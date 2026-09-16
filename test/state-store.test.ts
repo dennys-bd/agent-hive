@@ -27,3 +27,14 @@ test('loadState ignores a corrupt file and falls back to initialState', async ()
   const state = await loadState(dir, 2);
   assert.equal(state.slots.length, 2);
 });
+
+test('loadState reads a missing or unknown signal as green and keeps a valid one', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const legacy = { maxConcurrent: 1, slots: [], queue: [] }; // written before the signal existed
+  await writeFile(join(dir, 'state.json'), JSON.stringify(legacy));
+  assert.equal((await loadState(dir, 1)).signal, 'green');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, signal: 'red' }));
+  assert.equal((await loadState(dir, 1)).signal, 'red');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, signal: 'blue' }));
+  assert.equal((await loadState(dir, 1)).signal, 'green');
+});
