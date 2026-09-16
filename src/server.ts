@@ -3,7 +3,7 @@ import { rename, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
@@ -67,6 +67,8 @@ function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefine
   if (typeof body.promptTemplate === 'string' && body.promptTemplate.trim() === '') return current?.promptTemplate;
   return body.promptTemplate;
 }
+
+const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status], [b.board, b.status]);
 
 export async function detectAlive(state: State): Promise<string[]> {
   return aliveSlugs(state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : [])));
@@ -183,11 +185,12 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // Builds a Runtime for `config` on the port actually in use: hooks.json and the worker
   // command must target the listening port even when the saved file asks for another one.
-  async function activate(config: Config): Promise<Runtime> {
+  // Same board and status as the live runtime → same board instance, so a write already in flight keeps its chain.
+  async function activate(config: Config, current?: Runtime): Promise<Runtime> {
     if (boundPort === undefined) throw new Error('listen() precisa rodar antes de configure()');
     const effective: Config = { ...config, port: boundPort };
     const { hiveDir, hooksPath, promptsDir } = await prepareHiveDir(repo, boundPort);
-    const board = boardFactory(effective);
+    const board = current && sameBoard(current.config, effective) ? current.board : boardFactory(effective);
     await board.resolveFields();
     return { config: effective, board, hiveDir, hooksPath, promptsDir };
   }
@@ -206,7 +209,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function reconfigure(config: Config): Promise<void> {
     if (!live) throw new Error('Hive não configurado: use configure()');
-    const runtime = await activate(config);
+    const runtime = await activate(config, live.runtime);
     live = { runtime, state: live.state };
     if (live.state.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     await poll();
@@ -327,7 +330,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     // The only write allowed before validation: a markdown board that does not exist yet gets the header and an example row.
     if (config.board.type === 'markdown') {
       try {
-        await createMarkdownFileIfMissing(markdownPath(repo, config.board.path), config.status.queue);
+        await createMarkdownFileIfMissing(markdownPath(repo, config.board.path));
       } catch (err) {
         res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
         return;

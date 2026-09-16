@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMarkdownBoard, createMarkdownFileIfMissing, newBoardText } from '../../src/boards/markdown.js';
@@ -85,15 +85,18 @@ test('setupOptions lists the statuses in the file first, then the defaults not y
   assert.deepEqual(await createMarkdownBoard(path, STATUS).setupOptions(), ['In progress', 'Ready', 'In review', 'Done']);
 });
 
-test('createMarkdownFileIfMissing writes the header and an example row once and never overwrites', async () => {
+test('createMarkdownFileIfMissing writes the header and a Done example row once and never overwrites', async () => {
   const path = join(await mkdtemp(join(tmpdir(), 'hive-md-')), 'docs', 'board.md');
-  assert.equal(await createMarkdownFileIfMissing(path, 'Ready'), true);
-  assert.equal(await readFile(path, 'utf8'), `${HEADER}\n|---|---|---|\n| T-1 | Exemplo | Ready |\n`);
-  assert.equal(await createMarkdownFileIfMissing(path, 'Todo'), false);
-  assert.equal(await readFile(path, 'utf8'), newBoardText('Ready'));
+  assert.equal(await createMarkdownFileIfMissing(path), true);
+  assert.equal(await readFile(path, 'utf8'), `${HEADER}\n|---|---|---|\n| T-1 | Exemplo | Done |\n`);
+  await writeFile(path, BOARD);
+  assert.equal(await createMarkdownFileIfMissing(path), false);
+  assert.equal(await readFile(path, 'utf8'), BOARD);
+  await writeFile(path, newBoardText());
   const board = createMarkdownBoard(path, STATUS);
   await board.resolveFields();
-  assert.deepEqual((await board.listQueue()).map((t) => t.id), ['T-1']);
+  assert.deepEqual(await board.listQueue(), [], 'the example row is not queued, so a fresh setup spawns nothing');
+  assert.deepEqual(await board.setupOptions(), ['Done', 'Ready', 'In progress', 'In review']);
 });
 
 test('overlapping setStatus calls are serialized: both resolve and both changes land in the file', async () => {
@@ -117,4 +120,44 @@ test('an escaped pipe inside a cell is not a column boundary, and setStatus keep
 test('setStatus throws when the row has no status cell instead of rewriting nothing', async () => {
   const path = await boardFile(`${HEADER}\n|---|---|---|\n| T-1 | só título |\n`);
   await assert.rejects(createMarkdownBoard(path, STATUS).setStatus('T-1', 'working'), { message: `task T-1 sem célula de status em ${path}` });
+});
+
+test('two board instances writing the same file at once never corrupt it', async () => {
+  const path = await boardFile();
+  const a = createMarkdownBoard(path, STATUS);
+  const b = createMarkdownBoard(path, STATUS);
+  const results = await Promise.allSettled([a.setStatus('T-1', 'review'), b.setStatus('T-2', 'working')]);
+  assert.deepEqual(results.map((r) => r.status), ['fulfilled', 'fulfilled']);
+  const text = await readFile(path, 'utf8');
+  assert.equal(text.split('\n').length, BOARD.split('\n').length, text);
+  const landed = [text.includes('| T-1  | Primeira tarefa | In review |'), text.includes('| T-2  | Segunda tarefa  | In progress       |')];
+  assert.ok(landed.includes(true), text);
+  assert.equal((await createMarkdownBoard(path, STATUS).listQueue()).length, landed[1] ? 1 : 2);
+});
+
+test('setStatus through a symlink writes the real file and keeps the link', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-md-'));
+  const real = join(dir, 'real.md');
+  const link = join(dir, 'link.md');
+  await writeFile(real, BOARD);
+  await symlink(real, link);
+  await createMarkdownBoard(link, STATUS).setStatus('T-2', 'working');
+  assert.ok((await lstat(link)).isSymbolicLink());
+  assert.ok((await readFile(real, 'utf8')).includes('| T-2  | Segunda tarefa  | In progress       |'));
+});
+
+test('setStatus keeps CRLF line endings byte for byte', async () => {
+  const crlf = BOARD.replaceAll('\n', '\r\n');
+  const path = await boardFile(crlf);
+  await createMarkdownBoard(path, STATUS).setStatus('T-2', 'working');
+  const expected = crlf.replace('| Segunda tarefa  | Ready       |', '| Segunda tarefa  | In progress       |');
+  assert.notEqual(expected, crlf);
+  assert.equal(await readFile(path, 'utf8'), expected);
+});
+
+test('setStatus does not add a trailing newline to a file without one', async () => {
+  const text = `${HEADER}\n|---|---|---|\n| T-1 | Sem newline | Ready |`;
+  const path = await boardFile(text);
+  await createMarkdownBoard(path, STATUS).setStatus('T-1', 'review');
+  assert.equal(await readFile(path, 'utf8'), `${HEADER}\n|---|---|---|\n| T-1 | Sem newline | In review |`);
 });

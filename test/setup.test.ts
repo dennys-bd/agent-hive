@@ -160,6 +160,16 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal(configs.at(-1)?.status.queue, 'Done');
 });
 
+test('a second POST /setup with the same board and status keeps the live board instance', async (t) => {
+  const { base, configs } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const afterFirst = configs.length; // validation + activate
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: 'só {title}' })).status, 200);
+  assert.equal(configs.length, afterFirst + 1, 'only the pre-write validation creates a board; reconfigure reuses the live one');
+  assert.equal((await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } })).status, 200);
+  assert.equal(configs.length, afterFirst + 3, 'a different status needs a new board');
+});
+
 test('concurrent POST /setup calls run one at a time and the last one wins on disk and in memory', async (t) => {
   const { base, repo } = await start(t, 30);
   const [first, second] = await Promise.all([
@@ -237,7 +247,11 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   const body: SetupBody = { ...BODY, board: { type: 'markdown', path: 'docs/board.md' } };
   const file = join(repo, 'docs', 'board.md');
   assert.equal((await postSetup(base, body)).status, 200);
-  assert.equal(await readFile(file, 'utf8'), newBoardText('Ready'));
+  assert.equal(await readFile(file, 'utf8'), newBoardText());
+  assert.ok(newBoardText().includes('| T-1 | Exemplo | Done |'));
+  assert.deepEqual(server.getState()?.queue, [], 'the example row is Done, so nothing is queued');
+  await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
+  assert.equal((await postSetup(base, body)).status, 200);
   assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-1', 'Exemplo', file]]);
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
   // an existing file is never rewritten by setup, and its statuses feed the columns route

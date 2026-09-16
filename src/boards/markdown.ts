@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { Board, BoardConfig, StatusKey, Task } from '../types.js';
 
@@ -22,16 +23,16 @@ export function markdownPath(repo: string, path: string): string {
   return resolve(repo, path);
 }
 
-/** Header, separator and one example row in the queue column. */
-export function newBoardText(queueStatus: string): string {
-  return `${EXPECTED_HEADER}\n|---|---|---|\n| T-1 | Exemplo | ${queueStatus} |\n`;
+/** Header, separator and one example row. The example is `Done` so a fresh setup never spawns a worker on it. */
+export function newBoardText(): string {
+  return `${EXPECTED_HEADER}\n|---|---|---|\n| T-1 | Exemplo | Done |\n`;
 }
 
 /** Creates the file when it does not exist (parents included); resolves true when created. Never touches an existing file. */
-export async function createMarkdownFileIfMissing(path: string, queueStatus: string): Promise<boolean> {
+export async function createMarkdownFileIfMissing(path: string): Promise<boolean> {
   await mkdir(dirname(path), { recursive: true });
   try {
-    await writeFile(path, newBoardText(queueStatus), { flag: 'wx' });
+    await writeFile(path, newBoardText(), { flag: 'wx' });
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
@@ -104,10 +105,23 @@ function replaceCell(cell: string, value: string): string {
   return cell.slice(0, start) + value + cell.slice(start + content.length);
 }
 
+const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT';
+
+// Unique per write: another board instance (reconfigure mid-write, a second hive process) must not share the tmp.
 async function writeAtomic(path: string, text: string): Promise<void> {
-  const tmp = `${path}.tmp`;
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, text);
   await rename(tmp, path);
+}
+
+// A symlinked board.md must stay a symlink: read and rename onto the real file. Missing file → the configured path, so errors name it.
+async function realFile(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (err) {
+    if (isMissing(err)) return path;
+    throw err;
+  }
 }
 
 export function createMarkdownBoard(path: string, status: Record<StatusKey, string>): Board {
@@ -116,12 +130,12 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
   let writeChain: Promise<unknown> = Promise.resolve();
 
   // Always re-reads: the file is edited by hand too. No cache, no file lock (single user, local).
-  async function loadTable(): Promise<Table> {
+  async function loadTable(file: string): Promise<Table> {
     let text: string;
     try {
-      text = await readFile(path, 'utf8');
+      text = await readFile(file, 'utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${path} não existe (esperado um arquivo com a tabela ${EXPECTED_HEADER})`);
+      if (isMissing(err)) throw new Error(`${path} não existe (esperado um arquivo com a tabela ${EXPECTED_HEADER})`);
       throw err;
     }
     const table = parseTable(text);
@@ -132,23 +146,24 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
   }
 
   async function resolveFields(): Promise<void> {
-    await loadTable();
+    await loadTable(await realFile(path));
   }
 
   async function listQueue(): Promise<Task[]> {
-    const { rows } = await loadTable();
+    const { rows } = await loadTable(await realFile(path));
     return rows.filter((r) => r.status === status.queue).map((r) => ({ itemId: r.id, id: r.id, title: r.title, body: '', url: path }));
   }
 
   async function rewriteStatus(itemId: string, key: StatusKey): Promise<void> {
-    const { lines, columns, rows } = await loadTable();
+    const file = await realFile(path);
+    const { lines, columns, rows } = await loadTable(file);
     const row = rows.find((r) => r.id === itemId);
     if (!row) throw new Error(`task ${itemId} não encontrada em ${path}`);
     const split = splitLine(lines[row.lineIndex]);
     if (split.cells.length <= columns.status) throw new Error(`task ${itemId} sem célula de status em ${path}`);
     const cells = split.cells.map((cell, i) => (i === columns.status ? replaceCell(cell, status[key]) : cell));
     const updated = lines.map((line, i) => (i === row.lineIndex ? joinLine({ ...split, cells }) : line));
-    await writeAtomic(path, updated.join('\n'));
+    await writeAtomic(file, updated.join('\n'));
   }
 
   function setStatus(itemId: string, key: StatusKey): Promise<void> {
@@ -159,7 +174,7 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
   }
 
   async function setupOptions(): Promise<string[]> {
-    const { rows } = await loadTable();
+    const { rows } = await loadTable(await realFile(path));
     return [...new Set([...rows.map((r) => r.status).filter((s) => s !== ''), ...DEFAULT_STATUS_OPTIONS])];
   }
 

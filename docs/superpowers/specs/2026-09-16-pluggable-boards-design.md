@@ -62,7 +62,7 @@ interface Board {
 - `setStatus(itemId, key)`: relê o arquivo na hora (não usa cache), acha a linha pelo `id`, substitui só o conteúdo da célula `status` (mantendo os espaços de padding das outras células como estavam), regrava o arquivo inteiro (tmp + rename). Id não encontrado → erro `task <id> não encontrada em <path>` (vira banner, como qualquer falha de `setStatus`).
 - `resolveFields()`: arquivo existe e contém a tabela; senão erro dizendo o caminho e o cabeçalho esperado.
 - `setupOptions()`: valores distintos da coluna `status` no arquivo ∪ `Ready`, `In progress`, `In review`, `Done`, nessa ordem de aparição.
-- **Criação**: `POST /setup` com `markdown` e arquivo inexistente cria o arquivo com o cabeçalho e uma linha de exemplo (`| T-1 | Exemplo | Ready |`), antes de `resolveFields`. É a única escrita fora da tabela e só acontece se o arquivo não existe.
+- **Criação**: `POST /setup` com `markdown` e arquivo inexistente cria o arquivo com o cabeçalho e uma linha de exemplo (`| T-1 | Exemplo | Done |` — literal `Done`, fora da fila, para que um setup novo não abra um worker no exemplo), antes de `resolveFields`. É a única escrita fora da tabela e só acontece se o arquivo não existe.
 - Edição manual concorrente: o poll de 30s relê; `setStatus` sempre relê antes de escrever. Sem lock (single user, local).
 
 ## Adapter GitHub (`src/boards/github.ts`)
