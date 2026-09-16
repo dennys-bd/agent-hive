@@ -2,7 +2,7 @@
 
 Cada item vira seu próprio ciclo spec → plan → implementação. Ordem sugerida: 1 → 2 → 3 → 4.
 
-## 1. Entrypoint por command (só config)
+## 1. Entrypoint por command (só config) — ✅ feito
 
 Hoje o worker recebe `promptTemplate` com `{number}`, `{title}`, `{body}`, `{url}`. Pra um command do Claude Code (ex.: um `/ship` que faz spec, plan e implementa), basta a config apontar pra ele:
 
@@ -12,7 +12,7 @@ Hoje o worker recebe `promptTemplate` com `{number}`, `{title}`, `{body}`, `{url
 
 Nada a implementar. Vale documentar no README e talvez expor o template no formulário de configuração (hoje é só arquivo).
 
-## 2. Board plugável: `.md`, Asana, …
+## 2. Board plugável: `.md`, Asana, … — ✅ github + markdown feitos; Asana pendente
 
 Fronteira já existe: `src/board.ts` expõe `listQueue`, `setStatus`, `listProjects`, `listStatusOptions`. Um novo backend é outro arquivo com essas funções, escolhido por config:
 
