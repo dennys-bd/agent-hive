@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { BoardConfig, Config, StatusKey } from './types.js';
+import type { BoardConfig, Budget, Config, StatusKey } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -13,10 +13,12 @@ export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   claudeArgs: [],
   promptTemplate:
     'Task #{number}: {title}\n\n{body}\n\nWork on this branch. When the task is done, open a PR with `gh pr create`.',
+  budget: {},
 };
 
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const MARKDOWN_CELL_BREAKERS = /[|\r\n]/; // written into a table cell, these would split or end the row
+const BUDGET_KEYS = ['maxTokensPerHour', 'maxTokensPerDay'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -55,6 +57,14 @@ function boardFrom(raw: Record<string, unknown>): BoardConfig {
   return parseBoard(raw.board, 'board');
 }
 
+// Absent keys stay absent (never become 0) so a hive.config.json without limits stays clean.
+function parseBudget(raw: unknown): Budget {
+  if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "budget" must be an object`);
+  return Object.fromEntries(
+    BUDGET_KEYS.flatMap((key) => (raw[key] === undefined ? [] : [[key, requireInt(raw[key], `budget.${key}`)]])),
+  ) as Budget;
+}
+
 export function parseConfig(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const board = boardFrom(raw);
@@ -84,6 +94,7 @@ export function parseConfig(raw: unknown): Config {
       return v as string[];
     }),
     promptTemplate: optional(raw.promptTemplate, DEFAULT_CONFIG.promptTemplate, (v) => requireString(v, 'promptTemplate')),
+    budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
   };
 }
 

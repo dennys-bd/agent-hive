@@ -14,6 +14,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.equal(config.port, 47821);
   assert.deepEqual(config.claudeArgs, []);
   assert.equal(config.promptTemplate, DEFAULT_CONFIG.promptTemplate);
+  assert.deepEqual(config.budget, {});
 });
 
 test('parseConfig keeps explicit values', () => {
@@ -75,4 +76,26 @@ test('markdown boards reject status values with "|" or line breaks; github board
   assert.throws(() => parseConfig({ board: md, status: { working: 'In\nprogress' } }), { message });
   assert.throws(() => parseConfig({ board: md, status: { review: 'Rev\riew' } }), /status\.review/);
   assert.equal(parseConfig({ board: GITHUB, status: { working: 'In | progress' } }).status.working, 'In | progress');
+});
+
+test('parseConfig reads budget, leaves absent limits absent and defaults to {}', () => {
+  assert.deepEqual(parseConfig({ board: GITHUB }).budget, {});
+  assert.deepEqual(parseConfig({ board: GITHUB, budget: {} }).budget, {});
+  assert.deepEqual(parseConfig({ board: GITHUB, budget: { maxTokensPerHour: 50_000 } }).budget, { maxTokensPerHour: 50_000 });
+  assert.deepEqual(
+    parseConfig({ board: GITHUB, budget: { maxTokensPerHour: 0, maxTokensPerDay: 1_000_000 } }).budget,
+    { maxTokensPerHour: 0, maxTokensPerDay: 1_000_000 },
+  );
+});
+
+test('parseConfig rejects a budget that is not an object or has a non-integer limit, naming the field', () => {
+  assert.throws(() => parseConfig({ board: GITHUB, budget: 5 }), { message: 'hive.config.json: "budget" must be an object' });
+  assert.throws(() => parseConfig({ board: GITHUB, budget: [] }), /"budget" must be an object/);
+  assert.throws(() => parseConfig({ board: GITHUB, budget: null }), /"budget" must be an object/);
+  assert.throws(
+    () => parseConfig({ board: GITHUB, budget: { maxTokensPerHour: 1.5 } }),
+    { message: 'hive.config.json: "budget.maxTokensPerHour" must be a non-negative integer' },
+  );
+  assert.throws(() => parseConfig({ board: GITHUB, budget: { maxTokensPerDay: -1 } }), /budget\.maxTokensPerDay/);
+  assert.throws(() => parseConfig({ board: GITHUB, budget: { maxTokensPerDay: '10' } }), /budget\.maxTokensPerDay/);
 });

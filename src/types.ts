@@ -58,6 +58,7 @@ export interface Config {
   port: number;
   claudeArgs: string[];
   promptTemplate: string;
+  budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
 }
 
 export interface HookPayload {
@@ -104,6 +105,8 @@ export interface SetupBody {
   maxConcurrent: number;
   /** Optional; blank or missing keeps the current template (or the default on first setup). */
   promptTemplate?: string;
+  /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
+  budget?: Budget;
 }
 
 export interface SetupResult {
