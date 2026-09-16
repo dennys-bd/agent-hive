@@ -46,7 +46,7 @@ Um estado global `signal: "green" | "yellow" | "red"` que o `fill` do orquestrad
 
 - Branch: worktree-hive-5-orcamento-de-tokens
 - Plan: docs/superpowers/plans/2026-09-16-token-budget.md
-- PR: (pendente)
+- PR: https://github.com/dennys-bd/agent-hive/pull/14
 
 ## 6. Sinal dinâmico por uso de tokens
 
