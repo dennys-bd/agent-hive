@@ -9,7 +9,8 @@ export const EXPECTED_HEADER = '| id | título | status |';
 export const DEFAULT_STATUS_OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 const TITLE_HEADERS = ['titulo', 'title'];
 const SEPARATOR_CELL = /^\s*:?-+:?\s*$/;
-const COMBINING_MARKS = /[̀-ͯ]/g;
+const CELL_BOUNDARY = /(?<!\\)\|/; // a `\|` inside a cell is content, not a column boundary
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
 
 interface Columns { id: number; title: number; status: number }
 interface Row { lineIndex: number; id: string; title: string; status: string }
@@ -41,12 +42,12 @@ export async function createMarkdownFileIfMissing(path: string, queueStatus: str
 const isTableLine = (line: string): boolean => line.trimStart().startsWith('|');
 
 // Splits `| a | b |` into raw cells, keeping the text before the first pipe and from the closing pipe on,
-// so the line can be rebuilt byte for byte after one cell changes. ponytail: `\|` inside a cell is not handled.
+// so the line can be rebuilt byte for byte after one cell changes.
 function splitLine(line: string): SplitLine {
   const first = line.indexOf('|');
   const end = line.trimEnd();
   const last = end.endsWith('|') && end.length - 1 > first ? end.length - 1 : line.length;
-  return { head: line.slice(0, first + 1), cells: line.slice(first + 1, last).split('|'), tail: line.slice(last) };
+  return { head: line.slice(0, first + 1), cells: line.slice(first + 1, last).split(CELL_BOUNDARY), tail: line.slice(last) };
 }
 
 const joinLine = ({ head, cells, tail }: SplitLine): string => head + cells.join('|') + tail;
@@ -110,7 +111,11 @@ async function writeAtomic(path: string, text: string): Promise<void> {
 }
 
 export function createMarkdownBoard(path: string, status: Record<StatusKey, string>): Board {
-  // Always re-reads: the file is edited by hand too. No cache, no lock (single user, local).
+  // Dispatches overlap in-process, and two read-modify-writes on the same file would lose one
+  // update and race on the same .tmp. Chaining them makes each call re-read after the previous rename.
+  let writeChain: Promise<unknown> = Promise.resolve();
+
+  // Always re-reads: the file is edited by hand too. No cache, no file lock (single user, local).
   async function loadTable(): Promise<Table> {
     let text: string;
     try {
@@ -135,14 +140,22 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
     return rows.filter((r) => r.status === status.queue).map((r) => ({ itemId: r.id, id: r.id, title: r.title, body: '', url: path }));
   }
 
-  async function setStatus(itemId: string, key: StatusKey): Promise<void> {
+  async function rewriteStatus(itemId: string, key: StatusKey): Promise<void> {
     const { lines, columns, rows } = await loadTable();
     const row = rows.find((r) => r.id === itemId);
     if (!row) throw new Error(`task ${itemId} não encontrada em ${path}`);
     const split = splitLine(lines[row.lineIndex]);
+    if (split.cells.length <= columns.status) throw new Error(`task ${itemId} sem célula de status em ${path}`);
     const cells = split.cells.map((cell, i) => (i === columns.status ? replaceCell(cell, status[key]) : cell));
     const updated = lines.map((line, i) => (i === row.lineIndex ? joinLine({ ...split, cells }) : line));
     await writeAtomic(path, updated.join('\n'));
+  }
+
+  function setStatus(itemId: string, key: StatusKey): Promise<void> {
+    const run = () => rewriteStatus(itemId, key);
+    const link = writeChain.then(run, run);
+    writeChain = link.catch(() => undefined); // a failed write must not poison the chain
+    return link;
   }
 
   async function setupOptions(): Promise<string[]> {

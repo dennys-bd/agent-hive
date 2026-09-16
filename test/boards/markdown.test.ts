@@ -95,3 +95,26 @@ test('createMarkdownFileIfMissing writes the header and an example row once and 
   await board.resolveFields();
   assert.deepEqual((await board.listQueue()).map((t) => t.id), ['T-1']);
 });
+
+test('overlapping setStatus calls are serialized: both resolve and both changes land in the file', async () => {
+  const path = await boardFile();
+  const board = createMarkdownBoard(path, STATUS);
+  await Promise.all([board.setStatus('T-1', 'review'), board.setStatus('T-2', 'working')]);
+  const text = await readFile(path, 'utf8');
+  assert.ok(text.includes('| alta       | T-1  | Primeira tarefa | In review |'), text);
+  assert.ok(text.includes('| média      | T-2  | Segunda tarefa  | In progress       |'), text);
+});
+
+test('an escaped pipe inside a cell is not a column boundary, and setStatus keeps that cell byte-identical', async () => {
+  const row = '| T-1 | a \\| b | Ready |';
+  const path = await boardFile(`${HEADER}\n|---|---|---|\n${row}\n`);
+  const board = createMarkdownBoard(path, STATUS);
+  assert.deepEqual(await board.listQueue(), [{ itemId: 'T-1', id: 'T-1', title: 'a \\| b', body: '', url: path }]);
+  await board.setStatus('T-1', 'working');
+  assert.equal(await readFile(path, 'utf8'), `${HEADER}\n|---|---|---|\n| T-1 | a \\| b | In progress |\n`);
+});
+
+test('setStatus throws when the row has no status cell instead of rewriting nothing', async () => {
+  const path = await boardFile(`${HEADER}\n|---|---|---|\n| T-1 | só título |\n`);
+  await assert.rejects(createMarkdownBoard(path, STATUS).setStatus('T-1', 'working'), { message: `task T-1 sem célula de status em ${path}` });
+});
