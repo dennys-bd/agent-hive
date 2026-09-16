@@ -62,6 +62,12 @@ export type HiveEvent =
   | { type: 'spawned'; workerId: string; itermSessionId: string }
   | { type: 'error'; message?: string };
 
+export interface ProjectSummary {
+  number: number;
+  title: string;
+  url: string;
+}
+
 export type Effect =
   | { type: 'spawn'; slot: Slot }
   | { type: 'setStatus'; itemId: string; key: StatusKey }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBoard } from '../src/board.js';
+import { createBoard, listProjects, listStatusOptions } from '../src/board.js';
 import { parseConfig } from '../src/config.js';
 
 const config = parseConfig({ project: { owner: 'acme', number: 6 } });
@@ -66,4 +66,31 @@ test('listQueue returns only issues in the queue column, in board order', async 
     { itemId: 'I1', number: 1, title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
     { itemId: 'I4', number: 4, title: 'C', body: '', url: 'https://github.com/acme/r/issues/4' },
   ]);
+});
+
+test('listProjects lists only open projects as { number, title, url }', async () => {
+  const { exec, calls } = fakeExec({
+    'project list --owner': {
+      projects: [
+        { id: 'PVT_1', number: 6, title: 'Roadmap', url: 'https://github.com/users/acme/projects/6', closed: false },
+        { id: 'PVT_0', number: 2, title: 'Antigo', url: 'https://github.com/users/acme/projects/2', closed: true },
+      ],
+      totalCount: 2,
+    },
+  });
+  assert.deepEqual(await listProjects('acme', exec), [
+    { number: 6, title: 'Roadmap', url: 'https://github.com/users/acme/projects/6' },
+  ]);
+  assert.deepEqual(calls[0], ['project', 'list', '--owner', 'acme', '--limit', '100', '--format', 'json']);
+});
+
+test('listStatusOptions returns the Status option names in board order without resolveFields', async () => {
+  const { exec, calls } = fakeExec({ 'project field-list 6': fields });
+  assert.deepEqual(await listStatusOptions('acme', 6, exec), ['Ready', 'In progress', 'In review', 'Done']);
+  assert.deepEqual(calls[0], ['project', 'field-list', '6', '--owner', 'acme', '--format', 'json']);
+});
+
+test('listStatusOptions fails when the board has no single-select Status field', async () => {
+  const { exec } = fakeExec({ 'project field-list 6': { fields: [{ id: 'F_title', name: 'Title', type: 'ProjectV2Field' }] } });
+  await assert.rejects(listStatusOptions('acme', 6, exec), /"Status"/);
 });

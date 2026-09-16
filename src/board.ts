@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Config, StatusKey, Task } from './types.js';
+import type { Config, ProjectSummary, StatusKey, Task } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const GH_MAX_BUFFER = 20 * 1024 * 1024;
 const ITEM_LIMIT = 200;
+const PROJECT_LIMIT = 100;
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 
 export type Exec = (args: string[]) => Promise<string>;
@@ -26,23 +27,45 @@ export const ghExec: Exec = async (args) => {
 };
 
 interface GhField { id: string; name: string; type: string; options?: { id: string; name: string }[] }
+interface GhProject { number: number; title: string; url: string; closed?: boolean }
 interface GhItem {
   id: string;
   status?: string;
   title?: string;
   content?: { type?: string; number?: number; title?: string; body?: string | null; url?: string };
 }
+interface StatusField { id: string; options: { id: string; name: string }[] }
+
+function projectArgs(sub: string, owner: string, number: number): string[] {
+  return ['project', sub, String(number), '--owner', owner, '--format', 'json'];
+}
+
+async function fetchStatusField(owner: string, number: number, exec: Exec): Promise<StatusField> {
+  const { fields } = JSON.parse(await exec(projectArgs('field-list', owner, number))) as { fields: GhField[] };
+  const status = fields.find((f) => f.name === 'Status' && f.options);
+  if (!status?.options) throw new Error('board has no single-select "Status" field');
+  return { id: status.id, options: status.options };
+}
+
+export async function listProjects(owner: string, exec: Exec = ghExec): Promise<ProjectSummary[]> {
+  const { projects } = JSON.parse(
+    await exec(['project', 'list', '--owner', owner, '--limit', String(PROJECT_LIMIT), '--format', 'json']),
+  ) as { projects: GhProject[] };
+  return projects.filter((p) => !p.closed).map(({ number, title, url }) => ({ number, title, url }));
+}
+
+export async function listStatusOptions(owner: string, number: number, exec: Exec = ghExec): Promise<string[]> {
+  return (await fetchStatusField(owner, number, exec)).options.map((o) => o.name);
+}
 
 export function createBoard(config: Config, exec: Exec = ghExec): Board {
   const { owner, number } = config.project;
-  const base = (sub: string) => ['project', sub, String(number), '--owner', owner, '--format', 'json'];
+  const base = (sub: string) => projectArgs(sub, owner, number);
   let resolved: { projectId: string; statusFieldId: string; optionIds: Record<StatusKey, string> } | undefined;
 
   async function resolveFields(): Promise<void> {
     const view = JSON.parse(await exec(base('view'))) as { id: string };
-    const { fields } = JSON.parse(await exec(base('field-list'))) as { fields: GhField[] };
-    const status = fields.find((f) => f.name === 'Status' && f.options);
-    if (!status?.options) throw new Error('board has no single-select "Status" field');
+    const status = await fetchStatusField(owner, number, exec);
     const available = status.options.map((o) => o.name);
     const optionIds = {} as Record<StatusKey, string>;
     for (const key of STATUS_KEYS) {
