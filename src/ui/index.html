@@ -49,6 +49,8 @@
   #setup .row { display: flex; gap: 8px; align-items: flex-end; }
   #setup .row label { flex: 1; }
   #setup .row button { margin-bottom: 12px; }
+  #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  #setup fieldset[disabled] { display: none; }
   #setup textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
   .hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
   .hint code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
@@ -72,17 +74,36 @@
 <div id="notice"></div>
 <form id="setup">
   <h2>configuração do board</h2>
-  <div class="row">
-    <label>owner <input id="owner" type="text" value="@me" required></label>
-    <button type="button" id="load-projects">carregar</button>
-  </div>
-  <label>project <select id="project" required><option value="">carregue os projects do owner</option></select></label>
-  <label>coluna da fila <select id="col-queue" required></select></label>
-  <label>coluna em andamento <select id="col-working" required></select></label>
-  <label>coluna em review <select id="col-review" required></select></label>
+  <label>tipo de board
+    <select id="board-type">
+      <option value="github">GitHub Project</option>
+      <option value="markdown">arquivo markdown no repo</option>
+    </select>
+  </label>
+  <fieldset id="github-fields">
+    <div class="row">
+      <label>owner <input id="owner" type="text" value="@me" required></label>
+      <button type="button" id="load-projects">carregar</button>
+    </div>
+    <label>project <select id="project" required><option value="">carregue os projects do owner</option></select></label>
+    <label>coluna da fila <select id="col-queue" required></select></label>
+    <label>coluna em andamento <select id="col-working" required></select></label>
+    <label>coluna em review <select id="col-review" required></select></label>
+  </fieldset>
+  <fieldset id="markdown-fields" disabled>
+    <div class="row">
+      <label>caminho (relativo ao repo) <input id="md-path" type="text" value="board.md" required></label>
+      <button type="button" id="load-columns">carregar</button>
+    </div>
+    <div class="hint">tabela <code>| id | título | status |</code>; se o arquivo não existe, é criado ao salvar. "carregar" lista os status já usados no arquivo.</div>
+    <label>coluna da fila <input id="md-queue" type="text" list="md-options" value="Ready" required></label>
+    <label>coluna em andamento <input id="md-working" type="text" list="md-options" value="In progress" required></label>
+    <label>coluna em review <input id="md-review" type="text" list="md-options" value="In review" required></label>
+    <datalist id="md-options"></datalist>
+  </fieldset>
   <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
   <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
-  <div class="hint">placeholders: <code>{number}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> — ex.: <code>/ship #{number}</code>. Vazio mantém o atual.</div>
+  <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo.</div>
   <div id="setup-error"></div>
   <div class="actions">
     <button type="submit" id="save">salvar</button>

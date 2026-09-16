@@ -1,4 +1,4 @@
-import type { EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Slot, State, StatusKey } from '../types.js';
+import type { BoardConfig, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Slot, State, StatusKey, Task } from '../types.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
   vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
@@ -10,6 +10,10 @@ const DEFAULT_MAX = 2;
 const DEFAULT_OWNER = '@me';
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
+const MARKDOWN_INPUT: Record<StatusKey, string> = { queue: 'md-queue', working: 'md-working', review: 'md-review' };
+const DEFAULT_MARKDOWN_PATH = 'board.md';
+
+type BoardType = BoardConfig['type'];
 
 let state: State | undefined;
 let selectedSlotId: string | undefined;
@@ -71,6 +75,13 @@ function renderCard(slot: Slot): string {
     </div>`;
 }
 
+function taskLink(task: Task): string {
+  // GitHub tasks link to the issue; markdown tasks carry the board file path, which is not a browsable URL
+  return task.url.startsWith('http')
+    ? `<div class="meta"><a href="${esc(task.url)}" target="_blank" rel="noreferrer">issue</a></div>`
+    : `<div class="meta">board: ${esc(task.url)}</div>`;
+}
+
 function renderDetail(): void {
   const slot = state?.slots.find((s) => s.id === selectedSlotId);
   const panel = $('detail');
@@ -85,7 +96,7 @@ function renderDetail(): void {
     slot.question ? `<p>pendente:</p><pre>${esc(slot.question)}</pre>` : '',
     `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
     `<div class="meta">branch: ${esc(slot.branch ?? '—')}</div>`,
-    slot.task?.url ? `<div class="meta"><a href="${esc(slot.task.url)}" target="_blank" rel="noreferrer">issue</a></div>` : '',
+    slot.task ? taskLink(slot.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
   panel.classList.add('show');
@@ -132,18 +143,56 @@ function ownerValue(): string {
   return $<HTMLInputElement>('owner').value.trim();
 }
 
+function markdownPathValue(): string {
+  return $<HTMLInputElement>('md-path').value.trim();
+}
+
+function boardType(): BoardType {
+  return $<HTMLSelectElement>('board-type').value as BoardType;
+}
+
+// A disabled fieldset is hidden by CSS and skipped by form validation, so only the visible fields count.
+function applyBoardType(): void {
+  const type = boardType();
+  $<HTMLFieldSetElement>('github-fields').disabled = type !== 'github';
+  $<HTMLFieldSetElement>('markdown-fields').disabled = type !== 'markdown';
+}
+
+function columnsUrl(board: BoardConfig): string {
+  const params = new URLSearchParams(
+    board.type === 'github' ? { type: board.type, owner: board.owner, number: String(board.number) } : { type: board.type, path: board.path },
+  );
+  return `/setup/columns?${params.toString()}`;
+}
+
 async function loadColumns(): Promise<void> {
   const owner = ownerValue();
   const number = $<HTMLSelectElement>('project').value;
   if (!owner || !number) return;
   setupError();
   try {
-    const options = await getJson<string[]>(`/setup/columns?owner=${encodeURIComponent(owner)}&number=${encodeURIComponent(number)}`);
+    const options = await getJson<string[]>(columnsUrl({ type: 'github', owner, number: Number(number) }));
     const current = setupInfo?.config;
     for (const key of STATUS_KEYS) {
       const wanted = current && options.includes(current.status[key]) ? current.status[key] : PRESELECT[key];
       fillSelect($(COLUMN_SELECT[key]), options.map((o) => ({ value: o, label: o })), wanted);
     }
+  } catch (err) {
+    setupError((err as Error).message);
+  }
+}
+
+// Fills the datalist behind the three markdown text fields with the statuses the file already uses.
+async function loadMarkdownColumns(): Promise<void> {
+  const path = markdownPathValue();
+  if (!path) {
+    setupError('informe o caminho do arquivo');
+    return;
+  }
+  setupError();
+  try {
+    const options = await getJson<string[]>(columnsUrl({ type: 'markdown', path }));
+    $('md-options').innerHTML = options.map((o) => `<option value="${esc(o)}"></option>`).join('');
   } catch (err) {
     setupError((err as Error).message);
   }
@@ -175,33 +224,49 @@ async function loadProjects(selectedNumber?: number): Promise<void> {
 
 async function openSetup(): Promise<void> {
   const config = setupInfo?.config;
-  const github = config?.board.type === 'github' ? config.board : undefined; // markdown fields arrive in Task 5
+  const board = config?.board;
   document.body.classList.add('setup');
   $<HTMLButtonElement>('cancel').hidden = !setupInfo?.configured;
-  $<HTMLInputElement>('owner').value = github?.owner ?? DEFAULT_OWNER;
+  $<HTMLSelectElement>('board-type').value = board?.type ?? 'github';
+  applyBoardType();
+  $<HTMLInputElement>('owner').value = board?.type === 'github' ? board.owner : DEFAULT_OWNER;
+  $<HTMLInputElement>('md-path').value = board?.type === 'markdown' ? board.path : DEFAULT_MARKDOWN_PATH;
+  for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
+  $('md-options').innerHTML = '';
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
   $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
   setupError();
-  await loadProjects(github?.number);
+  if (board?.type !== 'markdown') await loadProjects(board?.type === 'github' ? board.number : undefined);
 }
 
 function closeSetup(): void {
   document.body.classList.remove('setup');
 }
 
+function boardFromForm(): BoardConfig | undefined {
+  if (boardType() === 'markdown') {
+    const path = markdownPathValue();
+    return path ? { type: 'markdown', path } : undefined;
+  }
+  const project = $<HTMLSelectElement>('project').value;
+  return project ? { type: 'github', owner: ownerValue(), number: Number(project) } : undefined;
+}
+
+function statusFromForm(): Record<StatusKey, string> {
+  const ids = boardType() === 'markdown' ? MARKDOWN_INPUT : COLUMN_SELECT;
+  const read = (key: StatusKey): string => $<HTMLInputElement | HTMLSelectElement>(ids[key]).value.trim();
+  return { queue: read('queue'), working: read('working'), review: read('review') };
+}
+
 async function saveSetup(): Promise<void> {
-  const projectValue = $<HTMLSelectElement>('project').value;
-  if (!projectValue) {
-    setupError('escolha um project');
+  const board = boardFromForm();
+  if (!board) {
+    setupError(boardType() === 'markdown' ? 'informe o caminho do arquivo' : 'escolha um project');
     return;
   }
   const body: SetupBody = {
-    board: { type: 'github', owner: ownerValue(), number: Number(projectValue) },
-    status: {
-      queue: $<HTMLSelectElement>(COLUMN_SELECT.queue).value,
-      working: $<HTMLSelectElement>(COLUMN_SELECT.working).value,
-      review: $<HTMLSelectElement>(COLUMN_SELECT.review).value,
-    },
+    board,
+    status: statusFromForm(),
     maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
     promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
   };
@@ -262,6 +327,8 @@ $('close').addEventListener('click', () => {
 
 $('configure').addEventListener('click', () => void openSetup());
 $('load-projects').addEventListener('click', () => void loadProjects());
+$('board-type').addEventListener('change', applyBoardType);
+$('load-columns').addEventListener('click', () => void loadMarkdownColumns());
 $('project').addEventListener('change', () => void loadColumns());
 $('setup').addEventListener('submit', (event) => {
   event.preventDefault();
