@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import type { Task } from './types.js';
 
 const execFileAsync = promisify(execFile);
-const PKILL_NO_MATCH = 1;
+const NO_MATCH_EXIT = 1;
 
 export interface WorkerCommandOptions {
   repo: string;
@@ -104,7 +104,7 @@ export async function killWorker(slug: string): Promise<void> {
   try {
     await execFileAsync('pkill', ['-f', '--', worktreePattern(slug)]);
   } catch (err) {
-    if ((err as { code?: number }).code !== PKILL_NO_MATCH) throw err;
+    if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
   }
 }
 
@@ -114,7 +114,8 @@ export async function aliveSlugs(slugs: string[]): Promise<string[]> {
       try {
         await execFileAsync('pgrep', ['-f', '--', worktreePattern(slug)]);
         return slug;
-      } catch {
+      } catch (err) {
+        if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
         return undefined;
       }
     }),
