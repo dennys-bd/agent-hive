@@ -3,3 +3,5 @@ dist
 .hive
 .omc/
 hive.config.json
+.claude/worktrees
+.claude/ideate.json
