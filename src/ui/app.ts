@@ -67,7 +67,7 @@ function renderCard(slot: Slot): string {
   if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.vazio}</div></div>`;
   return `
     <div class="${classes}" data-id="${slot.id}">
-      <div class="title">#${slot.task?.id} ${esc(slot.task?.title ?? '')}</div>
+      <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
       <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${slot.draining ? ' · drenando' : ''}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ?? '')}</div>
@@ -91,7 +91,7 @@ function renderDetail(): void {
     return;
   }
   const lines = [
-    `<div class="title">#${slot.task?.id} ${esc(slot.task?.title ?? '')}</div>`,
+    `<div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>`,
     slot.prUrl ? `<p>PR: <a href="${esc(slot.prUrl)}" target="_blank" rel="noreferrer">${esc(slot.prUrl)}</a></p>` : '',
     slot.question ? `<p>pendente:</p><pre>${esc(slot.question)}</pre>` : '',
     `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
@@ -111,7 +111,7 @@ function render(): void {
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
   showError(state.error);
   $('grid').innerHTML = state.slots.map(renderCard).join('');
-  $('queue').innerHTML = state.queue.map((t) => `<li>#${t.id} ${esc(t.title)}</li>`).join('')
+  $('queue').innerHTML = state.queue.map((t) => `<li>#${esc(t.id)} ${esc(t.title)}</li>`).join('')
     || '<li style="list-style:none;color:var(--muted)">vazia</li>';
   renderDetail();
 }
