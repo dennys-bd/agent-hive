@@ -1,52 +1,52 @@
 # Agent Hive
 
-Rode várias sessões do Claude Code em paralelo, cada uma numa git worktree própria, puxando tasks de um board — e veja tudo num painel.
+Run several Claude Code sessions in parallel, each in its own git worktree, pulling tasks from a board — and watch them all on one panel.
 
-O Hive abre até N abas do iTerm2, cada uma com um `claude` trabalhando numa task; quando uma sessão termina, a próxima task da fila entra sozinha. Um card por worker mostra em que ele está, fica amarelo quando o Claude precisa de você e azul quando o PR foi aberto. Você continua respondendo no terminal, como sempre; o Hive só observa (via hooks do Claude Code) e enfileira.
+Hive opens up to N iTerm2 tabs, each with a `claude` session working on one task; when a session ends, the next task in the queue starts on its own. One card per worker shows what it is doing, turns yellow when Claude needs you, and blue once the PR is open. You keep answering in the terminal as usual; Hive only observes (through Claude Code hooks) and schedules.
 
-Roda 100% local, sem serviço externo. macOS + iTerm2 por enquanto.
+Runs 100% locally, no external service. macOS + iTerm2 for now.
 
-## Como funciona
+## How it works
 
 ```
-board (GitHub Project ou board.md)
+board (GitHub Project or board.md)
         │ poll
         ▼
-  ┌────────────┐  spawn   ┌──────────────────────────┐
-  │  Agent Hive │ ───────▶ │ iTerm2 tab: claude --worktree=<task> │
-  │  (Electron) │ ◀─────── │   hooks → POST /hooks/event          │
-  └────────────┘  status   └──────────────────────────┘
+  ┌────────────┐  spawn   ┌──────────────────────────────────────┐
+  │ Agent Hive │ ───────▶ │ iTerm2 tab: claude --worktree=<task>  │
+  │ (Electron) │ ◀─────── │   hooks → POST /hooks/event           │
+  └────────────┘  status  └──────────────────────────────────────┘
         │ SSE
         ▼
-   dashboard (cards + fila)
+   dashboard (cards + queue)
 ```
 
-1. O Hive lê a coluna "fila" do board e preenche os slots livres (`maxConcurrent`).
-2. Cada worker é `claude --worktree=<slug> "<prompt>"` numa aba nova, com um `hooks.json` injetado por `--settings`: `SessionStart`, `PreToolUse`, `Notification`, `PostToolUse`, `Stop`, `SessionEnd` fazem um `curl` pro Hive.
-3. O card muda com os hooks: verde (trabalhando), amarelo (esperando você: permissão, pergunta, idle), azul (`gh pr create` detectado). O item do board vai pra "em andamento" e depois "em review".
-4. Sessão encerrada libera o slot; task sem PR volta pra fila.
+1. Hive reads the board's "queue" column and fills the free slots (`maxConcurrent`).
+2. Each worker is `claude --worktree=<slug> "<prompt>"` in a new tab, with a `hooks.json` injected via `--settings`: `SessionStart`, `PreToolUse`, `Notification`, `PostToolUse`, `Stop` and `SessionEnd` each `curl` the Hive.
+3. Cards follow the hooks: green (working), yellow (waiting for you: permission, question, idle), blue (`gh pr create` detected). The board item moves to "in progress" and later "in review".
+4. A session ending frees the slot; a task without a PR goes back to the queue.
 
-## Instalação
+## Install
 
-Requisitos: macOS, iTerm2, Node 24+, pnpm, `claude` (Claude Code) e `gh` autenticado (só pra boards GitHub; `gh auth refresh -s project` uma vez).
+Requirements: macOS, iTerm2, Node 24+, pnpm, `claude` (Claude Code), and `gh` logged in (GitHub boards only; run `gh auth refresh -s project` once).
 
 ```sh
-git clone <este repo> && cd agent-hive
+git clone git@github.com:dennys-bd/agent-hive.git && cd agent-hive
 pnpm install && pnpm build && pnpm link --global
 ```
 
-Isso cria o comando `hive` (via `pnpm setup`, se ainda não tiver `PNPM_HOME`).
+This creates the `hive` command (through `pnpm setup` if you don't have `PNPM_HOME` yet).
 
-## Uso
+## Usage
 
 ```sh
-cd /seu/repo
+cd /your/repo
 hive
 ```
 
-Sem `hive.config.json` no repo, a janela abre num formulário: tipo de board, colunas (fila / em andamento / em review), máximo de workers e o prompt do worker. Salvar grava o arquivo e mostra o dashboard. "configurar" reabre o formulário a qualquer momento.
+Without a `hive.config.json` in the repo, the window opens on a setup form: board type, columns (queue / in progress / in review), max workers and the worker prompt. Saving writes the file and shows the dashboard. "configurar" reopens the form at any time.
 
-Na tela: `N/M workers ativos`, o campo `máx. workers` (muda ao vivo), a fila, e um card por slot. Clique num card pra ver a pergunta pendente ou o link do PR e pra pular pra aba do terminal; `kill` derruba o worker e devolve a task pra fila.
+On screen: `N/M workers ativos`, the `máx. workers` field (changes live), the queue, and one card per slot. Click a card to see the pending question or the PR link and to jump to its terminal tab; `kill` stops the worker and returns the task to the queue.
 
 ## Boards
 
@@ -56,7 +56,7 @@ Na tela: `N/M workers ativos`, o campo `máx. workers` (muda ao vivo), a fila, e
 "board": { "type": "github", "owner": "@me", "number": 6 }
 ```
 
-As colunas são as opções do campo `Status` do project. O Hive move o item entre elas.
+Columns are the options of the project's `Status` field. Hive moves items between them.
 
 ### Markdown
 
@@ -64,56 +64,60 @@ As colunas são as opções do campo `Status` do project. O Hive move o item ent
 "board": { "type": "markdown", "path": "board.md" }
 ```
 
-O arquivo precisa ter uma tabela com `| id | título | status |` (colunas em qualquer ordem, outras extras permitidas). O resto do arquivo é livre — descreva as tasks abaixo da tabela, seu command do agente acha pelo id. O Hive só reescreve a célula `status`; o resto fica byte a byte igual.
+The file needs a table with `| id | título | status |` (columns in any order, extra columns allowed; `title` also works). The rest of the file is free — describe the tasks below the table, your agent's command finds them by id. Hive only rewrites the `status` cell; everything else stays byte-for-byte identical.
 
 ```md
 | id  | título              | status      |
 |-----|---------------------|-------------|
-| T-1 | Login com OAuth     | Ready       |
-| T-2 | Página de perfil    | In progress |
+| T-1 | OAuth login         | Ready       |
+| T-2 | Profile page        | In progress |
 
-## T-1 Login com OAuth
-Detalhes que o worker deve ler…
+## T-1 OAuth login
+Details the worker should read…
 ```
 
-Se o arquivo não existe, o setup cria um com uma linha de exemplo em `Done`.
+If the file does not exist, setup creates it with one example row in `Done`.
 
-## Prompt do worker
+## Worker prompt
 
-`promptTemplate` é o prompt inicial da sessão. Placeholders: `{id}`, `{title}`, `{body}`, `{url}` (`{number}` = `{id}`). Um slash command do seu repo funciona como entrypoint:
+`promptTemplate` is the session's initial prompt. Placeholders: `{id}`, `{title}`, `{body}`, `{url}` (`{number}` = `{id}`). A slash command from your repo works as the entrypoint:
 
 ```json
 "promptTemplate": "/ship #{id}"
 ```
 
-Default: `Task #{id}: {title}`, o body e a instrução de abrir PR com `gh pr create`.
+Default: `Task #{id}: {title}`, the body, and an instruction to open a PR with `gh pr create`.
 
 ## Config (`hive.config.json`)
 
-| campo | default | onde editar |
+| field | default | where to edit |
 |---|---|---|
-| `board` | — | formulário |
-| `status.queue` / `working` / `review` | `Ready` / `In progress` / `In review` | formulário |
-| `maxConcurrent` | `2` | formulário / dashboard |
-| `promptTemplate` | ver acima | formulário |
-| `port` | `47821` | arquivo (exige restart) |
-| `claudeArgs` | `[]` | arquivo (ex.: `["--model", "sonnet"]`) |
+| `board` | — | form |
+| `status.queue` / `working` / `review` | `Ready` / `In progress` / `In review` | form |
+| `maxConcurrent` | `2` | form / dashboard |
+| `promptTemplate` | see above | form |
+| `port` | `47821` | file (requires restart) |
+| `claudeArgs` | `[]` | file (e.g. `["--model", "sonnet"]`) |
 
-Arquivos antigos com `project: { owner, number }` continuam aceitos. Estado de runtime fica em `<repo>/.hive/` (fora do git via `.git/info/exclude`).
+Older files with `project: { owner, number }` are still accepted. Runtime state lives in `<repo>/.hive/` (kept out of git through `.git/info/exclude`).
 
-## Desenvolvimento
+## Development
 
 ```sh
-pnpm test                       # tsc + node --test
-pnpm start -- /caminho/do/repo  # Electron
-node dist/src/run.js /repo      # servidor sem janela em http://127.0.0.1:47821
+pnpm test                        # tsc + node --test
+pnpm start -- /path/to/repo      # Electron
+node dist/src/run.js /repo       # headless server at http://127.0.0.1:47821
 ```
 
-Arquitetura: `src/orchestrator.ts` é um reducer puro (estado + evento → novo estado + efeitos); `src/server.ts` recebe os hooks, roda o reducer e executa os efeitos; `src/boards/*` são os adapters; `src/ui/` é HTML + TS sem framework. Specs e planos em `docs/superpowers/`, próximos passos em `docs/roadmap.md`.
+Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new state + effects); `src/server.ts` receives the hooks, runs the reducer and executes the effects; `src/boards/*` are the adapters; `src/ui/` is HTML + TS with no framework. Specs and plans live in `docs/superpowers/`, next steps in `docs/roadmap.md`.
 
-## Limitações conhecidas
+## Known limitations
 
-- Só macOS + iTerm2 (abas via AppleScript).
-- Permissões e perguntas são respondidas no terminal; o dashboard só avisa.
-- Sem autenticação: o servidor escuta em `127.0.0.1` e rejeita outros `Host`.
-- Trocar de board com workers vivos deixa os slots presos aos ids antigos até eles saírem.
+- macOS + iTerm2 only (tabs via AppleScript).
+- Permissions and questions are answered in the terminal; the dashboard only signals.
+- No auth: the server listens on `127.0.0.1` and rejects other `Host` values.
+- Switching boards with live workers keeps those slots bound to the old ids until they exit.
+
+## License
+
+MIT
