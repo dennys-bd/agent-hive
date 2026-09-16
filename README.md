@@ -111,7 +111,7 @@ pnpm start -- /path/to/repo      # Electron
 node dist/src/run.js /repo       # headless server at http://127.0.0.1:47821
 ```
 
-Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new state + effects); `src/server.ts` receives the hooks, runs the reducer and executes the effects; `src/boards/*` are the adapters; `src/ui/` is HTML + TS with no framework. Specs and plans live in `docs/superpowers/`, next steps in `docs/roadmap.md`.
+Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new state + effects); `src/server.ts` receives the hooks, runs the reducer and executes the effects; `src/boards/*` are the adapters; `src/ui/` is HTML + TS with no framework. Specs and plans live in `docs/superpowers/`, next steps in the GitHub issues.
 
 ## Known limitations
 
