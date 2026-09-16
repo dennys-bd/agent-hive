@@ -31,6 +31,7 @@ export interface Slot {
   status: Status;
   draining?: boolean;
   paused?: boolean; // stopped at a Stop hook under a red signal; cleared when the signal leaves red or the worker acts again
+  tokens?: number; // session total at the last Stop / SessionEnd; the next delta is measured against it
   task?: Task;
   slug?: string;
   worktree?: string;
@@ -71,6 +72,7 @@ export interface HookPayload {
   tool_name?: string;
   tool_input?: unknown;
   tool_response?: unknown;
+  transcript_path?: string; // Claude Code sends it on every hook; the server reads it only on Stop / SessionEnd
 }
 
 export type HiveEvent =
@@ -78,7 +80,8 @@ export type HiveEvent =
   | { type: 'poll'; tasks: Task[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
-  | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string }
+  | { type: 'setBudget'; budget: Budget }
+  | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
   | { type: 'spawned'; workerId: string; itermSessionId: string }

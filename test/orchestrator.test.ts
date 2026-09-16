@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
-import type { HookPayload, Signal, State, Task } from '../src/types.js';
+import { HOUR_MS } from '../src/usage.js';
+import type { Budget, HookPayload, Signal, State, Task } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -14,6 +15,12 @@ const hook = (state: State, workerId: string, payload: Partial<HookPayload> & { 
 const occupied = (s: State) => s.slots.filter((x) => x.status !== 'vazio');
 const signaled = (state: State, signal: Signal) => reduce(state, { type: 'setSignal', signal });
 const stopped = (state: State, workerId: string) => hook(state, workerId, { hook_event_name: 'Stop' }).state;
+const counted = (state: State, workerId: string, tokens: number) =>
+  reduce(state, { type: 'hook', workerId, payload: { hook_event_name: 'Stop' }, tokens }).state;
+// One free slot, one usage sample of `tokens` aged `ageMs`, under `budget`.
+const spent = (tokens: number, ageMs: number, budget: Budget): State => ({
+  ...initialState(1), budget, usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
+});
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -47,6 +54,12 @@ test('reducer never mutates its input', () => {
   const pausedSnapshot = JSON.stringify(paused);
   reduce(paused, { type: 'setSignal', signal: 'green' });
   assert.equal(JSON.stringify(paused), pausedSnapshot);
+  const id = first.slots[0].workerId!;
+  const spentState = counted(first, id, 700);
+  const spentSnapshot = JSON.stringify(spentState);
+  reduce(spentState, { type: 'hook', workerId: id, payload: { hook_event_name: 'Stop' }, tokens: 900 });
+  reduce(spentState, { type: 'setBudget', budget: { maxTokensPerHour: 1 } });
+  assert.equal(JSON.stringify(spentState), spentSnapshot);
 });
 
 test('setMax up adds empty slots and fills them from the queue', () => {
@@ -359,6 +372,87 @@ test('setSignal to green or yellow clears paused on every slot; red again keeps 
   assert.deepEqual(signaled(paused, 'red').state.slots.map((s) => s.paused), [true, true]);
   assert.deepEqual(signaled(paused, 'yellow').state.slots.map((s) => s.paused), [undefined, undefined]);
   assert.deepEqual(signaled(paused, 'green').state.slots.map((s) => s.paused), [undefined, undefined]);
+});
+
+test('initialState starts with no usage and no budget', () => {
+  const idle = initialState(1);
+  assert.deepEqual(idle.usage, []);
+  assert.deepEqual(idle.budget, {});
+});
+
+test('Stop with tokens records the slot total and one sample per turn with the delta', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const one = counted(first, id, 1200);
+  assert.equal(one.slots[0].tokens, 1200);
+  assert.equal(one.slots[0].lastEvent, 'turno encerrado');
+  assert.deepEqual(one.usage.map((s) => s.tokens), [1200]);
+  assert.ok(Number.isFinite(Date.parse(one.usage[0].at)), 'sample time is ISO');
+  const two = counted(one, id, 1500);
+  assert.equal(two.slots[0].tokens, 1500);
+  assert.deepEqual(two.usage.map((s) => s.tokens), [1200, 300]);
+});
+
+test('Stop with a total below the previous one records the whole total; an equal total adds no sample', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const one = counted(first, id, 1000);
+  const replaced = counted(one, id, 400); // transcript swapped: the new file starts from zero
+  assert.equal(replaced.slots[0].tokens, 400);
+  assert.deepEqual(replaced.usage.map((s) => s.tokens), [1000, 400]);
+  const same = counted(replaced, id, 400);
+  assert.equal(same.slots[0].tokens, 400);
+  assert.deepEqual(same.usage.map((s) => s.tokens), [1000, 400]);
+});
+
+test('Stop without tokens and a counted hook for an unknown worker leave usage untouched', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const one = counted(first, id, 500);
+  const plain = stopped(one, id);
+  assert.deepEqual(plain.usage, one.usage);
+  assert.equal(plain.slots[0].tokens, 500);
+  const unknown = reduce(one, { type: 'hook', workerId: 'nope', payload: { hook_event_name: 'Stop' }, tokens: 999 });
+  assert.deepEqual(unknown.state, one);
+  assert.equal(unknown.effects.length, 0);
+});
+
+test('SessionEnd with tokens records the last turn before the slot is freed', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const one = counted(first, id, 800);
+  const { state } = reduce(one, { type: 'hook', workerId: id, payload: { hook_event_name: 'SessionEnd' }, tokens: 1000 });
+  assert.deepEqual(state.usage.map((s) => s.tokens), [800, 200]);
+  // exit reset the slot (and fill refilled it fresh from the requeued task): no leftover total
+  assert.notEqual(state.slots[0].workerId, id);
+  assert.equal(state.slots[0].tokens, undefined);
+});
+
+test('poll under an exhausted hour budget queues everything; a sample outside the hour does not count', () => {
+  const blocked = reduce(spent(1000, 0, { maxTokensPerHour: 1000 }), { type: 'poll', tasks: tasks(2) });
+  assert.equal(occupied(blocked.state).length, 0);
+  assert.deepEqual(blocked.state.queue.map((t) => t.id), ['1', '2']);
+  assert.equal(blocked.effects.length, 0);
+  const reopened = reduce(spent(1000, 2 * HOUR_MS, { maxTokensPerHour: 1000 }), { type: 'poll', tasks: tasks(2) });
+  assert.equal(reopened.state.slots[0].task?.id, '1');
+  assert.deepEqual(reopened.effects.map((e) => e.type), ['setStatus', 'spawn']);
+  const dayBlocked = reduce(spent(1000, 2 * HOUR_MS, { maxTokensPerDay: 1000 }), { type: 'poll', tasks: tasks(1) });
+  assert.equal(occupied(dayBlocked.state).length, 0);
+});
+
+test('setBudget stores the budget and fills a free slot only when the new limit is above the usage', () => {
+  const queued = reduce(spent(1000, 0, { maxTokensPerHour: 1000 }), { type: 'poll', tasks: tasks(1) }).state;
+  assert.equal(queued.slots[0].status, 'vazio');
+  const lower = reduce(queued, { type: 'setBudget', budget: { maxTokensPerHour: 500, maxTokensPerDay: 500 } });
+  assert.deepEqual(lower.state.budget, { maxTokensPerHour: 500, maxTokensPerDay: 500 });
+  assert.equal(lower.state.slots[0].status, 'vazio');
+  assert.equal(lower.effects.length, 0);
+  const raised = reduce(lower.state, { type: 'setBudget', budget: { maxTokensPerHour: 5000 } });
+  assert.deepEqual(raised.state.budget, { maxTokensPerHour: 5000 });
+  assert.equal(raised.state.slots[0].task?.id, '1');
+  assert.deepEqual(raised.effects.map((e) => e.type), ['setStatus', 'spawn']);
+  const unlimited = reduce(lower.state, { type: 'setBudget', budget: {} });
+  assert.equal(unlimited.state.slots[0].task?.id, '1');
 });
 
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {
