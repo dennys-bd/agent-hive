@@ -18,6 +18,11 @@
   button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
   button:disabled { opacity: 0.5; cursor: default; }
   button.danger { border-color: var(--danger); color: var(--danger); }
+  #signal { display: flex; gap: 6px; align-items: center; }
+  button.active[data-signal=green] { border-color: var(--trabalhando); color: var(--trabalhando); }
+  button.active[data-signal=yellow] { border-color: var(--esperando); color: var(--esperando); }
+  button.active[data-signal=red] { border-color: var(--danger); color: var(--danger); }
+  #signal-hint { color: var(--muted); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
   #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
@@ -30,6 +35,7 @@
   .card.aguardando_review { border-left-color: var(--review); }
   .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
   .card.draining .title { text-decoration: line-through; }
+  .card.paused { opacity: 0.6; }
   .card .title { font-weight: 600; margin-bottom: 4px; }
   .card .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .actions { margin-top: 8px; display: flex; gap: 8px; }
@@ -66,6 +72,12 @@
   <h1>Agent Hive</h1>
   <span id="summary" class="dash">0/0 workers ativos</span>
   <label class="dash">máx. workers <input id="max" type="number" min="0" step="1"></label>
+  <span id="signal" class="dash">
+    <button data-signal="green">verde</button>
+    <button data-signal="yellow">amarelo</button>
+    <button data-signal="red">vermelho</button>
+    <span id="signal-hint"></span>
+  </span>
   <button id="refresh" class="dash">atualizar board</button>
   <button id="configure">configurar</button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
