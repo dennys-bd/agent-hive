@@ -2,6 +2,7 @@
   "name": "agent-hive",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "dist/src/main.js",
   "bin": { "hive": "bin/hive.js" },
