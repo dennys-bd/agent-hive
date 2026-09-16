@@ -8,7 +8,7 @@ const ITEM_LIMIT = 200;
 const PROJECT_LIMIT = 100;
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
-const RELATION_LIMIT = 50;
+const RELATION_LIMIT = 50; // ponytail: no pagination, an issue with more open blockers/sub-issues than this is under-reported
 
 export type Exec = (args: string[]) => Promise<string>;
 export type GithubBoardConfig = Extract<BoardConfig, { type: 'github' }>;
@@ -33,7 +33,7 @@ interface GhItem {
 }
 interface StatusField { id: string; options: { id: string; name: string }[] }
 interface GhIssueRef { number: number; state: string }
-interface GhIssueRelations { blockedBy: { nodes: GhIssueRef[] }; subIssues: { nodes: GhIssueRef[] } }
+interface GhIssueRelations { blockedBy?: { nodes: GhIssueRef[] } | null; subIssues?: { nodes: GhIssueRef[] } | null }
 // One entry per alias; the repository (null) or the issue (issue: null) may be gone by the time we ask.
 type GhRelationsData = Record<string, { issue: GhIssueRelations | null } | null | undefined>;
 
@@ -78,7 +78,8 @@ function relationsQuery(tasks: Task[]): string | undefined {
 // Issue dependencies and sub-issues that are still OPEN, in response order, without duplicates.
 function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
   if (!issue) return [];
-  const open = [...issue.blockedBy.nodes, ...issue.subIssues.nodes].filter((n) => n.state === 'OPEN').map((n) => String(n.number));
+  const nodes = [...(issue.blockedBy?.nodes ?? []), ...(issue.subIssues?.nodes ?? [])];
+  const open = nodes.filter((n) => n.state === 'OPEN').map((n) => String(n.number));
   return [...new Set(open)];
 }
 
