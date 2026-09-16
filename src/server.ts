@@ -59,13 +59,15 @@ interface Live {
   state: State;
 }
 
-export async function detectAlive(state: State): Promise<string[]> {
-  return aliveSlugs(state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : [])));
+/** A blank template in the form means "keep what I have"; anything else must be a string (parseConfig validates). */
+function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefined): unknown {
+  if (body.promptTemplate === undefined) return current?.promptTemplate;
+  if (typeof body.promptTemplate === 'string' && body.promptTemplate.trim() === '') return current?.promptTemplate;
+  return body.promptTemplate;
 }
 
-function publicConfig(config: Config): Omit<Config, 'promptTemplate'> {
-  const { promptTemplate: _omitted, ...rest } = config;
-  return rest;
+export async function detectAlive(state: State): Promise<string[]> {
+  return aliveSlugs(state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : [])));
 }
 
 function errorMessage(err: unknown): string {
@@ -255,7 +257,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.get('/setup', (_req: Request, res: Response) => {
     const info: SetupInfo = live
-      ? { configured: true, repo, config: publicConfig(live.runtime.config) }
+      ? { configured: true, repo, config: live.runtime.config }
       : { configured: false, repo };
     res.json(info);
   });
@@ -306,7 +308,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         maxConcurrent: body.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
-        promptTemplate: current?.promptTemplate,
+        promptTemplate: promptTemplateFrom(body, current),
       });
       await boardFactory(config).resolveFields(); // validates columns against the real board before anything is written
     } catch (err) {

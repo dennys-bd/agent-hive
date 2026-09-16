@@ -49,6 +49,9 @@
   #setup .row { display: flex; gap: 8px; align-items: flex-end; }
   #setup .row label { flex: 1; }
   #setup .row button { margin-bottom: 12px; }
+  #setup textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
+  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+  .hint code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
   #setup-error { color: var(--danger); min-height: 1.4em; margin-bottom: 8px; white-space: pre-wrap; }
   #setup .actions { display: flex; gap: 8px; }
   body.setup #setup { display: block; }
@@ -78,6 +81,8 @@
   <label>coluna em andamento <select id="col-working" required></select></label>
   <label>coluna em review <select id="col-review" required></select></label>
   <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
+  <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false"></textarea></label>
+  <div class="hint">placeholders: <code>{number}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> — ex.: <code>/ship #{number}</code>. Vazio mantém o atual.</div>
   <div id="setup-error"></div>
   <div class="actions">
     <button type="submit" id="save">salvar</button>

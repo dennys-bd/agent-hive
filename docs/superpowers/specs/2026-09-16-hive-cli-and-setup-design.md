@@ -10,7 +10,7 @@ Extensão da v1 (`docs/superpowers/specs/2026-09-15-agent-hive-design.md`). Obje
 | Repo alvo | `argv[2]` ou `process.cwd()` | Espelha `claude` |
 | Sem config | O app sobe em modo *setup* em vez de falhar | Configuração pela interface |
 | Formulário | Listas carregadas do GitHub (projects do owner; colunas de Status do project) | Sem erro de digitação |
-| Campos avançados | `port`, `claudeArgs`, `promptTemplate` só no arquivo | YAGNI; preservados ao reconfigurar |
+| Campos avançados | `port` e `claudeArgs` só no arquivo; `promptTemplate` editável no formulário (vazio mantém o atual) | preservados ao reconfigurar |
 | Reconfigurar | Mesmo formulário e mesma rota, sem restart | Uma superfície só |
 
 ## Comando `hive`
@@ -50,14 +50,14 @@ Ambas independem de `resolveFields` ter rodado.
 
 | rota | função |
 |---|---|
-| `GET /setup` | `{ configured: boolean, repo: string, config?: Config }` (config sem `promptTemplate` na resposta, pra não vazar texto grande à toa) |
+| `GET /setup` | `{ configured: boolean, repo: string, config?: Config }` |
 | `GET /setup/projects?owner=@me` | `listProjects(owner)`; `owner` obrigatório |
 | `GET /setup/columns?owner=@me&number=6` | `listStatusOptions(owner, number)` |
-| `POST /setup` | corpo `{ project: { owner, number }, status: { queue, working, review }, maxConcurrent }` |
+| `POST /setup` | corpo `{ project: { owner, number }, status: { queue, working, review }, maxConcurrent, promptTemplate? }` |
 
 `POST /setup`:
 
-1. Lê o `hive.config.json` atual se existir e mescla `port`, `claudeArgs`, `promptTemplate` dele (senão defaults) com o corpo.
+1. Lê o `hive.config.json` atual se existir e mescla `port` e `claudeArgs` dele (senão defaults) com o corpo; `promptTemplate` vem do corpo, ou do arquivo/default quando ausente ou em branco.
 2. `parseConfig` — erro → 400 `{ error }`.
 3. `boardFactory(config).resolveFields()` — coluna inexistente ou `gh` fora → 400 `{ error }` com a mensagem do board (que lista as opções reais).
 4. Só então grava `hive.config.json` (write tmp + rename) e chama `server.configure(config)` (primeiro setup) ou `server.reconfigure(config)` (troca o board em memória, mantém slots/queue, faz um `poll`).
@@ -72,6 +72,7 @@ Falhas de `gh` nas listagens → 502 `{ error: stderr }`. Nenhuma rota de setup 
 - `owner` (texto, default `@me`) + botão "carregar" → `GET /setup/projects` → `<select id="project">` (`#número título`).
 - Ao escolher o project → `GET /setup/columns` → três `<select>`: fila, em andamento, em review, pré-selecionados com os nomes atuais quando reconfigurando (ou `Ready` / `In progress` / `In review` se existirem).
 - `máx. workers` (número, default 2).
+- `prompt do worker` (textarea com o template atual; legenda lista `{number}`, `{title}`, `{body}`, `{url}` e o exemplo `/ship #{number}`; vazio mantém o atual).
 - "salvar" → `POST /setup`; erro aparece no próprio form; sucesso esconde o form e mostra o dashboard (e o aviso de porta, se vier).
 
 `app.ts` no load chama `GET /setup`: `configured: false` → form visível, dashboard escondido; `true` → dashboard. "configurar" abre o form preenchido com a config atual. O SSE continua sendo a única fonte do estado do dashboard.

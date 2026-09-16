@@ -76,13 +76,15 @@ export type Effect =
 export interface SetupInfo {
   configured: boolean;
   repo: string;
-  config?: Omit<Config, 'promptTemplate'>;
+  config?: Config;
 }
 
 export interface SetupBody {
   project: { owner: string; number: number };
   status: Record<StatusKey, string>;
   maxConcurrent: number;
+  /** Optional; blank or missing keeps the current template (or the default on first setup). */
+  promptTemplate?: string;
 }
 
 export interface SetupResult {

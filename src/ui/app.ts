@@ -179,6 +179,7 @@ async function openSetup(): Promise<void> {
   $<HTMLButtonElement>('cancel').hidden = !setupInfo?.configured;
   $<HTMLInputElement>('owner').value = config?.project.owner ?? DEFAULT_OWNER;
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
+  $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
   setupError();
   await loadProjects(config?.project.number);
 }
@@ -201,6 +202,7 @@ async function saveSetup(): Promise<void> {
       review: $<HTMLSelectElement>(COLUMN_SELECT.review).value,
     },
     maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
+    promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
   };
   const save = $<HTMLButtonElement>('save');
   save.disabled = true;

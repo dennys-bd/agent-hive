@@ -110,7 +110,7 @@ test('POST /setup writes the config with defaults, boots the runtime and reports
   const info = await json<SetupInfo>(fetch(`${base}/setup`));
   assert.equal(info.configured, true);
   assert.equal(info.config?.project.number, 6);
-  assert.ok(info.config && !('promptTemplate' in info.config));
+  assert.equal(info.config?.promptTemplate, DEFAULT_CONFIG.promptTemplate);
 });
 
 test('POST /setup with a column the board does not have answers 400 and writes nothing', async (t) => {
@@ -181,4 +181,30 @@ test('requests with a Host header that does not match the bound address get 403'
 test('requests with a matching Host header are not rejected by the allowlist', async (t) => {
   const { port } = await start(t);
   assert.equal(await getWithHost(port, `127.0.0.1:${port}`), 200);
+});
+
+test('POST /setup with a promptTemplate persists it and GET /setup returns it', async (t) => {
+  const { base, repo } = await start(t);
+  const res = await postSetup(base, { ...BODY, promptTemplate: '/ship #{number}' });
+  assert.equal(res.status, 200);
+  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(saved.promptTemplate, '/ship #{number}');
+  const info = await json<SetupInfo>(fetch(`${base}/setup`));
+  assert.equal(info.config?.promptTemplate, '/ship #{number}');
+});
+
+test('POST /setup without a promptTemplate keeps the existing one, and an empty string is ignored', async (t) => {
+  const { base, repo } = await start(t);
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '/ship {url}' })).status, 200);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '   ' })).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
+});
+
+test('POST /setup with a non-string promptTemplate answers 400 naming the field', async (t) => {
+  const { base } = await start(t);
+  const res = await postSetup(base, { ...BODY, promptTemplate: 42 });
+  assert.equal(res.status, 400);
+  assert.match((await json<{ error: string }>(res)).error, /promptTemplate/);
 });
