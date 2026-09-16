@@ -4,7 +4,7 @@ import type { Server as HttpServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBoard, listProjects, listStatusOptions, type Board } from './board.js';
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
@@ -20,10 +20,12 @@ const POLL_INTERVAL_MS = 30_000;
 const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
+const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_CONFIGURED = 409;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
+const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 
 export type BoardFactory = (config: Config) => Board;
 
@@ -213,6 +215,17 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+
+  // Rejects DNS-rebinding / cross-origin requests that don't target this exact bound
+  // address: hooks and the UI always call http://127.0.0.1:<port> or localhost:<port>.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const allowedHosts = boundPort !== undefined ? [`127.0.0.1:${boundPort}`, `localhost:${boundPort}`] : [];
+    if (!allowedHosts.includes(req.headers.host ?? '')) {
+      res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_HOST_MESSAGE });
+      return;
+    }
+    next();
+  });
 
   app.post('/hooks/event', async (req: Request, res: Response) => {
     res.sendStatus(200);

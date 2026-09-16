@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
 import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +58,18 @@ const postSetup = (base: string, body: unknown): Promise<Response> =>
   fetch(`${base}/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const configFile = (repo: string): string => join(repo, 'hive.config.json');
+
+// fetch()/undici always sets Host from the URL, so a spoofed Host header needs node:http directly.
+function getWithHost(port: number, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ hostname: '127.0.0.1', port, path: '/setup', headers: { Host: host } }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 test('GET /setup reports configured: false and the repo in setup mode', async (t) => {
   const { base, repo } = await start(t);
@@ -158,4 +171,14 @@ test('first POST /setup applies the form maxConcurrent even with a stale .hive/s
   const state = server.getState();
   assert.equal(state?.maxConcurrent, 0);
   assert.equal(state?.slots.length, 0);
+});
+
+test('requests with a Host header that does not match the bound address get 403', async (t) => {
+  const { port } = await start(t);
+  assert.equal(await getWithHost(port, `evil.example:${port}`), 403);
+});
+
+test('requests with a matching Host header are not rejected by the allowlist', async (t) => {
+  const { port } = await start(t);
+  assert.equal(await getWithHost(port, `127.0.0.1:${port}`), 200);
 });
