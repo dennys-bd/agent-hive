@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Hive</title>
+<style>
+  :root {
+    --bg: #111418; --panel: #1a1f26; --text: #e6e6e6; --muted: #8a94a6; --border: #2a313b;
+    --vazio: #3a4250; --trabalhando: #2e9e5b; --esperando: #e0b52a; --review: #3b82f6; --danger: #d9534f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 16px; margin: 0; }
+  header label { color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  input[type=number] { width: 64px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
+  #error.show { display: block; }
+  #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
+  #notice.show { display: block; }
+  main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px 20px; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--vazio); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
+  .card.occupied { cursor: pointer; }
+  .card.trabalhando { border-left-color: var(--trabalhando); }
+  .card.aguardando_review { border-left-color: var(--review); }
+  .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
+  .card.draining .title { text-decoration: line-through; }
+  .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .actions { margin-top: 8px; display: flex; gap: 8px; }
+  @keyframes blink { 0%, 100% { background: var(--panel); } 50% { background: #3a3110; } }
+  aside { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  aside h2 { font-size: 13px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
+  ol { margin: 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+  #detail { display: none; }
+  #detail.show { display: block; }
+  #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+  a { color: var(--review); }
+  #setup { display: none; max-width: 520px; margin: 24px auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  #setup h2 { font-size: 15px; margin: 0 0 12px; }
+  #setup label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; color: var(--muted); }
+  #setup input[type=text], #setup select, #setup input[type=number] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  #setup .row { display: flex; gap: 8px; align-items: flex-end; }
+  #setup .row label { flex: 1; }
+  #setup .row button { margin-bottom: 12px; }
+  #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  #setup fieldset[disabled] { display: none; }
+  #setup textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
+  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+  .hint code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
+  #setup-error { color: var(--danger); min-height: 1.4em; margin-bottom: 8px; white-space: pre-wrap; }
+  #setup .actions { display: flex; gap: 8px; }
+  body.setup #setup { display: block; }
+  body.setup main, body.setup .dash, body.setup #configure { display: none; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Hive</h1>
+  <span id="summary" class="dash">0/0 workers ativos</span>
+  <label class="dash">máx. workers <input id="max" type="number" min="0" step="1"></label>
+  <button id="refresh" class="dash">atualizar board</button>
+  <button id="configure">configurar</button>
+  <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
+</header>
+<div id="error"></div>
+<div id="notice"></div>
+<form id="setup">
+  <h2>configuração do board</h2>
+  <label>tipo de board
+    <select id="board-type">
+      <option value="github">GitHub Project</option>
+      <option value="markdown">arquivo markdown no repo</option>
+    </select>
+  </label>
+  <fieldset id="github-fields">
+    <div class="row">
+      <label>owner <input id="owner" type="text" value="@me" required></label>
+      <button type="button" id="load-projects">carregar</button>
+    </div>
+    <label>project <select id="project" required><option value="">carregue os projects do owner</option></select></label>
+    <label>coluna da fila <select id="col-queue" required></select></label>
+    <label>coluna em andamento <select id="col-working" required></select></label>
+    <label>coluna em review <select id="col-review" required></select></label>
+  </fieldset>
+  <fieldset id="markdown-fields" disabled>
+    <div class="row">
+      <label>caminho (relativo ao repo ou absoluto) <input id="md-path" type="text" value="board.md" required></label>
+      <button type="button" id="load-columns">carregar</button>
+    </div>
+    <div class="hint">tabela <code>| id | título | status |</code>; se o arquivo não existe, é criado ao salvar. "carregar" lista os status já usados no arquivo.</div>
+    <label>coluna da fila <input id="md-queue" type="text" list="md-options" value="Ready" required></label>
+    <label>coluna em andamento <input id="md-working" type="text" list="md-options" value="In progress" required></label>
+    <label>coluna em review <input id="md-review" type="text" list="md-options" value="In review" required></label>
+    <datalist id="md-options"></datalist>
+  </fieldset>
+  <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
+  <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
+  <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo.</div>
+  <div id="setup-error"></div>
+  <div class="actions">
+    <button type="submit" id="save">salvar</button>
+    <button type="button" id="cancel">cancelar</button>
+  </div>
+</form>
+<main>
+  <section id="grid"></section>
+  <div>
+    <aside id="detail">
+      <h2>detalhe</h2>
+      <div id="detail-body"></div>
+      <div class="actions" style="margin-top: 8px; display: flex; gap: 8px;">
+        <button id="focus">ir pro terminal</button>
+        <button id="close">fechar</button>
+      </div>
+    </aside>
+    <aside id="queue-panel">
+      <h2>fila</h2>
+      <ol id="queue"></ol>
+    </aside>
+  </div>
+</main>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>

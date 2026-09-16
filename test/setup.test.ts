@@ -1,0 +1,262 @@
+import { test, type TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { DEFAULT_CONFIG } from '../src/config.js';
+import { initialState } from '../src/orchestrator.js';
+import { createServer, type HiveServer } from '../src/server.js';
+import { newBoardText } from '../src/boards/markdown.js';
+import type { Board, Config, SetupBody, SetupInfo } from '../src/types.js';
+
+const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
+const BODY: SetupBody = {
+  board: { type: 'github', owner: 'acme', number: 6 },
+  status: { queue: 'Ready', working: 'In progress', review: 'In review' },
+  maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would open an iTerm tab)
+};
+
+// A board that has the OPTIONS columns and returns one task named after the configured queue column.
+// `resolveDelayMs` makes resolveFields slow so concurrent saves overlap.
+function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Board; configs: Config[] } {
+  const configs: Config[] = [];
+  const factory = (config: Config): Board => {
+    configs.push(config);
+    return {
+      async resolveFields() {
+        if (resolveDelayMs > 0) await sleep(resolveDelayMs);
+        for (const key of ['queue', 'working', 'review'] as const) {
+          const wanted = config.status[key];
+          if (!OPTIONS.includes(wanted)) {
+            throw new Error(`status.${key} "${wanted}" not found in board Status options: ${OPTIONS.join(', ')}`);
+          }
+        }
+      },
+      async listQueue() {
+        return [{ itemId: 'I1', id: '1', title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
+      },
+      async setStatus() {},
+      async setupOptions() {
+        return OPTIONS;
+      },
+    };
+  };
+  return { factory, configs };
+}
+
+interface Started { repo: string; base: string; port: number; server: HiveServer; configs: Config[] }
+
+async function start(t: TestContext, resolveDelayMs = 0): Promise<Started> {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
+  const { factory, configs } = fakeBoardFactory(resolveDelayMs);
+  const server = createServer({ repo, boardFactory: factory });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  return { repo, base: `http://127.0.0.1:${port}`, port, server, configs };
+}
+
+const postSetup = (base: string, body: unknown): Promise<Response> =>
+  fetch(`${base}/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
+const configFile = (repo: string): string => join(repo, 'hive.config.json');
+
+// fetch()/undici always sets Host from the URL, so a spoofed Host header needs node:http directly.
+function getWithHost(port: number, host: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ hostname: '127.0.0.1', port, path: '/setup', headers: { Host: host } }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+test('GET /setup reports configured: false and the repo in setup mode', async (t) => {
+  const { base, repo } = await start(t);
+  assert.deepEqual(await json<SetupInfo>(fetch(`${base}/setup`)), { configured: false, repo });
+});
+
+test('GET /events streams { configured: false } until setup is saved', async (t) => {
+  const { base } = await start(t);
+  const res = await fetch(`${base}/events`);
+  const reader = res.body!.getReader();
+  const { value } = await reader.read();
+  await reader.cancel();
+  assert.match(new TextDecoder().decode(value), /^data: \{"configured":false\}\n\n/);
+});
+
+test('setup listings reject a missing owner, number, path or type with 400 naming the field', async (t) => {
+  const { base } = await start(t);
+  assert.equal((await fetch(`${base}/setup/projects`)).status, 400);
+  const noNumber = await fetch(`${base}/setup/columns?type=github&owner=acme`);
+  assert.equal(noNumber.status, 400);
+  assert.match((await json<{ error: string }>(noNumber)).error, /board\.number/);
+  const noPath = await fetch(`${base}/setup/columns?type=markdown`);
+  assert.equal(noPath.status, 400);
+  assert.match((await json<{ error: string }>(noPath)).error, /board\.path/);
+  const noType = await fetch(`${base}/setup/columns?owner=acme&number=6`);
+  assert.equal(noType.status, 400);
+  assert.match((await json<{ error: string }>(noType)).error, /board\.type/);
+});
+
+test('dashboard routes answer 409 before setup', async (t) => {
+  const { base } = await start(t);
+  assert.equal((await fetch(`${base}/board/refresh`, { method: 'POST' })).status, 409);
+});
+
+test('POST /setup writes the config with defaults, boots the runtime and reports the port mismatch', async (t) => {
+  const { base, repo, port, server } = await start(t);
+  const res = await postSetup(base, BODY);
+  assert.equal(res.status, 200);
+  // the test binds an ephemeral port, so the saved default port differs from the one in use
+  assert.deepEqual(await json(res), { ok: true, restartForPort: DEFAULT_CONFIG.port });
+  assert.deepEqual(JSON.parse(await readFile(configFile(repo), 'utf8')), { ...DEFAULT_CONFIG, ...BODY });
+  const state = server.getState();
+  assert.equal(state?.slots.length, 0);
+  assert.deepEqual(state?.queue.map((task) => task.title), ['from Ready']);
+  assert.match(await readFile(join(repo, '.hive', 'hooks.json'), 'utf8'), new RegExp(`127\\.0\\.0\\.1:${port}/hooks/event`));
+  const info = await json<SetupInfo>(fetch(`${base}/setup`));
+  assert.equal(info.configured, true);
+  assert.deepEqual(info.config?.board, BODY.board);
+  assert.equal(info.config?.promptTemplate, DEFAULT_CONFIG.promptTemplate);
+});
+
+test('POST /setup with a column the board does not have answers 400 and writes nothing', async (t) => {
+  const { base, repo, server } = await start(t);
+  const res = await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Todo' } });
+  assert.equal(res.status, 400);
+  assert.match((await json<{ error: string }>(res)).error, /"Todo".*Ready, In progress, In review, Done/);
+  await assert.rejects(stat(configFile(repo)));
+  await assert.rejects(stat(join(repo, '.hive')));
+  assert.equal(server.getState(), undefined);
+  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).configured, false);
+});
+
+test('POST /setup with an invalid body answers 400 naming the field', async (t) => {
+  const { base, repo } = await start(t);
+  const res = await postSetup(base, { ...BODY, board: { type: 'github', owner: 'acme' } });
+  assert.equal(res.status, 400);
+  assert.match((await json<{ error: string }>(res)).error, /board\.number/);
+  await assert.rejects(stat(configFile(repo)));
+});
+
+test('a second POST /setup reconfigures in memory and preserves port, claudeArgs and promptTemplate', async (t) => {
+  const { base, repo, server, configs } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  await writeFile(configFile(repo), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'], promptTemplate: 'só {title}' }));
+  const res = await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await json(res), { ok: true, restartForPort: 5000 });
+  const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(rewritten.status.queue, 'Done');
+  assert.equal(rewritten.port, 5000);
+  assert.deepEqual(rewritten.claudeArgs, ['--model', 'sonnet']);
+  assert.equal(rewritten.promptTemplate, 'só {title}');
+  assert.deepEqual(server.getState()?.queue.map((task) => task.title), ['from Done']);
+  assert.equal(configs.at(-1)?.status.queue, 'Done');
+});
+
+test('a second POST /setup with the same board and status keeps the live board instance', async (t) => {
+  const { base, configs } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const afterFirst = configs.length; // validation + activate
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: 'só {title}' })).status, 200);
+  assert.equal(configs.length, afterFirst + 1, 'only the pre-write validation creates a board; reconfigure reuses the live one');
+  assert.equal((await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } })).status, 200);
+  assert.equal(configs.length, afterFirst + 3, 'a different status needs a new board');
+});
+
+test('concurrent POST /setup calls run one at a time and the last one wins on disk and in memory', async (t) => {
+  const { base, repo } = await start(t, 30);
+  const [first, second] = await Promise.all([
+    postSetup(base, BODY),
+    postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } }),
+  ]);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  const onDisk = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(onDisk.status.queue, 'Done');
+  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.status.queue, 'Done');
+});
+
+test('first POST /setup applies the form maxConcurrent even with a stale .hive/state.json', async (t) => {
+  const { base, repo, server } = await start(t);
+  await mkdir(join(repo, '.hive'), { recursive: true });
+  await writeFile(join(repo, '.hive', 'state.json'), JSON.stringify(initialState(2)));
+  const res = await postSetup(base, BODY);
+  assert.equal(res.status, 200);
+  const state = server.getState();
+  assert.equal(state?.maxConcurrent, 0);
+  assert.equal(state?.slots.length, 0);
+});
+
+test('requests with a Host header that does not match the bound address get 403', async (t) => {
+  const { port } = await start(t);
+  assert.equal(await getWithHost(port, `evil.example:${port}`), 403);
+});
+
+test('requests with a matching Host header are not rejected by the allowlist', async (t) => {
+  const { port } = await start(t);
+  assert.equal(await getWithHost(port, `127.0.0.1:${port}`), 200);
+});
+
+test('POST /setup with a promptTemplate persists it and GET /setup returns it', async (t) => {
+  const { base, repo } = await start(t);
+  const res = await postSetup(base, { ...BODY, promptTemplate: '/ship #{number}' });
+  assert.equal(res.status, 200);
+  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(saved.promptTemplate, '/ship #{number}');
+  const info = await json<SetupInfo>(fetch(`${base}/setup`));
+  assert.equal(info.config?.promptTemplate, '/ship #{number}');
+});
+
+test('POST /setup without a promptTemplate keeps the existing one, and an empty string is ignored', async (t) => {
+  const { base, repo } = await start(t);
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '/ship {url}' })).status, 200);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
+  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '   ' })).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
+});
+
+test('POST /setup with a non-string promptTemplate answers 400 naming the field', async (t) => {
+  const { base } = await start(t);
+  const res = await postSetup(base, { ...BODY, promptTemplate: 42 });
+  assert.equal(res.status, 400);
+  assert.match((await json<{ error: string }>(res)).error, /promptTemplate/);
+});
+
+test('GET /setup/columns builds the board from the query and answers its setupOptions', async (t) => {
+  const { base, configs } = await start(t);
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=board.md`)), OPTIONS);
+  assert.deepEqual(configs.at(-1)?.board, { type: 'markdown', path: 'board.md' });
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=github&owner=acme&number=6`)), OPTIONS);
+  assert.deepEqual(configs.at(-1)?.board, { type: 'github', owner: 'acme', number: 6 });
+});
+
+test('POST /setup with a markdown board creates the file and boots the queue from it (real factory, no gh)', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
+  const server = createServer({ repo }); // default factory: the markdown adapter only touches a local file
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  const body: SetupBody = { ...BODY, board: { type: 'markdown', path: 'docs/board.md' } };
+  const file = join(repo, 'docs', 'board.md');
+  assert.equal((await postSetup(base, body)).status, 200);
+  assert.equal(await readFile(file, 'utf8'), newBoardText());
+  assert.ok(newBoardText().includes('| T-1 | Exemplo | Done |'));
+  assert.deepEqual(server.getState()?.queue, [], 'the example row is Done, so nothing is queued');
+  await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
+  assert.equal((await postSetup(base, body)).status, 200);
+  assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-1', 'Exemplo', file]]);
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
+  // an existing file is never rewritten by setup, and its statuses feed the columns route
+  await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
+  assert.equal((await postSetup(base, body)).status, 200);
+  assert.deepEqual(server.getState()?.queue, []);
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo', 'Ready', 'In progress', 'In review', 'Done']);
+});
