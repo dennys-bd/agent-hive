@@ -531,12 +531,15 @@ test('Stop counts this turn\'s sample before reading the signal, so the turn tha
 });
 
 test('setUsageRules copies the rules into the state and fills; a state without rules behaves as before', () => {
-  const capped = reduce(ruled(initialState(2), 550), { type: 'setUsageRules', usageRules: [] });
-  assert.deepEqual(capped.state.usageRules, []);
-  const { state, effects } = polled(capped.state, 3);
+  const capped = polled(ruled(initialState(2), 550), 2).state; // cap 1: one working, one queued
+  assert.equal(occupied(capped).length, 1);
+  const loosened = reduce(capped, { type: 'setUsageRules', usageRules: [] });
+  assert.deepEqual(loosened.state.usageRules, []);
+  assert.deepEqual(loosened.effects.map((e) => e.type), ['setStatus', 'spawn'], 'lifting the cap pulls the queue right away');
+  const { state, effects } = polled(loosened.state, 3);
   assert.equal(occupied(state).length, 2, 'no rules: the manual max is the only cap');
   assert.deepEqual(state.queue.map((t) => t.id), ['3']);
-  assert.equal(effects.filter((e) => e.type === 'spawn').length, 2);
+  assert.equal(effects.length, 0);
   const queued = polled({ ...ruled(initialState(1), 850), usageRules: [] }, 1).state; // 85% but no rules
   assert.equal(queued.slots[0].task?.id, '1');
   const back = reduce(queued, { type: 'setUsageRules', usageRules: RULES });

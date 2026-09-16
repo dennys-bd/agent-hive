@@ -1,7 +1,7 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState, SIGNALS } from './orchestrator.js';
-import type { Signal, State, UsageSample } from './types.js';
+import type { Signal, State, UsageRule, UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -10,6 +10,14 @@ const isSample = (value: unknown): value is UsageSample =>
   typeof value === 'object' && value !== null
   && typeof (value as UsageSample).at === 'string' && Number.isFinite((value as UsageSample).tokens);
 
+// Config validates the rules; here only the shape is checked, so a hand-edited state.json cannot feed the reducer garbage.
+const isRule = (value: unknown): value is UsageRule => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { percent, maxWorkers, signal } = value as UsageRule;
+  return Number.isFinite(percent) && (maxWorkers === undefined || Number.isFinite(maxWorkers))
+    && (signal === undefined || isSignal(signal)) && (maxWorkers !== undefined || signal !== undefined);
+};
+
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default.
 function normalize(parsed: State): State {
   return {
@@ -17,7 +25,7 @@ function normalize(parsed: State): State {
     signal: isSignal(parsed.signal) ? parsed.signal : 'green',
     usage: Array.isArray(parsed.usage) ? parsed.usage.filter(isSample) : [],
     budget: parsed.budget ?? {},
-    usageRules: Array.isArray(parsed.usageRules) ? parsed.usageRules : [],
+    usageRules: Array.isArray(parsed.usageRules) ? parsed.usageRules.filter(isRule) : [],
   };
 }
 

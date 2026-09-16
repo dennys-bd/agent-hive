@@ -53,9 +53,10 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   const kept = await loadState(dir, 1);
   assert.deepEqual(kept.usage, [valid]);
   assert.deepEqual(kept.budget, { maxTokensPerHour: 10 });
-  const usageRules = [{ percent: 80, signal: 'yellow' }];
+  const rule = { percent: 80, signal: 'yellow' };
+  const usageRules = [rule, { percent: 'x', signal: 'red' }, { percent: 50 }, { percent: 50, signal: 'blue' }, null, 7];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usageRules }));
-  assert.deepEqual((await loadState(dir, 1)).usageRules, usageRules);
+  assert.deepEqual((await loadState(dir, 1)).usageRules, [rule], 'malformed rules are dropped');
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
   assert.deepEqual((await loadState(dir, 1)).usage, []);
 });
