@@ -7,6 +7,8 @@ const GH_MAX_BUFFER = 20 * 1024 * 1024;
 const ITEM_LIMIT = 200;
 const PROJECT_LIMIT = 100;
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
+const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
+const RELATION_LIMIT = 50;
 
 export type Exec = (args: string[]) => Promise<string>;
 export type GithubBoardConfig = Extract<BoardConfig, { type: 'github' }>;
@@ -30,6 +32,10 @@ interface GhItem {
   content?: { type?: string; number?: number; title?: string; body?: string | null; url?: string };
 }
 interface StatusField { id: string; options: { id: string; name: string }[] }
+interface GhIssueRef { number: number; state: string }
+interface GhIssueRelations { blockedBy: { nodes: GhIssueRef[] }; subIssues: { nodes: GhIssueRef[] } }
+// One entry per alias; the repository (null) or the issue (issue: null) may be gone by the time we ask.
+type GhRelationsData = Record<string, { issue: GhIssueRelations | null } | null | undefined>;
 
 function projectArgs(sub: string, owner: string, number: number): string[] {
   return ['project', sub, String(number), '--owner', owner, '--format', 'json'];
@@ -53,6 +59,39 @@ export async function listStatusOptions(owner: string, number: number, exec: Exe
   return (await fetchStatusField(owner, number, exec)).options.map((o) => o.name);
 }
 
+// owner / name / number come from the issue url; they match only [\w.-], so JSON.stringify yields safe GraphQL string literals.
+function issueSelection(task: Task, alias: string): string | undefined {
+  const match = ISSUE_URL.exec(task.url);
+  if (!match) return undefined;
+  const [, owner, name, number] = match;
+  return `${alias}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issue(number: ${number}) {`
+    + ` blockedBy(first: ${RELATION_LIMIT}) { nodes { number state } }`
+    + ` subIssues(first: ${RELATION_LIMIT}) { nodes { number state } } } }`;
+}
+
+// One query for the whole queue: alias i<k> is the k-th task. Nothing to ask → undefined (no gh call).
+function relationsQuery(tasks: Task[]): string | undefined {
+  const selections = tasks.flatMap((task, i) => issueSelection(task, `i${i}`) ?? []);
+  return selections.length > 0 ? `query { ${selections.join(' ')} }` : undefined;
+}
+
+// Issue dependencies and sub-issues that are still OPEN, in response order, without duplicates.
+function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
+  if (!issue) return [];
+  const open = [...issue.blockedBy.nodes, ...issue.subIssues.nodes].filter((n) => n.state === 'OPEN').map((n) => String(n.number));
+  return [...new Set(open)];
+}
+
+async function withBlockers(tasks: Task[], exec: Exec): Promise<Task[]> {
+  const query = relationsQuery(tasks);
+  if (!query) return tasks;
+  const { data } = JSON.parse(await exec(['api', 'graphql', '-f', `query=${query}`])) as { data: GhRelationsData };
+  return tasks.map((task, i) => {
+    const blockedBy = openBlockers(data[`i${i}`]?.issue);
+    return blockedBy.length > 0 ? { ...task, blockedBy } : task;
+  });
+}
+
 export function createGithubBoard(board: GithubBoardConfig, statusNames: Record<StatusKey, string>, exec: Exec = ghExec): Board {
   const { owner, number } = board;
   const base = (sub: string) => projectArgs(sub, owner, number);
@@ -74,11 +113,12 @@ export function createGithubBoard(board: GithubBoardConfig, statusNames: Record<
 
   async function listQueue(): Promise<Task[]> {
     const { items } = JSON.parse(await exec([...base('item-list'), '--limit', String(ITEM_LIMIT)])) as { items: GhItem[] };
-    return items.flatMap<Task>((item) => {
+    const queued = items.flatMap<Task>((item) => {
       const c = item.content;
       if (item.status !== statusNames.queue || c?.type !== 'Issue' || typeof c.number !== 'number' || !c.url) return [];
       return [{ itemId: item.id, id: String(c.number), title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }];
     });
+    return withBlockers(queued, exec); // item-list carries no relations; a failed query rejects the poll, never "no blockers"
   }
 
   async function setStatus(itemId: string, key: StatusKey): Promise<void> {
