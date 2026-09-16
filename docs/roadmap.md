@@ -7,7 +7,7 @@ Cada item vira seu próprio ciclo spec → plan → implementação.
 | 1 | Entrypoint por command (`promptTemplate` com slash command, editável no form) | feito | `docs/superpowers/specs/2026-09-16-hive-cli-and-setup-design.md` |
 | 2 | Board plugável: GitHub + Markdown | feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
 | 3 | Blockers / dependências | feito | `docs/superpowers/specs/2026-09-16-blockers-design.md` |
-| 4 | Sinal verde / amarelo / vermelho | fazendo | `docs/superpowers/specs/2026-09-16-signal-design.md` |
+| 4 | Sinal verde / amarelo / vermelho | feito | `docs/superpowers/specs/2026-09-16-signal-design.md` |
 | 5 | Orçamento de tokens | a fazer | — |
 | 6 | Sinal dinâmico por uso de tokens | a fazer | — |
 | 7 | Board Asana | a fazer | — |
@@ -32,12 +32,13 @@ Uma task só entra na fila se não tem dependência aberta. `Task` ganha `blocke
 - Plan: docs/superpowers/plans/2026-09-16-blockers.md
 - PR: https://github.com/dennys-bd/agent-hive/pull/6
 
-## 4. Sinal verde / amarelo / vermelho — fazendo
+## 4. Sinal verde / amarelo / vermelho — feito
 
 Um estado global `signal: "green" | "yellow" | "red"` que o `fill` do orquestrador consulta antes de abrir job novo. **Verde**: comportamento atual. **Amarelo**: workers vivos terminam a iteração, mas nenhum job novo é iniciado. **Vermelho**: troca pra modo manual — cada worker pausa ao fim da iteração atual, e só volta quando o sinal sair do vermelho ou alguém retomar à mão. Nunca mata iteração no meio. Ajustável na UI (três botões) e por API. Regra pura e testável: `canStart(signal, slots)`.
 
 - Branch: worktree-hive-4-sinal-verde-amarelo-vermelho
 - Plan: docs/superpowers/plans/2026-09-16-signal.md
+- PR: https://github.com/dennys-bd/agent-hive/pull/5
 
 ## 5. Orçamento de tokens
 
