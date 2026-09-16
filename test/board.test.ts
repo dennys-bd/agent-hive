@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createBoard, listProjects, listStatusOptions } from '../src/board.js';
 import { parseConfig } from '../src/config.js';
 
-const config = parseConfig({ project: { owner: 'acme', number: 6 } });
+const config = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 } });
 
 function fakeExec(responses: Record<string, unknown>) {
   const calls: string[][] = [];
@@ -40,7 +40,7 @@ test('resolveFields maps configured status names to option ids and stores the pr
 });
 
 test('resolveFields fails naming the missing option and listing the available ones', async () => {
-  const bad = parseConfig({ project: { owner: 'acme', number: 6 }, status: { queue: 'Todo' } });
+  const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, status: { queue: 'Todo' } });
   const board = createBoard(bad, fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields }).exec);
   await assert.rejects(board.resolveFields(), /"Todo".*Ready, In progress, In review, Done/s);
 });
@@ -63,8 +63,8 @@ test('listQueue returns only issues in the queue column, in board order', async 
   const board = createBoard(config, fakeExec({ 'project item-list 6': items }).exec);
   const queue = await board.listQueue();
   assert.deepEqual(queue, [
-    { itemId: 'I1', number: 1, title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
-    { itemId: 'I4', number: 4, title: 'C', body: '', url: 'https://github.com/acme/r/issues/4' },
+    { itemId: 'I1', id: '1', title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
+    { itemId: 'I4', id: '4', title: 'C', body: '', url: 'https://github.com/acme/r/issues/4' },
   ]);
 });
 

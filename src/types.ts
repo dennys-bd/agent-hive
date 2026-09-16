@@ -1,9 +1,13 @@
 export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 export type StatusKey = 'queue' | 'working' | 'review';
 
+export type BoardConfig =
+  | { type: 'github'; owner: string; number: number }
+  | { type: 'markdown'; path: string };
+
 export interface Task {
-  itemId: string;
-  number: number;
+  itemId: string; // adapter's own key: project item id (GitHub) or the id cell (markdown)
+  id: string; // what the user sees and the slug uses: issue number as a string, or the id cell
   title: string;
   body: string;
   url: string;
@@ -34,7 +38,7 @@ export interface State {
 }
 
 export interface Config {
-  project: { owner: string; number: number };
+  board: BoardConfig;
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -80,7 +84,7 @@ export interface SetupInfo {
 }
 
 export interface SetupBody {
-  project: { owner: string; number: number };
+  board: BoardConfig;
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   /** Optional; blank or missing keeps the current template (or the default on first setup). */

@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Config, StatusKey } from './types.js';
+import type { BoardConfig, Config, StatusKey } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
-export const DEFAULT_CONFIG: Omit<Config, 'project'> = {
+export const BOARD_TYPES: readonly BoardConfig['type'][] = ['github', 'markdown'];
+
+export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
   maxConcurrent: 2,
   port: 47821,
@@ -33,11 +35,28 @@ function optional<T>(value: unknown, fallback: T, check: (v: unknown) => T): T {
   return value === undefined ? fallback : check(value);
 }
 
+// `field` is how the board appears in error messages: "board" for the current format, "project" for legacy files.
+function parseBoard(raw: unknown, field: string): BoardConfig {
+  if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
+  switch (raw.type) {
+    case 'github':
+      return { type: 'github', owner: requireString(raw.owner, `${field}.owner`), number: requireInt(raw.number, `${field}.number`) };
+    case 'markdown':
+      return { type: 'markdown', path: requireString(raw.path, `${field}.path`) };
+    default:
+      throw new Error(`${CONFIG_FILE}: "${field}.type" must be one of: ${BOARD_TYPES.join(', ')}`);
+  }
+}
+
+// Files written before boards were pluggable have `project: { owner, number }` and no `board`.
+function boardFrom(raw: Record<string, unknown>): BoardConfig {
+  if (raw.board === undefined && isRecord(raw.project)) return parseBoard({ ...raw.project, type: 'github' }, 'project');
+  return parseBoard(raw.board, 'board');
+}
+
 export function parseConfig(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
-  const project = isRecord(raw.project) ? raw.project : {};
-  const owner = requireString(project.owner, 'project.owner');
-  const number = requireInt(project.number, 'project.number');
+  const board = boardFrom(raw);
 
   const statusRaw = optional(raw.status, {} as Record<string, unknown>, (v) => {
     if (!isRecord(v)) throw new Error(`${CONFIG_FILE}: "status" must be an object`);
@@ -48,7 +67,7 @@ export function parseConfig(raw: unknown): Config {
   ) as Record<StatusKey, string>;
 
   return {
-    project: { owner, number },
+    board,
     status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
     port: optional(raw.port, DEFAULT_CONFIG.port, (v) => requireInt(v, 'port')),

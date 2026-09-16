@@ -19,9 +19,9 @@ export interface WorkerCommandOptions {
 
 export function renderPrompt(template: string, task: Task): string {
   const values: Record<string, string> = {
-    number: String(task.number), title: task.title, body: task.body, url: task.url,
+    id: task.id, number: task.id, title: task.title, body: task.body, url: task.url, // {number} is a synonym of {id}
   };
-  return template.replace(/\{(number|title|body|url)\}/g, (_, key: string) => values[key]);
+  return template.replace(/\{(id|number|title|body|url)\}/g, (_, key: string) => values[key]);
 }
 
 export async function writePrompt(promptsDir: string, slug: string, text: string): Promise<string> {

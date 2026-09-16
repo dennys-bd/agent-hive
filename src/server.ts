@@ -303,7 +303,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     try {
       const current = await loadConfigIfPresent(repo);
       config = parseConfig({
-        project: body.project,
+        board: body.board,
         status: body.status,
         maxConcurrent: body.maxConcurrent,
         port: current?.port,

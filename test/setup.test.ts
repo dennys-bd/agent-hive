@@ -13,7 +13,7 @@ import type { Config, SetupBody, SetupInfo } from '../src/types.js';
 
 const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 const BODY: SetupBody = {
-  project: { owner: 'acme', number: 6 },
+  board: { type: 'github', owner: 'acme', number: 6 },
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
   maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would open an iTerm tab)
 };
@@ -35,7 +35,7 @@ function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Bo
         }
       },
       async listQueue() {
-        return [{ itemId: 'I1', number: 1, title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
+        return [{ itemId: 'I1', id: '1', title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
       },
       async setStatus() {},
     };
@@ -109,7 +109,7 @@ test('POST /setup writes the config with defaults, boots the runtime and reports
   assert.match(await readFile(join(repo, '.hive', 'hooks.json'), 'utf8'), new RegExp(`127\\.0\\.0\\.1:${port}/hooks/event`));
   const info = await json<SetupInfo>(fetch(`${base}/setup`));
   assert.equal(info.configured, true);
-  assert.equal(info.config?.project.number, 6);
+  assert.deepEqual(info.config?.board, BODY.board);
   assert.equal(info.config?.promptTemplate, DEFAULT_CONFIG.promptTemplate);
 });
 
@@ -126,9 +126,9 @@ test('POST /setup with a column the board does not have answers 400 and writes n
 
 test('POST /setup with an invalid body answers 400 naming the field', async (t) => {
   const { base, repo } = await start(t);
-  const res = await postSetup(base, { ...BODY, project: { owner: 'acme' } });
+  const res = await postSetup(base, { ...BODY, board: { type: 'github', owner: 'acme' } });
   assert.equal(res.status, 400);
-  assert.match((await json<{ error: string }>(res)).error, /project\.number/);
+  assert.match((await json<{ error: string }>(res)).error, /board\.number/);
   await assert.rejects(stat(configFile(repo)));
 });
 

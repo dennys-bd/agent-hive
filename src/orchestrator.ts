@@ -16,12 +16,15 @@ export function initialState(maxConcurrent: number): State {
   return { maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [] };
 }
 
-export function slugFor(task: Task): string {
-  const kebab = task.title
+function kebab(text: string): string {
+  return text
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX).replace(/-+$/, '');
-  return `hive-${task.number}-${kebab}`;
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+export function slugFor(task: Task): string {
+  const title = kebab(task.title).slice(0, SLUG_MAX).replace(/-+$/, '');
+  return `hive-${kebab(task.id)}-${title}`;
 }
 
 export function extractPrUrl(command: string, response: unknown): string | undefined {

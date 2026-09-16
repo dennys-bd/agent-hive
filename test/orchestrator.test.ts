@@ -4,7 +4,7 @@ import { extractPrUrl, initialState, reduce, slugFor } from '../src/orchestrator
 import type { HookPayload, State, Task } from '../src/types.js';
 
 const task = (n: number): Task => ({
-  itemId: `item${n}`, number: n, title: `Task ${n}`, body: `body ${n}`,
+  itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
   url: `https://github.com/o/r/issues/${n}`,
 });
 const tasks = (n: number) => Array.from({ length: n }, (_, i) => task(i + 1));
@@ -15,8 +15,8 @@ const occupied = (s: State) => s.slots.filter((x) => x.status !== 'vazio');
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
-  assert.deepEqual(occupied(state).map((s) => s.task?.number), [1, 2, 3]);
-  assert.deepEqual(state.queue.map((t) => t.number), [4, 5]);
+  assert.deepEqual(occupied(state).map((s) => s.task?.id), ['1', '2', '3']);
+  assert.deepEqual(state.queue.map((t) => t.id), ['4', '5']);
   assert.equal(effects.filter((e) => e.type === 'spawn').length, 3);
   assert.deepEqual(
     effects.flatMap((e) => (e.type === 'setStatus' ? [e.key] : [])),
@@ -30,7 +30,7 @@ test('poll fills slots in board order up to maxConcurrent and queues the rest', 
 test('poll does not duplicate a task already in a slot', () => {
   const first = filled(1, 2).state;
   const { state, effects } = reduce(first, { type: 'poll', tasks: tasks(2) });
-  assert.deepEqual(state.queue.map((t) => t.number), [2]);
+  assert.deepEqual(state.queue.map((t) => t.id), ['2']);
   assert.equal(effects.length, 0);
 });
 
@@ -46,7 +46,7 @@ test('setMax up adds empty slots and fills them from the queue', () => {
   const { state, effects } = reduce(first, { type: 'setMax', max: 2 });
   assert.equal(state.maxConcurrent, 2);
   assert.equal(occupied(state).length, 2);
-  assert.deepEqual(state.queue.map((t) => t.number), [3]);
+  assert.deepEqual(state.queue.map((t) => t.id), ['3']);
   assert.equal(effects.filter((e) => e.type === 'spawn').length, 1);
 });
 
@@ -65,7 +65,7 @@ test('a draining slot is removed when its worker exits and its task returns to t
   const drained = reduce(filled(3, 3).state, { type: 'setMax', max: 1 }).state;
   const { state, effects } = reduce(drained, { type: 'exit', workerId: drained.slots[1].workerId! });
   assert.equal(state.slots.length, 2);
-  assert.deepEqual(state.queue.map((t) => t.number), [2]);
+  assert.deepEqual(state.queue.map((t) => t.id), ['2']);
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item2', key: 'queue' }]);
 });
 
@@ -171,8 +171,8 @@ test('exit without PR empties the slot, requeues the task at the end and pulls t
   const id = first.slots[0].id;
   const { state, effects } = reduce(first, { type: 'exit', workerId: first.slots[0].workerId! });
   assert.equal(state.slots[0].id, id, 'slot keeps its id');
-  assert.equal(state.slots[0].task?.number, 2, 'next task pulled');
-  assert.deepEqual(state.queue.map((t) => t.number), [1]);
+  assert.equal(state.slots[0].task?.id, '2', 'next task pulled');
+  assert.deepEqual(state.queue.map((t) => t.id), ['1']);
   assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'setStatus', 'spawn']);
   assert.deepEqual(effects[0], { type: 'setStatus', itemId: 'item1', key: 'queue' });
 });
@@ -193,8 +193,8 @@ test('SessionEnd behaves like exit', () => {
   const first = filled(1, 2).state;
   const id = first.slots[0].workerId!;
   const { state, effects } = hook(first, id, { hook_event_name: 'SessionEnd' });
-  assert.equal(state.slots[0].task?.number, 2, 'next task pulled via fill');
-  assert.deepEqual(state.queue.map((t) => t.number), [1], 'current task requeued');
+  assert.equal(state.slots[0].task?.id, '2', 'next task pulled via fill');
+  assert.deepEqual(state.queue.map((t) => t.id), ['1'], 'current task requeued');
   assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'setStatus', 'spawn']);
 });
 
@@ -217,7 +217,7 @@ test('exit and hooks carrying a replaced worker id are ignored after the slot wa
   const first = filled(1, 2).state;
   const w1 = first.slots[0].workerId!;
   const once = reduce(first, { type: 'exit', workerId: w1 });
-  assert.equal(once.state.slots[0].task?.number, 2);
+  assert.equal(once.state.slots[0].task?.id, '2');
   const w2 = once.state.slots[0].workerId!;
   assert.ok(w2 && w2 !== w1, 'refill assigns a fresh worker id');
   const stale = reduce(once.state, { type: 'exit', workerId: w1 });
@@ -238,8 +238,8 @@ test('boot empties slots whose worker is dead and requeues their tasks; alive on
   const first = filled(2, 2).state;
   const { state, effects } = reduce(first, { type: 'boot', aliveSlugs: ['hive-2-task-2'] });
   assert.equal(state.slots[0].status, 'vazio');
-  assert.equal(state.slots[1].task?.number, 2);
-  assert.deepEqual(state.queue.map((t) => t.number), [1]);
+  assert.equal(state.slots[1].task?.id, '2');
+  assert.deepEqual(state.queue.map((t) => t.id), ['1']);
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
 
@@ -266,6 +266,11 @@ test('error sets and poll clears state.error', () => {
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {
   assert.equal(slugFor({ ...task(12), title: 'Adicionar Autenticação OAuth no backend da API v2' }), 'hive-12-adicionar-autenticacao-oauth-n');
   assert.equal(slugFor({ ...task(3), title: '  --weird__title!!  ' }), 'hive-3-weird-title');
+});
+
+test('slugFor kebab-izes the id too, so markdown ids like T-12 work', () => {
+  assert.equal(slugFor({ ...task(1), id: 'T-12', title: 'Exemplo' }), 'hive-t-12-exemplo');
+  assert.equal(slugFor({ ...task(1), id: 'Épico #3', title: 'x' }), 'hive-epico-3-x');
 });
 
 test('extractPrUrl finds the PR url only for gh pr create', () => {

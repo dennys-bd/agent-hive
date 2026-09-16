@@ -59,7 +59,9 @@ export async function listStatusOptions(owner: string, number: number, exec: Exe
 }
 
 export function createBoard(config: Config, exec: Exec = ghExec): Board {
-  const { owner, number } = config.project;
+  // Task 3 replaces this guard with the markdown adapter
+  if (config.board.type !== 'github') throw new Error(`board.type "${config.board.type}" ainda não suportado`);
+  const { owner, number } = config.board;
   const base = (sub: string) => projectArgs(sub, owner, number);
   let resolved: { projectId: string; statusFieldId: string; optionIds: Record<StatusKey, string> } | undefined;
 
@@ -82,7 +84,7 @@ export function createBoard(config: Config, exec: Exec = ghExec): Board {
     return items.flatMap<Task>((item) => {
       const c = item.content;
       if (item.status !== config.status.queue || c?.type !== 'Issue' || typeof c.number !== 'number' || !c.url) return [];
-      return [{ itemId: item.id, number: c.number, title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }];
+      return [{ itemId: item.id, id: String(c.number), title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }];
     });
   }
 
