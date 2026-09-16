@@ -193,6 +193,11 @@ async function loadMarkdownColumns(): Promise<void> {
   try {
     const options = await getJson<string[]>(columnsUrl({ type: 'markdown', path }));
     $('md-options').innerHTML = options.map((o) => `<option value="${esc(o)}"></option>`).join('');
+    $('md-found').textContent = `status encontrados: ${options.join(', ')} — clique no campo para escolher.`;
+    for (const key of STATUS_KEYS) {
+      const input = $<HTMLInputElement>(MARKDOWN_INPUT[key]);
+      if (!options.includes(input.value)) input.value = ''; // not in the file: clear so the full list shows
+    }
   } catch (err) {
     setupError((err as Error).message);
   }
