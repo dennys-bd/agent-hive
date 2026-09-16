@@ -46,13 +46,14 @@ Ferramenta reutilizável: board, repo, nomes de colunas e limites vêm de config
 Um objeto em memória, gravado em `<repo>/.hive/state.json` a cada mudança.
 
 ```ts
-type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review' | 'drenando';
+type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 
 interface Task { itemId: string; number: number; title: string; body: string; url: string }
 
 interface Slot {
   id: string;             // uuid
   status: Status;
+  draining?: boolean;     // excede maxConcurrent; some ao esvaziar
   task?: Task;
   slug?: string;          // hive-<number>-<kebab(title)[:30]>
   worktree?: string;      // cwd do SessionStart
@@ -73,7 +74,7 @@ interface State {
 }
 ```
 
-`slots` tem exatamente `maxConcurrent` posições ocupáveis. Diminuir `maxConcurrent` não mata worker: slots excedentes ocupados viram `drenando` e são removidos quando esvaziam. Aumentar cria slots `vazio` e chama `fill()`.
+`slots` tem exatamente `maxConcurrent` posições ocupáveis. Diminuir `maxConcurrent` não mata worker: slots excedentes ocupados recebem `draining: true` (mantêm o status real, então ainda ficam amarelos se pedirem algo) e são removidos quando esvaziam. Aumentar cria slots `vazio` e chama `fill()`.
 
 ## Máquina de estados do slot
 
@@ -186,7 +187,7 @@ Falha de `gh` não derruba nada: `state.error = stderr`, banner na UI, tenta de 
 Sem framework. `EventSource('/events')` → re-renderiza tudo a cada estado.
 
 - **Topo**: `N/M workers ativos` · `<input type="number">` do `maxConcurrent` · "atualizar board" · banner vermelho de `state.error`.
-- **Grid**: um card por slot. Cores: `vazio` cinza, `trabalhando` verde, `esperando_voce` amarelo piscando (`@keyframes`), `aguardando_review` azul, `drenando` cinza riscado. Conteúdo: `#num título`, branch, `lastEvent`, tempo decorrido, botão kill.
+- **Grid**: um card por slot. Cores: `vazio` cinza, `trabalhando` verde, `esperando_voce` amarelo piscando (`@keyframes`), `aguardando_review` azul; `draining` = título riscado por cima da cor real. Conteúdo: `#num título`, branch, `lastEvent`, tempo decorrido, botão kill.
 - **Lateral**: fila em ordem com posição.
 - **Painel de detalhe**: clique em card ocupado → `question` ou link do PR, "ir pro terminal", path da worktree.
 - Links externos: Electron intercepta `will-navigate` / `setWindowOpenHandler` → `shell.openExternal`.
