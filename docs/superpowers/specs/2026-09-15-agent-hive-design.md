@@ -14,7 +14,7 @@ Ferramenta reutilizável: board, repo, nomes de colunas e limites vêm de config
 | Detecção de PR | Hook `PostToolUse` (Bash) contendo `gh pr create` | Automático, sem marcador no prompt |
 | Board | GitHub Projects v2 via `gh` | Kanban real; `gh` já autenticado |
 | Hooks | `--settings <repo>/.hive/hooks.json` por worker | Não toca o `settings.json` global; só workers do Hive reportam |
-| Correlação worker↔hook | Env `HIVE_WORKER_ID`, enviado como header pelo `curl` | Sem juggling de `session_id` |
+| Correlação worker↔hook | Env `HIVE_WORKER_ID` = `slot.workerId`, um UUID novo a cada spawn, enviado como header pelo `curl` | Sem juggling de `session_id`; `SessionEnd` e o `curl /hooks/exit` disparam os dois no fim da sessão, e o id por spawn faz o segundo sinal (e hooks atrasados) ser ignorado em vez de derrubar o próximo ocupante do slot |
 | Worktree | `claude --worktree <slug>` cria; path vem do `cwd` do `SessionStart` | Não usa hooks `WorktreeCreate/Remove` (eles *substituem* o git, não observam) |
 | Transporte UI | Express serve HTML + SSE; Electron é só a janela | Um transporte em vez de IPC + HTTP; abre em browser pra debug |
 | Linguagem | TypeScript, `tsc` só, sem bundler | Tipos compartilhados server↔UI; tooling mínimo |
@@ -51,7 +51,8 @@ type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 interface Task { itemId: string; number: number; title: string; body: string; url: string }
 
 interface Slot {
-  id: string;             // uuid
+  id: string;             // uuid, estável
+  workerId?: string;      // uuid por spawn
   status: Status;
   draining?: boolean;     // excede maxConcurrent; some ao esvaziar
   task?: Task;

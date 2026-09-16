@@ -38,10 +38,10 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch);
     case 'exit': return fill(exit(state, event.workerId));
     case 'kill': {
-      const slug = state.slots.find((s) => s.id === event.slotId)?.slug;
-      return { state, effects: slug ? [{ type: 'kill', slug }] : [] };
+      const slot = state.slots.find((s) => s.id === event.slotId);
+      return { state, effects: slot?.slug && slot.workerId ? [{ type: 'kill', slug: slot.slug, workerId: slot.workerId }] : [] };
     }
-    case 'spawned': return patch(state, event.slotId, { itermSessionId: event.itermSessionId });
+    case 'spawned': return patch(state, event.workerId, { itermSessionId: event.itermSessionId });
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
   }
 }
@@ -54,8 +54,8 @@ function none(state: State): Reduced {
   return { state, effects: [] };
 }
 
-function patch(state: State, slotId: string, changes: Partial<Slot>): Reduced {
-  return none({ ...state, slots: state.slots.map((s) => (s.id === slotId ? { ...s, ...changes } : s)) });
+function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced {
+  return none({ ...state, slots: state.slots.map((s) => (s.workerId === workerId ? { ...s, ...changes } : s)) });
 }
 
 function fill({ state, effects }: Reduced): Reduced {
@@ -66,7 +66,7 @@ function fill({ state, effects }: Reduced): Reduced {
     const [task, ...rest] = queue;
     queue = rest;
     const next: Slot = {
-      id: slot.id, status: 'trabalhando', task, slug: slugFor(task),
+      id: slot.id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
       startedAt: new Date().toISOString(), lastEvent: 'iniciando',
     };
     spawned.push({ type: 'setStatus', itemId: task.itemId, key: 'working' }, { type: 'spawn', slot: next });
@@ -102,12 +102,12 @@ function setMax(state: State, max: number): Reduced {
 }
 
 function exit(state: State, workerId: string): Reduced {
-  const slot = state.slots.find((s) => s.id === workerId);
+  const slot = state.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'vazio') return none(state);
   const requeue = slot.task && !slot.prUrl ? slot.task : undefined;
   const slots = slot.draining
-    ? state.slots.filter((s) => s.id !== workerId)
-    : state.slots.map((s) => (s.id === workerId ? { id: s.id, status: 'vazio' as Status } : s));
+    ? state.slots.filter((s) => s.workerId !== workerId)
+    : state.slots.map((s) => (s.workerId === workerId ? { id: s.id, status: 'vazio' as Status } : s));
   return {
     state: { ...state, slots, queue: requeue ? [...state.queue, requeue] : state.queue },
     effects: requeue ? [{ type: 'setStatus', itemId: requeue.itemId, key: 'queue' }] : [],
@@ -117,7 +117,7 @@ function exit(state: State, workerId: string): Reduced {
 function boot(state: State, aliveSlugs: string[]): Reduced {
   const dead = state.slots.filter((s) => s.status !== 'vazio' && s.slug && !aliveSlugs.includes(s.slug));
   return dead.reduce<Reduced>((r, s) => {
-    const next = exit(r.state, s.id);
+    const next = exit(r.state, s.workerId!);
     return { state: next.state, effects: [...r.effects, ...next.effects] };
   }, none(state));
 }
@@ -134,7 +134,7 @@ function activeStatus(slot: Slot): Status {
 }
 
 function applyHook(state: State, workerId: string, p: HookPayload, branch?: string): Reduced {
-  const slot = state.slots.find((s) => s.id === workerId);
+  const slot = state.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'vazio') return none(state);
   switch (p.hook_event_name) {
     case 'SessionStart':

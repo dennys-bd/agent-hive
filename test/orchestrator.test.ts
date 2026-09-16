@@ -63,7 +63,7 @@ test('setMax down marks extra occupied slots as draining instead of killing them
 
 test('a draining slot is removed when its worker exits and its task returns to the queue', () => {
   const drained = reduce(filled(3, 3).state, { type: 'setMax', max: 1 }).state;
-  const { state, effects } = reduce(drained, { type: 'exit', workerId: drained.slots[1].id });
+  const { state, effects } = reduce(drained, { type: 'exit', workerId: drained.slots[1].workerId! });
   assert.equal(state.slots.length, 2);
   assert.deepEqual(state.queue.map((t) => t.number), [2]);
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item2', key: 'queue' }]);
@@ -76,7 +76,7 @@ test('setMax down drops surplus empty slots', () => {
 
 test('SessionStart records worktree and branch', () => {
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const { state } = reduce(first, {
     type: 'hook', workerId: id, branch: 'hive-1-task-1',
     payload: { hook_event_name: 'SessionStart', cwd: '/repo/.claude/worktrees/hive-1-task-1' },
@@ -87,7 +87,7 @@ test('SessionStart records worktree and branch', () => {
 
 test('Notification of a waiting type turns the slot yellow with the message', () => {
   const first = filled(1, 1).state;
-  const { state } = hook(first, first.slots[0].id, {
+  const { state } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?',
   });
   assert.equal(state.slots[0].status, 'esperando_voce');
@@ -96,7 +96,7 @@ test('Notification of a waiting type turns the slot yellow with the message', ()
 
 test('Notification of a non-waiting type is ignored', () => {
   const first = filled(1, 1).state;
-  const { state } = hook(first, first.slots[0].id, {
+  const { state } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'Notification', notification_type: 'auth_success', message: 'ok',
   });
   assert.equal(state.slots[0].status, 'trabalhando');
@@ -105,7 +105,7 @@ test('Notification of a non-waiting type is ignored', () => {
 
 test('UserPromptSubmit and PreToolUse bring a yellow slot back to trabalhando and clear the question', () => {
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const yellow = hook(first, id, { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'idle' }).state;
   const green = hook(yellow, id, { hook_event_name: 'UserPromptSubmit' }).state;
   assert.equal(green.slots[0].status, 'trabalhando');
@@ -118,7 +118,7 @@ test('UserPromptSubmit and PreToolUse bring a yellow slot back to trabalhando an
 
 test('PostToolUse with gh pr create moves the slot to aguardando_review and the board item to review', () => {
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const { state, effects } = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_name: 'Bash',
     tool_input: { command: 'gh pr create --fill' },
@@ -131,7 +131,7 @@ test('PostToolUse with gh pr create moves the slot to aguardando_review and the 
 
 test('after a PR, a permission prompt answered returns the slot to aguardando_review, not trabalhando', () => {
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const reviewed = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/7',
   }).state;
@@ -143,7 +143,7 @@ test('after a PR, a permission prompt answered returns the slot to aguardando_re
 
 test('PostToolUse for other commands changes nothing', () => {
   const first = filled(1, 1).state;
-  const { state, effects } = hook(first, first.slots[0].id, {
+  const { state, effects } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'git status' }, tool_response: 'clean',
   });
   assert.equal(state.slots[0].status, 'trabalhando');
@@ -152,7 +152,7 @@ test('PostToolUse for other commands changes nothing', () => {
 
 test('Stop only updates lastEvent', () => {
   const first = filled(1, 1).state;
-  const { state, effects } = hook(first, first.slots[0].id, { hook_event_name: 'Stop' });
+  const { state, effects } = hook(first, first.slots[0].workerId!, { hook_event_name: 'Stop' });
   assert.equal(state.slots[0].status, 'trabalhando');
   assert.equal(state.slots[0].lastEvent, 'turno encerrado');
   assert.equal(effects.length, 0);
@@ -161,7 +161,7 @@ test('Stop only updates lastEvent', () => {
 test('exit without PR empties the slot, requeues the task at the end and pulls the next one', () => {
   const first = filled(1, 2).state;
   const id = first.slots[0].id;
-  const { state, effects } = reduce(first, { type: 'exit', workerId: id });
+  const { state, effects } = reduce(first, { type: 'exit', workerId: first.slots[0].workerId! });
   assert.equal(state.slots[0].id, id, 'slot keeps its id');
   assert.equal(state.slots[0].task?.number, 2, 'next task pulled');
   assert.deepEqual(state.queue.map((t) => t.number), [1]);
@@ -171,7 +171,7 @@ test('exit without PR empties the slot, requeues the task at the end and pulls t
 
 test('exit with PR does not requeue the task', () => {
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const reviewed = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
   }).state;
@@ -183,7 +183,7 @@ test('exit with PR does not requeue the task', () => {
 
 test('SessionEnd behaves like exit', () => {
   const first = filled(1, 2).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const { state, effects } = hook(first, id, { hook_event_name: 'SessionEnd' });
   assert.equal(state.slots[0].task?.number, 2, 'next task pulled via fill');
   assert.deepEqual(state.queue.map((t) => t.number), [1], 'current task requeued');
@@ -193,7 +193,7 @@ test('SessionEnd behaves like exit', () => {
 test('exit is idempotent and ignores unknown workers', () => {
   // use a slot with a PR so exit does not requeue (and fill does not immediately respawn) the task
   const first = filled(1, 1).state;
-  const id = first.slots[0].id;
+  const id = first.slots[0].workerId!;
   const reviewed = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
   }).state;
@@ -205,9 +205,23 @@ test('exit is idempotent and ignores unknown workers', () => {
   assert.deepEqual(unknown.state, first);
 });
 
+test('exit and hooks carrying a replaced worker id are ignored after the slot was refilled', () => {
+  const first = filled(1, 2).state;
+  const w1 = first.slots[0].workerId!;
+  const once = reduce(first, { type: 'exit', workerId: w1 });
+  assert.equal(once.state.slots[0].task?.number, 2);
+  const w2 = once.state.slots[0].workerId!;
+  assert.ok(w2 && w2 !== w1, 'refill assigns a fresh worker id');
+  const stale = reduce(once.state, { type: 'exit', workerId: w1 });
+  assert.deepEqual(stale.state, once.state);
+  assert.equal(stale.effects.length, 0);
+  const staleHook = hook(once.state, w1, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' });
+  assert.equal(staleHook.state.slots[0].status, 'trabalhando');
+});
+
 test('hook for an empty or unknown slot is ignored', () => {
   const s = initialState(1);
-  const { state, effects } = hook(s, s.slots[0].id, { hook_event_name: 'Stop' });
+  const { state, effects } = hook(s, s.slots[0].workerId!, { hook_event_name: 'Stop' });
   assert.deepEqual(state, s);
   assert.equal(effects.length, 0);
 });
@@ -224,12 +238,12 @@ test('boot empties slots whose worker is dead and requeues their tasks; alive on
 test('kill emits a kill effect for the slot slug', () => {
   const first = filled(1, 1).state;
   const { effects } = reduce(first, { type: 'kill', slotId: first.slots[0].id });
-  assert.deepEqual(effects, [{ type: 'kill', slug: 'hive-1-task-1' }]);
+  assert.deepEqual(effects, [{ type: 'kill', slug: 'hive-1-task-1', workerId: first.slots[0].workerId }]);
 });
 
 test('spawned stores the iTerm session id', () => {
   const first = filled(1, 1).state;
-  const { state } = reduce(first, { type: 'spawned', slotId: first.slots[0].id, itermSessionId: 'w0t1p0' });
+  const { state } = reduce(first, { type: 'spawned', workerId: first.slots[0].workerId!, itermSessionId: 'w0t1p0' });
   assert.equal(state.slots[0].itermSessionId, 'w0t1p0');
 });
 

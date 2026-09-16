@@ -86,13 +86,13 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   async function spawn(slot: Slot): Promise<void> {
-    if (!slot.task || !slot.slug) return;
+    if (!slot.task || !slot.slug || !slot.workerId) return;
     const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task));
     const command = workerCommand({
-      repo, workerId: slot.id, port: config.port, slug: slot.slug, hooksPath, promptPath, claudeArgs: config.claudeArgs,
+      repo, workerId: slot.workerId, port: config.port, slug: slot.slug, hooksPath, promptPath, claudeArgs: config.claudeArgs,
     });
     const itermSessionId = await openWorker(command);
-    await dispatch({ type: 'spawned', slotId: slot.id, itermSessionId });
+    await dispatch({ type: 'spawned', workerId: slot.workerId, itermSessionId });
   }
 
   async function poll(): Promise<void> {

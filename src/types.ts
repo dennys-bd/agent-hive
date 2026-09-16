@@ -11,6 +11,7 @@ export interface Task {
 
 export interface Slot {
   id: string;
+  workerId?: string; // uuid per spawn; stale exit/hook signals from a previous occupant are ignored
   status: Status;
   draining?: boolean;
   task?: Task;
@@ -58,10 +59,10 @@ export type HiveEvent =
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
-  | { type: 'spawned'; slotId: string; itermSessionId: string }
+  | { type: 'spawned'; workerId: string; itermSessionId: string }
   | { type: 'error'; message?: string };
 
 export type Effect =
   | { type: 'spawn'; slot: Slot }
   | { type: 'setStatus'; itemId: string; key: StatusKey }
-  | { type: 'kill'; slug: string };
+  | { type: 'kill'; slug: string; workerId: string };
