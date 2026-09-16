@@ -60,13 +60,14 @@ export function parseConfig(raw: unknown): Config {
   };
 }
 
-export async function loadConfig(repo: string): Promise<Config> {
+export async function loadConfigIfPresent(repo: string): Promise<Config | undefined> {
   const path = join(repo, CONFIG_FILE);
   let text: string;
   try {
     text = await readFile(path, 'utf8');
   } catch (err) {
-    throw new Error(`${CONFIG_FILE} não encontrado em ${repo} (${(err as Error).message})`);
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw new Error(`${path}: erro de leitura (${(err as Error).message})`);
   }
   let raw: unknown;
   try {
@@ -75,4 +76,10 @@ export async function loadConfig(repo: string): Promise<Config> {
     throw new Error(`${path}: JSON inválido (${(err as Error).message})`);
   }
   return parseConfig(raw);
+}
+
+export async function loadConfig(repo: string): Promise<Config> {
+  const config = await loadConfigIfPresent(repo);
+  if (!config) throw new Error(`${CONFIG_FILE} não encontrado em ${repo}`);
+  return config;
 }

@@ -10,8 +10,8 @@ export async function bootHive(repo: string): Promise<{ port: number; server: Hi
   const board = createBoard(config);
   await board.resolveFields();
   const saved = await loadState(hiveDir, config.maxConcurrent);
-  const server = createServer({ repo, config, board, state: saved, hiveDir, hooksPath, promptsDir });
-  await server.listen();
+  const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved });
+  await server.listen(config.port);
   await server.dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
   await server.poll();
   console.log(`Agent Hive em http://127.0.0.1:${config.port} (repo: ${repo})`);

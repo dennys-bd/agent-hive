@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_CONFIG, loadConfig, parseConfig } from '../src/config.js';
+import { DEFAULT_CONFIG, loadConfig, loadConfigIfPresent, parseConfig } from '../src/config.js';
 
 test('parseConfig applies defaults on top of a minimal config', () => {
   const config = parseConfig({ project: { owner: '@me', number: 6 } });
@@ -40,4 +40,13 @@ test('loadConfig reads hive.config.json from the repo and reports a missing file
   await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ project: { owner: '@me', number: 9 } }));
   const config = await loadConfig(repo);
   assert.equal(config.project.number, 9);
+});
+
+test('loadConfigIfPresent returns undefined only when the file is missing', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-'));
+  assert.equal(await loadConfigIfPresent(repo), undefined);
+  await writeFile(join(repo, 'hive.config.json'), '{not json');
+  await assert.rejects(loadConfigIfPresent(repo), /JSON inválido/);
+  await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ project: { owner: '@me', number: 9 } }));
+  assert.equal((await loadConfigIfPresent(repo))?.project.number, 9);
 });

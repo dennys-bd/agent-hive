@@ -72,3 +72,23 @@ export type Effect =
   | { type: 'spawn'; slot: Slot }
   | { type: 'setStatus'; itemId: string; key: StatusKey }
   | { type: 'kill'; slug: string; workerId: string };
+
+export interface SetupInfo {
+  configured: boolean;
+  repo: string;
+  config?: Omit<Config, 'promptTemplate'>;
+}
+
+export interface SetupBody {
+  project: { owner: string; number: number };
+  status: Record<StatusKey, string>;
+  maxConcurrent: number;
+}
+
+export interface SetupResult {
+  ok: true;
+  restartForPort?: number;
+}
+
+/** What `GET /events` streams: the whole State, or a marker while the Hive has no config yet. */
+export type EventsPayload = State | { configured: false };
