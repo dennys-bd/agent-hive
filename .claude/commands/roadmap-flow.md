@@ -25,9 +25,17 @@ stated assumption in the artifact of that stage. Stop only if the item is so
 ambiguous that any assumption would make the work useless; report the
 specific gap and what you would need.
 
-**Working tree**: `git status --short --branch` must be clean and on `main`
-before Stage 0. If it is not, stop and say what is dirty; never stash or
-discard on the user's behalf.
+**Working tree**: `git status --short --branch` must be clean before
+Stage 0. If it is not, stop and say what is dirty; never stash or discard
+on the user's behalf. Two ways to start:
+
+- **on `main`**: the flow creates the feature branch itself (Stage 3);
+- **on a fresh worktree branch** (Agent Hive spawns `claude --worktree=<slug>`,
+  so the session already sits on a branch named after the task): keep that
+  branch as the feature branch and skip the `checkout -b` in Stage 3. The
+  Hive has already moved the row to `🔄 fazendo` in the main checkout; the
+  worktree copy still shows `⏳ a fazer`, so the tracking edits below still
+  apply. Any other branch with commits ahead of `main` is a stop.
 
 ---
 
@@ -78,10 +86,11 @@ say so.
 2. Select the row per **Input** above. Read its `## <n>.` section; it
    carries the intent and the open decisions.
 3. Restate the scope in two or three sentences in chat.
-4. Derive the branch name now (`feat/<slug>`; slug from the feature name,
-   kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`) and
-   record `🔄 fazendo` + `- Branch:` in the roadmap. Do not commit yet;
-   Stage 3 commits it on the branch.
+4. Derive the branch name now: the current branch when already on a
+   worktree branch, otherwise `feat/<slug>` (slug from the feature name,
+   kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`). Record
+   `🔄 fazendo` + `- Branch:` in the roadmap. Do not commit yet; Stage 3
+   commits it on the branch.
 
 ## Stage 1 — Spec (brainstorming, autonomous)
 
@@ -124,7 +133,7 @@ Record `- Plan:` under the section when a plan file was written.
 ## Stage 3 — Branch
 
 ```sh
-git checkout -b <branch-from-stage-0> main
+git checkout -b <branch-from-stage-0> main   # skip when already on the worktree branch
 git add docs/roadmap.md docs/superpowers
 git commit -m "docs(roadmap): track <feature>"
 ```
@@ -197,7 +206,8 @@ Do not merge. The flow ends with the PR URL in chat and in the roadmap.
 
 There are no approval gates. The stop conditions are:
 
-1. dirty working tree or not on `main` (before Stage 0);
+1. dirty working tree, or a branch that is neither `main` nor a fresh
+   worktree branch (before Stage 0);
 2. ambiguous or missing roadmap match (Stage 0);
 3. an item too ambiguous to implement under a stated assumption (Stage 1);
 4. `pnpm test` red after `ecc:build-error-resolver` (Stage 4);

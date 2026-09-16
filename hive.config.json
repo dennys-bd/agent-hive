@@ -1,0 +1,6 @@
+{
+  "board": { "type": "markdown", "path": "docs/roadmap.md" },
+  "status": { "queue": "⏳ a fazer", "working": "🔄 fazendo", "review": "✅ feito" },
+  "maxConcurrent": 2,
+  "promptTemplate": "/roadmap-flow {id}"
+}

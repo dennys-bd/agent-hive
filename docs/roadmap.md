@@ -2,7 +2,7 @@
 
 Cada item vira seu próprio ciclo spec → plan → implementação.
 
-| # | Feature | Status | Spec |
+| id | título | status | spec |
 |---|---|---|---|
 | 1 | Entrypoint por command (`promptTemplate` com slash command, editável no form) | ✅ feito | `docs/superpowers/specs/2026-09-16-hive-cli-and-setup-design.md` |
 | 2 | Board plugável: GitHub + Markdown | ✅ feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
