@@ -1,1 +1,73 @@
-<!doctype html><title>Agent Hive</title>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Hive</title>
+<style>
+  :root {
+    --bg: #111418; --panel: #1a1f26; --text: #e6e6e6; --muted: #8a94a6; --border: #2a313b;
+    --vazio: #3a4250; --trabalhando: #2e9e5b; --esperando: #e0b52a; --review: #3b82f6; --danger: #d9534f;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 16px; margin: 0; }
+  header label { color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  input[type=number] { width: 64px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
+  #error.show { display: block; }
+  main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px 20px; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--vazio); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
+  .card.occupied { cursor: pointer; }
+  .card.trabalhando { border-left-color: var(--trabalhando); }
+  .card.aguardando_review { border-left-color: var(--review); }
+  .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
+  .card.draining .title { text-decoration: line-through; }
+  .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .actions { margin-top: 8px; display: flex; gap: 8px; }
+  @keyframes blink { 0%, 100% { background: var(--panel); } 50% { background: #3a3110; } }
+  aside { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  aside h2 { font-size: 13px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
+  ol { margin: 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+  #detail { display: none; }
+  #detail.show { display: block; }
+  #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+  a { color: var(--review); }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Hive</h1>
+  <span id="summary">0/0 workers ativos</span>
+  <label>máx. workers <input id="max" type="number" min="0" step="1"></label>
+  <button id="refresh">atualizar board</button>
+  <span id="polled" style="color: var(--muted); margin-left: auto;"></span>
+</header>
+<div id="error"></div>
+<main>
+  <section id="grid"></section>
+  <div>
+    <aside id="detail">
+      <h2>detalhe</h2>
+      <div id="detail-body"></div>
+      <div class="actions" style="margin-top: 8px; display: flex; gap: 8px;">
+        <button id="focus">ir pro terminal</button>
+        <button id="close">fechar</button>
+      </div>
+    </aside>
+    <aside id="queue-panel">
+      <h2>fila</h2>
+      <ol id="queue"></ol>
+    </aside>
+  </div>
+</main>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>
