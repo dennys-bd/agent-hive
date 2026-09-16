@@ -2,6 +2,16 @@ export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_re
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
+export interface Budget {
+  maxTokensPerHour?: number; // absent or 0 = no limit
+  maxTokensPerDay?: number;
+}
+
+export interface UsageSample {
+  at: string; // ISO, when the Stop / SessionEnd arrived
+  tokens: number; // delta since the worker's previous turn end
+}
+
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
   | { type: 'markdown'; path: string };
