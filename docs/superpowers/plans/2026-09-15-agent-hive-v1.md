@@ -521,7 +521,7 @@ export function extractPrUrl(command: string, response: unknown): string | undef
 
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
-    case 'boot': return fill(boot(state, event.aliveSlugs));
+    case 'boot': return boot(state, event.aliveSlugs); // no fill: bootHive polls right after, and the board is the truth
     case 'poll': return fill(poll(state, event.tasks));
     case 'setMax': return fill(setMax(state, event.max));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch);
