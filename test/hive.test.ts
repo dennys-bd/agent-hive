@@ -1,0 +1,27 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { newBoardText } from '../src/boards/markdown.js';
+import { bootHive } from '../src/hive.js';
+import { initialState } from '../src/orchestrator.js';
+import { saveState } from '../src/state-store.js';
+
+// Markdown board, zero slots and port 0 (random free port): boots without gh, iTerm or a fixed port.
+async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
+  await writeFile(join(repo, 'board.md'), newBoardText());
+  const config = { board: { type: 'markdown', path: 'board.md' }, maxConcurrent: 0, port: 0, ...extra };
+  await writeFile(join(repo, 'hive.config.json'), JSON.stringify(config));
+  return repo;
+}
+
+test('bootHive copies the budget from hive.config.json over the one saved in state.json', async (t) => {
+  const repo = await repoWithConfig({ budget: { maxTokensPerHour: 50_000 } });
+  await mkdir(join(repo, '.hive'));
+  await saveState(join(repo, '.hive'), { ...initialState(0), budget: { maxTokensPerDay: 1 } }); // stale copy from a previous run
+  const { server } = await bootHive(repo);
+  t.after(() => server.close());
+  assert.deepEqual(server.getState()?.budget, { maxTokensPerHour: 50_000 });
+});
