@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const MISSING_BUILD = 2;
+const MISSING_REPO = 2;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const mainJs = join(root, 'dist', 'src', 'main.js');
 const repo = resolve(process.argv[2] ?? process.cwd());
+
+if (!existsSync(repo) || !statSync(repo).isDirectory()) {
+  console.error(`diretório não encontrado: ${repo}`);
+  process.exit(MISSING_REPO);
+}
 
 if (!existsSync(mainJs)) {
   console.error(`${mainJs} não existe: rode \`pnpm build\` primeiro`);

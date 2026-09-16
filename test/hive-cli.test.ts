@@ -26,6 +26,25 @@ test('hive exits 2 with a build hint when dist/src/main.js is missing', async ()
   );
 });
 
+test('hive exits 2 with a not-found hint when the repo argument does not exist', async () => {
+  // fake dist/src/main.js so the build check passes; the missing-repo check must fire first anyway
+  const root = await mkdtemp(join(tmpdir(), 'hive-cli-'));
+  await mkdir(join(root, 'bin'));
+  await mkdir(join(root, 'dist', 'src'), { recursive: true });
+  await writeFile(join(root, 'package.json'), '{ "type": "module" }\n');
+  await writeFile(join(root, 'dist', 'src', 'main.js'), '');
+  await copyFile(HIVE_BIN, join(root, 'bin', 'hive.js'));
+  const missing = join(root, 'does-not-exist');
+  await assert.rejects(
+    execFileAsync(process.execPath, [join(root, 'bin', 'hive.js'), missing]),
+    (err: { code?: number; stderr?: string }) => {
+      assert.equal(err.code, 2);
+      assert.match(err.stderr ?? '', /diretório não encontrado/);
+      return true;
+    },
+  );
+});
+
 test('hive exits 1 with an install hint when electron is not installed', async () => {
   // fake dist/src/main.js so the build check passes, but no node_modules/electron, so require('electron') throws
   const root = await mkdtemp(join(tmpdir(), 'hive-cli-'));
