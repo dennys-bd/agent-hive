@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createBoard } from '../src/board.js';
 import { listProjects, listStatusOptions } from '../src/boards/github.js';
 import { parseConfig } from '../src/config.js';
@@ -102,4 +105,12 @@ test('setupOptions on a github board lists the Status option names in board orde
   const { exec, calls } = fakeExec({ 'project field-list 6': fields });
   assert.deepEqual(await createBoard(config, { repo: REPO, exec }).setupOptions(), ['Ready', 'In progress', 'In review', 'Done']);
   assert.equal(calls.length, 1);
+});
+
+test('createBoard picks the markdown adapter by type and resolves the path against the repo', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-'));
+  await writeFile(join(repo, 'board.md'), '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
+  const board = createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo });
+  await board.resolveFields();
+  assert.deepEqual((await board.listQueue()).map((t) => [t.id, t.url]), [['T-1', join(repo, 'board.md')]]);
 });
