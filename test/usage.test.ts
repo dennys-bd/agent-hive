@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import {
   DAY_MS, HOUR_MS, hasBudget, isTranscriptPath, parseUsageLine, pruneUsage, sumTranscriptTokens, usageTotals,
 } from '../src/usage.js';
@@ -40,6 +42,8 @@ test('parseUsageLine sums the four usage fields and counts missing or non-numeri
   assert.deepEqual(parseUsageLine(assistant('a2', { input_tokens: 7, output_tokens: 3 })), { id: 'a2', tokens: 10 });
   assert.deepEqual(parseUsageLine(assistant('a3', {})), { id: 'a3', tokens: 0 });
   assert.deepEqual(parseUsageLine(assistant('a4', { input_tokens: 'many', output_tokens: 2 })), { id: 'a4', tokens: 2 });
+  // 1e400 is valid JSON that parses to Infinity; counted it would make every budget check false for a day
+  assert.deepEqual(parseUsageLine(`{"type":"assistant","message":{"id":"a5","usage":{"input_tokens":1e400,"output_tokens":2}}}`), { id: 'a5', tokens: 2 });
 });
 
 test('sumTranscriptTokens counts each message.id once, sums distinct ids and skips every other line', async () => {
@@ -59,6 +63,14 @@ test('sumTranscriptTokens rejects for a missing file and resolves 0 for an empty
   const dir = await mkdtemp(join(tmpdir(), 'hive-usage-'));
   await assert.rejects(sumTranscriptTokens(join(dir, 'missing.jsonl')), { code: 'ENOENT' });
   assert.equal(await sumTranscriptTokens(await writeTranscript([])), 0);
+});
+
+test('sumTranscriptTokens rejects anything that is not a regular file instead of waiting on it forever', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-usage-'));
+  const fifo = join(dir, 'fifo.jsonl');
+  await promisify(execFile)('mkfifo', [fifo]); // a FIFO with no writer never reaches EOF
+  await assert.rejects(sumTranscriptTokens(fifo), /not a regular file/);
+  await assert.rejects(sumTranscriptTokens(dir), /not a regular file/);
 });
 
 test('usageTotals separates the last hour from the last day', () => {

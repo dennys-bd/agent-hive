@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Budget, UsageSample } from './types.js';
@@ -28,7 +29,7 @@ export function parseUsageLine(line: string): { id: string; tokens: number } | u
   if (typeof message?.id !== 'string' || typeof usage !== 'object' || usage === null) return undefined;
   const tokens = USAGE_FIELDS.reduce((sum, field) => {
     const value = usage[field];
-    return sum + (typeof value === 'number' ? value : 0);
+    return sum + (Number.isFinite(value) ? (value as number) : 0); // 1e400 parses to Infinity and would jam every budget check
   }, 0);
   return { id: message.id, tokens };
 }
@@ -38,7 +39,9 @@ export function parseUsageLine(line: string): { id: string; tokens: number } | u
  * Rejects when the file cannot be opened or read; the server treats that as "no tokens this turn".
  * ponytail: reads the whole file at every turn end; if transcripts ever weigh, keep a byte offset per slot and tail from it.
  */
-export function sumTranscriptTokens(path: string): Promise<number> {
+export async function sumTranscriptTokens(path: string): Promise<number> {
+  // A FIFO or a device never reaches EOF and would hold the read (and a threadpool slot) forever
+  if (!(await stat(path)).isFile()) throw new Error(`${path}: not a regular file`);
   return new Promise((resolve, reject) => {
     const seen = new Set<string>();
     let total = 0;
