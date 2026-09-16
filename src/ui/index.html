@@ -23,6 +23,8 @@
   button.active[data-signal=yellow] { border-color: var(--esperando); color: var(--esperando); }
   button.active[data-signal=red] { border-color: var(--danger); color: var(--danger); }
   #signal-hint { color: var(--muted); }
+  #usage { color: var(--muted); }
+  #usage.over { color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
   #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
@@ -78,6 +80,7 @@
     <button data-signal="red">red</button>
     <span id="signal-hint"></span>
   </span>
+  <span id="usage" class="dash"></span>
   <button id="refresh" class="dash">atualizar board</button>
   <button id="configure">configurar</button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
@@ -114,6 +117,11 @@
     <datalist id="md-options"></datalist>
   </fieldset>
   <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
+  <div class="row">
+    <label>tokens por hora <input id="budget-hour" type="number" min="0" step="1"></label>
+    <label>tokens por dia <input id="budget-day" type="number" min="0" step="1"></label>
+  </div>
+  <div class="hint">vazio = sem limite</div>
   <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
   <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo.</div>
   <div id="setup-error"></div>
