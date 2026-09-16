@@ -13,6 +13,7 @@ import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
 import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
+import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
 import type {
   Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, State,
 } from './types.js';
@@ -29,6 +30,7 @@ const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
+const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (config: Config) => Board;
 
@@ -184,6 +186,15 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
+  // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only an absolute `.jsonl`:
+  // any local process can hit /hooks/event, and the worst case here is reading a `.jsonl` and discarding it.
+  async function turnTokens(workerId: string, payload: HookPayload): Promise<number | undefined> {
+    if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
+    const slot = live?.state.slots.find((s) => s.workerId === workerId);
+    if (!slot || slot.status === 'vazio') return undefined;
+    return sumTranscriptTokens(payload.transcript_path).catch(() => undefined); // unreadable: the hook goes through without tokens
+  }
+
   // Builds a Runtime for `config` on the port actually in use: hooks.json and the worker
   // command must target the listening port even when the saved file asks for another one.
   // Same board and status as the live runtime → same board instance, so a write already in flight keeps its chain.
@@ -205,6 +216,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     live = { runtime, state: { ...saved, queue: [] } };
     await dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
     if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
+    if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     await poll();
   }
 
@@ -213,6 +225,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = await activate(config, live.runtime);
     live = { runtime, state: live.state };
     if (live.state.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
+    if (!isDeepStrictEqual(live.state.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     await poll();
   }
 
@@ -248,7 +261,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     const payload = req.body as HookPayload | undefined;
     if (!workerId || !payload?.hook_event_name) return;
     const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
-    await dispatch({ type: 'hook', workerId, payload, branch });
+    const tokens = await turnTokens(workerId, payload);
+    await dispatch({ type: 'hook', workerId, payload, branch, tokens });
   });
 
   app.post('/hooks/exit', async (req: Request, res: Response) => {
@@ -323,6 +337,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         port: current?.port,
         claudeArgs: current?.claudeArgs,
         promptTemplate: promptTemplateFrom(body, current),
+        budget: body.budget ?? current?.budget,
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
