@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { BoardConfig, Budget, Config, StatusKey } from './types.js';
+import { SIGNALS } from './orchestrator.js';
+import type { BoardConfig, Budget, Config, Signal, StatusKey, UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -14,11 +15,13 @@ export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   promptTemplate:
     'Task #{number}: {title}\n\n{body}\n\nWork on this branch. When the task is done, open a PR with `gh pr create`.',
   budget: {},
+  usageRules: [],
 };
 
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const MARKDOWN_CELL_BREAKERS = /[|\r\n]/; // written into a table cell, these would split or end the row
 const BUDGET_KEYS = ['maxTokensPerHour', 'maxTokensPerDay'] as const;
+const PERCENT_MAX = 100;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -65,6 +68,26 @@ function parseBudget(raw: unknown): Budget {
   ) as Budget;
 }
 
+function requireSignal(value: unknown, field: string): Signal {
+  if (!SIGNALS.includes(value as Signal)) throw new Error(`${CONFIG_FILE}: "${field}" must be one of: ${SIGNALS.join(', ')}`);
+  return value as Signal;
+}
+
+function parseUsageRule(raw: unknown, field: string): UsageRule {
+  if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
+  const percent = requireInt(raw.percent, `${field}.percent`);
+  if (percent > PERCENT_MAX) throw new Error(`${CONFIG_FILE}: "${field}.percent" must be an integer from 0 to ${PERCENT_MAX}`);
+  const maxWorkers = raw.maxWorkers === undefined ? undefined : requireInt(raw.maxWorkers, `${field}.maxWorkers`);
+  const signal = raw.signal === undefined ? undefined : requireSignal(raw.signal, `${field}.signal`);
+  if (maxWorkers === undefined && signal === undefined) throw new Error(`${CONFIG_FILE}: "${field}" must set "maxWorkers" or "signal"`);
+  return { percent, ...(maxWorkers === undefined ? {} : { maxWorkers }), ...(signal === undefined ? {} : { signal }) };
+}
+
+function parseUsageRules(raw: unknown): UsageRule[] {
+  if (!Array.isArray(raw)) throw new Error(`${CONFIG_FILE}: "usageRules" must be an array`);
+  return raw.map((rule, i) => parseUsageRule(rule, `usageRules[${i}]`));
+}
+
 export function parseConfig(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const board = boardFrom(raw);
@@ -95,6 +118,7 @@ export function parseConfig(raw: unknown): Config {
     }),
     promptTemplate: optional(raw.promptTemplate, DEFAULT_CONFIG.promptTemplate, (v) => requireString(v, 'promptTemplate')),
     budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
+    usageRules: optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules),
   };
 }
 
