@@ -73,7 +73,7 @@ O `board.ts` atual movido, com `Task.id = String(number)` e `setupOptions()` = `
 
 - Formulário: select `tipo de board` (`github` | `markdown`) no topo, default `github` (ou o tipo atual ao reconfigurar).
   - `github`: owner + carregar + project + três selects de coluna (como hoje).
-  - `markdown`: campo `caminho` (default `board.md`) + três campos de texto pras colunas (defaults `Ready` / `In progress` / `In review`), com um botão `carregar` que chama `GET /setup/columns` e transforma os textos em selects quando o arquivo existe. Sem `gh`.
+  - `markdown`: campo `caminho` (default `board.md`) + três campos de texto pras colunas (defaults `Ready` / `In progress` / `In review`), com um botão `carregar` que chama `GET /setup/columns` e oferece os valores do arquivo como sugestões (`datalist`) nos campos de texto. Sem `gh`.
   - `máx. workers` e `prompt do worker` iguais pros dois.
 - `POST /setup` corpo: `{ board: BoardConfig, status, maxConcurrent, promptTemplate? }`. Ordem: `parseConfig` → (markdown: cria o arquivo se não existe) → `resolveFields` → grava config → `configure`/`reconfigure`. Códigos de erro como hoje.
 - `GET /setup` devolve a config com `board` no formato novo.
