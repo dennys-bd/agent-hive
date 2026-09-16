@@ -102,6 +102,13 @@ function renderDetail(): void {
   panel.classList.add('show');
 }
 
+function renderQueued(task: Task): string {
+  const blockers = task.blockedBy?.length
+    ? `<span class="meta" style="color:var(--muted)"> · bloqueada por ${esc(task.blockedBy.join(', '))}</span>`
+    : '';
+  return `<li>#${esc(task.id)} ${esc(task.title)}${blockers}</li>`;
+}
+
 function render(): void {
   if (!state) return;
   const active = state.slots.filter((s) => s.status !== 'vazio').length;
@@ -111,7 +118,7 @@ function render(): void {
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
   showError(state.error);
   $('grid').innerHTML = state.slots.map(renderCard).join('');
-  $('queue').innerHTML = state.queue.map((t) => `<li>#${esc(t.id)} ${esc(t.title)}</li>`).join('')
+  $('queue').innerHTML = state.queue.map(renderQueued).join('')
     || '<li style="list-style:none;color:var(--muted)">vazia</li>';
   renderDetail();
 }
