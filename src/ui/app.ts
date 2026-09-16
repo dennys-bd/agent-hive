@@ -1,12 +1,19 @@
-import type { Slot, State } from '../types.js';
+import type { EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Slot, State, StatusKey } from '../types.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
   vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
 };
 const RERENDER_MS = 30_000;
+// Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
+const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
+const DEFAULT_MAX = 2;
+const DEFAULT_OWNER = '@me';
+const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
+const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
 
 let state: State | undefined;
 let selectedSlotId: string | undefined;
+let setupInfo: SetupInfo | undefined;
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -20,21 +27,35 @@ function elapsed(iso?: string): string {
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
-function showError(message?: string): void {
-  const el = $('error');
+function showBanner(id: 'error' | 'notice', message?: string): void {
+  const el = $(id);
   el.textContent = message ?? '';
   el.classList.toggle('show', Boolean(message));
 }
+const showError = (message?: string): void => showBanner('error', message);
+const showNotice = (message?: string): void => showBanner('notice', message);
 
-async function post(path: string, body?: unknown): Promise<void> {
-  const res = await fetch(path, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const { error } = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string };
-    showError(error ?? res.statusText);
-  }
+async function parseJson<T>(res: Response): Promise<T> {
+  const data = (await res.json().catch(() => ({ error: res.statusText }))) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? res.statusText);
+  return data;
 }
+
+function getJson<T>(path: string): Promise<T> {
+  return fetch(path).then((res) => parseJson<T>(res));
+}
+
+function postJson<T>(path: string, body?: unknown): Promise<T> {
+  return fetch(path, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+  }).then((res) => parseJson<T>(res));
+}
+
+function post(path: string, body?: unknown): void {
+  postJson(path, body).catch((err: Error) => showError(err.message));
+}
+
+// ---------- dashboard ----------
 
 function renderCard(slot: Slot): string {
   const occupied = slot.status !== 'vazio';
@@ -87,18 +108,134 @@ function render(): void {
 function connect(): void {
   const source = new EventSource('/events');
   source.onmessage = (event) => {
-    state = JSON.parse(event.data) as State;
+    const payload = JSON.parse(event.data) as EventsPayload;
+    if (!('slots' in payload)) return; // setup mode: the form is already showing, the first real State follows the save
+    state = payload;
     render();
   };
   source.onerror = () => showError('conexão com o Agent Hive perdida; reconectando…');
 }
+
+// ---------- setup form ----------
+
+function setupError(message?: string): void {
+  $('setup-error').textContent = message ?? '';
+}
+
+function fillSelect(select: HTMLSelectElement, options: { value: string; label: string }[], selected?: string): void {
+  select.innerHTML = options
+    .map((o) => `<option value="${esc(o.value)}"${o.value === selected ? ' selected' : ''}>${esc(o.label)}</option>`)
+    .join('');
+}
+
+function ownerValue(): string {
+  return $<HTMLInputElement>('owner').value.trim();
+}
+
+async function loadColumns(): Promise<void> {
+  const owner = ownerValue();
+  const number = $<HTMLSelectElement>('project').value;
+  if (!owner || !number) return;
+  setupError();
+  try {
+    const options = await getJson<string[]>(`/setup/columns?owner=${encodeURIComponent(owner)}&number=${encodeURIComponent(number)}`);
+    const current = setupInfo?.config;
+    for (const key of STATUS_KEYS) {
+      const wanted = current && options.includes(current.status[key]) ? current.status[key] : PRESELECT[key];
+      fillSelect($(COLUMN_SELECT[key]), options.map((o) => ({ value: o, label: o })), wanted);
+    }
+  } catch (err) {
+    setupError((err as Error).message);
+  }
+}
+
+async function loadProjects(selectedNumber?: number): Promise<void> {
+  const owner = ownerValue();
+  if (!owner) {
+    setupError('informe o owner (@me, usuário ou org)');
+    return;
+  }
+  setupError();
+  try {
+    const projects = await getJson<ProjectSummary[]>(`/setup/projects?owner=${encodeURIComponent(owner)}`);
+    fillSelect(
+      $('project'),
+      projects.map((p) => ({ value: String(p.number), label: `#${p.number} ${p.title}` })),
+      selectedNumber === undefined ? undefined : String(selectedNumber),
+    );
+    if (projects.length === 0) {
+      setupError(`nenhum project aberto em ${owner}`);
+      return;
+    }
+    await loadColumns();
+  } catch (err) {
+    setupError((err as Error).message);
+  }
+}
+
+async function openSetup(): Promise<void> {
+  const config = setupInfo?.config;
+  document.body.classList.add('setup');
+  $<HTMLButtonElement>('cancel').hidden = !setupInfo?.configured;
+  $<HTMLInputElement>('owner').value = config?.project.owner ?? DEFAULT_OWNER;
+  $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
+  setupError();
+  await loadProjects(config?.project.number);
+}
+
+function closeSetup(): void {
+  document.body.classList.remove('setup');
+}
+
+async function saveSetup(): Promise<void> {
+  const projectValue = $<HTMLSelectElement>('project').value;
+  if (!projectValue) {
+    setupError('escolha um project');
+    return;
+  }
+  const body: SetupBody = {
+    project: { owner: ownerValue(), number: Number(projectValue) },
+    status: {
+      queue: $<HTMLSelectElement>(COLUMN_SELECT.queue).value,
+      working: $<HTMLSelectElement>(COLUMN_SELECT.working).value,
+      review: $<HTMLSelectElement>(COLUMN_SELECT.review).value,
+    },
+    maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
+  };
+  const save = $<HTMLButtonElement>('save');
+  save.disabled = true;
+  setupError();
+  try {
+    const result = await postJson<SetupResult>('/setup', body);
+    setupInfo = await getJson<SetupInfo>('/setup');
+    closeSetup();
+    showNotice(result.restartForPort ? `reinicie o Hive pra usar a porta ${result.restartForPort}` : undefined);
+  } catch (err) {
+    setupError((err as Error).message);
+  } finally {
+    save.disabled = false;
+  }
+}
+
+async function init(): Promise<void> {
+  try {
+    setupInfo = await getJson<SetupInfo>('/setup');
+  } catch (err) {
+    showError((err as Error).message);
+    return;
+  }
+  if (!setupInfo.configured) await openSetup();
+  connect();
+}
+
+// ---------- events ----------
 
 $('grid').addEventListener('click', (event) => {
   const target = event.target as HTMLElement;
   const killId = target.dataset.kill;
   if (killId) {
     event.stopPropagation();
-    if (confirm('Matar esse worker? A task volta pra fila.')) void post(`/slots/${killId}/kill`);
+    if (confirm('Matar esse worker? A task volta pra fila.')) post(`/slots/${killId}/kill`);
     return;
   }
   const card = target.closest<HTMLElement>('.card.occupied');
@@ -109,16 +246,25 @@ $('grid').addEventListener('click', (event) => {
 
 $('max').addEventListener('change', (event) => {
   const value = Number((event.target as HTMLInputElement).value);
-  if (Number.isInteger(value) && value >= 0) void post('/config', { maxConcurrent: value });
+  if (Number.isInteger(value) && value >= 0) post('/config', { maxConcurrent: value });
 });
-$('refresh').addEventListener('click', () => void post('/board/refresh'));
+$('refresh').addEventListener('click', () => post('/board/refresh'));
 $('focus').addEventListener('click', () => {
-  if (selectedSlotId) void post(`/slots/${selectedSlotId}/focus`);
+  if (selectedSlotId) post(`/slots/${selectedSlotId}/focus`);
 });
 $('close').addEventListener('click', () => {
   selectedSlotId = undefined;
   renderDetail();
 });
 
+$('configure').addEventListener('click', () => void openSetup());
+$('load-projects').addEventListener('click', () => void loadProjects());
+$('project').addEventListener('change', () => void loadColumns());
+$('setup').addEventListener('submit', (event) => {
+  event.preventDefault();
+  void saveSetup();
+});
+$('cancel').addEventListener('click', closeSetup);
+
 setInterval(render, RERENDER_MS);
-connect();
+void init();

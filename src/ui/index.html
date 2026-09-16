@@ -16,9 +16,12 @@
   header label { color: var(--muted); display: flex; gap: 8px; align-items: center; }
   input[type=number] { width: 64px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
   button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
   button.danger { border-color: var(--danger); color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
+  #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
+  #notice.show { display: block; }
   main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px 20px; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
   .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--vazio); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
@@ -39,18 +42,48 @@
   #detail.show { display: block; }
   #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
   a { color: var(--review); }
+  #setup { display: none; max-width: 520px; margin: 24px auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  #setup h2 { font-size: 15px; margin: 0 0 12px; }
+  #setup label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; color: var(--muted); }
+  #setup input[type=text], #setup select, #setup input[type=number] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  #setup .row { display: flex; gap: 8px; align-items: flex-end; }
+  #setup .row label { flex: 1; }
+  #setup .row button { margin-bottom: 12px; }
+  #setup-error { color: var(--danger); min-height: 1.4em; margin-bottom: 8px; white-space: pre-wrap; }
+  #setup .actions { display: flex; gap: 8px; }
+  body.setup #setup { display: block; }
+  body.setup main, body.setup .dash, body.setup #configure { display: none; }
   @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Agent Hive</h1>
-  <span id="summary">0/0 workers ativos</span>
-  <label>máx. workers <input id="max" type="number" min="0" step="1"></label>
-  <button id="refresh">atualizar board</button>
-  <span id="polled" style="color: var(--muted); margin-left: auto;"></span>
+  <span id="summary" class="dash">0/0 workers ativos</span>
+  <label class="dash">máx. workers <input id="max" type="number" min="0" step="1"></label>
+  <button id="refresh" class="dash">atualizar board</button>
+  <button id="configure">configurar</button>
+  <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
 </header>
 <div id="error"></div>
+<div id="notice"></div>
+<form id="setup">
+  <h2>configuração do board</h2>
+  <div class="row">
+    <label>owner <input id="owner" type="text" value="@me" required></label>
+    <button type="button" id="load-projects">carregar</button>
+  </div>
+  <label>project <select id="project" required><option value="">carregue os projects do owner</option></select></label>
+  <label>coluna da fila <select id="col-queue" required></select></label>
+  <label>coluna em andamento <select id="col-working" required></select></label>
+  <label>coluna em review <select id="col-review" required></select></label>
+  <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
+  <div id="setup-error"></div>
+  <div class="actions">
+    <button type="submit" id="save">salvar</button>
+    <button type="button" id="cancel">cancelar</button>
+  </div>
+</form>
 <main>
   <section id="grid"></section>
   <div>
