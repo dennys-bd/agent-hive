@@ -1,5 +1,6 @@
 import type {
-  BoardConfig, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey, Task,
+  BoardConfig, Budget, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey, Task,
+  UsageSample,
 } from '../types.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
@@ -15,6 +16,11 @@ const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
 const MARKDOWN_INPUT: Record<StatusKey, string> = { queue: 'md-queue', working: 'md-working', review: 'md-review' };
 const DEFAULT_MARKDOWN_PATH = 'board.md';
+// Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+const THOUSAND = 1_000;
+const MILLION = 1_000_000;
 
 type BoardType = BoardConfig['type'];
 
@@ -33,6 +39,23 @@ function elapsed(iso?: string): string {
   const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
+
+// 842, 12.3k, 1.2M: fits the header and the card meta
+function fmt(n: number): string {
+  if (n < THOUSAND) return String(n);
+  if (n < MILLION) return `${(n / THOUSAND).toFixed(1)}k`;
+  return `${(n / MILLION).toFixed(1)}M`;
+}
+
+function usageTotals(usage: UsageSample[], now: number): { hour: number; day: number } {
+  return usage.reduce((totals, { at, tokens }) => {
+    const age = now - Date.parse(at);
+    return { hour: totals.hour + (age < HOUR_MS ? tokens : 0), day: totals.day + (age < DAY_MS ? tokens : 0) };
+  }, { hour: 0, day: 0 });
+}
+
+const withinLimit = (total: number, limit?: number): boolean => limit === undefined || limit <= 0 || total < limit;
+const meter = (value: number, max: number): string => `<meter min="0" max="${max}" value="${value}"></meter>`;
 
 function showBanner(id: 'error' | 'notice', message?: string): void {
   const el = $(id);
@@ -69,10 +92,11 @@ function renderCard(slot: Slot): string {
   const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
   if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.vazio}</div></div>`;
   const marks = `${slot.draining ? ' · drenando' : ''}${slot.paused ? ' · pausado' : ''}`;
+  const tokens = slot.tokens === undefined ? '' : ` · ${fmt(slot.tokens)} tokens`;
   return `
     <div class="${classes}" data-id="${slot.id}">
       <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
-      <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}</div>
+      <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ?? '')}</div>
       <div class="actions"><button class="danger" data-kill="${slot.id}">kill</button></div>
@@ -120,11 +144,25 @@ function renderSignal(signal: Signal): void {
   $('signal-hint').textContent = SIGNAL_HINT[signal];
 }
 
+// Every interpolated value is a number, so no escaping is needed.
+function renderUsage(usage: UsageSample[], budget: Budget): void {
+  const { hour, day } = usageTotals(usage, Date.now());
+  const over = !withinLimit(hour, budget.maxTokensPerHour) || !withinLimit(day, budget.maxTokensPerDay);
+  const el = $('usage');
+  el.classList.toggle('over', over);
+  el.innerHTML = [
+    `tokens: ${fmt(hour)}/h`, budget.maxTokensPerHour ? meter(hour, budget.maxTokensPerHour) : '',
+    `· ${fmt(day)}/dia`, budget.maxTokensPerDay ? meter(day, budget.maxTokensPerDay) : '',
+    over ? '· sem orçamento' : '',
+  ].filter(Boolean).join(' ');
+}
+
 function render(): void {
   if (!state) return;
   const active = state.slots.filter((s) => s.status !== 'vazio').length;
   $('summary').textContent = `${active}/${state.maxConcurrent} workers ativos`;
   renderSignal(state.signal);
+  renderUsage(state.usage, state.budget);
   const max = $<HTMLInputElement>('max');
   if (document.activeElement !== max) max.value = String(state.maxConcurrent);
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
@@ -246,6 +284,19 @@ async function loadProjects(selectedNumber?: number): Promise<void> {
   }
 }
 
+const budgetField = (limit?: number): string => (limit ? String(limit) : ''); // 0 or absent = no limit = empty field
+
+// Only filled fields above 0 become keys, so hive.config.json stays clean.
+function budgetFromForm(): Budget {
+  const limit = (id: string): number | undefined => {
+    const value = Number($<HTMLInputElement>(id).value);
+    return Number.isInteger(value) && value > 0 ? value : undefined;
+  };
+  const hour = limit('budget-hour');
+  const day = limit('budget-day');
+  return { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) };
+}
+
 async function openSetup(): Promise<void> {
   const config = setupInfo?.config;
   const board = config?.board;
@@ -258,6 +309,8 @@ async function openSetup(): Promise<void> {
   for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
   $('md-options').innerHTML = '';
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
+  $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
+  $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
   $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
   setupError();
   if (board?.type !== 'markdown') await loadProjects(board?.type === 'github' ? board.number : undefined);
@@ -293,6 +346,7 @@ async function saveSetup(): Promise<void> {
     status: statusFromForm(),
     maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
     promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
+    budget: budgetFromForm(),
   };
   const save = $<HTMLButtonElement>('save');
   save.disabled = true;

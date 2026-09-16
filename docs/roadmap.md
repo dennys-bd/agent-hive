@@ -8,7 +8,7 @@ Cada item vira seu próprio ciclo spec → plan → implementação.
 | 2 | Board plugável: GitHub + Markdown | feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
 | 3 | Blockers / dependências | feito | `docs/superpowers/specs/2026-09-16-blockers-design.md` |
 | 4 | Sinal verde / amarelo / vermelho | feito | `docs/superpowers/specs/2026-09-16-signal-design.md` |
-| 5 | Orçamento de tokens | a fazer | — |
+| 5 | Orçamento de tokens | feito | `docs/superpowers/specs/2026-09-16-token-budget-design.md` |
 | 6 | Sinal dinâmico por uso de tokens | a fazer | — |
 | 7 | Board Asana | a fazer | — |
 | 8 | Board Jira | a fazer | — |
@@ -40,9 +40,13 @@ Um estado global `signal: "green" | "yellow" | "red"` que o `fill` do orquestrad
 - Plan: docs/superpowers/plans/2026-09-16-signal.md
 - PR: https://github.com/dennys-bd/agent-hive/pull/5
 
-## 5. Orçamento de tokens
+## 5. Orçamento de tokens — feito
 
 Único item que muda o modelo: hoje o orquestrador só sabe "slot vazio ou não". Precisa de (a) um sinal de uso por worker — o `Stop` hook entrega `transcript_path`, dá pra somar tokens de lá, ou ler `ccusage` — e (b) um orçamento na config (`maxTokensPerHour`, `maxTokensPerDay`). O `fill` passa a exigir "tem slot **e** tem orçamento". Estado ganha `usage`, UI ganha um medidor. Antes de virar regra, medir por alguns dias pra saber a ordem de grandeza.
+
+- Branch: worktree-hive-5-orcamento-de-tokens
+- Plan: docs/superpowers/plans/2026-09-16-token-budget.md
+- PR: https://github.com/dennys-bd/agent-hive/pull/14
 
 ## 6. Sinal dinâmico por uso de tokens
 

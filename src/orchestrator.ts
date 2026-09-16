@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Effect, HiveEvent, HookPayload, Signal, Slot, State, Status, Task } from './types.js';
+import { hasBudget, pruneUsage } from './usage.js';
 
 export interface Reduced {
   state: State;
@@ -14,7 +15,9 @@ const SLUG_MAX = 30;
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 
 export function initialState(maxConcurrent: number): State {
-  return { signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [] };
+  return {
+    signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [], usage: [], budget: {},
+  };
 }
 
 /** The one gate every spawn goes through: green and at least one free slot that is not draining. */
@@ -50,7 +53,8 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'poll': return fill(poll(state, event.tasks));
     case 'setMax': return fill(setMax(state, event.max));
     case 'setSignal': return fill(setSignal(state, event.signal));
-    case 'hook': return applyHook(state, event.workerId, event.payload, event.branch);
+    case 'setBudget': return fill(none({ ...state, budget: event.budget })); // raising the limit can open a job right away
+    case 'hook': return applyHook(state, event.workerId, event.payload, event.branch, event.tokens);
     case 'exit': return fill(exit(state, event.workerId));
     case 'kill': {
       const slot = state.slots.find((s) => s.id === event.slotId);
@@ -75,7 +79,8 @@ function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced 
 
 function fill(reduced: Reduced): Reduced {
   const { state, effects } = reduced;
-  if (!canStart(state.signal, state.slots)) return reduced; // yellow / red: whatever happened stands, nothing new starts
+  // yellow / red or no budget left: whatever happened stands, nothing new starts
+  if (!canStart(state.signal, state.slots) || !hasBudget(state.usage, state.budget, Date.now())) return reduced;
   let queue = state.queue;
   const spawned: Effect[] = [];
   const slots = state.slots.map((slot) => {
@@ -158,9 +163,22 @@ function activeStatus(slot: Slot): Status {
   return slot.prUrl ? 'aguardando_review' : 'trabalhando';
 }
 
-function applyHook(state: State, workerId: string, p: HookPayload, branch?: string): Reduced {
-  const slot = state.slots.find((s) => s.workerId === workerId);
-  if (!slot || slot.status === 'vazio') return none(state);
+// One sample per turn: the delta against the total seen at this worker's previous turn end. A smaller total means the
+// transcript was replaced, so the whole new total counts. A delta of 0 adds nothing; pruning happens on insert.
+function recordUsage(state: State, slot: Slot, tokens: number): State {
+  const previous = slot.tokens ?? 0;
+  const delta = tokens >= previous ? tokens - previous : tokens;
+  const now = new Date();
+  const slots = state.slots.map((s) => (s.workerId === slot.workerId ? { ...s, tokens } : s));
+  const usage = delta > 0 ? pruneUsage([...state.usage, { at: now.toISOString(), tokens: delta }], now.getTime()) : state.usage;
+  return { ...state, slots, usage };
+}
+
+function applyHook(initial: State, workerId: string, p: HookPayload, branch?: string, tokens?: number): Reduced {
+  const slot = initial.slots.find((s) => s.workerId === workerId);
+  if (!slot || slot.status === 'vazio') return none(initial);
+  // Only the server sets `tokens` (Stop / SessionEnd): the sample lands first, then the event applies on top of it
+  const state = tokens === undefined ? initial : recordUsage(initial, slot, tokens);
   switch (p.hook_event_name) {
     case 'SessionStart':
       return patch(state, workerId, { worktree: p.cwd, branch });

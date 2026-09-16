@@ -2,6 +2,16 @@ export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_re
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
+export interface Budget {
+  maxTokensPerHour?: number; // absent or 0 = no limit
+  maxTokensPerDay?: number;
+}
+
+export interface UsageSample {
+  at: string; // ISO, when the Stop / SessionEnd arrived
+  tokens: number; // delta since the worker's previous turn end
+}
+
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
   | { type: 'markdown'; path: string };
@@ -21,6 +31,7 @@ export interface Slot {
   status: Status;
   draining?: boolean;
   paused?: boolean; // stopped at a Stop hook under a red signal; cleared when the signal leaves red or the worker acts again
+  tokens?: number; // session total at the last Stop / SessionEnd; the next delta is measured against it
   task?: Task;
   slug?: string;
   worktree?: string;
@@ -37,6 +48,8 @@ export interface State {
   maxConcurrent: number;
   slots: Slot[];
   queue: Task[];
+  usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
+  budget: Budget; // copied from Config.budget by setBudget
   lastPolledAt?: string;
   error?: string;
 }
@@ -48,6 +61,7 @@ export interface Config {
   port: number;
   claudeArgs: string[];
   promptTemplate: string;
+  budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
 }
 
 export interface HookPayload {
@@ -58,6 +72,7 @@ export interface HookPayload {
   tool_name?: string;
   tool_input?: unknown;
   tool_response?: unknown;
+  transcript_path?: string; // Claude Code sends it on every hook; the server reads it only on Stop / SessionEnd
 }
 
 export type HiveEvent =
@@ -65,7 +80,8 @@ export type HiveEvent =
   | { type: 'poll'; tasks: Task[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
-  | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string }
+  | { type: 'setBudget'; budget: Budget }
+  | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
   | { type: 'spawned'; workerId: string; itermSessionId: string }
@@ -94,6 +110,8 @@ export interface SetupBody {
   maxConcurrent: number;
   /** Optional; blank or missing keeps the current template (or the default on first setup). */
   promptTemplate?: string;
+  /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
+  budget?: Budget;
 }
 
 export interface SetupResult {

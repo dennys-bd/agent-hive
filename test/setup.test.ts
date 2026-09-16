@@ -283,3 +283,45 @@ test('POST /signal answers 409 before setup, 400 for an unknown value, then 200 
   // persisted with the rest of the state, so a Hive closed under red reopens under red
   assert.equal((JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State).signal, 'red');
 });
+
+test('POST /setup with a budget writes it to hive.config.json, GET /setup returns it and the State carries it', async (t) => {
+  const { base, repo, server } = await start(t);
+  const budget = { maxTokensPerHour: 50_000, maxTokensPerDay: 400_000 };
+  assert.equal((await postSetup(base, { ...BODY, budget })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).budget, budget);
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.budget, budget);
+  assert.deepEqual(server.getState()?.budget, budget);
+  const res = await fetch(`${base}/events`);
+  const reader = res.body!.getReader();
+  const { value } = await reader.read();
+  await reader.cancel();
+  const streamed = JSON.parse(new TextDecoder().decode(value).replace(/^data: /, '')) as State;
+  assert.deepEqual(streamed.budget, budget);
+  assert.deepEqual(streamed.usage, []);
+  // a save without budget keeps the file's; a save with {} clears it (the form always sends budget)
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).budget, budget);
+  assert.equal((await postSetup(base, { ...BODY, budget: {} })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).budget, {});
+  assert.deepEqual(server.getState()?.budget, {});
+  const bad = await postSetup(base, { ...BODY, budget: { maxTokensPerHour: -5 } });
+  assert.equal(bad.status, 400);
+  assert.match((await json<{ error: string }>(bad)).error, /budget\.maxTokensPerHour/);
+});
+
+test('POST /hooks/event Stop with a transcript_path for an unknown worker answers 200, reads nothing and keeps serving', async (t) => {
+  const { base, repo, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const transcript = join(repo, 'transcript.jsonl');
+  await writeFile(transcript, `${JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: { input_tokens: 10, output_tokens: 5 } } })}\n`);
+  const postHook = (body: unknown): Promise<Response> =>
+    fetch(`${base}/hooks/event`, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': 'ghost' }, body: JSON.stringify(body),
+    });
+  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: transcript })).status, 200);
+  assert.equal((await postHook({ hook_event_name: 'SessionEnd', transcript_path: join(repo, 'missing.jsonl') })).status, 200);
+  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: 'relative.jsonl' })).status, 200);
+  await sleep(20); // the route answers before dispatching; let the handlers finish
+  assert.deepEqual(server.getState()?.usage, [], 'no occupied slot matches, so nothing is read or recorded');
+  assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
+});
