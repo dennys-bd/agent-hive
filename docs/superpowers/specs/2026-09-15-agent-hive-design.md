@@ -87,7 +87,7 @@ trabalhando | esperando_voce ──PostToolUse(Bash, cmd contém "gh pr create",
 qualquer ocupado ──SessionEnd | POST /hooks/exit──▶ vazio (ou removido, se drenando) → fill()
 ```
 
-- `Stop` só atualiza `lastEvent = "turno encerrado"`.
+- `Stop` atualiza `lastEvent = "turno encerrado"`, limpa `question` e volta o slot pro status ativo (`trabalhando` ou `aguardando_review`); um `idle_prompt` posterior o deixa amarelo de novo.
 - Saída sem `prUrl`: item volta pra `status.queue` no board e pro fim de `state.queue`.
 - Saída com `prUrl`: item fica em `status.review`; slot esvazia.
 - `aguardando_review` continua ocupando o slot enquanto a sessão viver (você pode pedir ajustes no PR). Slot libera na saída da sessão.
@@ -152,7 +152,7 @@ Tabela evento → efeito:
 | `UserPromptSubmit`, `PreToolUse` | `status = trabalhando`; `lastEvent` = `"<tool_name>: <resumo do tool_input>"` |
 | `Notification` | se `notification_type ∈ {permission_prompt, idle_prompt, elicitation_*, agent_needs_input}`: `status = esperando_voce`, `question = message`; senão ignora |
 | `PostToolUse` | se `tool_input.command` contém `gh pr create` e `tool_response` contém `https://github.com/.../pull/N`: `status = aguardando_review`, `prUrl`, `board.setStatus(review)` |
-| `Stop` | `lastEvent = "turno encerrado"` |
+| `Stop` | `status = trabalhando` (ou `aguardando_review` se já tem `prUrl`); `question = undefined`; `lastEvent = "turno encerrado"` |
 | `SessionEnd` | igual a `exit` |
 
 Header `x-hive-worker` desconhecido → 200 e ignora (sessão de outro Hive/repo).

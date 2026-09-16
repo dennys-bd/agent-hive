@@ -150,12 +150,20 @@ test('PostToolUse for other commands changes nothing', () => {
   assert.equal(effects.length, 0);
 });
 
-test('Stop only updates lastEvent', () => {
+test('Stop returns a yellow slot to its active status and clears the question', () => {
   const first = filled(1, 1).state;
-  const { state, effects } = hook(first, first.slots[0].workerId!, { hook_event_name: 'Stop' });
+  const id = first.slots[0].workerId!;
+  const yellow = hook(first, id, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' }).state;
+  const { state, effects } = hook(yellow, id, { hook_event_name: 'Stop' });
   assert.equal(state.slots[0].status, 'trabalhando');
+  assert.equal(state.slots[0].question, undefined);
   assert.equal(state.slots[0].lastEvent, 'turno encerrado');
   assert.equal(effects.length, 0);
+  const reviewed = hook(first, id, {
+    hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
+  }).state;
+  const yellowReviewed = hook(reviewed, id, { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'y' }).state;
+  assert.equal(hook(yellowReviewed, id, { hook_event_name: 'Stop' }).state.slots[0].status, 'aguardando_review');
 });
 
 test('exit without PR empties the slot, requeues the task at the end and pulls the next one', () => {

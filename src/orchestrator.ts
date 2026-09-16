@@ -156,7 +156,7 @@ function applyHook(state: State, workerId: string, p: HookPayload, branch?: stri
       return { ...patched, effects: slot.task ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [] };
     }
     case 'Stop':
-      return patch(state, workerId, { lastEvent: 'turno encerrado' });
+      return patch(state, workerId, { status: activeStatus(slot), question: undefined, lastEvent: 'turno encerrado' });
     case 'SessionEnd':
       return fill(exit(state, workerId));
     default:
