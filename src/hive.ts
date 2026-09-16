@@ -13,7 +13,7 @@ export async function bootHive(repo: string): Promise<BootedHive> {
   const config = await loadConfigIfPresent(repo);
   if (!config) return bootSetupMode(repo);
   const { hiveDir, hooksPath, promptsDir } = await prepareHiveDir(repo, config.port);
-  const board = createBoard(config);
+  const board = createBoard(config, { repo });
   await board.resolveFields();
   const saved = await loadState(hiveDir, config.maxConcurrent);
   const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved });

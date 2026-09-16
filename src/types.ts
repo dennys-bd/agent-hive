@@ -98,3 +98,11 @@ export interface SetupResult {
 
 /** What `GET /events` streams: the whole State, or a marker while the Hive has no config yet. */
 export type EventsPayload = State | { configured: false };
+
+/** What every board adapter implements; `src/board.ts` picks one by `config.board.type`. */
+export interface Board {
+  resolveFields(): Promise<void>; // validates the config against the source (options / table exist)
+  listQueue(): Promise<Task[]>; // tasks in status.queue, in source order
+  setStatus(itemId: string, key: StatusKey): Promise<void>;
+  setupOptions(): Promise<string[]>; // status values available, for the setup form
+}

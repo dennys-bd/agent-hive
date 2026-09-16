@@ -5,11 +5,10 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Board } from '../src/board.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { Config, SetupBody, SetupInfo } from '../src/types.js';
+import type { Board, Config, SetupBody, SetupInfo } from '../src/types.js';
 
 const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 const BODY: SetupBody = {
@@ -38,6 +37,9 @@ function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Bo
         return [{ itemId: 'I1', id: '1', title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
       },
       async setStatus() {},
+      async setupOptions() {
+        return OPTIONS;
+      },
     };
   };
   return { factory, configs };

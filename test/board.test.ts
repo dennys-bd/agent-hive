@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBoard, listProjects, listStatusOptions } from '../src/board.js';
+import { createBoard } from '../src/board.js';
+import { listProjects, listStatusOptions } from '../src/boards/github.js';
 import { parseConfig } from '../src/config.js';
+
+const REPO = '/repo'; // the github adapter never reads it
 
 const config = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 } });
 
@@ -31,7 +34,7 @@ test('resolveFields maps configured status names to option ids and stores the pr
     'project field-list 6': fields,
     'project item-edit --id': '',
   });
-  const board = createBoard(config, exec);
+  const board = createBoard(config, { repo: REPO, exec });
   await board.resolveFields();
   await board.setStatus('ITEM_1', 'review');
   const edit = calls.find((c) => c[1] === 'item-edit');
@@ -41,12 +44,12 @@ test('resolveFields maps configured status names to option ids and stores the pr
 
 test('resolveFields fails naming the missing option and listing the available ones', async () => {
   const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, status: { queue: 'Todo' } });
-  const board = createBoard(bad, fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields }).exec);
+  const board = createBoard(bad, { repo: REPO, exec: fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields }).exec });
   await assert.rejects(board.resolveFields(), /"Todo".*Ready, In progress, In review, Done/s);
 });
 
 test('setStatus before resolveFields throws', async () => {
-  const board = createBoard(config, fakeExec({}).exec);
+  const board = createBoard(config, { repo: REPO, exec: fakeExec({}).exec });
   await assert.rejects(board.setStatus('x', 'queue'), /not resolved/);
 });
 
@@ -60,7 +63,7 @@ test('listQueue returns only issues in the queue column, in board order', async 
       { id: 'I5', title: 'No status', content: { type: 'Issue', number: 5, title: 'E', body: '', url: 'https://github.com/acme/r/issues/5' } },
     ],
   };
-  const board = createBoard(config, fakeExec({ 'project item-list 6': items }).exec);
+  const board = createBoard(config, { repo: REPO, exec: fakeExec({ 'project item-list 6': items }).exec });
   const queue = await board.listQueue();
   assert.deepEqual(queue, [
     { itemId: 'I1', id: '1', title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
@@ -93,4 +96,10 @@ test('listStatusOptions returns the Status option names in board order without r
 test('listStatusOptions fails when the board has no single-select Status field', async () => {
   const { exec } = fakeExec({ 'project field-list 6': { fields: [{ id: 'F_title', name: 'Title', type: 'ProjectV2Field' }] } });
   await assert.rejects(listStatusOptions('acme', 6, exec), /"Status"/);
+});
+
+test('setupOptions on a github board lists the Status option names in board order', async () => {
+  const { exec, calls } = fakeExec({ 'project field-list 6': fields });
+  assert.deepEqual(await createBoard(config, { repo: REPO, exec }).setupOptions(), ['Ready', 'In progress', 'In review', 'Done']);
+  assert.equal(calls.length, 1);
 });

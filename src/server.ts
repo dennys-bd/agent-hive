@@ -5,14 +5,15 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { createBoard, listProjects, listStatusOptions, type Board } from './board.js';
+import { createBoard } from './board.js';
+import { listProjects, listStatusOptions } from './boards/github.js';
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce } from './orchestrator.js';
 import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
 import type {
-  Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Slot, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Slot, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -75,7 +76,8 @@ function errorMessage(err: unknown): string {
 }
 
 export function createServer(deps: ServerDeps): HiveServer {
-  const { repo, boardFactory = createBoard } = deps;
+  const { repo } = deps;
+  const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo }));
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
   let httpServer: HttpServer | undefined;
