@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { aliveSlugs, renderPrompt, shellQuote, workerCommand, writePrompt } from '../src/spawn.js';
+import { aliveSlugs, killWorker, renderPrompt, shellQuote, workerCommand, writePrompt } from '../src/spawn.js';
 
 const task = { itemId: 'I1', number: 7, title: 'Fix "login"', body: 'line1\n$(echo pwned) `x`', url: 'https://github.com/a/b/issues/7' };
 
@@ -40,4 +40,8 @@ test('workerCommand runs claude in the repo with hive env, worktree, hooks and p
 
 test('aliveSlugs resolves to [] for a slug with no matching process (pgrep exit 1)', async () => {
   assert.deepEqual(await aliveSlugs(['definitely-not-running-slug-xyz']), []);
+});
+
+test('killWorker resolves false when no process matches', async () => {
+  assert.equal(await killWorker('definitely-not-running-slug-xyz'), false);
 });

@@ -100,11 +100,14 @@ function worktreePattern(slug: string): string {
   return `--worktree=${slug}`;
 }
 
-export async function killWorker(slug: string): Promise<void> {
+/** Resolves true when pkill matched a process, false when nothing matched. */
+export async function killWorker(slug: string): Promise<boolean> {
   try {
     await execFileAsync('pkill', ['-f', '--', worktreePattern(slug)]);
+    return true;
   } catch (err) {
     if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
+    return false;
   }
 }
 

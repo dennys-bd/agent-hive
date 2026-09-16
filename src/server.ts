@@ -77,7 +77,13 @@ export function createServer(deps: ServerDeps): HiveServer {
         await board.setStatus(effect.itemId, effect.key).catch((err) => fail(`board.setStatus(${effect.key})`, err));
         return;
       case 'kill':
-        await killWorker(effect.slug).catch((err) => fail('kill', err));
+        try {
+          // no live process (tab closed by hand, exit signal lost): free the slot ourselves
+          const matched = await killWorker(effect.slug);
+          if (!matched) await dispatch({ type: 'exit', workerId: effect.workerId });
+        } catch (err) {
+          await fail('kill', err);
+        }
         return;
       case 'spawn':
         await spawn(effect.slot).catch((err) => fail(`spawn ${effect.slot.slug}`, err));
