@@ -1,5 +1,6 @@
 export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 export type StatusKey = 'queue' | 'working' | 'review';
+export type Signal = 'green' | 'yellow' | 'red';
 
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
@@ -19,6 +20,7 @@ export interface Slot {
   workerId?: string; // uuid per spawn; stale exit/hook signals from a previous occupant are ignored
   status: Status;
   draining?: boolean;
+  paused?: boolean; // stopped at a Stop hook under a red signal; cleared when the signal leaves red or the worker acts again
   task?: Task;
   slug?: string;
   worktree?: string;
@@ -31,6 +33,7 @@ export interface Slot {
 }
 
 export interface State {
+  signal: Signal; // runtime gate for new jobs; lives here, not in the config, so a red set by hand survives a restart
   maxConcurrent: number;
   slots: Slot[];
   queue: Task[];
@@ -61,6 +64,7 @@ export type HiveEvent =
   | { type: 'boot'; aliveSlugs: string[] }
   | { type: 'poll'; tasks: Task[] }
   | { type: 'setMax'; max: number }
+  | { type: 'setSignal'; signal: Signal }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }

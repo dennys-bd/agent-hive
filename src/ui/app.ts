@@ -1,8 +1,11 @@
-import type { BoardConfig, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Slot, State, StatusKey, Task } from '../types.js';
+import type {
+  BoardConfig, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey, Task,
+} from '../types.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
   vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
 };
+const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
 const RERENDER_MS = 30_000;
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
 const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
@@ -63,12 +66,13 @@ function post(path: string, body?: unknown): void {
 
 function renderCard(slot: Slot): string {
   const occupied = slot.status !== 'vazio';
-  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : ''].join(' ');
+  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
   if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.vazio}</div></div>`;
+  const marks = `${slot.draining ? ' · drenando' : ''}${slot.paused ? ' · pausado' : ''}`;
   return `
     <div class="${classes}" data-id="${slot.id}">
       <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
-      <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${slot.draining ? ' · drenando' : ''}</div>
+      <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ?? '')}</div>
       <div class="actions"><button class="danger" data-kill="${slot.id}">kill</button></div>
@@ -109,10 +113,18 @@ function renderQueued(task: Task): string {
   return `<li>#${esc(task.id)} ${esc(task.title)}${blockers}</li>`;
 }
 
+function renderSignal(signal: Signal): void {
+  document.querySelectorAll<HTMLButtonElement>('#signal button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.signal === signal);
+  });
+  $('signal-hint').textContent = SIGNAL_HINT[signal];
+}
+
 function render(): void {
   if (!state) return;
   const active = state.slots.filter((s) => s.status !== 'vazio').length;
   $('summary').textContent = `${active}/${state.maxConcurrent} workers ativos`;
+  renderSignal(state.signal);
   const max = $<HTMLInputElement>('max');
   if (document.activeElement !== max) max.value = String(state.maxConcurrent);
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
@@ -329,6 +341,10 @@ $('max').addEventListener('change', (event) => {
   if (Number.isInteger(value) && value >= 0) post('/config', { maxConcurrent: value });
 });
 $('refresh').addEventListener('click', () => post('/board/refresh'));
+$('signal').addEventListener('click', (event) => {
+  const signal = (event.target as HTMLElement).dataset.signal;
+  if (signal) post('/signal', { signal });
+});
 $('focus').addEventListener('click', () => {
   if (selectedSlotId) post(`/slots/${selectedSlotId}/focus`);
 });

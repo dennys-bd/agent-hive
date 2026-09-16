@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
-import type { HookPayload, State, Task } from '../src/types.js';
+import { canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
+import type { HookPayload, Signal, State, Task } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -12,6 +12,8 @@ const filled = (max: number, n: number) => reduce(initialState(max), { type: 'po
 const hook = (state: State, workerId: string, payload: Partial<HookPayload> & { hook_event_name: string }) =>
   reduce(state, { type: 'hook', workerId, payload });
 const occupied = (s: State) => s.slots.filter((x) => x.status !== 'vazio');
+const signaled = (state: State, signal: Signal) => reduce(state, { type: 'setSignal', signal });
+const stopped = (state: State, workerId: string) => hook(state, workerId, { hook_event_name: 'Stop' }).state;
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -38,7 +40,13 @@ test('reducer never mutates its input', () => {
   const before = initialState(2);
   const snapshot = JSON.stringify(before);
   reduce(before, { type: 'poll', tasks: tasks(3) });
+  reduce(before, { type: 'setSignal', signal: 'red' });
   assert.equal(JSON.stringify(before), snapshot);
+  const first = filled(1, 1).state;
+  const paused = stopped(signaled(first, 'red').state, first.slots[0].workerId!);
+  const pausedSnapshot = JSON.stringify(paused);
+  reduce(paused, { type: 'setSignal', signal: 'green' });
+  assert.equal(JSON.stringify(paused), pausedSnapshot);
 });
 
 test('setMax up adds empty slots and fills them from the queue', () => {
@@ -261,6 +269,96 @@ test('error sets and poll clears state.error', () => {
   const cleared = reduce(withError, { type: 'poll', tasks: [] }).state;
   assert.equal(cleared.error, undefined);
   assert.ok(cleared.lastPolledAt);
+});
+
+test('initialState starts green and canStart is true only under green with a free, non-draining slot', () => {
+  const idle = initialState(2);
+  assert.equal(idle.signal, 'green');
+  assert.equal(canStart('green', idle.slots), true);
+  assert.equal(canStart('green', filled(2, 2).state.slots), false, 'all occupied');
+  assert.equal(canStart('green', [{ id: 'x', status: 'vazio', draining: true }]), false, 'draining does not count as free');
+  assert.equal(canStart('green', []), false, 'no slots');
+  assert.equal(canStart('yellow', idle.slots), false);
+  assert.equal(canStart('red', idle.slots), false);
+});
+
+test('poll under yellow queues every task and spawns nothing', () => {
+  const yellow = signaled(initialState(2), 'yellow').state;
+  const { state, effects } = reduce(yellow, { type: 'poll', tasks: tasks(3) });
+  assert.deepEqual(state.queue.map((t) => t.id), ['1', '2', '3']);
+  assert.equal(occupied(state).length, 0);
+  assert.equal(effects.length, 0);
+});
+
+test('setMax up under red adds empty slots without spawning', () => {
+  const red = signaled(filled(1, 3).state, 'red').state;
+  const { state, effects } = reduce(red, { type: 'setMax', max: 3 });
+  assert.equal(state.maxConcurrent, 3);
+  assert.equal(state.slots.length, 3);
+  assert.equal(occupied(state).length, 1);
+  assert.deepEqual(state.queue.map((t) => t.id), ['2', '3']);
+  assert.equal(effects.length, 0);
+});
+
+test('exit under yellow returns the task to the queue without pulling the next one', () => {
+  const yellow = signaled(filled(1, 2).state, 'yellow').state;
+  const { state, effects } = reduce(yellow, { type: 'exit', workerId: yellow.slots[0].workerId! });
+  assert.equal(state.slots[0].status, 'vazio');
+  assert.deepEqual(state.queue.map((t) => t.id), ['2', '1']);
+  assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
+});
+
+test('setSignal green fills a free slot from the queue; yellow to red emits nothing', () => {
+  const yellow = signaled(initialState(1), 'yellow').state;
+  const queued = reduce(yellow, { type: 'poll', tasks: tasks(2) }).state;
+  const red = signaled(queued, 'red');
+  assert.equal(red.state.signal, 'red');
+  assert.equal(occupied(red.state).length, 0);
+  assert.equal(red.effects.length, 0);
+  const green = signaled(red.state, 'green');
+  assert.equal(green.state.signal, 'green');
+  assert.equal(green.state.slots[0].task?.id, '1');
+  assert.deepEqual(green.state.queue.map((t) => t.id), ['2']);
+  assert.deepEqual(green.effects.map((e) => e.type), ['setStatus', 'spawn']);
+});
+
+test('Stop under red marks the slot paused and keeps its status; under green it does not', () => {
+  const first = filled(2, 2).state;
+  const [working, reviewing] = first.slots.map((s) => s.workerId!);
+  const reviewed = hook(first, reviewing, {
+    hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
+  }).state;
+  const red = signaled(reviewed, 'red').state;
+  const one = stopped(red, working);
+  assert.equal(one.slots[0].paused, true);
+  assert.equal(one.slots[0].status, 'trabalhando');
+  assert.equal(one.slots[0].lastEvent, 'pausado: sinal red');
+  const two = stopped(one, reviewing);
+  assert.equal(two.slots[1].paused, true);
+  assert.equal(two.slots[1].status, 'aguardando_review');
+  const green = stopped(reviewed, working);
+  assert.equal(green.slots[0].paused, undefined);
+  assert.equal(green.slots[0].lastEvent, 'turno encerrado');
+});
+
+test('UserPromptSubmit and PreToolUse clear paused', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const paused = stopped(signaled(first, 'red').state, id);
+  assert.equal(paused.slots[0].paused, true);
+  assert.equal(hook(paused, id, { hook_event_name: 'UserPromptSubmit' }).state.slots[0].paused, undefined);
+  const tool = hook(paused, id, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }).state;
+  assert.equal(tool.slots[0].paused, undefined);
+  assert.equal(tool.slots[0].status, 'trabalhando');
+});
+
+test('setSignal to green or yellow clears paused on every slot; red again keeps it', () => {
+  const first = filled(2, 2).state;
+  const paused = first.slots.reduce((s, slot) => stopped(s, slot.workerId!), signaled(first, 'red').state);
+  assert.deepEqual(paused.slots.map((s) => s.paused), [true, true]);
+  assert.deepEqual(signaled(paused, 'red').state.slots.map((s) => s.paused), [true, true]);
+  assert.deepEqual(signaled(paused, 'yellow').state.slots.map((s) => s.paused), [undefined, undefined]);
+  assert.deepEqual(signaled(paused, 'green').state.slots.map((s) => s.paused), [undefined, undefined]);
 });
 
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {

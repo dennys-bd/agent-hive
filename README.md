@@ -48,6 +48,8 @@ Without a `hive.config.json` in the repo, the window opens on a setup form: boar
 
 On screen: `N/M workers ativos`, the `máx. workers` field (changes live), the queue, and one card per slot. Click a card to see the pending question or the PR link and to jump to its terminal tab; `kill` stops the worker and returns the task to the queue.
 
+The `green` / `yellow` / `red` buttons set a global signal (also `POST /signal {"signal":"red"}`): yellow opens no new job while live workers finish; red is manual mode: nothing new opens and each worker is marked `pausado` when its current turn ends, until the signal leaves red or someone types in its terminal. Nothing is ever killed mid-turn. The signal is saved with the state, so the Hive reopens in the same color.
+
 ## Boards
 
 ### GitHub Projects v2
