@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createBoard } from './board.js';
-import { listProjects, listStatusOptions } from './boards/github.js';
+import { listProjects } from './boards/github.js';
+import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce } from './orchestrator.js';
@@ -73,6 +74,12 @@ export async function detectAlive(state: State): Promise<string[]> {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+// Query values are strings: `number` is converted, the rest goes to parseConfig as is so it names the bad field.
+function boardFromQuery(query: Request['query']): Record<string, unknown> {
+  const { type, owner, number, path } = query;
+  return { type, owner, path, number: typeof number === 'string' && number !== '' ? Number(number) : number };
 }
 
 export function createServer(deps: ServerDeps): HiveServer {
@@ -278,14 +285,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   app.get('/setup/columns', async (req: Request, res: Response) => {
-    const { owner, number } = req.query;
-    const parsed = typeof number === 'string' && number !== '' ? Number(number) : Number.NaN;
-    if (typeof owner !== 'string' || owner === '' || !Number.isInteger(parsed) || parsed < 0) {
-      res.status(HTTP_BAD_REQUEST).json({ error: 'owner e number obrigatórios' });
+    let config: Config;
+    try {
+      config = parseConfig({ board: boardFromQuery(req.query) }); // defaults fill the rest; only the board matters here
+    } catch (err) {
+      res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
     }
     try {
-      res.json(await listStatusOptions(owner, parsed));
+      res.json(await boardFactory(config).setupOptions());
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
@@ -312,7 +320,21 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         promptTemplate: promptTemplateFrom(body, current),
       });
-      await boardFactory(config).resolveFields(); // validates columns against the real board before anything is written
+    } catch (err) {
+      res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
+      return;
+    }
+    // The only write allowed before validation: a markdown board that does not exist yet gets the header and an example row.
+    if (config.board.type === 'markdown') {
+      try {
+        await createMarkdownFileIfMissing(markdownPath(repo, config.board.path), config.status.queue);
+      } catch (err) {
+        res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
+        return;
+      }
+    }
+    try {
+      await boardFactory(config).resolveFields(); // validates against the real board before the config is written
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;

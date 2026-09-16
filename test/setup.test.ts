@@ -8,6 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
+import { newBoardText } from '../src/boards/markdown.js';
 import type { Board, Config, SetupBody, SetupInfo } from '../src/types.js';
 
 const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
@@ -87,10 +88,18 @@ test('GET /events streams { configured: false } until setup is saved', async (t)
   assert.match(new TextDecoder().decode(value), /^data: \{"configured":false\}\n\n/);
 });
 
-test('setup listings reject a missing owner or number with 400', async (t) => {
+test('setup listings reject a missing owner, number, path or type with 400 naming the field', async (t) => {
   const { base } = await start(t);
   assert.equal((await fetch(`${base}/setup/projects`)).status, 400);
-  assert.equal((await fetch(`${base}/setup/columns?owner=acme`)).status, 400);
+  const noNumber = await fetch(`${base}/setup/columns?type=github&owner=acme`);
+  assert.equal(noNumber.status, 400);
+  assert.match((await json<{ error: string }>(noNumber)).error, /board\.number/);
+  const noPath = await fetch(`${base}/setup/columns?type=markdown`);
+  assert.equal(noPath.status, 400);
+  assert.match((await json<{ error: string }>(noPath)).error, /board\.path/);
+  const noType = await fetch(`${base}/setup/columns?owner=acme&number=6`);
+  assert.equal(noType.status, 400);
+  assert.match((await json<{ error: string }>(noType)).error, /board\.type/);
 });
 
 test('dashboard routes answer 409 before setup', async (t) => {
@@ -209,4 +218,31 @@ test('POST /setup with a non-string promptTemplate answers 400 naming the field'
   const res = await postSetup(base, { ...BODY, promptTemplate: 42 });
   assert.equal(res.status, 400);
   assert.match((await json<{ error: string }>(res)).error, /promptTemplate/);
+});
+
+test('GET /setup/columns builds the board from the query and answers its setupOptions', async (t) => {
+  const { base, configs } = await start(t);
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=board.md`)), OPTIONS);
+  assert.deepEqual(configs.at(-1)?.board, { type: 'markdown', path: 'board.md' });
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=github&owner=acme&number=6`)), OPTIONS);
+  assert.deepEqual(configs.at(-1)?.board, { type: 'github', owner: 'acme', number: 6 });
+});
+
+test('POST /setup with a markdown board creates the file and boots the queue from it (real factory, no gh)', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
+  const server = createServer({ repo }); // default factory: the markdown adapter only touches a local file
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  const body: SetupBody = { ...BODY, board: { type: 'markdown', path: 'docs/board.md' } };
+  const file = join(repo, 'docs', 'board.md');
+  assert.equal((await postSetup(base, body)).status, 200);
+  assert.equal(await readFile(file, 'utf8'), newBoardText('Ready'));
+  assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-1', 'Exemplo', file]]);
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
+  // an existing file is never rewritten by setup, and its statuses feed the columns route
+  await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
+  assert.equal((await postSetup(base, body)).status, 200);
+  assert.deepEqual(server.getState()?.queue, []);
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo', 'Ready', 'In progress', 'In review', 'Done']);
 });
