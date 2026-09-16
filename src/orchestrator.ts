@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Effect, HiveEvent, HookPayload, Slot, State, Status, Task } from './types.js';
+import type { Effect, HiveEvent, HookPayload, Signal, Slot, State, Status, Task } from './types.js';
 
 export interface Reduced {
   state: State;
@@ -11,9 +11,15 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 const SLUG_MAX = 30;
+export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 
 export function initialState(maxConcurrent: number): State {
-  return { maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [] };
+  return { signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [] };
+}
+
+/** The one gate every spawn goes through: green and at least one free slot that is not draining. */
+export function canStart(signal: Signal, slots: Slot[]): boolean {
+  return signal === 'green' && slots.some((s) => s.status === 'vazio' && !s.draining);
 }
 
 function kebab(text: string): string {
@@ -43,6 +49,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'boot': return boot(state, event.aliveSlugs); // no fill: bootHive polls right after, and the board is the truth
     case 'poll': return fill(poll(state, event.tasks));
     case 'setMax': return fill(setMax(state, event.max));
+    case 'setSignal': return fill(setSignal(state, event.signal));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch);
     case 'exit': return fill(exit(state, event.workerId));
     case 'kill': {
@@ -66,7 +73,9 @@ function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced 
   return none({ ...state, slots: state.slots.map((s) => (s.workerId === workerId ? { ...s, ...changes } : s)) });
 }
 
-function fill({ state, effects }: Reduced): Reduced {
+function fill(reduced: Reduced): Reduced {
+  const { state, effects } = reduced;
+  if (!canStart(state.signal, state.slots)) return reduced; // yellow / red: whatever happened stands, nothing new starts
   let queue = state.queue;
   const spawned: Effect[] = [];
   const slots = state.slots.map((slot) => {
@@ -111,6 +120,12 @@ function setMax(state: State, max: number): Reduced {
   return none({ ...state, maxConcurrent: max, slots: [...kept, ...extra] });
 }
 
+// Leaving red releases every paused mark. The Hive never types in a worker's terminal: this mark is all it releases.
+function setSignal(state: State, signal: Signal): Reduced {
+  const slots = signal === 'red' ? state.slots : state.slots.map((s) => ({ ...s, paused: undefined }));
+  return none({ ...state, signal, slots });
+}
+
 function exit(state: State, workerId: string): Reduced {
   const slot = state.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'vazio') return none(state);
@@ -150,9 +165,9 @@ function applyHook(state: State, workerId: string, p: HookPayload, branch?: stri
     case 'SessionStart':
       return patch(state, workerId, { worktree: p.cwd, branch });
     case 'UserPromptSubmit':
-      return patch(state, workerId, { status: activeStatus(slot), question: undefined, lastEvent: 'prompt enviado' });
+      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: 'prompt enviado' });
     case 'PreToolUse':
-      return patch(state, workerId, { status: activeStatus(slot), question: undefined, lastEvent: describeTool(p) });
+      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: describeTool(p) });
     case 'Notification': {
       const kind = String(p.notification_type ?? '');
       if (!WAITING_NOTIFICATIONS.includes(kind)) return none(state);
@@ -166,7 +181,11 @@ function applyHook(state: State, workerId: string, p: HookPayload, branch?: stri
       return { ...patched, effects: slot.task ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [] };
     }
     case 'Stop':
-      return patch(state, workerId, { status: activeStatus(slot), question: undefined, lastEvent: 'turno encerrado' });
+      // Red is manual mode: the worker stops by itself at the end of the turn; the mark says it stopped under red
+      return patch(state, workerId, {
+        status: activeStatus(slot), question: undefined,
+        ...(state.signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal vermelho' } : { lastEvent: 'turno encerrado' }),
+      });
     case 'SessionEnd':
       return fill(exit(state, workerId));
     default:
