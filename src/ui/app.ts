@@ -312,7 +312,7 @@ async function openSetup(): Promise<void> {
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
   $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
-  setupError();
+  setupError(setupInfo?.configured ? undefined : setupInfo?.error);
   if (board?.type !== 'markdown') await loadProjects(board?.type === 'github' ? board.number : undefined);
 }
 

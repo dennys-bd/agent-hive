@@ -47,6 +47,8 @@ export interface ServerDeps {
   runtime?: Runtime;
   state?: State;
   boardFactory?: BoardFactory;
+  /** Setup mode with a config that failed to boot: prefills the form and explains why. */
+  setupFallback?: { config: Config; error: string };
 }
 
 export interface HiveServer {
@@ -289,7 +291,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.get('/setup', (_req: Request, res: Response) => {
     const info: SetupInfo = live
       ? { configured: true, repo, config: live.runtime.config }
-      : { configured: false, repo };
+      : { configured: false, repo, ...deps.setupFallback };
     res.json(info);
   });
 
