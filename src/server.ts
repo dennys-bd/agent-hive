@@ -39,16 +39,28 @@ export function createServer(deps: ServerDeps): HiveServer {
   const { repo, config, board, hiveDir, hooksPath, promptsDir } = deps;
   let state = deps.state;
   const clients = new Set<Response>();
+  let saveChain: Promise<void> = Promise.resolve();
 
   function broadcast(): void {
     const payload = `data: ${JSON.stringify(state)}\n\n`;
     for (const res of clients) res.write(payload);
   }
 
+  // Serializes writes: dispatch calls can overlap (a hook arriving mid-poll, or the
+  // nested `spawned` dispatch inside spawn()), and two concurrent saveState calls
+  // would race on the same state.json.tmp. Chaining onto saveChain queues them, and
+  // reading `state` inside the .then ensures a queued save always persists the latest.
+  function persist(): Promise<void> {
+    saveChain = saveChain
+      .then(() => saveState(hiveDir, state))
+      .catch((err: Error) => console.error('persist failed:', err.message));
+    return saveChain;
+  }
+
   async function dispatch(event: HiveEvent): Promise<void> {
     const result = reduce(state, event);
     state = result.state;
-    await saveState(hiveDir, state).catch((err: Error) => console.error('persist failed:', err.message));
+    await persist();
     broadcast();
     for (const effect of result.effects) await runEffect(effect);
   }
