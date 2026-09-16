@@ -116,7 +116,10 @@ export type Effect =
 export interface SetupInfo {
   configured: boolean;
   repo: string;
+  /** In setup mode, the saved config (if any) so the form reopens prefilled. */
   config?: Config;
+  /** Why the saved config could not boot (board missing, unreadable…); shown in the setup form. */
+  error?: string;
 }
 
 export interface SetupBody {
