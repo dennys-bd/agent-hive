@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { Effect, HiveEvent, HookPayload, Signal, Slot, State, Status, Task } from './types.js';
+import type { Effect, HiveEvent, HookPayload, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
 import { hasBudget, pruneUsage } from './usage.js';
+import { applyUsageRules, worstSignal } from './usage-rules.js';
 
 export interface Reduced {
   state: State;
@@ -17,12 +18,23 @@ export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 export function initialState(maxConcurrent: number): State {
   return {
     signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [], usage: [], budget: {},
+    usageRules: [],
   };
 }
 
-/** The one gate every spawn goes through: green and at least one free slot that is not draining. */
-export function canStart(signal: Signal, slots: Slot[]): boolean {
-  return signal === 'green' && slots.some((s) => s.status === 'vazio' && !s.draining);
+/** The one gate every spawn goes through: green, a free slot that is not draining, and room under the cap when there is one. */
+export function canStart(signal: Signal, slots: Slot[], limit?: number): boolean {
+  if (signal !== 'green' || !slots.some((s) => s.status === 'vazio' && !s.draining)) return false;
+  return limit === undefined || slots.filter((s) => s.status !== 'vazio').length < limit;
+}
+
+/** Effective signal and worker cap: the manual signal and the usage rules can only restrict each other, never loosen. */
+function limits(state: State, now: number): UsageLimits {
+  const dyn = applyUsageRules(state.usage, state.budget, state.usageRules, now);
+  return {
+    signal: worstSignal(state.signal, dyn.signal),
+    ...(dyn.maxWorkers === undefined ? {} : { maxWorkers: Math.min(state.maxConcurrent, dyn.maxWorkers) }),
+  };
 }
 
 function kebab(text: string): string {
@@ -50,10 +62,11 @@ export function extractPrUrl(command: string, response: unknown): string | undef
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
     case 'boot': return boot(state, event.aliveSlugs); // no fill: bootHive polls right after, and the board is the truth
-    case 'poll': return fill(poll(state, event.tasks));
+    case 'poll': return fill(poll(state, event.tasks)); // also where a dynamic red ages out: samples leave the window with time
     case 'setMax': return fill(setMax(state, event.max));
     case 'setSignal': return fill(setSignal(state, event.signal));
     case 'setBudget': return fill(none({ ...state, budget: event.budget })); // raising the limit can open a job right away
+    case 'setUsageRules': return fill(setUsageRules(state, event.usageRules));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch, event.tokens);
     case 'exit': return fill(exit(state, event.workerId));
     case 'kill': {
@@ -79,32 +92,36 @@ function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced 
 
 function fill(reduced: Reduced): Reduced {
   const { state, effects } = reduced;
-  // yellow / red or no budget left: whatever happened stands, nothing new starts
-  if (!canStart(state.signal, state.slots) || !hasBudget(state.usage, state.budget, Date.now())) return reduced;
+  const now = Date.now();
+  const { signal, maxWorkers } = limits(state, now);
+  if (!hasBudget(state.usage, state.budget, now)) return reduced; // no budget left: whatever happened stands, nothing new starts
   let queue = state.queue;
+  let slots = state.slots;
   const spawned: Effect[] = [];
-  const slots = state.slots.map((slot) => {
-    if (slot.status !== 'vazio' || slot.draining) return slot;
+  // The gate is re-checked before every spawn against the slots as they stand, so the cap counts what was just opened.
+  for (let i = 0; i < slots.length && canStart(signal, slots, maxWorkers); i += 1) {
+    const slot = slots[i];
+    if (slot.status !== 'vazio' || slot.draining) continue;
     const index = queue.findIndex((t) => !isBlocked(t)); // first free task in board order; blocked ones keep their place
-    if (index < 0) return slot;
+    if (index < 0) break;
     const task = queue[index];
-    queue = queue.filter((_, i) => i !== index);
+    queue = queue.filter((_, j) => j !== index);
     const next: Slot = {
       id: slot.id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
       startedAt: new Date().toISOString(), lastEvent: 'iniciando',
     };
+    slots = slots.map((s, j) => (j === i ? next : s));
     spawned.push({ type: 'setStatus', itemId: task.itemId, key: 'working' }, { type: 'spawn', slot: next });
-    return next;
-  });
+  }
   return { state: { ...state, slots, queue }, effects: [...effects, ...spawned] };
 }
 
 function poll(state: State, tasks: Task[]): Reduced {
   const inSlot = new Set(state.slots.map((s) => s.task?.itemId));
-  return none({
+  return none(releasePaused({
     ...state, queue: tasks.filter((t) => !inSlot.has(t.itemId)),
     lastPolledAt: new Date().toISOString(), error: undefined,
-  });
+  }));
 }
 
 function setMax(state: State, max: number): Reduced {
@@ -125,10 +142,18 @@ function setMax(state: State, max: number): Reduced {
   return none({ ...state, maxConcurrent: max, slots: [...kept, ...extra] });
 }
 
-// Leaving red releases every paused mark. The Hive never types in a worker's terminal: this mark is all it releases.
 function setSignal(state: State, signal: Signal): Reduced {
-  const slots = signal === 'red' ? state.slots : state.slots.map((s) => ({ ...s, paused: undefined }));
-  return none({ ...state, signal, slots });
+  return none(releasePaused({ ...state, signal }));
+}
+
+function setUsageRules(state: State, usageRules: UsageRule[]): Reduced {
+  return none(releasePaused({ ...state, usageRules }));
+}
+
+// Leaving red (manual or dynamic) releases every paused mark. The Hive never types in a worker's terminal: this mark is all it releases.
+function releasePaused(state: State): State {
+  if (!state.slots.some((s) => s.paused) || limits(state, Date.now()).signal === 'red') return state;
+  return { ...state, slots: state.slots.map((s) => ({ ...s, paused: undefined })) };
 }
 
 function exit(state: State, workerId: string): Reduced {
@@ -199,10 +224,11 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
       return { ...patched, effects: slot.task ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [] };
     }
     case 'Stop':
-      // Red is manual mode: the worker stops by itself at the end of the turn; the mark says it stopped under red
+      // Red (by hand or by usage, this turn's sample included) is manual mode: the worker stops by itself at the end of
+      // the turn; the mark says it stopped under red
       return patch(state, workerId, {
         status: activeStatus(slot), question: undefined,
-        ...(state.signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal red' } : { lastEvent: 'turno encerrado' }),
+        ...(limits(state, Date.now()).signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal red' } : { lastEvent: 'turno encerrado' }),
       });
     case 'SessionEnd':
       return fill(exit(state, workerId));

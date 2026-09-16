@@ -46,12 +46,16 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   const loaded = await loadState(dir, 1);
   assert.deepEqual(loaded.usage, []);
   assert.deepEqual(loaded.budget, {});
+  assert.deepEqual(loaded.usageRules, []);
   const valid = { at: '2026-09-16T12:00:00.000Z', tokens: 1200 };
   const usage = [valid, { at: 5, tokens: 1 }, { at: '2026-09-16T12:00:00.000Z' }, { at: 'x', tokens: 'many' }, null, 7];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage, budget: { maxTokensPerHour: 10 } }));
   const kept = await loadState(dir, 1);
   assert.deepEqual(kept.usage, [valid]);
   assert.deepEqual(kept.budget, { maxTokensPerHour: 10 });
+  const usageRules = [{ percent: 80, signal: 'yellow' }];
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usageRules }));
+  assert.deepEqual((await loadState(dir, 1)).usageRules, usageRules);
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
   assert.deepEqual((await loadState(dir, 1)).usage, []);
 });

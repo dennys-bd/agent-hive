@@ -16,7 +16,7 @@ export async function bootHive(repo: string): Promise<BootedHive> {
   const board = createBoard(config, { repo });
   await board.resolveFields();
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
-  const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget };
+  const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget, usageRules: config.usageRules };
   const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved });
   const port = await server.listen(config.port);
   await server.dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });

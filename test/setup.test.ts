@@ -325,3 +325,19 @@ test('POST /hooks/event Stop with a transcript_path for an unknown worker answer
   assert.deepEqual(server.getState()?.usage, [], 'no occupied slot matches, so nothing is read or recorded');
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });
+
+test('usageRules come from the file only: a second POST /setup keeps them and the live config and State carry them', async (t) => {
+  const { base, repo, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.deepEqual(saved.usageRules, [], 'the default is written out');
+  const usageRules = [{ percent: 50, maxWorkers: 1 }, { percent: 90, signal: 'red' }];
+  await writeFile(configFile(repo), JSON.stringify({ ...saved, usageRules }));
+  const injected = { ...BODY, status: { ...BODY.status, queue: 'Done' }, usageRules: [{ percent: 1, signal: 'red' }] };
+  assert.equal((await postSetup(base, injected)).status, 200);
+  const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(rewritten.status.queue, 'Done');
+  assert.deepEqual(rewritten.usageRules, usageRules, 'the body cannot set usageRules');
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.usageRules, usageRules);
+  assert.deepEqual(server.getState()?.usageRules, usageRules);
+});

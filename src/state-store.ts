@@ -17,6 +17,7 @@ function normalize(parsed: State): State {
     signal: isSignal(parsed.signal) ? parsed.signal : 'green',
     usage: Array.isArray(parsed.usage) ? parsed.usage.filter(isSample) : [],
     budget: parsed.budget ?? {},
+    usageRules: Array.isArray(parsed.usageRules) ? parsed.usageRules : [],
   };
 }
 
