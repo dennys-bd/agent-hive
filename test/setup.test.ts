@@ -1,11 +1,12 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Board } from '../src/board.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
+import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Config, SetupBody, SetupInfo } from '../src/types.js';
 
@@ -145,4 +146,15 @@ test('concurrent POST /setup calls run one at a time and the last one wins on di
   const onDisk = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
   assert.equal(onDisk.status.queue, 'Done');
   assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.status.queue, 'Done');
+});
+
+test('first POST /setup applies the form maxConcurrent even with a stale .hive/state.json', async (t) => {
+  const { base, repo, server } = await start(t);
+  await mkdir(join(repo, '.hive'), { recursive: true });
+  await writeFile(join(repo, '.hive', 'state.json'), JSON.stringify(initialState(2)));
+  const res = await postSetup(base, BODY);
+  assert.equal(res.status, 200);
+  const state = server.getState();
+  assert.equal(state?.maxConcurrent, 0);
+  assert.equal(state?.slots.length, 0);
 });

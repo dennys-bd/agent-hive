@@ -183,8 +183,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live) throw new Error('Hive já configurado: use reconfigure()');
     const runtime = await activate(config);
     const saved = await loadState(runtime.hiveDir, config.maxConcurrent);
-    live = { runtime, state: saved };
+    // Empty queue on boot: setMax's fill would otherwise spawn off a stale pre-restart
+    // queue. The poll() below refills from the board, which is the source of truth.
+    live = { runtime, state: { ...saved, queue: [] } };
     await dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
+    if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     await poll();
   }
 
