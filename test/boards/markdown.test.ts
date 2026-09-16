@@ -161,3 +161,42 @@ test('setStatus does not add a trailing newline to a file without one', async ()
   await createMarkdownBoard(path, STATUS).setStatus('T-1', 'review');
   assert.equal(await readFile(path, 'utf8'), `${HEADER}\n|---|---|---|\n| T-1 | Sem newline | In review |`);
 });
+
+const DEPENDS_BOARD = `| id  | título   | status      | depende de |
+|-----|----------|-------------|------------|
+| T-1 | Primeira | Ready       |            |
+| T-2 | Segunda  | Ready       | T-1, T-3   |
+| T-3 | Terceira | In progress |            |
+| T-4 | Quarta   | Done        |            |
+| T-5 | Quinta   | Ready       | T-4 T-1    |
+| T-6 | Sexta    | Ready       | T-4        |
+`;
+
+test('listQueue lists open dependencies from the depende de column (comma and/or space), ignoring Done ones', async () => {
+  const path = await boardFile(DEPENDS_BOARD);
+  const queue = await createMarkdownBoard(path, STATUS).listQueue();
+  assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [
+    ['T-1', undefined],
+    ['T-2', ['T-1', 'T-3']],
+    ['T-5', ['T-1']],
+    ['T-6', undefined],
+  ]);
+  assert.deepEqual(queue[0], { itemId: 'T-1', id: 'T-1', title: 'Primeira', body: '', url: path }, 'no blockedBy key when free');
+});
+
+test('an unknown dependency id blocks the task', async () => {
+  const path = await boardFile('| id | título | status | depende de |\n|---|---|---|---|\n| T-1 | Só | Ready | T-99 |\n');
+  assert.deepEqual((await createMarkdownBoard(path, STATUS).listQueue()).map((t) => t.blockedBy), [['T-99']]);
+});
+
+test('a table without a dependency column yields tasks without blockedBy, even if another column mentions ids', async () => {
+  const path = await boardFile('| id | título | status | notas |\n|---|---|---|---|\n| T-1 | A | Ready | ver T-2 |\n| T-2 | B | Ready | |\n');
+  const queue = await createMarkdownBoard(path, STATUS).listQueue();
+  assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, undefined]);
+});
+
+test('the blocked by header is recognized too, normalized like the other headers', async () => {
+  const path = await boardFile('| id | título | status | Blocked By |\n|---|---|---|---|\n| T-1 | A | Ready | |\n| T-2 | B | Ready | T-1 |\n');
+  const queue = await createMarkdownBoard(path, STATUS).listQueue();
+  assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, ['T-1']]);
+});
