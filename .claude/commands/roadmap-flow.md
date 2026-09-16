@@ -1,6 +1,6 @@
 ---
 description: "Autonomous dev flow for one roadmap item: pick → brainstorm → plan → branch → TDD → review → security → PR. Tracked in docs/roadmap.md."
-argument-hint: "[roadmap item number or feature substring, or empty for the next ⏳ a fazer]"
+argument-hint: "[roadmap item number or feature substring, or empty for the next a fazer]"
 ---
 
 # /roadmap-flow
@@ -13,7 +13,7 @@ truth for what is being worked on and where the artifacts live.
 
 **Input**: `$ARGUMENTS` — optional. A row number (`3`) or a substring of the
 `Feature` cell (`blockers`). If empty, take the **first row from the top
-whose `Status` is `⏳ a fazer`**. If the substring matches more than one
+whose `Status` is `a fazer`**. If the substring matches more than one
 row, or none, list the candidates and stop; that is the only case where the
 flow asks before starting.
 
@@ -33,8 +33,8 @@ on the user's behalf. Two ways to start:
 - **on a fresh worktree branch** (Agent Hive spawns `claude --worktree=<slug>`,
   so the session already sits on a branch named after the task): keep that
   branch as the feature branch and skip the `checkout -b` in Stage 3. The
-  Hive has already moved the row to `🔄 fazendo` in the main checkout; the
-  worktree copy still shows `⏳ a fazer`, so the tracking edits below still
+  Hive has already moved the row to `fazendo` in the main checkout; the
+  worktree copy still shows `a fazer`, so the tracking edits below still
   apply. Any other branch with commits ahead of `main` is a stop.
 
 ---
@@ -47,10 +47,10 @@ the end as the flow advances:
 
 | When | Edit |
 |---|---|
-| Stage 0, item picked | table `Status` → `🔄 fazendo`; section header `— 🔄`; append `- Branch: <name>` |
+| Stage 0, item picked | table `Status` → `fazendo`; section header `— fazendo`; append `- Branch: <name>` |
 | End of Stage 1 (architectural path) | table `Spec` → `` `docs/superpowers/specs/<file>.md` `` |
 | End of Stage 2 (architectural path) | append `- Plan: docs/superpowers/plans/<file>.md` |
-| End of Stage 7, PR opened | table `Status` → `✅ feito`; section header `— ✅`; append `- PR: <url>` |
+| End of Stage 7, PR opened | table `Status` → `feito`; section header `— feito`; append `- PR: <url>` |
 
 Rules:
 
@@ -89,7 +89,7 @@ say so.
 4. Derive the branch name now: the current branch when already on a
    worktree branch, otherwise `feat/<slug>` (slug from the feature name,
    kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`). Record
-   `🔄 fazendo` + `- Branch:` in the roadmap. Do not commit yet; Stage 3
+   `fazendo` + `- Branch:` in the roadmap. Do not commit yet; Stage 3
    commits it on the branch.
 
 ## Stage 1 — Spec (brainstorming, autonomous)
@@ -190,7 +190,7 @@ confirm.
 
 ## Stage 7 — PR
 
-1. Mark the row `✅ feito`, the header `— ✅`, add `- PR:` with a
+1. Mark the row `feito`, the header `— feito`, add `- PR:` with a
    placeholder, commit `docs(roadmap): mark <feature> done`.
 2. Run `ecc:pr` against `main`. The body references the roadmap row, the
    spec and plan paths (when they exist), and a test plan with the

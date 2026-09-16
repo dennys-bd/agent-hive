@@ -4,22 +4,22 @@ Cada item vira seu próprio ciclo spec → plan → implementação.
 
 | id | título | status | spec |
 |---|---|---|---|
-| 1 | Entrypoint por command (`promptTemplate` com slash command, editável no form) | ✅ feito | `docs/superpowers/specs/2026-09-16-hive-cli-and-setup-design.md` |
-| 2 | Board plugável: GitHub + Markdown | ✅ feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
-| 3 | Blockers / dependências | ⏳ a fazer | — |
-| 4 | Sinal verde / amarelo / vermelho | ⏳ a fazer | — |
-| 5 | Orçamento de tokens | ⏳ a fazer | — |
-| 6 | Sinal dinâmico por uso de tokens | ⏳ a fazer | — |
-| 7 | Board Asana | ⏳ a fazer | — |
-| 8 | Board Jira | ⏳ a fazer | — |
+| 1 | Entrypoint por command (`promptTemplate` com slash command, editável no form) | feito | `docs/superpowers/specs/2026-09-16-hive-cli-and-setup-design.md` |
+| 2 | Board plugável: GitHub + Markdown | feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
+| 3 | Blockers / dependências | a fazer | — |
+| 4 | Sinal verde / amarelo / vermelho | a fazer | — |
+| 5 | Orçamento de tokens | a fazer | — |
+| 6 | Sinal dinâmico por uso de tokens | a fazer | — |
+| 7 | Board Asana | a fazer | — |
+| 8 | Board Jira | a fazer | — |
 
 Boards novos (7, 8) não são prioridade; ficam depois do sinal e do orçamento.
 
-## 1. Entrypoint por command — ✅
+## 1. Entrypoint por command — feito
 
 `promptTemplate` aceita `{id}` (`{number}` é sinônimo), `{title}`, `{body}`, `{url}`; um slash command funciona como prompt inicial (`"/ship #{id}"`). Editável no formulário de configuração.
 
-## 2. Board plugável: GitHub + Markdown — ✅
+## 2. Board plugável: GitHub + Markdown — feito
 
 `config.board.type` escolhe o adapter (`src/boards/github.ts`, `src/boards/markdown.ts`); interface `Board` = `resolveFields`, `listQueue`, `setStatus`, `setupOptions`. Markdown = tabela `| id | título | status |` num `.md` com o resto do arquivo livre; escrita só na célula de status. Config legada (`project`) ainda aceita.
 
