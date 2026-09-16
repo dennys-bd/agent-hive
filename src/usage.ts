@@ -56,7 +56,8 @@ export async function sumTranscriptTokens(path: string): Promise<number> {
       seen.add(usage.id);
       total += usage.tokens;
     });
-    lines.on('close', () => resolve(total));
+    // Finite fields can still overflow the sum; nothing non-finite may reach State.usage or it jams every budget check
+    lines.on('close', () => (Number.isFinite(total) ? resolve(total) : reject(new Error(`${path}: token total is not finite`))));
   });
 }
 

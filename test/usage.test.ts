@@ -73,6 +73,11 @@ test('sumTranscriptTokens rejects anything that is not a regular file instead of
   await assert.rejects(sumTranscriptTokens(dir), /not a regular file/);
 });
 
+test('sumTranscriptTokens rejects when finite fields overflow the total to Infinity', async () => {
+  const huge = { input_tokens: Number.MAX_VALUE, output_tokens: Number.MAX_VALUE };
+  await assert.rejects(sumTranscriptTokens(await writeTranscript([assistant('a1', huge), assistant('a2', huge)])), /not finite/);
+});
+
 test('usageTotals separates the last hour from the last day', () => {
   const usage = [
     sample(30 * MINUTE_MS, 100), sample(59 * MINUTE_MS, 20), sample(61 * MINUTE_MS, 1000),
