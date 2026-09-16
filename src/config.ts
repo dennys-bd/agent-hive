@@ -16,6 +16,7 @@ export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
 };
 
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
+const MARKDOWN_CELL_BREAKERS = /[|\r\n]/; // written into a table cell, these would split or end the row
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -65,6 +66,13 @@ export function parseConfig(raw: unknown): Config {
   const status = Object.fromEntries(
     STATUS_KEYS.map((key) => [key, optional(statusRaw[key], DEFAULT_CONFIG.status[key], (v) => requireString(v, `status.${key}`))]),
   ) as Record<StatusKey, string>;
+  if (board.type === 'markdown') {
+    for (const key of STATUS_KEYS) {
+      if (MARKDOWN_CELL_BREAKERS.test(status[key])) {
+        throw new Error(`${CONFIG_FILE}: "status.${key}" must not contain "|" or line breaks for markdown boards`);
+      }
+    }
+  }
 
   return {
     board,

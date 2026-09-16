@@ -67,3 +67,12 @@ test('loadConfigIfPresent returns undefined only when the file is missing', asyn
   await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ board: { type: 'markdown', path: 'board.md' } }));
   assert.deepEqual((await loadConfigIfPresent(repo))?.board, { type: 'markdown', path: 'board.md' });
 });
+
+test('markdown boards reject status values with "|" or line breaks; github boards do not care', () => {
+  const md = { type: 'markdown', path: 'board.md' };
+  const message = 'hive.config.json: "status.working" must not contain "|" or line breaks for markdown boards';
+  assert.throws(() => parseConfig({ board: md, status: { working: 'In | progress' } }), { message });
+  assert.throws(() => parseConfig({ board: md, status: { working: 'In\nprogress' } }), { message });
+  assert.throws(() => parseConfig({ board: md, status: { review: 'Rev\riew' } }), /status\.review/);
+  assert.equal(parseConfig({ board: GITHUB, status: { working: 'In | progress' } }).status.working, 'In | progress');
+});
