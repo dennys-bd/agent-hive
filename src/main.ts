@@ -30,15 +30,15 @@ function openWindow(port: number): void {
   const origin = `http://127.0.0.1:${port}`;
   const win = new BrowserWindow(WINDOW);
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    shell.openExternal(url).catch((err: Error) => console.error('openExternal failed:', err.message));
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
     if (url.startsWith(origin)) return;
     event.preventDefault();
-    void shell.openExternal(url);
+    shell.openExternal(url).catch((err: Error) => console.error('openExternal failed:', err.message));
   });
-  void win.loadURL(`${origin}/`);
+  win.loadURL(`${origin}/`).catch((err: Error) => dialog.showErrorBox('Agent Hive', err.message));
 }
 
 app.whenReady().then(async () => {
