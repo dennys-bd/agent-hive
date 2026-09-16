@@ -36,11 +36,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'poll': return fill(poll(state, event.tasks));
     case 'setMax': return fill(setMax(state, event.max));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch);
-    case 'exit': {
-      const slot = state.slots.find((s) => s.id === event.workerId);
-      if (!slot || slot.status === 'vazio') return none(state);
-      return fill(exit(state, event.workerId));
-    }
+    case 'exit': return fill(exit(state, event.workerId));
     case 'kill': {
       const slug = state.slots.find((s) => s.id === event.slotId)?.slug;
       return { state, effects: slug ? [{ type: 'kill', slug }] : [] };
@@ -162,7 +158,7 @@ function applyHook(state: State, workerId: string, p: HookPayload, branch?: stri
     case 'Stop':
       return patch(state, workerId, { lastEvent: 'turno encerrado' });
     case 'SessionEnd':
-      return exit(state, workerId); // no fill: server will poll after this
+      return fill(exit(state, workerId));
     default:
       return none(state);
   }

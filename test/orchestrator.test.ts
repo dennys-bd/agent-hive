@@ -182,15 +182,23 @@ test('exit with PR does not requeue the task', () => {
 });
 
 test('SessionEnd behaves like exit', () => {
-  const first = filled(1, 1).state;
-  const { state } = hook(first, first.slots[0].id, { hook_event_name: 'SessionEnd' });
-  assert.equal(state.slots[0].status, 'vazio');
+  const first = filled(1, 2).state;
+  const id = first.slots[0].id;
+  const { state, effects } = hook(first, id, { hook_event_name: 'SessionEnd' });
+  assert.equal(state.slots[0].task?.number, 2, 'next task pulled via fill');
+  assert.deepEqual(state.queue.map((t) => t.number), [1], 'current task requeued');
+  assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'setStatus', 'spawn']);
 });
 
 test('exit is idempotent and ignores unknown workers', () => {
+  // use a slot with a PR so exit does not requeue (and fill does not immediately respawn) the task
   const first = filled(1, 1).state;
-  const once = reduce(first, { type: 'exit', workerId: first.slots[0].id }).state;
-  const twice = reduce(once, { type: 'exit', workerId: first.slots[0].id });
+  const id = first.slots[0].id;
+  const reviewed = hook(first, id, {
+    hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
+  }).state;
+  const once = reduce(reviewed, { type: 'exit', workerId: id }).state;
+  const twice = reduce(once, { type: 'exit', workerId: id });
   assert.deepEqual(twice.state, once);
   assert.equal(twice.effects.length, 0);
   const unknown = reduce(first, { type: 'exit', workerId: 'nope' });
