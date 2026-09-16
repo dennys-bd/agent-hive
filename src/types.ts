@@ -11,6 +11,7 @@ export interface Task {
   title: string;
   body: string;
   url: string;
+  blockedBy?: string[]; // ids of blockers still open, per the adapter; absent or empty = free to start
 }
 
 export interface Slot {

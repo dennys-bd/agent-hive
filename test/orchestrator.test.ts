@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractPrUrl, initialState, reduce, slugFor } from '../src/orchestrator.js';
+import { extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
 import type { HookPayload, State, Task } from '../src/types.js';
 
 const task = (n: number): Task => ({
@@ -271,6 +271,39 @@ test('slugFor strips accents, lowercases, and caps the title at 30 chars', () =>
 test('slugFor kebab-izes the id too, so markdown ids like T-12 work', () => {
   assert.equal(slugFor({ ...task(1), id: 'T-12', title: 'Exemplo' }), 'hive-t-12-exemplo');
   assert.equal(slugFor({ ...task(1), id: 'Épico #3', title: 'x' }), 'hive-epico-3-x');
+});
+
+test('fill skips a blocked task, takes the next free one and leaves the blocked one in its queue position', () => {
+  const blocked = { ...task(1), blockedBy: ['3'] };
+  const { state, effects } = reduce(initialState(1), { type: 'poll', tasks: [blocked, task(2), task(3)] });
+  assert.equal(state.slots[0].task?.id, '2');
+  assert.deepEqual(state.queue.map((t) => t.id), ['1', '3']);
+  assert.deepEqual(state.queue[0].blockedBy, ['3'], 'blocked task kept as the board delivered it');
+  assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item2', key: 'working' }, { type: 'spawn', slot: state.slots[0] }]);
+});
+
+test('blockedBy: [] counts as free', () => {
+  const { state } = reduce(initialState(1), { type: 'poll', tasks: [{ ...task(1), blockedBy: [] }] });
+  assert.equal(state.slots[0].task?.id, '1');
+  assert.deepEqual(state.queue, []);
+});
+
+test('a slot stays empty while every queued task is blocked, and a later poll without blockedBy starts it', () => {
+  const first = reduce(initialState(1), { type: 'poll', tasks: [{ ...task(1), blockedBy: ['2'] }] });
+  assert.equal(first.state.slots[0].status, 'vazio');
+  assert.deepEqual(first.state.queue.map((t) => t.id), ['1']);
+  assert.equal(first.effects.length, 0);
+  const { state, effects } = reduce(first.state, { type: 'poll', tasks: [task(1)] });
+  assert.equal(state.slots[0].task?.id, '1');
+  assert.equal(state.slots[0].task?.blockedBy, undefined);
+  assert.deepEqual(state.queue, []);
+  assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'spawn']);
+});
+
+test('isBlocked is true only for a non-empty blockedBy', () => {
+  assert.equal(isBlocked(task(1)), false);
+  assert.equal(isBlocked({ ...task(1), blockedBy: [] }), false);
+  assert.equal(isBlocked({ ...task(1), blockedBy: ['T-1'] }), true);
 });
 
 test('extractPrUrl finds the PR url only for gh pr create', () => {
