@@ -81,7 +81,7 @@
   <label>coluna em andamento <select id="col-working" required></select></label>
   <label>coluna em review <select id="col-review" required></select></label>
   <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
-  <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false"></textarea></label>
+  <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
   <div class="hint">placeholders: <code>{number}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> — ex.: <code>/ship #{number}</code>. Vazio mantém o atual.</div>
   <div id="setup-error"></div>
   <div class="actions">
