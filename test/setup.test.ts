@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
-import type { Board, Config, SetupBody, SetupInfo } from '../src/types.js';
+import type { Board, Config, SetupBody, SetupInfo, State } from '../src/types.js';
 
 const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 const BODY: SetupBody = {
@@ -259,4 +259,27 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   assert.equal((await postSetup(base, body)).status, 200);
   assert.deepEqual(server.getState()?.queue, []);
   assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo']);
+});
+
+test('POST /signal answers 409 before setup, 400 for an unknown value, then 200 and the state carries it', async (t) => {
+  const { base, repo, server } = await start(t);
+  const postSignal = (body: unknown): Promise<Response> =>
+    fetch(`${base}/signal`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await postSignal({ signal: 'red' })).status, 409);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal(server.getState()?.signal, 'green');
+  const bad = await postSignal({ signal: 'blue' });
+  assert.equal(bad.status, 400);
+  assert.equal((await json<{ error: string }>(bad)).error, 'signal must be one of: green, yellow, red');
+  const ok = await postSignal({ signal: 'red' });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await json(ok), { ok: true });
+  const res = await fetch(`${base}/events`);
+  const reader = res.body!.getReader();
+  const { value } = await reader.read();
+  await reader.cancel();
+  const streamed = JSON.parse(new TextDecoder().decode(value).replace(/^data: /, '')) as State;
+  assert.equal(streamed.signal, 'red');
+  // persisted with the rest of the state, so a Hive closed under red reopens under red
+  assert.equal((JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State).signal, 'red');
 });

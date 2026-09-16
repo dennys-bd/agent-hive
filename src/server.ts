@@ -10,11 +10,11 @@ import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
-import { reduce } from './orchestrator.js';
+import { reduce, SIGNALS } from './orchestrator.js';
 import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Slot, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -28,6 +28,7 @@ const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
+const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 
 export type BoardFactory = (config: Config) => Board;
 
@@ -361,6 +362,17 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     await dispatch({ type: 'setMax', max: max as number });
+    res.json({ ok: true });
+  });
+
+  app.post('/signal', async (req: Request, res: Response) => {
+    if (!requireLive(res)) return;
+    const signal = (req.body as { signal?: unknown }).signal;
+    if (!SIGNALS.includes(signal as Signal)) {
+      res.status(HTTP_BAD_REQUEST).json({ error: SIGNAL_MESSAGE });
+      return;
+    }
+    await dispatch({ type: 'setSignal', signal: signal as Signal });
     res.json({ ok: true });
   });
 
