@@ -80,9 +80,11 @@ test('resolveFields fails naming the path and the expected header when the table
   });
 });
 
-test('setupOptions lists the statuses in the file first, then the defaults not yet present', async () => {
+test('setupOptions pads a default-worded file with the defaults, but a file with its own vocabulary lists only its statuses', async () => {
   const path = await boardFile();
   assert.deepEqual(await createMarkdownBoard(path, STATUS).setupOptions(), ['In progress', 'Ready', 'In review', 'Done']);
+  const own = await boardFile('| id | título | status |\n|---|---|---|\n| 1 | a | feito |\n| 2 | b | a fazer |\n');
+  assert.deepEqual(await createMarkdownBoard(own, STATUS).setupOptions(), ['feito', 'a fazer']);
 });
 
 test('createMarkdownFileIfMissing writes the header and a Done example row once and never overwrites', async () => {

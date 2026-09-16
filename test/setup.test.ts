@@ -254,9 +254,9 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   assert.equal((await postSetup(base, body)).status, 200);
   assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-1', 'Exemplo', file]]);
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
-  // an existing file is never rewritten by setup, and its statuses feed the columns route
+  // an existing file is never rewritten by setup; a file with its own vocabulary lists only its statuses
   await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
   assert.equal((await postSetup(base, body)).status, 200);
   assert.deepEqual(server.getState()?.queue, []);
-  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo', 'Ready', 'In progress', 'In review', 'Done']);
+  assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo']);
 });

@@ -2,3 +2,4 @@ node_modules
 dist
 .hive
 .omc/
+hive.config.json

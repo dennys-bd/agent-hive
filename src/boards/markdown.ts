@@ -175,7 +175,10 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
 
   async function setupOptions(): Promise<string[]> {
     const { rows } = await loadTable(await realFile(path));
-    return [...new Set([...rows.map((r) => r.status).filter((s) => s !== ''), ...DEFAULT_STATUS_OPTIONS])];
+    const found = [...new Set(rows.map((r) => r.status).filter((s) => s !== ''))];
+    // A file with its own vocabulary (e.g. "a fazer") lists only that; the defaults only pad a fresh or default-worded board.
+    const usesOwnVocabulary = found.some((s) => !DEFAULT_STATUS_OPTIONS.includes(s));
+    return usesOwnVocabulary ? found : [...new Set([...found, ...DEFAULT_STATUS_OPTIONS])];
   }
 
   return { resolveFields, listQueue, setStatus, setupOptions };
