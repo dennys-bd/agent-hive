@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { Board } from '../src/board.js';
 import { DEFAULT_CONFIG } from '../src/config.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -16,12 +17,14 @@ const BODY: SetupBody = {
 };
 
 // A board that has the OPTIONS columns and returns one task named after the configured queue column.
-function fakeBoardFactory(): { factory: (config: Config) => Board; configs: Config[] } {
+// `resolveDelayMs` makes resolveFields slow so concurrent saves overlap.
+function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Board; configs: Config[] } {
   const configs: Config[] = [];
   const factory = (config: Config): Board => {
     configs.push(config);
     return {
       async resolveFields() {
+        if (resolveDelayMs > 0) await sleep(resolveDelayMs);
         for (const key of ['queue', 'working', 'review'] as const) {
           const wanted = config.status[key];
           if (!OPTIONS.includes(wanted)) {
@@ -40,9 +43,9 @@ function fakeBoardFactory(): { factory: (config: Config) => Board; configs: Conf
 
 interface Started { repo: string; base: string; port: number; server: HiveServer; configs: Config[] }
 
-async function start(t: TestContext): Promise<Started> {
+async function start(t: TestContext, resolveDelayMs = 0): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
-  const { factory, configs } = fakeBoardFactory();
+  const { factory, configs } = fakeBoardFactory(resolveDelayMs);
   const server = createServer({ repo, boardFactory: factory });
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -129,4 +132,17 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal(rewritten.promptTemplate, 'só {title}');
   assert.deepEqual(server.getState()?.queue.map((task) => task.title), ['from Done']);
   assert.equal(configs.at(-1)?.status.queue, 'Done');
+});
+
+test('concurrent POST /setup calls run one at a time and the last one wins on disk and in memory', async (t) => {
+  const { base, repo } = await start(t, 30);
+  const [first, second] = await Promise.all([
+    postSetup(base, BODY),
+    postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } }),
+  ]);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  const onDisk = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(onDisk.status.queue, 'Done');
+  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.status.queue, 'Done');
 });

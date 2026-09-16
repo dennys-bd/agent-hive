@@ -78,6 +78,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let pollTimer: NodeJS.Timeout | undefined;
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
+  let setupChain: Promise<void> = Promise.resolve();
 
   function eventsPayload(): EventsPayload {
     return live?.state ?? { configured: false };
@@ -270,8 +271,16 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   });
 
-  app.post('/setup', async (req: Request, res: Response) => {
-    const body = (req.body ?? {}) as Partial<SetupBody>;
+  // Serializes saves: two concurrent POST /setup would race on hive.config.json.tmp and
+  // into configure()/reconfigure(). Chaining queues them in arrival order; each request
+  // awaits its own link, and the chain never rejects because saveSetup answers every error.
+  app.post('/setup', (req: Request, res: Response) => {
+    const run = (): Promise<void> => saveSetup((req.body ?? {}) as Partial<SetupBody>, res);
+    setupChain = setupChain.then(run, run);
+    return setupChain;
+  });
+
+  async function saveSetup(body: Partial<SetupBody>, res: Response): Promise<void> {
     let config: Config;
     try {
       const current = await loadConfigIfPresent(repo);
@@ -297,7 +306,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     const result: SetupResult = config.port === boundPort ? { ok: true } : { ok: true, restartForPort: config.port };
     res.json(result);
-  });
+  }
 
   app.post('/config', async (req: Request, res: Response) => {
     if (!requireLive(res)) return;
