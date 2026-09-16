@@ -27,6 +27,11 @@ export function slugFor(task: Task): string {
   return `hive-${kebab(task.id)}-${title}`;
 }
 
+/** The only blocking rule: the adapter already filtered the list down to blockers that are still open. */
+export function isBlocked(task: Task): boolean {
+  return (task.blockedBy?.length ?? 0) > 0;
+}
+
 export function extractPrUrl(command: string, response: unknown): string | undefined {
   if (!command.includes('gh pr create')) return undefined;
   const text = typeof response === 'string' ? response : JSON.stringify(response ?? '');
@@ -65,9 +70,11 @@ function fill({ state, effects }: Reduced): Reduced {
   let queue = state.queue;
   const spawned: Effect[] = [];
   const slots = state.slots.map((slot) => {
-    if (slot.status !== 'vazio' || slot.draining || queue.length === 0) return slot;
-    const [task, ...rest] = queue;
-    queue = rest;
+    if (slot.status !== 'vazio' || slot.draining) return slot;
+    const index = queue.findIndex((t) => !isBlocked(t)); // first free task in board order; blocked ones keep their place
+    if (index < 0) return slot;
+    const task = queue[index];
+    queue = queue.filter((_, i) => i !== index);
     const next: Slot = {
       id: slot.id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
       startedAt: new Date().toISOString(), lastEvent: 'iniciando',

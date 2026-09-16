@@ -66,7 +66,7 @@ test('listQueue returns only issues in the queue column, in board order', async 
       { id: 'I5', title: 'No status', content: { type: 'Issue', number: 5, title: 'E', body: '', url: 'https://github.com/acme/r/issues/5' } },
     ],
   };
-  const board = createBoard(config, { repo: REPO, exec: fakeExec({ 'project item-list 6': items }).exec });
+  const board = createBoard(config, { repo: REPO, exec: fakeExec({ 'project item-list 6': items, 'api graphql -f': { data: {} } }).exec });
   const queue = await board.listQueue();
   assert.deepEqual(queue, [
     { itemId: 'I1', id: '1', title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
@@ -113,4 +113,55 @@ test('createBoard picks the markdown adapter by type and resolves the path again
   const board = createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo });
   await board.resolveFields();
   assert.deepEqual((await board.listQueue()).map((t) => [t.id, t.url]), [['T-1', join(repo, 'board.md')]]);
+});
+
+const issue = (n: number, status = 'Ready') => ({
+  id: `I${n}`, status, title: `T${n}`,
+  content: { type: 'Issue', number: n, title: `T${n}`, body: '', url: `https://github.com/acme/r/issues/${n}` },
+});
+const relations = (blockedBy: [number, string][], subIssues: [number, string][] = []) => ({
+  issue: {
+    blockedBy: { nodes: blockedBy.map(([number, state]) => ({ number, state })) },
+    subIssues: { nodes: subIssues.map(([number, state]) => ({ number, state })) },
+  },
+});
+
+test('listQueue resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
+  const { exec, calls } = fakeExec({
+    'project item-list 6': { items: [issue(1), issue(2, 'In progress'), issue(3), issue(4)] },
+    'api graphql -f': {
+      data: {
+        i0: relations([[7, 'OPEN'], [8, 'CLOSED']], [[7, 'OPEN'], [9, 'OPEN']]),
+        i1: relations([[10, 'CLOSED']], [[11, 'CLOSED']]),
+        i2: relations([], []),
+      },
+    },
+  });
+  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
+  assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
+  assert.ok(!('blockedBy' in queue[1]), 'field omitted when there is no open blocker');
+  const graphql = calls.filter((c) => c[0] === 'api');
+  assert.equal(graphql.length, 1);
+  assert.deepEqual(graphql[0].slice(0, 3), ['api', 'graphql', '-f']);
+  const query = graphql[0][3];
+  assert.match(query, /^query=query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blockedBy\(first: 50\) \{ nodes \{ number state \} \} subIssues\(first: 50\) \{ nodes \{ number state \} \} \} \} i1: /);
+  assert.match(query, /i1: repository\(owner: "acme", name: "r"\) \{ issue\(number: 3\)/);
+  assert.match(query, /i2: repository\(owner: "acme", name: "r"\) \{ issue\(number: 4\)/);
+  assert.ok(!query.includes('i3:'), 'no alias for issues outside the queue column');
+});
+
+test('listQueue with nothing in the queue column makes no graphql call', async () => {
+  const { exec, calls } = fakeExec({ 'project item-list 6': { items: [issue(2, 'In progress')] } });
+  assert.deepEqual(await createBoard(config, { repo: REPO, exec }).listQueue(), []);
+  assert.deepEqual(calls.map((c) => c[1]), ['item-list']);
+});
+
+test('listQueue treats issue: null, a null repository or a missing alias as no blockers', async () => {
+  const { exec, calls } = fakeExec({
+    'project item-list 6': { items: [issue(1), issue(2), issue(3)] },
+    'api graphql -f': { data: { i0: { issue: null }, i1: null } },
+  });
+  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
+  assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, undefined, undefined]);
+  assert.equal(calls.filter((c) => c[0] === 'api').length, 1);
 });

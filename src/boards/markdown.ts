@@ -12,9 +12,11 @@ const TITLE_HEADERS = ['titulo', 'title'];
 const SEPARATOR_CELL = /^\s*:?-+:?\s*$/;
 const CELL_BOUNDARY = /(?<!\\)\|/; // a `\|` inside a cell is content, not a column boundary
 const COMBINING_MARKS = /[\u0300-\u036f]/g;
+const DEPENDS_HEADERS = ['depende de', 'depends on', 'depends', 'bloqueada por', 'blocked by'];
+const ID_SEPARATOR = /[\s,]+/; // ids in the dependency cell, separated by commas and/or whitespace
 
-interface Columns { id: number; title: number; status: number }
-interface Row { lineIndex: number; id: string; title: string; status: string }
+interface Columns { id: number; title: number; status: number; dependsOn?: number }
+interface Row { lineIndex: number; id: string; title: string; status: string; dependsOn: string[] }
 interface Table { lines: string[]; columns: Columns; rows: Row[] }
 interface SplitLine { head: string; cells: string[]; tail: string }
 
@@ -60,10 +62,17 @@ const normalizeHeader = (cell: string): string => cell.normalize('NFD').replace(
 function findColumns(headerCells: string[]): Columns | undefined {
   const names = headerCells.map(normalizeHeader);
   const columns = { id: names.indexOf('id'), title: names.findIndex((n) => TITLE_HEADERS.includes(n)), status: names.indexOf('status') };
-  return columns.id >= 0 && columns.title >= 0 && columns.status >= 0 ? columns : undefined;
+  if (columns.id < 0 || columns.title < 0 || columns.status < 0) return undefined;
+  const dependsOn = names.findIndex((n) => DEPENDS_HEADERS.includes(n));
+  return dependsOn >= 0 ? { ...columns, dependsOn } : columns;
 }
 
 const cellText = (cells: string[], index: number): string => (cells[index] ?? '').trim();
+
+function dependsList(cells: string[], columns: Columns): string[] {
+  if (columns.dependsOn === undefined) return [];
+  return cellText(cells, columns.dependsOn).split(ID_SEPARATOR).filter((d) => d !== '');
+}
 
 function readRows(lines: string[], start: number, columns: Columns): Row[] {
   const rows: Row[] = [];
@@ -71,7 +80,9 @@ function readRows(lines: string[], start: number, columns: Columns): Row[] {
     const cells = splitLine(lines[i]).cells;
     const id = cellText(cells, columns.id);
     if (id === '') continue;
-    rows.push({ lineIndex: i, id, title: cellText(cells, columns.title), status: cellText(cells, columns.status) });
+    rows.push({
+      lineIndex: i, id, title: cellText(cells, columns.title), status: cellText(cells, columns.status), dependsOn: dependsList(cells, columns),
+    });
   }
   return rows;
 }
@@ -151,7 +162,14 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
 
   async function listQueue(): Promise<Task[]> {
     const { rows } = await loadTable(await realFile(path));
-    return rows.filter((r) => r.status === status.queue).map((r) => ({ itemId: r.id, id: r.id, title: r.title, body: '', url: path }));
+    const known = new Set(Object.values(status)); // queue / working / review are the only statuses still open to the Hive
+    const open = new Set(rows.filter((r) => known.has(r.status)).map((r) => r.id));
+    const ids = new Set(rows.map((r) => r.id));
+    return rows.filter((r) => r.status === status.queue).map((r) => {
+      const blockedBy = r.dependsOn.filter((d) => open.has(d) || !ids.has(d)); // an unknown id blocks, so the typo shows in the queue
+      const task: Task = { itemId: r.id, id: r.id, title: r.title, body: '', url: path };
+      return blockedBy.length > 0 ? { ...task, blockedBy } : task;
+    });
   }
 
   async function rewriteStatus(itemId: string, key: StatusKey): Promise<void> {

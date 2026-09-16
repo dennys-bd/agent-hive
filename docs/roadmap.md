@@ -6,7 +6,7 @@ Cada item vira seu próprio ciclo spec → plan → implementação.
 |---|---|---|---|
 | 1 | Entrypoint por command (`promptTemplate` com slash command, editável no form) | feito | `docs/superpowers/specs/2026-09-16-hive-cli-and-setup-design.md` |
 | 2 | Board plugável: GitHub + Markdown | feito | `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md` |
-| 3 | Blockers / dependências | a fazer | — |
+| 3 | Blockers / dependências | feito | `docs/superpowers/specs/2026-09-16-blockers-design.md` |
 | 4 | Sinal verde / amarelo / vermelho | a fazer | — |
 | 5 | Orçamento de tokens | a fazer | — |
 | 6 | Sinal dinâmico por uso de tokens | a fazer | — |
@@ -24,9 +24,13 @@ Boards novos (7, 8) não são prioridade; ficam depois do sinal e do orçamento.
 `config.board.type` escolhe o adapter (`src/boards/github.ts`, `src/boards/markdown.ts`); interface `Board` = `resolveFields`, `listQueue`, `setStatus`, `setupOptions`. Markdown = tabela `| id | título | status |` num `.md` com o resto do arquivo livre; escrita só na célula de status. Config legada (`project`) ainda aceita.
 
 
-## 3. Blockers / dependências
+## 3. Blockers / dependências — feito
 
 Uma task só entra na fila se não tem dependência aberta. `Task` ganha `blockedBy?: string[]`; o `fill` do orquestrador pula tasks bloqueadas (regra pura, testável). Cada adapter decide de onde vem a informação: GitHub → sub-issues / `blockedBy`; markdown → uma coluna opcional `depende de` ou convenção `depends: T-12`; Asana → dependencies; Jira → issue links "is blocked by". O card/fila mostra "bloqueada por T-12".
+
+- Branch: worktree-hive-3-blockers-dependencias
+- Plan: docs/superpowers/plans/2026-09-16-blockers.md
+- PR: https://github.com/dennys-bd/agent-hive/pull/6
 
 ## 4. Sinal verde / amarelo / vermelho
 
