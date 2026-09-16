@@ -10,7 +10,7 @@ Extensão da v1 (`docs/superpowers/specs/2026-09-15-agent-hive-design.md`, autor
 | O que é "iteração" | Um turno do worker: de `UserPromptSubmit` até `Stop` | É a única unidade que os hooks entregam; é onde o item 5 vai medir tokens (`transcript_path` no `Stop`) |
 | Regra pura | `canStart(signal, slots): boolean` = `signal === 'green'` **e** existe slot `vazio` não drenando; `fill` consulta ela antes de qualquer spawn | Nome e assinatura do roadmap; o item 6 acrescenta o orçamento na mesma porta |
 | Amarelo | `fill` não abre job. Workers vivos seguem até o fim da sessão; `exit` sem PR devolve a task pra fila como hoje, o slot fica `vazio` e assim permanece | "Termina a iteração, não começa job novo" sem tocar em nenhum worker |
-| Vermelho: pausa | No `Stop` de um slot ocupado enquanto o sinal está vermelho, o slot ganha `paused: true` e `lastEvent = 'pausado: sinal vermelho'`; `status` não muda (continua `trabalhando` / `aguardando_review`, como o `Stop` já faz) | O Claude Code interativo já para sozinho no fim do turno; o Hive não tem como segurar nem retomar um worker sem digitar no terminal dele. A marca registra que aquele worker parou sob vermelho e o card mostra isso |
+| Vermelho: pausa | No `Stop` de um slot ocupado enquanto o sinal está vermelho, o slot ganha `paused: true` e `lastEvent = 'pausado: sinal red'`; `status` não muda (continua `trabalhando` / `aguardando_review`, como o `Stop` já faz) | O Claude Code interativo já para sozinho no fim do turno; o Hive não tem como segurar nem retomar um worker sem digitar no terminal dele. A marca registra que aquele worker parou sob vermelho e o card mostra isso |
 | Vermelho: retomar | `paused` some (a) quando o sinal sai do vermelho (`setSignal` limpa a marca de todos os slots) ou (b) quando o worker recebe `UserPromptSubmit` ou `PreToolUse` (alguém digitou no terminal) | Os dois caminhos do roadmap: "sair do vermelho" e "retomar à mão" |
 | O Hive nunca digita no terminal | Sair do vermelho não envia texto pro iTerm; só limpa a marca e roda `fill` | Digitar "continue" num worker que parou pra perguntar algo é automação que o verde não tem; o sinal só pode reduzir automação, nunca criar |
 | Worker já ocioso quando vira vermelho | Não recebe `paused` retroativamente; só o próximo `Stop` marca | O Hive não sabe com certeza se um worker está ocioso; o botão vermelho aceso no topo já diz ao humano que é modo manual |
@@ -18,7 +18,7 @@ Extensão da v1 (`docs/superpowers/specs/2026-09-15-agent-hive-design.md`, autor
 | Transições | `setSignal` grava o sinal, limpa `paused` se o novo sinal não é vermelho, e chama `fill` (que só abre job se o sinal ficou verde) | Verde volta a puxar da fila na hora; amarelo→vermelho e vermelho→amarelo não abrem nada |
 | `setMax`, `poll`, `exit`, `SessionEnd` | Continuam chamando `fill`; sob amarelo/vermelho `fill` devolve o estado sem efeitos de spawn. `setMax` ainda cria/drena slots | Slots refletem o teto configurado; só o disparo é que fica suspenso |
 | API | `POST /signal { "signal": "green" \| "yellow" \| "red" }` → `{ ok: true }`; valor inválido → 400; sem config → 409. Sem `GET`: o `State` do SSE já carrega `signal` | Mesmo padrão de `POST /config` |
-| UI | Três botões no topo (`verde` / `amarelo` / `vermelho`), o ativo pintado com a cor; ao lado, `sem jobs novos` (amarelo) ou `modo manual` (vermelho). Card com `paused` mostra ` · pausado` no meta e fica esmaecido (classe `paused`) | Cópia em português; sem painel novo, sem modal |
+| UI | Três botões no topo (`green` / `yellow` / `red`), o ativo pintado com a cor; ao lado, `sem jobs novos` (amarelo) ou `modo manual` (vermelho). Card com `paused` mostra ` · pausado` no meta e fica esmaecido (classe `paused`) | Cópia em português; sem painel novo, sem modal |
 | Fora | Sinal dinâmico por uso (roadmap 6); persistir o sinal na config; retomar worker automaticamente; contar `paused` no `N/M workers ativos` (ativos = ocupados, como hoje) | Escopo do item 4 |
 
 ## Tipos
@@ -53,7 +53,7 @@ export function canStart(signal: Signal, slots: Slot[]): boolean;
 - `canStart` é pura: verde **e** algum slot `status === 'vazio'` sem `draining`.
 - `fill`: se `!canStart(state.signal, state.slots)` devolve `{ state, effects }` inalterados. Senão, comportamento de hoje.
 - `setSignal`: `{ ...state, signal, slots: signal === 'red' ? state.slots : slots sem paused }` → `fill`.
-- `Stop` (em `applyHook`): comportamento de hoje mais, se `state.signal === 'red'`, `paused: true` e `lastEvent: 'pausado: sinal vermelho'` (no lugar de `'turno encerrado'`).
+- `Stop` (em `applyHook`): comportamento de hoje mais, se `state.signal === 'red'`, `paused: true` e `lastEvent: 'pausado: sinal red'` (no lugar de `'turno encerrado'`).
 - `UserPromptSubmit` e `PreToolUse`: além do que já fazem, `paused: undefined`.
 - `exit`, `SessionEnd`, `boot`, `kill`, `spawned`, `error`, `poll`, `setMax`: sem mudança própria; só herdam o `fill` condicionado.
 
@@ -71,7 +71,7 @@ Sem mudança em hooks, spawn, board ou config.
 
 ## UI (`ui/index.html` + `ui/app.ts`)
 
-- Topo, depois de `máx. workers`: `<span id="signal">` com três `<button data-signal="green|yellow|red">verde|amarelo|vermelho</button>` e um `<span id="signal-hint">`. Clique → `POST /signal`. `render()` põe a classe `active` no botão do sinal atual e escreve o hint (`''` / `sem jobs novos` / `modo manual`).
+- Topo, depois de `máx. workers`: `<span id="signal">` com três `<button data-signal="green|yellow|red">green|yellow|red</button>` e um `<span id="signal-hint">`. Clique → `POST /signal`. `render()` põe a classe `active` no botão do sinal atual e escreve o hint (`''` / `sem jobs novos` / `modo manual`).
 - CSS: `button.active[data-signal=green]` borda/texto `--trabalhando`; `yellow` → `--esperando`; `red` → `--danger`. `.card.paused { opacity: 0.6 }`.
 - `renderCard`: meta ganha ` · pausado` quando `slot.paused`; classe `paused` no card.
 - Nenhuma mudança no formulário de setup.
@@ -82,7 +82,7 @@ Sem mudança em hooks, spawn, board ou config.
   - `canStart` verde com slot livre → `true`; verde sem slot livre (todos ocupados ou drenando) → `false`; amarelo/vermelho com slot livre → `false`.
   - `poll` sob amarelo enfileira tudo e não emite `spawn`; `setMax` pra cima sob vermelho cria slots vazios sem spawn; `exit` sob amarelo devolve a task pra fila (`setStatus queue`) sem repuxar.
   - `setSignal` verde com fila e slot vazio dispara `fill` (spawn); `setSignal` amarelo→vermelho não emite nada.
-  - `Stop` sob vermelho marca `paused` e `lastEvent = 'pausado: sinal vermelho'`, status preservado (`trabalhando` e `aguardando_review`); `Stop` sob verde não marca.
+  - `Stop` sob vermelho marca `paused` e `lastEvent = 'pausado: sinal red'`, status preservado (`trabalhando` e `aguardando_review`); `Stop` sob verde não marca.
   - `UserPromptSubmit` e `PreToolUse` limpam `paused`; `setSignal` pra verde ou amarelo limpa `paused` de todos os slots; `setSignal` vermelho de novo mantém.
   - `initialState` começa em `green`; reducer continua não mutando a entrada.
 - `test/state-store.test.ts`: `state.json` sem `signal` carrega como `green`; com `signal: "red"` preserva; com valor inválido volta a `green`.

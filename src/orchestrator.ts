@@ -184,7 +184,7 @@ function applyHook(state: State, workerId: string, p: HookPayload, branch?: stri
       // Red is manual mode: the worker stops by itself at the end of the turn; the mark says it stopped under red
       return patch(state, workerId, {
         status: activeStatus(slot), question: undefined,
-        ...(state.signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal vermelho' } : { lastEvent: 'turno encerrado' }),
+        ...(state.signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal red' } : { lastEvent: 'turno encerrado' }),
       });
     case 'SessionEnd':
       return fill(exit(state, workerId));

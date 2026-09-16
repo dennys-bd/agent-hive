@@ -332,7 +332,7 @@ test('Stop under red marks the slot paused and keeps its status; under green it 
   const one = stopped(red, working);
   assert.equal(one.slots[0].paused, true);
   assert.equal(one.slots[0].status, 'trabalhando');
-  assert.equal(one.slots[0].lastEvent, 'pausado: sinal vermelho');
+  assert.equal(one.slots[0].lastEvent, 'pausado: sinal red');
   const two = stopped(one, reviewing);
   assert.equal(two.slots[1].paused, true);
   assert.equal(two.slots[1].status, 'aguardando_review');
