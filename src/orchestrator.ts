@@ -14,7 +14,9 @@ const SLUG_MAX = 30;
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 
 export function initialState(maxConcurrent: number): State {
-  return { signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [] };
+  return {
+    signal: 'green', maxConcurrent, slots: Array.from({ length: maxConcurrent }, emptySlot), queue: [], usage: [], budget: {},
+  };
 }
 
 /** The one gate every spawn goes through: green and at least one free slot that is not draining. */

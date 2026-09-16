@@ -47,6 +47,8 @@ export interface State {
   maxConcurrent: number;
   slots: Slot[];
   queue: Task[];
+  usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
+  budget: Budget; // copied from Config.budget by setBudget
   lastPolledAt?: string;
   error?: string;
 }

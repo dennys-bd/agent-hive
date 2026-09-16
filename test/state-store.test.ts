@@ -38,3 +38,20 @@ test('loadState reads a missing or unknown signal as green and keeps a valid one
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, signal: 'blue' }));
   assert.equal((await loadState(dir, 1)).signal, 'green');
 });
+
+test('loadState reads missing usage and budget as empty, keeps valid samples and drops malformed ones', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const legacy = { signal: 'green', maxConcurrent: 1, slots: [], queue: [] }; // written before the budget existed
+  await writeFile(join(dir, 'state.json'), JSON.stringify(legacy));
+  const loaded = await loadState(dir, 1);
+  assert.deepEqual(loaded.usage, []);
+  assert.deepEqual(loaded.budget, {});
+  const valid = { at: '2026-09-16T12:00:00.000Z', tokens: 1200 };
+  const usage = [valid, { at: 5, tokens: 1 }, { at: '2026-09-16T12:00:00.000Z' }, { at: 'x', tokens: 'many' }, null, 7];
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage, budget: { maxTokensPerHour: 10 } }));
+  const kept = await loadState(dir, 1);
+  assert.deepEqual(kept.usage, [valid]);
+  assert.deepEqual(kept.budget, { maxTokensPerHour: 10 });
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
+  assert.deepEqual((await loadState(dir, 1)).usage, []);
+});
