@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
-import type { Budget, HookPayload, Signal, State, Task } from '../src/types.js';
+import type { Budget, HookPayload, Signal, State, Task, UsageRule } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -21,6 +21,13 @@ const counted = (state: State, workerId: string, tokens: number) =>
 const spent = (tokens: number, ageMs: number, budget: Budget): State => ({
   ...initialState(1), budget, usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
 });
+// Usage rules over a 1000-token hour: 55% → cap 1; 85% → yellow + cap 1; 95% → red + cap 1; 10% → nothing.
+const RULES: UsageRule[] = [{ percent: 50, maxWorkers: 1 }, { percent: 80, signal: 'yellow' }, { percent: 90, signal: 'red' }];
+const ruled = (state: State, tokens: number, ageMs = 0): State => ({
+  ...state, budget: { maxTokensPerHour: 1000 }, usageRules: RULES,
+  usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
+});
+const polled = (state: State, n: number) => reduce(state, { type: 'poll', tasks: tasks(n) });
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -48,6 +55,7 @@ test('reducer never mutates its input', () => {
   const snapshot = JSON.stringify(before);
   reduce(before, { type: 'poll', tasks: tasks(3) });
   reduce(before, { type: 'setSignal', signal: 'red' });
+  reduce(before, { type: 'setUsageRules', usageRules: RULES });
   assert.equal(JSON.stringify(before), snapshot);
   const first = filled(1, 1).state;
   const paused = stopped(signaled(first, 'red').state, first.slots[0].workerId!);
@@ -453,6 +461,91 @@ test('setBudget stores the budget and fills a free slot only when the new limit 
   assert.deepEqual(raised.effects.map((e) => e.type), ['setStatus', 'spawn']);
   const unlimited = reduce(lower.state, { type: 'setBudget', budget: {} });
   assert.equal(unlimited.state.slots[0].task?.id, '1');
+});
+
+test('canStart with a limit needs the occupied count below it; without one it is as before', () => {
+  const one = filled(2, 1).state.slots; // 1 occupied, 1 free
+  assert.equal(canStart('green', one), true);
+  assert.equal(canStart('green', one, 2), true, 'occupied 1 < limit 2');
+  assert.equal(canStart('green', one, 1), false, 'occupied 1 = limit 1');
+  assert.equal(canStart('green', one, 0), false);
+  assert.equal(canStart('yellow', one, 2), false, 'a limit never overrides the signal');
+});
+
+test('poll under a usage cap opens up to the cap, queues the rest and drains nothing', () => {
+  const { state, effects } = polled(ruled(initialState(3), 550), 3); // 55%: cap 1
+  assert.equal(state.maxConcurrent, 3, 'the configured max is untouched');
+  assert.equal(occupied(state).length, 1);
+  assert.equal(state.slots.length, 3);
+  assert.deepEqual(state.queue.map((t) => t.id), ['2', '3']);
+  assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'spawn']);
+  assert.ok(state.slots.every((s) => !s.draining));
+});
+
+test('a usage cap below the occupied count emits no kill, drains nothing, and a freed slot stays empty', () => {
+  const three = ruled(filled(3, 4).state, 550); // 3 working, 1 queued, cap 1
+  const { state, effects } = polled(three, 4);
+  assert.equal(effects.length, 0);
+  assert.equal(occupied(state).length, 3);
+  assert.ok(state.slots.every((s) => !s.draining));
+  assert.deepEqual(state.queue.map((t) => t.id), ['4']);
+  const freed = reduce(state, { type: 'exit', workerId: state.slots[0].workerId! });
+  assert.equal(occupied(freed.state).length, 2, 'the freed slot stays empty while occupied >= cap');
+  assert.equal(freed.state.slots[0].status, 'vazio');
+  assert.deepEqual(freed.state.queue.map((t) => t.id), ['4', '1']);
+  assert.deepEqual(freed.effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
+});
+
+test('usage past the yellow rule stops fill without touching the manual signal; a sample out of the window reopens', () => {
+  const queued = polled(ruled(initialState(1), 850), 1); // 85%: yellow
+  assert.equal(queued.state.signal, 'green', 'the manual signal is untouched');
+  assert.equal(occupied(queued.state).length, 0);
+  assert.deepEqual(queued.state.queue.map((t) => t.id), ['1']);
+  assert.equal(queued.effects.length, 0);
+  const aged = polled(ruled(queued.state, 850, 2 * HOUR_MS), 1); // same sample, older than the hour window
+  assert.equal(aged.state.slots[0].task?.id, '1');
+  assert.deepEqual(aged.effects.map((e) => e.type), ['setStatus', 'spawn']);
+});
+
+test('Stop under a dynamic red pauses; manual green cannot lift it; usage aging out clears it on poll; usage never lifts a manual red', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const paused = stopped(ruled(first, 950), id); // 95%: red
+  assert.equal(paused.slots[0].paused, true);
+  assert.equal(paused.slots[0].status, 'trabalhando');
+  assert.equal(paused.slots[0].lastEvent, 'pausado: sinal red');
+  const stillRed = signaled(paused, 'green').state;
+  assert.equal(stillRed.signal, 'green');
+  assert.equal(stillRed.slots[0].paused, true, 'manual green does not beat a dynamic red');
+  const aged = polled(ruled(stillRed, 950, 2 * HOUR_MS), 0).state;
+  assert.equal(aged.slots[0].paused, undefined, 'the sample left the hour window: poll releases the mark');
+  const byHand = stopped(signaled(ruled(first, 100), 'red').state, id);
+  assert.equal(byHand.slots[0].paused, true);
+  assert.equal(polled(ruled(byHand, 0), 0).state.slots[0].paused, true, 'usage never clears a manual red');
+});
+
+test('Stop counts this turn\'s sample before reading the signal, so the turn that crosses the red line pauses', () => {
+  const first = ruled(filled(1, 1).state, 0);
+  const crossed = counted({ ...first, usage: [] }, first.slots[0].workerId!, 950); // 95% in one turn
+  assert.equal(crossed.slots[0].paused, true);
+});
+
+test('setUsageRules copies the rules into the state and fills; a state without rules behaves as before', () => {
+  const capped = polled(ruled(initialState(2), 550), 2).state; // cap 1: one working, one queued
+  assert.equal(occupied(capped).length, 1);
+  const loosened = reduce(capped, { type: 'setUsageRules', usageRules: [] });
+  assert.deepEqual(loosened.state.usageRules, []);
+  assert.deepEqual(loosened.effects.map((e) => e.type), ['setStatus', 'spawn'], 'lifting the cap pulls the queue right away');
+  const { state, effects } = polled(loosened.state, 3);
+  assert.equal(occupied(state).length, 2, 'no rules: the manual max is the only cap');
+  assert.deepEqual(state.queue.map((t) => t.id), ['3']);
+  assert.equal(effects.length, 0);
+  const queued = polled({ ...ruled(initialState(1), 850), usageRules: [] }, 1).state; // 85% but no rules
+  assert.equal(queued.slots[0].task?.id, '1');
+  const back = reduce(queued, { type: 'setUsageRules', usageRules: RULES });
+  assert.deepEqual(back.state.usageRules, RULES);
+  assert.equal(back.effects.length, 0, 'rules that tighten never kill or drain');
+  assert.equal(back.state.slots[0].task?.id, '1');
 });
 
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {

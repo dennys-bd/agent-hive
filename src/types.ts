@@ -12,6 +12,18 @@ export interface UsageSample {
   tokens: number; // delta since the worker's previous turn end
 }
 
+/** One row of the usage table: at `percent` of the budget used, cap the workers and/or force a signal. */
+export interface UsageRule {
+  percent: number;
+  maxWorkers?: number;
+  signal?: Signal;
+}
+
+export interface UsageLimits {
+  signal: Signal;
+  maxWorkers?: number;
+}
+
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
   | { type: 'markdown'; path: string };
@@ -50,6 +62,7 @@ export interface State {
   queue: Task[];
   usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
   budget: Budget; // copied from Config.budget by setBudget
+  usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
   lastPolledAt?: string;
   error?: string;
 }
@@ -62,6 +75,7 @@ export interface Config {
   claudeArgs: string[];
   promptTemplate: string;
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
+  usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
 }
 
 export interface HookPayload {
@@ -81,6 +95,7 @@ export type HiveEvent =
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
+  | { type: 'setUsageRules'; usageRules: UsageRule[] }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }

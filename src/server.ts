@@ -217,6 +217,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
     if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
+    if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     await poll();
   }
 
@@ -226,6 +227,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     live = { runtime, state: live.state };
     if (live.state.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(live.state.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
+    if (!isDeepStrictEqual(live.state.usageRules, config.usageRules)) {
+      await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
+    }
     await poll();
   }
 
@@ -338,6 +342,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
+        usageRules: current?.usageRules, // not in the form: comes from the file, like port and claudeArgs
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });

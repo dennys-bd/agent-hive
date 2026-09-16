@@ -15,6 +15,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.deepEqual(config.claudeArgs, []);
   assert.equal(config.promptTemplate, DEFAULT_CONFIG.promptTemplate);
   assert.deepEqual(config.budget, {});
+  assert.deepEqual(config.usageRules, []);
 });
 
 test('parseConfig keeps explicit values', () => {
@@ -98,4 +99,23 @@ test('parseConfig rejects a budget that is not an object or has a non-integer li
   );
   assert.throws(() => parseConfig({ board: GITHUB, budget: { maxTokensPerDay: -1 } }), /budget\.maxTokensPerDay/);
   assert.throws(() => parseConfig({ board: GITHUB, budget: { maxTokensPerDay: '10' } }), /budget\.maxTokensPerDay/);
+});
+
+test('parseConfig reads usageRules as written', () => {
+  const usageRules = [{ percent: 50, maxWorkers: 4 }, { percent: 80, signal: 'yellow' }, { percent: 90, maxWorkers: 0, signal: 'red' }];
+  assert.deepEqual(parseConfig({ board: GITHUB, usageRules }).usageRules, usageRules);
+  assert.deepEqual(parseConfig({ board: GITHUB, usageRules: [] }).usageRules, []);
+});
+
+test('parseConfig rejects bad usage rules naming the field', () => {
+  const rules = (usageRules: unknown) => () => parseConfig({ board: GITHUB, usageRules });
+  assert.throws(rules('x'), /"usageRules" must be an array/);
+  assert.throws(rules([5]), /"usageRules\[0\]" must be an object/);
+  assert.throws(rules([{ percent: 101, signal: 'red' }]), /"usageRules\[0\]\.percent" must be an integer from 0 to 100/);
+  assert.throws(rules([{ percent: -1, signal: 'red' }]), /usageRules\[0\]\.percent/);
+  assert.throws(rules([{ percent: 1.5, signal: 'red' }]), /usageRules\[0\]\.percent/);
+  assert.throws(rules([{ signal: 'red' }]), /usageRules\[0\]\.percent/);
+  assert.throws(rules([{ percent: 50, signal: 'blue' }]), /"usageRules\[0\]\.signal" must be one of: green, yellow, red/);
+  assert.throws(rules([{ percent: 50, maxWorkers: -1 }]), /usageRules\[0\]\.maxWorkers/);
+  assert.throws(rules([{ percent: 50, signal: 'red' }, { percent: 60 }]), /"usageRules\[1\]" must set "maxWorkers" or "signal"/);
 });
