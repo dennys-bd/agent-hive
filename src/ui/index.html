@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #111418; --panel: #1a1f26; --text: #e6e6e6; --muted: #8a94a6; --border: #2a313b;
-    --vazio: #3a4250; --trabalhando: #2e9e5b; --esperando: #e0b52a; --review: #3b82f6; --danger: #d9534f;
+    --empty: #3a4250; --working: #2e9e5b; --waiting: #e0b52a; --review: #3b82f6; --danger: #d9534f;
     --code-bg: #0b0e12; --string: #d7a86e; --number: #c792ea; --keyword: #7fb4f5;
   }
   * { box-sizing: border-box; }
@@ -20,8 +20,8 @@
   button:disabled { opacity: 0.5; cursor: default; }
   button.danger { border-color: var(--danger); color: var(--danger); }
   #signal { display: flex; gap: 6px; align-items: center; }
-  button.active[data-signal=green] { border-color: var(--trabalhando); color: var(--trabalhando); }
-  button.active[data-signal=yellow] { border-color: var(--esperando); color: var(--esperando); }
+  button.active[data-signal=green] { border-color: var(--working); color: var(--working); }
+  button.active[data-signal=yellow] { border-color: var(--waiting); color: var(--waiting); }
   button.active[data-signal=red] { border-color: var(--danger); color: var(--danger); }
   #signal-hint { color: var(--muted); }
   #usage, #limits { color: var(--muted); display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.2; }
@@ -29,15 +29,15 @@
   #quota.low { color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
-  #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
+  #notice { display: none; background: #3a3110; color: var(--waiting); padding: 8px 20px; }
   #notice.show { display: block; }
   main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px 20px; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--vazio); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--empty); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
   .card.occupied { cursor: pointer; }
-  .card.trabalhando { border-left-color: var(--trabalhando); }
-  .card.aguardando_review { border-left-color: var(--review); }
-  .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
+  .card.working { border-left-color: var(--working); }
+  .card.review { border-left-color: var(--review); }
+  .card.waiting { border-left-color: var(--waiting); animation: blink 1s ease-in-out infinite; }
   .card.paused { opacity: 0.6; }
   .card .title { font-weight: 600; margin-bottom: 4px; }
   .card.draining .title { text-decoration: line-through; }
@@ -57,7 +57,7 @@
   #output { font: 12px/1.4 ui-monospace, monospace; min-height: 60px; max-height: 300px; overflow: auto; white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; }
   #output .code { margin: 0; padding: 6px 8px; max-height: none; background: var(--code-bg); border: 1px solid var(--border); }
   #output code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
-  #output .add { color: var(--trabalhando); }
+  #output .add { color: var(--working); }
   #output .del { color: var(--danger); }
   #output .hunk { color: var(--review); }
   #output .comment { color: var(--muted); font-style: italic; }
@@ -95,8 +95,9 @@
 <body>
 <header>
   <h1>Agent Hive</h1>
-  <span id="summary" class="dash">0/0 workers ativos</span>
-  <label class="dash">máx. workers <input id="max" type="number" min="0" step="1"></label>
+  <span id="summary" class="dash"></span>
+  <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+  <label class="dash"><span data-i18n="maxWorkers"></span> <input id="max" type="number" min="0" step="1"></label>
   <span id="signal" class="dash">
     <button type="button" data-signal="green">green</button>
     <button type="button" data-signal="yellow">yellow</button>
@@ -105,103 +106,127 @@
   </span>
   <span id="usage" class="dash"></span>
   <span id="limits" class="dash"></span>
-  <button type="button" id="refresh" class="dash">atualizar board</button>
-  <button type="button" id="configure">configurar</button>
+  <button type="button" id="refresh" class="dash" data-i18n="header.refresh"></button>
+  <button type="button" id="configure" data-i18n="header.configure"></button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
 </header>
 <div id="error"></div>
 <div id="notice"></div>
 <form id="setup">
-  <h2>configuração</h2>
+  <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
+  <h2 data-i18n="setup.title"></h2>
   <div class="tabs">
     <nav id="setup-tabs">
-      <button type="button" data-tab="board" aria-pressed="true">board</button>
-      <button type="button" data-tab="geral" aria-pressed="false">geral</button>
-      <button type="button" data-tab="limites" aria-pressed="false">limites</button>
+      <button type="button" data-tab="board" aria-pressed="true" data-i18n="setup.tab.board"></button>
+      <button type="button" data-tab="geral" aria-pressed="false" data-i18n="setup.tab.general"></button>
+      <button type="button" data-tab="limites" aria-pressed="false" data-i18n="setup.tab.limits"></button>
     </nav>
     <div class="panels">
       <section data-panel="board">
-        <label>tipo de board
+        <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+        <label><span data-i18n="setup.boardType"></span>
           <select id="board-type">
-            <option value="github">GitHub Project</option>
-            <option value="markdown">arquivo markdown no repo</option>
+            <option value="github" data-i18n="setup.boardType.github"></option>
+            <option value="markdown" data-i18n="setup.boardType.markdown"></option>
           </select>
         </label>
         <fieldset id="github-fields">
           <div class="row">
-            <label>owner <input id="owner" type="text" value="@me" required></label>
-            <button type="button" id="load-projects">carregar</button>
+            <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+            <label><span data-i18n="setup.owner"></span> <input id="owner" type="text" value="@me" required></label>
+            <button type="button" id="load-projects" data-i18n="setup.load"></button>
           </div>
-          <label>project <select id="project" required><option value="">carregue os projects do owner</option></select></label>
-          <label>coluna da fila <select id="col-queue" required></select></label>
-          <label>coluna em andamento <select id="col-working" required></select></label>
-          <label>coluna em review <select id="col-review" required></select></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.project"></span> <select id="project" required><option value="" data-i18n="setup.projectPlaceholder"></option></select></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnQueue"></span> <select id="col-queue" required></select></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnWorking"></span> <select id="col-working" required></select></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnReview"></span> <select id="col-review" required></select></label>
           <div class="hint" id="quota"></div>
-          <label>épicos (issues com sub-issues)
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.epics"></span>
             <select id="epics">
-              <option value="ignore">ignorar: só as sub-issues entram na fila</option>
-              <option value="queue">enfileirar quando todas as sub-issues fecharem</option>
+              <option value="ignore" data-i18n="setup.epics.ignore"></option>
+              <option value="queue" data-i18n="setup.epics.queue"></option>
             </select>
           </label>
         </fieldset>
         <fieldset id="markdown-fields" disabled>
           <div class="row">
-            <label>caminho (relativo ao repo ou absoluto) <input id="md-path" type="text" value="board.md" required></label>
-            <button type="button" id="load-columns">carregar</button>
+            <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+            <label><span data-i18n="setup.markdownPath"></span> <input id="md-path" type="text" value="board.md" required></label>
+            <button type="button" id="load-columns" data-i18n="setup.load"></button>
           </div>
-          <div class="hint">tabela <code>| id | título | status |</code>; se o arquivo não existe, é criado ao salvar. "carregar" lista os status já usados no arquivo. <span id="md-found"></span></div>
-          <label>coluna da fila <input id="md-queue" type="text" list="md-options" value="Ready" required></label>
-          <label>coluna em andamento <input id="md-working" type="text" list="md-options" value="In progress" required></label>
-          <label>coluna em review <input id="md-review" type="text" list="md-options" value="In review" required></label>
+          <div class="hint"><span data-i18n-html="setup.markdownHint"></span> <span id="md-found"></span></div>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnQueue"></span> <input id="md-queue" type="text" list="md-options" value="Ready" required></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnWorking"></span> <input id="md-working" type="text" list="md-options" value="In progress" required></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.columnReview"></span> <input id="md-review" type="text" list="md-options" value="In review" required></label>
           <datalist id="md-options"></datalist>
         </fieldset>
       </section>
       <section data-panel="geral" hidden>
-        <label>onde os workers rodam
-          <select id="workers-mode">
-            <option value="embedded">embutidos (sessão tmux; terminal pelo botão do card)</option>
-            <option value="iterm">tabs do iTerm2 (macOS)</option>
+        <label><span data-i18n="setup.language"></span>
+          <select id="language">
+            <option value="pt">português</option>
+            <option value="en">English</option>
           </select>
         </label>
-        <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
-        <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Permissões e perguntas são respondidas no terminal do worker (botão <code>terminal</code> no card). O modo embutido precisa do <code>tmux</code> (<code>brew install tmux</code> / <code>apt install tmux</code>).</div>
+        <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+        <label><span data-i18n="setup.workers"></span>
+          <select id="workers-mode">
+            <option value="embedded" data-i18n="setup.workers.embedded"></option>
+            <option value="iterm" data-i18n="setup.workers.iterm"></option>
+          </select>
+        </label>
+        <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+        <label><span data-i18n="setup.promptTemplate"></span> <textarea id="prompt-template" rows="4" spellcheck="false" data-i18n-placeholder="setup.promptPlaceholder"></textarea></label>
+        <div class="hint" data-i18n-html="setup.promptHint"></div>
       </section>
       <section data-panel="limites" hidden>
         <div class="row">
-          <label>tokens por hora <input id="budget-hour" type="number" min="0" step="1"></label>
-          <label>tokens por dia <input id="budget-day" type="number" min="0" step="1"></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.budgetHour"></span> <input id="budget-hour" type="number" min="0" step="1"></label>
+          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
+          <label><span data-i18n="setup.budgetDay"></span> <input id="budget-day" type="number" min="0" step="1"></label>
         </div>
-        <div class="hint">totais por hora e por dia; ao estourar, nenhum job novo abre (os que estão rodando terminam). Vazio = sem limite.</div>
+        <div class="hint" data-i18n="setup.budgetHint"></div>
         <div class="hint" id="usage-raw"></div>
         <table id="rules">
-          <thead><tr><th>% do orçamento</th><th>máx. workers</th><th>sinal</th><th></th></tr></thead>
+          <thead><tr><th data-i18n="setup.rules.percent"></th><th data-i18n="maxWorkers"></th><th data-i18n="setup.rules.signal"></th><th></th></tr></thead>
           <tbody></tbody>
         </table>
-        <button type="button" id="add-rule">adicionar faixa</button>
-        <div class="hint">faixas cumulativas: ao passar de uma faixa, valem todas as anteriores (o pior sinal e o menor teto). O sinal manual do dashboard vence quando é mais restritivo.</div>
+        <button type="button" id="add-rule" data-i18n="setup.rules.add"></button>
+        <div class="hint" data-i18n="setup.rulesHint"></div>
       </section>
     </div>
   </div>
   <div id="setup-error"></div>
   <div class="actions">
-    <button type="submit" id="save">salvar</button>
-    <button type="button" id="cancel">cancelar</button>
+    <button type="submit" id="save" data-i18n="setup.save"></button>
+    <button type="button" id="cancel" data-i18n="setup.cancel"></button>
   </div>
 </form>
 <main>
   <section id="grid"></section>
   <div>
     <aside id="detail">
-      <h2>detalhe</h2>
+      <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
+      <h2 data-i18n="detail.title"></h2>
       <div id="detail-body"></div>
       <div id="output"></div>
       <div class="actions" style="margin-top: 8px; display: flex; gap: 8px;">
-        <button type="button" id="focus">ir pro terminal</button>
-        <button type="button" id="close">fechar</button>
+        <button type="button" id="focus" data-i18n="detail.focus"></button>
+        <button type="button" id="close" data-i18n="detail.close"></button>
       </div>
     </aside>
     <aside id="queue-panel">
-      <h2>fila</h2>
+      <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
+      <h2 data-i18n="queue.title"></h2>
       <ol id="queue"></ol>
     </aside>
   </div>

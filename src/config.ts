@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LOG_LEVELS, type LogLevel } from './log.js';
+import { LANGUAGES } from './language.js';
 import { SIGNALS } from './orchestrator.js';
-import type { BoardConfig, Budget, Config, EpicsMode, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
+import type { BoardConfig, Budget, Config, EpicsMode, Language, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -79,6 +80,11 @@ function requireSignal(value: unknown, field: string): Signal {
   return value as Signal;
 }
 
+function requireLanguage(value: unknown): Language {
+  if (!LANGUAGES.includes(value as Language)) throw new Error(`${CONFIG_FILE}: "language" must be one of: ${LANGUAGES.join(', ')}`);
+  return value as Language;
+}
+
 function parseUsageRule(raw: unknown, field: string): UsageRule {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
   const percent = requireInt(raw.percent, `${field}.percent`);
@@ -127,6 +133,7 @@ export function parseConfig(raw: unknown): Config {
       if (!LOG_LEVELS.includes(v as LogLevel)) throw new Error(`${CONFIG_FILE}: "logLevel" must be one of: ${LOG_LEVELS.join(', ')}`);
       return v as LogLevel;
     }),
+    ...(raw.language === undefined ? {} : { language: requireLanguage(raw.language) }), // absent stays absent: the system decides
     status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
     port: optional(raw.port, DEFAULT_CONFIG.port, (v) => requireInt(v, 'port')),

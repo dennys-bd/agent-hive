@@ -1,0 +1,211 @@
+// The only place UI text lives. Served as /ui/i18n.js; no DOM at import time, so node:test covers t / statusText / slotEventText.
+import type { Language, SlotEvent, SlotEventKind, Status } from '../types.js';
+
+const en = {
+  'header.activeWorkers': '{active}/{max} active workers',
+  'maxWorkers': 'max. workers',
+  'header.refresh': 'refresh board',
+  'header.configure': 'configure',
+  'signal.yellow': 'no new jobs',
+  'signal.red': 'manual mode',
+  'usage.hour': 'hour',
+  'usage.day': 'day',
+  'usage.over': 'over budget',
+  'usage.raw': 'current usage: {hour}/h · {day}/day',
+  'window.session': 'session',
+  'window.week': 'week',
+  'limits.resets': 'resets {time}',
+  'limits.at': 'read at {time}',
+  'status.empty': 'empty',
+  'status.working': 'working',
+  'status.waiting': 'waiting for you',
+  'status.review': 'awaiting review',
+  'event.starting': 'starting',
+  'event.manualStart': 'started by hand',
+  'event.prompt': 'prompt sent',
+  'event.waiting': 'waiting: {detail}',
+  'event.pr': 'PR open',
+  'event.paused': 'paused: red signal',
+  'event.turn': 'turn ended',
+  'card.draining': 'draining',
+  'card.paused': 'paused',
+  'detail.title': 'detail',
+  'detail.pending': 'pending:',
+  'detail.session': 'session:',
+  'detail.focus': 'open terminal',
+  'detail.close': 'close',
+  'queue.title': 'queue',
+  'queue.empty': 'empty',
+  'queue.blockedBy': 'blocked by {ids}',
+  'queue.start': 'start',
+  'confirm.kill': 'Kill this worker? The task goes back to the queue.',
+  'confirm.raiseMax': 'No free slot. Raise max. workers from {from} to {to} and start #{id}?',
+  'error.disconnected': 'connection to the Agent Hive lost; reconnecting…',
+  'notice.restartPort': 'restart the Hive to use port {port}',
+  'setup.title': 'configuration',
+  'setup.tab.board': 'board',
+  'setup.tab.general': 'general',
+  'setup.tab.limits': 'limits',
+  'setup.boardType': 'board type',
+  'setup.boardType.github': 'GitHub Project',
+  'setup.boardType.markdown': 'markdown file in the repo',
+  'setup.owner': 'owner',
+  'setup.load': 'load',
+  'setup.project': 'project',
+  'setup.projectPlaceholder': "load the owner's projects",
+  'setup.columnQueue': 'queue column',
+  'setup.columnWorking': 'in-progress column',
+  'setup.columnReview': 'review column',
+  'setup.epics': 'epics (issues with sub-issues)',
+  'setup.epics.ignore': 'ignore: only the sub-issues are queued',
+  'setup.epics.queue': 'queue once every sub-issue is closed',
+  'setup.markdownPath': 'path (relative to the repo or absolute)',
+  'setup.markdownHint': 'table <code>| id | título | status |</code>; if the file does not exist, it is created on save. "load" lists the statuses already used in the file.',
+  'setup.markdownFound': 'statuses found: {list} — click the field to choose.',
+  'setup.workers': 'where the workers run',
+  'setup.workers.embedded': 'embedded (tmux session; terminal through the card button)',
+  'setup.workers.iterm': 'iTerm2 tabs (macOS)',
+  'setup.language': 'language',
+  'setup.promptTemplate': 'worker prompt',
+  'setup.promptPlaceholder': 'empty = default: Task #{number}: {title}, the issue body and the instruction to open a PR with gh pr create',
+  'setup.promptHint': 'placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> is an alias of <code>{id}</code>) — e.g. <code>/ship #{id}</code>. Empty keeps the current one. On markdown, <code>{body}</code> is empty and <code>{url}</code> is the file path. Permissions and questions are answered in the worker\'s terminal (<code>terminal</code> button on the card). Embedded mode needs <code>tmux</code> (<code>brew install tmux</code> / <code>apt install tmux</code>).',
+  'setup.budgetHour': 'tokens per hour',
+  'setup.budgetDay': 'tokens per day',
+  'setup.budgetHint': 'hourly and daily totals; past a limit no new job opens (the running ones finish). Empty = no limit.',
+  'setup.rules.percent': '% of the budget',
+  'setup.rules.signal': 'signal',
+  'setup.rules.add': 'add tier',
+  'setup.rules.remove': 'remove',
+  'setup.rules.error': 'tier {n}: enter max. workers or a signal',
+  'setup.rulesHint': 'cumulative tiers: past a tier, every earlier one still applies (the worst signal and the lowest cap). The manual signal of the dashboard wins when it is stricter.',
+  'setup.save': 'save',
+  'setup.cancel': 'cancel',
+  'setup.error.owner': 'enter the owner (@me, a user or an org)',
+  'setup.error.noProjects': 'no open project in {owner}',
+  'setup.error.path': 'enter the file path',
+  'setup.error.project': 'choose a project',
+};
+
+export type MessageKey = keyof typeof en;
+
+const pt: Record<MessageKey, string> = {
+  'header.activeWorkers': '{active}/{max} workers ativos',
+  'maxWorkers': 'máx. workers',
+  'header.refresh': 'atualizar board',
+  'header.configure': 'configurar',
+  'signal.yellow': 'sem jobs novos',
+  'signal.red': 'modo manual',
+  'usage.hour': 'hora',
+  'usage.day': 'dia',
+  'usage.over': 'sem orçamento',
+  'usage.raw': 'consumo atual: {hour}/h · {day}/dia',
+  'window.session': 'sessão',
+  'window.week': 'semana',
+  'limits.resets': 'reseta {time}',
+  'limits.at': 'lido às {time}',
+  'status.empty': 'vazio',
+  'status.working': 'trabalhando',
+  'status.waiting': 'esperando você',
+  'status.review': 'aguardando review',
+  'event.starting': 'iniciando',
+  'event.manualStart': 'iniciado à mão',
+  'event.prompt': 'prompt enviado',
+  'event.waiting': 'aguardando: {detail}',
+  'event.pr': 'PR aberto',
+  'event.paused': 'pausado: sinal red',
+  'event.turn': 'turno encerrado',
+  'card.draining': 'drenando',
+  'card.paused': 'pausado',
+  'detail.title': 'detalhe',
+  'detail.pending': 'pendente:',
+  'detail.session': 'sessão:',
+  'detail.focus': 'ir pro terminal',
+  'detail.close': 'fechar',
+  'queue.title': 'fila',
+  'queue.empty': 'vazia',
+  'queue.blockedBy': 'bloqueada por {ids}',
+  'queue.start': 'iniciar',
+  'confirm.kill': 'Matar esse worker? A task volta pra fila.',
+  'confirm.raiseMax': 'Nenhum slot livre. Subir máx. workers de {from} pra {to} e iniciar #{id}?',
+  'error.disconnected': 'conexão com o Agent Hive perdida; reconectando…',
+  'notice.restartPort': 'reinicie o Hive pra usar a porta {port}',
+  'setup.title': 'configuração',
+  'setup.tab.board': 'board',
+  'setup.tab.general': 'geral',
+  'setup.tab.limits': 'limites',
+  'setup.boardType': 'tipo de board',
+  'setup.boardType.github': 'GitHub Project',
+  'setup.boardType.markdown': 'arquivo markdown no repo',
+  'setup.owner': 'owner',
+  'setup.load': 'carregar',
+  'setup.project': 'project',
+  'setup.projectPlaceholder': 'carregue os projects do owner',
+  'setup.columnQueue': 'coluna da fila',
+  'setup.columnWorking': 'coluna em andamento',
+  'setup.columnReview': 'coluna em review',
+  'setup.epics': 'épicos (issues com sub-issues)',
+  'setup.epics.ignore': 'ignorar: só as sub-issues entram na fila',
+  'setup.epics.queue': 'enfileirar quando todas as sub-issues fecharem',
+  'setup.markdownPath': 'caminho (relativo ao repo ou absoluto)',
+  'setup.markdownHint': 'tabela <code>| id | título | status |</code>; se o arquivo não existe, é criado ao salvar. "carregar" lista os status já usados no arquivo.',
+  'setup.markdownFound': 'status encontrados: {list} — clique no campo para escolher.',
+  'setup.workers': 'onde os workers rodam',
+  'setup.workers.embedded': 'embutidos (sessão tmux; terminal pelo botão do card)',
+  'setup.workers.iterm': 'tabs do iTerm2 (macOS)',
+  'setup.language': 'idioma',
+  'setup.promptTemplate': 'prompt do worker',
+  'setup.promptPlaceholder': 'vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create',
+  'setup.promptHint': 'placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Permissões e perguntas são respondidas no terminal do worker (botão <code>terminal</code> no card). O modo embutido precisa do <code>tmux</code> (<code>brew install tmux</code> / <code>apt install tmux</code>).',
+  'setup.budgetHour': 'tokens por hora',
+  'setup.budgetDay': 'tokens por dia',
+  'setup.budgetHint': 'totais por hora e por dia; ao estourar, nenhum job novo abre (os que estão rodando terminam). Vazio = sem limite.',
+  'setup.rules.percent': '% do orçamento',
+  'setup.rules.signal': 'sinal',
+  'setup.rules.add': 'adicionar faixa',
+  'setup.rules.remove': 'remover',
+  'setup.rules.error': 'faixa {n}: informe máx. workers ou sinal',
+  'setup.rulesHint': 'faixas cumulativas: ao passar de uma faixa, valem todas as anteriores (o pior sinal e o menor teto). O sinal manual do dashboard vence quando é mais restritivo.',
+  'setup.save': 'salvar',
+  'setup.cancel': 'cancelar',
+  'setup.error.owner': 'informe o owner (@me, usuário ou org)',
+  'setup.error.noProjects': 'nenhum project aberto em {owner}',
+  'setup.error.path': 'informe o caminho do arquivo',
+  'setup.error.project': 'escolha um project',
+};
+
+export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
+export const LOCALE: Record<Language, string> = { pt: 'pt-BR', en: 'en-US' };
+const PLACEHOLDER = /\{(\w+)\}/g;
+const STATUS_KEY: Record<Status, MessageKey> = { empty: 'status.empty', working: 'status.working', waiting: 'status.waiting', review: 'status.review' };
+const EVENT_KEY: Record<Exclude<SlotEventKind, 'tool'>, MessageKey> = {
+  starting: 'event.starting', manualStart: 'event.manualStart', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', paused: 'event.paused', turn: 'event.turn',
+};
+
+let current: Language = 'en';
+
+export function setLanguage(language: Language): void {
+  current = language;
+}
+
+/** The text for `key` in the current language; `{name}` placeholders are filled from `vars` and left alone when there is none. */
+export function t(key: MessageKey, vars?: Record<string, string | number>): string {
+  const text = MESSAGES[current][key];
+  if (!vars) return text; // the prompt hint carries literal {id} / {number}: untouched
+  return text.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
+}
+
+export const statusText = (status: Status): string => t(STATUS_KEY[status]);
+
+/** The card's last-event line. `tool` is already the text the reducer built (the caller escapes it); `waiting` names the notification kind. */
+export function slotEventText(event: SlotEvent): string {
+  if (event.kind === 'tool') return event.detail ?? '';
+  return t(EVENT_KEY[event.kind], { detail: event.detail ?? '' });
+}
+
+/** Static text from the keys in the HTML. innerHTML only for the hints with <code>: the dictionary is code, not input. */
+export function applyTranslations(): void {
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n as MessageKey); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml as MessageKey); });
+  document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder as MessageKey); });
+  document.documentElement.lang = LOCALE[current];
+}

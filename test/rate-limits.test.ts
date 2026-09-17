@@ -64,15 +64,24 @@ test('parseRateLimits is undefined without rate_limits or for a body that is not
 });
 
 test('formatRateLimits is the status line — label, rounded percent, dot-separated — and windowLabel names every key', () => {
-  assert.equal(formatRateLimits(PARSED), 'sessão 23% · semana 41%');
+  assert.equal(formatRateLimits(PARSED, 'pt'), 'sessão 23% · semana 41%');
   const fable: RateLimits = { at: PARSED.at, windows: { ...PARSED.windows, seven_day_fable: { usedPercent: 99.5, resetsAt: PARSED.at } } };
-  assert.equal(formatRateLimits(fable), 'sessão 23% · semana 41% · semana fable 100%');
-  assert.equal(windowLabel('five_hour'), 'sessão');
-  assert.equal(windowLabel('seven_day'), 'semana');
-  assert.equal(windowLabel('seven_day_fable'), 'semana fable');
-  assert.equal(windowLabel('seven_day_opus'), 'semana opus');
-  assert.equal(windowLabel('spend_limit'), 'spend limit');
-  assert.equal(windowLabel('constructor'), 'constructor', 'an inherited property name is not a label');
+  assert.equal(formatRateLimits(fable, 'pt'), 'sessão 23% · semana 41% · semana fable 100%');
+  assert.equal(windowLabel('five_hour', 'pt'), 'sessão');
+  assert.equal(windowLabel('seven_day', 'pt'), 'semana');
+  assert.equal(windowLabel('seven_day_fable', 'pt'), 'semana fable');
+  assert.equal(windowLabel('seven_day_opus', 'pt'), 'semana opus');
+  assert.equal(windowLabel('spend_limit', 'pt'), 'spend limit');
+  assert.equal(windowLabel('constructor', 'pt'), 'constructor', 'an inherited property name is not a label');
+});
+
+test('formatRateLimits and windowLabel in English: session / week, the weekly prefix translated, other keys as they are', () => {
+  assert.equal(formatRateLimits(PARSED, 'en'), 'session 23% · week 41%');
+  const fable: RateLimits = { at: PARSED.at, windows: { ...PARSED.windows, seven_day_fable: { usedPercent: 99.5, resetsAt: PARSED.at } } };
+  assert.equal(formatRateLimits(fable, 'en'), 'session 23% · week 41% · week fable 100%');
+  assert.equal(windowLabel('seven_day_opus', 'en'), 'week opus');
+  assert.equal(windowLabel('spend_limit', 'en'), 'spend limit');
+  assert.equal(windowLabel('constructor', 'en'), 'constructor');
 });
 
 // What GET /api/oauth/usage answers on a Max plan: per-model weekly windows present, unused ones null, extra_usage alongside

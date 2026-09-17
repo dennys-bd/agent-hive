@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
+import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, SlotEventKind, State, Status, Task, UsageLimits, UsageRule } from './types.js';
 import { hasBudget, isTranscriptPath, pruneUsage } from './usage.js';
 import { applyUsageRules, worstSignal } from './usage-rules.js';
 
@@ -15,6 +15,7 @@ const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 export const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/; // Claude Code uses uuids; anything else came from another local process
 const SLUG_MAX = 30;
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
+export const STATUSES: readonly Status[] = ['empty', 'working', 'waiting', 'review'];
 
 export function initialState(maxConcurrent: number): State {
   return {
@@ -25,10 +26,10 @@ export function initialState(maxConcurrent: number): State {
 
 /** A free slot for the gate and for a manual start: empty and not draining. */
 export function isFree(slot: Slot): boolean {
-  return slot.status === 'vazio' && !slot.draining;
+  return slot.status === 'empty' && !slot.draining;
 }
 
-const occupiedCount = (slots: Slot[]): number => slots.filter((s) => s.status !== 'vazio').length;
+const occupiedCount = (slots: Slot[]): number => slots.filter((s) => s.status !== 'empty').length;
 
 /** The one gate every automatic spawn goes through: green, a free slot that is not draining, and room under the cap when there is one. */
 export function canStart(signal: Signal, slots: Slot[], limit?: number): boolean {
@@ -78,6 +79,13 @@ export function isSessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value);
 }
 
+/** A hook is from a subagent or teammate, not the worker's own top-level turn, when the slot already recorded a
+ * session id (from its first SessionStart) and this payload carries a different, well-formed one. A missing or
+ * malformed payload id, or a slot that never recorded one, is today's behaviour: treated as the main session (#24). */
+export function isChildSession(slot: Slot | undefined, payload: HookPayload): boolean {
+  return isSessionId(slot?.sessionId) && isSessionId(payload.session_id) && payload.session_id !== slot.sessionId;
+}
+
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
     case 'boot': return boot(state); // no fill: bootHive polls right after, and the board is the truth; opens under yellow unless a saved red wins
@@ -100,7 +108,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
 }
 
 function emptySlot(): Slot {
-  return { id: randomUUID(), status: 'vazio' };
+  return { id: randomUUID(), status: 'empty' };
 }
 
 function none(state: State): Reduced {
@@ -116,14 +124,14 @@ function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced 
 function setRateLimits(state: State, workerId: string | undefined, rateLimits: RateLimits): Reduced {
   if (workerId === undefined) return none({ ...state, rateLimits });
   const slot = state.slots.find((s) => s.workerId === workerId);
-  return !slot || slot.status === 'vazio' ? none(state) : none({ ...state, rateLimits });
+  return !slot || slot.status === 'empty' ? none(state) : none({ ...state, rateLimits });
 }
 
 // Takes `task` out of the queue into `slots[index]` and emits the board move plus the spawn; fill and start share it.
-function occupy(state: State, index: number, task: Task, lastEvent: string): Reduced {
+function occupy(state: State, index: number, task: Task, kind: SlotEventKind): Reduced {
   const next: Slot = {
-    id: state.slots[index].id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
-    startedAt: new Date().toISOString(), lastEvent,
+    id: state.slots[index].id, workerId: randomUUID(), status: 'working', task, slug: slugFor(task),
+    startedAt: new Date().toISOString(), lastEvent: { kind },
   };
   return {
     state: { ...state, slots: state.slots.map((s, i) => (i === index ? next : s)), queue: state.queue.filter((t) => t !== task) },
@@ -142,7 +150,7 @@ function fill(reduced: Reduced): Reduced {
     if (!isFree(state.slots[i])) continue;
     const task = state.queue.find((t) => !isBlocked(t)); // first free task in board order; blocked ones keep their place
     if (!task) break;
-    const next = occupy(state, i, task, 'iniciando');
+    const next = occupy(state, i, task, 'starting');
     state = next.state;
     spawned.push(...next.effects);
   }
@@ -159,7 +167,7 @@ function start(state: State, itemId: string, raiseMax: boolean): Reduced {
   if (!hasFree && !raiseMax) return none(state);
   const base = hasFree ? state : setMax(state, occupiedCount(state.slots) + 1).state;
   const index = base.slots.findIndex(isFree);
-  return index < 0 ? none(state) : occupy(base, index, task, 'iniciado à mão'); // never throws: a reducer that throws takes the route with it
+  return index < 0 ? none(state) : occupy(base, index, task, 'manualStart'); // never throws: a reducer that throws takes the route with it
 }
 
 function poll(state: State, tasks: Task[]): Reduced {
@@ -176,7 +184,7 @@ function setMax(state: State, max: number): Reduced {
   let occupiedSeen = 0;
   let emptyKept = 0;
   const kept = state.slots.flatMap<Slot>((s) => {
-    if (s.status !== 'vazio') {
+    if (s.status !== 'empty') {
       const draining = occupiedSeen++ >= max;
       return [draining ? { ...s, draining: true } : { ...s, draining: undefined }];
     }
@@ -204,11 +212,11 @@ function releasePaused(state: State): State {
 
 function exit(state: State, workerId: string): Reduced {
   const slot = state.slots.find((s) => s.workerId === workerId);
-  if (!slot || slot.status === 'vazio') return none(state);
+  if (!slot || slot.status === 'empty') return none(state);
   const requeue = slot.task && !slot.prUrl ? slot.task : undefined;
   const slots = slot.draining
     ? state.slots.filter((s) => s.workerId !== workerId)
-    : state.slots.map((s) => (s.workerId === workerId ? { id: s.id, status: 'vazio' as Status } : s));
+    : state.slots.map((s) => (s.workerId === workerId ? { id: s.id, status: 'empty' as Status } : s));
   return {
     state: { ...state, slots, queue: requeue ? [...state.queue, requeue] : state.queue },
     effects: requeue ? [{ type: 'setStatus', itemId: requeue.itemId, key: 'queue' }] : [],
@@ -221,7 +229,7 @@ function exit(state: State, workerId: string): Reduced {
 function boot(state: State): Reduced {
   const signal = state.signal === 'red' ? 'red' : 'yellow';
   return state.slots
-    .flatMap((s) => (s.status !== 'vazio' && s.workerId ? [s.workerId] : []))
+    .flatMap((s) => (s.status !== 'empty' && s.workerId ? [s.workerId] : []))
     .reduce<Reduced>((r, workerId) => {
       const next = exit(r.state, workerId);
       return { state: next.state, effects: [...r.effects, ...next.effects] };
@@ -236,7 +244,7 @@ function describeTool(p: HookPayload): string {
 }
 
 function activeStatus(slot: Slot): Status {
-  return slot.prUrl ? 'aguardando_review' : 'trabalhando';
+  return slot.prUrl ? 'review' : 'working';
 }
 
 // One sample per turn: the delta against the total seen at this worker's previous turn end. A smaller total means the
@@ -252,7 +260,10 @@ function recordUsage(state: State, slot: Slot, tokens: number): State {
 
 function applyHook(initial: State, workerId: string, p: HookPayload, branch?: string, tokens?: number): Reduced {
   const slot = initial.slots.find((s) => s.workerId === workerId);
-  if (!slot || slot.status === 'vazio') return none(initial);
+  if (!slot || slot.status === 'empty') return none(initial);
+  // A Stop / SessionEnd from a subagent or teammate is not the worker's turn end: skip before the token sample
+  // lands, so status, paused, lastEvent and usage all stay as they were, and the slot is not exited (#24)
+  if ((p.hook_event_name === 'Stop' || p.hook_event_name === 'SessionEnd') && isChildSession(slot, p)) return none(initial);
   // Only the server sets `tokens` (Stop / SessionEnd): the sample lands first, then the event applies on top of it
   const state = tokens === undefined ? initial : recordUsage(initial, slot, tokens);
   switch (p.hook_event_name) {
@@ -262,19 +273,19 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
         sessionId: slot.sessionId ?? (isSessionId(p.session_id) ? p.session_id : undefined),
       });
     case 'UserPromptSubmit':
-      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: 'prompt enviado' });
+      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: { kind: 'prompt' } });
     case 'PreToolUse':
-      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: describeTool(p) });
+      return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: { kind: 'tool', detail: describeTool(p) } });
     case 'Notification': {
       const kind = String(p.notification_type ?? '');
       if (!WAITING_NOTIFICATIONS.includes(kind)) return none(state);
-      return patch(state, workerId, { status: 'esperando_voce', question: String(p.message ?? kind), lastEvent: `aguardando: ${kind}` });
+      return patch(state, workerId, { status: 'waiting', question: String(p.message ?? kind), lastEvent: { kind: 'waiting', detail: kind } });
     }
     case 'PostToolUse': {
       const command = String((p.tool_input as { command?: unknown } | undefined)?.command ?? '');
       const prUrl = extractPrUrl(command, p.tool_response);
       if (!prUrl) return none(state);
-      const patched = patch(state, workerId, { status: 'aguardando_review', prUrl, question: undefined, lastEvent: 'PR aberto' });
+      const patched = patch(state, workerId, { status: 'review', prUrl, question: undefined, lastEvent: { kind: 'pr' } });
       return { ...patched, effects: slot.task ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [] };
     }
     case 'Stop':
@@ -282,7 +293,7 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
       // the turn; the mark says it stopped under red
       return patch(state, workerId, {
         status: activeStatus(slot), question: undefined,
-        ...(limits(state, Date.now()).signal === 'red' ? { paused: true, lastEvent: 'pausado: sinal red' } : { lastEvent: 'turno encerrado' }),
+        ...(limits(state, Date.now()).signal === 'red' ? { paused: true, lastEvent: { kind: 'paused' } } : { lastEvent: { kind: 'turn' } }),
       });
     case 'SessionEnd':
       return fill(exit(state, workerId));

@@ -106,6 +106,7 @@ Default: `Task #{id}: {title}`, the body, and an instruction to open a PR with `
 | `port` | `47821` | file (requires restart) |
 | `claudeArgs` | `[]` | file (e.g. `["--permission-mode", "acceptEdits"]`) |
 | `logLevel` | `info` | file (`info` or `debug`; re-read on every save of the setup form, no restart needed) |
+| `language` | system (`pt` when the OS locale starts with `pt`, else `en`) | form (`pt` or `en`; the dashboard and the setup form switch on save, no reload) |
 
 Older files with `project: { owner, number }` are still accepted. Runtime state lives in `<repo>/.hive/` (kept out of git through `.git/info/exclude`), including `hive.log`: one line per thing the Hive did (`tail -f .hive/hive.log`), rotated once at 5 MB into `hive.log.1`; `logLevel: "debug"` adds every hook event and every `gh` call.
 

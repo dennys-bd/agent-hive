@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
-import type { Config, SetupBody, SetupInfo, State } from '../src/types.js';
+import type { Config, Language, SetupBody, SetupInfo, State } from '../src/types.js';
 import { fakeBoardFactory, OPTIONS } from './fakes.js';
 
 const BODY: SetupBody = {
@@ -20,10 +20,10 @@ const BODY: SetupBody = {
 
 interface Started { repo: string; base: string; port: number; server: HiveServer; configs: Config[] }
 
-async function start(t: TestContext, resolveDelayMs = 0): Promise<Started> {
+async function start(t: TestContext, resolveDelayMs = 0, systemLanguage?: Language): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
   const { factory, configs } = fakeBoardFactory(resolveDelayMs);
-  const server = createServer({ repo, boardFactory: factory });
+  const server = createServer({ repo, boardFactory: factory, systemLanguage });
   const port = await server.listen(0);
   t.after(() => server.close());
   return { repo, base: `http://127.0.0.1:${port}`, port, server, configs };
@@ -49,7 +49,7 @@ function getWithHost(port: number, host: string): Promise<number> {
 
 test('GET /setup reports configured: false and the repo in setup mode', async (t) => {
   const { base, repo } = await start(t);
-  assert.deepEqual(await json<SetupInfo>(fetch(`${base}/setup`)), { configured: false, repo });
+  assert.deepEqual(await json<SetupInfo>(fetch(`${base}/setup`)), { configured: false, repo, language: 'en' }); // no systemLanguage injected: en
 });
 
 test('GET /events streams { configured: false } until setup is saved', async (t) => {
@@ -362,30 +362,31 @@ test('POST /setup with an invalid usage rule answers 400 naming the rule and wri
   assert.deepEqual(server.getState()?.usageRules, usageRules);
 });
 
+const STATUS_PAYLOAD = {
+  model: { id: 'claude-opus' }, // the rest of the status line JSON rides along and is ignored
+  rate_limits: { five_hour: { used_percentage: 23.4, resets_at: 1759744800 }, seven_day: { used_percentage: 41, resets_at: 1760263200 } },
+};
+const postStatus = (base: string, body: unknown, worker?: string): Promise<Response> =>
+  fetch(`${base}/hooks/status`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(worker ? { 'x-hive-worker': worker } : {}) },
+    body: JSON.stringify(body),
+  });
+
 test('POST /hooks/status answers the limits line for a valid payload, an empty body otherwise, and an unknown worker changes nothing', async (t) => {
   const { base, server } = await start(t);
   assert.equal((await postSetup(base, BODY)).status, 200);
-  const postStatus = (body: unknown, worker?: string): Promise<Response> =>
-    fetch(`${base}/hooks/status`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(worker ? { 'x-hive-worker': worker } : {}) },
-      body: JSON.stringify(body),
-    });
-  const payload = {
-    model: { id: 'claude-opus' }, // the rest of the status line JSON rides along and is ignored
-    rate_limits: { five_hour: { used_percentage: 23.4, resets_at: 1759744800 }, seven_day: { used_percentage: 41, resets_at: 1760263200 } },
-  };
-  const ok = await postStatus(payload, 'ghost');
+  const ok = await postStatus(base, STATUS_PAYLOAD, 'ghost');
   assert.equal(ok.status, 200);
   assert.match(ok.headers.get('content-type') ?? '', /^text\/plain/);
-  assert.equal(await ok.text(), 'sessão 23% · semana 41%');
-  const noHeader = await postStatus(payload);
+  assert.equal(await ok.text(), 'session 23% · week 41%'); // no systemLanguage injected: en
+  const noHeader = await postStatus(base, STATUS_PAYLOAD);
   assert.equal(noHeader.status, 200);
   assert.equal(await noHeader.text(), '');
-  const noLimits = await postStatus({ model: { id: 'claude-opus' } }, 'ghost');
+  const noLimits = await postStatus(base, { model: { id: 'claude-opus' } }, 'ghost');
   assert.equal(noLimits.status, 200);
   assert.equal(await noLimits.text(), '');
-  const noValid = await postStatus({ rate_limits: { five_hour: { used_percentage: 'x' } } }, 'ghost');
+  const noValid = await postStatus(base, { rate_limits: { five_hour: { used_percentage: 'x' } } }, 'ghost');
   assert.equal(await noValid.text(), '');
   await sleep(20); // the route answers before dispatching; let the handlers finish
   assert.equal(server.getState()?.rateLimits, undefined, 'no occupied slot matches, so nothing is stored');
@@ -409,4 +410,30 @@ test('POST /setup with epics writes it, a save without the key keeps it, a chang
   assert.equal(bad.status, 400);
   assert.match((await json<{ error: string }>(bad)).error, /"epics" must be one of: ignore, queue/);
   assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'queue', 'rejected before the write');
+});
+
+test('GET /setup carries the effective language: the system one until a save sets it, then the file; an omitted key keeps it; a bad value is 400', async (t) => {
+  const { base, repo } = await start(t, 0, 'pt');
+  const language = async (): Promise<Language> => (await json<SetupInfo>(fetch(`${base}/setup`))).language;
+  const saved = async (): Promise<Config> => JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(await language(), 'pt');
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal(await language(), 'pt', 'no language in the body: still the system one');
+  assert.equal('language' in (await saved()), false, 'and the file has no language key');
+  assert.equal((await postSetup(base, { ...BODY, language: 'en' })).status, 200);
+  assert.equal(await language(), 'en');
+  assert.equal((await saved()).language, 'en');
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal(await language(), 'en', 'an API caller that omits it keeps the saved one');
+  const bad = await postSetup(base, { ...BODY, language: 'fr' });
+  assert.equal(bad.status, 400);
+  assert.match((await json<{ error: string }>(bad)).error, /"language" must be one of: pt, en/);
+  assert.equal((await saved()).language, 'en', 'nothing written');
+});
+
+test('POST /hooks/status answers in the effective language: the system one first, the saved one after', async (t) => {
+  const { base } = await start(t, 0, 'pt');
+  assert.equal(await (await postStatus(base, STATUS_PAYLOAD, 'ghost')).text(), 'sessão 23% · semana 41%', 'setup mode: the system language');
+  assert.equal((await postSetup(base, { ...BODY, language: 'en' })).status, 200);
+  assert.equal(await (await postStatus(base, STATUS_PAYLOAD, 'ghost')).text(), 'session 23% · week 41%');
 });

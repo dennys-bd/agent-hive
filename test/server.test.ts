@@ -74,7 +74,7 @@ test('POST /setup does not override a maxConcurrent changed through POST /config
 test('saving the setup starts one worker with the launch: mode, repo, port, hooks and the prompt file with the rendered prompt', async (t) => {
   const { repo, port, server, workers } = await start(t);
   const slot = slot0(server);
-  assert.equal(slot.status, 'trabalhando');
+  assert.equal(slot.status, 'working');
   assert.equal(slot.slug, 'hive-1-from-ready');
   assert.equal(workers.length, 1);
   const promptPath = join(repo, '.hive', 'prompts', 'hive-1-from-ready.md');
@@ -145,22 +145,38 @@ test('a Stop kills the session only once the PR is open; the exit then frees the
   const workerId = slot0(server).workerId!;
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
   assert.equal(worker.killed, 0, 'no PR yet: the session stays for the next turn');
-  assert.equal(slot0(server).status, 'trabalhando');
+  assert.equal(slot0(server).status, 'working');
   await openPr(server, workerId);
-  assert.equal(slot0(server).status, 'aguardando_review');
+  assert.equal(slot0(server).status, 'review');
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
   await waitFor(() => worker.killed === 1);
   worker.handlers.onExit();
-  await waitFor(() => slot0(server).status === 'vazio');
+  await waitFor(() => slot0(server).status === 'empty');
   assert.deepEqual(server.getState()?.queue, []);
   assert.equal(workers.length, 1, 'nothing left to spawn');
+});
+
+test('a Stop from a child session (a subagent or teammate) does not kill the session even with the PR open; the main session still does (#24)', async (t) => {
+  const { base, repo, server, workers } = await start(t);
+  const [worker] = workers;
+  const workerId = slot0(server).workerId!;
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const childId = 'another-child-session-0001';
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 200);
+  await openPr(server, workerId);
+  assert.equal(slot0(server).status, 'review');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: childId })).status, 200);
+  assert.equal(worker.killed, 0, 'a teammate/subagent Stop is not the worker turn end');
+  assert.equal(slot0(server).status, 'review', 'state untouched by the child Stop');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 200);
+  await waitFor(() => worker.killed === 1);
 });
 
 test('an error reported by the spawner lands in State.error with the worker slug', async (t) => {
   const { server, workers } = await start(t);
   workers[0].handlers.onError('tmux: spawn tmux ENOENT');
   await waitFor(() => server.getState()?.error === 'worker hive-1-from-ready: tmux: spawn tmux ENOENT');
-  assert.equal(slot0(server).status, 'trabalhando', 'only the exit frees the slot');
+  assert.equal(slot0(server).status, 'working', 'only the exit frees the slot');
 });
 
 test('an exit without a PR requeues the task, which the free slot picks up again with a new worker', async (t) => {
@@ -169,7 +185,7 @@ test('an exit without a PR requeues the task, which the free slot picks up again
   workers[0].handlers.onExit();
   await waitFor(() => workers.length === 2);
   const slot = slot0(server);
-  assert.equal(slot.status, 'trabalhando');
+  assert.equal(slot.status, 'working');
   assert.notEqual(slot.workerId, first);
   assert.equal(workers[1].launch.workerId, slot.workerId);
   assert.deepEqual(server.getState()?.queue, []);
@@ -180,7 +196,7 @@ test('POST /slots/:id/kill sends kill to the live worker; the slot frees on its 
   const id = slot0(server).id;
   assert.deepEqual(await json(postJson(`${base}/slots/${id}/kill`)), { ok: true });
   assert.equal(workers[0].killed, 1);
-  assert.equal(slot0(server).status, 'trabalhando');
+  assert.equal(slot0(server).status, 'working');
   workers[0].handlers.onExit();
   await waitFor(() => workers.length === 2); // requeued and picked up again
 });
@@ -198,7 +214,7 @@ test('kill on a slot whose process the pool does not know (Hive restarted) frees
   await server.listen(0);
   t.after(() => server.close());
   await server.dispatch({ type: 'kill', slotId: state.slots[0].id });
-  assert.equal(slot0(server).status, 'vazio');
+  assert.equal(slot0(server).status, 'empty');
   assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['1']);
   assert.equal(workers.length, 0);
 });
@@ -268,7 +284,7 @@ test('the log tells the story: slot transitions, signal and board writes at info
   has('INFO signal: green → yellow'); // boot
   has('INFO poll queue=1');
   has('INFO signal: yellow → green');
-  has(`INFO slot 1: vazio → trabalhando #1 worker=${id8}`);
+  has(`INFO slot 1: empty → working #1 worker=${id8}`);
   has('INFO setStatus #I1 → working ok');
   has(`INFO spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
   has('DEBUG setSignal green');
@@ -281,7 +297,7 @@ test('the log tells the story: slot transitions, signal and board writes at info
   assert.equal(lines.filter((l) => l.includes('session=')).length, 1, 'one line per session');
   await openPr(server, workerId);
   has(`DEBUG hook PostToolUse worker=${id8} tool=Bash`);
-  has(`INFO slot 1: trabalhando → aguardando_review #1 worker=${id8}`);
+  has(`INFO slot 1: working → review #1 worker=${id8}`);
   has('INFO setStatus #I1 → review ok');
   assert.ok(!lines.some((l) => l.includes('gh pr create')), 'tool_input never reaches the log');
   assert.ok(!lines.some((l) => l.includes('pull/9')), 'tool_response never reaches the log');
@@ -367,7 +383,7 @@ test('without a readPlanLimits dep the server never reads the plan limits and lo
   assert.ok(!lines.some((l) => l.includes('plan limits')), lines.join('\n'));
 });
 
-test('POST /queue/:itemId/start under yellow opens the task in the pool with its slug, marked "iniciado à mão"; 404 for a task not in the queue, 409 before the setup', async (t) => {
+test('POST /queue/:itemId/start under yellow opens the task in the pool with its slug, marked manualStart; 404 for a task not in the queue, 409 before the setup', async (t) => {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn });
@@ -384,8 +400,8 @@ test('POST /queue/:itemId/start under yellow opens the task in the pool with its
   assert.deepEqual(await missing.json(), { error: 'task não está na fila' });
   assert.deepEqual(await json(postJson(`${base}/queue/I1/start`)), { ok: true });
   const slot = slot0(server);
-  assert.equal(slot.status, 'trabalhando');
-  assert.equal(slot.lastEvent, 'iniciado à mão');
+  assert.equal(slot.status, 'working');
+  assert.deepEqual(slot.lastEvent, { kind: 'manualStart' });
   assert.equal(workers.length, 1, 'the spawn ran before the answer');
   assert.equal(workers[0].launch.slug, 'hive-1-from-ready');
   assert.equal(workers[0].launch.workerId, slot.workerId);
@@ -415,12 +431,12 @@ test('POST /queue/:itemId/start is 409 for a blocked task and, without a free sl
   assert.equal(server.getState()?.slots.length, 2);
   const opened = server.getState()!.slots[1];
   assert.equal(opened.task?.id, '3');
-  assert.equal(opened.lastEvent, 'iniciado à mão');
+  assert.deepEqual(opened.lastEvent, { kind: 'manualStart' });
   assert.equal(workers.length, 2);
   assert.equal(workers[1].launch.slug, 'hive-3-free');
   assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['2']);
   assert.ok(lines.includes('DEBUG start #I3 raiseMax=true'), lines.filter((l) => l.includes('start')).join('\n'));
-  assert.ok(lines.includes(`INFO slot 2: vazio → trabalhando #3 worker=${opened.workerId!.slice(0, 8)}`), 'the slot that appeared occupied is a transition');
+  assert.ok(lines.includes(`INFO slot 2: empty → working #3 worker=${opened.workerId!.slice(0, 8)}`), 'the slot that appeared occupied is a transition');
   const saved = JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State;
   assert.equal(saved.maxConcurrent, 2, 'the raised max survives a restart');
   assert.equal(server.getState()?.error, undefined);

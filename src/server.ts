@@ -11,7 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
-import { isBlocked, isFree, reduce, SIGNALS } from './orchestrator.js';
+import { isBlocked, isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
@@ -21,7 +21,7 @@ import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
   SpawnWorker, State,
 } from './types.js';
 
@@ -67,6 +67,7 @@ export interface ServerDeps {
   readPlanLimits?: PlanLimitsReader;
   /** Setup mode with a config that failed to boot: prefills the form and explains why. */
   setupFallback?: { config: Config; error: string };
+  systemLanguage?: Language; // from the locale the boot saw; default en. The config's language wins when set
 }
 
 export interface HiveServer {
@@ -97,7 +98,7 @@ const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board,
 
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
-  const slugs = state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : []));
+  const slugs = state.slots.flatMap((s) => (s.status !== 'empty' && s.slug ? [s.slug] : []));
   await Promise.all(slugs.map((slug) => killStray(slug)));
 }
 
@@ -123,6 +124,7 @@ function startRefusal(state: State, itemId: string, raiseMax: boolean): { status
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
+  const systemLanguage = deps.systemLanguage ?? 'en';
   const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo, log }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
@@ -140,6 +142,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const slotOf = (workerId: string): Slot | undefined => live?.state.slots.find((s) => s.workerId === workerId);
+
+  // What the UI and the status line speak: the saved config's language, else the system's. Setup mode reads the fallback config too.
+  const effectiveLanguage = (): Language => (live?.runtime.config ?? deps.setupFallback?.config)?.language ?? systemLanguage;
 
   function broadcast(): void {
     const data = `data: ${JSON.stringify(eventsPayload())}\n\n`;
@@ -278,7 +283,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function turnTokens(workerId: string, payload: HookPayload): Promise<number | undefined> {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
     const slot = slotOf(workerId);
-    if (!slot || slot.status === 'vazio') return undefined;
+    if (!slot || slot.status === 'empty') return undefined;
     return sumTranscriptTokens(payload.transcript_path).catch(() => undefined); // unreadable: the hook goes through without tokens
   }
 
@@ -362,15 +367,18 @@ export function createServer(deps: ServerDeps): HiveServer {
     const workerId = req.header('x-hive-worker');
     const raw = req.body as HookPayload | undefined;
     const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
+    // Computed once against the slot as it stands: a subagent/teammate Stop or SessionEnd must neither read the
+    // transcript nor trigger the post-PR kill below, same as the reducer ignores it (#24)
+    const isChild = workerId !== undefined && payload !== undefined && isChildSession(slotOf(workerId), payload);
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
-      const tokens = await turnTokens(workerId, payload);
+      const tokens = isChild ? undefined : await turnTokens(workerId, payload);
       await dispatch({ type: 'hook', workerId, payload, branch, tokens });
     } else {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
-    if (workerId && payload?.hook_event_name === 'Stop' && slotOf(workerId)?.status === 'aguardando_review') pool.kill(workerId);
+    if (workerId && payload?.hook_event_name === 'Stop' && !isChild && slotOf(workerId)?.status === 'review') pool.kill(workerId);
   });
 
   // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.
@@ -389,7 +397,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.send('');
       return;
     }
-    res.send(formatRateLimits(rateLimits)); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
+    res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
     await dispatch({ type: 'rateLimits', workerId, rateLimits });
   });
 
@@ -405,9 +413,10 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   app.get('/setup', (_req: Request, res: Response) => {
+    const language = effectiveLanguage();
     const info: SetupInfo = live
-      ? { configured: true, repo, config: live.runtime.config }
-      : { configured: false, repo, ...deps.setupFallback };
+      ? { configured: true, repo, config: live.runtime.config, language }
+      : { configured: false, repo, ...deps.setupFallback, language };
     res.json(info);
   });
 
@@ -464,6 +473,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
+        language: body.language ?? current?.language, // the form always sends it; an API caller that omits it keeps the saved one
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
@@ -530,7 +540,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const current = requireLive(res);
     if (!current) return;
     const slot = current.state.slots.find((s) => s.id === req.params.id);
-    if (!slot || slot.status === 'vazio') {
+    if (!slot || slot.status === 'empty') {
       res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
       return;
     }
@@ -578,6 +588,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
   app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
   app.get('/ui/highlight.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'highlight.js')));
+  app.get('/ui/i18n.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'i18n.js')));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {
