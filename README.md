@@ -118,9 +118,9 @@ Older files with `project: { owner, number }` are still accepted. Runtime state 
 ## Development
 
 ```sh
-pnpm test                        # tsc + vite build, then node --test and vitest
+pnpm test                        # pnpm build, then node --test and vitest
 pnpm dev                         # Vite dev server with HMR for src/ui; proxies the API to a Hive on 127.0.0.1:47821 (HIVE_PORT overrides)
-pnpm exec tsc -p src/ui          # type-checks the React side (vite build only transpiles)
+pnpm build                       # tsc, tsc -p src/ui (type-checks the React side; vite build only transpiles), then vite build
 pnpm start -- /path/to/repo      # goes through bin/hive.js, detaches
 node dist/src/main.js /repo      # Electron, stays attached (debugging)
 node dist/src/run.js /repo       # headless server at http://127.0.0.1:47821

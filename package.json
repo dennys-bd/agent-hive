@@ -10,7 +10,7 @@
     "hive": "bin/hive.js"
   },
   "scripts": {
-    "build": "tsc && vite build",
+    "build": "tsc && tsc -p src/ui && rm -rf dist/src/ui/assets && vite build",
     "dev": "vite",
     "test": "pnpm build && node --test \"dist/test/*.test.js\" \"dist/test/boards/*.test.js\" && vitest run",
     "lint": "biome lint --error-on-warnings",
