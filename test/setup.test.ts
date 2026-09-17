@@ -326,7 +326,7 @@ test('POST /hooks/event Stop with a transcript_path for an unknown worker answer
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });
 
-test('POST /setup with usageRules writes them to hive.config.json, GET /setup returns them and the State carries them', async (t) => {
+test('POST /setup with usageRules writes them to hive.config.json, GET /setup and the State carry them, an absent key keeps them and [] clears them', async (t) => {
   const { base, repo, server } = await start(t);
   const usageRules = [{ percent: 50, maxWorkers: 1 }, { percent: 90, signal: 'red' }];
   assert.equal((await postSetup(base, { ...BODY, usageRules })).status, 200);
