@@ -60,3 +60,30 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
   assert.deepEqual((await loadState(dir, 1)).usage, []);
 });
+
+test('loadState keeps a valid rateLimits reading', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const rateLimits = {
+    at: '2026-09-16T12:00:00.000Z',
+    windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-16T15:00:00.000Z' }, seven_day_fable: { usedPercent: 7, resetsAt: '2026-09-20T00:00:00.000Z' } },
+  };
+  await saveState(dir, { ...initialState(1), rateLimits });
+  assert.deepEqual((await loadState(dir, 1)).rateLimits, rateLimits);
+});
+
+test('loadState drops a rateLimits with the wrong shape and leaves the key absent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const base = initialState(1);
+  const at = '2026-09-16T12:00:00.000Z';
+  const bad: unknown[] = [
+    5, 'x', null, [], { at: 5, windows: {} }, { at }, { at, windows: [] }, { at, windows: 'x' },
+    { at, windows: { five_hour: { usedPercent: 'many', resetsAt: at } } },
+    { at, windows: { five_hour: { usedPercent: 1, resetsAt: 7 } } },
+    { at, windows: { five_hour: null } },
+  ];
+  for (const rateLimits of bad) {
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...base, rateLimits }));
+    const loaded = await loadState(dir, 1);
+    assert.equal('rateLimits' in loaded, false, JSON.stringify(rateLimits));
+  }
+});
