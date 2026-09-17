@@ -342,7 +342,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
-        usageRules: current?.usageRules, // not in the form: comes from the file, like port and claudeArgs
+        usageRules: body.usageRules ?? current?.usageRules,
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });

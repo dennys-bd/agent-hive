@@ -51,7 +51,7 @@
 - Produces (in `src/server.ts`): `saveSetup` passes `usageRules: body.usageRules ?? current?.usageRules` to `parseConfig`. `parseUsageRules` / `parseUsageRule` (item 6) validate and name the field; an error answers 400 through the existing `catch` and nothing is written. `configure` / `reconfigure` already dispatch `setUsageRules` when the config's rules differ from the State's, so `getState()?.usageRules` follows the file.
 - Consumed by: Task 3 (`saveSetup` in `app.ts` sends `usageRules`).
 
-- [ ] **Step 1: Write the failing tests — rewrite the last test of `test/setup.test.ts`**
+- [x] **Step 1: Write the failing tests — rewrite the last test of `test/setup.test.ts`**
 
 Replace the whole test `usageRules come from the file only: a second POST /setup keeps them and the live config and State carry them` (lines 329–343, the last test in the file) with these two:
 
@@ -88,12 +88,12 @@ test('POST /setup with an invalid usage rule answers 400 naming the rule and wri
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pnpm test`
 Expected: build green (the bodies are `unknown`, so the extra key compiles). `POST /setup with usageRules writes them…` fails at the first `assert.deepEqual` (`[]` on disk: the body's `usageRules` is ignored). `POST /setup with an invalid usage rule…` fails at `assert.equal(outOfRange.status, 400)` (got 200: nothing in the body is validated). 152 pass, 2 fail.
 
-- [ ] **Step 3: Edit `src/types.ts`**
+- [x] **Step 3: Edit `src/types.ts`**
 
 In `SetupBody`, after the `budget?: Budget;` line add:
 
@@ -102,7 +102,7 @@ In `SetupBody`, after the `budget?: Budget;` line add:
   usageRules?: UsageRule[];
 ```
 
-- [ ] **Step 4: Edit `src/server.ts`**
+- [x] **Step 4: Edit `src/server.ts`**
 
 In `saveSetup`, replace
 
@@ -116,12 +116,12 @@ with
         usageRules: body.usageRules ?? current?.usageRules,
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run: `pnpm test`
 Expected: 154 tests PASS (`setup` 23). The `budget` test (`POST /setup with a budget…`) is untouched and still green: `parseConfig` gets `usageRules: undefined` from `BODY` and defaults it to `[]`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/types.ts src/server.ts test/setup.test.ts

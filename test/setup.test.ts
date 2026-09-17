@@ -326,18 +326,33 @@ test('POST /hooks/event Stop with a transcript_path for an unknown worker answer
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });
 
-test('usageRules come from the file only: a second POST /setup keeps them and the live config and State carry them', async (t) => {
+test('POST /setup with usageRules writes them to hive.config.json, GET /setup returns them and the State carries them', async (t) => {
   const { base, repo, server } = await start(t);
-  assert.equal((await postSetup(base, BODY)).status, 200);
-  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.deepEqual(saved.usageRules, [], 'the default is written out');
   const usageRules = [{ percent: 50, maxWorkers: 1 }, { percent: 90, signal: 'red' }];
-  await writeFile(configFile(repo), JSON.stringify({ ...saved, usageRules }));
-  const injected = { ...BODY, status: { ...BODY.status, queue: 'Done' }, usageRules: [{ percent: 1, signal: 'red' }] };
-  assert.equal((await postSetup(base, injected)).status, 200);
-  const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.equal(rewritten.status.queue, 'Done');
-  assert.deepEqual(rewritten.usageRules, usageRules, 'the body cannot set usageRules');
+  assert.equal((await postSetup(base, { ...BODY, usageRules })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.usageRules, usageRules);
+  assert.deepEqual(server.getState()?.usageRules, usageRules);
+  // a save without the key keeps the file's; a save with [] clears them (the form always sends the table)
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
+  assert.deepEqual(server.getState()?.usageRules, usageRules);
+  assert.equal((await postSetup(base, { ...BODY, usageRules: [] })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, []);
+  assert.deepEqual(server.getState()?.usageRules, []);
+});
+
+test('POST /setup with an invalid usage rule answers 400 naming the rule and writes nothing', async (t) => {
+  const { base, repo, server } = await start(t);
+  const usageRules = [{ percent: 80, signal: 'yellow' }];
+  assert.equal((await postSetup(base, { ...BODY, usageRules })).status, 200);
+  const outOfRange = await postSetup(base, { ...BODY, usageRules: [{ percent: 101, signal: 'red' }] });
+  assert.equal(outOfRange.status, 400);
+  assert.match((await json<{ error: string }>(outOfRange)).error, /usageRules\[0\]\.percent/);
+  const noEffect = await postSetup(base, { ...BODY, usageRules: [{ percent: 50 }] });
+  assert.equal(noEffect.status, 400);
+  assert.match((await json<{ error: string }>(noEffect)).error, /usageRules\[0\]/);
+  // both rejected before the write: the file and the State still carry the valid rule
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
   assert.deepEqual(server.getState()?.usageRules, usageRules);
 });
