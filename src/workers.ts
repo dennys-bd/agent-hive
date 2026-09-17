@@ -77,8 +77,12 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
 
   function start(o: StartWorker): void {
     const { workerId } = o;
+    let exited = false;
     const onExit = (): void => {
-      if (entries.delete(workerId)) o.onExit(); // once: the handle and the external signal can both report it
+      if (exited) return; // once: the handle and the external signal can both report it
+      exited = true;
+      entries.delete(workerId);
+      o.onExit();
     };
     const handle = spawn(o.launch, {
       onLine: (line) => {
@@ -89,7 +93,7 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
       },
       onExit,
     });
-    entries.set(workerId, { handle, lines: [], ended: false, exit: onExit });
+    if (!exited) entries.set(workerId, { handle, lines: [], ended: false, exit: onExit }); // a spawner may fail before returning
   }
 
   function call(workerId: string, action: (entry: Entry) => void, unlessEnded = false): boolean {

@@ -136,3 +136,14 @@ test('send after end reports the worker as gone: stdin is closed even though the
   assert.deepEqual(worker.sent, [], 'nothing is written to a closed stdin');
   assert.equal(pool.has('W1'), true, 'the entry stays until the exit so its output is still readable');
 });
+
+test('a spawner that reports the exit before returning the handle leaves no entry behind', () => {
+  const pool = createWorkerPool((_launch, handlers) => {
+    handlers.onExit();
+    return { send: noop, end: noop, kill: noop };
+  });
+  const exits: string[] = [];
+  pool.start({ workerId: 'W1', launch: LAUNCH, onExit: () => exits.push('W1'), onResult: noop });
+  assert.deepEqual(exits, ['W1']);
+  assert.equal(pool.has('W1'), false);
+});
