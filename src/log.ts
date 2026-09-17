@@ -100,7 +100,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'setSignal': return `setSignal ${event.signal}`;
     case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
     case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
-    case 'rateLimits': return `rateLimits worker=${shortId(event.workerId)}`;
+    case 'rateLimits': return event.workerId ? `rateLimits worker=${shortId(event.workerId)}` : 'rateLimits source=hive';
     case 'boardQuota': return `boardQuota remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
     case 'hook': {
       const tool = event.payload.tool_name ? ` tool=${event.payload.tool_name}` : '';
@@ -126,13 +126,18 @@ export function describeEffect(effect: Effect): string {
 const slotDetail = (slot: Slot): string =>
   `${slot.task ? ` #${slot.task.id}` : ''}${slot.workerId ? ` worker=${shortId(slot.workerId)}` : ''}`;
 
-/** Slot and signal transitions between two states: one line per slot whose status changed, in grid order, matched by id; then the signal. */
+/** Slot and signal transitions between two states: one line per slot whose status changed, in grid order, matched by id; then the sessions that appeared; then the signal. */
 export function describeChanges(prev: State, next: State): string[] {
-  const slots = next.slots.flatMap((slot, i) => {
-    const before = prev.slots.find((s) => s.id === slot.id);
-    if (!before || before.status === slot.status) return [];
-    const detail = slotDetail(slot.status === 'empty' ? before : slot); // an emptied slot names what it held
-    return [`slot ${i + 1}: ${before.status} → ${slot.status}${detail}`];
+  const before = (slot: Slot): Slot | undefined => prev.slots.find((s) => s.id === slot.id);
+  const statuses = next.slots.flatMap((slot, i) => {
+    const old = before(slot);
+    if (!old || old.status === slot.status) return [];
+    const detail = slotDetail(slot.status === 'empty' ? old : slot); // an emptied slot names what it held
+    return [`slot ${i + 1}: ${old.status} → ${slot.status}${detail}`];
   });
-  return prev.signal === next.signal ? slots : [...slots, `signal: ${prev.signal} → ${next.signal}`];
+  // The slot is wiped on exit / boot; this line is what ties a PR (same worker=) back to a `claude --resume` id afterwards
+  const sessions = next.slots.flatMap((slot, i) =>
+    slot.sessionId && !before(slot)?.sessionId ? [`slot ${i + 1}: session=${slot.sessionId}${slotDetail(slot)}`] : []);
+  const lines = [...statuses, ...sessions];
+  return prev.signal === next.signal ? lines : [...lines, `signal: ${prev.signal} → ${next.signal}`];
 }

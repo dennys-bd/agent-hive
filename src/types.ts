@@ -45,6 +45,9 @@ export interface RateLimits {
   windows: Record<string, RateLimitWindow>; // keyed as Claude Code sends them: five_hour, seven_day, …
 }
 
+/** Reads the plan limits of the Claude Code account; rejects when it cannot (no token, network, 401). */
+export type PlanLimitsReader = () => Promise<RateLimits | undefined>;
+
 /** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
 export interface BoardQuota {
   limit: number;
@@ -82,6 +85,7 @@ export interface Slot {
   prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
+  sessionId?: string; // Claude Code session id from SessionStart; what `claude --resume` takes. First one wins (#24)
 }
 
 export interface State {
@@ -128,6 +132,7 @@ export interface HookPayload {
   tool_input?: unknown;
   tool_response?: unknown;
   transcript_path?: string; // Claude Code sends it on every hook; the server reads tokens from it on Stop / SessionEnd, the reducer keeps it from SessionStart
+  session_id?: string; // Claude Code sends it on every hook; the reducer keeps it from SessionStart
 }
 
 export type HiveEvent =
@@ -137,7 +142,7 @@ export type HiveEvent =
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
-  | { type: 'rateLimits'; workerId: string; rateLimits: RateLimits }
+  | { type: 'rateLimits'; workerId?: string; rateLimits: RateLimits } // no workerId: the Hive's own reading
   | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }

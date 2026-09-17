@@ -1,13 +1,15 @@
 ---
-description: "Autonomous dev flow for one GitHub issue: read → brainstorm → plan → branch → TDD → review → security → PR. The issue is the card; spec and plan are linked from the PR."
+description: "Dev flow for one GitHub issue: read → brainstorm → [approve spec] → plan → branch → TDD → review → security → PR. One human gate, after the spec; the issue is the card; spec and plan are linked from the PR."
 argument-hint: "<issue number or URL> [optionally followed by the issue title and body]"
 ---
 
 # /roadmap-flow
 
-Runs this repo's development pipeline end to end for **one** GitHub issue,
-without stopping for approval. Each stage delegates to an existing skill or
-agent; this file only sequences them. The issue is the card: it carries the
+Runs this repo's development pipeline end to end for **one** GitHub issue.
+The spec stage is a conversation with the user and ends with their
+approval; everything after that runs on its own. Each stage delegates to
+an existing skill or agent; this file only sequences them. The issue is
+the card: it carries the
 intent and the open decisions, and the PR that closes it links the spec and
 plan artifacts. The flow moves the card on the board as it advances (see
 **Tracking**); `Closes #<n>` closes the issue on merge, and whether that
@@ -26,12 +28,14 @@ If `$ARGUMENTS` is empty, run `gh issue list --state open --limit 10`, show
 the candidates and stop; that is the only case where the flow asks before
 starting.
 
-**No human gates.** Every stage below runs straight into the next. Where a
-stage would normally ask the user a question, resolve it from the issue
-body and comments, the existing specs in `docs/superpowers/specs/`, and the
-code, and write the decision down as a stated assumption in the artifact of
-that stage. Stop only if the issue is so ambiguous that any assumption would
-make the work useless; report the specific gap and what you would need.
+**Human input lives in Stage 1.** Brainstorming asks the user its
+questions as usual (that is what the spec stage is for), and the stage
+ends when the user approves the spec (see **Stage 1 — Approval**). From
+Stage 2 on there are no questions: where a stage would normally ask the
+user something, resolve it from the approved spec, the issue body and
+comments, the existing specs in `docs/superpowers/specs/`, and the code,
+and write the decision down as a stated assumption in the artifact of
+that stage.
 
 **Working tree**: `git status --short --branch` must be clean before
 Stage 0. If it is not, stop and say what is dirty; never stash or discard
@@ -50,7 +54,7 @@ on the user's behalf. Two ways to start:
 | When | Where it is recorded | Board column |
 |---|---|---|
 | Stage 0, issue read | scope restated in chat, branch name announced | — |
-| End of Stage 1 | architectural path: `docs/superpowers/specs/<file>.md`; bounded path: a `Design:` paragraph in chat, carried into the PR body | `status.queue` (`Ready`) |
+| End of Stage 1, spec approved | architectural path: `docs/superpowers/specs/<file>.md`; bounded path: a `Design:` paragraph in chat, carried into the PR body | `status.queue` (`Ready`) |
 | End of Stage 2 | architectural path: `docs/superpowers/plans/<file>.md` | — |
 | End of Stage 3 | branch exists, spec/plan committed | `status.working` (`In progress`) |
 | End of Stage 7 | PR body: `Closes #<n>`, spec and plan paths, test plan | `status.review` (`In review`) |
@@ -92,7 +96,7 @@ say so.
 
 | Stage | Actor | Model | Why |
 |---|---|---|---|
-| 1 — Spec | `superpowers:brainstorming` (inline, main session) | session model | the questions are answered by the session itself from the issue and the specs; no dispatch |
+| 1 — Spec | `superpowers:brainstorming` (inline, main session) | session model | interactive with the user; no dispatch |
 | 2 — Plan | `ecc:planner` agent | `opus` (`ecc:planner`'s declared default) | planning mistakes are the most expensive to unwind |
 | 3 — Branch | inline `git` | session model | trivial, no dispatch |
 | 4 — Implementation | `ecc:tdd-guide` | `sonnet` | high-volume, well-specified work once the plan exists |
@@ -118,10 +122,13 @@ say so.
    worktree branch, otherwise `feat/<slug>` (slug from the issue title,
    kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`).
 
-## Stage 1 — Spec (brainstorming, autonomous)
+## Stage 1 — Spec (brainstorming, interactive)
 
 Invoke `superpowers:brainstorming` with the issue title and body as the
-idea. **Only this piece of superpowers is in scope** for the flow.
+idea. **Only this piece of superpowers is in scope** for the flow. Ask the
+user the skill's questions as usual, one at a time; do not answer them
+yourself. Skip a question only when the issue body or comments already
+close it, and say which answer you took from there.
 
 - Classify per that skill's rules:
   - **bounded** (one or two files, no new type in `src/types.ts`, no new
@@ -135,14 +142,28 @@ idea. **Only this piece of superpowers is in scope** for the flow.
     (`Decisões fechadas` table, config, types, per-file behaviour, tests).
     Reference the v1 spec and the specs it extends instead of restating
     them; describe only the delta. Cite the issue (`#<n>`) in the header.
-- Every question the skill would ask the user is answered by you, with the
-  answer and its reason written into the spec's `Decisões fechadas` table
-  (or the `Design:` paragraph for bounded work). The issue body already
+- Every decision, whether taken from the issue or answered by the user,
+  goes into the spec's `Decisões fechadas` table (or the `Design:`
+  paragraph for bounded work) with its reason. The issue body already
   lists the decisions to close; each one gets a row.
 - `docs/superpowers/specs/2026-09-15-agent-hive-design.md` is authoritative
   for anything the issue does not override.
-- Move the card to `status.queue` (`Ready`) unless it is already further
-  along.
+
+### Stage 1 — Approval
+
+Do not start Stage 2 until the user approves the spec.
+
+1. Show the spec in chat: the path of the spec file plus its `Decisões
+   fechadas` table (architectural), or the `Design:` paragraph (bounded).
+2. Ask with `AskUserQuestion` (prose if it is unavailable): approve as is,
+   or change something. Then wait.
+3. On "change": apply the requested changes to the spec (or paragraph),
+   show the diff of what changed, and ask again. Repeat until approved.
+4. On approval: move the card to `status.queue` (`Ready`) unless it is
+   already further along, and continue to Stage 2.
+
+Approval does not commit anything; the spec is committed in Stage 3 with
+the plan.
 
 ## Stage 2 — Plan
 
@@ -238,12 +259,14 @@ flow ends with the PR URL in chat.
 
 ## Gates summary
 
-There are no approval gates. The stop conditions are:
+Stage 1 is interactive and ends with the user's approval of the spec;
+after that there are no questions. The stop conditions are:
 
 1. dirty working tree, or a branch that is neither `main` nor a fresh
    worktree branch (before Stage 0);
 2. no issue given, or the issue cannot be read (Stage 0);
-3. an issue too ambiguous to implement under a stated assumption (Stage 1);
+3. a decision after Stage 1 that the approved spec does not settle and no
+   assumption would settle safely;
 4. `pnpm test` red after `ecc:build-error-resolver` (Stage 4);
 5. CRITICAL findings that cannot be fixed without changing the spec
    (Stages 5–6).

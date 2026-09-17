@@ -49,7 +49,7 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
   assert.equal(t('setup.rules.error', { n: 3 }), 'tier 3: enter max. workers or a signal');
   assert.equal(t('queue.blockedBy', { ids: '4, 5' }), 'blocked by 4, 5');
   assert.match(t('setup.promptPlaceholder'), /\{number\}: \{title\}/, 'no vars: literal braces stay');
-  assert.equal(t('limits.at', { other: 'x' }), 'at {time}', 'an unknown placeholder stays');
+  assert.equal(t('limits.at', { other: 'x' }), 'read at {time}', 'an unknown placeholder stays');
   setLanguage('pt');
   assert.equal(t('header.activeWorkers', { active: 1, max: 2 }), '1/2 workers ativos');
   assert.equal(t('setup.rules.error', { n: 3 }), 'faixa 3: informe máx. workers ou sinal');

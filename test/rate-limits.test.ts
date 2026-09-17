@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatRateLimits, isRateLimits, MAX_WINDOWS, parseRateLimits, windowLabel } from '../src/rate-limits.js';
+import { formatRateLimits, isRateLimits, MAX_WINDOWS, parseRateLimits, parseUsage, windowLabel } from '../src/rate-limits.js';
 import type { RateLimits } from '../src/types.js';
 
 const NOW = new Date('2026-09-16T12:00:00.000Z');
@@ -82,6 +82,51 @@ test('formatRateLimits and windowLabel in English: session / week, the weekly pr
   assert.equal(windowLabel('seven_day_opus', 'en'), 'week opus');
   assert.equal(windowLabel('spend_limit', 'en'), 'spend limit');
   assert.equal(windowLabel('constructor', 'en'), 'constructor');
+});
+
+// What GET /api/oauth/usage answers on a Max plan: per-model weekly windows present, unused ones null, extra_usage alongside
+const USAGE = {
+  five_hour: { utilization: 23.4, resets_at: '2026-09-17T15:00:00.000Z' },
+  seven_day: { utilization: 41, resets_at: '2026-09-21T00:00:00Z' },
+  seven_day_opus: { utilization: 7.5, resets_at: '2026-09-21T00:00:00+00:00' },
+  seven_day_sonnet: null,
+  extra_usage: { is_enabled: false, monthly_limit: 0, used_credits: 0, utilization: null },
+};
+const USAGE_PARSED: RateLimits = {
+  at: '2026-09-16T12:00:00.000Z',
+  windows: {
+    five_hour: { usedPercent: 23.4, resetsAt: '2026-09-17T15:00:00.000Z' },
+    seven_day: { usedPercent: 41, resetsAt: '2026-09-21T00:00:00.000Z' },
+    seven_day_opus: { usedPercent: 7.5, resetsAt: '2026-09-21T00:00:00.000Z' },
+  },
+};
+
+test('parseUsage reads the usage endpoint body: one window per key with utilization and an ISO resets_at, nulls and extras dropped', () => {
+  assert.deepEqual(parseUsage(USAGE, NOW), USAGE_PARSED);
+  assert.deepEqual(Object.keys(parseUsage(USAGE, NOW)?.windows ?? {}), ['five_hour', 'seven_day', 'seven_day_opus'], 'payload order');
+});
+
+test('parseUsage clamps a utilization above 100 and drops a window whose resets_at does not parse', () => {
+  const over = { five_hour: { utilization: 250, resets_at: '2026-09-17T15:00:00Z' } };
+  assert.equal(parseUsage(over, NOW)?.windows.five_hour.usedPercent, 100);
+  const bad = { ...USAGE, seven_day: { utilization: 41, resets_at: 'soon' } };
+  assert.deepEqual(Object.keys(parseUsage(bad, NOW)?.windows ?? {}), ['five_hour', 'seven_day_opus']);
+  assert.equal(parseUsage({ five_hour: { utilization: 1, resets_at: 'soon' } }, NOW), undefined, 'no surviving window');
+});
+
+test('parseUsage is undefined for a body that is not an object or has no valid window', () => {
+  const iso = '2026-09-17T15:00:00Z';
+  const bodies: unknown[] = [
+    undefined, null, 'x', 5, [], {}, { five_hour: null }, { five_hour: 7 },
+    { five_hour: { utilization: '23', resets_at: iso } }, { five_hour: { utilization: -1, resets_at: iso } },
+    { five_hour: { utilization: 1, resets_at: 1759744800 } }, { 'Five-Hour': { utilization: 1, resets_at: iso } },
+  ];
+  for (const body of bodies) assert.equal(parseUsage(body, NOW), undefined, String(JSON.stringify(body)));
+});
+
+test('parseUsage keeps at most MAX_WINDOWS windows, like parseRateLimits', () => {
+  const body = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`w${i}`, { utilization: i, resets_at: '2026-09-17T15:00:00Z' }]));
+  assert.deepEqual(Object.keys(parseUsage(body, NOW)?.windows ?? {}), Array.from({ length: MAX_WINDOWS }, (_, i) => `w${i}`));
 });
 
 test('isRateLimits accepts the parsed shape and rejects anything else', () => {

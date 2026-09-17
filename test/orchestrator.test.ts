@@ -129,6 +129,24 @@ test('SessionStart records worktree, branch and the transcript path; a path that
   assert.equal(hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w' }).state.slots[0].transcriptPath, undefined);
 });
 
+test('SessionStart keeps a well-formed session_id, the first one wins, and a malformed or missing one is dropped without losing the rest of the hook', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const start = (state: State, session_id?: string): State => hook(state, id, { hook_event_name: 'SessionStart', cwd: '/w', session_id }).state;
+  const uuid = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b'; // what Claude Code sends
+  const started = start(first, uuid);
+  assert.equal(started.slots[0].sessionId, uuid);
+  assert.equal(started.slots[0].worktree, '/w');
+  assert.equal(start(started, 'another-session-id-0001').slots[0].sessionId, uuid, 'a teammate SessionStart does not replace the main session (#24)');
+  for (const bad of ['', 'short', 'has space-in-it', 'x'.repeat(65), '../../etc/passwd', '<b>x</b>abcdef']) {
+    assert.equal(start(first, bad).slots[0].sessionId, undefined, JSON.stringify(bad));
+  }
+  const missing = start(first);
+  assert.equal(missing.slots[0].sessionId, undefined);
+  assert.equal(missing.slots[0].worktree, '/w', 'the rest of the hook still applies');
+  assert.equal(JSON.stringify(first.slots[0].sessionId), undefined, 'the input state is untouched');
+});
+
 test('Notification of a waiting type turns the slot yellow with the message', () => {
   const first = filled(1, 1).state;
   const { state } = hook(first, first.slots[0].workerId!, {
@@ -617,6 +635,20 @@ test('rateLimits never mutates its input and the reading survives poll, setMax a
   const later = reduce(reduce(state, { type: 'poll', tasks: tasks(1) }).state, { type: 'setMax', max: 2 }).state;
   assert.deepEqual(later.rateLimits, LIMITS, 'the last reading stays until a newer one arrives');
   assert.deepEqual(reduce(later, { type: 'boot' }).state.rateLimits, LIMITS, 'a reopened Hive shows the last value');
+});
+
+test('rateLimits without a workerId is the Hive own reading: stored with no slot occupied, no effects, input untouched', () => {
+  const idle = initialState(1); // one free slot, empty queue: no worker anywhere
+  const snapshot = JSON.stringify(idle);
+  const { state, effects } = reduce(idle, { type: 'rateLimits', rateLimits: LIMITS });
+  assert.deepEqual(state.rateLimits, LIMITS);
+  assert.equal(effects.length, 0, 'display only');
+  assert.deepEqual({ ...state, rateLimits: undefined }, { ...idle, rateLimits: undefined }, 'nothing else changes');
+  assert.equal(JSON.stringify(idle), snapshot);
+  assert.equal(idle.rateLimits, undefined);
+  const newer: RateLimits = { ...LIMITS, at: '2026-09-17T12:05:00.000Z' };
+  assert.deepEqual(reduce(state, { type: 'rateLimits', rateLimits: newer }).state.rateLimits, newer, 'the latest reading wins');
+  assert.equal(limited(state, 'ghost').state.rateLimits, LIMITS, 'with a workerId the slot rule still holds');
 });
 
 test('canSchedule is the fill gate: green with a free slot and budget; not under yellow, a reached cap or an exhausted budget', () => {

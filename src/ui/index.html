@@ -24,10 +24,8 @@
   button.active[data-signal=yellow] { border-color: var(--waiting); color: var(--waiting); }
   button.active[data-signal=red] { border-color: var(--danger); color: var(--danger); }
   #signal-hint { color: var(--muted); }
-  #usage { color: var(--muted); }
+  #usage, #limits { color: var(--muted); display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.2; }
   #usage.over { color: var(--danger); }
-  #limits { color: var(--muted); }
-  #quota { color: var(--muted); }
   #quota.low { color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
@@ -107,7 +105,6 @@
   </span>
   <span id="usage" class="dash"></span>
   <span id="limits" class="dash"></span>
-  <span id="quota" class="dash"></span>
   <button type="button" id="refresh" class="dash" data-i18n="header.refresh"></button>
   <button type="button" id="configure" data-i18n="header.configure"></button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
@@ -146,6 +143,7 @@
           <label><span data-i18n="setup.columnWorking"></span> <select id="col-working" required></select></label>
           <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
           <label><span data-i18n="setup.columnReview"></span> <select id="col-review" required></select></label>
+          <div class="hint" id="quota"></div>
           <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
           <label><span data-i18n="setup.epics"></span>
             <select id="epics">
@@ -196,6 +194,7 @@
           <label><span data-i18n="setup.budgetDay"></span> <input id="budget-day" type="number" min="0" step="1"></label>
         </div>
         <div class="hint" data-i18n="setup.budgetHint"></div>
+        <div class="hint" id="usage-raw"></div>
         <table id="rules">
           <thead><tr><th data-i18n="setup.rules.percent"></th><th data-i18n="maxWorkers"></th><th data-i18n="setup.rules.signal"></th><th></th></tr></thead>
           <tbody></tbody>

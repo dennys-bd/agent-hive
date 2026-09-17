@@ -7,7 +7,7 @@ import { newBoardText } from '../src/boards/markdown.js';
 import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
-import type { SetupInfo } from '../src/types.js';
+import type { RateLimits, SetupInfo } from '../src/types.js';
 
 // Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
@@ -98,4 +98,19 @@ test('bootHive turns the locale into the system language: pt-BR without a config
   const setup = await bootHive(broken, { locale: 'en-US' });
   t.after(() => setup.server.close());
   assert.equal((await setupInfo(setup.port)).language, 'en');
+});
+
+test('bootHive reads the plan limits through the injected reader on boot, so the header has them before any worker; no reader, no reading', async (t) => {
+  const repo = await repoWithConfig({});
+  const rateLimits: RateLimits = { at: '2026-09-17T12:00:00.000Z', windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-17T15:00:00.000Z' } } };
+  let reads = 0;
+  const { server } = await bootHive(repo, { readPlanLimits: async () => { reads += 1; return rateLimits; } });
+  t.after(() => server.close());
+  assert.equal(reads, 1);
+  assert.deepEqual(server.getState()?.rateLimits, rateLimits);
+  const plain = await repoWithConfig({});
+  const bare = await bootHive(plain);
+  t.after(() => bare.server.close());
+  assert.equal(bare.server.getState()?.rateLimits, undefined);
+  assert.ok(!(await logLines(plain)).some((l) => l.includes('plan limits')), 'nothing to say without a reader');
 });

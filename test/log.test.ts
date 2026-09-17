@@ -123,6 +123,7 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'setBudget', budget: { maxTokensPerHour: 10 } }), 'setBudget {"maxTokensPerHour":10}');
   assert.equal(describeEvent({ type: 'setUsageRules', usageRules: [{ percent: 80, signal: 'yellow' }] }), 'setUsageRules rules=1');
   assert.equal(describeEvent({ type: 'rateLimits', workerId: WORKER, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits worker=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'rateLimits', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits source=hive');
   assert.equal(
     describeEvent({ type: 'boardQuota', quota: { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' } }),
     'boardQuota remaining=4320/5000 resetsAt=2026-09-16T13:00:00.000Z',
@@ -151,6 +152,24 @@ test('describeChanges lists each slot whose status changed (position in the grid
   assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: review → empty #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
   assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
   assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'empty' }] }), [], 'a slot added by setMax is not a transition');
+});
+
+test('describeChanges emits the session line once, when the id appears, after the status lines and before the signal', () => {
+  const session = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const empty: Slot = { id: SLOT, status: 'empty' };
+  const working: Slot = { ...empty, workerId: WORKER, status: 'working', task: task('29'), slug: 'hive-29-session' };
+  const prev: State = { ...initialState(0), signal: 'yellow', slots: [working] };
+  const started: State = { ...prev, slots: [{ ...working, sessionId: session, worktree: '/w' }] };
+  assert.deepEqual(describeChanges(prev, started), [`slot 1: session=${session} #29 worker=1a2b3c4d`]);
+  const later: State = { ...started, slots: [{ ...started.slots[0], lastEvent: { kind: 'tool', detail: 'Bash: pnpm test' } }] };
+  assert.deepEqual(describeChanges(started, later), [], 'the same id in both states is not a change');
+  const both: State = { ...prev, signal: 'green', slots: [{ ...working, status: 'waiting', sessionId: session }] };
+  assert.deepEqual(describeChanges(prev, both), [
+    'slot 1: working → waiting #29 worker=1a2b3c4d',
+    `slot 1: session=${session} #29 worker=1a2b3c4d`,
+    'signal: yellow → green',
+  ]);
+  assert.deepEqual(describeChanges(started, { ...started, slots: [empty] }), ['slot 1: working → empty #29 worker=1a2b3c4d'], 'freeing the slot drops the id silently: its line already left');
 });
 
 test('a message with line breaks stays one log line, and an oversized one is cut: the file is always grep-able', async () => {
