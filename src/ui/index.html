@@ -8,6 +8,7 @@
   :root {
     --bg: #111418; --panel: #1a1f26; --text: #e6e6e6; --muted: #8a94a6; --border: #2a313b;
     --vazio: #3a4250; --trabalhando: #2e9e5b; --esperando: #e0b52a; --review: #3b82f6; --danger: #d9534f;
+    --code-bg: #0b0e12; --string: #d7a86e; --number: #c792ea; --keyword: #7fb4f5;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
@@ -50,7 +51,16 @@
   #detail { display: none; }
   #detail.show { display: block; }
   #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
-  #output { font: 12px/1.4 ui-monospace, monospace; min-height: 60px; }
+  #output { font: 12px/1.4 ui-monospace, monospace; min-height: 60px; max-height: 300px; overflow: auto; white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; }
+  #output .code { margin: 0; padding: 6px 8px; max-height: none; background: var(--code-bg); border: 1px solid var(--border); }
+  #output code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
+  #output .add { color: var(--trabalhando); }
+  #output .del { color: var(--danger); }
+  #output .hunk { color: var(--review); }
+  #output .comment { color: var(--muted); font-style: italic; }
+  #output .string { color: var(--string); }
+  #output .number { color: var(--number); }
+  #output .keyword { color: var(--keyword); }
   #detail .row { display: flex; gap: 8px; margin-top: 8px; }
   body[data-workers=iterm] #output { display: none; }
   body:not([data-workers=iterm]) #focus { display: none; }
@@ -164,7 +174,7 @@
     <aside id="detail">
       <h2>detalhe</h2>
       <div id="detail-body"></div>
-      <pre id="output"></pre>
+      <div id="output"></div>
       <div class="row">
         <input id="input" type="text" placeholder="mensagem pro worker" autocomplete="off">
         <button id="send">enviar</button>
