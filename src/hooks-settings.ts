@@ -6,16 +6,25 @@ export const HOOK_EVENTS: readonly string[] = [
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionEnd',
 ];
 
-export function hookCommand(port: number): string {
+function postStdin(port: number, path: string): string {
   return [
-    `curl -s -m 2 -X POST http://127.0.0.1:${port}/hooks/event`,
+    `curl -s -m 2 -X POST http://127.0.0.1:${port}${path}`,
     `-H "x-hive-worker: $HIVE_WORKER_ID"`,
     `-H 'content-type: application/json'`,
-    `-d @- >/dev/null; exit 0`,
+    `-d @-`,
   ].join(' ');
 }
 
-export function renderHooksSettings(port: number): { hooks: Record<string, unknown[]> } {
+export function hookCommand(port: number): string {
+  return `${postStdin(port, '/hooks/event')} >/dev/null; exit 0`;
+}
+
+/** The worker's status line: the Hive replies with the plan limits summary, which is what the worker's tab shows. */
+export function statusCommand(port: number): string {
+  return `${postStdin(port, '/hooks/status')}; exit 0`;
+}
+
+export function renderHooksSettings(port: number): { hooks: Record<string, unknown[]>; statusLine: { type: 'command'; command: string } } {
   const command = hookCommand(port);
   const hooks = Object.fromEntries(
     HOOK_EVENTS.map((event) => [
@@ -23,7 +32,8 @@ export function renderHooksSettings(port: number): { hooks: Record<string, unkno
       [{ ...(event === 'PostToolUse' ? { matcher: 'Bash' } : {}), hooks: [{ type: 'command', command }] }],
     ]),
   );
-  return { hooks };
+  // --settings precedence replaces the user's own status line inside the workers; the reply keeps the tab useful
+  return { hooks, statusLine: { type: 'command', command: statusCommand(port) } };
 }
 
 async function excludeFromGit(repo: string): Promise<void> {

@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newBoardText } from '../src/boards/markdown.js';
 import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
+import type { SetupInfo } from '../src/types.js';
 
 // Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
@@ -24,4 +25,15 @@ test('bootHive copies the budget from hive.config.json over the one saved in sta
   const { server } = await bootHive(repo);
   t.after(() => server.close());
   assert.deepEqual(server.getState()?.budget, { maxTokensPerHour: 50_000 });
+});
+
+test('bootHive falls back to setup mode when the configured board is unusable', async (t) => {
+  const repo = await repoWithConfig({});
+  await rm(join(repo, 'board.md')); // the board file was deleted after the config was written
+  const { server, port } = await bootHive(repo);
+  t.after(() => server.close());
+  const info = await (await fetch(`http://127.0.0.1:${port}/setup`)).json() as SetupInfo;
+  assert.equal(info.configured, false);
+  assert.equal(info.config?.board.type, 'markdown'); // the form reopens prefilled with what was saved
+  assert.match(info.error ?? '', /board\.md não existe/);
 });

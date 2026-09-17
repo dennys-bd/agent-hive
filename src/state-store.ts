@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState, SIGNALS } from './orchestrator.js';
+import { isRateLimits } from './rate-limits.js';
 import type { Signal, State, UsageRule, UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
@@ -20,12 +21,14 @@ const isRule = (value: unknown): value is UsageRule => {
 
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default.
 function normalize(parsed: State): State {
+  const { rateLimits, ...rest } = parsed;
   return {
-    ...parsed,
+    ...rest,
     signal: isSignal(parsed.signal) ? parsed.signal : 'green',
     usage: Array.isArray(parsed.usage) ? parsed.usage.filter(isSample) : [],
     budget: parsed.budget ?? {},
     usageRules: Array.isArray(parsed.usageRules) ? parsed.usageRules.filter(isRule) : [],
+    ...(isRateLimits(rateLimits) ? { rateLimits } : {}), // wrong shape or legacy file: no key at all, the header shows nothing
   };
 }
 

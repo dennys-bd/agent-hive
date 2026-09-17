@@ -11,6 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
+import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { killStray, renderPrompt, spawnWorker, workerArgv, workerEnv, writePrompt } from './spawn.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
@@ -53,6 +54,8 @@ export interface ServerDeps {
   state?: State;
   boardFactory?: BoardFactory;
   spawnWorker?: SpawnWorker; // tests inject a fake; the default opens a real claude
+  /** Setup mode with a config that failed to boot: prefills the form and explains why. */
+  setupFallback?: { config: Config; error: string };
 }
 
 export interface HiveServer {
@@ -287,6 +290,19 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.sendStatus(200);
   });
 
+  // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
+  app.post('/hooks/status', async (req: Request, res: Response) => {
+    res.type('text/plain');
+    const workerId = req.header('x-hive-worker');
+    const rateLimits = parseRateLimits(req.body, new Date());
+    if (!workerId || !rateLimits) {
+      res.send('');
+      return;
+    }
+    res.send(formatRateLimits(rateLimits)); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
+    await dispatch({ type: 'rateLimits', workerId, rateLimits });
+  });
+
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
     res.write(`data: ${JSON.stringify(eventsPayload())}\n\n`);
@@ -301,7 +317,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.get('/setup', (_req: Request, res: Response) => {
     const info: SetupInfo = live
       ? { configured: true, repo, config: live.runtime.config }
-      : { configured: false, repo };
+      : { configured: false, repo, ...deps.setupFallback };
     res.json(info);
   });
 
@@ -354,7 +370,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
-        usageRules: current?.usageRules, // not in the form: comes from the file, like port and claudeArgs
+        usageRules: body.usageRules ?? current?.usageRules,
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
@@ -449,6 +465,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.get('/', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'index.html')));
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
+  app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {

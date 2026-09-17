@@ -298,18 +298,63 @@ test('POST /hooks/event Stop with a transcript_path for an unknown worker answer
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });
 
-test('usageRules come from the file only: a second POST /setup keeps them and the live config and State carry them', async (t) => {
+test('POST /setup with usageRules writes them to hive.config.json, GET /setup and the State carry them, an absent key keeps them and [] clears them', async (t) => {
   const { base, repo, server } = await start(t);
-  assert.equal((await postSetup(base, BODY)).status, 200);
-  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.deepEqual(saved.usageRules, [], 'the default is written out');
   const usageRules = [{ percent: 50, maxWorkers: 1 }, { percent: 90, signal: 'red' }];
-  await writeFile(configFile(repo), JSON.stringify({ ...saved, usageRules }));
-  const injected = { ...BODY, status: { ...BODY.status, queue: 'Done' }, usageRules: [{ percent: 1, signal: 'red' }] };
-  assert.equal((await postSetup(base, injected)).status, 200);
-  const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.equal(rewritten.status.queue, 'Done');
-  assert.deepEqual(rewritten.usageRules, usageRules, 'the body cannot set usageRules');
+  assert.equal((await postSetup(base, { ...BODY, usageRules })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.usageRules, usageRules);
   assert.deepEqual(server.getState()?.usageRules, usageRules);
+  // a save without the key keeps the file's; a save with [] clears them (the form always sends the table)
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
+  assert.deepEqual(server.getState()?.usageRules, usageRules);
+  assert.equal((await postSetup(base, { ...BODY, usageRules: [] })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, []);
+  assert.deepEqual(server.getState()?.usageRules, []);
+});
+
+test('POST /setup with an invalid usage rule answers 400 naming the rule and writes nothing', async (t) => {
+  const { base, repo, server } = await start(t);
+  const usageRules = [{ percent: 80, signal: 'yellow' }];
+  assert.equal((await postSetup(base, { ...BODY, usageRules })).status, 200);
+  const outOfRange = await postSetup(base, { ...BODY, usageRules: [{ percent: 101, signal: 'red' }] });
+  assert.equal(outOfRange.status, 400);
+  assert.match((await json<{ error: string }>(outOfRange)).error, /usageRules\[0\]\.percent/);
+  const noEffect = await postSetup(base, { ...BODY, usageRules: [{ percent: 50 }] });
+  assert.equal(noEffect.status, 400);
+  assert.match((await json<{ error: string }>(noEffect)).error, /usageRules\[0\]/);
+  // both rejected before the write: the file and the State still carry the valid rule
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).usageRules, usageRules);
+  assert.deepEqual(server.getState()?.usageRules, usageRules);
+});
+
+test('POST /hooks/status answers the limits line for a valid payload, an empty body otherwise, and an unknown worker changes nothing', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const postStatus = (body: unknown, worker?: string): Promise<Response> =>
+    fetch(`${base}/hooks/status`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(worker ? { 'x-hive-worker': worker } : {}) },
+      body: JSON.stringify(body),
+    });
+  const payload = {
+    model: { id: 'claude-opus' }, // the rest of the status line JSON rides along and is ignored
+    rate_limits: { five_hour: { used_percentage: 23.4, resets_at: 1759744800 }, seven_day: { used_percentage: 41, resets_at: 1760263200 } },
+  };
+  const ok = await postStatus(payload, 'ghost');
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers.get('content-type') ?? '', /^text\/plain/);
+  assert.equal(await ok.text(), 'sessão 23% · semana 41%');
+  const noHeader = await postStatus(payload);
+  assert.equal(noHeader.status, 200);
+  assert.equal(await noHeader.text(), '');
+  const noLimits = await postStatus({ model: { id: 'claude-opus' } }, 'ghost');
+  assert.equal(noLimits.status, 200);
+  assert.equal(await noLimits.text(), '');
+  const noValid = await postStatus({ rate_limits: { five_hour: { used_percentage: 'x' } } }, 'ghost');
+  assert.equal(await noValid.text(), '');
+  await sleep(20); // the route answers before dispatching; let the handlers finish
+  assert.equal(server.getState()?.rateLimits, undefined, 'no occupied slot matches, so nothing is stored');
+  assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });

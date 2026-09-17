@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
-import type { Budget, HookPayload, Signal, State, Task, UsageRule } from '../src/types.js';
+import type { Budget, HookPayload, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -28,6 +28,15 @@ const ruled = (state: State, tokens: number, ageMs = 0): State => ({
   usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
 });
 const polled = (state: State, n: number) => reduce(state, { type: 'poll', tasks: tasks(n) });
+const LIMITS: RateLimits = {
+  at: '2026-09-16T12:00:00.000Z',
+  windows: {
+    five_hour: { usedPercent: 23, resetsAt: '2026-09-16T15:00:00.000Z' },
+    seven_day: { usedPercent: 41, resetsAt: '2026-09-20T00:00:00.000Z' },
+  },
+};
+const limited = (state: State, workerId: string, rateLimits: RateLimits = LIMITS) =>
+  reduce(state, { type: 'rateLimits', workerId, rateLimits });
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -549,6 +558,44 @@ test('setUsageRules copies the rules into the state and fills; a state without r
   assert.deepEqual(back.state.usageRules, RULES);
   assert.equal(back.effects.length, 0, 'rules that tighten never kill or drain');
   assert.equal(back.state.slots[0].task?.id, '1');
+});
+
+test('rateLimits from an occupied slot stores the reading, emits no effect and starts nothing', () => {
+  const first = filled(1, 2).state; // one working, task 2 queued
+  const id = first.slots[0].workerId!;
+  // A free slot next to a non-empty queue: any fill would spawn task 2 here
+  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'vazio' }] };
+  const { state, effects } = limited(roomy, id);
+  assert.deepEqual(state.rateLimits, LIMITS);
+  assert.equal(effects.length, 0, 'display only: no fill, no spawn');
+  assert.equal(state.slots[1].status, 'vazio');
+  assert.deepEqual({ ...state, rateLimits: undefined }, { ...roomy, rateLimits: undefined }, 'nothing else changes');
+  const newer: RateLimits = { ...LIMITS, at: '2026-09-16T12:05:00.000Z' };
+  assert.deepEqual(limited(state, id, newer).state.rateLimits, newer, 'the latest reading replaces the previous one');
+});
+
+test('rateLimits from an unknown worker or one that already exited leaves the state as is', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const ghost = limited(first, 'ghost');
+  assert.equal(ghost.state, first, 'same object: nothing to persist or broadcast differently');
+  assert.equal(ghost.state.rateLimits, undefined);
+  assert.equal(ghost.effects.length, 0);
+  const gone = reduce(first, { type: 'exit', workerId: id }).state; // the slot is refilled under a new workerId
+  assert.notEqual(gone.slots[0].workerId, id);
+  assert.equal(limited(gone, id).state.rateLimits, undefined, 'a worker that exited no longer feeds');
+});
+
+test('rateLimits never mutates its input and the reading survives poll, setMax and boot', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const snapshot = JSON.stringify(first);
+  const { state } = limited(first, id);
+  assert.equal(JSON.stringify(first), snapshot);
+  assert.equal(first.rateLimits, undefined);
+  const later = reduce(reduce(state, { type: 'poll', tasks: tasks(1) }).state, { type: 'setMax', max: 2 }).state;
+  assert.deepEqual(later.rateLimits, LIMITS, 'the last reading stays until a newer one arrives');
+  assert.deepEqual(reduce(later, { type: 'boot' }).state.rateLimits, LIMITS, 'a reopened Hive shows the last value');
 });
 
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {
