@@ -138,7 +138,8 @@ export type HiveEvent =
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
-  | { type: 'error'; message?: string };
+  | { type: 'error'; message?: string }
+  | { type: 'start'; itemId: string; raiseMax?: boolean }; // the human override from the queue panel: past the signal, the cap and the budget
 
 export interface ProjectSummary {
   number: number;

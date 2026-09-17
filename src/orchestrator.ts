@@ -95,6 +95,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
     case 'rateLimits': return setRateLimits(state, event.workerId, event.rateLimits); // display only: no fill, no effects
     case 'boardQuota': return none({ ...state, boardQuota: event.quota }); // display and timer backoff only: no fill, no effects
+    case 'start': return start(state, event.itemId, event.raiseMax === true); // no fill: nothing loosened, so nothing else could open
   }
 }
 
@@ -146,6 +147,19 @@ function fill(reduced: Reduced): Reduced {
     spawned.push(...next.effects);
   }
   return { state, effects: [...reduced.effects, ...spawned] };
+}
+
+// The human override: no signal, cap or budget check. Unknown or blocked task, or no free slot without raiseMax: unchanged.
+// With raiseMax the new max is occupied + 1, not maxConcurrent + 1: with slots draining the cap sits below the occupied count
+// and +1 on it would open nothing. A free slot ignores raiseMax: the slot appeared between the render and the click.
+function start(state: State, itemId: string, raiseMax: boolean): Reduced {
+  const task = state.queue.find((t) => t.itemId === itemId);
+  if (!task || isBlocked(task)) return none(state);
+  const hasFree = state.slots.some(isFree);
+  if (!hasFree && !raiseMax) return none(state);
+  const base = hasFree ? state : setMax(state, occupiedCount(state.slots) + 1).state;
+  const index = base.slots.findIndex(isFree);
+  return index < 0 ? none(state) : occupy(base, index, task, 'iniciado à mão'); // never throws: a reducer that throws takes the route with it
 }
 
 function poll(state: State, tasks: Task[]): Reduced {

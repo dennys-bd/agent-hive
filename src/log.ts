@@ -109,6 +109,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'exit': return `exit worker=${shortId(event.workerId)}`;
     case 'kill': return `kill slot=${shortId(event.slotId)}`;
     case 'error': return event.message ? `error ${event.message}` : 'error';
+    case 'start': return `start #${event.itemId} raiseMax=${event.raiseMax === true}`;
   }
 }
 
@@ -128,16 +129,17 @@ const slotDetail = (slot: Slot): string =>
 
 /** Slot and signal transitions between two states: one line per slot whose status changed, in grid order, matched by id; then the sessions that appeared; then the signal. */
 export function describeChanges(prev: State, next: State): string[] {
-  const before = (slot: Slot): Slot | undefined => prev.slots.find((s) => s.id === slot.id);
+  // A slot missing from prev appeared in this reduce: empty (setMax: no line) or already occupied (start with raiseMax: one line).
+  const before = (slot: Slot): Slot => prev.slots.find((s) => s.id === slot.id) ?? { id: slot.id, status: 'vazio' };
   const statuses = next.slots.flatMap((slot, i) => {
     const old = before(slot);
-    if (!old || old.status === slot.status) return [];
+    if (old.status === slot.status) return [];
     const detail = slotDetail(slot.status === 'vazio' ? old : slot); // an emptied slot names what it held
     return [`slot ${i + 1}: ${old.status} → ${slot.status}${detail}`];
   });
   // The slot is wiped on exit / boot; this line is what ties a PR (same worker=) back to a `claude --resume` id afterwards
   const sessions = next.slots.flatMap((slot, i) =>
-    slot.sessionId && !before(slot)?.sessionId ? [`slot ${i + 1}: session=${slot.sessionId}${slotDetail(slot)}`] : []);
+    slot.sessionId && !before(slot).sessionId ? [`slot ${i + 1}: session=${slot.sessionId}${slotDetail(slot)}`] : []);
   const lines = [...statuses, ...sessions];
   return prev.signal === next.signal ? lines : [...lines, `signal: ${prev.signal} → ${next.signal}`];
 }
