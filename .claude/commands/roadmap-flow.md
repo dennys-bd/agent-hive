@@ -9,10 +9,8 @@ Runs this repo's development pipeline end to end for **one** GitHub issue,
 without stopping for approval. Each stage delegates to an existing skill or
 agent; this file only sequences them. The issue is the card: it carries the
 intent and the open decisions, and the PR that closes it links the spec and
-plan artifacts. The flow does not move board columns: when it runs inside a
-Hive worker the Hive already sets `working` on spawn and `review` when the
-session ends, and when run by hand the flow has no way to know which board
-the issue lives on. `Closes #<n>` closes the issue on merge; whether that
+plan artifacts. The flow moves the card on the board as it advances (see
+**Tracking**); `Closes #<n>` closes the issue on merge, and whether that
 moves the card to done is the project's own workflow.
 
 **Input**: `$ARGUMENTS` — required. One of:
@@ -49,15 +47,34 @@ on the user's behalf. Two ways to start:
 
 ## Tracking (the issue is the card)
 
-| When | Where it is recorded |
-|---|---|
-| Stage 0, issue read | scope restated in chat, branch name announced |
-| End of Stage 1 | architectural path: `docs/superpowers/specs/<file>.md`; bounded path: a `Design:` paragraph in chat, carried into the PR body |
-| End of Stage 2 | architectural path: `docs/superpowers/plans/<file>.md` |
-| End of Stage 7 | PR body: `Closes #<n>`, spec and plan paths, test plan |
+| When | Where it is recorded | Board column |
+|---|---|---|
+| Stage 0, issue read | scope restated in chat, branch name announced | — |
+| End of Stage 1 | architectural path: `docs/superpowers/specs/<file>.md`; bounded path: a `Design:` paragraph in chat, carried into the PR body | `status.queue` (`Ready`) |
+| End of Stage 2 | architectural path: `docs/superpowers/plans/<file>.md` | — |
+| End of Stage 3 | branch exists, spec/plan committed | `status.working` (`In progress`) |
+| End of Stage 7 | PR body: `Closes #<n>`, spec and plan paths, test plan | `status.review` (`In review`) |
+
+Column names come from `status` in `hive.config.json` at the repo root
+(defaults in parentheses); the board is `board.owner` / `board.number` in
+the same file. Moving the card:
+
+```sh
+gh project view <number> --owner <owner> --format json --jq .id                                  # project id
+gh project field-list <number> --owner <owner> --format json --jq '.fields[] | select(.name=="Status")'   # field id + option ids
+gh project item-list <number> --owner <owner> --format json --limit 200 --jq '.items[] | select(.content.number==<n>) | {id, status}'
+gh project item-edit --id <item-id> --project-id <project-id> --field-id <field-id> --single-select-option-id <option-id>
+```
 
 Rules:
 
+- Never move the card backwards. Inside a Hive worker the card is already
+  `In progress` when Stage 1 ends, so the `Ready` move is a no-op there;
+  it matters when the flow is run by hand on an issue still in the
+  backlog. Compare the current `status` from `item-list` before editing.
+- No `hive.config.json`, or the issue is not on that board: say so once
+  and carry on without board moves; it is not a stop.
+- Announce each move in chat as it happens (`board: #<n> → In progress`).
 - Spec and plan files are committed on the feature branch (`docs: spec and
   plan for #<n>`), so the PR carries them.
 - Comment on the issue only when the information would otherwise be lost:
@@ -124,6 +141,8 @@ idea. **Only this piece of superpowers is in scope** for the flow.
   lists the decisions to close; each one gets a row.
 - `docs/superpowers/specs/2026-09-15-agent-hive-design.md` is authoritative
   for anything the issue does not override.
+- Move the card to `status.queue` (`Ready`) unless it is already further
+  along.
 
 ## Stage 2 — Plan
 
@@ -147,6 +166,9 @@ git commit -m "docs: spec and plan for #<n>"  # architectural path only
 
 Bounded path: nothing to commit here; the first commit is the first green
 task of Stage 4.
+
+Then move the card to `status.working` (`In progress`) unless it is
+already further along.
 
 Commit message conventions for every commit in this flow: `<type>:
 <description>` or `<type>(<scope>): <description>`, English, no
@@ -209,7 +231,8 @@ Run `ecc:pr` against `main`. The body has, in this order:
 4. a test plan with the `pnpm test` result plus any manual `pnpm start`
    checks from Stage 4.
 
-Do not merge. The flow ends with the PR URL in chat.
+Then move the card to `status.review` (`In review`). Do not merge. The
+flow ends with the PR URL in chat.
 
 ---
 
@@ -231,6 +254,6 @@ which stage stopped and why, and what input would unblock it.
 ## Explicitly out of scope
 
 - Any superpowers skill other than `brainstorming`.
-- Moving the issue between board columns or labelling it (see the
-  tracking section for why).
+- Labelling the issue, or moving it to any column other than the three in
+  **Tracking** (done is the project's workflow after merge).
 - Releasing / publishing the package.
