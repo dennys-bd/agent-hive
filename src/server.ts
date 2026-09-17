@@ -12,6 +12,7 @@ import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
 import { reduce, SIGNALS } from './orchestrator.js';
+import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
@@ -20,7 +21,8 @@ import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  SpawnWorker, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -56,6 +58,8 @@ export interface ServerDeps {
   boardFactory?: BoardFactory;
   spawnWorker?: SpawnWorker; // tests inject a fake; the default opens a real claude
   log?: Logger; // tests inject a fake; the default writes <repo>/.hive/hive.log
+  /** The Hive's own reading of the plan limits; absent (every test) means it never reads. main.ts / run.ts inject the real one. */
+  readPlanLimits?: PlanLimitsReader;
   /** Setup mode with a config that failed to boot: prefills the form and explains why. */
   setupFallback?: { config: Config; error: string };
 }
@@ -63,6 +67,7 @@ export interface ServerDeps {
 export interface HiveServer {
   dispatch(event: HiveEvent): Promise<void>;
   poll(): Promise<void>;
+  refreshPlanLimits(): Promise<void>;
   listen(port: number): Promise<number>;
   close(): Promise<void>;
   configure(config: Config): Promise<void>;
@@ -110,6 +115,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   let boundPort: number | undefined;
   let httpServer: HttpServer | undefined;
   let pollTimer: NodeJS.Timeout | undefined;
+  let planLimitsTimer: NodeJS.Timeout | undefined;
+  let planLimitsReason: string | undefined; // last failure logged; a repeat is silent, a change and the recovery are one line each
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
   let setupChain: Promise<void> = Promise.resolve();
@@ -213,6 +220,23 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
+  // A failure keeps the last value and is logged once per reason: an API-key user (no OAuth token) sees it in hive.log once, not
+  // every 5 min. Info, not error: nothing is broken. The reader's message never carries the token or the response body.
+  async function refreshPlanLimits(): Promise<void> {
+    const read = deps.readPlanLimits;
+    if (!read || !live) return;
+    try {
+      const rateLimits = await read();
+      if (planLimitsReason !== undefined) log.info('plan limits: ok');
+      planLimitsReason = undefined;
+      if (rateLimits) await dispatch({ type: 'rateLimits', rateLimits });
+    } catch (err) {
+      const reason = errorMessage(err);
+      if (reason !== planLimitsReason) log.info(`plan limits: ${reason}`);
+      planLimitsReason = reason;
+    }
+  }
+
   // Only the timer asks shouldPoll; /board/refresh, configure, reconfigure and boot always poll: whoever asked wants the answer now.
   async function tick(): Promise<void> {
     if (live && shouldPoll(live.state, Date.now())) await poll();
@@ -270,6 +294,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     await poll();
+    await refreshPlanLimits();
   }
 
   async function reconfigure(config: Config): Promise<void> {
@@ -533,11 +558,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     boundPort = bound;
     log.info(`listening port=${bound}`);
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
+    planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep
     return bound;
   }
 
   async function close(): Promise<void> {
     if (pollTimer) clearInterval(pollTimer);
+    if (planLimitsTimer) clearInterval(planLimitsTimer);
     pool.killAll(); // children of the Hive: none should outlive it
     const server = httpServer;
     httpServer = undefined; // a second close() (Electron will-quit after a test's after hook, or vice versa) is a no-op
@@ -546,5 +573,5 @@ export function createServer(deps: ServerDeps): HiveServer {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 
-  return { dispatch, poll, listen, close, configure, reconfigure, getState: () => live?.state };
+  return { dispatch, poll, refreshPlanLimits, listen, close, configure, reconfigure, getState: () => live?.state };
 }
