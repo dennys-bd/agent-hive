@@ -103,8 +103,9 @@ Default: `Task #{id}: {title}`, the body, and an instruction to open a PR with `
 | `promptTemplate` | see above | form |
 | `port` | `47821` | file (requires restart) |
 | `claudeArgs` | `[]` | file (e.g. `["--permission-mode", "acceptEdits"]`; embedded workers have no permission prompt, so this or the repo's `.claude/settings.json` must allow the tools) |
+| `logLevel` | `info` | file (`info` or `debug`; re-read on every save of the setup form, no restart needed) |
 
-Older files with `project: { owner, number }` are still accepted. Runtime state lives in `<repo>/.hive/` (kept out of git through `.git/info/exclude`).
+Older files with `project: { owner, number }` are still accepted. Runtime state lives in `<repo>/.hive/` (kept out of git through `.git/info/exclude`), including `hive.log`: one line per thing the Hive did (`tail -f .hive/hive.log`), rotated once at 5 MB into `hive.log.1`; `logLevel: "debug"` adds every hook event and every `gh` call.
 
 ## Development
 

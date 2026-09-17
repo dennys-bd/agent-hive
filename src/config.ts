@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { LOG_LEVELS, type LogLevel } from './log.js';
 import { SIGNALS } from './orchestrator.js';
 import type { BoardConfig, Budget, Config, EpicsMode, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
 
@@ -12,6 +13,7 @@ export const EPICS_MODES: readonly EpicsMode[] = ['ignore', 'queue'];
 export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   workers: 'embedded',
   epics: 'ignore',
+  logLevel: 'info',
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
   maxConcurrent: 2,
   port: 47821,
@@ -120,6 +122,10 @@ export function parseConfig(raw: unknown): Config {
     epics: optional(raw.epics, DEFAULT_CONFIG.epics, (v) => {
       if (!EPICS_MODES.includes(v as EpicsMode)) throw new Error(`${CONFIG_FILE}: "epics" must be one of: ${EPICS_MODES.join(', ')}`);
       return v as EpicsMode;
+    }),
+    logLevel: optional(raw.logLevel, DEFAULT_CONFIG.logLevel, (v) => {
+      if (!LOG_LEVELS.includes(v as LogLevel)) throw new Error(`${CONFIG_FILE}: "logLevel" must be one of: ${LOG_LEVELS.join(', ')}`);
+      return v as LogLevel;
     }),
     status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
