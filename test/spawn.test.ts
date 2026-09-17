@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killStray, renderPrompt, workerEnv, writePrompt } from '../src/spawn.js';
+import { killStray, movesNote, renderPrompt, workerEnv, writePrompt } from '../src/spawn.js';
 import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
 import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
 
 const task = { itemId: 'I1', id: '7', title: 'Fix "login"', body: 'line1\n$(echo pwned) `x`', url: 'https://github.com/a/b/issues/7' };
+const STATUS = { queue: 'Ready', working: 'In progress', review: 'In review' };
+const NOTE = '\n\nBoard moves you own (the Hive will not make them): ';
 
 test('renderPrompt substitutes every placeholder', () => {
   const text = renderPrompt('#{number} {title}\n{body}\n{url}', task);
@@ -17,6 +19,23 @@ test('renderPrompt substitutes every placeholder', () => {
 
 test('renderPrompt renders {id} and {number} the same', () => {
   assert.equal(renderPrompt('{id}={number}', { ...task, id: 'T-12' }), 'T-12=T-12');
+});
+
+test('movesNote is empty unless the agent owns a move, then lists the owned moves in working, review, queue order with the column names', () => {
+  assert.equal(movesNote({ working: 'hive', review: 'hive', queue: 'hive' }, STATUS), '');
+  assert.equal(movesNote({ working: 'human', review: 'hive', queue: 'human' }, STATUS), '', 'human is nobody\'s instruction');
+  assert.equal(
+    movesNote({ working: 'hive', review: 'agent', queue: 'agent' }, STATUS),
+    `${NOTE}move it to "In review" when you open the PR; move it back to "Ready" if you stop without a PR.`,
+  );
+  assert.equal(
+    movesNote({ working: 'agent', review: 'hive', queue: 'hive' }, { ...STATUS, working: 'Doing' }),
+    `${NOTE}move this task's card to "Doing" now, at the start.`,
+  );
+  assert.equal(
+    movesNote({ working: 'agent', review: 'agent', queue: 'agent' }, STATUS),
+    `${NOTE}move this task's card to "In progress" now, at the start; move it to "In review" when you open the PR; move it back to "Ready" if you stop without a PR.`,
+  );
 });
 
 test('writePrompt writes <promptsDir>/<slug>.md', async () => {
