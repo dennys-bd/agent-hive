@@ -1,6 +1,6 @@
 import type {
-  BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
-  State, StatusKey, Task, UsageSample, WorkersMode,
+  BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, Mover, Moves, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult,
+  Signal, Slot, State, StatusKey, Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { esc, renderOutput } from './highlight.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
@@ -17,6 +17,7 @@ const DEFAULT_OWNER = '@me';
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
 const MARKDOWN_INPUT: Record<StatusKey, string> = { queue: 'md-queue', working: 'md-working', review: 'md-review' };
+const MOVE_SELECT: Record<StatusKey, string> = { queue: 'move-queue', working: 'move-working', review: 'move-review' };
 const DEFAULT_MARKDOWN_PATH = 'board.md';
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
 const HOUR_MS = 3_600_000;
@@ -390,6 +391,7 @@ async function openSetup(): Promise<void> {
   $('md-options').innerHTML = '';
   $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
   $<HTMLSelectElement>('epics').value = config?.epics ?? 'ignore';
+  for (const key of STATUS_KEYS) $<HTMLSelectElement>(MOVE_SELECT[key]).value = config?.moves[key] ?? 'hive';
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
   renderRules(config?.usageRules ?? []);
@@ -414,6 +416,11 @@ function boardFromForm(): BoardConfig | undefined {
 function statusFromForm(): Record<StatusKey, string> {
   const ids = boardType() === 'markdown' ? MARKDOWN_INPUT : COLUMN_SELECT;
   const read = (key: StatusKey): string => $<HTMLInputElement | HTMLSelectElement>(ids[key]).value.trim();
+  return { queue: read('queue'), working: read('working'), review: read('review') };
+}
+
+function movesFromForm(): Moves {
+  const read = (key: StatusKey): Mover => $<HTMLSelectElement>(MOVE_SELECT[key]).value as Mover;
   return { queue: read('queue'), working: read('working'), review: read('review') };
 }
 
@@ -442,6 +449,7 @@ async function saveSetup(): Promise<void> {
       status: statusFromForm(),
       workers: $<HTMLSelectElement>('workers-mode').value as WorkersMode,
       epics: $<HTMLSelectElement>('epics').value as EpicsMode,
+      moves: movesFromForm(),
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
       usageRules,

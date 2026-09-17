@@ -74,6 +74,7 @@
   #setup .row label { flex: 1; }
   #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   #setup fieldset[disabled] { display: none; }
+  #setup legend { color: var(--muted); font-size: 12px; text-transform: uppercase; padding: 0; margin-bottom: 8px; }
   #setup .tabs { display: flex; gap: 20px; align-items: flex-start; }
   #setup-tabs { display: flex; flex-direction: column; gap: 4px; width: 120px; flex: none; }
   #setup-tabs button { text-align: left; }
@@ -155,6 +156,31 @@
           <label>coluna em andamento <input id="md-working" type="text" list="md-options" value="In progress" required></label>
           <label>coluna em review <input id="md-review" type="text" list="md-options" value="In review" required></label>
           <datalist id="md-options"></datalist>
+        </fieldset>
+        <fieldset id="moves-fields">
+          <legend>quem move o card</legend>
+          <label>pra "em andamento", ao abrir o worker
+            <select id="move-working">
+              <option value="hive">Hive</option>
+              <option value="agent">o agente (recebe a instrução no prompt)</option>
+              <option value="human">à mão (ninguém automatiza)</option>
+            </select>
+          </label>
+          <label>pra "em review", quando o PR abre
+            <select id="move-review">
+              <option value="hive">Hive</option>
+              <option value="agent">o agente (recebe a instrução no prompt)</option>
+              <option value="human">à mão (ninguém automatiza)</option>
+            </select>
+          </label>
+          <label>de volta pra fila, se o worker sai sem PR
+            <select id="move-queue">
+              <option value="hive">Hive</option>
+              <option value="agent">o agente (recebe a instrução no prompt)</option>
+              <option value="human">à mão (ninguém automatiza)</option>
+            </select>
+          </label>
+          <div class="hint">com "o agente", o prompt do worker ganha um parágrafo dizendo quais movimentos são dele; com "à mão", o Hive só observa o board pelo poll.</div>
         </fieldset>
       </section>
       <section data-panel="geral" hidden>
