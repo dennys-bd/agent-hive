@@ -130,6 +130,12 @@
     <label>coluna da fila <select id="col-queue" required></select></label>
     <label>coluna em andamento <select id="col-working" required></select></label>
     <label>coluna em review <select id="col-review" required></select></label>
+    <label>épicos (issues com sub-issues)
+      <select id="epics">
+        <option value="ignore">ignorar: só as sub-issues entram na fila</option>
+        <option value="queue">enfileirar quando todas as sub-issues fecharem</option>
+      </select>
+    </label>
   </fieldset>
   <fieldset id="markdown-fields" disabled>
     <div class="row">

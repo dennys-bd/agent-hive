@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Board, BoardConfig, BoardQuota, ProjectSummary, StatusKey, Task } from '../types.js';
+import type { Board, BoardConfig, BoardQuota, EpicsMode, ProjectSummary, StatusKey, Task } from '../types.js';
 
 const execFileAsync = promisify(execFile);
 const GH_MAX_BUFFER = 20 * 1024 * 1024;
@@ -85,13 +85,18 @@ function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
   return [...new Set(open)];
 }
 
-async function withBlockers(tasks: Task[], exec: Exec): Promise<Task[]> {
+// An epic is any issue with at least one sub-issue, whatever its state: the same relation GitHub shows as an epic.
+const isEpic = (issue: GhIssueRelations | null | undefined): boolean => (issue?.subIssues?.nodes.length ?? 0) > 0;
+
+async function withBlockers(tasks: Task[], epics: EpicsMode, exec: Exec): Promise<Task[]> {
   const query = relationsQuery(tasks);
   if (!query) return tasks;
   const { data } = JSON.parse(await exec(['api', 'graphql', '-f', `query=${query}`])) as { data: GhRelationsData };
-  return tasks.map((task, i) => {
-    const blockedBy = openBlockers(data[`i${i}`]?.issue);
-    return blockedBy.length > 0 ? { ...task, blockedBy } : task;
+  return tasks.flatMap((task, i) => {
+    const issue = data[`i${i}`]?.issue;
+    if (epics === 'ignore' && isEpic(issue)) return []; // not a task for the Hive: only its sub-issues are
+    const blockedBy = openBlockers(issue);
+    return [blockedBy.length > 0 ? { ...task, blockedBy } : task];
   });
 }
 
@@ -105,7 +110,9 @@ async function readQuota(exec: Exec): Promise<BoardQuota | undefined> {
   return { limit, remaining, resetsAt: new Date(reset * MS_PER_SECOND).toISOString(), at: new Date().toISOString() };
 }
 
-export function createGithubBoard(board: GithubBoardConfig, statusNames: Record<StatusKey, string>, exec: Exec = ghExec): Board {
+export function createGithubBoard(
+  board: GithubBoardConfig, statusNames: Record<StatusKey, string>, epics: EpicsMode, exec: Exec = ghExec,
+): Board {
   const { owner, number } = board;
   const base = (sub: string) => projectArgs(sub, owner, number);
   let resolved: { projectId: string; statusFieldId: string; optionIds: Record<StatusKey, string> } | undefined;
@@ -131,7 +138,7 @@ export function createGithubBoard(board: GithubBoardConfig, statusNames: Record<
       if (item.status !== statusNames.queue || c?.type !== 'Issue' || typeof c.number !== 'number' || !c.url) return [];
       return [{ itemId: item.id, id: String(c.number), title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }];
     });
-    return withBlockers(queued, exec); // item-list carries no relations; a failed query rejects the poll, never "no blockers"
+    return withBlockers(queued, epics, exec); // item-list carries no relations; a failed query rejects the poll, never "no blockers"
   }
 
   async function setStatus(itemId: string, key: StatusKey): Promise<void> {

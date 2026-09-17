@@ -81,7 +81,8 @@ function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefine
   return body.promptTemplate;
 }
 
-const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status], [b.board, b.status]);
+// epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or status.
+const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status, a.epics], [b.board, b.status, b.epics]);
 
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
@@ -401,6 +402,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         port: current?.port,
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,
+        epics: body.epics ?? current?.epics,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,

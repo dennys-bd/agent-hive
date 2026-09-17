@@ -10,6 +10,7 @@ import { parseConfig } from '../src/config.js';
 const REPO = '/repo'; // the github adapter never reads it
 
 const config = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 } });
+const queued = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, epics: 'queue' });
 
 function fakeExec(responses: Record<string, unknown>) {
   const calls: string[][] = [];
@@ -126,7 +127,7 @@ const relations = (blockedBy: [number, string][], subIssues: [number, string][] 
   },
 });
 
-test('listQueue resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
+test('with epics: queue, listQueue keeps epics and resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
   const { exec, calls } = fakeExec({
     'project item-list 6': { items: [issue(1), issue(2, 'In progress'), issue(3), issue(4)] },
     'api graphql -f': {
@@ -137,7 +138,7 @@ test('listQueue resolves open blockers with one graphql call, one alias per queu
       },
     },
   });
-  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
+  const queue = await createBoard(queued, { repo: REPO, exec }).listQueue();
   assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
   assert.ok(!('blockedBy' in queue[1]), 'field omitted when there is no open blocker');
   const graphql = calls.filter((c) => c[0] === 'api');
@@ -156,14 +157,32 @@ test('listQueue with nothing in the queue column makes no graphql call', async (
   assert.deepEqual(calls.map((c) => c[1]), ['item-list']);
 });
 
-test('listQueue treats issue: null, a null repository or a missing alias as no blockers', async () => {
+test('listQueue treats issue: null, a null repository or a missing alias as no blockers and not as an epic', async () => {
   const { exec, calls } = fakeExec({
     'project item-list 6': { items: [issue(1), issue(2), issue(3)] },
     'api graphql -f': { data: { i0: { issue: null }, i1: null } },
   });
   const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
   assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, undefined, undefined]);
+  assert.deepEqual(queue.map((t) => t.id), ['1', '2', '3'], 'nothing dropped under the default epics: ignore');
   assert.equal(calls.filter((c) => c[0] === 'api').length, 1);
+});
+
+test('listQueue drops epics (issues with any sub-issue, open or closed) by default and keeps the others with their blockedBy', async () => {
+  const { exec, calls } = fakeExec({
+    'project item-list 6': { items: [issue(1), issue(2), issue(3), issue(4)] },
+    'api graphql -f': {
+      data: {
+        i0: relations([], [[5, 'OPEN']]), // epic with an open sub-issue
+        i1: relations([[7, 'OPEN']], [[8, 'CLOSED']]), // epic whose sub-issues are all closed: still an epic
+        i2: relations([[7, 'OPEN']]), // blocked by a dependency, not an epic
+        i3: relations([[9, 'CLOSED']]),
+      },
+    },
+  });
+  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
+  assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [['3', ['7']], ['4', undefined]]);
+  assert.equal(calls.filter((c) => c[0] === 'api').length, 1, 'same single query as before: no extra call to detect epics');
 });
 
 test('quota reads gh api rate_limit for the graphql resource and converts reset (epoch seconds) to ISO', async () => {

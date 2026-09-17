@@ -358,3 +358,22 @@ test('POST /hooks/status answers the limits line for a valid payload, an empty b
   assert.equal(server.getState()?.rateLimits, undefined, 'no occupied slot matches, so nothing is stored');
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
 });
+
+test('POST /setup with epics writes it, a save without the key keeps it, a change rebuilds the board and a bad value answers 400', async (t) => {
+  const { base, repo, configs } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'ignore', 'default on first setup');
+  const before = configs.length;
+  assert.equal((await postSetup(base, { ...BODY, epics: 'queue' })).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'queue');
+  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.epics, 'queue');
+  assert.equal(configs.at(-1)?.epics, 'queue', 'the live board is built with the new mode');
+  assert.equal(configs.length, before + 2, 'a different epics mode needs a new board: validation + activate');
+  // a save without the key keeps the file's (the API caller that omits it, like `workers`)
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'queue');
+  const bad = await postSetup(base, { ...BODY, epics: 'label' });
+  assert.equal(bad.status, 400);
+  assert.match((await json<{ error: string }>(bad)).error, /"epics" must be one of: ignore, queue/);
+  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'queue', 'rejected before the write');
+});

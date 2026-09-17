@@ -1,15 +1,17 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SIGNALS } from './orchestrator.js';
-import type { BoardConfig, Budget, Config, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
+import type { BoardConfig, Budget, Config, EpicsMode, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
 export const BOARD_TYPES: readonly BoardConfig['type'][] = ['github', 'markdown'];
 export const WORKERS_MODES: readonly WorkersMode[] = ['embedded', 'iterm'];
+export const EPICS_MODES: readonly EpicsMode[] = ['ignore', 'queue'];
 
 export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   workers: 'embedded',
+  epics: 'ignore',
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
   maxConcurrent: 2,
   port: 47821,
@@ -114,6 +116,10 @@ export function parseConfig(raw: unknown): Config {
     workers: optional(raw.workers, DEFAULT_CONFIG.workers, (v) => {
       if (!WORKERS_MODES.includes(v as WorkersMode)) throw new Error(`${CONFIG_FILE}: "workers" must be one of: ${WORKERS_MODES.join(', ')}`);
       return v as WorkersMode;
+    }),
+    epics: optional(raw.epics, DEFAULT_CONFIG.epics, (v) => {
+      if (!EPICS_MODES.includes(v as EpicsMode)) throw new Error(`${CONFIG_FILE}: "epics" must be one of: ${EPICS_MODES.join(', ')}`);
+      return v as EpicsMode;
     }),
     status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
