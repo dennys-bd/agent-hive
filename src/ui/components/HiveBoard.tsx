@@ -2,6 +2,7 @@ import { columnOf, isBlocked } from '../../cards';
 import type { Card as CardModel, Status, State } from '../../types';
 import { act } from '@/components/actions';
 import { Confirm } from '@/components/Confirm';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { statusText, t } from '@/i18n';
@@ -25,6 +26,11 @@ function BoardCard({ card, state }: { card: CardModel; state: State }) {
       <div className="font-medium">{`#${card.task.id} ${card.task.title}`}</div>
       <div className="text-muted-foreground text-xs">{meta}</div>
       {card.prUrl && <a href={card.prUrl} target="_blank" rel="noreferrer" className="text-xs">PR</a>}
+      {card.error && (
+        <Badge variant="destructive" className="max-w-full" title={card.error}>
+          <span className="truncate">{card.error}</span>
+        </Badge>
+      )}
       {card.missing ? (
         <div className="flex items-center gap-2 text-destructive text-xs">
           {t('card.missing')}
