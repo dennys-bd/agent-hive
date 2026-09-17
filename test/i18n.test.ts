@@ -37,6 +37,7 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
   assert.equal(t('setup.rules.error', { n: 3 }), 'tier 3: enter max. workers or a signal');
   assert.equal(t('card.blockedBy', { ids: '4, 5' }), 'blocked by 4, 5');
   assert.match(t('setup.columns.hint'), /\{id\}/, 'no vars: literal braces stay');
+  assert.equal(t('setup.columns.error', { n: 2 }), 'column 2: enter a name and an integer weight ≥ 0');
   assert.equal(t('limits.at', { other: 'x' }), 'read at {time}', 'an unknown placeholder stays');
   setLanguage('pt');
   assert.equal(t('header.activeWorkers', { active: 1, max: 2 }), '1/2 workers ativos');
@@ -44,7 +45,7 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
 });
 
 test('the board and column keys exist in both languages', () => {
-  for (const key of ['board.title', 'card.start', 'card.missing', 'card.close', 'card.keep', 'card.orphan', 'confirm.close', 'setup.columns', 'setup.columns.add', 'setup.columns.hint'] as const) {
+  for (const key of ['board.title', 'card.start', 'card.missing', 'card.close', 'card.keep', 'card.orphan', 'confirm.close', 'setup.columns', 'setup.columns.add', 'setup.columns.hint', 'setup.columns.error'] as const) {
     assert.ok(MESSAGES.en[key].length > 0 && MESSAGES.pt[key].length > 0, key);
   }
   assert.equal('queue.title' in MESSAGES.en, false, 'the queue panel is gone');
