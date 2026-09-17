@@ -1,29 +1,36 @@
 ---
-description: "Autonomous dev flow for one roadmap item: pick → brainstorm → plan → branch → TDD → review → security → PR. Tracked in docs/roadmap.md."
-argument-hint: "[roadmap item number or feature substring, or empty for the next a fazer]"
+description: "Autonomous dev flow for one GitHub issue: read → brainstorm → plan → branch → TDD → review → security → PR. The issue is the card; spec and plan are linked from the PR."
+argument-hint: "<issue number or URL> [optionally followed by the issue title and body]"
 ---
 
 # /roadmap-flow
 
-Runs this repo's development pipeline end to end for **one** row of the
-table in `docs/roadmap.md`, without stopping for approval. Each stage
-delegates to an existing skill or agent; this file only sequences them and
-keeps the roadmap row updated so `docs/roadmap.md` is the single source of
-truth for what is being worked on and where the artifacts live.
+Runs this repo's development pipeline end to end for **one** GitHub issue,
+without stopping for approval. Each stage delegates to an existing skill or
+agent; this file only sequences them. The issue is the card: it carries the
+intent and the open decisions, and the PR that closes it links the spec and
+plan artifacts. Nothing else tracks status (the Hive moves the board column
+itself; this flow never touches columns, labels or `docs/`).
 
-**Input**: `$ARGUMENTS` — optional. A row number (`3`) or a substring of the
-`Feature` cell (`blockers`). If empty, take the **first row from the top
-whose `Status` is `a fazer`**. If the substring matches more than one
-row, or none, list the candidates and stop; that is the only case where the
-flow asks before starting.
+**Input**: `$ARGUMENTS` — required. One of:
+
+- an issue number (`36`, `#36`) or URL
+  (`https://github.com/<owner>/<repo>/issues/36`);
+- the same, followed by the issue title and body already inlined (the Hive
+  template can be `/roadmap-flow {url}\n\n{title}\n\n{body}`). When the title
+  and body are present in the arguments, use them as-is and skip the
+  `gh issue view` in Stage 0.
+
+If `$ARGUMENTS` is empty, run `gh issue list --state open --limit 10`, show
+the candidates and stop; that is the only case where the flow asks before
+starting.
 
 **No human gates.** Every stage below runs straight into the next. Where a
-stage would normally ask the user a question, resolve it from the item's
-section in `docs/roadmap.md` (`## <n>. <Feature>`), the existing specs in
-`docs/superpowers/specs/`, and the code, and write the decision down as a
-stated assumption in the artifact of that stage. Stop only if the item is so
-ambiguous that any assumption would make the work useless; report the
-specific gap and what you would need.
+stage would normally ask the user a question, resolve it from the issue
+body and comments, the existing specs in `docs/superpowers/specs/`, and the
+code, and write the decision down as a stated assumption in the artifact of
+that stage. Stop only if the issue is so ambiguous that any assumption would
+make the work useless; report the specific gap and what you would need.
 
 **Working tree**: `git status --short --branch` must be clean before
 Stage 0. If it is not, stop and say what is dirty; never stash or discard
@@ -32,35 +39,26 @@ on the user's behalf. Two ways to start:
 - **on `main`**: the flow creates the feature branch itself (Stage 3);
 - **on a fresh worktree branch** (Agent Hive spawns `claude --worktree=<slug>`,
   so the session already sits on a branch named after the task): keep that
-  branch as the feature branch and skip the `checkout -b` in Stage 3. The
-  Hive has already moved the row to `fazendo` in the main checkout; the
-  worktree copy still shows `a fazer`, so the tracking edits below still
-  apply. Any other branch with commits ahead of `main` is a stop.
+  branch as the feature branch and skip the `checkout -b` in Stage 3. Any
+  other branch with commits ahead of `main` is a stop.
 
 ---
 
-## Tracking in the roadmap (do this at every stage boundary)
+## Tracking (the issue is the card)
 
-The row in the table plus its `## <n>. <Feature>` section is the card. Edit
-in place; the section keeps its prose and gets tracking lines appended at
-the end as the flow advances:
-
-| When | Edit |
+| When | Where it is recorded |
 |---|---|
-| Stage 0, item picked | table `Status` → `fazendo`; section header `— fazendo`; append `- Branch: <name>` |
-| End of Stage 1 (architectural path) | table `Spec` → `` `docs/superpowers/specs/<file>.md` `` |
-| End of Stage 2 (architectural path) | append `- Plan: docs/superpowers/plans/<file>.md` |
-| End of Stage 7, PR opened | table `Status` → `feito`; section header `— feito`; append `- PR: <url>` |
+| Stage 0, issue read | scope restated in chat, branch name announced |
+| End of Stage 1 | architectural path: `docs/superpowers/specs/<file>.md`; bounded path: a `Design:` paragraph in chat, carried into the PR body |
+| End of Stage 2 | architectural path: `docs/superpowers/plans/<file>.md` |
+| End of Stage 7 | PR body: `Closes #<n>`, spec and plan paths, test plan |
 
 Rules:
 
-- Every edit to `docs/roadmap.md` is committed on the feature branch as
-  part of the flow (`docs(roadmap): track <feature>`), so the PR carries
-  the status change and `main` reflects reality after merge.
-- Announce each edit in chat as it happens (`roadmap: <feature> → fazendo`).
-- Never batch the edits at the end.
-- Rows are never deleted or reordered by this flow. The `## Pendências`
-  list is not in scope; it is not a queue.
+- Spec and plan files are committed on the feature branch (`docs: spec and
+  plan for #<n>`), so the PR carries them.
+- Never comment on the issue, edit its body, or change its labels; the PR
+  with `Closes #<n>` is the only write to GitHub besides the branch.
 
 ## Model routing
 
@@ -80,27 +78,32 @@ say so.
 | 6 — Security | `ecc:security-reviewer` | `sonnet` |
 | 7 — PR | `ecc:pr` inline | session model |
 
-## Stage 0 — Pick the item
+## Stage 0 — Read the issue
 
-1. Read `docs/roadmap.md` in full.
-2. Select the row per **Input** above. Read its `## <n>.` section; it
-   carries the intent and the open decisions.
+1. Extract the issue number from `$ARGUMENTS` (a bare number, `#n`, or the
+   last path segment of the URL).
+2. Unless the title and body came inlined in `$ARGUMENTS`, fetch them:
+
+   ```sh
+   gh issue view <n> --json number,title,body,url,labels,comments
+   ```
+
+   Read the comments too; they often close decisions the body leaves open.
+   If `gh` fails (not found, rate limit), stop and report the exact error.
 3. Restate the scope in two or three sentences in chat.
 4. Derive the branch name now: the current branch when already on a
-   worktree branch, otherwise `feat/<slug>` (slug from the feature name,
-   kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`). Record
-   `fazendo` + `- Branch:` in the roadmap. Do not commit yet; Stage 3
-   commits it on the branch.
+   worktree branch, otherwise `feat/<slug>` (slug from the issue title,
+   kebab-case, ≤ 5 words, e.g. `feat/blockers`, `feat/board-asana`).
 
 ## Stage 1 — Spec (brainstorming, autonomous)
 
-Invoke `superpowers:brainstorming` with the feature name and its section as
-the idea. **Only this piece of superpowers is in scope** for the flow.
+Invoke `superpowers:brainstorming` with the issue title and body as the
+idea. **Only this piece of superpowers is in scope** for the flow.
 
 - Classify per that skill's rules:
   - **bounded** (one or two files, no new type in `src/types.ts`, no new
-    adapter, no UI panel): write a short design paragraph as a `- Design:`
-    line under the section. No spec file.
+    adapter, no UI panel): write a short `Design:` paragraph in chat. No
+    spec file. The paragraph goes into the PR body in Stage 7.
   - **architectural** (new `Board` adapter, change to `Task`/`Config`/
     `State`, new orchestrator rule, new UI panel): write
     `docs/superpowers/specs/YYYY-MM-DD-<slug>-design.md`, in Portuguese,
@@ -108,35 +111,36 @@ the idea. **Only this piece of superpowers is in scope** for the flow.
     `docs/superpowers/specs/2026-09-16-pluggable-boards-design.md`
     (`Decisões fechadas` table, config, types, per-file behaviour, tests).
     Reference the v1 spec and the specs it extends instead of restating
-    them; describe only the delta.
+    them; describe only the delta. Cite the issue (`#<n>`) in the header.
 - Every question the skill would ask the user is answered by you, with the
   answer and its reason written into the spec's `Decisões fechadas` table
-  (or the `- Design:` line for bounded work). The roadmap section already
+  (or the `Design:` paragraph for bounded work). The issue body already
   lists the decisions to close; each one gets a row.
 - `docs/superpowers/specs/2026-09-15-agent-hive-design.md` is authoritative
-  for anything the item does not override.
-- Record the path in the table's `Spec` cell when a spec file was written.
+  for anything the issue does not override.
 
 ## Stage 2 — Plan
 
-Dispatch `ecc:planner` with the spec (or the `Design:` line) to produce
+Dispatch `ecc:planner` with the spec (or the `Design:` paragraph) to produce
 `docs/superpowers/plans/YYYY-MM-DD-<slug>.md` in the format of
 `docs/superpowers/plans/2026-09-16-pluggable-boards.md`: header block
 (Goal, Architecture, Tech Stack, Spec), Global Constraints (copy the
 existing list; it is the repo's rule set; update the test count), File map,
 then task-by-task steps with checkboxes, interfaces and test code.
 
-Bounded path: no plan file; the `Design:` line is the plan. Go to Stage 3.
-
-Record `- Plan:` under the section when a plan file was written.
+Bounded path: no plan file; the `Design:` paragraph is the plan. Go to
+Stage 3.
 
 ## Stage 3 — Branch
 
 ```sh
 git checkout -b <branch-from-stage-0> main   # skip when already on the worktree branch
-git add docs/roadmap.md docs/superpowers
-git commit -m "docs(roadmap): track <feature>"
+git add docs/superpowers                      # architectural path only
+git commit -m "docs: spec and plan for #<n>"  # architectural path only
 ```
+
+Bounded path: nothing to commit here; the first commit is the first green
+task of Stage 4.
 
 Commit message conventions for every commit in this flow: `<type>:
 <description>` or `<type>(<scope>): <description>`, English, no
@@ -144,10 +148,10 @@ Commit message conventions for every commit in this flow: `<type>:
 
 ## Stage 4 — Implementation (TDD)
 
-Dispatch `ecc:tdd-guide` with the plan (or `Design:` line), task by task:
-RED → GREEN → refactor. Tests are `node:test` + `node:assert/strict` under
-`test/` (adapters under `test/boards/`), compiled by `tsc` and run with
-`pnpm test`. External processes (`gh`, `claude`) are always behind an
+Dispatch `ecc:tdd-guide` with the plan (or `Design:` paragraph), task by
+task: RED → GREEN → refactor. Tests are `node:test` + `node:assert/strict`
+under `test/` (adapters under `test/boards/`), compiled by `tsc` and run
+with `pnpm test`. External processes (`gh`, `claude`) are always behind an
 injectable `exec` / factory so tests never shell out. Commit after each
 green task.
 
@@ -190,15 +194,16 @@ confirm.
 
 ## Stage 7 — PR
 
-1. Mark the row `feito`, the header `— feito`, add `- PR:` with a
-   placeholder, commit `docs(roadmap): mark <feature> done`.
-2. Run `ecc:pr` against `main`. The body references the roadmap row, the
-   spec and plan paths (when they exist), and a test plan with the
-   `pnpm test` result plus any manual `pnpm start` checks from Stage 4.
-3. Replace the `- PR:` placeholder with the real URL, amend or add a
-   `docs(roadmap):` commit, push.
+Run `ecc:pr` against `main`. The body has, in this order:
 
-Do not merge. The flow ends with the PR URL in chat and in the roadmap.
+1. `Closes #<n>` on its own line, so the merge closes the issue;
+2. the spec and plan paths when they exist, or the `Design:` paragraph for
+   bounded work;
+3. MEDIUM review findings left open, if any;
+4. a test plan with the `pnpm test` result plus any manual `pnpm start`
+   checks from Stage 4.
+
+Do not merge. The flow ends with the PR URL in chat.
 
 ---
 
@@ -208,20 +213,18 @@ There are no approval gates. The stop conditions are:
 
 1. dirty working tree, or a branch that is neither `main` nor a fresh
    worktree branch (before Stage 0);
-2. ambiguous or missing roadmap match (Stage 0);
-3. an item too ambiguous to implement under a stated assumption (Stage 1);
+2. no issue given, or the issue cannot be read (Stage 0);
+3. an issue too ambiguous to implement under a stated assumption (Stage 1);
 4. `pnpm test` red after `ecc:build-error-resolver` (Stage 4);
 5. CRITICAL findings that cannot be fixed without changing the spec
    (Stages 5–6).
 
-On any stop, leave the branch and roadmap edits in place, say exactly which
-stage stopped and why, and what input would unblock it.
+On any stop, leave the branch and any spec/plan files in place, say exactly
+which stage stopped and why, and what input would unblock it.
 
 ## Explicitly out of scope
 
 - Any superpowers skill other than `brainstorming`.
-- GitHub issues and project boards as a tracker; `docs/roadmap.md` is the
-  tracker (the Hive itself may use a GitHub board, that is product, not
-  process).
-- The `## Pendências` list in the roadmap.
+- Moving the issue on the board, labelling it, or commenting on it; the
+  Hive owns the board and `Closes #<n>` does the rest.
 - Releasing / publishing the package.
