@@ -10,7 +10,6 @@ const GITHUB = { board: { type: 'github', owner: '@me', number: 6 }, columns: CO
 
 test('parseConfig applies defaults on top of a minimal config', () => {
   const config = parseConfig({ ...GITHUB });
-  assert.deepEqual(config.status, { queue: 'Ready', working: 'In progress', review: 'In review' });
   assert.equal(config.maxConcurrent, 2);
   assert.equal(config.port, 47821);
   assert.deepEqual(config.claudeArgs, []);
@@ -52,13 +51,10 @@ test('parseConfig keeps explicit values', () => {
   const config = parseConfig({
     board: { type: 'github', owner: 'acme', number: 3 },
     columns: COLUMNS,
-    status: { queue: 'Todo', working: 'Doing', review: 'Review' },
-    maxConcurrent: 4, port: 5000, claudeArgs: ['--model', 'sonnet'], promptTemplate: '{title}',
+    maxConcurrent: 4, port: 5000, claudeArgs: ['--model', 'sonnet'],
   });
-  assert.equal(config.status.queue, 'Todo');
   assert.equal(config.maxConcurrent, 4);
   assert.deepEqual(config.claudeArgs, ['--model', 'sonnet']);
-  assert.equal(config.promptTemplate, '{title}');
 });
 
 test('parseConfig accepts a github or a markdown board', () => {
@@ -82,7 +78,6 @@ test('parseConfig rejects missing or wrong-typed fields with the field name', ()
   assert.throws(() => parseConfig({ project: { owner: '@me' }, columns: COLUMNS }), /project\.number/);
   assert.throws(() => parseConfig({ ...GITHUB, maxConcurrent: '3' }), /maxConcurrent/);
   assert.throws(() => parseConfig({ ...GITHUB, claudeArgs: 'x' }), /claudeArgs/);
-  assert.throws(() => parseConfig({ ...GITHUB, status: { queue: 1 } }), /status\.queue/);
 });
 
 test('loadConfig reads hive.config.json from the repo, including a legacy project file, and reports a missing file clearly', async () => {
@@ -99,15 +94,6 @@ test('loadConfigIfPresent returns undefined only when the file is missing', asyn
   await assert.rejects(loadConfigIfPresent(repo), /JSON inválido/);
   await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS }));
   assert.deepEqual((await loadConfigIfPresent(repo))?.board, { type: 'markdown', path: 'board.md' });
-});
-
-test('markdown boards reject status values with "|" or line breaks; github boards do not care', () => {
-  const md = { type: 'markdown', path: 'board.md' };
-  const message = 'hive.config.json: "status.working" must not contain "|" or line breaks for markdown boards';
-  assert.throws(() => parseConfig({ board: md, columns: COLUMNS, status: { working: 'In | progress' } }), { message });
-  assert.throws(() => parseConfig({ board: md, columns: COLUMNS, status: { working: 'In\nprogress' } }), { message });
-  assert.throws(() => parseConfig({ board: md, columns: COLUMNS, status: { review: 'Rev\riew' } }), /status\.review/);
-  assert.equal(parseConfig({ ...GITHUB, status: { working: 'In | progress' } }).status.working, 'In | progress');
 });
 
 test('parseConfig reads budget, leaves absent limits absent and defaults to {}', () => {

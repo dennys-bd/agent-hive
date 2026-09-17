@@ -9,7 +9,6 @@ export interface SlotEvent {
   kind: SlotEventKind;
   detail?: string;
 }
-export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
 export interface Budget {
@@ -146,11 +145,9 @@ export interface Config {
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
   columns: Column[]; // the Hive's board, in pipeline order
-  status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
   claudeArgs: string[];
-  promptTemplate: string;
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
   usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
 }
@@ -211,12 +208,8 @@ export interface SetupBody {
   board: BoardConfig;
   /** The form always sends it; an API caller that omits it keeps the current columns (or the legacy proposal). */
   columns?: Column[];
-  /** @deprecated superseded by `columns`; kept until Task 7 so an old API caller does not break mid-migration. */
-  status?: Record<StatusKey, string>;
   /** Optional; the form never sends it. Seeds the first boot; after that the header (POST /config) owns it. */
   maxConcurrent?: number;
-  /** Optional; blank or missing keeps the current template (or the default on first setup). */
-  promptTemplate?: string;
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
 import { SIGNALS } from './orchestrator.js';
-import type { BoardConfig, Budget, Column, Config, EpicsMode, Language, Signal, StatusKey, SessionPolicy, UsageRule, WorkersMode } from './types.js';
+import type { BoardConfig, Budget, Column, Config, EpicsMode, Language, Signal, SessionPolicy, UsageRule, WorkersMode } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -13,24 +13,20 @@ export const EPICS_MODES: readonly EpicsMode[] = ['ignore', 'queue'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const LEGACY_COLUMN_NAME = 'fila';
 /** What a file from before columns existed meant: the one-column pipeline `legacyColumns` proposes. */
-export const LEGACY_STATUS: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
+export const LEGACY_STATUS: Record<'queue' | 'working' | 'review', string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
 export const LEGACY_PROMPT = 'Task #{number}: {title}\n\n{body}\n\nWork on this branch. When the task is done, open a PR with `gh pr create`.';
 
 export const DEFAULT_CONFIG: Omit<Config, 'board' | 'columns'> = {
   workers: 'embedded',
   epics: 'ignore',
   logLevel: 'info',
-  status: LEGACY_STATUS,
   maxConcurrent: 2,
   port: 47821,
   claudeArgs: [],
-  promptTemplate: LEGACY_PROMPT,
   budget: {},
   usageRules: [],
 };
 
-const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
-const MARKDOWN_CELL_BREAKERS = /[|\r\n]/; // written into a table cell, these would split or end the row
 const BUDGET_KEYS = ['maxTokensPerHour', 'maxTokensPerDay'] as const;
 const PERCENT_MAX = 100;
 
@@ -162,21 +158,6 @@ export function parseConfig(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const board = boardFrom(raw);
 
-  const statusRaw = optional(raw.status, {} as Record<string, unknown>, (v) => {
-    if (!isRecord(v)) throw new Error(`${CONFIG_FILE}: "status" must be an object`);
-    return v;
-  });
-  const status = Object.fromEntries(
-    STATUS_KEYS.map((key) => [key, optional(statusRaw[key], DEFAULT_CONFIG.status[key], (v) => requireString(v, `status.${key}`))]),
-  ) as Record<StatusKey, string>;
-  if (board.type === 'markdown') {
-    for (const key of STATUS_KEYS) {
-      if (MARKDOWN_CELL_BREAKERS.test(status[key])) {
-        throw new Error(`${CONFIG_FILE}: "status.${key}" must not contain "|" or line breaks for markdown boards`);
-      }
-    }
-  }
-
   return {
     board,
     columns: parseColumns(raw.columns),
@@ -193,14 +174,12 @@ export function parseConfig(raw: unknown): Config {
       return v as LogLevel;
     }),
     ...(raw.language === undefined ? {} : { language: requireLanguage(raw.language) }), // absent stays absent: the system decides
-    status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
     port: optional(raw.port, DEFAULT_CONFIG.port, (v) => requireInt(v, 'port')),
     claudeArgs: optional(raw.claudeArgs, DEFAULT_CONFIG.claudeArgs, (v) => {
       if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) throw new Error(`${CONFIG_FILE}: "claudeArgs" must be an array of strings`);
       return v as string[];
     }),
-    promptTemplate: optional(raw.promptTemplate, DEFAULT_CONFIG.promptTemplate, (v) => requireString(v, 'promptTemplate')),
     budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
     usageRules: optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules),
   };

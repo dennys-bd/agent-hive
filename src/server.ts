@@ -86,13 +86,6 @@ interface Live {
   state: State;
 }
 
-/** A blank template in the form means "keep what I have"; anything else must be a string (parseConfig validates). */
-function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefined): unknown {
-  if (body.promptTemplate === undefined) return current?.promptTemplate;
-  if (typeof body.promptTemplate === 'string' && body.promptTemplate.trim() === '') return current?.promptTemplate;
-  return body.promptTemplate;
-}
-
 // epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or columns.
 const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, citedColumns(a.columns), a.epics], [b.board, citedColumns(b.columns), b.epics]);
 
@@ -451,14 +444,12 @@ export function createServer(deps: ServerDeps): HiveServer {
       const current = await loadConfigOrLegacy(repo);
       config = parseConfig({
         board: body.board, columns: body.columns ?? current?.columns,
-        status: body.status,
         maxConcurrent: body.maxConcurrent ?? current?.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,
         epics: body.epics ?? current?.epics,
         logLevel: current?.logLevel, // never in the body: the file is the switch
-        promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
         language: body.language ?? current?.language, // the form always sends it; an API caller that omits it keeps the saved one
