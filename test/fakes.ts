@@ -32,7 +32,8 @@ export function fakeSpawn(): { spawn: SpawnWorker; workers: FakeWorker[] } {
 
 export const LAUNCH: WorkerLaunch = {
   mode: 'embedded', workerId: 'W1', slug: 'hive-1-task', repo: '/repo', port: 4242,
-  hooksPath: '/repo/.hive/hooks.json', promptPath: '/repo/.hive/prompts/hive-1-task.md', claudeArgs: [],
+  hooksPath: '/repo/.hive/hooks.json', promptPath: '/repo/.hive/prompts/hive-1-task.md',
+  args: ['--worktree=hive-1-task', '--session-id', 'a1b2c3d4-0000-4000-8000-000000000001'],
 };
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];

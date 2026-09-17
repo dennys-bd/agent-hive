@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killStray, renderPrompt, workerEnv, writePrompt } from '../src/spawn.js';
+import { killStray, renderPrompt, workerArgs, workerEnv, writePrompt } from '../src/spawn.js';
 import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
 import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
@@ -60,12 +60,25 @@ test('openItermTab runs the open-tab script with the text as argv 1 and resolves
 test('workerCommand (iterm) runs claude interactively in the repo with hive env, worktree, hooks and the prompt file, then reports exit', () => {
   const cmd = workerCommand({
     ...LAUNCH, repo: '/Users/x/my repo', hooksPath: '/Users/x/my repo/.hive/hooks.json',
-    promptPath: '/Users/x/my repo/.hive/prompts/hive-1-task.md', claudeArgs: ['--model', 'sonnet'],
+    promptPath: '/Users/x/my repo/.hive/prompts/hive-1-task.md', args: ['--worktree=hive-1-task', '--model', 'sonnet', '--session-id', 'S1'],
   });
   assert.equal(
     cmd,
-    "cd '/Users/x/my repo' && HIVE_WORKER_ID=W1 HIVE_PORT=4242 claude --worktree=hive-1-task " +
-      "--settings '/Users/x/my repo/.hive/hooks.json' '--model' 'sonnet' \"$(cat '/Users/x/my repo/.hive/prompts/hive-1-task.md')\"; " +
+    "cd '/Users/x/my repo' && HIVE_WORKER_ID=W1 HIVE_PORT=4242 claude --settings '/Users/x/my repo/.hive/hooks.json' " +
+      "'--worktree=hive-1-task' '--model' 'sonnet' '--session-id' 'S1' \"$(cat '/Users/x/my repo/.hive/prompts/hive-1-task.md')\"; " +
       "curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-worker: W1' >/dev/null",
   );
+});
+
+test('workerArgs always opens the worktree, then the global claudeArgs, the column model and the session flag the reducer resolved', () => {
+  const card = { slug: 'hive-7-fix', sessionId: '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b' };
+  assert.deepEqual(workerArgs(card, {}, 'new', []), ['--worktree=hive-7-fix', '--session-id', card.sessionId]);
+  assert.deepEqual(workerArgs(card, { model: 'opus' }, 'continue', ['--permission-mode', 'acceptEdits']),
+    ['--worktree=hive-7-fix', '--permission-mode', 'acceptEdits', '--model', 'opus', '--resume', card.sessionId]);
+  assert.deepEqual(workerArgs({ slug: 'hive-7-fix' }, {}, 'continue', []), ['--worktree=hive-7-fix'], 'no id at all: claude picks its own');
+});
+
+test('workerCommand quotes every arg so a model or id with a quote cannot break out of the shell string', () => {
+  const cmd = workerCommand({ ...LAUNCH, args: ['--model', "o'ps"] });
+  assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });

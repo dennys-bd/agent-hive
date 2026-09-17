@@ -81,8 +81,10 @@ test('saving the setup starts one worker with the launch: mode, repo, port, hook
   const promptPath = join(repo, '.hive', 'prompts', 'hive-1-from-ready.md');
   assert.deepEqual(workers[0].launch, {
     mode: 'embedded', workerId: slot.workerId, slug: 'hive-1-from-ready', repo, port,
-    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath, claudeArgs: [],
+    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath,
+    args: ['--worktree=hive-1-from-ready', '--session-id', server.getState()!.cards[0].sessionId!],
   });
+  assert.match(workers[0].launch.args[2], /^[0-9a-f-]{36}$/);
   assert.match(await readFile(promptPath, 'utf8'), /from Ready/, 'the command line reads the prompt from this file');
 });
 

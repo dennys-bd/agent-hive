@@ -16,7 +16,7 @@ import { isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
-import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { killStray, renderPrompt, spawnWorker, workerArgs, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
@@ -208,13 +208,13 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   async function spawn(runtime: Runtime, effect: Extract<Effect, { type: 'spawn' }>): Promise<void> {
-    const { slot: { workerId }, card, column } = effect;
+    const { slot: { workerId }, card, column, session } = effect;
     if (!workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
     const promptPath = await writePrompt(promptsDir, card.slug, renderPrompt(column.prompt ?? '', card.task)); // the command line reads it
     pool.start({
       workerId,
-      launch: { mode: config.workers, workerId, slug: card.slug, repo, port: config.port, hooksPath, promptPath, claudeArgs: config.claudeArgs },
+      launch: { mode: config.workers, workerId, slug: card.slug, repo, port: config.port, hooksPath, promptPath, args: workerArgs(card, column, session, config.claudeArgs) },
       onExit: () => void dispatch({ type: 'exit', workerId }),
       onError: (message) => void fail(`worker ${card.slug}`, new Error(message)), // tmux / iTerm missing or refused: the error bar
     });

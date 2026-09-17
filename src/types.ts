@@ -272,7 +272,7 @@ export interface WorkerLaunch {
   port: number;
   hooksPath: string;
   promptPath: string; // the rendered prompt on disk: the command line reads it with $(cat …)
-  claudeArgs: string[];
+  args: string[]; // the claude argv after --settings: worktree, claudeArgs, model, session (workerArgs)
 }
 
 export type SpawnWorker = (launch: WorkerLaunch, handlers: WorkerHandlers) => WorkerHandle;

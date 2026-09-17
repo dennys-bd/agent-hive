@@ -10,14 +10,13 @@ export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-// The one shell string in the repo: iTerm types it into a tab, so there is no argv to pass. Everything
-// user-controlled goes through shellQuote; the slug is kebab-case by construction.
+// The one shell string in the repo: iTerm types it into a tab, so there is no argv to pass. Everything user-controlled goes
+// through shellQuote; the args are the reducer's (workerArgs), quoted one by one.
 export function workerCommand(o: WorkerLaunch): string {
-  const args = o.claudeArgs.map(shellQuote).join(' ');
   return [
     `cd ${shellQuote(o.repo)} &&`,
-    `HIVE_WORKER_ID=${o.workerId} HIVE_PORT=${o.port} claude --worktree=${o.slug}`,
-    `--settings ${shellQuote(o.hooksPath)}${args ? ` ${args}` : ''}`,
+    `HIVE_WORKER_ID=${o.workerId} HIVE_PORT=${o.port} claude --settings ${shellQuote(o.hooksPath)}`,
+    ...o.args.map(shellQuote),
     `"$(cat ${shellQuote(o.promptPath)})";`,
     `curl -s -m 2 -X POST http://127.0.0.1:${o.port}/hooks/exit -H 'x-hive-worker: ${o.workerId}' >/dev/null`,
   ].join(' ');
