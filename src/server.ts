@@ -253,12 +253,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live) throw new Error('Hive já configurado: use reconfigure()');
     const runtime = await activate(config);
     const saved = await loadState(runtime.hiveDir, config.maxConcurrent);
-    // Empty queue on boot: setMax's fill would otherwise spawn off a stale pre-restart
+    // Empty queue on boot: the boot event's fill would otherwise spawn off a stale pre-restart
     // queue. The poll() below refills from the board, which is the source of truth.
     live = { runtime, state: { ...saved, queue: [] } };
     await killStrays(saved);
     await dispatch({ type: 'boot' });
-    if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     await poll();
@@ -268,7 +267,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!live) throw new Error('Hive não configurado: use configure()');
     const runtime = await activate(config, live.runtime);
     live = { runtime, state: live.state };
-    if (live.state.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(live.state.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(live.state.usageRules, config.usageRules)) {
       await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
@@ -398,7 +396,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       config = parseConfig({
         board: body.board,
         status: body.status,
-        maxConcurrent: body.maxConcurrent,
+        maxConcurrent: body.maxConcurrent ?? current?.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,

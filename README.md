@@ -48,7 +48,7 @@ hive
 
 Without a `hive.config.json` in the repo, the window opens on a setup form: board type, columns (queue / in progress / in review), max workers and the worker prompt. Saving writes the file and shows the dashboard. "configurar" reopens the form at any time.
 
-On screen: `N/M workers ativos`, the `máx. workers` field (changes live), the queue, and one card per slot. Click a card to see the pending question or the PR link, the worker's output, and to send it a message; `kill` stops the worker and returns the task to the queue.
+On screen: `N/M workers ativos`, the `máx. workers` field (changes live and persists across restarts), the queue, and one card per slot. Click a card to see the pending question or the PR link, the worker's output, and to send it a message; `kill` stops the worker and returns the task to the queue.
 
 The `green` / `yellow` / `red` buttons set a global signal (also `POST /signal {"signal":"red"}`): yellow opens no new job while live workers finish; red is manual mode: nothing new opens and each worker is marked `pausado` when its current turn ends, until the signal leaves red or someone sends it a message from its card. Nothing is ever killed mid-turn. The signal is saved with the state, so the Hive reopens in the same color.
 
@@ -99,7 +99,7 @@ Default: `Task #{id}: {title}`, the body, and an instruction to open a PR with `
 | `board` | — | form |
 | `status.queue` / `working` / `review` | `Ready` / `In progress` / `In review` | form |
 | `workers` | `embedded` | form (`embedded` or `iterm`) |
-| `maxConcurrent` | `2` | form / dashboard |
+| `maxConcurrent` | `2` | dashboard header (only seeds the first boot; the running Hive keeps its own value across restarts) |
 | `promptTemplate` | see above | form |
 | `port` | `47821` | file (requires restart) |
 | `claudeArgs` | `[]` | file (e.g. `["--permission-mode", "acceptEdits"]`; embedded workers have no permission prompt, so this or the repo's `.claude/settings.json` must allow the tools) |
