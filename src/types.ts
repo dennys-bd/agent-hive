@@ -1,3 +1,5 @@
+import type { LogLevel } from './log.js';
+
 export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
@@ -71,6 +73,7 @@ export interface Slot {
   lastEvent?: string;
   prUrl?: string;
   question?: string;
+  transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
 }
 
 export interface State {
@@ -87,7 +90,7 @@ export interface State {
   error?: string;
 }
 
-/** Where a worker runs: a child of the Hive (print mode, JSON over stdio) or an iTerm2 tab the Hive opens and watches. */
+/** Where a worker runs: a detached tmux session of the Hive with the terminal opened on demand, or an iTerm2 tab the Hive opens and watches. */
 export type WorkersMode = 'embedded' | 'iterm';
 
 /** What the GitHub adapter does with an issue that has sub-issues: drop it (only the sub-issues are tasks) or queue it like any other. */
@@ -97,6 +100,7 @@ export interface Config {
   board: BoardConfig;
   workers: WorkersMode;
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
+  logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -114,7 +118,7 @@ export interface HookPayload {
   tool_name?: string;
   tool_input?: unknown;
   tool_response?: unknown;
-  transcript_path?: string; // Claude Code sends it on every hook; the server reads it only on Stop / SessionEnd
+  transcript_path?: string; // Claude Code sends it on every hook; the server reads tokens from it on Stop / SessionEnd, the reducer keeps it from SessionStart
 }
 
 export type HiveEvent =
@@ -128,7 +132,6 @@ export type HiveEvent =
   | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
-  | { type: 'idle'; workerId: string; question: string } // a `result` line without a PR: the worker waits for input
   | { type: 'kill'; slotId: string }
   | { type: 'error'; message?: string };
 
@@ -186,20 +189,21 @@ export interface Board {
   quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
 
-/** What the server injects so tests never open a process. */
+/** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
+export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
+
+/** What the server injects so tests never open a session. */
 export interface WorkerHandlers {
-  onLine(line: string): void; // one stdout line, or one stderr line prefixed `stderr: `
-  onExit(): void; // once, on process exit or spawn error
+  onExit(): void; // once, on session end, kill or spawn failure
+  onError(message: string): void; // spawner failures (tmux / iTerm missing or refused): shown in the dashboard error bar
 }
 
 export interface WorkerHandle {
-  send(text: string): void; // one `user` message on stdin, or typed into the tab
-  end(): void; // close stdin: the session ends after the current turn (no-op for a tab)
-  kill(): void; // SIGTERM
-  focus?(): Promise<void>; // tabs only: bring the worker's terminal to the front
+  kill(): void; // tmux kill-session, or pkill by slug for a tab
+  focus(): Promise<void>; // opens (or brings to the front) the worker's terminal
 }
 
-/** Everything a spawner needs to start one worker; each mode turns it into a process or a tab its own way. */
+/** Everything a spawner needs to start one worker; each mode turns it into a session or a tab its own way. */
 export interface WorkerLaunch {
   mode: WorkersMode;
   workerId: string;
@@ -207,8 +211,7 @@ export interface WorkerLaunch {
   repo: string;
   port: number;
   hooksPath: string;
-  promptPath: string; // the rendered prompt on disk: a record for embedded, the input for the tab's command line
-  prompt: string;
+  promptPath: string; // the rendered prompt on disk: the command line reads it with $(cat …)
   claudeArgs: string[];
 }
 

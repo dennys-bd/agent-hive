@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
-  DAY_MS, HOUR_MS, hasBudget, isTranscriptPath, parseUsageLine, pruneUsage, sumTranscriptTokens, usageTotals,
+  DAY_MS, HOUR_MS, hasBudget, isTranscriptPath, isWorkerTranscript, parseUsageLine, pruneUsage, sumTranscriptTokens, transcriptDir, usageTotals,
 } from '../src/usage.js';
 import type { UsageSample } from '../src/types.js';
 
@@ -115,4 +115,21 @@ test('isTranscriptPath accepts only an absolute string ending in .jsonl', () => 
   assert.equal(isTranscriptPath(''), false);
   assert.equal(isTranscriptPath(undefined), false);
   assert.equal(isTranscriptPath(42), false);
+});
+
+test('transcriptDir is <config dir>/projects/<cwd with every non-alphanumeric as ->; CLAUDE_CONFIG_DIR wins over ~/.claude', () => {
+  assert.equal(transcriptDir('/Users/x/my repo/.claude/worktrees/hive-7-fix', {}), join(homedir(), '.claude', 'projects', '-Users-x-my-repo--claude-worktrees-hive-7-fix'));
+  assert.equal(transcriptDir('/w', { CLAUDE_CONFIG_DIR: '/cfg' }), '/cfg/projects/-w');
+});
+
+test('isWorkerTranscript accepts only a .jsonl directly under the transcript dir of the worker worktree', () => {
+  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
+  const own = '/cfg/projects/-repo--claude-worktrees-hive-7-fix/abc.jsonl';
+  assert.equal(isWorkerTranscript(own, '/repo', 'hive-7-fix', env), true);
+  assert.equal(isWorkerTranscript('/cfg/projects/-repo--claude-worktrees-hive-8-other/abc.jsonl', '/repo', 'hive-7-fix', env), false, 'another worker');
+  assert.equal(isWorkerTranscript('/cfg/projects/-Users-x-secret/abc.jsonl', '/repo', 'hive-7-fix', env), false, 'another project');
+  assert.equal(isWorkerTranscript('/cfg/projects/-repo--claude-worktrees-hive-7-fix/sub/abc.jsonl', '/repo', 'hive-7-fix', env), false, 'a subdirectory');
+  assert.equal(isWorkerTranscript('/cfg/projects/-repo--claude-worktrees-hive-7-fix/../x/abc.jsonl', '/repo', 'hive-7-fix', env), false, 'no traversal');
+  assert.equal(isWorkerTranscript('/cfg/projects/-repo--claude-worktrees-hive-7-fix/abc.json', '/repo', 'hive-7-fix', env), false);
+  assert.equal(isWorkerTranscript(undefined, '/repo', 'hive-7-fix', env), false);
 });

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { Logger } from '../log.js';
 import type { Board, BoardConfig, BoardQuota, EpicsMode, ProjectSummary, StatusKey, Task } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -10,6 +11,7 @@ const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
 const RELATION_LIMIT = 50; // ponytail: no pagination, an issue with more open blockers/sub-issues than this is under-reported
 const MS_PER_SECOND = 1000;
+const ARGV_MAX = 200; // the GraphQL query is long; the head names the call, the rest is noise
 
 export type Exec = (args: string[]) => Promise<string>;
 export type GithubBoardConfig = Extract<BoardConfig, { type: 'github' }>;
@@ -23,6 +25,29 @@ export const ghExec: Exec = async (args) => {
     throw new Error(`gh ${args.slice(0, 2).join(' ')}: ${(e.stderr ?? '').trim() || e.message}`);
   }
 };
+
+const cutArgv = (args: string[]): string => {
+  const argv = args.join(' ');
+  return argv.length > ARGV_MAX ? `${argv.slice(0, ARGV_MAX)}…` : argv;
+};
+
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split('\n')[0];
+
+/** Wraps a gh runner so every call leaves a debug line with argv and duration; stdout is never logged, errors rethrow untouched. */
+export function loggedExec(exec: Exec, log: Logger): Exec {
+  return async (args) => {
+    const argv = cutArgv(args);
+    const started = Date.now();
+    try {
+      const stdout = await exec(args);
+      log.debug(`gh ${argv} ${Date.now() - started}ms ok`);
+      return stdout;
+    } catch (err) {
+      log.debug(`gh ${argv} ${Date.now() - started}ms error: ${firstLine(err)}`);
+      throw err;
+    }
+  };
+}
 
 interface GhField { id: string; name: string; type: string; options?: { id: string; name: string }[] }
 interface GhProject { number: number; title: string; url: string; closed?: boolean }

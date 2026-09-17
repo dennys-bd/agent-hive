@@ -11,8 +11,6 @@ const STATUS_LABEL: Record<Slot['status'], string> = {
 const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
 const RERENDER_MS = 30_000;
 const OUTPUT_POLL_MS = 2_000;
-const INPUT_PLACEHOLDER = 'mensagem pro worker';
-const ANSWER_PLACEHOLDER = 'responder ao worker';
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
 const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
 const DEFAULT_OWNER = '@me';
@@ -117,7 +115,7 @@ function renderCard(slot: Slot): string {
       <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ?? '')}</div>
-      <div class="actions"><button class="danger" data-kill="${slot.id}">kill</button></div>
+      <div class="actions"><button data-focus="${slot.id}">terminal</button><button class="danger" data-kill="${slot.id}">kill</button></div>
     </div>`;
 }
 
@@ -145,15 +143,7 @@ async function loadOutput(): Promise<void> {
   }
 }
 
-const workersMode = (): WorkersMode => setupInfo?.config?.workers ?? 'embedded';
-
-// The CSS keys the panel off this: output for embedded workers, the "ir pro terminal" button for tabs.
-function applyWorkersMode(): void {
-  document.body.dataset.workers = workersMode();
-}
-
 // One timer, for the selected slot only: opening the panel starts it, closing or switching restarts it clean.
-// A tab has no output to poll.
 function syncOutputPolling(slotId: string | undefined): void {
   if (slotId === outputSlotId) return;
   if (outputTimer) clearInterval(outputTimer);
@@ -161,17 +151,9 @@ function syncOutputPolling(slotId: string | undefined): void {
   outputSlotId = slotId;
   $('output').innerHTML = '';
   lastOutput = '';
-  if (!slotId || workersMode() === 'iterm') return;
+  if (!slotId) return;
   void loadOutput();
   outputTimer = setInterval(() => void loadOutput(), OUTPUT_POLL_MS);
-}
-
-function sendInput(): void {
-  const input = $<HTMLInputElement>('input');
-  const text = input.value.trim();
-  if (!selectedSlotId || !text) return;
-  input.value = '';
-  post(`/slots/${selectedSlotId}/input`, { text });
 }
 
 function renderDetail(): void {
@@ -192,7 +174,6 @@ function renderDetail(): void {
     slot.task ? taskLink(slot.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
-  $<HTMLInputElement>('input').placeholder = slot.status === 'esperando_voce' ? ANSWER_PLACEHOLDER : INPUT_PLACEHOLDER;
   panel.classList.add('show');
   syncOutputPolling(slot.id);
 }
@@ -467,7 +448,6 @@ async function saveSetup(): Promise<void> {
     };
     const result = await postJson<SetupResult>('/setup', body);
     setupInfo = await getJson<SetupInfo>('/setup');
-    applyWorkersMode();
     closeSetup();
     showNotice(result.restartForPort ? `reinicie o Hive pra usar a porta ${result.restartForPort}` : undefined);
   } catch (err) {
@@ -484,7 +464,6 @@ async function init(): Promise<void> {
     showError((err as Error).message);
     return;
   }
-  applyWorkersMode();
   if (!setupInfo.configured) await openSetup();
   connect();
 }
@@ -497,6 +476,12 @@ $('grid').addEventListener('click', (event) => {
   if (killId) {
     event.stopPropagation();
     if (confirm('Matar esse worker? A task volta pra fila.')) post(`/slots/${killId}/kill`);
+    return;
+  }
+  const focusId = target.dataset.focus;
+  if (focusId) {
+    event.stopPropagation(); // opens the terminal, not the panel
+    post(`/slots/${focusId}/focus`);
     return;
   }
   const card = target.closest<HTMLElement>('.card.occupied');
@@ -521,11 +506,6 @@ $('close').addEventListener('click', () => {
   selectedSlotId = undefined;
   renderDetail();
 });
-$('send').addEventListener('click', sendInput);
-$('input').addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') sendInput();
-});
-
 $('configure').addEventListener('click', () => void openSetup());
 $('load-projects').addEventListener('click', () => void loadProjects());
 $('board-type').addEventListener('change', applyBoardType);

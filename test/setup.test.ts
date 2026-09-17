@@ -102,7 +102,7 @@ test('POST /setup with a column the board does not have answers 400 and writes n
   assert.equal(res.status, 400);
   assert.match((await json<{ error: string }>(res)).error, /"Todo".*Ready, In progress, In review, Done/);
   await assert.rejects(stat(configFile(repo)));
-  await assert.rejects(stat(join(repo, '.hive')));
+  await assert.rejects(stat(join(repo, '.hive', 'hooks.json')), 'the runtime dir is never prepared: only the logger touched .hive/');
   assert.equal(server.getState(), undefined);
   assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).configured, false);
 });

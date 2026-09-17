@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createBoard } from '../src/board.js';
 import { listProjects, listStatusOptions } from '../src/boards/github.js';
 import { parseConfig } from '../src/config.js';
+import { fakeLog } from './fakes.js';
 
 const REPO = '/repo'; // the github adapter never reads it
 
@@ -207,4 +208,23 @@ test('quota is undefined for an unexpected shape, and a markdown board has no qu
   }
   await assert.rejects(createBoard(config, { repo: REPO, exec: fakeExec({}).exec }).quota!(), /unexpected gh call/, 'a failing gh rejects: the server logs it');
   assert.equal(createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo: REPO }).quota, undefined);
+});
+
+test('createBoard with a log wraps the exec: every gh call leaves a debug line with the argv (cut at 200 chars), the duration and ok / error, and errors rethrow', async () => {
+  const { log, lines } = fakeLog();
+  const { exec } = fakeExec({ 'project field-list 6': fields, 'project item-list 6': { items: [issue(1), issue(2), issue(3)] }, 'api graphql -f': { data: {} } });
+  const board = createBoard(config, { repo: REPO, exec, log });
+  assert.deepEqual(await board.setupOptions(), ['Ready', 'In progress', 'In review', 'Done']);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^DEBUG gh project field-list 6 --owner acme --format json \d+ms ok$/);
+  assert.ok(!lines[0].includes('O_ready'), 'stdout is never logged');
+  await board.listQueue(); // item-list + one long graphql query
+  const graphql = lines.find((l) => l.startsWith('DEBUG gh api graphql'));
+  assert.ok(graphql, lines.join('\n'));
+  assert.match(graphql, /^DEBUG gh .{200}… \d+ms ok$/, 'argv cut at 200 characters');
+  await assert.rejects(board.setStatus('x', 'queue'), /not resolved/); // thrown before exec: no gh line
+  await assert.rejects(board.quota!(), /unexpected gh call/); // the fake rejects; the wrapper rethrows
+  assert.match(lines.at(-1)!, /^DEBUG gh api rate_limit --jq \.resources\.graphql \d+ms error: unexpected gh call: api rate_limit --jq \.resources\.graphql$/);
+  assert.equal(lines.length, 4);
+  assert.ok(lines.every((l) => l.startsWith('DEBUG ')), 'gh calls are debug only');
 });

@@ -11,7 +11,7 @@
     "build": "tsc && mkdir -p dist/src/ui && cp src/ui/index.html dist/src/ui/",
     "test": "pnpm build && node --test \"dist/test/*.test.js\" \"dist/test/boards/*.test.js\"",
     "lint": "biome lint --error-on-warnings",
-    "start": "pnpm build && electron dist/src/main.js",
+    "start": "pnpm build && node bin/hive.js",
     "run:headless": "pnpm build && node dist/src/run.js"
   },
   "dependencies": {

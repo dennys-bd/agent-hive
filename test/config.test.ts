@@ -18,6 +18,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.deepEqual(config.usageRules, []);
   assert.equal(config.workers, 'embedded');
   assert.equal(config.epics, 'ignore');
+  assert.equal(config.logLevel, 'info');
 });
 
 test('parseConfig accepts workers embedded or iterm and rejects anything else', () => {
@@ -29,6 +30,13 @@ test('parseConfig accepts epics ignore or queue and rejects anything else', () =
   assert.equal(parseConfig({ board: GITHUB, epics: 'queue' }).epics, 'queue');
   assert.equal(parseConfig({ board: GITHUB, epics: 'ignore' }).epics, 'ignore');
   assert.throws(() => parseConfig({ board: GITHUB, epics: 'label' }), /"epics" must be one of: ignore, queue/);
+});
+
+test('parseConfig accepts logLevel info or debug and rejects anything else', () => {
+  assert.equal(parseConfig({ board: GITHUB, logLevel: 'debug' }).logLevel, 'debug');
+  assert.equal(parseConfig({ board: GITHUB, logLevel: 'info' }).logLevel, 'info');
+  assert.throws(() => parseConfig({ board: GITHUB, logLevel: 'trace' }), /"logLevel" must be one of: info, debug/);
+  assert.throws(() => parseConfig({ board: GITHUB, logLevel: true }), /"logLevel" must be one of: info, debug/);
 });
 
 test('parseConfig keeps explicit values', () => {
