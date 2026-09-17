@@ -72,6 +72,13 @@ export function isSessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value);
 }
 
+/** A hook is from a subagent or teammate, not the worker's own top-level turn, when the slot already recorded a
+ * session id (from its first SessionStart) and this payload carries a different, well-formed one. A missing or
+ * malformed payload id, or a slot that never recorded one, is today's behaviour: treated as the main session (#24). */
+export function isChildSession(slot: Slot | undefined, payload: HookPayload): boolean {
+  return isSessionId(slot?.sessionId) && isSessionId(payload.session_id) && payload.session_id !== slot.sessionId;
+}
+
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
     case 'boot': return boot(state); // no fill: bootHive polls right after, and the board is the truth; opens under yellow unless a saved red wins
@@ -229,6 +236,9 @@ function recordUsage(state: State, slot: Slot, tokens: number): State {
 function applyHook(initial: State, workerId: string, p: HookPayload, branch?: string, tokens?: number): Reduced {
   const slot = initial.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'empty') return none(initial);
+  // A Stop / SessionEnd from a subagent or teammate is not the worker's turn end: skip before the token sample
+  // lands, so status, paused, lastEvent and usage all stay as they were, and the slot is not exited (#24)
+  if ((p.hook_event_name === 'Stop' || p.hook_event_name === 'SessionEnd') && isChildSession(slot, p)) return none(initial);
   // Only the server sets `tokens` (Stop / SessionEnd): the sample lands first, then the event applies on top of it
   const state = tokens === undefined ? initial : recordUsage(initial, slot, tokens);
   switch (p.hook_event_name) {

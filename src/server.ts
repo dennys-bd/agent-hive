@@ -11,7 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
-import { reduce, SIGNALS } from './orchestrator.js';
+import { isChildSession, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
@@ -346,15 +346,18 @@ export function createServer(deps: ServerDeps): HiveServer {
     const workerId = req.header('x-hive-worker');
     const raw = req.body as HookPayload | undefined;
     const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
+    // Computed once against the slot as it stands: a subagent/teammate Stop or SessionEnd must neither read the
+    // transcript nor trigger the post-PR kill below, same as the reducer ignores it (#24)
+    const isChild = workerId !== undefined && payload !== undefined && isChildSession(slotOf(workerId), payload);
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
-      const tokens = await turnTokens(workerId, payload);
+      const tokens = isChild ? undefined : await turnTokens(workerId, payload);
       await dispatch({ type: 'hook', workerId, payload, branch, tokens });
     } else {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
-    if (workerId && payload?.hook_event_name === 'Stop' && slotOf(workerId)?.status === 'review') pool.kill(workerId);
+    if (workerId && payload?.hook_event_name === 'Stop' && !isChild && slotOf(workerId)?.status === 'review') pool.kill(workerId);
   });
 
   // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.

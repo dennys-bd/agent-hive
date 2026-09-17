@@ -156,6 +156,22 @@ test('a Stop kills the session only once the PR is open; the exit then frees the
   assert.equal(workers.length, 1, 'nothing left to spawn');
 });
 
+test('a Stop from a child session (a subagent or teammate) does not kill the session even with the PR open; the main session still does (#24)', async (t) => {
+  const { base, repo, server, workers } = await start(t);
+  const [worker] = workers;
+  const workerId = slot0(server).workerId!;
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const childId = 'another-child-session-0001';
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 200);
+  await openPr(server, workerId);
+  assert.equal(slot0(server).status, 'review');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: childId })).status, 200);
+  assert.equal(worker.killed, 0, 'a teammate/subagent Stop is not the worker turn end');
+  assert.equal(slot0(server).status, 'review', 'state untouched by the child Stop');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 200);
+  await waitFor(() => worker.killed === 1);
+});
+
 test('an error reported by the spawner lands in State.error with the worker slug', async (t) => {
   const { server, workers } = await start(t);
   workers[0].handlers.onError('tmux: spawn tmux ENOENT');
