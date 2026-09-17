@@ -12,9 +12,13 @@ export interface BootedHive {
 }
 
 export async function bootHive(repo: string): Promise<BootedHive> {
-  const config = await loadConfigIfPresent(repo);
-  const log = createLogger(join(repo, HIVE_DIR), config?.logLevel ?? 'info'); // before anything else: setup mode logs too
+  const log = createLogger(join(repo, HIVE_DIR)); // before anything else: a config that fails to parse and setup mode log too
+  const config = await loadConfigIfPresent(repo).catch((err: Error) => {
+    log.error(`config: ${err.message}`);
+    throw err;
+  });
   if (!config) return bootSetupMode(repo, log);
+  log.setLevel(config.logLevel);
   const { hiveDir, hooksPath, promptsDir } = await prepareHiveDir(repo, config.port);
   const board = createBoard(config, { repo, log });
   try {

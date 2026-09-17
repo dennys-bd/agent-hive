@@ -6,6 +6,7 @@ export type LogLevel = 'info' | 'debug';
 export const LOG_LEVELS: readonly LogLevel[] = ['info', 'debug'];
 export const LOG_FILE = 'hive.log';
 export const LOG_MAX_BYTES = 5 * 1024 * 1024;
+export const MESSAGE_MAX = 1000; // chars per line: a gh stderr blob or a crafted hook name must not become one unbounded entry
 const TAG_WIDTH = 5; // ERROR / INFO  / DEBUG
 const ID_WIDTH = 8; // enough of a uuid to grep for
 const POLL_IDS_MAX = 20;
@@ -56,7 +57,9 @@ export function createLogger(dir: string, level: LogLevel = 'info', options: Log
   // ponytail: sync appends and no queue; a few short lines per second keep order for free. Move to a write stream if the volume ever matters.
   function write(tag: string, message: string): void {
     if (disabled) return;
-    const line = `${new Date().toISOString()} ${tag.padEnd(TAG_WIDTH)} ${message}\n`;
+    // One entry per line, whatever the message carries: hook names come from any local process and gh stderr spans lines.
+    const text = message.replace(/[\r\n]+/g, ' ').slice(0, MESSAGE_MAX);
+    const line = `${new Date().toISOString()} ${tag.padEnd(TAG_WIDTH)} ${text}\n`;
     const bytes = Buffer.byteLength(line);
     try {
       if (size > 0 && size + bytes > maxBytes) {

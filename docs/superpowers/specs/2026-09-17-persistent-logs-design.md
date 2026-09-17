@@ -54,7 +54,7 @@ interface Config { /* … */ logLevel: LogLevel; }
 ## `src/log.ts`
 
 - `createLogger(dir, level = 'info', options?: { maxBytes?: number; stderr?: (line: string) => void })`: `mkdirSync(dir, { recursive: true })` na criação; guarda o tamanho atual (`statSync`, 0 se não existe) e soma cada linha escrita. Antes de escrever, se `size + linha > maxBytes`: `renameSync(hive.log, hive.log.1)` e `size = 0`.
-- Linha: `${new Date().toISOString()} ${LEVEL.padEnd(5)} ${message}\n`. Uma mensagem com quebra de linha é gravada como está (só o `gh` poderia trazer uma, e ela é cortada antes).
+- Linha: `${new Date().toISOString()} ${LEVEL.padEnd(5)} ${message}\n`. Quebras de linha na mensagem viram espaço e a mensagem é cortada em `MESSAGE_MAX` (1000) caracteres, no próprio `write`: o stderr do `gh` tem várias linhas e um `hook_event_name` vem de qualquer processo local que poste em `/hooks/event`, e nenhum dos dois pode forjar uma entrada nem virar uma linha sem fim.
 - `error` sempre grava e chama `stderr(message)` (default `console.error`); `info` grava quando `level` ∈ {`info`, `debug`}; `debug` só em `debug`.
 - Falha de escrita (`EACCES`, `ENOSPC`, …): `stderr('hive.log: <erro>')` uma vez, `disabled = true`, e as chamadas seguintes viram no-op no arquivo (`error` ainda vai pro stderr).
 - Helpers puros, exportados e testados:

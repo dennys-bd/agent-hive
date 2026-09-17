@@ -75,3 +75,11 @@ test('bootHive writes the boot to <repo>/.hive/hive.log: mode=hive with a usable
   assert.ok(setupLines.some((l) => l.startsWith('ERROR board: ') && l.includes('board.md não existe')), setupLines.join('\n'));
   assert.ok(setupLines.some((l) => l.startsWith(`INFO  boot repo=${broken} mode=setup reason=`) && l.includes('board.md não existe')));
 });
+
+test('bootHive logs a hive.config.json that cannot be parsed before rethrowing, so a broken boot leaves a trace', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
+  await writeFile(join(repo, 'hive.config.json'), '{ not json');
+  await assert.rejects(bootHive(repo), /JSON inválido/);
+  const lines = await logLines(repo);
+  assert.ok(lines.some((l) => l.startsWith('ERROR config: ') && l.includes('JSON inválido')), lines.join('\n'));
+});

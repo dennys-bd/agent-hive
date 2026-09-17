@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLogger, describeChanges, describeEffect, describeEvent, LOG_FILE, shortId } from '../src/log.js';
+import { createLogger, describeChanges, describeEffect, describeEvent, LOG_FILE, MESSAGE_MAX, shortId } from '../src/log.js';
 import { initialState } from '../src/orchestrator.js';
 import type { Slot, State, Task } from '../src/types.js';
 
@@ -152,4 +152,15 @@ test('describeChanges lists each slot whose status changed (position in the grid
   assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: aguardando_review → vazio #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
   assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
   assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'vazio' }] }), [], 'a slot added by setMax is not a transition');
+});
+
+test('a message with line breaks stays one log line, and an oversized one is cut: the file is always grep-able', async () => {
+  const dir = await logDir();
+  const log = createLogger(dir, 'info', { stderr: quiet });
+  log.error('board.listQueue: gh api graphql: line one\nline two\r\nERROR forged'); // gh stderr, or a hook_event_name from any local process
+  log.info(`x${'y'.repeat(MESSAGE_MAX + 100)}`);
+  const lines = tail(dir);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], 'ERROR board.listQueue: gh api graphql: line one line two ERROR forged');
+  assert.equal(lines[1].length, 'INFO  '.length + MESSAGE_MAX);
 });
