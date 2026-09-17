@@ -37,6 +37,9 @@ export interface RateLimits {
   windows: Record<string, RateLimitWindow>; // keyed as Claude Code sends them: five_hour, seven_day, …
 }
 
+/** Reads the plan limits of the Claude Code account; rejects when it cannot (no token, network, 401). */
+export type PlanLimitsReader = () => Promise<RateLimits | undefined>;
+
 /** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
 export interface BoardQuota {
   limit: number;
