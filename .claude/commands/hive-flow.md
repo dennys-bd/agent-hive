@@ -42,6 +42,10 @@ Free-text ideas are not accepted here (there is no card to move); use
 
 The flow ends with the PR URL in chat. Do not merge.
 
+Inside a Hive worker, each stage ends only when the command runs the
+`/hooks/done` curl from the trailer the Hive appends to the prompt; a turn
+that ends without it leaves the slot yellow (waiting) and the card where it is.
+
 ## Tracking (the issue is the card)
 
 | When | Where it is recorded | Board column |
