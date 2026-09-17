@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorkerPool, formatOutput, OUTPUT_LINES, RESULT_LINE } from '../src/workers.js';
+import { createWorkerPool, DIFF_MAX, formatOutput, OUTPUT_LINES, RESULT_LINE } from '../src/workers.js';
 import { fakeSpawn, LAUNCH } from './fakes.js';
 
 const noop = (): void => {};
@@ -11,8 +11,11 @@ function started(workerId = 'W1', withFocus = false) {
   const { spawn, workers } = fakeSpawn(withFocus);
   const pool = createWorkerPool(spawn);
   const exits: string[] = [];
-  const results: string[] = [];
-  pool.start({ workerId, launch: { ...LAUNCH, workerId }, onExit: () => exits.push(workerId), onResult: (id) => results.push(id) });
+  const results: [string, string][] = [];
+  pool.start({
+    workerId, launch: { ...LAUNCH, workerId },
+    onExit: () => exits.push(workerId), onResult: (id, text) => results.push([id, text]),
+  });
   return { pool, worker: workers[0], workers, exits, results };
 }
 
@@ -68,14 +71,35 @@ test('output keeps the last 200 formatted lines and returns a copy', () => {
   assert.deepEqual(pool.output('nope'), []);
 });
 
-test('a result line calls onResult with the worker id; other lines do not', () => {
+test('a result line calls onResult with the worker id and the final text; other lines do not', () => {
   const { worker, results } = started();
   worker.handlers.onLine(assistant({ type: 'text', text: 'oi' }));
   worker.handlers.onLine(JSON.stringify({ type: 'system' }));
   worker.handlers.onLine('not json');
   assert.deepEqual(results, []);
+  worker.handlers.onLine(JSON.stringify({ type: 'result', result: 'Posso apagar o arquivo?' }));
+  assert.deepEqual(results, [['W1', 'Posso apagar o arquivo?']]);
   worker.handlers.onLine(JSON.stringify({ type: 'result' }));
-  assert.deepEqual(results, ['W1']);
+  assert.deepEqual(results.at(-1), ['W1', ''], 'no result text: empty string, never undefined');
+});
+
+test('formatOutput renders an Edit as a diff block with the file path, cutting each side at DIFF_MAX lines', () => {
+  const edit = (input: Record<string, unknown>): string[] => formatOutput(assistant({ type: 'tool_use', name: 'Edit', input }));
+  assert.deepEqual(edit({ file_path: '/repo/a.ts', old_string: 'const a = 1;\nconst b = 2;', new_string: 'const a = 10;' }), [
+    '▶ Edit: /repo/a.ts', '```diff', '-const a = 1;', '-const b = 2;', '+const a = 10;', '```',
+  ]);
+  const many = Array.from({ length: DIFF_MAX + 5 }, (_, i) => `line ${i}`).join('\n');
+  const long = edit({ file_path: '/repo/b.ts', old_string: many, new_string: 'x' });
+  assert.equal(long.length, 2 + DIFF_MAX + 1 + 1 + 1, 'header, fence, DIFF_MAX old lines, cut mark, one new line, fence');
+  assert.equal(long[2 + DIFF_MAX - 1], `-line ${DIFF_MAX - 1}`);
+  assert.equal(long[2 + DIFF_MAX], '…');
+  assert.equal(long[2 + DIFF_MAX + 1], '+x');
+  assert.equal(long.at(-1), '```');
+  assert.deepEqual(edit({ file_path: '/repo/c.ts', old_string: '', new_string: 'novo' }), ['▶ Edit: /repo/c.ts', '```diff', '+novo', '```'], 'an empty side adds no lines');
+  assert.deepEqual(
+    formatOutput(assistant({ type: 'tool_use', name: 'Write', input: { file_path: '/repo/d.ts', content: 'x'.repeat(5000) } })),
+    ['▶ Write: /repo/d.ts'], 'Write stays a one-liner',
+  );
 });
 
 test('exit removes the worker and calls onExit; later calls report it unknown', () => {
