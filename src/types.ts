@@ -143,6 +143,8 @@ export interface SetupBody {
   promptTemplate?: string;
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
   budget?: Budget;
+  /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */
+  usageRules?: UsageRule[];
 }
 
 export interface SetupResult {

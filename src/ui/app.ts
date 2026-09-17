@@ -2,6 +2,7 @@ import type {
   BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
   Task, UsageSample,
 } from '../types.js';
+import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
   vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
@@ -336,6 +337,7 @@ async function openSetup(): Promise<void> {
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
+  renderRules(config?.usageRules ?? []);
   $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
   setupError(setupInfo?.configured ? undefined : setupInfo?.error);
   if (board?.type !== 'markdown') await loadProjects(board?.type === 'github' ? board.number : undefined);
@@ -366,17 +368,19 @@ async function saveSetup(): Promise<void> {
     setupError(boardType() === 'markdown' ? 'informe o caminho do arquivo' : 'escolha um project');
     return;
   }
-  const body: SetupBody = {
-    board,
-    status: statusFromForm(),
-    maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
-    promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
-    budget: budgetFromForm(),
-  };
   const save = $<HTMLButtonElement>('save');
   save.disabled = true;
   setupError();
   try {
+    // usageRulesFromForm throws for a row with no effect: the message lands in setupError and nothing is posted
+    const body: SetupBody = {
+      board,
+      status: statusFromForm(),
+      maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
+      promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
+      budget: budgetFromForm(),
+      usageRules: usageRulesFromForm(),
+    };
     const result = await postJson<SetupResult>('/setup', body);
     setupInfo = await getJson<SetupInfo>('/setup');
     closeSetup();
@@ -442,6 +446,7 @@ $('setup').addEventListener('submit', (event) => {
   void saveSetup();
 });
 $('cancel').addEventListener('click', closeSetup);
+$('add-rule').addEventListener('click', () => addRuleRow());
 
 setInterval(render, RERENDER_MS);
 void init();
