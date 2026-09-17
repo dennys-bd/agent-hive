@@ -43,11 +43,22 @@ let loadedOptions: string[] = []; // board columns from GET /setup/columns; a sa
 const NONE_OPTION = (): string => `<option value="">${t('setup.columns.none')}</option>`;
 
 // The loaded columns first, then whatever is selected but not loaded (a saved config before "load" ran); only these can be picked.
-const boardOptions = (selected: string | string[] | undefined): string => {
-  const chosen = new Set(selected === undefined ? [] : [selected].flat());
-  const names = [...loadedOptions, ...[...chosen].filter((c) => !loadedOptions.includes(c))];
-  return names.map((o) => `<option value="${esc(o)}"${chosen.has(o) ? ' selected' : ''}>${esc(o)}</option>`).join('');
+const pickable = (chosen: Set<string>): string[] => [...loadedOptions, ...[...chosen].filter((c) => !loadedOptions.includes(c))];
+
+const boardOptions = (selected: string | undefined): string => {
+  const chosen = new Set(selected === undefined ? [] : [selected]);
+  return pickable(chosen).map((o) => `<option value="${esc(o)}"${chosen.has(o) ? ' selected' : ''}>${esc(o)}</option>`).join('');
 };
+
+// A dropdown (native <details>) with one checkbox per board column: a plain click toggles, which a <select multiple> only does
+// with a modifier key, and the list can grow without taking the form over. The summary names what is picked.
+const boardChecks = (selected: string[]): string => {
+  const chosen = new Set(selected);
+  const items = pickable(chosen).map((o) => `<label class="check"><input type="checkbox" value="${esc(o)}"${chosen.has(o) ? ' checked' : ''}> ${esc(o)}</label>`);
+  return `<details><summary>${esc(summaryOf(selected))}</summary><div class="menu">${items.join('')}</div></details>`;
+};
+
+const summaryOf = (selected: string[]): string => (selected.length === 0 ? t('setup.columns.none') : selected.join(', '));
 
 function rowHtml(column?: Column): string {
   const option = (value: 'new' | 'continue'): string => `<option value="${value}"${column?.session === value ? ' selected' : ''}>${t(`setup.columns.session.${value}`)}</option>`;
@@ -59,7 +70,7 @@ function rowHtml(column?: Column): string {
       <label>${t('setup.columns.model')} <input class="col-model" type="text" value="${esc(column?.model ?? '')}"></label>
     </div>
     <div class="row">
-      <label>${t('setup.columns.from')} <select class="col-from" multiple size="4">${boardOptions(column?.from ?? [])}</select></label>
+      <div class="field"><span>${t('setup.columns.from')}</span><div class="col-from">${boardChecks(column?.from ?? [])}</div></div>
       <label>${t('setup.columns.onStart')} <select class="col-on-start">${NONE_OPTION()}${boardOptions(column?.onStart)}</select></label>
       <label>${t('setup.columns.onFinish')} <select class="col-on-finish">${NONE_OPTION()}${boardOptions(column?.onFinish)}</select></label>
     </div>
@@ -78,8 +89,17 @@ export function addColumnRow(column?: Column): void {
   field<HTMLButtonElement>(row, 'button.col-remove').addEventListener('click', () => row.remove());
   field<HTMLButtonElement>(row, 'button.col-up').addEventListener('click', () => row.previousElementSibling?.before(row));
   field<HTMLButtonElement>(row, 'button.col-down').addEventListener('click', () => row.nextElementSibling?.after(row));
+  const from = field<HTMLElement>(row, '.col-from');
+  from.addEventListener('change', () => { field<HTMLElement>(from, 'summary').textContent = summaryOf(checked(from)); });
   rows().appendChild(row);
 }
+
+// One listener for every dropdown: a click anywhere outside an open one closes it, as a select would
+document.addEventListener('click', (e) => {
+  for (const open of Array.from(document.querySelectorAll<HTMLDetailsElement>('.col-from details[open]'))) {
+    if (!open.contains(e.target as Node)) open.open = false;
+  }
+});
 
 /** Clears the editor and adds one row per column, in pipeline order. */
 export function renderColumnRows(columns: Column[]): void {
@@ -87,14 +107,15 @@ export function renderColumnRows(columns: Column[]): void {
   for (const column of columns) addColumnRow(column);
 }
 
-const BOARD_SELECTS = 'select.col-from, select.col-on-start, select.col-on-finish';
+const checked = (box: Element): string[] =>
+  Array.from(box.querySelectorAll<HTMLInputElement>('input:checked'), (i: HTMLInputElement) => i.value);
 
-/** Keeps the board's columns for new rows and rebuilds the selects of the rows already there, each keeping what it had selected. */
+/** Keeps the board's columns for new rows and rebuilds the pickers of the rows already there, each keeping what it had picked. */
 export function fillColumnOptions(options: string[]): void {
   loadedOptions = options;
-  for (const select of Array.from(rows().querySelectorAll<HTMLSelectElement>(BOARD_SELECTS))) {
-    const chosen = Array.from(select.selectedOptions, (o: HTMLOptionElement) => o.value).filter((v) => v !== '');
-    select.innerHTML = (select.multiple ? '' : NONE_OPTION()) + boardOptions(chosen);
+  for (const box of Array.from(rows().querySelectorAll('.col-from'))) box.innerHTML = boardChecks(checked(box));
+  for (const select of Array.from(rows().querySelectorAll<HTMLSelectElement>('select.col-on-start, select.col-on-finish'))) {
+    select.innerHTML = NONE_OPTION() + boardOptions(select.value === '' ? undefined : select.value);
   }
 }
 
@@ -106,7 +127,7 @@ function columnFromRow(row: Element): Column {
   const session = field<HTMLSelectElement>(row, 'select.col-session').value;
   return {
     name: text(row, 'input.col-name'), weight: Number(text(row, 'input.col-weight')),
-    from: Array.from(field<HTMLSelectElement>(row, 'select.col-from').selectedOptions, (o: HTMLOptionElement) => o.value),
+    from: checked(field<HTMLElement>(row, '.col-from')),
     ...(session === 'continue' ? { session: 'continue' as const } : {}),
     ...optional('model', text(row, 'input.col-model')), ...optional('onStart', text(row, 'select.col-on-start')),
     ...optional('onFinish', text(row, 'select.col-on-finish')), ...optional('prompt', text(row, 'textarea.col-prompt')),
