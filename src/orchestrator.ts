@@ -68,7 +68,7 @@ export function extractPrUrl(command: string, response: unknown): string | undef
 
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
-    case 'boot': return boot(state); // no fill: bootHive polls right after, and the board is the truth
+    case 'boot': return boot(state); // no fill: bootHive polls right after, and the board is the truth; opens under yellow unless a saved red wins
     case 'poll': return fill(poll(state, event.tasks)); // also where a dynamic red ages out: samples leave the window with time
     case 'setMax': return fill(setMax(state, event.max));
     case 'setSignal': return fill(setSignal(state, event.signal));
@@ -194,13 +194,16 @@ function idle(state: State, workerId: string, question: string): Reduced {
 }
 
 // Workers are children of the Hive: none survives a restart, so every occupied slot is given as dead.
+// Every boot opens under yellow so nothing new is dispatched before the user looks; a saved red is
+// manual mode and survives the restart.
 function boot(state: State): Reduced {
+  const signal = state.signal === 'red' ? 'red' : 'yellow';
   return state.slots
     .filter((s) => s.status !== 'vazio' && s.workerId)
     .reduce<Reduced>((r, s) => {
       const next = exit(r.state, s.workerId!);
       return { state: next.state, effects: [...r.effects, ...next.effects] };
-    }, none(state));
+    }, none({ ...state, signal }));
 }
 
 function describeTool(p: HookPayload): string {

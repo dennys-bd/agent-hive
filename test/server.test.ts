@@ -34,7 +34,8 @@ async function start(t: TestContext, body: SetupBody = BODY, withFocus = false):
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/setup`, body)).status, 200); // configure + poll + fill: the spawn runs before the answer
+  assert.equal((await postJson(`${base}/setup`, body)).status, 200); // configure + poll: boot opens under yellow, so nothing spawns yet
+  await server.dispatch({ type: 'setSignal', signal: 'green' }); // these tests exercise worker behavior, not the boot signal itself
   return { repo, base, port, server, workers };
 }
 
