@@ -61,6 +61,7 @@ test('kill runs kill-session and reports the exit once, even when kill-session f
   handle.kill();
   await tick();
   assert.equal(h.exits(), 1, 'a second kill does not exit twice');
+  assert.equal(ok.calls.length, 2, 'nor does it run kill-session again: the first kill is the kill');
   const failing = fakeExec('kill-session');
   const h2 = handlers();
   spawnTmuxWorker(LAUNCH, h2.handlers, { exec: failing.exec, openTerminal: noTerminal }).kill();
