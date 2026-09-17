@@ -35,6 +35,14 @@ export interface RateLimits {
   windows: Record<string, RateLimitWindow>; // keyed as Claude Code sends them: five_hour, seven_day, …
 }
 
+/** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
+export interface BoardQuota {
+  limit: number;
+  remaining: number;
+  resetsAt: string; // ISO
+  at: string; // ISO
+}
+
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
   | { type: 'markdown'; path: string };
@@ -74,6 +82,7 @@ export interface State {
   budget: Budget; // copied from Config.budget by setBudget
   usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
   rateLimits?: RateLimits; // display only; absent until a worker's status line reports it
+  boardQuota?: BoardQuota; // last quota read after a poll; drives the timer backoff and the header meter, never a job
   lastPolledAt?: string;
   error?: string;
 }
@@ -112,6 +121,7 @@ export type HiveEvent =
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
   | { type: 'rateLimits'; workerId: string; rateLimits: RateLimits }
+  | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'idle'; workerId: string; question: string } // a `result` line without a PR: the worker waits for input
