@@ -75,6 +75,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     }
     case 'spawned': return patch(state, event.workerId, { itermSessionId: event.itermSessionId });
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
+    case 'rateLimits': return none(state); // placeholder: Task 3 wires setRateLimits
   }
 }
 
