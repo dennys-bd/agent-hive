@@ -4,8 +4,10 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBoard } from '../src/board.js';
+import { citedColumns } from '../src/cards.js';
 import { listProjects, listStatusOptions } from '../src/boards/github.js';
 import { parseConfig } from '../src/config.js';
+import type { Column } from '../src/types.js';
 import { COLUMNS, fakeLog } from './fakes.js';
 
 const REPO = '/repo'; // the github adapter never reads it
@@ -33,46 +35,54 @@ const fields = {
   ],
 };
 
-test('resolveFields maps configured status names to option ids and stores the project id', async () => {
-  const { exec, calls } = fakeExec({
-    'project view 6': { id: 'PVT_1' },
-    'project field-list 6': fields,
-    'project item-edit --id': '',
-  });
+test('resolveFields maps every cited column to its option id and setColumn edits the item with it', async () => {
+  const { exec, calls } = fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields, 'project item-edit --id': '' });
   const board = createBoard(config, { repo: REPO, exec });
   await board.resolveFields();
-  await board.setStatus('ITEM_1', 'review');
+  await board.setColumn('ITEM_1', 'In review');
   const edit = calls.find((c) => c[1] === 'item-edit');
   assert.deepEqual(edit, ['project', 'item-edit', '--id', 'ITEM_1', '--project-id', 'PVT_1', '--field-id', 'F_status', '--single-select-option-id', 'O_rev']);
   for (const c of calls.filter((c) => c[1] !== 'item-edit')) assert.ok(c.includes('--owner') && c.includes('acme'), c.join(' '));
+  await assert.rejects(board.setColumn('ITEM_1', 'Done'), /"Done" is not a column the config cites/);
 });
 
-test('resolveFields fails naming the missing option and listing the available ones', async () => {
-  const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, columns: COLUMNS, status: { queue: 'Todo' } });
+test('resolveFields fails naming the missing option, the Hive column that cites it and the available ones', async () => {
+  const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, columns: [{ ...COLUMNS[0], onFinish: 'Todo' }] });
   const board = createBoard(bad, { repo: REPO, exec: fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields }).exec });
-  await assert.rejects(board.resolveFields(), /"Todo".*Ready, In progress, In review, Done/s);
+  await assert.rejects(board.resolveFields(), /"Todo" \(fila\.onFinish\).*Ready, In progress, In review, Done/s);
 });
 
-test('setStatus before resolveFields throws', async () => {
+test('setColumn before resolveFields throws', async () => {
   const board = createBoard(config, { repo: REPO, exec: fakeExec({}).exec });
-  await assert.rejects(board.setStatus('x', 'queue'), /not resolved/);
+  await assert.rejects(board.setColumn('x', 'Ready'), /not resolved/);
 });
 
-test('listQueue returns only issues in the queue column, in board order', async () => {
+test('listCards returns the issues in any cited column with the column name, in board order', async () => {
   const items = {
     items: [
       { id: 'I1', status: 'Ready', title: 'A', content: { type: 'Issue', number: 1, title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' } },
       { id: 'I2', status: 'In progress', title: 'B', content: { type: 'Issue', number: 2, title: 'B', body: 'b', url: 'https://github.com/acme/r/issues/2' } },
       { id: 'I3', status: 'Ready', title: 'Draft', content: { type: 'DraftIssue', title: 'Draft', body: '' } },
-      { id: 'I4', status: 'Ready', title: 'C', content: { type: 'Issue', number: 4, title: 'C', body: null, url: 'https://github.com/acme/r/issues/4' } },
+      { id: 'I4', status: 'Done', title: 'C', content: { type: 'Issue', number: 4, title: 'C', body: null, url: 'https://github.com/acme/r/issues/4' } },
       { id: 'I5', title: 'No status', content: { type: 'Issue', number: 5, title: 'E', body: '', url: 'https://github.com/acme/r/issues/5' } },
     ],
   };
   const board = createBoard(config, { repo: REPO, exec: fakeExec({ 'project item-list 6': items, 'api graphql -f': { data: {} } }).exec });
-  const queue = await board.listQueue();
-  assert.deepEqual(queue, [
-    { itemId: 'I1', id: '1', title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' },
-    { itemId: 'I4', id: '4', title: 'C', body: '', url: 'https://github.com/acme/r/issues/4' },
+  assert.deepEqual(await board.listCards(), [
+    { task: { itemId: 'I1', id: '1', title: 'A', body: 'a', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' },
+    { task: { itemId: 'I2', id: '2', title: 'B', body: 'b', url: 'https://github.com/acme/r/issues/2' }, column: 'In progress' },
+  ]);
+});
+
+test('citedColumns lists every board column the config mentions once, naming the first Hive column and field that cites it', () => {
+  const columns: Column[] = [
+    { name: 'spec', weight: 5, from: ['Backlog'], onFinish: 'Ready' },
+    { name: 'dev', weight: 1, from: ['Ready'], onStart: 'In progress', onFinish: 'In review' },
+    { name: 'review', weight: 0, from: ['In review'] },
+  ];
+  assert.deepEqual(citedColumns(columns), [
+    { column: 'Backlog', by: 'spec.from' }, { column: 'Ready', by: 'spec.onFinish' },
+    { column: 'In progress', by: 'dev.onStart' }, { column: 'In review', by: 'dev.onFinish' },
   ]);
 });
 
@@ -114,7 +124,7 @@ test('createBoard picks the markdown adapter by type and resolves the path again
   await writeFile(join(repo, 'board.md'), '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
   const board = createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS }), { repo });
   await board.resolveFields();
-  assert.deepEqual((await board.listQueue()).map((t) => [t.id, t.url]), [['T-1', join(repo, 'board.md')]]);
+  assert.deepEqual((await board.listCards()).map((c) => [c.task.id, c.task.url]), [['T-1', join(repo, 'board.md')]]);
 });
 
 const issue = (n: number, status = 'Ready') => ({
@@ -128,9 +138,9 @@ const relations = (blockedBy: [number, string][], subIssues: [number, string][] 
   },
 });
 
-test('with epics: queue, listQueue keeps epics and resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
+test('with epics: queue, listCards keeps epics and resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
   const { exec, calls } = fakeExec({
-    'project item-list 6': { items: [issue(1), issue(2, 'In progress'), issue(3), issue(4)] },
+    'project item-list 6': { items: [issue(1), issue(2, 'Done'), issue(3), issue(4)] },
     'api graphql -f': {
       data: {
         i0: relations([[7, 'OPEN'], [8, 'CLOSED']], [[7, 'OPEN'], [9, 'OPEN']]),
@@ -139,9 +149,9 @@ test('with epics: queue, listQueue keeps epics and resolves open blockers with o
       },
     },
   });
-  const queue = await createBoard(queued, { repo: REPO, exec }).listQueue();
-  assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
-  assert.ok(!('blockedBy' in queue[1]), 'field omitted when there is no open blocker');
+  const cards = await createBoard(queued, { repo: REPO, exec }).listCards();
+  assert.deepEqual(cards.map((c) => [c.task.id, c.task.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
+  assert.ok(!('blockedBy' in cards[1].task), 'field omitted when there is no open blocker');
   const graphql = calls.filter((c) => c[0] === 'api');
   assert.equal(graphql.length, 1);
   assert.deepEqual(graphql[0].slice(0, 3), ['api', 'graphql', '-f']);
@@ -149,27 +159,27 @@ test('with epics: queue, listQueue keeps epics and resolves open blockers with o
   assert.match(query, /^query=query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blockedBy\(first: 50\) \{ nodes \{ number state \} \} subIssues\(first: 50\) \{ nodes \{ number state \} \} \} \} i1: /);
   assert.match(query, /i1: repository\(owner: "acme", name: "r"\) \{ issue\(number: 3\)/);
   assert.match(query, /i2: repository\(owner: "acme", name: "r"\) \{ issue\(number: 4\)/);
-  assert.ok(!query.includes('i3:'), 'no alias for issues outside the queue column');
+  assert.ok(!query.includes('i3:'), 'no alias for issues outside the cited columns');
 });
 
-test('listQueue with nothing in the queue column makes no graphql call', async () => {
-  const { exec, calls } = fakeExec({ 'project item-list 6': { items: [issue(2, 'In progress')] } });
-  assert.deepEqual(await createBoard(config, { repo: REPO, exec }).listQueue(), []);
+test('listCards with nothing in the queue column makes no graphql call', async () => {
+  const { exec, calls } = fakeExec({ 'project item-list 6': { items: [issue(2, 'Done')] } });
+  assert.deepEqual(await createBoard(config, { repo: REPO, exec }).listCards(), []);
   assert.deepEqual(calls.map((c) => c[1]), ['item-list']);
 });
 
-test('listQueue treats issue: null, a null repository or a missing alias as no blockers and not as an epic', async () => {
+test('listCards treats issue: null, a null repository or a missing alias as no blockers and not as an epic', async () => {
   const { exec, calls } = fakeExec({
     'project item-list 6': { items: [issue(1), issue(2), issue(3)] },
     'api graphql -f': { data: { i0: { issue: null }, i1: null } },
   });
-  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
-  assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, undefined, undefined]);
-  assert.deepEqual(queue.map((t) => t.id), ['1', '2', '3'], 'nothing dropped under the default epics: ignore');
+  const cards = await createBoard(config, { repo: REPO, exec }).listCards();
+  assert.deepEqual(cards.map((c) => c.task.blockedBy), [undefined, undefined, undefined]);
+  assert.deepEqual(cards.map((c) => c.task.id), ['1', '2', '3'], 'nothing dropped under the default epics: ignore');
   assert.equal(calls.filter((c) => c[0] === 'api').length, 1);
 });
 
-test('listQueue drops epics (issues with any sub-issue, open or closed) by default and keeps the others with their blockedBy', async () => {
+test('listCards drops epics (issues with any sub-issue, open or closed) by default and keeps the others with their blockedBy', async () => {
   const { exec, calls } = fakeExec({
     'project item-list 6': { items: [issue(1), issue(2), issue(3), issue(4)] },
     'api graphql -f': {
@@ -181,8 +191,8 @@ test('listQueue drops epics (issues with any sub-issue, open or closed) by defau
       },
     },
   });
-  const queue = await createBoard(config, { repo: REPO, exec }).listQueue();
-  assert.deepEqual(queue.map((t) => [t.id, t.blockedBy]), [['3', ['7']], ['4', undefined]]);
+  const cards = await createBoard(config, { repo: REPO, exec }).listCards();
+  assert.deepEqual(cards.map((c) => [c.task.id, c.task.blockedBy]), [['3', ['7']], ['4', undefined]]);
   assert.equal(calls.filter((c) => c[0] === 'api').length, 1, 'same single query as before: no extra call to detect epics');
 });
 
@@ -218,11 +228,11 @@ test('createBoard with a log wraps the exec: every gh call leaves a debug line w
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^DEBUG gh project field-list 6 --owner acme --format json \d+ms ok$/);
   assert.ok(!lines[0].includes('O_ready'), 'stdout is never logged');
-  await board.listQueue(); // item-list + one long graphql query
+  await board.listCards(); // item-list + one long graphql query
   const graphql = lines.find((l) => l.startsWith('DEBUG gh api graphql'));
   assert.ok(graphql, lines.join('\n'));
   assert.match(graphql, /^DEBUG gh .{200}… \d+ms ok$/, 'argv cut at 200 characters');
-  await assert.rejects(board.setStatus('x', 'queue'), /not resolved/); // thrown before exec: no gh line
+  await assert.rejects(board.setColumn('x', 'Ready'), /not resolved/); // thrown before exec: no gh line
   await assert.rejects(board.quota!(), /unexpected gh call/); // the fake rejects; the wrapper rethrows
   assert.match(lines.at(-1)!, /^DEBUG gh api rate_limit --jq \.resources\.graphql \d+ms error: unexpected gh call: api rate_limit --jq \.resources\.graphql$/);
   assert.equal(lines.length, 4);

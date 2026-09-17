@@ -207,7 +207,7 @@ test('kill on a slot whose process the pool does not know (Hive restarted) frees
   const { factory } = fakeBoardFactory();
   const config = parseConfig(BODY);
   const board = factory(config);
-  const previous = reduce(initialState(1), { type: 'poll', tasks: await board.listQueue() }).state; // occupied by a worker of a previous run
+  const previous = reduce(initialState(1), { type: 'poll', tasks: (await board.listCards()).map((c) => c.task) }).state; // occupied by a worker of a previous run
   const state: State = { ...previous, signal: 'yellow' }; // yellow: the requeued task is not picked up, so the freed slot stays visible
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ repo, boardFactory: factory, spawnWorker: spawn, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state });
@@ -255,7 +255,7 @@ test('the timer skips the board while nothing could start, and reads it again on
     repo, spawnWorker: fakeSpawn().spawn,
     boardFactory: (config) => {
       const board = inner(config);
-      return { ...board, listQueue: () => { polls += 1; return board.listQueue(); } };
+      return { ...board, listCards: () => { polls += 1; return board.listCards(); } };
     },
   });
   const port = await server.listen(0);
@@ -282,7 +282,7 @@ test('the log tells the story: slot transitions, signal and board writes at info
   const id8 = workerId.slice(0, 8);
   const has = (line: string): void => assert.ok(lines.includes(line), `missing "${line}" in:\n${lines.join('\n')}`);
   has('INFO signal: green → yellow'); // boot
-  has('INFO poll queue=1');
+  has('INFO poll cards=1');
   has('INFO signal: yellow → green');
   has(`INFO slot 1: empty → working #1 worker=${id8}`);
   has('INFO setStatus #I1 → working ok');

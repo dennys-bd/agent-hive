@@ -1,13 +1,13 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { Citation } from '../cards.js';
 import type { Logger } from '../log.js';
-import type { Board, BoardConfig, BoardQuota, EpicsMode, ProjectSummary, StatusKey, Task } from '../types.js';
+import type { Board, BoardCard, BoardConfig, BoardQuota, EpicsMode, ProjectSummary, Task } from '../types.js';
 
 const execFileAsync = promisify(execFile);
 const GH_MAX_BUFFER = 20 * 1024 * 1024;
 const ITEM_LIMIT = 200;
 const PROJECT_LIMIT = 100;
-const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
 const RELATION_LIMIT = 50; // ponytail: no pagination, an issue with more open blockers/sub-issues than this is under-reported
 const MS_PER_SECOND = 1000;
@@ -113,15 +113,15 @@ function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
 // An epic is any issue with at least one sub-issue, whatever its state: the same relation GitHub shows as an epic.
 const isEpic = (issue: GhIssueRelations | null | undefined): boolean => (issue?.subIssues?.nodes.length ?? 0) > 0;
 
-async function withBlockers(tasks: Task[], epics: EpicsMode, exec: Exec): Promise<Task[]> {
-  const query = relationsQuery(tasks);
-  if (!query) return tasks;
+async function withBlockers(cards: BoardCard[], epics: EpicsMode, exec: Exec): Promise<BoardCard[]> {
+  const query = relationsQuery(cards.map((c) => c.task));
+  if (!query) return cards;
   const { data } = JSON.parse(await exec(['api', 'graphql', '-f', `query=${query}`])) as { data: GhRelationsData };
-  return tasks.flatMap((task, i) => {
+  return cards.flatMap((card, i) => {
     const issue = data[`i${i}`]?.issue;
     if (epics === 'ignore' && isEpic(issue)) return []; // not a task for the Hive: only its sub-issues are
     const blockedBy = openBlockers(issue);
-    return [blockedBy.length > 0 ? { ...task, blockedBy } : task];
+    return [blockedBy.length > 0 ? { ...card, task: { ...card.task, blockedBy } } : card];
   });
 }
 
@@ -136,47 +136,46 @@ async function readQuota(exec: Exec): Promise<BoardQuota | undefined> {
 }
 
 export function createGithubBoard(
-  board: GithubBoardConfig, statusNames: Record<StatusKey, string>, epics: EpicsMode, exec: Exec = ghExec,
+  board: GithubBoardConfig, cited: Citation[], epics: EpicsMode, exec: Exec = ghExec,
 ): Board {
   const { owner, number } = board;
   const base = (sub: string) => projectArgs(sub, owner, number);
-  let resolved: { projectId: string; statusFieldId: string; optionIds: Record<StatusKey, string> } | undefined;
+  let resolved: { projectId: string; statusFieldId: string; optionIds: Record<string, string> } | undefined;
 
   async function resolveFields(): Promise<void> {
     const view = JSON.parse(await exec(base('view'))) as { id: string };
     const status = await fetchStatusField(owner, number, exec);
     const available = status.options.map((o) => o.name);
-    const optionIds = {} as Record<StatusKey, string>;
-    for (const key of STATUS_KEYS) {
-      const wanted = statusNames[key];
-      const option = status.options.find((o) => o.name === wanted);
-      if (!option) throw new Error(`status.${key} "${wanted}" not found in board Status options: ${available.join(', ')}`);
-      optionIds[key] = option.id;
+    const optionIds: Record<string, string> = {};
+    for (const { column, by } of cited) {
+      const option = status.options.find((o) => o.name === column);
+      if (!option) throw new Error(`"${column}" (${by}) not found in board Status options: ${available.join(', ')}`);
+      optionIds[column] = option.id;
     }
     resolved = { projectId: view.id, statusFieldId: status.id, optionIds };
   }
 
-  async function listQueue(): Promise<Task[]> {
+  async function listCards(): Promise<BoardCard[]> {
+    const names = new Set(cited.map((c) => c.column));
     const { items } = JSON.parse(await exec([...base('item-list'), '--limit', String(ITEM_LIMIT)])) as { items: GhItem[] };
-    const queued = items.flatMap<Task>((item) => {
+    const listed = items.flatMap<BoardCard>((item) => {
       const c = item.content;
-      if (item.status !== statusNames.queue || c?.type !== 'Issue' || typeof c.number !== 'number' || !c.url) return [];
-      return [{ itemId: item.id, id: String(c.number), title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }];
+      if (item.status === undefined || !names.has(item.status) || c?.type !== 'Issue' || typeof c.number !== 'number' || !c.url) return [];
+      return [{ task: { itemId: item.id, id: String(c.number), title: c.title ?? item.title ?? `#${c.number}`, body: c.body ?? '', url: c.url }, column: item.status }];
     });
-    return withBlockers(queued, epics, exec); // item-list carries no relations; a failed query rejects the poll, never "no blockers"
+    return withBlockers(listed, epics, exec); // item-list carries no relations; a failed query rejects the poll, never "no blockers"
   }
 
-  async function setStatus(itemId: string, key: StatusKey): Promise<void> {
+  async function setColumn(itemId: string, column: string): Promise<void> {
     if (!resolved) throw new Error('board not resolved: call resolveFields() first');
-    await exec([
-      'project', 'item-edit', '--id', itemId, '--project-id', resolved.projectId,
-      '--field-id', resolved.statusFieldId, '--single-select-option-id', resolved.optionIds[key],
-    ]);
+    const optionId = resolved.optionIds[column];
+    if (optionId === undefined) throw new Error(`"${column}" is not a column the config cites`);
+    await exec(['project', 'item-edit', '--id', itemId, '--project-id', resolved.projectId, '--field-id', resolved.statusFieldId, '--single-select-option-id', optionId]);
   }
 
   async function setupOptions(): Promise<string[]> {
     return listStatusOptions(owner, number, exec);
   }
 
-  return { resolveFields, listQueue, setStatus, setupOptions, quota: () => readQuota(exec) };
+  return { resolveFields, listCards, setColumn, setupOptions, quota: () => readQuota(exec) };
 }

@@ -9,7 +9,7 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
-import type { Config, Language, SetupBody, SetupInfo, State } from '../src/types.js';
+import type { BoardSpec, Config, Language, SetupBody, SetupInfo, State } from '../src/types.js';
 import { COLUMNS, fakeBoardFactory, OPTIONS } from './fakes.js';
 
 const BODY: SetupBody = {
@@ -18,7 +18,7 @@ const BODY: SetupBody = {
   maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would start a real claude)
 };
 
-interface Started { repo: string; base: string; port: number; server: HiveServer; configs: Config[] }
+interface Started { repo: string; base: string; port: number; server: HiveServer; configs: BoardSpec[] }
 
 async function start(t: TestContext, resolveDelayMs = 0, systemLanguage?: Language): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
@@ -98,10 +98,9 @@ test('POST /setup writes the config with defaults, boots the runtime and reports
 
 test('POST /setup with a column the board does not have answers 400 and writes nothing', async (t) => {
   const { base, repo, server } = await start(t);
-  // status still drives board validation in Task 1 (fakeBoardFactory checks it, not columns); columns rides along for the fixture shape.
-  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Todo'] }], status: { queue: 'Todo', working: 'In progress', review: 'In review' } });
+  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Todo'] }] });
   assert.equal(res.status, 400);
-  assert.match((await json<{ error: string }>(res)).error, /"Todo".*Ready, In progress, In review, Done/);
+  assert.match((await json<{ error: string }>(res)).error, /"Todo" \(fila\.from\).*Ready, In progress, In review, Done/);
   await assert.rejects(stat(configFile(repo)));
   await assert.rejects(stat(join(repo, '.hive', 'hooks.json')), 'the runtime dir is never prepared: only the logger touched .hive/');
   assert.equal(server.getState(), undefined);
@@ -121,8 +120,7 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal((await postSetup(base, BODY)).status, 200);
   const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
   await writeFile(configFile(repo), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'], promptTemplate: 'só {title}' }));
-  // status still drives the fake board's queue in Task 1 (fakeBoardFactory checks it, not columns); columns rides along for the fixture shape.
-  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }], status: { queue: 'Done', working: 'In progress', review: 'In review' } });
+  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }] });
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true, restartForPort: 5000 });
   const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
@@ -138,11 +136,10 @@ test('a second POST /setup with the same board and status keeps the live board i
   const { base, configs } = await start(t);
   assert.equal((await postSetup(base, BODY)).status, 200);
   const afterFirst = configs.length; // validation + activate
-  assert.equal((await postSetup(base, { ...BODY, promptTemplate: 'só {title}' })).status, 200);
+  assert.equal((await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], prompt: 'só {title}' }] })).status, 200);
   assert.equal(configs.length, afterFirst + 1, 'only the pre-write validation creates a board; reconfigure reuses the live one');
-  // status still drives sameBoard in Task 1 (columns is not compared yet); columns rides along for the fixture shape.
   assert.equal(
-    (await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }], status: { queue: 'Done', working: 'In progress', review: 'In review' } })).status,
+    (await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }] })).status,
     200,
   );
   assert.equal(configs.length, afterFirst + 3, 'a different status needs a new board');
@@ -267,7 +264,8 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   // an existing file is never rewritten by setup; a file with its own vocabulary lists only its statuses
   await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
   assert.equal((await postSetup(base, { ...body, columns: [{ ...COLUMNS[0], from: ['Todo'], onStart: 'Todo', onFinish: 'Todo' }] })).status, 200);
-  assert.deepEqual(server.getState()?.queue, []);
+  // Todo is now cited (fila.from), so the row the Hive's own board says is its entry column is queued.
+  assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-7', 'Só esta', file]]);
   assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo']);
 });
 

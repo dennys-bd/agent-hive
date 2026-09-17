@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { citedColumns } from '../src/cards.js';
 import type { Logger } from '../src/log.js';
-import type { Board, BoardQuota, Column, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
+import type { Board, BoardQuota, BoardSpec, Column, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
 
 export interface FakeWorker {
   launch: WorkerLaunch;
@@ -41,26 +42,24 @@ export const COLUMNS: Column[] = [
   { name: 'fila', weight: 1, from: ['Ready'], onStart: 'In progress', onFinish: 'In review', prompt: 'Task #{id}: {title}\n\n{body}' },
 ];
 
-// A board that has the OPTIONS columns and returns one task named after the configured queue column.
+// A board that has the OPTIONS columns and returns one task named after the configured entry column.
 // `resolveDelayMs` makes resolveFields slow so concurrent saves overlap; `quota` gives it a fixed quota reading (none by default, like markdown).
-export function fakeBoardFactory(resolveDelayMs = 0, quota?: BoardQuota): { factory: (config: Config) => Board; configs: Config[] } {
-  const configs: Config[] = [];
-  const factory = (config: Config): Board => {
+export function fakeBoardFactory(resolveDelayMs = 0, quota?: BoardQuota): { factory: (config: BoardSpec) => Board; configs: BoardSpec[] } {
+  const configs: BoardSpec[] = [];
+  const factory = (config: BoardSpec): Board => {
     configs.push(config);
     return {
       async resolveFields() {
         if (resolveDelayMs > 0) await sleep(resolveDelayMs);
-        for (const key of ['queue', 'working', 'review'] as const) {
-          const wanted = config.status[key];
-          if (!OPTIONS.includes(wanted)) {
-            throw new Error(`status.${key} "${wanted}" not found in board Status options: ${OPTIONS.join(', ')}`);
-          }
+        for (const { column, by } of citedColumns(config.columns)) {
+          if (!OPTIONS.includes(column)) throw new Error(`"${column}" (${by}) not found in board Status options: ${OPTIONS.join(', ')}`);
         }
       },
-      async listQueue() {
-        return [{ itemId: 'I1', id: '1', title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
+      async listCards() {
+        const from = config.columns.flatMap((c) => c.from)[0];
+        return [{ task: { itemId: 'I1', id: '1', title: `from ${from}`, body: '', url: 'https://github.com/acme/r/issues/1' }, column: from }];
       },
-      async setStatus() {},
+      async setColumn() {},
       async setupOptions() {
         return OPTIONS;
       },

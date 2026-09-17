@@ -65,7 +65,7 @@ test('bootHive writes the boot to <repo>/.hive/hive.log: mode=hive with a usable
   const lines = await logLines(repo);
   assert.ok(lines.includes(`INFO  boot repo=${repo} mode=hive`), lines.join('\n'));
   assert.ok(lines.includes(`INFO  listening port=${hive.port}`));
-  assert.ok(lines.includes('INFO  poll queue=0')); // newBoardText's example row is status Done, not the queue column
+  assert.ok(lines.includes('INFO  poll cards=0')); // newBoardText's example row is status Done, which no column cites
   assert.ok(!lines.some((l) => l.startsWith('DEBUG')), 'default level is info');
 
   const broken = await repoWithConfig({ logLevel: 'debug' });

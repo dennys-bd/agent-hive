@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { Board, BoardConfig, StatusKey, Task } from '../types.js';
+import type { Citation } from '../cards.js';
+import type { Board, BoardCard, BoardConfig, Task } from '../types.js';
 
 export type MarkdownBoardConfig = Extract<BoardConfig, { type: 'markdown' }>;
 
@@ -135,7 +136,8 @@ async function realFile(path: string): Promise<string> {
   }
 }
 
-export function createMarkdownBoard(path: string, status: Record<StatusKey, string>): Board {
+export function createMarkdownBoard(path: string, cited: Citation[]): Board {
+  const names = new Set(cited.map((c) => c.column));
   // Dispatches overlap in-process, and two read-modify-writes on the same file would lose one
   // update and race on the same .tmp. Chaining them makes each call re-read after the previous rename.
   let writeChain: Promise<unknown> = Promise.resolve();
@@ -156,36 +158,39 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
     return table;
   }
 
+  // The file's own vocabulary is the only truth: a cited column nobody uses (and that is not a padded default) is a typo.
   async function resolveFields(): Promise<void> {
-    await loadTable(await realFile(path));
+    const available = await setupOptions();
+    for (const { column, by } of cited) {
+      if (!available.includes(column)) throw new Error(`"${column}" (${by}) not found in ${path}: ${available.join(', ')}`);
+    }
   }
 
-  async function listQueue(): Promise<Task[]> {
+  async function listCards(): Promise<BoardCard[]> {
     const { rows } = await loadTable(await realFile(path));
-    const known = new Set(Object.values(status)); // queue / working / review are the only statuses still open to the Hive
-    const open = new Set(rows.filter((r) => known.has(r.status)).map((r) => r.id));
+    const open = new Set(rows.filter((r) => names.has(r.status)).map((r) => r.id)); // cited columns are the ones still open to the Hive
     const ids = new Set(rows.map((r) => r.id));
-    return rows.filter((r) => r.status === status.queue).map((r) => {
-      const blockedBy = r.dependsOn.filter((d) => open.has(d) || !ids.has(d)); // an unknown id blocks, so the typo shows in the queue
+    return rows.filter((r) => names.has(r.status)).map((r) => {
+      const blockedBy = r.dependsOn.filter((d) => open.has(d) || !ids.has(d)); // an unknown id blocks, so the typo shows on the card
       const task: Task = { itemId: r.id, id: r.id, title: r.title, body: '', url: path };
-      return blockedBy.length > 0 ? { ...task, blockedBy } : task;
+      return { task: blockedBy.length > 0 ? { ...task, blockedBy } : task, column: r.status };
     });
   }
 
-  async function rewriteStatus(itemId: string, key: StatusKey): Promise<void> {
+  async function rewriteStatus(itemId: string, column: string): Promise<void> {
     const file = await realFile(path);
     const { lines, columns, rows } = await loadTable(file);
     const row = rows.find((r) => r.id === itemId);
     if (!row) throw new Error(`task ${itemId} não encontrada em ${path}`);
     const split = splitLine(lines[row.lineIndex]);
     if (split.cells.length <= columns.status) throw new Error(`task ${itemId} sem célula de status em ${path}`);
-    const cells = split.cells.map((cell, i) => (i === columns.status ? replaceCell(cell, status[key]) : cell));
+    const cells = split.cells.map((cell, i) => (i === columns.status ? replaceCell(cell, column) : cell));
     const updated = lines.map((line, i) => (i === row.lineIndex ? joinLine({ ...split, cells }) : line));
     await writeAtomic(file, updated.join('\n'));
   }
 
-  function setStatus(itemId: string, key: StatusKey): Promise<void> {
-    const run = () => rewriteStatus(itemId, key);
+  function setColumn(itemId: string, column: string): Promise<void> {
+    const run = () => rewriteStatus(itemId, column);
     const link = writeChain.then(run, run);
     writeChain = link.catch(() => undefined); // a failed write must not poison the chain
     return link;
@@ -199,5 +204,5 @@ export function createMarkdownBoard(path: string, status: Record<StatusKey, stri
     return usesOwnVocabulary ? found : [...new Set([...found, ...DEFAULT_STATUS_OPTIONS])];
   }
 
-  return { resolveFields, listQueue, setStatus, setupOptions };
+  return { resolveFields, listCards, setColumn, setupOptions };
 }

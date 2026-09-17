@@ -8,6 +8,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
+import { citedColumns } from './cards.js';
 import { CONFIG_FILE, DEFAULT_CONFIG, loadConfigOrLegacy, parseBoard, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
@@ -21,7 +22,7 @@ import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  Board, BoardSpec, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
   SpawnWorker, State,
 } from './types.js';
 
@@ -46,7 +47,7 @@ const NOT_QUEUED_MESSAGE = 'task não está na fila';
 const NO_FREE_SLOT_MESSAGE = 'nenhum slot livre';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
-export type BoardFactory = (config: Config) => Board;
+export type BoardFactory = (spec: BoardSpec) => Board;
 
 export interface Runtime {
   config: Config;
@@ -93,8 +94,8 @@ function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefine
   return body.promptTemplate;
 }
 
-// epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or status.
-const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status, a.epics], [b.board, b.status, b.epics]);
+// epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or columns.
+const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, citedColumns(a.columns), a.epics], [b.board, citedColumns(b.columns), b.epics]);
 
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
@@ -125,7 +126,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
   const systemLanguage = deps.systemLanguage ?? 'en';
-  const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo, log }));
+  const boardFactory: BoardFactory = deps.boardFactory ?? ((spec) => createBoard(spec, { repo, log }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
@@ -186,8 +187,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = live?.runtime;
     if (!runtime) return;
     switch (effect.type) {
-      case 'setStatus':
-        await runtime.board.setStatus(effect.itemId, effect.key)
+      case 'setStatus': // bridge until Task 3 dispatches cards directly: the reducer still speaks status keys, the board speaks column names
+        await runtime.board.setColumn(effect.itemId, runtime.config.status[effect.key])
           .then(() => log.info(`${describeEffect(effect)} ok`))
           .catch((err) => fail(`board.setStatus(${effect.key})`, err));
         return;
@@ -220,11 +221,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = live?.runtime;
     if (!runtime) return;
     try {
-      const tasks = await runtime.board.listQueue();
-      log.info(`poll queue=${tasks.length}`);
-      await dispatch({ type: 'poll', tasks });
+      const cards = await runtime.board.listCards();
+      log.info(`poll cards=${cards.length}`);
+      await dispatch({ type: 'poll', tasks: cards.map((c) => c.task) }); // Task 3 dispatches the cards themselves
     } catch (err) {
-      await fail('board.listQueue', err);
+      await fail('board.listCards', err);
     }
     await refreshQuota(runtime.board); // after every real poll, success or failure: the reset time matters most when the limit just hit
   }
@@ -434,15 +435,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   app.get('/setup/columns', async (req: Request, res: Response) => {
-    let config: Config;
+    let spec: BoardSpec;
     try {
-      config = { ...DEFAULT_CONFIG, columns: [], board: parseBoard(boardFromQuery(req.query), 'board') }; // columns unused here, only the board matters
+      spec = { board: parseBoard(boardFromQuery(req.query), 'board'), columns: [], epics: DEFAULT_CONFIG.epics }; // only the board matters here
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
     }
     try {
-      res.json(await boardFactory(config).setupOptions());
+      res.json(await boardFactory(spec).setupOptions());
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }

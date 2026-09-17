@@ -240,15 +240,15 @@ export type EventsPayload = State | { configured: false };
 
 /** What every board adapter implements; `src/board.ts` picks one by `config.board.type`. */
 export interface Board {
-  resolveFields(): Promise<void>; // validates the config against the source (options / table exist)
-  listQueue(): Promise<Task[]>; // tasks in status.queue, in source order
-  setStatus(itemId: string, key: StatusKey): Promise<void>;
+  resolveFields(): Promise<void>; // every column name the config cites exists on the board
+  listCards(): Promise<BoardCard[]>; // tasks in any cited column, in board order
+  setColumn(itemId: string, column: string): Promise<void>;
   setupOptions(): Promise<string[]>; // status values available, for the setup form
   quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
 
 /** What a board adapter is built from; the rest of the config is not its business. */
-export type BoardSpec = Pick<Config, 'board' | 'status' | 'epics'>;
+export type BoardSpec = Pick<Config, 'board' | 'columns' | 'epics'>;
 
 /** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
 export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
