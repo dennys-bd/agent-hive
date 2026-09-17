@@ -79,8 +79,8 @@
   #setup fieldset[disabled] { display: none; }
   #setup .tabs { display: flex; gap: 20px; align-items: flex-start; }
   #setup-tabs { display: flex; flex-direction: column; gap: 4px; width: 120px; flex: none; }
-  #setup-tabs [role=tab] { text-align: left; }
-  #setup-tabs [aria-selected=true] { border-color: var(--review); color: var(--review); }
+  #setup-tabs button { text-align: left; }
+  #setup-tabs [aria-pressed=true] { border-color: var(--review); color: var(--review); }
   #setup .panels { flex: 1; min-width: 0; }
   #rules { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
   #rules th { text-align: left; font-weight: normal; color: var(--muted); font-size: 12px; padding: 0 4px 4px 0; }
@@ -120,10 +120,10 @@
 <form id="setup">
   <h2>configuração</h2>
   <div class="tabs">
-    <nav id="setup-tabs" role="tablist">
-      <button type="button" role="tab" data-tab="board" aria-selected="true">board</button>
-      <button type="button" role="tab" data-tab="geral" aria-selected="false">geral</button>
-      <button type="button" role="tab" data-tab="limites" aria-selected="false">limites</button>
+    <nav id="setup-tabs">
+      <button type="button" data-tab="board" aria-pressed="true">board</button>
+      <button type="button" data-tab="geral" aria-pressed="false">geral</button>
+      <button type="button" data-tab="limites" aria-pressed="false">limites</button>
     </nav>
     <div class="panels">
       <section data-panel="board">

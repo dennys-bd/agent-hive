@@ -280,7 +280,7 @@ function connect(): void {
 // Panels are hidden, never disabled, so native validation still covers every tab.
 function showTab(name: string): void {
   document.querySelectorAll<HTMLButtonElement>('#setup-tabs [data-tab]')
-    .forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.tab === name)));
+    .forEach((tab) => tab.setAttribute('aria-pressed', String(tab.dataset.tab === name)));
   document.querySelectorAll<HTMLElement>('#setup [data-panel]')
     .forEach((panel) => { panel.hidden = panel.dataset.panel !== name; });
 }
@@ -445,11 +445,19 @@ async function saveSetup(): Promise<void> {
     setupError(boardType() === 'markdown' ? 'informe o caminho do arquivo' : 'escolha um project');
     return;
   }
+  // usageRulesFromForm throws for a row with no effect; the row lives on a tab that may be hidden, so reveal it
+  let usageRules: SetupBody['usageRules'];
+  try {
+    usageRules = usageRulesFromForm();
+  } catch (err) {
+    showTab('limites');
+    setupError((err as Error).message);
+    return;
+  }
   const save = $<HTMLButtonElement>('save');
   save.disabled = true;
   setupError();
   try {
-    // usageRulesFromForm throws for a row with no effect: the message lands in setupError and nothing is posted
     const body: SetupBody = {
       board,
       status: statusFromForm(),
@@ -458,7 +466,7 @@ async function saveSetup(): Promise<void> {
       epics: $<HTMLSelectElement>('epics').value as EpicsMode,
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
-      usageRules: usageRulesFromForm(),
+      usageRules,
     };
     const result = await postJson<SetupResult>('/setup', body);
     setupInfo = await getJson<SetupInfo>('/setup');
