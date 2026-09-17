@@ -37,7 +37,6 @@ const LIMITS: RateLimits = {
 };
 const limited = (state: State, workerId: string, rateLimits: RateLimits = LIMITS) =>
   reduce(state, { type: 'rateLimits', workerId, rateLimits });
-const idled = (state: State, workerId: string, question: string) => reduce(state, { type: 'idle', workerId, question });
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
@@ -276,38 +275,6 @@ test('hook for an empty or unknown slot is ignored', () => {
   const { state, effects } = hook(s, s.slots[0].workerId!, { hook_event_name: 'Stop' });
   assert.deepEqual(state, s);
   assert.equal(effects.length, 0);
-});
-
-test('idle without a PR turns the slot yellow with the question cut at 500 chars; the answer brings it back; paused is not touched', () => {
-  const first = filled(1, 1).state;
-  const id = first.slots[0].workerId!;
-  const { state, effects } = idled(first, id, 'Posso apagar o arquivo?');
-  assert.equal(state.slots[0].status, 'esperando_voce');
-  assert.equal(state.slots[0].question, 'Posso apagar o arquivo?');
-  assert.equal(state.slots[0].lastEvent, 'aguardando resposta');
-  assert.equal(effects.length, 0, 'no fill, no effects: nothing was freed');
-  assert.equal(idled(first, id, 'x'.repeat(600)).state.slots[0].question?.length, 500);
-  const answered = hook(state, id, { hook_event_name: 'UserPromptSubmit' }).state;
-  assert.equal(answered.slots[0].status, 'trabalhando');
-  assert.equal(answered.slots[0].question, undefined);
-  const paused = stopped(signaled(first, 'red').state, id);
-  const idlePaused = idled(paused, id, 'q').state;
-  assert.equal(idlePaused.slots[0].status, 'esperando_voce');
-  assert.equal(idlePaused.slots[0].paused, true, 'idle does not release the red mark');
-});
-
-test('idle with a PR, for an unknown worker or an empty slot leaves the state as is', () => {
-  const first = filled(1, 1).state;
-  const id = first.slots[0].workerId!;
-  const reviewed = hook(first, id, {
-    hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
-  }).state;
-  const withPr = idled(reviewed, id, 'algo');
-  assert.equal(withPr.state, reviewed, 'same object: the server already closes stdin for a reviewed slot');
-  assert.equal(withPr.effects.length, 0);
-  assert.equal(idled(first, 'nope', 'algo').state, first);
-  const empty = initialState(1);
-  assert.equal(idled(empty, 'w', 'q').state, empty);
 });
 
 test('boot gives every occupied slot as dead: tasks without a PR go back to the queue, tasks with a PR just free the slot', () => {

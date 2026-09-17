@@ -15,14 +15,13 @@ interface ContentBlock {
   input?: Record<string, unknown>;
 }
 
-export interface TranscriptLine {
+interface TranscriptLine {
   type?: string;
   message?: { content?: ContentBlock[] };
-  result?: string; // print-mode stream only; a transcript never has it
 }
 
-// One JSON object per line, the same shape in the transcript and in the print-mode stream. Anything else is not a line.
-export function parseLine(line: string): TranscriptLine | undefined {
+// One JSON object per line. Anything else is not a line.
+function parseLine(line: string): TranscriptLine | undefined {
   try {
     const parsed: unknown = JSON.parse(line);
     return typeof parsed === 'object' && parsed !== null ? (parsed as TranscriptLine) : undefined;

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killStray, renderPrompt, spawnEmbeddedWorker, userMessage, workerArgv, workerEnv, writePrompt } from '../src/spawn.js';
+import { killStray, renderPrompt, workerEnv, writePrompt } from '../src/spawn.js';
 import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
 import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
@@ -26,49 +26,15 @@ test('writePrompt writes <promptsDir>/<slug>.md', async () => {
   assert.equal(await readFile(path, 'utf8'), 'hello');
 });
 
-test('workerArgv puts the worktree, the hooks settings and the stream-json print mode before claudeArgs', () => {
-  const argv = workerArgv({ slug: 'hive-7-fix', hooksPath: '/Users/x/my repo/.hive/hooks.json', claudeArgs: ['--permission-mode', 'acceptEdits'] });
-  assert.deepEqual(argv, [
-    '--worktree=hive-7-fix', '--settings', '/Users/x/my repo/.hive/hooks.json',
-    '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--permission-mode', 'acceptEdits',
-  ]);
-  assert.deepEqual(workerArgv({ slug: 's', hooksPath: 'h', claudeArgs: [] }).slice(-1), ['--verbose'], 'no trailing args without claudeArgs');
-});
-
-test('workerEnv copies the base env without CLAUDECODE and adds HIVE_WORKER_ID and HIVE_PORT', () => {
-  const base = { PATH: '/bin', CLAUDECODE: '1', HOME: '/Users/x' };
+test('workerEnv copies the base env without CLAUDECODE and NODE_PATH and adds HIVE_WORKER_ID and HIVE_PORT', () => {
+  const base = { PATH: '/bin', CLAUDECODE: '1', NODE_PATH: '/hive/node_modules', HOME: '/Users/x' };
   assert.deepEqual(workerEnv(base, 'W1', 4242), { PATH: '/bin', HOME: '/Users/x', HIVE_WORKER_ID: 'W1', HIVE_PORT: '4242' });
   assert.equal(base.CLAUDECODE, '1', 'the base env is not touched');
-});
-
-test('userMessage wraps text as one stream-json user line', () => {
-  assert.equal(userMessage('oi "você"\nlinha 2'), `${JSON.stringify({ type: 'user', message: { role: 'user', content: 'oi "você"\nlinha 2' } })}\n`);
+  assert.equal(base.NODE_PATH, '/hive/node_modules');
 });
 
 test('killStray resolves false when no process matches', async () => {
   assert.equal(await killStray('definitely-not-running-slug-xyz'), false);
-});
-
-// A stand-in for `claude`: ignores its argv and echoes stdin, so what the spawner writes comes back as stdout lines.
-async function echoBinary(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'hive-echo-'));
-  const bin = join(dir, 'claude-echo');
-  await writeFile(bin, '#!/bin/sh\ncat\n');
-  await chmod(bin, 0o755);
-  return bin;
-}
-
-test('spawnEmbeddedWorker sends the prompt as the first user message over stdin, then follow-ups; end() exits once', async () => {
-  const lines: string[] = [];
-  let exits = 0;
-  const handle = spawnEmbeddedWorker({ ...LAUNCH, repo: tmpdir() }, { onLine: (l) => lines.push(l), onExit: () => { exits += 1; } }, await echoBinary());
-  handle.send('continua');
-  handle.end();
-  for (let i = 0; i < 100 && exits === 0; i += 1) await new Promise((r) => setTimeout(r, 10));
-  assert.equal(exits, 1);
-  assert.deepEqual(lines, [userMessage('faz a task').trim(), userMessage('continua').trim()]);
-  handle.end(); // a closed stdin again is harmless
 });
 
 test('shellQuote single-quotes and escapes embedded quotes', () => {

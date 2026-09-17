@@ -36,7 +36,7 @@ export function spawnTmuxWorker(launch: WorkerLaunch, handlers: WorkerHandlers, 
     exited = true;
     handlers.onExit();
   };
-  const report = (err: Error): void => handlers.onLine(`stderr: tmux: ${err.message}`);
+  const report = (err: Error): void => handlers.onError(`tmux: ${err.message}`);
   const session = exec('tmux', tmuxArgs(
     'new-session', '-d', '-s', slug, '-c', launch.repo, '-x', SESSION_COLS, '-y', SESSION_ROWS, workerCommand(launch),
   ), { env: workerEnv(process.env, launch.workerId, launch.port) }).catch((err: Error) => {
@@ -44,8 +44,6 @@ export function spawnTmuxWorker(launch: WorkerLaunch, handlers: WorkerHandlers, 
     exitOnce();
   });
   return {
-    send: () => {}, // interactive claude: the human types in the terminal
-    end: () => {}, // nothing to close; the session ends with the command
     // kill-session SIGHUPs the shell, so the curl trailer never runs: the handle reports the exit itself, after the kill
     kill: () => void session.then(() => exec('tmux', tmuxArgs('kill-session', '-t', slug))).catch(report).then(() => exitOnce()),
     focus: () => session.then(() => open(attachArgv(slug))),

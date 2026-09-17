@@ -1,19 +1,13 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { spawnItermWorker } from './spawn-iterm.js';
-import type { SpawnWorker, Task, WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
+import { spawnTmuxWorker } from './spawn-tmux.js';
+import type { SpawnWorker, Task } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const NO_MATCH_EXIT = 1;
-
-export interface WorkerArgvOptions {
-  slug: string;
-  hooksPath: string;
-  claudeArgs: string[]; // where the user sets the permission mode: print mode has no permission prompt
-}
 
 export function renderPrompt(template: string, task: Task): string {
   const values: Record<string, string> = {
@@ -28,64 +22,22 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
   return path;
 }
 
-/** Print mode with JSON on both ends of stdio: the session stays open until stdin closes, so follow-ups still work. */
-export function workerArgv(o: WorkerArgvOptions): string[] {
-  return [
-    `--worktree=${o.slug}`, '--settings', o.hooksPath,
-    '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    ...o.claudeArgs,
-  ];
-}
-
-/** The env the worker (and the tmux server, born with its first client) gets: the Hive's own minus CLAUDECODE (a Hive launched from inside Claude Code would stop the child from starting), plus the worker id and port. */
+/**
+ * The env the worker (and the tmux server, born with its first client) gets: the Hive's own minus CLAUDECODE (a Hive
+ * launched from inside Claude Code would stop the child from starting) and NODE_PATH (Electron points it at the Hive's
+ * node_modules; inherited, a worker running `pnpm test` would resolve the Hive's electron and open a window that never
+ * exits), plus the worker id and port.
+ */
 export function workerEnv(base: NodeJS.ProcessEnv, workerId: string, port: number): NodeJS.ProcessEnv {
-  const { CLAUDECODE: _inherited, ...env } = base;
+  const { CLAUDECODE: _claudecode, NODE_PATH: _nodePath, ...env } = base;
   return { ...env, HIVE_WORKER_ID: workerId, HIVE_PORT: String(port) };
 }
 
-export function userMessage(text: string): string {
-  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
-}
-
-/** The real embedded spawner. `bin` exists for the test, which points it at a script that echoes stdin. */
-export function spawnEmbeddedWorker(launch: WorkerLaunch, handlers: WorkerHandlers, bin = 'claude'): WorkerHandle {
-  const argv = workerArgv({ slug: launch.slug, hooksPath: launch.hooksPath, claudeArgs: launch.claudeArgs });
-  const env = workerEnv(process.env, launch.workerId, launch.port);
-  const child = spawn(bin, argv, { cwd: launch.repo, env, stdio: ['pipe', 'pipe', 'pipe'] });
-  let exited = false;
-  const exitOnce = (): void => {
-    if (exited) return;
-    exited = true;
-    handlers.onExit();
-  };
-  createInterface({ input: child.stdout }).on('line', (line) => handlers.onLine(line));
-  createInterface({ input: child.stderr }).on('line', (line) => handlers.onLine(`stderr: ${line}`));
-  child.on('exit', exitOnce);
-  child.on('error', (err) => {
-    // claude not on PATH, or the signal failed: shown in the panel, and the worker is over either way
-    handlers.onLine(`stderr: ${err.message}`);
-    exitOnce();
-  });
-  child.stdin.on('error', (err) => handlers.onLine(`stderr: stdin: ${err.message}`)); // EPIPE after the child died: exit already freed the slot
-  child.stdin.write(userMessage(launch.prompt)); // the first turn; the prompt file is only a record
-  return {
-    send: (text) => {
-      child.stdin.write(userMessage(text));
-    },
-    end: () => {
-      child.stdin.end();
-    },
-    kill: () => {
-      child.kill('SIGTERM');
-    },
-  };
-}
-
-/** The default spawner: picks the implementation by `config.workers`. */
+/** The default spawner: picks the implementation by `config.workers`. Both run an interactive claude. */
 export const spawnWorker: SpawnWorker = (launch, handlers) =>
-  (launch.mode === 'iterm' ? spawnItermWorker(launch, handlers) : spawnEmbeddedWorker(launch, handlers));
+  (launch.mode === 'iterm' ? spawnItermWorker(launch, handlers) : spawnTmuxWorker(launch, handlers));
 
-/** Boot-only orphan defense: kills a worker of a previous Hive that may still hold the worktree. Resolves true when pkill matched. */
+/** Boot-only orphan defense (and the tab's kill): kills a worker that may still hold the worktree. Resolves true when pkill matched. */
 export async function killStray(slug: string): Promise<boolean> {
   try {
     await execFileAsync('pkill', ['-f', '--', `--worktree=${slug}`]);
