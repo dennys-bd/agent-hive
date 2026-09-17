@@ -171,6 +171,7 @@ function renderDetail(): void {
     slot.question ? `<p>pendente:</p><pre>${esc(slot.question)}</pre>` : '',
     `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
     `<div class="meta">branch: ${esc(slot.branch ?? '—')}</div>`,
+    slot.sessionId ? `<div class="meta">sessão: <code>claude --resume ${esc(slot.sessionId)}</code></div>` : '',
     slot.task ? taskLink(slot.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
