@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorkerPool, DIFF_MAX, formatOutput, OUTPUT_LINES, RESULT_LINE } from '../src/workers.js';
+import { createWorkerPool, DIFF_LINE_MAX, DIFF_MAX, formatOutput, OUTPUT_LINES, RESULT_LINE } from '../src/workers.js';
 import { fakeSpawn, LAUNCH } from './fakes.js';
 
 const noop = (): void => {};
@@ -83,19 +83,22 @@ test('a result line calls onResult with the worker id and the final text; other 
   assert.deepEqual(results.at(-1), ['W1', ''], 'no result text: empty string, never undefined');
 });
 
-test('formatOutput renders an Edit as a diff block with the file path, cutting each side at DIFF_MAX lines', () => {
+test('formatOutput renders an Edit as one diff block entry with the file path, cutting each side at DIFF_MAX lines', () => {
   const edit = (input: Record<string, unknown>): string[] => formatOutput(assistant({ type: 'tool_use', name: 'Edit', input }));
   assert.deepEqual(edit({ file_path: '/repo/a.ts', old_string: 'const a = 1;\nconst b = 2;', new_string: 'const a = 10;' }), [
-    '▶ Edit: /repo/a.ts', '```diff', '-const a = 1;', '-const b = 2;', '+const a = 10;', '```',
-  ]);
+    '▶ Edit: /repo/a.ts', '```diff\n-const a = 1;\n-const b = 2;\n+const a = 10;\n```',
+  ], 'the whole block is one ring entry, so the 200-line eviction never leaves a stray closing fence');
   const many = Array.from({ length: DIFF_MAX + 5 }, (_, i) => `line ${i}`).join('\n');
-  const long = edit({ file_path: '/repo/b.ts', old_string: many, new_string: 'x' });
-  assert.equal(long.length, 2 + DIFF_MAX + 1 + 1 + 1, 'header, fence, DIFF_MAX old lines, cut mark, one new line, fence');
-  assert.equal(long[2 + DIFF_MAX - 1], `-line ${DIFF_MAX - 1}`);
-  assert.equal(long[2 + DIFF_MAX], '…');
-  assert.equal(long[2 + DIFF_MAX + 1], '+x');
+  const long = edit({ file_path: '/repo/b.ts', old_string: many, new_string: 'x' })[1].split('\n');
+  assert.equal(long.length, 1 + DIFF_MAX + 1 + 1 + 1, 'fence, DIFF_MAX old lines, cut mark, one new line, fence');
+  assert.equal(long[DIFF_MAX], `-line ${DIFF_MAX - 1}`);
+  assert.equal(long[DIFF_MAX + 1], '…');
+  assert.equal(long[DIFF_MAX + 2], '+x');
   assert.equal(long.at(-1), '```');
-  assert.deepEqual(edit({ file_path: '/repo/c.ts', old_string: '', new_string: 'novo' }), ['▶ Edit: /repo/c.ts', '```diff', '+novo', '```'], 'an empty side adds no lines');
+  assert.deepEqual(edit({ file_path: '/repo/c.ts', old_string: '', new_string: 'novo' }), ['▶ Edit: /repo/c.ts', '```diff\n+novo\n```'], 'an empty side adds no lines');
+  assert.equal(edit({ file_path: 'w.ts', old_string: 'a\r\nb\rc', new_string: '' })[1], '```diff\n-a\n-b\n-c\n```', 'CRLF and CR normalised: no \\r reaches the panel');
+  const blob = edit({ file_path: 'm.js', old_string: '', new_string: 'x'.repeat(DIFF_LINE_MAX + 50) })[1].split('\n')[1];
+  assert.equal(blob, `+${'x'.repeat(DIFF_LINE_MAX)}`, 'a line is cut at DIFF_LINE_MAX');
   assert.deepEqual(
     formatOutput(assistant({ type: 'tool_use', name: 'Write', input: { file_path: '/repo/d.ts', content: 'x'.repeat(5000) } })),
     ['▶ Write: /repo/d.ts'], 'Write stays a one-liner',

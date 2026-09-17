@@ -3,6 +3,7 @@ import type { SpawnWorker, WorkerHandle, WorkerLaunch } from './types.js';
 export const OUTPUT_LINES = 200;
 export const RESULT_LINE = '✔ turno encerrado';
 export const DIFF_MAX = 40; // lines shown per side of an Edit; the panel is a glance, not a review
+export const DIFF_LINE_MAX = 200; // chars per diff line: a minified blob must not become one unbounded panel entry
 const CUT_MARK = '…';
 const TEXT_MAX = 2000;
 const TOOL_MAX = 120;
@@ -56,23 +57,25 @@ function parseLine(line: string): StreamLine | undefined {
   }
 }
 
-// One side of the Edit: every line prefixed, the side cut at DIFF_MAX with a mark; an empty side (a pure insertion) adds nothing.
+// One side of the Edit: every line prefixed and cut at DIFF_LINE_MAX, the side cut at DIFF_MAX with a mark; an empty
+// side (a pure insertion) adds nothing. CRLF is normalised so no `\r` reaches the panel.
 function diffSide(sign: '-' | '+', text: string): string[] {
   if (!text) return [];
-  const lines = text.split('\n');
-  const shown = lines.slice(0, DIFF_MAX).map((line) => `${sign}${line}`);
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const shown = lines.slice(0, DIFF_MAX).map((line) => `${sign}${line.slice(0, DIFF_LINE_MAX)}`);
   return lines.length > DIFF_MAX ? [...shown, CUT_MARK] : shown;
 }
 
-// The only place in the stream where a diff exists: tool results are dropped and a Write can be huge.
+// The only place in the stream where a diff exists: tool results are dropped and a Write can be huge. The whole block is
+// one ring entry (like an assistant text block), so eviction never splits a fence and leaves a stray closing marker.
 function describeEdit(input: Record<string, unknown>): string[] {
-  return [
-    `▶ Edit: ${String(input.file_path ?? '').slice(0, TOOL_MAX)}`,
+  const block = [
     '```diff',
     ...diffSide('-', String(input.old_string ?? '')),
     ...diffSide('+', String(input.new_string ?? '')),
     '```',
   ];
+  return [`▶ Edit: ${String(input.file_path ?? '').slice(0, TOOL_MAX)}`, block.join('\n')];
 }
 
 function describeBlock(block: ContentBlock): string[] {
