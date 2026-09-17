@@ -8,6 +8,7 @@ const STATUS_LABEL: Record<Slot['status'], string> = {
 };
 const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
 const RERENDER_MS = 30_000;
+const OUTPUT_POLL_MS = 2_000;
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
 const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
 const DEFAULT_MAX = 2;
@@ -27,6 +28,8 @@ type BoardType = BoardConfig['type'];
 let state: State | undefined;
 let selectedSlotId: string | undefined;
 let setupInfo: SetupInfo | undefined;
+let outputTimer: ReturnType<typeof setInterval> | undefined;
+let outputSlotId: string | undefined; // the slot the output polling follows
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -110,12 +113,49 @@ function taskLink(task: Task): string {
     : `<div class="meta">board: ${esc(task.url)}</div>`;
 }
 
+async function loadOutput(): Promise<void> {
+  const slotId = outputSlotId;
+  if (!slotId) return;
+  try {
+    const { lines } = await getJson<{ lines: string[] }>(`/slots/${slotId}/output`);
+    if (slotId !== outputSlotId) return; // the panel moved on while the request was in flight
+    const pre = $('output');
+    const text = lines.join('\n');
+    if (text === pre.textContent) return;
+    pre.textContent = text;
+    pre.scrollTop = pre.scrollHeight; // follows the worker as the output grows
+  } catch (err) {
+    showError((err as Error).message);
+  }
+}
+
+// One timer, for the selected slot only: opening the panel starts it, closing or switching restarts it clean.
+function syncOutputPolling(slotId: string | undefined): void {
+  if (slotId === outputSlotId) return;
+  if (outputTimer) clearInterval(outputTimer);
+  outputTimer = undefined;
+  outputSlotId = slotId;
+  $('output').textContent = '';
+  if (!slotId) return;
+  void loadOutput();
+  outputTimer = setInterval(() => void loadOutput(), OUTPUT_POLL_MS);
+}
+
+function sendInput(): void {
+  const input = $<HTMLInputElement>('input');
+  const text = input.value.trim();
+  if (!selectedSlotId || !text) return;
+  input.value = '';
+  post(`/slots/${selectedSlotId}/input`, { text });
+}
+
 function renderDetail(): void {
   const slot = state?.slots.find((s) => s.id === selectedSlotId);
   const panel = $('detail');
   if (!slot || slot.status === 'vazio') {
     panel.classList.remove('show');
     selectedSlotId = undefined;
+    syncOutputPolling(undefined);
     return;
   }
   const lines = [
@@ -128,6 +168,7 @@ function renderDetail(): void {
   ];
   $('detail-body').innerHTML = lines.join('');
   panel.classList.add('show');
+  syncOutputPolling(slot.id);
 }
 
 function renderQueued(task: Task): string {
@@ -402,6 +443,10 @@ $('signal').addEventListener('click', (event) => {
 $('close').addEventListener('click', () => {
   selectedSlotId = undefined;
   renderDetail();
+});
+$('send').addEventListener('click', sendInput);
+$('input').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') sendInput();
 });
 
 $('configure').addEventListener('click', () => void openSetup());

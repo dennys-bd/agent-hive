@@ -48,7 +48,9 @@ app.whenReady().then(async () => {
     return;
   }
   await rememberRepo(repo);
-  const { port } = await bootHive(repo);
+  const { port, server } = await bootHive(repo);
+  // Workers are children of this process: SIGTERM them before Electron goes away. Best effort, no waiting.
+  app.on('will-quit', () => void server.close().catch((err: Error) => console.error('close failed:', err.message)));
   openWindow(port);
 }).catch((err: Error) => {
   dialog.showErrorBox('Agent Hive', err.message);
