@@ -23,10 +23,17 @@ export function initialState(maxConcurrent: number): State {
   };
 }
 
-/** The one gate every spawn goes through: green, a free slot that is not draining, and room under the cap when there is one. */
+/** A free slot for the gate and for a manual start: empty and not draining. */
+export function isFree(slot: Slot): boolean {
+  return slot.status === 'vazio' && !slot.draining;
+}
+
+const occupiedCount = (slots: Slot[]): number => slots.filter((s) => s.status !== 'vazio').length;
+
+/** The one gate every automatic spawn goes through: green, a free slot that is not draining, and room under the cap when there is one. */
 export function canStart(signal: Signal, slots: Slot[], limit?: number): boolean {
-  if (signal !== 'green' || !slots.some((s) => s.status === 'vazio' && !s.draining)) return false;
-  return limit === undefined || slots.filter((s) => s.status !== 'vazio').length < limit;
+  if (signal !== 'green' || !slots.some(isFree)) return false;
+  return limit === undefined || occupiedCount(slots) < limit;
 }
 
 /** Effective signal and worker cap: the manual signal and the usage rules can only restrict each other, never loosen. */
@@ -111,30 +118,34 @@ function setRateLimits(state: State, workerId: string | undefined, rateLimits: R
   return !slot || slot.status === 'vazio' ? none(state) : none({ ...state, rateLimits });
 }
 
+// Takes `task` out of the queue into `slots[index]` and emits the board move plus the spawn; fill and start share it.
+function occupy(state: State, index: number, task: Task, lastEvent: string): Reduced {
+  const next: Slot = {
+    id: state.slots[index].id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
+    startedAt: new Date().toISOString(), lastEvent,
+  };
+  return {
+    state: { ...state, slots: state.slots.map((s, i) => (i === index ? next : s)), queue: state.queue.filter((t) => t !== task) },
+    effects: [{ type: 'setStatus', itemId: task.itemId, key: 'working' }, { type: 'spawn', slot: next }],
+  };
+}
+
 function fill(reduced: Reduced): Reduced {
-  const { state, effects } = reduced;
   const now = Date.now();
-  if (!canSchedule(state, now)) return reduced; // nothing could start: whatever happened stands
-  const { signal, maxWorkers } = limits(state, now);
-  let queue = state.queue;
-  let slots = state.slots;
+  if (!canSchedule(reduced.state, now)) return reduced; // nothing could start: whatever happened stands
+  const { signal, maxWorkers } = limits(reduced.state, now);
+  let { state } = reduced;
   const spawned: Effect[] = [];
   // The gate is re-checked before every spawn against the slots as they stand, so the cap counts what was just opened.
-  for (let i = 0; i < slots.length && canStart(signal, slots, maxWorkers); i += 1) {
-    const slot = slots[i];
-    if (slot.status !== 'vazio' || slot.draining) continue;
-    const index = queue.findIndex((t) => !isBlocked(t)); // first free task in board order; blocked ones keep their place
-    if (index < 0) break;
-    const task = queue[index];
-    queue = queue.filter((_, j) => j !== index);
-    const next: Slot = {
-      id: slot.id, workerId: randomUUID(), status: 'trabalhando', task, slug: slugFor(task),
-      startedAt: new Date().toISOString(), lastEvent: 'iniciando',
-    };
-    slots = slots.map((s, j) => (j === i ? next : s));
-    spawned.push({ type: 'setStatus', itemId: task.itemId, key: 'working' }, { type: 'spawn', slot: next });
+  for (let i = 0; i < state.slots.length && canStart(signal, state.slots, maxWorkers); i += 1) {
+    if (!isFree(state.slots[i])) continue;
+    const task = state.queue.find((t) => !isBlocked(t)); // first free task in board order; blocked ones keep their place
+    if (!task) break;
+    const next = occupy(state, i, task, 'iniciando');
+    state = next.state;
+    spawned.push(...next.effects);
   }
-  return { state: { ...state, slots, queue }, effects: [...effects, ...spawned] };
+  return { state, effects: [...reduced.effects, ...spawned] };
 }
 
 function poll(state: State, tasks: Task[]): Reduced {
@@ -146,8 +157,8 @@ function poll(state: State, tasks: Task[]): Reduced {
 }
 
 function setMax(state: State, max: number): Reduced {
-  const occupiedCount = state.slots.filter((s) => s.status !== 'vazio').length;
-  const room = Math.max(0, max - occupiedCount);
+  const occupied = occupiedCount(state.slots);
+  const room = Math.max(0, max - occupied);
   let occupiedSeen = 0;
   let emptyKept = 0;
   const kept = state.slots.flatMap<Slot>((s) => {
