@@ -341,3 +341,33 @@ test('usageRules come from the file only: a second POST /setup keeps them and th
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.usageRules, usageRules);
   assert.deepEqual(server.getState()?.usageRules, usageRules);
 });
+
+test('POST /hooks/status answers the limits line for a valid payload, an empty body otherwise, and an unknown worker changes nothing', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const postStatus = (body: unknown, worker?: string): Promise<Response> =>
+    fetch(`${base}/hooks/status`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(worker ? { 'x-hive-worker': worker } : {}) },
+      body: JSON.stringify(body),
+    });
+  const payload = {
+    model: { id: 'claude-opus' }, // the rest of the status line JSON rides along and is ignored
+    rate_limits: { five_hour: { used_percentage: 23.4, resets_at: 1759744800 }, seven_day: { used_percentage: 41, resets_at: 1760263200 } },
+  };
+  const ok = await postStatus(payload, 'ghost');
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers.get('content-type') ?? '', /^text\/plain/);
+  assert.equal(await ok.text(), 'sessão 23% · semana 41%');
+  const noHeader = await postStatus(payload);
+  assert.equal(noHeader.status, 200);
+  assert.equal(await noHeader.text(), '');
+  const noLimits = await postStatus({ model: { id: 'claude-opus' } }, 'ghost');
+  assert.equal(noLimits.status, 200);
+  assert.equal(await noLimits.text(), '');
+  const noValid = await postStatus({ rate_limits: { five_hour: { used_percentage: 'x' } } }, 'ghost');
+  assert.equal(await noValid.text(), '');
+  await sleep(20); // the route answers before dispatching; let the handlers finish
+  assert.equal(server.getState()?.rateLimits, undefined, 'no occupied slot matches, so nothing is stored');
+  assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');
+});

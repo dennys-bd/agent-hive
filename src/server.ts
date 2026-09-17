@@ -11,6 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
+import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
@@ -275,6 +276,19 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
     if (workerId) await dispatch({ type: 'exit', workerId });
+  });
+
+  // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
+  app.post('/hooks/status', async (req: Request, res: Response) => {
+    res.type('text/plain');
+    const workerId = req.header('x-hive-worker');
+    const rateLimits = parseRateLimits(req.body, new Date());
+    if (!workerId || !rateLimits) {
+      res.send('');
+      return;
+    }
+    res.send(formatRateLimits(rateLimits)); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
+    await dispatch({ type: 'rateLimits', workerId, rateLimits });
   });
 
   app.get('/events', (req: Request, res: Response) => {

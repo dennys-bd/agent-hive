@@ -1,6 +1,6 @@
 import type {
-  BoardConfig, Budget, EventsPayload, ProjectSummary, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey, Task,
-  UsageSample,
+  BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
+  Task, UsageSample,
 } from '../types.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
@@ -21,6 +21,10 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const THOUSAND = 1_000;
 const MILLION = 1_000_000;
+// Mirrors src/rate-limits.ts, which cannot be imported here (the served module graph only has app.js).
+const WINDOW_LABEL: Record<string, string> = { five_hour: 'sessão', seven_day: 'semana' };
+const WEEKLY_PREFIX = 'seven_day_';
+const PERCENT_MAX = 100;
 
 type BoardType = BoardConfig['type'];
 
@@ -56,6 +60,14 @@ function usageTotals(usage: UsageSample[], now: number): { hour: number; day: nu
 
 const withinLimit = (total: number, limit?: number): boolean => limit === undefined || limit <= 0 || total < limit;
 const meter = (value: number, max: number): string => `<meter min="0" max="${max}" value="${value}"></meter>`;
+
+const clock = (iso: string): string => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function windowLabel(key: string): string {
+  if (Object.hasOwn(WINDOW_LABEL, key)) return WINDOW_LABEL[key];
+  if (key.startsWith(WEEKLY_PREFIX)) return `semana ${key.slice(WEEKLY_PREFIX.length)}`;
+  return key.replaceAll('_', ' ');
+}
 
 function showBanner(id: 'error' | 'notice', message?: string): void {
   const el = $(id);
@@ -157,12 +169,25 @@ function renderUsage(usage: UsageSample[], budget: Budget): void {
   ].filter(Boolean).join(' ');
 }
 
+// Percent and times are numbers / Date output; the label derives from a key another process chose, so it is escaped.
+function renderLimits(limits?: RateLimits): void {
+  const el = $('limits');
+  if (!limits) {
+    el.textContent = '';
+    return;
+  }
+  const windows = Object.entries(limits.windows).map(([key, w]) =>
+    `${esc(windowLabel(key))} ${Math.round(w.usedPercent)}% ${meter(w.usedPercent, PERCENT_MAX)} reseta ${clock(w.resetsAt)}`);
+  el.innerHTML = [...windows, `às ${clock(limits.at)}`].join(' · ');
+}
+
 function render(): void {
   if (!state) return;
   const active = state.slots.filter((s) => s.status !== 'vazio').length;
   $('summary').textContent = `${active}/${state.maxConcurrent} workers ativos`;
   renderSignal(state.signal);
   renderUsage(state.usage, state.budget);
+  renderLimits(state.rateLimits);
   const max = $<HTMLInputElement>('max');
   if (document.activeElement !== max) max.value = String(state.maxConcurrent);
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';

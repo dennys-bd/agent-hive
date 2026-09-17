@@ -24,6 +24,17 @@ export interface UsageLimits {
   maxWorkers?: number;
 }
 
+export interface RateLimitWindow {
+  usedPercent: number;
+  resetsAt: string; // ISO
+}
+
+/** Plan limits as last seen in a worker's status line; `at` is when the reading arrived, not a live value. */
+export interface RateLimits {
+  at: string; // ISO
+  windows: Record<string, RateLimitWindow>; // keyed as Claude Code sends them: five_hour, seven_day, …
+}
+
 export type BoardConfig =
   | { type: 'github'; owner: string; number: number }
   | { type: 'markdown'; path: string };
@@ -63,6 +74,7 @@ export interface State {
   usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
   budget: Budget; // copied from Config.budget by setBudget
   usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
+  rateLimits?: RateLimits; // display only; absent until a worker's status line reports it
   lastPolledAt?: string;
   error?: string;
 }
@@ -96,6 +108,7 @@ export type HiveEvent =
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
+  | { type: 'rateLimits'; workerId: string; rateLimits: RateLimits }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }

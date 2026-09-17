@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Effect, HiveEvent, HookPayload, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
+import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
 import { hasBudget, pruneUsage } from './usage.js';
 import { applyUsageRules, worstSignal } from './usage-rules.js';
 
@@ -75,6 +75,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     }
     case 'spawned': return patch(state, event.workerId, { itermSessionId: event.itermSessionId });
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
+    case 'rateLimits': return setRateLimits(state, event.workerId, event.rateLimits); // display only: no fill, no effects
   }
 }
 
@@ -88,6 +89,12 @@ function none(state: State): Reduced {
 
 function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced {
   return none({ ...state, slots: state.slots.map((s) => (s.workerId === workerId ? { ...s, ...changes } : s)) });
+}
+
+// Account-wide data, but only a live worker feeds it, as with hooks. Nothing here gates a spawn: signal and budget stay item 6's.
+function setRateLimits(state: State, workerId: string, rateLimits: RateLimits): Reduced {
+  const slot = state.slots.find((s) => s.workerId === workerId);
+  return !slot || slot.status === 'vazio' ? none(state) : none({ ...state, rateLimits });
 }
 
 function fill(reduced: Reduced): Reduced {
