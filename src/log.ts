@@ -131,7 +131,7 @@ export function describeChanges(prev: State, next: State): string[] {
   const slots = next.slots.flatMap((slot, i) => {
     const before = prev.slots.find((s) => s.id === slot.id);
     if (!before || before.status === slot.status) return [];
-    const detail = slotDetail(slot.status === 'vazio' ? before : slot); // an emptied slot names what it held
+    const detail = slotDetail(slot.status === 'empty' ? before : slot); // an emptied slot names what it held
     return [`slot ${i + 1}: ${before.status} → ${slot.status}${detail}`];
   });
   return prev.signal === next.signal ? slots : [...slots, `signal: ${prev.signal} → ${next.signal}`];

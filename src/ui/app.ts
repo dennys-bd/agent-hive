@@ -1,13 +1,19 @@
 import type {
   BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
-  State, StatusKey, Task, UsageSample, WorkersMode,
+  SlotEvent, State, StatusKey, Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { esc, renderOutput } from './highlight.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
-  vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
+  empty: 'vazio', working: 'trabalhando', waiting: 'esperando você', review: 'aguardando review',
 };
+// The reducer's former lastEvent sentences, keyed; `tool` and `waiting` carry a detail. Moves to i18n.ts with the dictionary.
+const EVENT_TEXT: Record<SlotEvent['kind'], (detail: string) => string> = {
+  starting: () => 'iniciando', prompt: () => 'prompt enviado', tool: (detail) => detail, waiting: (detail) => `aguardando: ${detail}`,
+  pr: () => 'PR aberto', paused: () => 'pausado: sinal red', turn: () => 'turno encerrado',
+};
+const eventText = (event?: SlotEvent): string => (event ? EVENT_TEXT[event.kind](event.detail ?? '') : '');
 const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
 const RERENDER_MS = 30_000;
 const OUTPUT_POLL_MS = 2_000;
@@ -104,9 +110,9 @@ function post(path: string, body?: unknown): void {
 // ---------- dashboard ----------
 
 function renderCard(slot: Slot): string {
-  const occupied = slot.status !== 'vazio';
+  const occupied = slot.status !== 'empty';
   const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
-  if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.vazio}</div></div>`;
+  if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.empty}</div></div>`;
   const marks = `${slot.draining ? ' · drenando' : ''}${slot.paused ? ' · pausado' : ''}`;
   const tokens = slot.tokens === undefined ? '' : ` · ${fmt(slot.tokens)} tokens`;
   return `
@@ -114,7 +120,7 @@ function renderCard(slot: Slot): string {
       <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
       <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
-      <div class="meta">${esc(slot.lastEvent ?? '')}</div>
+      <div class="meta">${esc(eventText(slot.lastEvent))}</div>
       <div class="actions"><button data-focus="${slot.id}">terminal</button><button class="danger" data-kill="${slot.id}">kill</button></div>
     </div>`;
 }
@@ -159,7 +165,7 @@ function syncOutputPolling(slotId: string | undefined): void {
 function renderDetail(): void {
   const slot = state?.slots.find((s) => s.id === selectedSlotId);
   const panel = $('detail');
-  if (!slot || slot.status === 'vazio') {
+  if (!slot || slot.status === 'empty') {
     panel.classList.remove('show');
     selectedSlotId = undefined;
     syncOutputPolling(undefined);
@@ -228,7 +234,7 @@ function renderQuota(quota?: BoardQuota): void {
 
 function render(): void {
   if (!state) return;
-  const active = state.slots.filter((s) => s.status !== 'vazio').length;
+  const active = state.slots.filter((s) => s.status !== 'empty').length;
   $('summary').textContent = `${active}/${state.maxConcurrent} workers ativos`;
   renderSignal(state.signal);
   renderUsage(state.usage, state.budget);

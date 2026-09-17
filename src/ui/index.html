@@ -37,9 +37,9 @@
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
   .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--vazio); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
   .card.occupied { cursor: pointer; }
-  .card.trabalhando { border-left-color: var(--trabalhando); }
-  .card.aguardando_review { border-left-color: var(--review); }
-  .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
+  .card.working { border-left-color: var(--trabalhando); }
+  .card.review { border-left-color: var(--review); }
+  .card.waiting { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
   .card.paused { opacity: 0.6; }
   .card .title { font-weight: 600; margin-bottom: 4px; }
   .card.draining .title { text-decoration: line-through; }

@@ -132,25 +132,25 @@ test('describeEvent summarises every other event with names, ids and counts only
 });
 
 test('describeEffect: spawn, setStatus and kill', () => {
-  const slot: Slot = { id: SLOT, workerId: WORKER, status: 'trabalhando', task: task('30'), slug: 'hive-30-logs' };
+  const slot: Slot = { id: SLOT, workerId: WORKER, status: 'working', task: task('30'), slug: 'hive-30-logs' };
   assert.equal(describeEffect({ type: 'spawn', slot }), 'spawn slot=9f8e7d6c #30 slug=hive-30-logs worker=1a2b3c4d');
   assert.equal(describeEffect({ type: 'setStatus', itemId: 'PVTI_1', key: 'review' }), 'setStatus #PVTI_1 → review');
   assert.equal(describeEffect({ type: 'kill', slug: 'hive-30-logs', workerId: WORKER }), 'kill slug=hive-30-logs worker=1a2b3c4d');
 });
 
 test('describeChanges lists each slot whose status changed (position in the grid, matched by id) and the signal change; [] when nothing moved', () => {
-  const empty: Slot = { id: SLOT, status: 'vazio' };
-  const other: Slot = { id: 'b0b0b0b0-3333-4333-8333-333333333333', status: 'vazio' };
-  const working: Slot = { ...empty, workerId: WORKER, status: 'trabalhando', task: task('30'), slug: 'hive-30-logs' };
+  const empty: Slot = { id: SLOT, status: 'empty' };
+  const other: Slot = { id: 'b0b0b0b0-3333-4333-8333-333333333333', status: 'empty' };
+  const working: Slot = { ...empty, workerId: WORKER, status: 'working', task: task('30'), slug: 'hive-30-logs' };
   const prev: State = { ...initialState(0), signal: 'yellow', slots: [empty, other] };
   const next: State = { ...prev, signal: 'green', slots: [working, other] };
-  assert.deepEqual(describeChanges(prev, next), ['slot 1: vazio → trabalhando #30 worker=1a2b3c4d', 'signal: yellow → green']);
-  const reviewed: State = { ...next, slots: [{ ...working, status: 'aguardando_review', prUrl: 'https://github.com/acme/r/pull/9' }, other] };
-  assert.deepEqual(describeChanges(next, reviewed), ['slot 1: trabalhando → aguardando_review #30 worker=1a2b3c4d']);
+  assert.deepEqual(describeChanges(prev, next), ['slot 1: empty → working #30 worker=1a2b3c4d', 'signal: yellow → green']);
+  const reviewed: State = { ...next, slots: [{ ...working, status: 'review', prUrl: 'https://github.com/acme/r/pull/9' }, other] };
+  assert.deepEqual(describeChanges(next, reviewed), ['slot 1: working → review #30 worker=1a2b3c4d']);
   const freed: State = { ...reviewed, slots: [empty, other] };
-  assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: aguardando_review → vazio #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
+  assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: review → empty #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
   assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
-  assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'vazio' }] }), [], 'a slot added by setMax is not a transition');
+  assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'empty' }] }), [], 'a slot added by setMax is not a transition');
 });
 
 test('a message with line breaks stays one log line, and an oversized one is cut: the file is always grep-able', async () => {

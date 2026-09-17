@@ -87,7 +87,7 @@ const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board,
 
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
-  const slugs = state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : []));
+  const slugs = state.slots.flatMap((s) => (s.status !== 'empty' && s.slug ? [s.slug] : []));
   await Promise.all(slugs.map((slug) => killStray(slug)));
 }
 
@@ -240,7 +240,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function turnTokens(workerId: string, payload: HookPayload): Promise<number | undefined> {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
     const slot = slotOf(workerId);
-    if (!slot || slot.status === 'vazio') return undefined;
+    if (!slot || slot.status === 'empty') return undefined;
     return sumTranscriptTokens(payload.transcript_path).catch(() => undefined); // unreadable: the hook goes through without tokens
   }
 
@@ -324,7 +324,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
-    if (workerId && payload?.hook_event_name === 'Stop' && slotOf(workerId)?.status === 'aguardando_review') pool.kill(workerId);
+    if (workerId && payload?.hook_event_name === 'Stop' && slotOf(workerId)?.status === 'review') pool.kill(workerId);
   });
 
   // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.
@@ -484,7 +484,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const current = requireLive(res);
     if (!current) return;
     const slot = current.state.slots.find((s) => s.id === req.params.id);
-    if (!slot || slot.status === 'vazio') {
+    if (!slot || slot.status === 'empty') {
       res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
       return;
     }

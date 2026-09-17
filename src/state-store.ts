@@ -1,9 +1,9 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { initialState, SIGNALS } from './orchestrator.js';
+import { initialState, SIGNALS, STATUSES } from './orchestrator.js';
 import { isBoardQuota } from './polling.js';
 import { isRateLimits } from './rate-limits.js';
-import type { Signal, State, UsageRule, UsageSample } from './types.js';
+import type { Signal, Slot, SlotEvent, SlotEventKind, State, Status, UsageRule, UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -20,11 +20,33 @@ const isRule = (value: unknown): value is UsageRule => {
     && (signal === undefined || isSignal(signal)) && (maxWorkers !== undefined || signal !== undefined);
 };
 
+// Files written before the status keys were neutral carry the Portuguese words and a lastEvent sentence.
+const LEGACY_STATUS: Record<string, Status> = { vazio: 'empty', trabalhando: 'working', esperando_voce: 'waiting', aguardando_review: 'review' };
+const EVENT_KINDS: readonly SlotEventKind[] = ['starting', 'prompt', 'tool', 'waiting', 'pr', 'paused', 'turn'];
+
+const isSlotEvent = (value: unknown): value is SlotEvent =>
+  typeof value === 'object' && value !== null && EVENT_KINDS.includes((value as SlotEvent).kind)
+  && ((value as SlotEvent).detail === undefined || typeof (value as SlotEvent).detail === 'string');
+
+function statusOf(raw: unknown): Status | undefined {
+  if (STATUSES.includes(raw as Status)) return raw as Status;
+  return typeof raw === 'string' && Object.hasOwn(LEGACY_STATUS, raw) ? LEGACY_STATUS[raw] : undefined; // hasOwn: "constructor" is not a status
+}
+
+// Unknown status: nothing to trust beyond the id (boot gives every occupied slot as dead anyway). A sentence or a bad object is not a lastEvent.
+function normalizeSlot(slot: Slot): Slot {
+  const status = statusOf(slot.status);
+  if (status === undefined) return { id: slot.id, status: 'empty' };
+  const { lastEvent, ...rest } = slot;
+  return { ...rest, status, ...(isSlotEvent(lastEvent) ? { lastEvent } : {}) };
+}
+
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default.
 function normalize(parsed: State): State {
   const { rateLimits, boardQuota, ...rest } = parsed;
   return {
     ...rest,
+    slots: parsed.slots.map(normalizeSlot),
     signal: isSignal(parsed.signal) ? parsed.signal : 'green',
     usage: Array.isArray(parsed.usage) ? parsed.usage.filter(isSample) : [],
     budget: parsed.budget ?? {},

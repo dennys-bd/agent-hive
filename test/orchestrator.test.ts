@@ -12,7 +12,7 @@ const tasks = (n: number) => Array.from({ length: n }, (_, i) => task(i + 1));
 const filled = (max: number, n: number) => reduce(initialState(max), { type: 'poll', tasks: tasks(n) });
 const hook = (state: State, workerId: string, payload: Partial<HookPayload> & { hook_event_name: string }) =>
   reduce(state, { type: 'hook', workerId, payload });
-const occupied = (s: State) => s.slots.filter((x) => x.status !== 'vazio');
+const occupied = (s: State) => s.slots.filter((x) => x.status !== 'empty');
 const signaled = (state: State, signal: Signal) => reduce(state, { type: 'setSignal', signal });
 const stopped = (state: State, workerId: string) => hook(state, workerId, { hook_event_name: 'Stop' }).state;
 const counted = (state: State, workerId: string, tokens: number) =>
@@ -48,9 +48,10 @@ test('poll fills slots in board order up to maxConcurrent and queues the rest', 
     effects.flatMap((e) => (e.type === 'setStatus' ? [e.key] : [])),
     ['working', 'working', 'working'],
   );
-  assert.equal(state.slots[0].status, 'trabalhando');
+  assert.equal(state.slots[0].status, 'working');
   assert.equal(state.slots[0].slug, 'hive-1-task-1');
   assert.ok(state.slots[0].startedAt);
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'starting' });
 });
 
 test('poll does not duplicate a task already in a slot', () => {
@@ -97,7 +98,7 @@ test('setMax down marks extra occupied slots as draining instead of killing them
   assert.ok(!state.slots[0].draining);
   assert.equal(state.slots[1].draining, true);
   assert.equal(state.slots[2].draining, true);
-  assert.equal(state.slots[1].status, 'trabalhando');
+  assert.equal(state.slots[1].status, 'working');
 });
 
 test('a draining slot is removed when its worker exits and its task returns to the queue', () => {
@@ -133,8 +134,9 @@ test('Notification of a waiting type turns the slot yellow with the message', ()
   const { state } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?',
   });
-  assert.equal(state.slots[0].status, 'esperando_voce');
+  assert.equal(state.slots[0].status, 'waiting');
   assert.equal(state.slots[0].question, 'Allow Bash?');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'waiting', detail: 'permission_prompt' });
 });
 
 test('Notification of a non-waiting type is ignored', () => {
@@ -142,24 +144,25 @@ test('Notification of a non-waiting type is ignored', () => {
   const { state } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'Notification', notification_type: 'auth_success', message: 'ok',
   });
-  assert.equal(state.slots[0].status, 'trabalhando');
+  assert.equal(state.slots[0].status, 'working');
   assert.equal(state.slots[0].question, undefined);
 });
 
-test('UserPromptSubmit and PreToolUse bring a yellow slot back to trabalhando and clear the question', () => {
+test('UserPromptSubmit and PreToolUse bring a yellow slot back to working and clear the question', () => {
   const first = filled(1, 1).state;
   const id = first.slots[0].workerId!;
   const yellow = hook(first, id, { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'idle' }).state;
   const green = hook(yellow, id, { hook_event_name: 'UserPromptSubmit' }).state;
-  assert.equal(green.slots[0].status, 'trabalhando');
+  assert.equal(green.slots[0].status, 'working');
   assert.equal(green.slots[0].question, undefined);
+  assert.deepEqual(green.slots[0].lastEvent, { kind: 'prompt' });
   const yellowAgain = hook(green, id, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' }).state;
   const tool = hook(yellowAgain, id, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'pnpm test' } }).state;
-  assert.equal(tool.slots[0].status, 'trabalhando');
-  assert.equal(tool.slots[0].lastEvent, 'Bash: pnpm test');
+  assert.equal(tool.slots[0].status, 'working');
+  assert.deepEqual(tool.slots[0].lastEvent, { kind: 'tool', detail: 'Bash: pnpm test' });
 });
 
-test('PostToolUse with gh pr create moves the slot to aguardando_review and the board item to review', () => {
+test('PostToolUse with gh pr create moves the slot to review and the board item to review', () => {
   const first = filled(1, 1).state;
   const id = first.slots[0].workerId!;
   const { state, effects } = hook(first, id, {
@@ -167,21 +170,22 @@ test('PostToolUse with gh pr create moves the slot to aguardando_review and the 
     tool_input: { command: 'gh pr create --fill' },
     tool_response: { stdout: 'Creating pull request\nhttps://github.com/o/r/pull/42\n', stderr: '' },
   });
-  assert.equal(state.slots[0].status, 'aguardando_review');
+  assert.equal(state.slots[0].status, 'review');
   assert.equal(state.slots[0].prUrl, 'https://github.com/o/r/pull/42');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'pr' });
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'review' }]);
 });
 
-test('after a PR, a permission prompt answered returns the slot to aguardando_review, not trabalhando', () => {
+test('after a PR, a permission prompt answered returns the slot to review, not working', () => {
   const first = filled(1, 1).state;
   const id = first.slots[0].workerId!;
   const reviewed = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/7',
   }).state;
   const yellow = hook(reviewed, id, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' }).state;
-  assert.equal(yellow.slots[0].status, 'esperando_voce');
+  assert.equal(yellow.slots[0].status, 'waiting');
   const back = hook(yellow, id, { hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: { file_path: 'a.ts' } }).state;
-  assert.equal(back.slots[0].status, 'aguardando_review');
+  assert.equal(back.slots[0].status, 'review');
 });
 
 test('PostToolUse for other commands changes nothing', () => {
@@ -189,7 +193,7 @@ test('PostToolUse for other commands changes nothing', () => {
   const { state, effects } = hook(first, first.slots[0].workerId!, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'git status' }, tool_response: 'clean',
   });
-  assert.equal(state.slots[0].status, 'trabalhando');
+  assert.equal(state.slots[0].status, 'working');
   assert.equal(effects.length, 0);
 });
 
@@ -198,15 +202,15 @@ test('Stop returns a yellow slot to its active status and clears the question', 
   const id = first.slots[0].workerId!;
   const yellow = hook(first, id, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' }).state;
   const { state, effects } = hook(yellow, id, { hook_event_name: 'Stop' });
-  assert.equal(state.slots[0].status, 'trabalhando');
+  assert.equal(state.slots[0].status, 'working');
   assert.equal(state.slots[0].question, undefined);
-  assert.equal(state.slots[0].lastEvent, 'turno encerrado');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'turn' });
   assert.equal(effects.length, 0);
   const reviewed = hook(first, id, {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
   }).state;
   const yellowReviewed = hook(reviewed, id, { hook_event_name: 'Notification', notification_type: 'idle_prompt', message: 'y' }).state;
-  assert.equal(hook(yellowReviewed, id, { hook_event_name: 'Stop' }).state.slots[0].status, 'aguardando_review');
+  assert.equal(hook(yellowReviewed, id, { hook_event_name: 'Stop' }).state.slots[0].status, 'review');
 });
 
 test('exit without PR empties the slot, requeues the task at the end and pulls the next one', () => {
@@ -227,7 +231,7 @@ test('exit with PR does not requeue the task', () => {
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/1',
   }).state;
   const { state, effects } = reduce(reviewed, { type: 'exit', workerId: id });
-  assert.equal(state.slots[0].status, 'vazio');
+  assert.equal(state.slots[0].status, 'empty');
   assert.equal(state.queue.length, 0);
   assert.equal(effects.length, 0);
 });
@@ -267,7 +271,7 @@ test('exit and hooks carrying a replaced worker id are ignored after the slot wa
   assert.deepEqual(stale.state, once.state);
   assert.equal(stale.effects.length, 0);
   const staleHook = hook(once.state, w1, { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'x' });
-  assert.equal(staleHook.state.slots[0].status, 'trabalhando');
+  assert.equal(staleHook.state.slots[0].status, 'working');
 });
 
 test('hook for an empty or unknown slot is ignored', () => {
@@ -280,7 +284,7 @@ test('hook for an empty or unknown slot is ignored', () => {
 test('boot gives every occupied slot as dead: tasks without a PR go back to the queue, tasks with a PR just free the slot', () => {
   const first = filled(2, 2).state;
   const all = reduce(first, { type: 'boot' });
-  assert.deepEqual(all.state.slots.map((s) => s.status), ['vazio', 'vazio']);
+  assert.deepEqual(all.state.slots.map((s) => s.status), ['empty', 'empty']);
   assert.deepEqual(all.state.queue.map((t) => t.id), ['1', '2']);
   assert.deepEqual(all.effects, [
     { type: 'setStatus', itemId: 'item1', key: 'queue' },
@@ -290,7 +294,7 @@ test('boot gives every occupied slot as dead: tasks without a PR go back to the 
     hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/9',
   }).state;
   const { state, effects } = reduce(withPr, { type: 'boot' });
-  assert.deepEqual(state.slots.map((s) => s.status), ['vazio', 'vazio']);
+  assert.deepEqual(state.slots.map((s) => s.status), ['empty', 'empty']);
   assert.deepEqual(state.queue.map((t) => t.id), ['1'], 'a task with a PR is not requeued');
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
@@ -326,7 +330,7 @@ test('initialState starts green and canStart is true only under green with a fre
   assert.equal(idle.signal, 'green');
   assert.equal(canStart('green', idle.slots), true);
   assert.equal(canStart('green', filled(2, 2).state.slots), false, 'all occupied');
-  assert.equal(canStart('green', [{ id: 'x', status: 'vazio', draining: true }]), false, 'draining does not count as free');
+  assert.equal(canStart('green', [{ id: 'x', status: 'empty', draining: true }]), false, 'draining does not count as free');
   assert.equal(canStart('green', []), false, 'no slots');
   assert.equal(canStart('yellow', idle.slots), false);
   assert.equal(canStart('red', idle.slots), false);
@@ -353,7 +357,7 @@ test('setMax up under red adds empty slots without spawning', () => {
 test('exit under yellow returns the task to the queue without pulling the next one', () => {
   const yellow = signaled(filled(1, 2).state, 'yellow').state;
   const { state, effects } = reduce(yellow, { type: 'exit', workerId: yellow.slots[0].workerId! });
-  assert.equal(state.slots[0].status, 'vazio');
+  assert.equal(state.slots[0].status, 'empty');
   assert.deepEqual(state.queue.map((t) => t.id), ['2', '1']);
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
@@ -381,14 +385,14 @@ test('Stop under red marks the slot paused and keeps its status; under green it 
   const red = signaled(reviewed, 'red').state;
   const one = stopped(red, working);
   assert.equal(one.slots[0].paused, true);
-  assert.equal(one.slots[0].status, 'trabalhando');
-  assert.equal(one.slots[0].lastEvent, 'pausado: sinal red');
+  assert.equal(one.slots[0].status, 'working');
+  assert.deepEqual(one.slots[0].lastEvent, { kind: 'paused' });
   const two = stopped(one, reviewing);
   assert.equal(two.slots[1].paused, true);
-  assert.equal(two.slots[1].status, 'aguardando_review');
+  assert.equal(two.slots[1].status, 'review');
   const green = stopped(reviewed, working);
   assert.equal(green.slots[0].paused, undefined);
-  assert.equal(green.slots[0].lastEvent, 'turno encerrado');
+  assert.deepEqual(green.slots[0].lastEvent, { kind: 'turn' });
 });
 
 test('UserPromptSubmit and PreToolUse clear paused', () => {
@@ -399,7 +403,7 @@ test('UserPromptSubmit and PreToolUse clear paused', () => {
   assert.equal(hook(paused, id, { hook_event_name: 'UserPromptSubmit' }).state.slots[0].paused, undefined);
   const tool = hook(paused, id, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }).state;
   assert.equal(tool.slots[0].paused, undefined);
-  assert.equal(tool.slots[0].status, 'trabalhando');
+  assert.equal(tool.slots[0].status, 'working');
 });
 
 test('setSignal to green or yellow clears paused on every slot; red again keeps it', () => {
@@ -422,7 +426,7 @@ test('Stop with tokens records the slot total and one sample per turn with the d
   const id = first.slots[0].workerId!;
   const one = counted(first, id, 1200);
   assert.equal(one.slots[0].tokens, 1200);
-  assert.equal(one.slots[0].lastEvent, 'turno encerrado');
+  assert.deepEqual(one.slots[0].lastEvent, { kind: 'turn' });
   assert.deepEqual(one.usage.map((s) => s.tokens), [1200]);
   assert.ok(Number.isFinite(Date.parse(one.usage[0].at)), 'sample time is ISO');
   const two = counted(one, id, 1500);
@@ -479,10 +483,10 @@ test('poll under an exhausted hour budget queues everything; a sample outside th
 
 test('setBudget stores the budget and fills a free slot only when the new limit is above the usage', () => {
   const queued = reduce(spent(1000, 0, { maxTokensPerHour: 1000 }), { type: 'poll', tasks: tasks(1) }).state;
-  assert.equal(queued.slots[0].status, 'vazio');
+  assert.equal(queued.slots[0].status, 'empty');
   const lower = reduce(queued, { type: 'setBudget', budget: { maxTokensPerHour: 500, maxTokensPerDay: 500 } });
   assert.deepEqual(lower.state.budget, { maxTokensPerHour: 500, maxTokensPerDay: 500 });
-  assert.equal(lower.state.slots[0].status, 'vazio');
+  assert.equal(lower.state.slots[0].status, 'empty');
   assert.equal(lower.effects.length, 0);
   const raised = reduce(lower.state, { type: 'setBudget', budget: { maxTokensPerHour: 5000 } });
   assert.deepEqual(raised.state.budget, { maxTokensPerHour: 5000 });
@@ -520,7 +524,7 @@ test('a usage cap below the occupied count emits no kill, drains nothing, and a 
   assert.deepEqual(state.queue.map((t) => t.id), ['4']);
   const freed = reduce(state, { type: 'exit', workerId: state.slots[0].workerId! });
   assert.equal(occupied(freed.state).length, 2, 'the freed slot stays empty while occupied >= cap');
-  assert.equal(freed.state.slots[0].status, 'vazio');
+  assert.equal(freed.state.slots[0].status, 'empty');
   assert.deepEqual(freed.state.queue.map((t) => t.id), ['4', '1']);
   assert.deepEqual(freed.effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
@@ -541,8 +545,8 @@ test('Stop under a dynamic red pauses; manual green cannot lift it; usage aging 
   const id = first.slots[0].workerId!;
   const paused = stopped(ruled(first, 950), id); // 95%: red
   assert.equal(paused.slots[0].paused, true);
-  assert.equal(paused.slots[0].status, 'trabalhando');
-  assert.equal(paused.slots[0].lastEvent, 'pausado: sinal red');
+  assert.equal(paused.slots[0].status, 'working');
+  assert.deepEqual(paused.slots[0].lastEvent, { kind: 'paused' });
   const stillRed = signaled(paused, 'green').state;
   assert.equal(stillRed.signal, 'green');
   assert.equal(stillRed.slots[0].paused, true, 'manual green does not beat a dynamic red');
@@ -581,11 +585,11 @@ test('rateLimits from an occupied slot stores the reading, emits no effect and s
   const first = filled(1, 2).state; // one working, task 2 queued
   const id = first.slots[0].workerId!;
   // A free slot next to a non-empty queue: any fill would spawn task 2 here
-  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'vazio' }] };
+  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'empty' }] };
   const { state, effects } = limited(roomy, id);
   assert.deepEqual(state.rateLimits, LIMITS);
   assert.equal(effects.length, 0, 'display only: no fill, no spawn');
-  assert.equal(state.slots[1].status, 'vazio');
+  assert.equal(state.slots[1].status, 'empty');
   assert.deepEqual({ ...state, rateLimits: undefined }, { ...roomy, rateLimits: undefined }, 'nothing else changes');
   const newer: RateLimits = { ...LIMITS, at: '2026-09-16T12:05:00.000Z' };
   assert.deepEqual(limited(state, id, newer).state.rateLimits, newer, 'the latest reading replaces the previous one');
@@ -630,12 +634,12 @@ test('canSchedule is the fill gate: green with a free slot and budget; not under
 
 test('boardQuota stores the reading, emits no effect and never fills, even with a free slot next to a queue', () => {
   const first = filled(1, 2).state; // one working, task 2 queued
-  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'vazio' }] };
+  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'empty' }] };
   const snapshot = JSON.stringify(roomy);
   const { state, effects } = reduce(roomy, { type: 'boardQuota', quota: QUOTA });
   assert.deepEqual(state.boardQuota, QUOTA);
   assert.equal(effects.length, 0, 'display and backoff only: no fill, no spawn');
-  assert.equal(state.slots[1].status, 'vazio');
+  assert.equal(state.slots[1].status, 'empty');
   assert.deepEqual(state.queue.map((t) => t.id), ['2']);
   assert.deepEqual({ ...state, boardQuota: undefined }, { ...roomy, boardQuota: undefined }, 'nothing else changes');
   assert.equal(JSON.stringify(roomy), snapshot, 'no mutation');
@@ -671,7 +675,7 @@ test('blockedBy: [] counts as free', () => {
 
 test('a slot stays empty while every queued task is blocked, and a later poll without blockedBy starts it', () => {
   const first = reduce(initialState(1), { type: 'poll', tasks: [{ ...task(1), blockedBy: ['2'] }] });
-  assert.equal(first.state.slots[0].status, 'vazio');
+  assert.equal(first.state.slots[0].status, 'empty');
   assert.deepEqual(first.state.queue.map((t) => t.id), ['1']);
   assert.equal(first.effects.length, 0);
   const { state, effects } = reduce(first.state, { type: 'poll', tasks: [task(1)] });

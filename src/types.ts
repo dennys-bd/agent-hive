@@ -2,7 +2,13 @@ import type { LogLevel } from './log.js';
 
 export type Language = 'pt' | 'en';
 
-export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
+export type Status = 'empty' | 'working' | 'waiting' | 'review';
+export type SlotEventKind = 'starting' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
+/** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
+export interface SlotEvent {
+  kind: SlotEventKind;
+  detail?: string;
+}
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
@@ -72,7 +78,7 @@ export interface Slot {
   worktree?: string;
   branch?: string;
   startedAt?: string;
-  lastEvent?: string;
+  lastEvent?: SlotEvent;
   prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
