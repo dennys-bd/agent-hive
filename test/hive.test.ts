@@ -101,6 +101,19 @@ test('bootHive turns the locale into the system language: pt-BR without a config
   assert.equal((await setupInfo(setup.port)).language, 'en');
 });
 
+test('bootHive with a hive.config.json that predates columns opens in setup mode with the legacy proposal and the reason, instead of dying', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
+  await writeFile(join(repo, 'board.md'), newBoardText());
+  await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ board: { type: 'markdown', path: 'board.md' }, port: 0, promptTemplate: '/x {url}' }));
+  const { server, port } = await bootHive(repo);
+  t.after(() => server.close());
+  const info = await setupInfo(port);
+  assert.equal(info.configured, false);
+  assert.match(info.error ?? '', /"columns" is required/);
+  assert.equal(info.config?.columns[0].prompt, '/x {url}');
+  assert.ok((await logLines(repo)).some((l) => l.startsWith('INFO  boot repo=') && l.includes('mode=setup') && l.includes('"columns" is required')));
+});
+
 test('bootHive reads the plan limits through the injected reader on boot, so the header has them before any worker; no reader, no reading', async (t) => {
   const repo = await repoWithConfig({});
   const rateLimits: RateLimits = { at: '2026-09-17T12:00:00.000Z', windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-17T15:00:00.000Z' } } };

@@ -446,3 +446,31 @@ test('POST /cards/:id/start is 409 for a blocked card and, without a free slot, 
   assert.equal(saved.maxConcurrent, 2, 'the raised max survives a restart');
   assert.equal(server.getState()?.error, undefined);
 });
+
+test('POST /cards/:id/close and /keep answer a missing card: close kills and removes it, keep makes it an orphan; 404 unknown, 409 while it is still on the board', async (t) => {
+  const { base, server, workers } = await start(t); // I1 running
+  assert.equal((await postJson(`${base}/cards/nope/close`)).status, 404);
+  const early = await postJson(`${base}/cards/I1/keep`);
+  assert.equal(early.status, 409);
+  assert.deepEqual(await early.json(), { error: 'card ainda está no board' });
+  await server.dispatch({ type: 'poll', cards: [] }); // the board no longer lists it
+  assert.equal(server.getState()?.cards[0].missing, true);
+  assert.deepEqual(await json(postJson(`${base}/cards/I1/keep`)), { ok: true });
+  assert.deepEqual([server.getState()?.cards[0].orphan, server.getState()?.cards[0].missing], [true, undefined]);
+  assert.equal(workers[0].killed, 0);
+  const again = await start(t);
+  await again.server.dispatch({ type: 'poll', cards: [] });
+  assert.deepEqual(await json(postJson(`${again.base}/cards/I1/close`)), { ok: true });
+  assert.equal(again.workers[0].killed, 1);
+  assert.deepEqual(again.server.getState()?.cards, []);
+  assert.equal(slot0(again.server).status, 'empty');
+});
+
+test('POST /setup with different columns dispatches setColumns: the state follows and a stopped card in a vanished column is dropped until the next poll re-enters it', async (t) => {
+  const { base, server } = await start(t, { ...BODY, maxConcurrent: 0 }); // I1 stopped in fila
+  assert.equal(server.getState()?.cards[0].column, 'fila');
+  const columns = [{ name: 'triagem', weight: 2, from: ['Ready'], prompt: 'x' }];
+  assert.equal((await postJson(`${base}/setup`, { ...BODY, maxConcurrent: 0, columns })).status, 200);
+  assert.deepEqual(server.getState()?.columns, columns);
+  assert.equal(server.getState()?.cards[0].column, 'triagem', 'reconfigure polls: the card came back through the new from');
+});

@@ -8,14 +8,15 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
-import { cardOf, citedColumns, columnOf, isBlocked } from './cards.js';
+import { cardOf, citedColumns } from './cards.js';
 import { CONFIG_FILE, DEFAULT_CONFIG, loadConfigOrLegacy, parseBoard, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeColumns, describeEffect, describeEvent, type Logger } from './log.js';
-import { isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
+import { isChildSession, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
+import { registerCardRoutes } from './server-cards.js';
 import { killStray, renderPrompt, spawnWorker, workerArgs, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
@@ -43,8 +44,6 @@ export const UI_HEADER = 'x-hive-ui'; // every dashboard POST carries it; the va
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
-const UNKNOWN_CARD_MESSAGE = 'card desconhecido';
-const NO_FREE_SLOT_MESSAGE = 'nenhum slot livre';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (spec: BoardSpec) => Board;
@@ -111,18 +110,6 @@ function errorMessage(err: unknown): string {
 function boardFromQuery(query: Request['query']): Record<string, unknown> {
   const { type, owner, number, path } = query;
   return { type, owner, path, number: typeof number === 'string' && number !== '' ? Number(number) : number };
-}
-
-/** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. */
-function startRefusal(state: State, itemId: string, raiseMax: boolean): { status: number; message: string } | undefined {
-  const card = state.cards.find((c) => c.task.itemId === itemId);
-  if (!card) return { status: HTTP_NOT_FOUND, message: UNKNOWN_CARD_MESSAGE };
-  if (card.slotId !== undefined) return { status: HTTP_CONFLICT, message: 'card já está rodando' };
-  if (card.missing) return { status: HTTP_CONFLICT, message: 'card sumiu do board: feche ou mantenha' };
-  if (isBlocked(card.task)) return { status: HTTP_CONFLICT, message: `card bloqueado por ${(card.task.blockedBy ?? []).join(', ')}` };
-  if (columnOf(state.columns, card.column)?.prompt === undefined) return { status: HTTP_CONFLICT, message: 'coluna sem prompt' };
-  if (!raiseMax && !state.slots.some(isFree)) return { status: HTTP_CONFLICT, message: NO_FREE_SLOT_MESSAGE };
-  return undefined;
 }
 
 export function createServer(deps: ServerDeps): HiveServer {
@@ -563,21 +550,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   });
 
-  // The human override on a stopped card. The checks answer what the reducer would ignore in silence, so the UI is never left
-  // without an answer; a race between the check and the dispatch is a no-op in the reducer, never a spawn it should not do.
-  app.post('/cards/:id/start', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const itemId = req.params.id as string;
-    const raiseMax = (req.body as { raiseMax?: unknown } | undefined)?.raiseMax === true; // only a literal true raises the max
-    const refusal = startRefusal(current.state, itemId, raiseMax);
-    if (refusal) {
-      res.status(refusal.status).json({ error: refusal.message });
-      return;
-    }
-    await dispatch({ type: 'start', itemId, raiseMax });
-    res.json({ ok: true });
-  });
+  registerCardRoutes(app, { requireLive, dispatch }); // start, close, keep: same host/origin middleware ordering, registered here
 
   app.post('/board/refresh', async (_req: Request, res: Response) => {
     if (!requireLive(res)) return;

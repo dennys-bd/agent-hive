@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULT_CONFIG, legacyConfig } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
@@ -115,11 +115,11 @@ test('POST /setup with an invalid body answers 400 naming the field', async (t) 
   await assert.rejects(stat(configFile(repo)));
 });
 
-test('a second POST /setup reconfigures in memory and preserves port, claudeArgs and promptTemplate', async (t) => {
+test('a second POST /setup reconfigures in memory and preserves port and claudeArgs', async (t) => {
   const { base, repo, server, configs } = await start(t);
   assert.equal((await postSetup(base, BODY)).status, 200);
   const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  await writeFile(configFile(repo), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'], promptTemplate: 'só {title}' }));
+  await writeFile(configFile(repo), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'] }));
   const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }] });
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true, restartForPort: 5000 });
@@ -127,7 +127,6 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal(rewritten.columns[0].from[0], 'Done');
   assert.equal(rewritten.port, 5000);
   assert.deepEqual(rewritten.claudeArgs, ['--model', 'sonnet']);
-  assert.equal(rewritten.promptTemplate, 'só {title}');
   assert.deepEqual(server.getState()?.cards.map((c) => c.task.title), ['from Done']);
   assert.equal(configs.at(-1)?.columns[0].from[0], 'Done');
 });
@@ -211,30 +210,39 @@ test('requests with a matching Host header are not rejected by the allowlist', a
   assert.equal(await getWithHost(port, `127.0.0.1:${port}`), 200);
 });
 
-test('POST /setup with a promptTemplate persists it and GET /setup returns it', async (t) => {
+test('POST /setup with columns persists them, GET /setup returns them, an omitted key keeps them and a bad one answers 400 naming the index', async (t) => {
   const { base, repo } = await start(t);
-  const res = await postSetup(base, { ...BODY, promptTemplate: '/ship #{number}' });
+  const columns = [{ name: 'spec', weight: 5, from: ['Ready'], onFinish: 'In review', prompt: '/hive-spec {url}', session: 'new' }, { name: 'review', weight: 0, from: ['In review'] }];
+  assert.equal((await postSetup(base, { ...BODY, columns })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).columns, columns);
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.columns, columns);
+  const { columns: _omitted, ...withoutColumns } = BODY;
+  assert.equal((await postSetup(base, withoutColumns)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).columns, columns, 'an API caller that omits it keeps the saved ones');
+  const bad = await postSetup(base, { ...BODY, columns: [{ name: 'a', weight: -1, from: ['Ready'] }] });
+  assert.equal(bad.status, 400);
+  assert.match((await json<{ error: string }>(bad)).error, /columns\[0\]\.weight/);
+});
+
+test('GET /setup in setup mode over a legacy file proposes legacyColumns with the error, and the first save without columns writes the proposal', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-setup-'));
+  await writeFile(configFile(repo), JSON.stringify({ board: { type: 'github', owner: 'acme', number: 6 }, status: { queue: 'Todo' }, promptTemplate: '/ship #{id}', maxConcurrent: 0 }));
+  const { factory } = fakeBoardFactory();
+  const raw = JSON.parse(await readFile(configFile(repo), 'utf8')) as Record<string, unknown>;
+  const fallback = { config: legacyConfig(raw)!, error: 'hive.config.json: "columns" is required' };
+  const server = createServer({ repo, boardFactory: factory, setupFallback: fallback }); // what bootHive builds for such a file
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  const info = await json<SetupInfo>(fetch(`${base}/setup`));
+  assert.equal(info.configured, false);
+  assert.match(info.error ?? '', /"columns" is required/);
+  assert.deepEqual(info.config?.columns, [{ name: 'fila', weight: 1, session: 'new', from: ['Todo'], onStart: 'In progress', onFinish: 'In review', prompt: '/ship #{id}' }]);
+  const res = await postSetup(base, { board: BODY.board, columns: [{ ...info.config!.columns[0], from: ['Ready'] }], maxConcurrent: 0 });
   assert.equal(res.status, 200);
   const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.equal(saved.promptTemplate, '/ship #{number}');
-  const info = await json<SetupInfo>(fetch(`${base}/setup`));
-  assert.equal(info.config?.promptTemplate, '/ship #{number}');
-});
-
-test('POST /setup without a promptTemplate keeps the existing one, and an empty string is ignored', async (t) => {
-  const { base, repo } = await start(t);
-  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '/ship {url}' })).status, 200);
-  assert.equal((await postSetup(base, BODY)).status, 200);
-  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
-  assert.equal((await postSetup(base, { ...BODY, promptTemplate: '   ' })).status, 200);
-  assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).promptTemplate, '/ship {url}');
-});
-
-test('POST /setup with a non-string promptTemplate answers 400 naming the field', async (t) => {
-  const { base } = await start(t);
-  const res = await postSetup(base, { ...BODY, promptTemplate: 42 });
-  assert.equal(res.status, 400);
-  assert.match((await json<{ error: string }>(res)).error, /promptTemplate/);
+  assert.deepEqual(saved.columns[0].from, ['Ready']);
+  assert.deepEqual(server.getState()?.cards.map((c) => c.task.title), ['from Ready']);
 });
 
 test('GET /setup/columns builds the board from the query and answers its setupOptions', async (t) => {
