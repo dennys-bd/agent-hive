@@ -107,7 +107,6 @@ export function describeEvent(event: HiveEvent): string {
       return `hook ${event.payload.hook_event_name} worker=${shortId(event.workerId)}${tool}`;
     }
     case 'exit': return `exit worker=${shortId(event.workerId)}`;
-    case 'idle': return `idle worker=${shortId(event.workerId)}`;
     case 'kill': return `kill slot=${shortId(event.slotId)}`;
     case 'error': return event.message ? `error ${event.message}` : 'error';
   }
