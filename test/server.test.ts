@@ -50,6 +50,16 @@ const openPr = (server: HiveServer, workerId: string): Promise<void> =>
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
   });
 
+test('POST /setup does not override a maxConcurrent changed through POST /config', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal(server.getState()?.maxConcurrent, 1);
+  assert.equal((await postJson(`${base}/config`, { maxConcurrent: 2 })).status, 200);
+  assert.equal(server.getState()?.maxConcurrent, 2);
+  const { maxConcurrent: _omitted, ...withoutMax } = BODY; // the form re-save: no maxConcurrent key
+  assert.equal((await postJson(`${base}/setup`, withoutMax)).status, 200);
+  assert.equal(server.getState()?.maxConcurrent, 2, 'the form re-save does not revert the header change');
+});
+
 test('saving the setup starts one worker with the launch: mode, repo, port, hooks, prompt file and the rendered prompt', async (t) => {
   const { repo, port, server, workers } = await start(t);
   const slot = slot0(server);

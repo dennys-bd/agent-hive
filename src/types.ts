@@ -155,7 +155,8 @@ export interface SetupInfo {
 export interface SetupBody {
   board: BoardConfig;
   status: Record<StatusKey, string>;
-  maxConcurrent: number;
+  /** Optional; the form never sends it. Seeds the first boot; after that the header (POST /config) owns it. */
+  maxConcurrent?: number;
   /** Optional; blank or missing keeps the current template (or the default on first setup). */
   promptTemplate?: string;
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */

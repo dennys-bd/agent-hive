@@ -15,7 +15,6 @@ const INPUT_PLACEHOLDER = 'mensagem pro worker';
 const ANSWER_PLACEHOLDER = 'responder ao worker';
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
 const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
-const DEFAULT_MAX = 2;
 const DEFAULT_OWNER = '@me';
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
@@ -410,7 +409,6 @@ async function openSetup(): Promise<void> {
   $('md-options').innerHTML = '';
   $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
   $<HTMLSelectElement>('epics').value = config?.epics ?? 'ignore';
-  $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
   renderRules(config?.usageRules ?? []);
@@ -461,7 +459,6 @@ async function saveSetup(): Promise<void> {
     const body: SetupBody = {
       board,
       status: statusFromForm(),
-      maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
       workers: $<HTMLSelectElement>('workers-mode').value as WorkersMode,
       epics: $<HTMLSelectElement>('epics').value as EpicsMode,
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,

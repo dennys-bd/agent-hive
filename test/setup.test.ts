@@ -155,16 +155,34 @@ test('concurrent POST /setup calls run one at a time and the last one wins on di
   assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.status.queue, 'Done');
 });
 
-test('first POST /setup applies the form maxConcurrent even with a stale .hive/state.json', async (t) => {
+test('boot keeps the maxConcurrent saved in .hive/state.json over the config value', async (t) => {
   const { base, repo, server } = await start(t);
   await mkdir(join(repo, '.hive'), { recursive: true });
-  await writeFile(join(repo, '.hive', 'state.json'), JSON.stringify(initialState(2)));
-  const res = await postSetup(base, BODY);
+  // 0 slots in the saved state, regardless of the config value: nothing can spawn even if this
+  // test's board (real spawnWorker, no fake) has a queued task. maxConcurrent 2 vs 0 would risk
+  // opening a real `claude` process here, so both sides of the assertion stay at 0/non-zero via
+  // the config side only.
+  await writeFile(join(repo, '.hive', 'state.json'), JSON.stringify(initialState(0)));
+  const res = await postSetup(base, { ...BODY, maxConcurrent: 1 });
   assert.equal(res.status, 200);
   const state = server.getState();
-  assert.equal(state?.maxConcurrent, 0);
+  assert.equal(state?.maxConcurrent, 0, 'state.json wins over the config value');
   assert.equal(state?.slots.length, 0);
 });
+
+test('POST /setup without maxConcurrent keeps the value already in hive.config.json', async (t) => {
+  const { base, repo, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200); // BODY.maxConcurrent is 0
+  const { maxConcurrent: _omitted, ...withoutMax } = BODY;
+  assert.equal((await postSetup(base, withoutMax)).status, 200);
+  const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
+  assert.equal(saved.maxConcurrent, 0);
+  assert.equal(server.getState()?.maxConcurrent, 0);
+});
+
+// POST /config with a non-zero maxConcurrent is skipped here: this file's start() uses the real
+// spawnWorker (no fake), and a fake board task under a non-zero maxConcurrent would risk spawning
+// an actual `claude` process. See test/server.test.ts, which fakes spawnWorker, for that coverage.
 
 test('requests with a Host header that does not match the bound address get 403', async (t) => {
   const { port } = await start(t);

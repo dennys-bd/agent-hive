@@ -168,7 +168,6 @@
             <option value="iterm">tabs do iTerm2 (macOS; permissões respondidas no terminal)</option>
           </select>
         </label>
-        <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
         <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
         <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Workers embutidos rodam em modo print, sem prompt de permissão: libere as ferramentas com <code>claudeArgs</code> no <code>hive.config.json</code> (ex.: <code>["--permission-mode", "acceptEdits"]</code>) ou no <code>.claude/settings.json</code> do repo. No iTerm2 o <code>claude</code> é interativo e pergunta no terminal.</div>
       </section>
