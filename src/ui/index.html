@@ -80,8 +80,12 @@
   #setup .row { display: flex; gap: 8px; align-items: flex-end; }
   #setup .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; color: var(--muted); }
   #setup .row label, #setup .row .field { flex: 1; }
-  #setup .col-from { display: flex; flex-wrap: wrap; gap: 4px 12px; min-height: 31px; padding: 4px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
-  #setup .col-from .check { flex-direction: row; align-items: center; gap: 6px; margin: 0; color: var(--text); }
+  #setup .col-from details { position: relative; }
+  #setup .col-from summary { list-style: none; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+  #setup .col-from summary::after { content: ' ▾'; color: var(--muted); }
+  #setup .col-from .menu { position: absolute; z-index: 10; left: 0; right: 0; max-height: 200px; overflow-y: auto; margin-top: 4px; padding: 4px 0; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+  #setup .col-from .check { flex-direction: row; align-items: center; gap: 6px; margin: 0; padding: 4px 8px; color: var(--text); }
+  #setup .col-from .check:hover { background: var(--bg); }
   #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   #setup fieldset[disabled] { display: none; }
   #setup .tabs { display: flex; gap: 20px; align-items: flex-start; }

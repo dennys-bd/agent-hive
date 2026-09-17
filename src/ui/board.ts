@@ -50,11 +50,15 @@ const boardOptions = (selected: string | undefined): string => {
   return pickable(chosen).map((o) => `<option value="${esc(o)}"${chosen.has(o) ? ' selected' : ''}>${esc(o)}</option>`).join('');
 };
 
-// One checkbox per board column: a plain click toggles, which a <select multiple> only does with a modifier key
+// A dropdown (native <details>) with one checkbox per board column: a plain click toggles, which a <select multiple> only does
+// with a modifier key, and the list can grow without taking the form over. The summary names what is picked.
 const boardChecks = (selected: string[]): string => {
   const chosen = new Set(selected);
-  return pickable(chosen).map((o) => `<label class="check"><input type="checkbox" value="${esc(o)}"${chosen.has(o) ? ' checked' : ''}> ${esc(o)}</label>`).join('');
+  const items = pickable(chosen).map((o) => `<label class="check"><input type="checkbox" value="${esc(o)}"${chosen.has(o) ? ' checked' : ''}> ${esc(o)}</label>`);
+  return `<details><summary>${esc(summaryOf(selected))}</summary><div class="menu">${items.join('')}</div></details>`;
 };
+
+const summaryOf = (selected: string[]): string => (selected.length === 0 ? t('setup.columns.none') : selected.join(', '));
 
 function rowHtml(column?: Column): string {
   const option = (value: 'new' | 'continue'): string => `<option value="${value}"${column?.session === value ? ' selected' : ''}>${t(`setup.columns.session.${value}`)}</option>`;
@@ -85,8 +89,17 @@ export function addColumnRow(column?: Column): void {
   field<HTMLButtonElement>(row, 'button.col-remove').addEventListener('click', () => row.remove());
   field<HTMLButtonElement>(row, 'button.col-up').addEventListener('click', () => row.previousElementSibling?.before(row));
   field<HTMLButtonElement>(row, 'button.col-down').addEventListener('click', () => row.nextElementSibling?.after(row));
+  const from = field<HTMLElement>(row, '.col-from');
+  from.addEventListener('change', () => { field<HTMLElement>(from, 'summary').textContent = summaryOf(checked(from)); });
   rows().appendChild(row);
 }
+
+// One listener for every dropdown: a click anywhere outside an open one closes it, as a select would
+document.addEventListener('click', (e) => {
+  for (const open of Array.from(document.querySelectorAll<HTMLDetailsElement>('.col-from details[open]'))) {
+    if (!open.contains(e.target as Node)) open.open = false;
+  }
+});
 
 /** Clears the editor and adds one row per column, in pipeline order. */
 export function renderColumnRows(columns: Column[]): void {
