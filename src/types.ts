@@ -162,6 +162,8 @@ export interface SetupInfo {
   config?: Config;
   /** Why the saved config could not boot (board missing, unreadable…); shown in the setup form. */
   error?: string;
+  /** Effective UI language: the config's when set, else the system's. Read by app.ts before any render. */
+  language: Language;
 }
 
 export interface SetupBody {
@@ -179,6 +181,8 @@ export interface SetupBody {
   workers?: WorkersMode;
   /** Optional; missing keeps the current mode (or `ignore` on first setup). */
   epics?: EpicsMode;
+  /** The form always sends it; an API caller that omits it keeps the current one (or the system's on first setup). */
+  language?: Language;
 }
 
 export interface SetupResult {

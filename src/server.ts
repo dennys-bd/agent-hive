@@ -20,7 +20,7 @@ import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -58,6 +58,7 @@ export interface ServerDeps {
   log?: Logger; // tests inject a fake; the default writes <repo>/.hive/hive.log
   /** Setup mode with a config that failed to boot: prefills the form and explains why. */
   setupFallback?: { config: Config; error: string };
+  systemLanguage?: Language; // from the locale the boot saw; default en. The config's language wins when set
 }
 
 export interface HiveServer {
@@ -104,6 +105,7 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
+  const systemLanguage = deps.systemLanguage ?? 'en';
   const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo, log }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
@@ -119,6 +121,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const slotOf = (workerId: string): Slot | undefined => live?.state.slots.find((s) => s.workerId === workerId);
+
+  // What the UI and the status line speak: the saved config's language, else the system's. Setup mode reads the fallback config too.
+  const effectiveLanguage = (): Language => (live?.runtime.config ?? deps.setupFallback?.config)?.language ?? systemLanguage;
 
   function broadcast(): void {
     const data = `data: ${JSON.stringify(eventsPayload())}\n\n`;
@@ -343,7 +348,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.send('');
       return;
     }
-    res.send(formatRateLimits(rateLimits)); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
+    res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
     await dispatch({ type: 'rateLimits', workerId, rateLimits });
   });
 
@@ -359,9 +364,10 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   app.get('/setup', (_req: Request, res: Response) => {
+    const language = effectiveLanguage();
     const info: SetupInfo = live
-      ? { configured: true, repo, config: live.runtime.config }
-      : { configured: false, repo, ...deps.setupFallback };
+      ? { configured: true, repo, config: live.runtime.config, language }
+      : { configured: false, repo, ...deps.setupFallback, language };
     res.json(info);
   });
 
@@ -418,6 +424,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
+        language: body.language ?? current?.language, // the form always sends it; an API caller that omits it keeps the saved one
       });
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
@@ -516,6 +523,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
   app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
   app.get('/ui/highlight.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'highlight.js')));
+  app.get('/ui/i18n.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'i18n.js')));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {

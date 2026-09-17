@@ -1,4 +1,4 @@
-import type { RateLimits, RateLimitWindow } from './types.js';
+import type { Language, RateLimits, RateLimitWindow } from './types.js';
 
 export const MAX_WINDOWS = 8;
 // Claude Code names windows like five_hour / seven_day; the key becomes a State key and a UI label, so it is kept to this.
@@ -6,7 +6,10 @@ const WINDOW_KEY = /^[a-z][a-z0-9_]{0,31}$/;
 const MS_PER_SECOND = 1000;
 const PERCENT_MAX = 100;
 const WEEKLY_PREFIX = 'seven_day_';
-const LABELS: Record<string, string> = { five_hour: 'sessão', seven_day: 'semana' };
+const LABELS: Record<Language, Record<string, string>> = {
+  pt: { five_hour: 'sessão', seven_day: 'semana' },
+  en: { five_hour: 'session', seven_day: 'week' },
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -47,16 +50,17 @@ export function isRateLimits(value: unknown): value is RateLimits {
   return isRecord(value) && typeof value.at === 'string' && isRecord(value.windows) && Object.entries(value.windows).every(isWindow);
 }
 
-/** five_hour → sessão, seven_day → semana, seven_day_<x> → semana <x>; anything else reads as its key with spaces. */
-export function windowLabel(key: string): string {
-  if (Object.hasOwn(LABELS, key)) return LABELS[key]; // hasOwn: "constructor" must not resolve to Object's
-  if (key.startsWith(WEEKLY_PREFIX)) return `semana ${key.slice(WEEKLY_PREFIX.length)}`;
+/** five_hour → sessão / session, seven_day → semana / week, seven_day_<x> → semana <x> / week <x>; anything else reads as its key with spaces. */
+export function windowLabel(key: string, language: Language): string {
+  const labels = LABELS[language];
+  if (Object.hasOwn(labels, key)) return labels[key]; // hasOwn: "constructor" must not resolve to Object's
+  if (key.startsWith(WEEKLY_PREFIX)) return `${labels.seven_day} ${key.slice(WEEKLY_PREFIX.length)}`;
   return key.replaceAll('_', ' ');
 }
 
-/** The line the worker's status line shows: "sessão 23% · semana 41%". */
-export function formatRateLimits(limits: RateLimits): string {
+/** The line the worker's status line shows: "sessão 23% · semana 41%" or "session 23% · week 41%". */
+export function formatRateLimits(limits: RateLimits, language: Language): string {
   return Object.entries(limits.windows)
-    .map(([key, window]) => `${windowLabel(key)} ${Math.round(window.usedPercent)}%`)
+    .map(([key, window]) => `${windowLabel(key, language)} ${Math.round(window.usedPercent)}%`)
     .join(' · ');
 }

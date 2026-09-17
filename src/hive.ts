@@ -2,22 +2,29 @@ import { join } from 'node:path';
 import { createBoard } from './board.js';
 import { DEFAULT_CONFIG, loadConfigIfPresent } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
+import { languageFrom, systemLanguage } from './language.js';
 import { createLogger, type Logger } from './log.js';
 import { createServer, killStrays, type HiveServer, type ServerDeps } from './server.js';
 import { loadState } from './state-store.js';
+import type { Language } from './types.js';
 
 export interface BootedHive {
   port: number;
   server: HiveServer;
 }
 
-export async function bootHive(repo: string): Promise<BootedHive> {
+export interface BootOptions {
+  locale?: string; // Electron's app.getLocale(); absent (run.js) → the Node process locale
+}
+
+export async function bootHive(repo: string, options: BootOptions = {}): Promise<BootedHive> {
+  const language = options.locale === undefined ? systemLanguage() : languageFrom(options.locale);
   const log = createLogger(join(repo, HIVE_DIR)); // before anything else: a config that fails to parse and setup mode log too
   const config = await loadConfigIfPresent(repo).catch((err: Error) => {
     log.error(`config: ${err.message}`);
     throw err;
   });
-  if (!config) return bootSetupMode(repo, log);
+  if (!config) return bootSetupMode(repo, log, language);
   log.setLevel(config.logLevel);
   const { hiveDir, hooksPath, promptsDir } = await prepareHiveDir(repo, config.port);
   const board = createBoard(config, { repo, log });
@@ -27,12 +34,12 @@ export async function bootHive(repo: string): Promise<BootedHive> {
     // A saved config whose board is gone (file deleted, project removed) must not kill the app: reopen the setup form with the reason.
     const error = (err as Error).message;
     log.error(`board: ${error}`);
-    return bootSetupMode(repo, log, { config, error });
+    return bootSetupMode(repo, log, language, { config, error });
   }
   log.info(`boot repo=${repo} mode=hive`);
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
   const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget, usageRules: config.usageRules };
-  const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved, log });
+  const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved, log, systemLanguage: language });
   const port = await server.listen(config.port);
   await killStrays(saved);
   await server.dispatch({ type: 'boot' });
@@ -42,9 +49,9 @@ export async function bootHive(repo: string): Promise<BootedHive> {
 }
 
 // No hive.config.json (or one whose board cannot be read): serve only the setup form; POST /setup finishes the boot in place.
-async function bootSetupMode(repo: string, log: Logger, setupFallback?: ServerDeps['setupFallback']): Promise<BootedHive> {
+async function bootSetupMode(repo: string, log: Logger, language: Language, setupFallback?: ServerDeps['setupFallback']): Promise<BootedHive> {
   log.info(`boot repo=${repo} mode=setup reason=${setupFallback?.error ?? 'no hive.config.json'}`);
-  const server = createServer({ repo, setupFallback, log });
+  const server = createServer({ repo, setupFallback, log, systemLanguage: language });
   const port = await server.listen(setupFallback?.config.port ?? DEFAULT_CONFIG.port);
   console.log(`Agent Hive em modo setup em http://127.0.0.1:${port} (repo: ${repo}, ${setupFallback?.error ?? 'sem hive.config.json'})`);
   return { port, server };
