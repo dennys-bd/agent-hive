@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
+import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, State, Status, StatusKey, Task, UsageLimits, UsageRule } from './types.js';
 import { hasBudget, isTranscriptPath, pruneUsage } from './usage.js';
 import { applyUsageRules, worstSignal } from './usage-rules.js';
 
@@ -57,6 +57,11 @@ export function slugFor(task: Task): string {
 /** The only blocking rule: the adapter already filtered the list down to blockers that are still open. */
 export function isBlocked(task: Task): boolean {
   return (task.blockedBy?.length ?? 0) > 0;
+}
+
+/** Whether the Hive itself writes the board for the transition landing on `key`; a state without `moves` (legacy state.json) is all hive. */
+export function hiveMoves(state: State, key: StatusKey): boolean {
+  return (state.moves?.[key] ?? 'hive') === 'hive';
 }
 
 export function extractPrUrl(command: string, response: unknown): string | undefined {
@@ -124,7 +129,8 @@ function fill(reduced: Reduced): Reduced {
       startedAt: new Date().toISOString(), lastEvent: 'iniciando',
     };
     slots = slots.map((s, j) => (j === i ? next : s));
-    spawned.push({ type: 'setStatus', itemId: task.itemId, key: 'working' }, { type: 'spawn', slot: next });
+    if (hiveMoves(state, 'working')) spawned.push({ type: 'setStatus', itemId: task.itemId, key: 'working' });
+    spawned.push({ type: 'spawn', slot: next });
   }
   return { state: { ...state, slots, queue }, effects: [...effects, ...spawned] };
 }
@@ -172,7 +178,8 @@ function releasePaused(state: State): State {
 function exit(state: State, workerId: string): Reduced {
   const slot = state.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'vazio') return none(state);
-  const requeue = slot.task && !slot.prUrl ? slot.task : undefined;
+  // Not the Hive's move: whoever moves the card decides if the task comes back; the next poll sees it in the queue column
+  const requeue = slot.task && !slot.prUrl && hiveMoves(state, 'queue') ? slot.task : undefined;
   const slots = slot.draining
     ? state.slots.filter((s) => s.workerId !== workerId)
     : state.slots.map((s) => (s.workerId === workerId ? { id: s.id, status: 'vazio' as Status } : s));
@@ -239,7 +246,11 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
       const prUrl = extractPrUrl(command, p.tool_response);
       if (!prUrl) return none(state);
       const patched = patch(state, workerId, { status: 'aguardando_review', prUrl, question: undefined, lastEvent: 'PR aberto' });
-      return { ...patched, effects: slot.task ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [] };
+      // The slot moves either way: moves governs the board write only
+      return {
+        ...patched,
+        effects: slot.task && hiveMoves(state, 'review') ? [{ type: 'setStatus', itemId: slot.task.itemId, key: 'review' }] : [],
+      };
     }
     case 'Stop':
       // Red (by hand or by usage, this turn's sample included) is manual mode: the worker stops by itself at the end of

@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
+import { canSchedule, canStart, extractPrUrl, hiveMoves, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
-import type { BoardQuota, Budget, HookPayload, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
+import type { BoardQuota, Budget, HookPayload, Moves, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -38,6 +38,8 @@ const LIMITS: RateLimits = {
 const limited = (state: State, workerId: string, rateLimits: RateLimits = LIMITS) =>
   reduce(state, { type: 'rateLimits', workerId, rateLimits });
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
+// The state with `moves` as configure / bootHive leave it: every key set, hive unless overridden.
+const moved = (state: State, moves: Partial<Moves>): State => ({ ...state, moves: { working: 'hive', review: 'hive', queue: 'hive', ...moves } });
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -692,4 +694,49 @@ test('extractPrUrl finds the PR url only for gh pr create', () => {
   assert.equal(extractPrUrl('gh pr create', { stdout: 'x https://github.com/a/b-c/pull/10 y' }), 'https://github.com/a/b-c/pull/10');
   assert.equal(extractPrUrl('gh pr view', 'https://github.com/a/b/pull/9'), undefined);
   assert.equal(extractPrUrl('gh pr create', 'error: not logged in'), undefined);
+});
+
+test('fill under moves.working = agent or human spawns without a setStatus working; hive, or no moves at all, writes the board as before', () => {
+  const agent = reduce(moved(initialState(1), { working: 'agent' }), { type: 'poll', tasks: tasks(2) });
+  assert.equal(agent.state.slots[0].status, 'trabalhando');
+  assert.equal(agent.state.slots[0].task?.id, '1');
+  assert.deepEqual(agent.state.queue.map((t) => t.id), ['2']);
+  assert.deepEqual(agent.effects, [{ type: 'spawn', slot: agent.state.slots[0] }], 'the card stays in the queue column: whoever owns the move handles it');
+  assert.deepEqual(agent.state.moves, { working: 'agent', review: 'hive', queue: 'hive' }, 'moves rides along in the state');
+  const human = reduce(moved(initialState(1), { working: 'human' }), { type: 'poll', tasks: tasks(1) });
+  assert.deepEqual(human.effects.map((e) => e.type), ['spawn']);
+  const hive = reduce(moved(initialState(1), {}), { type: 'poll', tasks: tasks(1) });
+  assert.deepEqual(hive.effects.map((e) => e.type), ['setStatus', 'spawn']);
+  assert.equal(hiveMoves(initialState(1), 'working'), true, 'a state without moves (legacy state.json) is all hive');
+  assert.equal(hiveMoves(moved(initialState(1), { queue: 'human' }), 'queue'), false);
+});
+
+test('PostToolUse with gh pr create under moves.review = human moves the slot to aguardando_review with the prUrl and writes nothing to the board', () => {
+  const first = moved(filled(1, 1).state, { review: 'human' });
+  const id = first.slots[0].workerId!;
+  const { state, effects } = hook(first, id, {
+    hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/o/r/pull/42',
+  });
+  assert.equal(state.slots[0].status, 'aguardando_review');
+  assert.equal(state.slots[0].prUrl, 'https://github.com/o/r/pull/42');
+  assert.equal(state.slots[0].lastEvent, 'PR aberto');
+  assert.deepEqual(effects, [], 'the internal state does not depend on moves; only the board write does');
+  // the Stop with a PR still ends the task: its exit frees the slot and never requeues, whatever moves says
+  const freed = reduce(state, { type: 'exit', workerId: id });
+  assert.equal(freed.state.slots[0].status, 'vazio');
+  assert.deepEqual(freed.state.queue, []);
+  assert.deepEqual(freed.effects, []);
+});
+
+test('exit without a PR under moves.queue = agent frees the slot without requeueing or writing the board; boot follows the same rule', () => {
+  const first = moved(filled(1, 2).state, { queue: 'agent' }); // task 1 working, task 2 queued
+  const { state, effects } = reduce(first, { type: 'exit', workerId: first.slots[0].workerId! });
+  assert.equal(state.slots[0].task?.id, '2', 'the free slot still pulls the next task');
+  assert.deepEqual(state.queue, [], 'task 1 is not back in the queue: the agent moves the card, the next poll sees it');
+  assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'spawn'], 'only the working move of task 2; nothing for task 1');
+  assert.deepEqual(effects[0], { type: 'setStatus', itemId: 'item2', key: 'working' });
+  const booted = reduce(moved(filled(2, 2).state, { queue: 'human' }), { type: 'boot' });
+  assert.deepEqual(booted.state.slots.map((s) => s.status), ['vazio', 'vazio']);
+  assert.deepEqual(booted.state.queue, [], 'dead slots are not requeued when the move is not the Hive\'s');
+  assert.deepEqual(booted.effects, []);
 });
