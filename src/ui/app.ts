@@ -1,5 +1,5 @@
 import type {
-  BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
+  BoardConfig, Budget, EpicsMode, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
   Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { esc, renderOutput } from './highlight.js';
@@ -387,6 +387,7 @@ async function openSetup(): Promise<void> {
   for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
   $('md-options').innerHTML = '';
   $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
+  $<HTMLSelectElement>('epics').value = config?.epics ?? 'ignore';
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
@@ -431,6 +432,7 @@ async function saveSetup(): Promise<void> {
       status: statusFromForm(),
       maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
       workers: $<HTMLSelectElement>('workers-mode').value as WorkersMode,
+      epics: $<HTMLSelectElement>('epics').value as EpicsMode,
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
       usageRules: usageRulesFromForm(),
