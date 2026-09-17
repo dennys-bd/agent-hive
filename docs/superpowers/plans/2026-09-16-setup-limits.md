@@ -279,7 +279,7 @@ git commit -m "feat(setup): limites section — budget copy and the usage rules 
 - `saveSetup` builds the body inside the existing `try`: `usageRulesFromForm()` throwing lands in `setupError` through the same `catch` that shows server errors, and no `POST` happens. `save.disabled = true` and `setupError()` run before the `try`, as today; `finally` re-enables the button in every path.
 - The `#add-rule` click appends an empty row. Native validation (`required`, `min`, `max`) runs on submit before `saveSetup`, as for every other field.
 
-- [ ] **Step 1: Edit `src/ui/app.ts` — import**
+- [x] **Step 1: Edit `src/ui/app.ts` — import**
 
 After the closing `} from '../types.js';` of the type import (line 4) add:
 
@@ -287,7 +287,7 @@ After the closing `} from '../types.js';` of the type import (line 4) add:
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 ```
 
-- [ ] **Step 2: Edit `src/ui/app.ts` — `openSetup`**
+- [x] **Step 2: Edit `src/ui/app.ts` — `openSetup`**
 
 After `  $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);` add:
 
@@ -295,7 +295,7 @@ After `  $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.ma
   renderRules(config?.usageRules ?? []);
 ```
 
-- [ ] **Step 3: Edit `src/ui/app.ts` — `saveSetup`**
+- [x] **Step 3: Edit `src/ui/app.ts` — `saveSetup`**
 
 Replace the function in full with:
 
@@ -331,7 +331,7 @@ async function saveSetup(): Promise<void> {
 }
 ```
 
-- [ ] **Step 4: Edit `src/ui/app.ts` — listener**
+- [x] **Step 4: Edit `src/ui/app.ts` — listener**
 
 After `$('cancel').addEventListener('click', closeSetup);` add:
 
@@ -339,7 +339,7 @@ After `$('cancel').addEventListener('click', closeSetup);` add:
 $('add-rule').addEventListener('click', () => addRuleRow());
 ```
 
-- [ ] **Step 5: Build and test**
+- [x] **Step 5: Build and test**
 
 Run: `pnpm test`
 Expected: 154 tests PASS (UI compiles under `strict`; `app.ts` lands at ~428 lines, +5 net). `saveSetup` stays under 30 lines.
@@ -363,7 +363,7 @@ Put in `hive.config.json`:
 3. Set that row's `máx. workers` to `2`, `salvar`: the form closes; `hive.config.json` has `usageRules: [{ "percent": 80, "signal": "yellow" }, { "percent": 60, "maxWorkers": 2 }]` — table order, no sorting, no `undefined` keys; `curl -s localhost:47821/setup` returns the same two rules.
 4. Leave `% do orçamento` empty on a new row and `salvar`: the browser's native `required` bubble blocks the submit; `101` is blocked by `max`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/ui/app.ts
