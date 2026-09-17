@@ -1,9 +1,17 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { bootHive } from './hive.js';
 
+const APP_NAME = 'Agent Hive';
 const WINDOW = { width: 1280, height: 820, backgroundColor: '#111418' };
+// runs from dist/src/main.js; the asset is not copied by the build
+const ICON = fileURLToPath(new URL('../../assets/icon.png', import.meta.url));
+
+// before ready so userData (and last-repo) live under "Agent Hive" instead of Electron's default dir;
+// unpackaged, macOS still takes the Dock label from Electron's Info.plist, only the icon is ours
+app.setName(APP_NAME);
 
 function lastRepoFile(): string {
   return join(app.getPath('userData'), 'last-repo');
@@ -41,7 +49,17 @@ function openWindow(port: number): void {
   win.loadURL(`${origin}/`).catch((err: Error) => dialog.showErrorBox('Agent Hive', err.message));
 }
 
+function setDockIcon(): void {
+  try {
+    app.dock?.setIcon(ICON);
+  } catch (err) {
+    // a bad icon file is not worth refusing to start
+    console.error('dock icon failed:', (err as Error).message);
+  }
+}
+
 app.whenReady().then(async () => {
+  setDockIcon();
   const repo = await pickRepo();
   if (!repo) {
     app.quit();
