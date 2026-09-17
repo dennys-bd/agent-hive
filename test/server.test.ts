@@ -366,3 +366,62 @@ test('without a readPlanLimits dep the server never reads the plan limits and lo
   assert.equal(server.getState()?.rateLimits, undefined);
   assert.ok(!lines.some((l) => l.includes('plan limits')), lines.join('\n'));
 });
+
+test('POST /queue/:itemId/start under yellow opens the task in the pool with its slug, marked "iniciado à mão"; 404 for a task not in the queue, 409 before the setup', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const { spawn, workers } = fakeSpawn();
+  const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  assert.equal((await postJson(`${base}/queue/I1/start`)).status, 409, 'not configured');
+  assert.equal((await postJson(`${base}/setup`, { ...BODY, maxConcurrent: 2 })).status, 200); // boot opens under yellow: I1 queued, nothing spawned
+  assert.equal(server.getState()?.signal, 'yellow');
+  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['1']);
+  assert.equal(workers.length, 0);
+  const missing = await postJson(`${base}/queue/nope/start`);
+  assert.equal(missing.status, 404);
+  assert.deepEqual(await missing.json(), { error: 'task não está na fila' });
+  assert.deepEqual(await json(postJson(`${base}/queue/I1/start`)), { ok: true });
+  const slot = slot0(server);
+  assert.equal(slot.status, 'trabalhando');
+  assert.equal(slot.lastEvent, 'iniciado à mão');
+  assert.equal(workers.length, 1, 'the spawn ran before the answer');
+  assert.equal(workers[0].launch.slug, 'hive-1-from-ready');
+  assert.equal(workers[0].launch.workerId, slot.workerId);
+  assert.deepEqual(server.getState()?.queue, []);
+  assert.equal(server.getState()?.signal, 'yellow', 'the signal is untouched');
+  assert.equal(server.getState()?.maxConcurrent, 2, 'a free slot: nothing to raise');
+});
+
+test('POST /queue/:itemId/start is 409 for a blocked task and, without a free slot, unless raiseMax is true: then the max rises, persists and the worker opens', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, repo, server, workers } = await start(t, BODY, log); // 1 slot, I1 working
+  const blocked = { itemId: 'I2', id: '2', title: 'blocked', body: '', url: 'https://github.com/acme/r/issues/2', blockedBy: ['1'] };
+  const free = { itemId: 'I3', id: '3', title: 'free', body: '', url: 'https://github.com/acme/r/issues/3' };
+  await server.dispatch({ type: 'poll', tasks: [blocked, free] }); // I1 stays in its slot; no free slot, so nothing spawns
+  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['2', '3']);
+  const refused = await postJson(`${base}/queue/I2/start`, { raiseMax: true });
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await refused.json(), { error: 'task bloqueada por 1' });
+  const noSlot = await postJson(`${base}/queue/I3/start`);
+  assert.equal(noSlot.status, 409);
+  assert.deepEqual(await noSlot.json(), { error: 'nenhum slot livre' });
+  assert.equal((await postJson(`${base}/queue/I3/start`, { raiseMax: 'yes' })).status, 409, 'only a literal true raises the max');
+  assert.equal(workers.length, 1);
+  assert.ok(!lines.some((l) => l.startsWith('DEBUG start')), 'a refusal never reaches the reducer');
+  assert.deepEqual(await json(postJson(`${base}/queue/I3/start`, { raiseMax: true })), { ok: true });
+  assert.equal(server.getState()?.maxConcurrent, 2);
+  assert.equal(server.getState()?.slots.length, 2);
+  const opened = server.getState()!.slots[1];
+  assert.equal(opened.task?.id, '3');
+  assert.equal(opened.lastEvent, 'iniciado à mão');
+  assert.equal(workers.length, 2);
+  assert.equal(workers[1].launch.slug, 'hive-3-free');
+  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['2']);
+  assert.ok(lines.includes('DEBUG start #I3 raiseMax=true'), lines.filter((l) => l.includes('start')).join('\n'));
+  assert.ok(lines.includes(`INFO slot 2: vazio → trabalhando #3 worker=${opened.workerId!.slice(0, 8)}`), 'the slot that appeared occupied is a transition');
+  const saved = JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State;
+  assert.equal(saved.maxConcurrent, 2, 'the raised max survives a restart');
+  assert.equal(server.getState()?.error, undefined);
+});
