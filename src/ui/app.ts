@@ -1,6 +1,6 @@
 import type {
-  BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
-  Task, UsageSample, WorkersMode,
+  BoardConfig, BoardQuota, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State,
+  StatusKey, Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { esc, renderOutput } from './highlight.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
@@ -30,6 +30,8 @@ const MILLION = 1_000_000;
 const WINDOW_LABEL: Record<string, string> = { five_hour: 'sessão', seven_day: 'semana' };
 const WEEKLY_PREFIX = 'seven_day_';
 const PERCENT_MAX = 100;
+// Mirrors src/polling.ts, which cannot be imported here (it pulls the orchestrator into the browser).
+const QUOTA_RESERVE = 500;
 
 type BoardType = BoardConfig['type'];
 
@@ -234,6 +236,15 @@ function renderLimits(limits?: RateLimits): void {
   el.innerHTML = [...windows, `às ${clock(limits.at)}`].join(' · ');
 }
 
+// Numbers and a Date: nothing to escape. Empty without a reading (markdown board, or no poll yet).
+function renderQuota(quota?: BoardQuota): void {
+  const el = $('quota');
+  el.classList.toggle('low', quota !== undefined && quota.remaining < QUOTA_RESERVE);
+  el.textContent = quota
+    ? `GitHub ${quota.remaining.toLocaleString('pt-BR')}/${quota.limit.toLocaleString('pt-BR')} · reseta ${clock(quota.resetsAt)}`
+    : '';
+}
+
 function render(): void {
   if (!state) return;
   const active = state.slots.filter((s) => s.status !== 'vazio').length;
@@ -241,6 +252,7 @@ function render(): void {
   renderSignal(state.signal);
   renderUsage(state.usage, state.budget);
   renderLimits(state.rateLimits);
+  renderQuota(state.boardQuota);
   const max = $<HTMLInputElement>('max');
   if (document.activeElement !== max) max.value = String(state.maxConcurrent);
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
