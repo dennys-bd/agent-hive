@@ -38,6 +38,17 @@ export function renderBoard(state: State): string {
 
 // ---------- setup: the column editor ----------
 
+let loadedOptions: string[] = []; // board columns from GET /setup/columns; a saved value not among them is kept so the form never loses it
+
+const NONE_OPTION = (): string => `<option value="">${t('setup.columns.none')}</option>`;
+
+// The loaded columns first, then whatever is selected but not loaded (a saved config before "load" ran); only these can be picked.
+const boardOptions = (selected: string | string[] | undefined): string => {
+  const chosen = new Set(selected === undefined ? [] : [selected].flat());
+  const names = [...loadedOptions, ...[...chosen].filter((c) => !loadedOptions.includes(c))];
+  return names.map((o) => `<option value="${esc(o)}"${chosen.has(o) ? ' selected' : ''}>${esc(o)}</option>`).join('');
+};
+
 function rowHtml(column?: Column): string {
   const option = (value: 'new' | 'continue'): string => `<option value="${value}"${column?.session === value ? ' selected' : ''}>${t(`setup.columns.session.${value}`)}</option>`;
   return `
@@ -48,9 +59,9 @@ function rowHtml(column?: Column): string {
       <label>${t('setup.columns.model')} <input class="col-model" type="text" value="${esc(column?.model ?? '')}"></label>
     </div>
     <div class="row">
-      <label>${t('setup.columns.from')} <input class="col-from" type="text" list="column-options" value="${esc(column?.from.join(', ') ?? '')}"></label>
-      <label>${t('setup.columns.onStart')} <input class="col-on-start" type="text" list="column-options" placeholder="${t('setup.columns.none')}" value="${esc(column?.onStart ?? '')}"></label>
-      <label>${t('setup.columns.onFinish')} <input class="col-on-finish" type="text" list="column-options" placeholder="${t('setup.columns.none')}" value="${esc(column?.onFinish ?? '')}"></label>
+      <label>${t('setup.columns.from')} <select class="col-from" multiple size="4">${boardOptions(column?.from ?? [])}</select></label>
+      <label>${t('setup.columns.onStart')} <select class="col-on-start">${NONE_OPTION()}${boardOptions(column?.onStart)}</select></label>
+      <label>${t('setup.columns.onFinish')} <select class="col-on-finish">${NONE_OPTION()}${boardOptions(column?.onFinish)}</select></label>
     </div>
     <label>${t('setup.columns.prompt')} <textarea class="col-prompt" rows="2" spellcheck="false">${esc(column?.prompt ?? '')}</textarea></label>
     <div class="row">
@@ -76,11 +87,18 @@ export function renderColumnRows(columns: Column[]): void {
   for (const column of columns) addColumnRow(column);
 }
 
+const BOARD_SELECTS = 'select.col-from, select.col-on-start, select.col-on-finish';
+
+/** Keeps the board's columns for new rows and rebuilds the selects of the rows already there, each keeping what it had selected. */
 export function fillColumnOptions(options: string[]): void {
-  $('column-options').innerHTML = options.map((o) => `<option value="${esc(o)}"></option>`).join('');
+  loadedOptions = options;
+  for (const select of Array.from(rows().querySelectorAll<HTMLSelectElement>(BOARD_SELECTS))) {
+    const chosen = Array.from(select.selectedOptions, (o: HTMLOptionElement) => o.value).filter((v) => v !== '');
+    select.innerHTML = (select.multiple ? '' : NONE_OPTION()) + boardOptions(chosen);
+  }
 }
 
-const text = (row: Element, selector: string): string => field<HTMLInputElement | HTMLTextAreaElement>(row, selector).value.trim();
+const text = (row: Element, selector: string): string => field<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(row, selector).value.trim();
 const optional = <K extends string>(key: K, value: string): { [P in K]?: string } => (value === '' ? {} : { [key]: value }) as { [P in K]?: string };
 
 // Absent keys stay absent (never an explicit undefined), so hive.config.json stays clean; the server validates the rest.
@@ -88,10 +106,10 @@ function columnFromRow(row: Element): Column {
   const session = field<HTMLSelectElement>(row, 'select.col-session').value;
   return {
     name: text(row, 'input.col-name'), weight: Number(text(row, 'input.col-weight')),
-    from: text(row, 'input.col-from').split(',').map((s) => s.trim()).filter((s) => s !== ''),
+    from: Array.from(field<HTMLSelectElement>(row, 'select.col-from').selectedOptions, (o: HTMLOptionElement) => o.value),
     ...(session === 'continue' ? { session: 'continue' as const } : {}),
-    ...optional('model', text(row, 'input.col-model')), ...optional('onStart', text(row, 'input.col-on-start')),
-    ...optional('onFinish', text(row, 'input.col-on-finish')), ...optional('prompt', text(row, 'textarea.col-prompt')),
+    ...optional('model', text(row, 'input.col-model')), ...optional('onStart', text(row, 'select.col-on-start')),
+    ...optional('onFinish', text(row, 'select.col-on-finish')), ...optional('prompt', text(row, 'textarea.col-prompt')),
   };
 }
 
