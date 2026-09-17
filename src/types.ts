@@ -3,7 +3,7 @@ import type { LogLevel } from './log.js';
 export type Language = 'pt' | 'en';
 
 export type Status = 'empty' | 'working' | 'waiting' | 'review';
-export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
+export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'turn';
 /** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
 export interface SlotEvent {
   kind: SlotEventKind;
@@ -107,27 +107,23 @@ export interface BoardCard {
 export interface Slot {
   id: string;
   workerId?: string; // uuid per spawn; stale exit/hook signals from a previous occupant are ignored
+  cardId?: string; // the task.itemId of the card running here
   status: Status;
   draining?: boolean;
-  paused?: boolean; // stopped at a Stop hook under a red signal; cleared when the signal leaves red or the worker acts again
   tokens?: number; // session total at the last Stop / SessionEnd; the next delta is measured against it
-  task?: Task;
-  slug?: string;
-  worktree?: string;
-  branch?: string;
   startedAt?: string;
   lastEvent?: SlotEvent;
-  prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
-  sessionId?: string; // Claude Code session id from SessionStart; what `claude --resume` takes. First one wins (#24)
+  sessionId?: string; // Claude Code session id from SessionStart; must coincide with Card.sessionId. First one wins (#24)
 }
 
 export interface State {
   signal: Signal; // runtime gate for new jobs; lives here, not in the config, so a red set by hand survives a restart
   maxConcurrent: number;
   slots: Slot[];
-  queue: Task[];
+  columns: Column[]; // copied from Config.columns; the pipeline order
+  cards: Card[]; // every task the Hive holds, in board order
   usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
   budget: Budget; // copied from Config.budget by setBudget
   usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
@@ -173,18 +169,21 @@ export interface HookPayload {
 
 export type HiveEvent =
   | { type: 'boot' }
-  | { type: 'poll'; tasks: Task[] }
+  | { type: 'poll'; cards: BoardCard[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
+  | { type: 'setColumns'; columns: Column[] }
   | { type: 'rateLimits'; workerId?: string; rateLimits: RateLimits } // no workerId: the Hive's own reading
   | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
   | { type: 'error'; message?: string }
-  | { type: 'start'; itemId: string; raiseMax?: boolean }; // the human override from the queue panel: past the signal, the cap and the budget
+  | { type: 'start'; itemId: string; raiseMax?: boolean } // the human override on a stopped card: past the signal, the cap and the budget
+  | { type: 'closeCard'; cardId: string } // fechar on a missing card
+  | { type: 'keepCard'; cardId: string }; // manter on a missing card
 
 export interface ProjectSummary {
   number: number;
@@ -193,8 +192,8 @@ export interface ProjectSummary {
 }
 
 export type Effect =
-  | { type: 'spawn'; slot: Slot }
-  | { type: 'setStatus'; itemId: string; key: StatusKey }
+  | { type: 'spawn'; slot: Slot; card: Card; column: Column; session: SessionPolicy } // session already resolved: continue without an id runs as new
+  | { type: 'setColumn'; itemId: string; column: string }
   | { type: 'kill'; slug: string; workerId: string };
 
 export interface SetupInfo {

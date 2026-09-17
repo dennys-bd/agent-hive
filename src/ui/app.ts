@@ -33,6 +33,7 @@ const isFree = (slot: Slot): boolean => slot.status === 'empty' && !slot.drainin
 type BoardType = BoardConfig['type'];
 
 let state: State | undefined;
+const cardOf = (slot: Slot) => state?.cards.find((c) => c.task.itemId === slot.cardId); // the card running in this slot
 let selectedSlotId: string | undefined;
 let setupInfo: SetupInfo | undefined;
 let outputTimer: ReturnType<typeof setInterval> | undefined;
@@ -114,15 +115,14 @@ function post(path: string, body?: unknown): void {
 
 function renderCard(slot: Slot): string {
   const occupied = slot.status !== 'empty';
-  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
+  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : ''].join(' ');
   if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${statusText('empty')}</div></div>`;
-  const marks = `${slot.draining ? ` · ${t('card.draining')}` : ''}${slot.paused ? ` · ${t('card.paused')}` : ''}`;
   const tokens = slot.tokens === undefined ? '' : ` · ${fmt(slot.tokens)} tokens`;
   return `
     <div class="${classes}" data-id="${slot.id}">
-      <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
-      <div class="meta">${statusText(slot.status)} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
-      <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
+      <div class="title">#${esc(cardOf(slot)?.task.id ?? '')} ${esc(cardOf(slot)?.task.title ?? '')}</div>
+      <div class="meta">${statusText(slot.status)} · ${elapsed(slot.startedAt)}${slot.draining ? ` · ${t('card.draining')}` : ''}${tokens}</div>
+      <div class="meta">${esc(cardOf(slot)?.branch ?? cardOf(slot)?.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ? slotEventText(slot.lastEvent) : '')}</div>
       <div class="actions"><button data-focus="${slot.id}">terminal</button><button class="danger" data-kill="${slot.id}">kill</button></div>
     </div>`;
@@ -174,14 +174,14 @@ function renderDetail(): void {
     syncOutputPolling(undefined);
     return;
   }
+  const card = cardOf(slot);
   const lines = [
-    `<div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>`,
-    slot.prUrl ? `<p>PR: <a href="${esc(slot.prUrl)}" target="_blank" rel="noreferrer">${esc(slot.prUrl)}</a></p>` : '',
+    `<div class="title">#${esc(card?.task.id ?? '')} ${esc(card?.task.title ?? '')}</div>`,
+    card?.prUrl ? `<p>PR: <a href="${esc(card.prUrl)}" target="_blank" rel="noreferrer">${esc(card.prUrl)}</a></p>` : '',
     slot.question ? `<p>${t('detail.pending')}</p><pre>${esc(slot.question)}</pre>` : '',
-    `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
-    `<div class="meta">branch: ${esc(slot.branch ?? '—')}</div>`,
+    `<div class="meta">worktree: ${esc(card?.worktree ?? '—')}</div><div class="meta">branch: ${esc(card?.branch ?? '—')}</div>`,
     slot.sessionId ? `<div class="meta">${t('detail.session')} <code>claude --resume ${esc(slot.sessionId)}</code></div>` : '',
-    slot.task ? taskLink(slot.task) : '',
+    card ? taskLink(card.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
   panel.classList.add('show');
@@ -257,7 +257,7 @@ function render(): void {
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString(locale())}` : '';
   showError(state.error);
   $('grid').innerHTML = state.slots.map(renderCard).join('');
-  $('queue').innerHTML = state.queue.map(renderQueued).join('')
+  $('queue').innerHTML = state.cards.filter((c) => !c.slotId).map((c) => renderQueued(c.task)).join('')
     || `<li style="list-style:none;color:var(--muted)">${t('queue.empty')}</li>`;
   renderDetail();
 }
@@ -517,9 +517,9 @@ $('grid').addEventListener('click', (event) => {
 // reducer will set (occupied + 1: maxConcurrent + 1 unless slots are draining), on the same request so nothing races the raise.
 $('queue').addEventListener('click', (event) => {
   const itemId = (event.target as HTMLElement).dataset.start;
-  const task = itemId === undefined ? undefined : state?.queue.find((t) => t.itemId === itemId);
+  const task = itemId === undefined ? undefined : state?.cards.find((c) => c.task.itemId === itemId)?.task;
   if (!state || !task) return;
-  const path = `/queue/${encodeURIComponent(task.itemId)}/start`;
+  const path = `/cards/${encodeURIComponent(task.itemId)}/start`;
   if (state.slots.some(isFree)) {
     post(path);
     return;

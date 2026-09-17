@@ -39,7 +39,7 @@ export async function bootHive(repo: string, options: BootOptions = {}): Promise
   }
   log.info(`boot repo=${repo} mode=hive`);
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
-  const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget, usageRules: config.usageRules };
+  const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget, usageRules: config.usageRules, columns: config.columns };
   const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved, log, systemLanguage: language, ...deps });
   const port = await server.listen(config.port);
   await killStrays(saved);

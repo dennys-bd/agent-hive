@@ -89,7 +89,7 @@ test('POST /setup writes the config with defaults, boots the runtime and reports
   assert.deepEqual(JSON.parse(await readFile(configFile(repo), 'utf8')), { ...DEFAULT_CONFIG, ...BODY });
   const state = server.getState();
   assert.equal(state?.slots.length, 0);
-  assert.deepEqual(state?.queue.map((task) => task.title), ['from Ready']);
+  assert.deepEqual(state?.cards.map((c) => c.task.title), ['from Ready']);
   assert.match(await readFile(join(repo, '.hive', 'hooks.json'), 'utf8'), new RegExp(`127\\.0\\.0\\.1:${port}/hooks/event`));
   const info = await json<SetupInfo>(fetch(`${base}/setup`));
   assert.equal(info.configured, true);
@@ -128,7 +128,7 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal(rewritten.port, 5000);
   assert.deepEqual(rewritten.claudeArgs, ['--model', 'sonnet']);
   assert.equal(rewritten.promptTemplate, 'só {title}');
-  assert.deepEqual(server.getState()?.queue.map((task) => task.title), ['from Done']);
+  assert.deepEqual(server.getState()?.cards.map((c) => c.task.title), ['from Done']);
   assert.equal(configs.at(-1)?.columns[0].from[0], 'Done');
 });
 
@@ -256,16 +256,16 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   assert.equal((await postSetup(base, body)).status, 200);
   assert.equal(await readFile(file, 'utf8'), newBoardText());
   assert.ok(newBoardText().includes('| T-1 | Exemplo | Done |'));
-  assert.deepEqual(server.getState()?.queue, [], 'the example row is Done, so nothing is queued');
+  assert.deepEqual(server.getState()?.cards, [], 'the example row is Done, so nothing is queued');
   await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
   assert.equal((await postSetup(base, body)).status, 200);
-  assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-1', 'Exemplo', file]]);
+  assert.deepEqual(server.getState()?.cards.map((c) => [c.task.id, c.task.title, c.task.url]), [['T-1', 'Exemplo', file]]);
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
   // an existing file is never rewritten by setup; a file with its own vocabulary lists only its statuses
   await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
   assert.equal((await postSetup(base, { ...body, columns: [{ ...COLUMNS[0], from: ['Todo'], onStart: 'Todo', onFinish: 'Todo' }] })).status, 200);
-  // Todo is now cited (fila.from), so the row the Hive's own board says is its entry column is queued.
-  assert.deepEqual(server.getState()?.queue.map((task) => [task.id, task.title, task.url]), [['T-7', 'Só esta', file]]);
+  // Todo is now cited (fila.from), so the row the Hive's own board says is its entry column is a card; T-1 left the file: missing, not gone.
+  assert.deepEqual(server.getState()?.cards.filter((c) => !c.missing).map((c) => [c.task.id, c.task.title, c.task.url]), [['T-7', 'Só esta', file]]);
   assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo']);
 });
 

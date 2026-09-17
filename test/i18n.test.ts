@@ -31,7 +31,6 @@ test('statusText and slotEventText follow the language: tool shows the detail, w
   assert.equal(slotEventText({ kind: 'starting' }), 'iniciando');
   assert.equal(slotEventText({ kind: 'tool', detail: 'Bash: pnpm test' }), 'Bash: pnpm test');
   assert.equal(slotEventText({ kind: 'waiting', detail: 'permission_prompt' }), 'aguardando: permission_prompt');
-  assert.equal(slotEventText({ kind: 'paused' }), 'pausado: sinal red');
   assert.equal(slotEventText({ kind: 'turn' }), 'turno encerrado');
   setLanguage('en');
   assert.equal(statusText('working'), 'working');

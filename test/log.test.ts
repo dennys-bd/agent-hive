@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createLogger, describeChanges, describeEffect, describeEvent, LOG_FILE, MESSAGE_MAX, shortId } from '../src/log.js';
 import { initialState } from '../src/orchestrator.js';
-import type { Slot, State, Task } from '../src/types.js';
+import type { Card, Column, Slot, State, Task } from '../src/types.js';
 
 const LINE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (ERROR|INFO |DEBUG) /;
 const ISO_WIDTH = 25; // "2026-09-17T12:00:00.000Z " — what precedes the level tag
@@ -14,6 +14,7 @@ const quiet = (): void => {};
 const WORKER = '1a2b3c4d-1111-4111-8111-111111111111';
 const SLOT = '9f8e7d6c-2222-4222-8222-222222222222';
 const task = (id: string): Task => ({ itemId: `I${id}`, id, title: 'Logs', body: 'the body is never logged', url: `https://github.com/acme/r/issues/${id}` });
+const cardFor = (id: string): Card => ({ task: task(id), column: 'dev', boardColumn: 'Ready', slug: `hive-${id}-logs` });
 
 async function logDir(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'hive-log-')), '.hive'); // does not exist yet: the logger creates it
@@ -113,9 +114,9 @@ test('describeEvent names the hook, worker and tool but never the tool_input, th
 
 test('describeEvent summarises every other event with names, ids and counts only', () => {
   assert.equal(describeEvent({ type: 'boot' }), 'boot');
-  assert.equal(describeEvent({ type: 'poll', tasks: [task('1'), task('2')] }), 'poll tasks=2 ids=1,2');
+  assert.equal(describeEvent({ type: 'poll', cards: [task('1'), task('2')].map((t) => ({ task: t, column: 'Ready' })) }), 'poll cards=2 ids=1,2');
   const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
-  assert.equal(describeEvent({ type: 'poll', tasks: ids.map(task) }), `poll tasks=25 ids=${ids.slice(0, 20).join(',')}`);
+  assert.equal(describeEvent({ type: 'poll', cards: ids.map((id) => ({ task: task(id), column: 'Ready' })) }), `poll cards=25 ids=${ids.slice(0, 20).join(',')}`);
   assert.equal(describeEvent({ type: 'exit', workerId: WORKER }), 'exit worker=1a2b3c4d');
   assert.equal(describeEvent({ type: 'kill', slotId: SLOT }), 'kill slot=9f8e7d6c');
   assert.equal(describeEvent({ type: 'setSignal', signal: 'red' }), 'setSignal red');
@@ -132,27 +133,31 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'error' }), 'error');
   assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1' }), 'start #PVTI_1 raiseMax=false');
   assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1', raiseMax: true }), 'start #PVTI_1 raiseMax=true');
+  assert.equal(describeEvent({ type: 'closeCard', cardId: 'PVTI_1' }), 'closeCard #PVTI_1');
+  assert.equal(describeEvent({ type: 'keepCard', cardId: 'PVTI_1' }), 'keepCard #PVTI_1');
+  assert.equal(describeEvent({ type: 'setColumns', columns: [{ name: 'a', weight: 2, from: [] }, { name: 'b', weight: 0, from: [] }] }), 'setColumns a(2)>b(0)');
 });
 
-test('describeEffect: spawn, setStatus and kill', () => {
-  const slot: Slot = { id: SLOT, workerId: WORKER, status: 'working', task: task('30'), slug: 'hive-30-logs' };
-  assert.equal(describeEffect({ type: 'spawn', slot }), 'spawn slot=9f8e7d6c #30 slug=hive-30-logs worker=1a2b3c4d');
-  assert.equal(describeEffect({ type: 'setStatus', itemId: 'PVTI_1', key: 'review' }), 'setStatus #PVTI_1 → review');
+test('describeEffect: spawn, setColumn and kill', () => {
+  const slot: Slot = { id: SLOT, workerId: WORKER, status: 'working', cardId: 'I30' };
+  const column: Column = { name: 'dev', weight: 1, from: ['Ready'], prompt: 'x' };
+  assert.equal(describeEffect({ type: 'spawn', slot, card: cardFor('30'), column, session: 'new' }), 'spawn slot=9f8e7d6c #30 slug=hive-30-logs column=dev session=new worker=1a2b3c4d');
+  assert.equal(describeEffect({ type: 'setColumn', itemId: 'PVTI_1', column: 'In review' }), 'setColumn #PVTI_1 → In review');
   assert.equal(describeEffect({ type: 'kill', slug: 'hive-30-logs', workerId: WORKER }), 'kill slug=hive-30-logs worker=1a2b3c4d');
 });
 
 test('describeChanges lists each slot whose status changed (position in the grid, matched by id) and the signal change; [] when nothing moved', () => {
   const empty: Slot = { id: SLOT, status: 'empty' };
   const other: Slot = { id: 'b0b0b0b0-3333-4333-8333-333333333333', status: 'empty' };
-  const working: Slot = { ...empty, workerId: WORKER, status: 'working', task: task('30'), slug: 'hive-30-logs' };
-  const prev: State = { ...initialState(0), signal: 'yellow', slots: [empty, other] };
+  const working: Slot = { ...empty, workerId: WORKER, status: 'working', cardId: 'I30' };
+  const prev: State = { ...initialState(0), signal: 'yellow', slots: [empty, other], cards: [cardFor('30')] };
   const next: State = { ...prev, signal: 'green', slots: [working, other] };
   assert.deepEqual(describeChanges(prev, next), ['slot 1: empty → working #30 worker=1a2b3c4d', 'signal: yellow → green']);
-  const reviewed: State = { ...next, slots: [{ ...working, status: 'review', prUrl: 'https://github.com/acme/r/pull/9' }, other] };
+  const reviewed: State = { ...next, slots: [{ ...working, status: 'review' }, other] };
   assert.deepEqual(describeChanges(next, reviewed), ['slot 1: working → review #30 worker=1a2b3c4d']);
   const freed: State = { ...reviewed, slots: [empty, other] };
   assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: review → empty #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
-  assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
+  assert.deepEqual(describeChanges(next, { ...next, cards: [cardFor('30'), cardFor('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
   assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'empty' }] }), [], 'a slot added by setMax is not a transition');
   const added: Slot = { ...working, id: 'c0c0c0c0-4444-4444-8444-444444444444' };
   assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, added] }), ['slot 3: empty → working #30 worker=1a2b3c4d'], 'a slot that appears already occupied (start with raiseMax) is a transition');
@@ -161,9 +166,9 @@ test('describeChanges lists each slot whose status changed (position in the grid
 test('describeChanges emits the session line once, when the id appears, after the status lines and before the signal', () => {
   const session = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
   const empty: Slot = { id: SLOT, status: 'empty' };
-  const working: Slot = { ...empty, workerId: WORKER, status: 'working', task: task('29'), slug: 'hive-29-session' };
-  const prev: State = { ...initialState(0), signal: 'yellow', slots: [working] };
-  const started: State = { ...prev, slots: [{ ...working, sessionId: session, worktree: '/w' }] };
+  const working: Slot = { ...empty, workerId: WORKER, status: 'working', cardId: 'I29' };
+  const prev: State = { ...initialState(0), signal: 'yellow', slots: [working], cards: [cardFor('29')] };
+  const started: State = { ...prev, slots: [{ ...working, sessionId: session }] };
   assert.deepEqual(describeChanges(prev, started), [`slot 1: session=${session} #29 worker=1a2b3c4d`]);
   const later: State = { ...started, slots: [{ ...started.slots[0], lastEvent: { kind: 'tool', detail: 'Bash: pnpm test' } }] };
   assert.deepEqual(describeChanges(started, later), [], 'the same id in both states is not a change');

@@ -178,7 +178,7 @@ export const LOCALE: Record<Language, string> = { pt: 'pt-BR', en: 'en-US' };
 const PLACEHOLDER = /\{(\w+)\}/g;
 const STATUS_KEY: Record<Status, MessageKey> = { empty: 'status.empty', working: 'status.working', waiting: 'status.waiting', review: 'status.review' };
 const EVENT_KEY: Record<Exclude<SlotEventKind, 'tool'>, MessageKey> = {
-  starting: 'event.starting', manualStart: 'event.manualStart', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', paused: 'event.paused', turn: 'event.turn',
+  starting: 'event.starting', manualStart: 'event.manualStart', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', turn: 'event.turn',
 };
 
 let current: Language = 'en';
