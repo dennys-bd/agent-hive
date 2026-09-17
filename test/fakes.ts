@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { Logger } from '../src/log.js';
 import type { Board, BoardQuota, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
 
 export interface FakeWorker {
@@ -66,4 +67,13 @@ export function fakeBoardFactory(resolveDelayMs = 0, quota?: BoardQuota): { fact
     };
   };
   return { factory, configs };
+}
+
+/** A Logger that writes nothing: every call becomes a `LEVEL message` line, whatever the level, and setLevel a `LEVEL <level>` line. */
+export function fakeLog(): { log: Logger; lines: string[] } {
+  const lines: string[] = [];
+  const at = (tag: string) => (message: string): void => {
+    lines.push(`${tag} ${message}`);
+  };
+  return { lines, log: { error: at('ERROR'), info: at('INFO'), debug: at('DEBUG'), setLevel: at('LEVEL') } };
 }

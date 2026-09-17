@@ -1,3 +1,5 @@
+import type { LogLevel } from './log.js';
+
 export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
@@ -97,6 +99,7 @@ export interface Config {
   board: BoardConfig;
   workers: WorkersMode;
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
+  logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
