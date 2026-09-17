@@ -84,6 +84,7 @@ export interface State {
   usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
   budget: Budget; // copied from Config.budget by setBudget
   usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
+  moves?: Moves; // set from Config before boot; absent (legacy state.json) reads as all hive
   rateLimits?: RateLimits; // display only; absent until a worker's status line reports it
   boardQuota?: BoardQuota; // last quota read after a poll; drives the timer backoff and the header meter, never a job
   lastPolledAt?: string;
@@ -96,10 +97,16 @@ export type WorkersMode = 'embedded' | 'iterm';
 /** What the GitHub adapter does with an issue that has sub-issues: drop it (only the sub-issues are tasks) or queue it like any other. */
 export type EpicsMode = 'ignore' | 'queue';
 
+/** Who performs one board move: the Hive (today's behaviour), the worker from inside its session, or nobody automated. */
+export type Mover = 'hive' | 'agent' | 'human';
+/** One entry per transition, keyed by the column it lands on: working (spawn), review (PR seen), queue (exit without a PR). */
+export type Moves = Record<StatusKey, Mover>;
+
 export interface Config {
   board: BoardConfig;
   workers: WorkersMode;
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
+  moves: Moves; // copied to State.moves by configure / reconfigure / bootHive; the agent's moves are appended to the worker prompt
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   status: Record<StatusKey, string>;
   maxConcurrent: number;
@@ -170,6 +177,8 @@ export interface SetupBody {
   workers?: WorkersMode;
   /** Optional; missing keeps the current mode (or `ignore` on first setup). */
   epics?: EpicsMode;
+  /** Optional; missing keeps the current value (or all hive on first setup). The form always sends the three keys. */
+  moves?: Moves;
 }
 
 export interface SetupResult {

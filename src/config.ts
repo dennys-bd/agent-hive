@@ -2,13 +2,16 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { SIGNALS } from './orchestrator.js';
-import type { BoardConfig, Budget, Config, EpicsMode, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
+import type { BoardConfig, Budget, Config, EpicsMode, Mover, Moves, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
 export const BOARD_TYPES: readonly BoardConfig['type'][] = ['github', 'markdown'];
 export const WORKERS_MODES: readonly WorkersMode[] = ['embedded', 'iterm'];
 export const EPICS_MODES: readonly EpicsMode[] = ['ignore', 'queue'];
+export const MOVERS: readonly Mover[] = ['hive', 'agent', 'human'];
+/** The three transitions the Hive makes today, in the order the prompt note and the log line list them. */
+export const MOVE_KEYS: readonly StatusKey[] = ['working', 'review', 'queue'];
 
 export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
   workers: 'embedded',
@@ -22,6 +25,7 @@ export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
     'Task #{number}: {title}\n\n{body}\n\nWork on this branch. When the task is done, open a PR with `gh pr create`.',
   budget: {},
   usageRules: [],
+  moves: { working: 'hive', review: 'hive', queue: 'hive' },
 };
 
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
@@ -94,6 +98,19 @@ function parseUsageRules(raw: unknown): UsageRule[] {
   return raw.map((rule, i) => parseUsageRule(rule, `usageRules[${i}]`));
 }
 
+function requireMover(value: unknown, field: string): Mover {
+  if (!MOVERS.includes(value as Mover)) throw new Error(`${CONFIG_FILE}: "${field}" must be one of: ${MOVERS.join(', ')}`);
+  return value as Mover;
+}
+
+// A partial object is fine: a missing key is the Hive, so a file written before moves existed changes nothing.
+function parseMoves(raw: unknown): Moves {
+  if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "moves" must be an object`);
+  return Object.fromEntries(
+    MOVE_KEYS.map((key) => [key, optional(raw[key], DEFAULT_CONFIG.moves[key], (v) => requireMover(v, `moves.${key}`))]),
+  ) as Moves;
+}
+
 export function parseConfig(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const board = boardFrom(raw);
@@ -137,6 +154,7 @@ export function parseConfig(raw: unknown): Config {
     promptTemplate: optional(raw.promptTemplate, DEFAULT_CONFIG.promptTemplate, (v) => requireString(v, 'promptTemplate')),
     budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
     usageRules: optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules),
+    moves: optional(raw.moves, DEFAULT_CONFIG.moves, parseMoves),
   };
 }
 

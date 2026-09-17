@@ -19,6 +19,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.equal(config.workers, 'embedded');
   assert.equal(config.epics, 'ignore');
   assert.equal(config.logLevel, 'info');
+  assert.deepEqual(config.moves, { working: 'hive', review: 'hive', queue: 'hive' });
 });
 
 test('parseConfig accepts workers embedded or iterm and rejects anything else', () => {
@@ -30,6 +31,24 @@ test('parseConfig accepts epics ignore or queue and rejects anything else', () =
   assert.equal(parseConfig({ board: GITHUB, epics: 'queue' }).epics, 'queue');
   assert.equal(parseConfig({ board: GITHUB, epics: 'ignore' }).epics, 'ignore');
   assert.throws(() => parseConfig({ board: GITHUB, epics: 'label' }), /"epics" must be one of: ignore, queue/);
+});
+
+test('parseConfig reads moves as a partial object with hive as the default and rejects bad values naming the key', () => {
+  const all = { working: 'hive', review: 'hive', queue: 'hive' };
+  assert.deepEqual(parseConfig({ board: GITHUB, moves: {} }).moves, all);
+  assert.deepEqual(parseConfig({ board: GITHUB, moves: { review: 'agent' } }).moves, { ...all, review: 'agent' });
+  assert.deepEqual(
+    parseConfig({ board: GITHUB, moves: { working: 'human', review: 'agent', queue: 'agent' } }).moves,
+    { working: 'human', review: 'agent', queue: 'agent' },
+  );
+  assert.throws(() => parseConfig({ board: GITHUB, moves: 'agent' }), { message: 'hive.config.json: "moves" must be an object' });
+  assert.throws(() => parseConfig({ board: GITHUB, moves: null }), /"moves" must be an object/);
+  assert.throws(() => parseConfig({ board: GITHUB, moves: [] }), /"moves" must be an object/);
+  assert.throws(
+    () => parseConfig({ board: GITHUB, moves: { review: 'bot' } }),
+    { message: 'hive.config.json: "moves.review" must be one of: hive, agent, human' },
+  );
+  assert.throws(() => parseConfig({ board: GITHUB, moves: { queue: true } }), /"moves\.queue" must be one of/);
 });
 
 test('parseConfig accepts logLevel info or debug and rejects anything else', () => {
