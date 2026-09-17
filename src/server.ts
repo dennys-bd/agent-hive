@@ -8,13 +8,13 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
-import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
+import { CONFIG_FILE, loadConfigIfPresent, MOVE_KEYS, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
 import { reduce, SIGNALS } from './orchestrator.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
-import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { killStray, movesNote, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
@@ -181,7 +181,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!slot.task || !slot.slug || !slot.workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
     const { workerId } = slot;
-    const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task)); // the command line reads it
+    const text = renderPrompt(config.promptTemplate, slot.task) + movesNote(config.moves, config.status); // appended: saved templates need no edit
+    const promptPath = await writePrompt(promptsDir, slot.slug, text); // the command line reads it
     pool.start({
       workerId,
       launch: { mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, claudeArgs: config.claudeArgs },
@@ -254,7 +255,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     const board = current && sameBoard(current.config, effective) ? current.board : boardFactory(effective);
     await board.resolveFields();
     log.setLevel(effective.logLevel); // read from the file on every save: a hand edit switches the level without a restart
-    log.info(`config port=${boundPort} board=${effective.board.type} workers=${effective.workers} logLevel=${effective.logLevel}`);
+    const moves = MOVE_KEYS.map((key) => `${key}:${effective.moves[key]}`).join(',');
+    log.info(`config port=${boundPort} board=${effective.board.type} workers=${effective.workers} logLevel=${effective.logLevel} moves=${moves}`);
     return { config: effective, board, hiveDir, hooksPath, promptsDir };
   }
 
@@ -264,7 +266,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const saved = await loadState(runtime.hiveDir, config.maxConcurrent);
     // Empty queue on boot: the boot event's fill would otherwise spawn off a stale pre-restart
     // queue. The poll() below refills from the board, which is the source of truth.
-    live = { runtime, state: { ...saved, queue: [] } };
+    live = { runtime, state: { ...saved, queue: [], moves: config.moves } }; // before boot: dead slots follow the config's rule, not state.json's
     await killStrays(saved);
     await dispatch({ type: 'boot' });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
@@ -275,7 +277,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function reconfigure(config: Config): Promise<void> {
     if (!live) throw new Error('Hive não configurado: use configure()');
     const runtime = await activate(config, live.runtime);
-    live = { runtime, state: live.state };
+    live = { runtime, state: { ...live.state, moves: config.moves } }; // no event: nothing reacts to the change; the poll below persists and broadcasts
     if (!isDeepStrictEqual(live.state.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(live.state.usageRules, config.usageRules)) {
       await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
@@ -414,6 +416,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,
         epics: body.epics ?? current?.epics,
+        moves: body.moves ?? current?.moves,
         logLevel: current?.logLevel, // never in the body: the file is the switch
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,

@@ -7,7 +7,7 @@ import { newBoardText } from '../src/boards/markdown.js';
 import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
-import type { SetupInfo } from '../src/types.js';
+import type { SetupInfo, Slot } from '../src/types.js';
 
 // Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
@@ -41,6 +41,25 @@ test('bootHive opens under yellow even when state.json saved green, and under re
   const red = await bootHive(repoRed);
   t.after(() => red.server.close());
   assert.equal(red.server.getState()?.signal, 'red');
+});
+
+test('bootHive copies moves from hive.config.json into the state before the boot event: a dead slot is requeued by the config rule, not by state.json', async (t) => {
+  const task = { itemId: 'T-1', id: 'T-1', title: 'Exemplo', body: '', url: 'board.md' };
+  const dead: Slot = { id: 'S1', workerId: 'W1', status: 'trabalhando', task, slug: 'hive-t-1-exemplo' }; // a worker of a previous run, no PR
+  const repo = await repoWithConfig({ moves: { queue: 'agent' } });
+  await mkdir(join(repo, '.hive'));
+  await saveState(join(repo, '.hive'), { ...initialState(1), slots: [dead] }); // written before moves existed: no moves key
+  const { server } = await bootHive(repo);
+  t.after(() => server.close());
+  assert.deepEqual(server.getState()?.moves, { working: 'hive', review: 'hive', queue: 'agent' });
+  assert.equal(server.getState()?.slots[0].status, 'vazio');
+  assert.equal(await readFile(join(repo, 'board.md'), 'utf8'), newBoardText(), 'queue is the agent\'s: the Hive did not move T-1 back');
+  const control = await repoWithConfig({});
+  await mkdir(join(control, '.hive'));
+  await saveState(join(control, '.hive'), { ...initialState(1), slots: [dead] });
+  const hive = await bootHive(control);
+  t.after(() => hive.server.close());
+  assert.ok((await readFile(join(control, 'board.md'), 'utf8')).includes('| T-1 | Exemplo | Ready |'), 'default: the Hive moves T-1 back to the queue column');
 });
 
 test('bootHive falls back to setup mode when the configured board is unusable', async (t) => {

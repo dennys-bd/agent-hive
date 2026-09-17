@@ -395,3 +395,26 @@ test('POST /setup with epics writes it, a save without the key keeps it, a chang
   assert.match((await json<{ error: string }>(bad)).error, /"epics" must be one of: ignore, queue/);
   assert.equal((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).epics, 'queue', 'rejected before the write');
 });
+
+test('POST /setup with moves writes the whole object, GET /setup, the State and state.json carry it, a save without the key keeps it, a partial object fills hive and a bad value answers 400', async (t) => {
+  const { base, repo, server } = await start(t);
+  const all = { working: 'hive', review: 'hive', queue: 'hive' };
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).moves, all, 'all hive on first setup');
+  assert.deepEqual(server.getState()?.moves, all, 'configure copies it into the state');
+  const moves = { working: 'hive', review: 'agent', queue: 'human' };
+  assert.equal((await postSetup(base, { ...BODY, moves })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).moves, moves);
+  assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.moves, moves);
+  assert.deepEqual(server.getState()?.moves, moves, 'reconfigure copies it into the live state without an event');
+  assert.deepEqual((JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State).moves, moves, 'persisted by the poll that follows');
+  // a save without the key keeps the file's (the API caller that omits it, like `epics`); a partial object fills the rest with hive
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).moves, moves);
+  assert.equal((await postSetup(base, { ...BODY, moves: { queue: 'agent' } })).status, 200);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).moves, { ...all, queue: 'agent' });
+  const bad = await postSetup(base, { ...BODY, moves: { review: 'bot' } });
+  assert.equal(bad.status, 400);
+  assert.match((await json<{ error: string }>(bad)).error, /"moves\.review" must be one of: hive, agent, human/);
+  assert.deepEqual((JSON.parse(await readFile(configFile(repo), 'utf8')) as Config).moves, { ...all, queue: 'agent' }, 'rejected before the write');
+});

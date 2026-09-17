@@ -280,7 +280,7 @@ test('POST /setup re-reads logLevel from hive.config.json and switches the logge
   const { log, lines } = fakeLog();
   const { base, repo, port } = await start(t, BODY, log);
   assert.ok(lines.includes('LEVEL info'), 'the first save activates the default level');
-  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info`));
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info moves=working:hive,review:hive,queue:hive`));
   assert.ok(lines.includes('INFO setup saved'));
   assert.ok(lines.includes(`INFO listening port=${port}`));
   const file = join(repo, 'hive.config.json');
@@ -289,6 +289,24 @@ test('POST /setup re-reads logLevel from hive.config.json and switches the logge
   const { maxConcurrent: _omitted, ...formBody } = BODY; // the form re-save: no logLevel in the body
   assert.equal((await postJson(`${base}/setup`, formBody)).status, 200);
   assert.ok(lines.includes('LEVEL debug'), lines.filter((l) => l.startsWith('LEVEL')).join('\n'));
-  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug`));
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug moves=working:hive,review:hive,queue:hive`));
   assert.equal((JSON.parse(await readFile(file, 'utf8')) as { logLevel: string }).logLevel, 'debug', 'the save keeps the level it read');
+});
+
+test('the worker prompt ends with the moves the agent owns and the Hive skips those board writes; with every move on the Hive the file is the rendered template only', async (t) => {
+  const { log, lines } = fakeLog();
+  const { repo, port, server } = await start(t, { ...BODY, moves: { working: 'hive', review: 'agent', queue: 'agent' } }, log);
+  const note = '\n\nBoard moves you own (the Hive will not make them): move it to "In review" when you open the PR; move it back to "Ready" if you stop without a PR.';
+  const text = await readFile(join(repo, '.hive', 'prompts', 'hive-1-from-ready.md'), 'utf8');
+  assert.ok(text.startsWith('Task #1: from Ready'), text);
+  assert.ok(text.endsWith(note), text);
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info moves=working:hive,review:agent,queue:agent`));
+  assert.ok(lines.includes('INFO setStatus #I1 → working ok'), 'working is still the Hive\'s');
+  await openPr(server, slot0(server).workerId!);
+  assert.equal(slot0(server).status, 'aguardando_review', 'the slot state does not depend on moves');
+  assert.ok(!lines.some((l) => l.includes('setStatus #I1 → review')), `review is the agent's: no board write in\n${lines.join('\n')}`);
+  const plain = await start(t);
+  const plainText = await readFile(join(plain.repo, '.hive', 'prompts', 'hive-1-from-ready.md'), 'utf8');
+  assert.ok(!plainText.includes('Board moves you own'), plainText);
+  assert.ok(plainText.endsWith('open a PR with `gh pr create`.'), 'nothing appended: the file is the rendered template');
 });
