@@ -255,7 +255,7 @@ test('the timer skips the board while nothing could start, and reads it again on
 
 test('the log tells the story: slot transitions, signal and board writes at info, events at debug, and never a tool_input', async (t) => {
   const { log, lines } = fakeLog();
-  const { server } = await start(t, BODY, log);
+  const { base, repo, server } = await start(t, BODY, log);
   const workerId = slot0(server).workerId!;
   const id8 = workerId.slice(0, 8);
   const has = (line: string): void => assert.ok(lines.includes(line), `missing "${line}" in:\n${lines.join('\n')}`);
@@ -267,6 +267,12 @@ test('the log tells the story: slot transitions, signal and board writes at info
   has(`INFO spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
   has('DEBUG setSignal green');
   has(`DEBUG effects: setStatus #I1 → working; spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
+  const session = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: session })).status, 200);
+  assert.equal(slot0(server).sessionId, session, 'the route hands the whole payload to the reducer');
+  has(`DEBUG hook SessionStart worker=${id8}`);
+  has(`INFO slot 1: session=${session} #1 worker=${id8}`);
+  assert.equal(lines.filter((l) => l.includes('session=')).length, 1, 'one line per session');
   await openPr(server, workerId);
   has(`DEBUG hook PostToolUse worker=${id8} tool=Bash`);
   has(`INFO slot 1: trabalhando → aguardando_review #1 worker=${id8}`);

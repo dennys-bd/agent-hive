@@ -74,6 +74,7 @@ export interface Slot {
   prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
+  sessionId?: string; // Claude Code session id from SessionStart; what `claude --resume` takes. First one wins (#24)
 }
 
 export interface State {
@@ -119,6 +120,7 @@ export interface HookPayload {
   tool_input?: unknown;
   tool_response?: unknown;
   transcript_path?: string; // Claude Code sends it on every hook; the server reads tokens from it on Stop / SessionEnd, the reducer keeps it from SessionStart
+  session_id?: string; // Claude Code sends it on every hook; the reducer keeps it from SessionStart
 }
 
 export type HiveEvent =
