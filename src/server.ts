@@ -105,7 +105,7 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
-  const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo }));
+  const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo, log }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
