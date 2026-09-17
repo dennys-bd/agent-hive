@@ -131,7 +131,7 @@ export type HiveEvent =
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
-  | { type: 'rateLimits'; workerId: string; rateLimits: RateLimits }
+  | { type: 'rateLimits'; workerId?: string; rateLimits: RateLimits } // no workerId: the Hive's own reading
   | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }

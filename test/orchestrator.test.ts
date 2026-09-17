@@ -615,6 +615,20 @@ test('rateLimits never mutates its input and the reading survives poll, setMax a
   assert.deepEqual(reduce(later, { type: 'boot' }).state.rateLimits, LIMITS, 'a reopened Hive shows the last value');
 });
 
+test('rateLimits without a workerId is the Hive own reading: stored with no slot occupied, no effects, input untouched', () => {
+  const idle = initialState(1); // one free slot, empty queue: no worker anywhere
+  const snapshot = JSON.stringify(idle);
+  const { state, effects } = reduce(idle, { type: 'rateLimits', rateLimits: LIMITS });
+  assert.deepEqual(state.rateLimits, LIMITS);
+  assert.equal(effects.length, 0, 'display only');
+  assert.deepEqual({ ...state, rateLimits: undefined }, { ...idle, rateLimits: undefined }, 'nothing else changes');
+  assert.equal(JSON.stringify(idle), snapshot);
+  assert.equal(idle.rateLimits, undefined);
+  const newer: RateLimits = { ...LIMITS, at: '2026-09-17T12:05:00.000Z' };
+  assert.deepEqual(reduce(state, { type: 'rateLimits', rateLimits: newer }).state.rateLimits, newer, 'the latest reading wins');
+  assert.equal(limited(state, 'ghost').state.rateLimits, LIMITS, 'with a workerId the slot rule still holds');
+});
+
 test('canSchedule is the fill gate: green with a free slot and budget; not under yellow, a reached cap or an exhausted budget', () => {
   const now = Date.now();
   assert.equal(canSchedule(initialState(1), now), true);
