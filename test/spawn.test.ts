@@ -4,7 +4,8 @@ import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { killStray, renderPrompt, spawnEmbeddedWorker, userMessage, workerArgv, workerEnv, writePrompt } from '../src/spawn.js';
-import { shellQuote, workerCommand } from '../src/spawn-iterm.js';
+import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
+import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
 
 const task = { itemId: 'I1', id: '7', title: 'Fix "login"', body: 'line1\n$(echo pwned) `x`', url: 'https://github.com/a/b/issues/7' };
@@ -73,6 +74,21 @@ test('spawnEmbeddedWorker sends the prompt as the first user message over stdin,
 test('shellQuote single-quotes and escapes embedded quotes', () => {
   assert.equal(shellQuote('plain'), "'plain'");
   assert.equal(shellQuote("it's"), "'it'\\''s'");
+});
+
+test('openItermTab runs the open-tab script with the text as argv 1 and resolves to the session id', async () => {
+  const calls: string[][] = [];
+  const exec: Exec = async (file, args) => {
+    calls.push([file, ...args]);
+    return { stdout: 'w0t1p0:ABCD\n' };
+  };
+  assert.equal(await openItermTab("echo 'oi'", exec), 'w0t1p0:ABCD');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'osascript');
+  assert.equal(calls[0][1], '-e');
+  assert.ok(calls[0][2].includes('com.googlecode.iterm2'));
+  assert.ok(calls[0][2].includes('write text (item 1 of argv)'));
+  assert.equal(calls[0][3], "echo 'oi'");
 });
 
 test('workerCommand (iterm) runs claude interactively in the repo with hive env, worktree, hooks and the prompt file, then reports exit', () => {

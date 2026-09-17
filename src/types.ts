@@ -189,6 +189,9 @@ export interface Board {
   quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
 
+/** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
+export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
+
 /** What the server injects so tests never open a process. */
 export interface WorkerHandlers {
   onLine(line: string): void; // one stdout line, or one stderr line prefixed `stderr: `

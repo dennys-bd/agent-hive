@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { killStray } from './spawn.js';
-import type { WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
+import type { Exec, WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync: Exec = promisify(execFile);
 const ITERM_APP_ID = 'com.googlecode.iterm2';
 
 export function shellQuote(s: string): string {
@@ -65,6 +65,12 @@ async function osascript(script: string, ...args: string[]): Promise<string> {
   return stdout.trim();
 }
 
+/** Opens an iTerm2 tab typing `text` (a shell string) and resolves to the session's unique id. `terminal.ts` reuses it for the attach. */
+export async function openItermTab(text: string, exec: Exec = execFileAsync): Promise<string> {
+  const { stdout } = await exec('osascript', ['-e', OPEN_TAB_SCRIPT, text]);
+  return stdout.trim();
+}
+
 async function inTab(sessionId: string, script: string, ...args: string[]): Promise<void> {
   if ((await osascript(script, sessionId, ...args)) !== 'ok') throw new Error(`iTerm session ${sessionId} not found`);
 }
@@ -75,7 +81,7 @@ async function inTab(sessionId: string, script: string, ...args: string[]): Prom
  */
 export function spawnItermWorker(launch: WorkerLaunch, handlers: WorkerHandlers): WorkerHandle {
   const report = (err: Error): void => handlers.onLine(`stderr: iTerm: ${err.message}`);
-  const session = osascript(OPEN_TAB_SCRIPT, workerCommand(launch)).catch((err: Error) => {
+  const session = openItermTab(workerCommand(launch)).catch((err: Error) => {
     report(err); // iTerm missing or refused: the worker never started, free the slot
     handlers.onExit();
     return undefined;
