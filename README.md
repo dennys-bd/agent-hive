@@ -118,13 +118,15 @@ Older files with `project: { owner, number }` are still accepted. Runtime state 
 ## Development
 
 ```sh
-pnpm test                        # tsc + node --test
+pnpm test                        # tsc + vite build, then node --test and vitest
+pnpm dev                         # Vite dev server with HMR for src/ui; proxies the API to a Hive on 127.0.0.1:47821 (HIVE_PORT overrides)
+pnpm exec tsc -p src/ui          # type-checks the React side (vite build only transpiles)
 pnpm start -- /path/to/repo      # goes through bin/hive.js, detaches
 node dist/src/main.js /repo      # Electron, stays attached (debugging)
 node dist/src/run.js /repo       # headless server at http://127.0.0.1:47821
 ```
 
-Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new state + effects); `src/server.ts` receives the hooks, runs the reducer and executes the effects; `src/boards/*` are the adapters; `src/ui/` is HTML + TS with no framework. Specs and plans live in `docs/superpowers/`, next steps in the GitHub issues.
+Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new state + effects); `src/server.ts` receives the hooks, runs the reducer and executes the effects; `src/boards/*` are the adapters; `src/ui/` is a Vite + React + shadcn/ui client of the same API (`src/ui/lib/*`, `i18n.ts` and `highlight.ts` are framework-free and tested with `node:test`; components with logic have Vitest + Testing Library tests under `test/ui/`). Specs and plans live in `docs/superpowers/`, next steps in the GitHub issues.
 
 ## Known limitations
 

@@ -1,4 +1,4 @@
-// The only place UI text lives. Served as /ui/i18n.js; no DOM at import time, so node:test covers t / statusText / slotEventText.
+// The only place UI text lives. No DOM at import time, so node:test covers t / statusText / slotEventText; the React components call t() and re-render when the language changes.
 import type { Language, SlotEvent, SlotEventKind, Status } from '../types.js';
 
 const en = {
@@ -228,12 +228,4 @@ export const statusText = (status: Status): string => t(STATUS_KEY[status]);
 export function slotEventText(event: SlotEvent): string {
   if (event.kind === 'tool') return event.detail ?? '';
   return t(EVENT_KEY[event.kind], { detail: event.detail ?? '' });
-}
-
-/** Static text from the keys in the HTML. innerHTML only for the hints with <code>: the dictionary is code, not input. */
-export function applyTranslations(): void {
-  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n as MessageKey); });
-  document.querySelectorAll<HTMLElement>('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml as MessageKey); });
-  document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder as MessageKey); });
-  document.documentElement.lang = LOCALE[current];
 }
