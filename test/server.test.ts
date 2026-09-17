@@ -12,11 +12,11 @@ import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
 import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { BoardQuota, RateLimits, SetupBody, Slot, State } from '../src/types.js';
-import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
+import { COLUMNS, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
-  status: { queue: 'Ready', working: 'In progress', review: 'In review' },
+  columns: COLUMNS,
   maxConcurrent: 1, // one slot: the fake board's single task is spawned into the fake worker
 };
 

@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import { createBoard } from '../src/board.js';
 import { listProjects, listStatusOptions } from '../src/boards/github.js';
 import { parseConfig } from '../src/config.js';
-import { fakeLog } from './fakes.js';
+import { COLUMNS, fakeLog } from './fakes.js';
 
 const REPO = '/repo'; // the github adapter never reads it
 
-const config = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 } });
-const queued = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, epics: 'queue' });
+const config = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, columns: COLUMNS });
+const queued = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, columns: COLUMNS, epics: 'queue' });
 
 function fakeExec(responses: Record<string, unknown>) {
   const calls: string[][] = [];
@@ -48,7 +48,7 @@ test('resolveFields maps configured status names to option ids and stores the pr
 });
 
 test('resolveFields fails naming the missing option and listing the available ones', async () => {
-  const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, status: { queue: 'Todo' } });
+  const bad = parseConfig({ board: { type: 'github', owner: 'acme', number: 6 }, columns: COLUMNS, status: { queue: 'Todo' } });
   const board = createBoard(bad, { repo: REPO, exec: fakeExec({ 'project view 6': { id: 'PVT_1' }, 'project field-list 6': fields }).exec });
   await assert.rejects(board.resolveFields(), /"Todo".*Ready, In progress, In review, Done/s);
 });
@@ -112,7 +112,7 @@ test('setupOptions on a github board lists the Status option names in board orde
 test('createBoard picks the markdown adapter by type and resolves the path against the repo', async () => {
   const repo = await mkdtemp(join(tmpdir(), 'hive-'));
   await writeFile(join(repo, 'board.md'), '| id | título | status |\n|---|---|---|\n| T-1 | Exemplo | Ready |\n');
-  const board = createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo });
+  const board = createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS }), { repo });
   await board.resolveFields();
   assert.deepEqual((await board.listQueue()).map((t) => [t.id, t.url]), [['T-1', join(repo, 'board.md')]]);
 });
@@ -207,7 +207,7 @@ test('quota is undefined for an unexpected shape, and a markdown board has no qu
     assert.equal(await createBoard(config, { repo: REPO, exec }).quota!(), undefined, JSON.stringify(shape));
   }
   await assert.rejects(createBoard(config, { repo: REPO, exec: fakeExec({}).exec }).quota!(), /unexpected gh call/, 'a failing gh rejects: the server logs it');
-  assert.equal(createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo: REPO }).quota, undefined);
+  assert.equal(createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS }), { repo: REPO }).quota, undefined);
 });
 
 test('createBoard with a log wraps the exec: every gh call leaves a debug line with the argv (cut at 200 chars), the duration and ok / error, and errors rethrow', async () => {

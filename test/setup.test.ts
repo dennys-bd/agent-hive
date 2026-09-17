@@ -10,11 +10,11 @@ import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
 import type { Config, Language, SetupBody, SetupInfo, State } from '../src/types.js';
-import { fakeBoardFactory, OPTIONS } from './fakes.js';
+import { COLUMNS, fakeBoardFactory, OPTIONS } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
-  status: { queue: 'Ready', working: 'In progress', review: 'In review' },
+  columns: COLUMNS,
   maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would start a real claude)
 };
 
@@ -94,12 +94,12 @@ test('POST /setup writes the config with defaults, boots the runtime and reports
   const info = await json<SetupInfo>(fetch(`${base}/setup`));
   assert.equal(info.configured, true);
   assert.deepEqual(info.config?.board, BODY.board);
-  assert.equal(info.config?.promptTemplate, DEFAULT_CONFIG.promptTemplate);
 });
 
 test('POST /setup with a column the board does not have answers 400 and writes nothing', async (t) => {
   const { base, repo, server } = await start(t);
-  const res = await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Todo' } });
+  // status still drives board validation in Task 1 (fakeBoardFactory checks it, not columns); columns rides along for the fixture shape.
+  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Todo'] }], status: { queue: 'Todo', working: 'In progress', review: 'In review' } });
   assert.equal(res.status, 400);
   assert.match((await json<{ error: string }>(res)).error, /"Todo".*Ready, In progress, In review, Done/);
   await assert.rejects(stat(configFile(repo)));
@@ -121,16 +121,17 @@ test('a second POST /setup reconfigures in memory and preserves port, claudeArgs
   assert.equal((await postSetup(base, BODY)).status, 200);
   const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
   await writeFile(configFile(repo), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'], promptTemplate: 'só {title}' }));
-  const res = await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } });
+  // status still drives the fake board's queue in Task 1 (fakeBoardFactory checks it, not columns); columns rides along for the fixture shape.
+  const res = await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }], status: { queue: 'Done', working: 'In progress', review: 'In review' } });
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true, restartForPort: 5000 });
   const rewritten = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.equal(rewritten.status.queue, 'Done');
+  assert.equal(rewritten.columns[0].from[0], 'Done');
   assert.equal(rewritten.port, 5000);
   assert.deepEqual(rewritten.claudeArgs, ['--model', 'sonnet']);
   assert.equal(rewritten.promptTemplate, 'só {title}');
   assert.deepEqual(server.getState()?.queue.map((task) => task.title), ['from Done']);
-  assert.equal(configs.at(-1)?.status.queue, 'Done');
+  assert.equal(configs.at(-1)?.columns[0].from[0], 'Done');
 });
 
 test('a second POST /setup with the same board and status keeps the live board instance', async (t) => {
@@ -139,7 +140,11 @@ test('a second POST /setup with the same board and status keeps the live board i
   const afterFirst = configs.length; // validation + activate
   assert.equal((await postSetup(base, { ...BODY, promptTemplate: 'só {title}' })).status, 200);
   assert.equal(configs.length, afterFirst + 1, 'only the pre-write validation creates a board; reconfigure reuses the live one');
-  assert.equal((await postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } })).status, 200);
+  // status still drives sameBoard in Task 1 (columns is not compared yet); columns rides along for the fixture shape.
+  assert.equal(
+    (await postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }], status: { queue: 'Done', working: 'In progress', review: 'In review' } })).status,
+    200,
+  );
   assert.equal(configs.length, afterFirst + 3, 'a different status needs a new board');
 });
 
@@ -147,13 +152,13 @@ test('concurrent POST /setup calls run one at a time and the last one wins on di
   const { base, repo } = await start(t, 30);
   const [first, second] = await Promise.all([
     postSetup(base, BODY),
-    postSetup(base, { ...BODY, status: { ...BODY.status, queue: 'Done' } }),
+    postSetup(base, { ...BODY, columns: [{ ...COLUMNS[0], from: ['Done'] }] }),
   ]);
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
   const onDisk = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
-  assert.equal(onDisk.status.queue, 'Done');
-  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.status.queue, 'Done');
+  assert.equal(onDisk.columns[0].from[0], 'Done');
+  assert.equal((await json<SetupInfo>(fetch(`${base}/setup`))).config?.columns[0].from[0], 'Done');
 });
 
 test('boot keeps the maxConcurrent saved in .hive/state.json over the config value', async (t) => {
@@ -261,7 +266,7 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
   assert.deepEqual((await json<SetupInfo>(fetch(`${base}/setup`))).config?.board, body.board);
   // an existing file is never rewritten by setup; a file with its own vocabulary lists only its statuses
   await writeFile(file, '| id | título | status |\n|---|---|---|\n| T-7 | Só esta | Todo |\n');
-  assert.equal((await postSetup(base, body)).status, 200);
+  assert.equal((await postSetup(base, { ...body, columns: [{ ...COLUMNS[0], from: ['Todo'], onStart: 'Todo', onFinish: 'Todo' }] })).status, 200);
   assert.deepEqual(server.getState()?.queue, []);
   assert.deepEqual(await json(fetch(`${base}/setup/columns?type=markdown&path=docs/board.md`)), ['Todo']);
 });

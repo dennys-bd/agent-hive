@@ -8,7 +8,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
-import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
+import { CONFIG_FILE, DEFAULT_CONFIG, loadConfigOrLegacy, parseBoard, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
 import { isBlocked, isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
@@ -436,7 +436,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.get('/setup/columns', async (req: Request, res: Response) => {
     let config: Config;
     try {
-      config = parseConfig({ board: boardFromQuery(req.query) }); // defaults fill the rest; only the board matters here
+      config = { ...DEFAULT_CONFIG, columns: [], board: parseBoard(boardFromQuery(req.query), 'board') }; // columns unused here, only the board matters
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
@@ -460,9 +460,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function saveSetup(body: Partial<SetupBody>, res: Response): Promise<void> {
     let config: Config;
     try {
-      const current = await loadConfigIfPresent(repo);
+      const current = await loadConfigOrLegacy(repo);
       config = parseConfig({
-        board: body.board,
+        board: body.board, columns: body.columns ?? current?.columns,
         status: body.status,
         maxConcurrent: body.maxConcurrent ?? current?.maxConcurrent,
         port: current?.port,

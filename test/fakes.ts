@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Logger } from '../src/log.js';
-import type { Board, BoardQuota, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
+import type { Board, BoardQuota, Column, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
 
 export interface FakeWorker {
   launch: WorkerLaunch;
@@ -35,6 +35,11 @@ export const LAUNCH: WorkerLaunch = {
 };
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
+
+/** One column that reproduces today's flow: Ready → In progress on start → In review on finish, then the card leaves. */
+export const COLUMNS: Column[] = [
+  { name: 'fila', weight: 1, from: ['Ready'], onStart: 'In progress', onFinish: 'In review', prompt: 'Task #{id}: {title}\n\n{body}' },
+];
 
 // A board that has the OPTIONS columns and returns one task named after the configured queue column.
 // `resolveDelayMs` makes resolveFields slow so concurrent saves overlap; `quota` gives it a fixed quota reading (none by default, like markdown).

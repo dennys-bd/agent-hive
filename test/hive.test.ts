@@ -8,12 +8,13 @@ import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
 import type { RateLimits, SetupInfo } from '../src/types.js';
+import { COLUMNS } from './fakes.js';
 
 // Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
   await writeFile(join(repo, 'board.md'), newBoardText());
-  const config = { board: { type: 'markdown', path: 'board.md' }, maxConcurrent: 0, port: 0, ...extra };
+  const config = { board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS, maxConcurrent: 0, port: 0, ...extra };
   await writeFile(join(repo, 'hive.config.json'), JSON.stringify(config));
   return repo;
 }

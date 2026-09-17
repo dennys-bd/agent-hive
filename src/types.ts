@@ -69,6 +69,41 @@ export interface Task {
   blockedBy?: string[]; // ids of blockers still open, per the adapter; absent or empty = free to start
 }
 
+export type SessionPolicy = 'new' | 'continue';
+
+/** One stage of the Hive's own board; the array order is the pipeline order. */
+export interface Column {
+  name: string;
+  prompt?: string; // template ({id} {number} {title} {body} {url}); absent = no action, the card just sits here
+  session?: SessionPolicy; // continue = --resume the card's session; absent = new
+  model?: string; // --model
+  weight: number; // higher wins a free slot; ties by board order
+  from: string[]; // board columns whose cards enter here (new cards, or a human move)
+  onStart?: string; // board column the card is moved to when the command starts
+  onFinish?: string; // idem when the command ends
+}
+
+/** A board task inside the Hive: it exists while it sits in a column, running or not. */
+export interface Card {
+  task: Task;
+  column: string;
+  boardColumn: string; // where the Hive last saw or left it on the board; the poll compares against it
+  slug: string;
+  worktree?: string;
+  branch?: string;
+  sessionId?: string; // set by the reducer at spawn (new) or kept (continue); what --resume takes
+  prUrl?: string;
+  slotId?: string; // present while the command runs
+  missing?: true; // gone from the board; waits for close or keep
+  orphan?: true; // kept after going missing: runs to the end, no board writes, ignored by the poll
+}
+
+/** A task as the adapter lists it: which board column it is in, in board order. */
+export interface BoardCard {
+  task: Task;
+  column: string;
+}
+
 export interface Slot {
   id: string;
   workerId?: string; // uuid per spawn; stale exit/hook signals from a previous occupant are ignored
@@ -114,6 +149,7 @@ export interface Config {
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
+  columns: Column[]; // the Hive's board, in pipeline order
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -174,7 +210,10 @@ export interface SetupInfo {
 
 export interface SetupBody {
   board: BoardConfig;
-  status: Record<StatusKey, string>;
+  /** The form always sends it; an API caller that omits it keeps the current columns (or the legacy proposal). */
+  columns?: Column[];
+  /** @deprecated superseded by `columns`; kept until Task 7 so an old API caller does not break mid-migration. */
+  status?: Record<StatusKey, string>;
   /** Optional; the form never sends it. Seeds the first boot; after that the header (POST /config) owns it. */
   maxConcurrent?: number;
   /** Optional; blank or missing keeps the current template (or the default on first setup). */
@@ -207,6 +246,9 @@ export interface Board {
   setupOptions(): Promise<string[]>; // status values available, for the setup form
   quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
+
+/** What a board adapter is built from; the rest of the config is not its business. */
+export type BoardSpec = Pick<Config, 'board' | 'status' | 'epics'>;
 
 /** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
 export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
