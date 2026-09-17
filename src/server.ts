@@ -11,7 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
-import { killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
+import { killStray, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
 import type {
@@ -76,7 +76,7 @@ const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board,
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
   const slugs = state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : []));
-  await Promise.all(slugs.map((slug) => killWorker(slug)));
+  await Promise.all(slugs.map((slug) => killStray(slug)));
 }
 
 function errorMessage(err: unknown): string {
@@ -145,7 +145,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       case 'kill':
         try {
           // no live process (tab closed by hand, exit signal lost): free the slot ourselves
-          const matched = await killWorker(effect.slug);
+          const matched = await killStray(effect.slug);
           if (!matched) await dispatch({ type: 'exit', workerId: effect.workerId });
         } catch (err) {
           await fail('kill', err);

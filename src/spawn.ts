@@ -1,8 +1,9 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
-import type { Task } from './types.js';
+import type { SpawnWorker, Task } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const NO_MATCH_EXIT = 1;
@@ -29,6 +30,61 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
   await writeFile(path, text);
   return path;
 }
+
+export interface WorkerArgvOptions {
+  slug: string;
+  hooksPath: string;
+  claudeArgs: string[]; // where the user sets the permission mode: print mode has no permission prompt
+}
+
+/** Print mode with JSON on both ends of stdio: the session stays open until stdin closes, so follow-ups still work. */
+export function workerArgv(o: WorkerArgvOptions): string[] {
+  return [
+    `--worktree=${o.slug}`, '--settings', o.hooksPath,
+    '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
+    ...o.claudeArgs,
+  ];
+}
+
+/** The child's env: the Hive's own minus CLAUDECODE (a Hive launched from inside Claude Code would stop the child from starting). */
+export function workerEnv(base: NodeJS.ProcessEnv, workerId: string, port: number): NodeJS.ProcessEnv {
+  const { CLAUDECODE: _inherited, ...env } = base;
+  return { ...env, HIVE_WORKER_ID: workerId, HIVE_PORT: String(port) };
+}
+
+export function userMessage(text: string): string {
+  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
+}
+
+export const spawnWorker: SpawnWorker = (argv, { cwd, env }, handlers) => {
+  const child = spawn('claude', argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let exited = false;
+  const exitOnce = (): void => {
+    if (exited) return;
+    exited = true;
+    handlers.onExit();
+  };
+  createInterface({ input: child.stdout }).on('line', (line) => handlers.onLine(line));
+  createInterface({ input: child.stderr }).on('line', (line) => handlers.onLine(`stderr: ${line}`));
+  child.on('exit', exitOnce);
+  child.on('error', (err) => {
+    // claude not on PATH, or the signal failed: shown in the panel, and the worker is over either way
+    handlers.onLine(`stderr: ${err.message}`);
+    exitOnce();
+  });
+  child.stdin.on('error', (err) => handlers.onLine(`stderr: stdin: ${err.message}`)); // EPIPE after the child died: exit already freed the slot
+  return {
+    send: (text) => {
+      child.stdin.write(userMessage(text));
+    },
+    end: () => {
+      child.stdin.end();
+    },
+    kill: () => {
+      child.kill('SIGTERM');
+    },
+  };
+};
 
 export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -76,8 +132,8 @@ function worktreePattern(slug: string): string {
   return `--worktree=${slug}`;
 }
 
-/** Resolves true when pkill matched a process, false when nothing matched. */
-export async function killWorker(slug: string): Promise<boolean> {
+/** Boot-only orphan defense: kills a worker of a previous Hive that may still hold the worktree. Resolves true when pkill matched. */
+export async function killStray(slug: string): Promise<boolean> {
   try {
     await execFileAsync('pkill', ['-f', '--', worktreePattern(slug)]);
     return true;
