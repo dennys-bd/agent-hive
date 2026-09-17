@@ -67,6 +67,7 @@ export async function readPlanLimits(deps: PlanLimitsDeps = {}): Promise<RateLim
   const res = await doFetch(USAGE_URL, {
     headers: { Authorization: `Bearer ${token}`, 'anthropic-beta': OAUTH_BETA },
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), // no retry: the next reading is the retry
+    redirect: 'manual', // the bearer never follows a redirect off the fixed host; a 3xx is just a failed reading (!res.ok)
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const body: unknown = await res.json().catch(() => { throw new Error('invalid JSON body'); }); // res.json() would quote the body

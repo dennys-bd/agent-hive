@@ -56,6 +56,7 @@ test('readPlanLimits with the env token calls the usage URL with the bearer and 
   assert.equal(headers.get('authorization'), `Bearer ${TOKEN}`);
   assert.equal(headers.get('anthropic-beta'), 'oauth-2025-04-20');
   assert.ok(calls[0].init?.signal instanceof AbortSignal, 'a timeout guards the call');
+  assert.equal(calls[0].init?.redirect, 'manual', 'the bearer never follows a redirect');
   assert.equal(keychain.calls.length, 0, 'the env wins: the Keychain is not asked');
   assert.equal(PLAN_LIMITS_INTERVAL_MS, 300_000);
 });
