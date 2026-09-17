@@ -12,6 +12,7 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
   'permission_prompt', 'idle_prompt', 'agent_needs_input', 'elicitation_dialog', 'elicitation_url_dialog',
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
+export const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/; // Claude Code uses uuids; anything else came from another local process
 const SLUG_MAX = 30;
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 
@@ -63,6 +64,11 @@ export function extractPrUrl(command: string, response: unknown): string | undef
   if (!command.includes('gh pr create')) return undefined;
   const text = typeof response === 'string' ? response : JSON.stringify(response ?? '');
   return text.match(PR_URL)?.[0];
+}
+
+/** Any local process can hit /hooks/event and the id reaches the panel and the log: only a plain id of a sane length is kept. */
+export function isSessionId(value: unknown): value is string {
+  return typeof value === 'string' && SESSION_ID.test(value);
 }
 
 export function reduce(state: State, event: HiveEvent): Reduced {
@@ -223,8 +229,11 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
   // Only the server sets `tokens` (Stop / SessionEnd): the sample lands first, then the event applies on top of it
   const state = tokens === undefined ? initial : recordUsage(initial, slot, tokens);
   switch (p.hook_event_name) {
-    case 'SessionStart': // the transcript path is kept only when it is what Claude Code sends: an absolute .jsonl
-      return patch(state, workerId, { worktree: p.cwd, branch, transcriptPath: isTranscriptPath(p.transcript_path) ? p.transcript_path : undefined });
+    case 'SessionStart': // the transcript path is kept only when it is what Claude Code sends: an absolute .jsonl; the first session id wins (#24)
+      return patch(state, workerId, {
+        worktree: p.cwd, branch, transcriptPath: isTranscriptPath(p.transcript_path) ? p.transcript_path : undefined,
+        sessionId: slot.sessionId ?? (isSessionId(p.session_id) ? p.session_id : undefined),
+      });
     case 'UserPromptSubmit':
       return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: 'prompt enviado' });
     case 'PreToolUse':
