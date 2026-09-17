@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HOOK_EVENTS, hookCommand, prepareHiveDir, renderHooksSettings } from '../src/hooks-settings.js';
+import { HOOK_EVENTS, hookCommand, prepareHiveDir, renderHooksSettings, statusCommand } from '../src/hooks-settings.js';
 
 test('hookCommand posts stdin to the hive with the worker header and never fails the hook', () => {
   const cmd = hookCommand(4242);
@@ -23,6 +23,16 @@ test('renderHooksSettings registers every lifecycle event, Bash matcher only on 
   assert.equal(stop.matcher, undefined);
   assert.equal(stop.hooks[0].type, 'command');
   assert.equal(stop.hooks[0].command, hookCommand(4242));
+});
+
+test('statusCommand posts the status line JSON to /hooks/status, prints the reply and never fails; renderHooksSettings ships it as statusLine', () => {
+  const cmd = statusCommand(4242);
+  assert.match(cmd, /curl -s -m 2 -X POST http:\/\/127\.0\.0\.1:4242\/hooks\/status/);
+  assert.match(cmd, /-H "x-hive-worker: \$HIVE_WORKER_ID"/);
+  assert.match(cmd, /-d @-; exit 0$/);
+  assert.doesNotMatch(cmd, />\/dev\/null/, 'the reply is the line the worker shows');
+  assert.deepEqual(renderHooksSettings(4242).statusLine, { type: 'command', command: cmd });
+  assert.equal(hookCommand(4242).endsWith('>/dev/null; exit 0'), true, 'hooks still discard the reply');
 });
 
 test('prepareHiveDir creates .hive/prompts, hooks.json and excludes .hive from git', async () => {
