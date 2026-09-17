@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type { Budget, UsageSample } from './types.js';
 
@@ -83,4 +84,17 @@ export function pruneUsage(usage: UsageSample[], now: number): UsageSample[] {
 /** Any local process can hit /hooks/event: only an absolute `.jsonl` path is ever opened. */
 export function isTranscriptPath(value: unknown): value is string {
   return typeof value === 'string' && isAbsolute(value) && value.endsWith('.jsonl');
+}
+
+/** Where Claude Code keeps the transcripts of a cwd: `<config dir>/projects/<cwd with every non-alphanumeric as '-'>`. */
+export function transcriptDir(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+}
+
+/**
+ * The worker's own transcript: an absolute `.jsonl` directly under the transcript dir of its worktree
+ * (`claude --worktree=<slug>` runs in `<repo>/.claude/worktrees/<slug>`). A forged hook cannot point the excerpt at any other file.
+ */
+export function isWorkerTranscript(value: unknown, repo: string, slug: string, env: NodeJS.ProcessEnv = process.env): value is string {
+  return isTranscriptPath(value) && dirname(value) === transcriptDir(join(repo, '.claude', 'worktrees', slug), env);
 }

@@ -1,13 +1,14 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseConfig } from '../src/config.js';
 import { prepareHiveDir } from '../src/hooks-settings.js';
 import type { Logger } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
+import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
 import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
@@ -100,19 +101,34 @@ test('POST /slots/:id/focus reaches the handle of an embedded worker too; an unk
   assert.deepEqual(await failed.json(), { error: 'terminal não suportado em win32' });
 });
 
-test('GET /slots/:id/output is the formatted tail of the transcript SessionStart pointed at; [] before the hook or when unreadable; unknown slot is 404', async (t) => {
+test('GET /slots/:id/output is the formatted tail of the worker transcript SessionStart pointed at; [] before the hook, when unreadable or when the path is not the worker own; unknown slot is 404', async (t) => {
   const { base, repo, server } = await start(t);
-  const { id, workerId } = slot0(server);
-  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] });
-  const transcriptPath = join(repo, 'session.jsonl');
-  await writeFile(transcriptPath, [
+  const { id, workerId, slug } = slot0(server);
+  const configDir = await mkdtemp(join(tmpdir(), 'hive-claude-'));
+  process.env.CLAUDE_CONFIG_DIR = configDir; // where transcriptDir looks; the suite runs one file per process
+  t.after(() => { delete process.env.CLAUDE_CONFIG_DIR; });
+  const lines = [
     JSON.stringify({ type: 'user', message: { content: 'faz a task' } }),
     JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'lendo o issue' }, { type: 'tool_use', name: 'Bash', input: { command: 'gh issue view 1' } }] } }),
     '',
-  ].join('\n'));
-  await server.dispatch({ type: 'hook', workerId: workerId!, payload: { hook_event_name: 'SessionStart', cwd: repo, transcript_path: transcriptPath } });
+  ].join('\n');
+  const sessionStart = (transcriptPath: string): Promise<Response> => fetch(`${base}/hooks/event`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': workerId! },
+    body: JSON.stringify({ hook_event_name: 'SessionStart', cwd: repo, transcript_path: transcriptPath }),
+  });
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] });
+  const forged = join(configDir, 'projects', '-Users-x-secret', 'other.jsonl'); // another project's transcript: any local process can post a hook
+  await mkdir(dirname(forged), { recursive: true });
+  await writeFile(forged, lines);
+  assert.equal((await sessionStart(forged)).status, 200);
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'a path outside the worker transcript dir is dropped');
+  assert.equal(slot0(server).transcriptPath, undefined);
+  const own = join(transcriptDir(join(repo, '.claude', 'worktrees', slug!)), 'abc.jsonl');
+  await mkdir(dirname(own), { recursive: true });
+  await writeFile(own, lines);
+  assert.equal((await sessionStart(own)).status, 200);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', '▶ Bash: gh issue view 1'] });
-  await rm(transcriptPath);
+  await rm(own);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'an unreadable transcript is an empty excerpt, not an error');
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });

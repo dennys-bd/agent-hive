@@ -18,7 +18,7 @@ import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
-import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
+import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
   Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
 } from './types.js';
@@ -227,8 +227,16 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
-  // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only an absolute `.jsonl`:
-  // any local process can hit /hooks/event, and the worst case here is reading a `.jsonl` and discarding it.
+  // Any local process can hit /hooks/event: a transcript path is honoured only when it is the worker's own, so a forged
+  // SessionStart cannot turn GET /slots/:id/output into a reader of any `.jsonl` the Hive can open. Dropped, not rejected:
+  // the rest of the hook (status, branch) still applies.
+  function scopeTranscript(workerId: string, payload: HookPayload): HookPayload {
+    const slug = slotOf(workerId)?.slug;
+    if (payload.transcript_path === undefined || (slug !== undefined && isWorkerTranscript(payload.transcript_path, repo, slug))) return payload;
+    return { ...payload, transcript_path: undefined };
+  }
+
+  // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only the worker's own `.jsonl` (scopeTranscript).
   async function turnTokens(workerId: string, payload: HookPayload): Promise<number | undefined> {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
     const slot = slotOf(workerId);
@@ -306,7 +314,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // the session is killed after the answer and its exit frees the slot. Unknown to the pool: a previous Hive's worker, nothing to do.
   app.post('/hooks/event', async (req: Request, res: Response) => {
     const workerId = req.header('x-hive-worker');
-    const payload = req.body as HookPayload | undefined;
+    const raw = req.body as HookPayload | undefined;
+    const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
       const tokens = await turnTokens(workerId, payload);
