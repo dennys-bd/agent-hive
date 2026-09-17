@@ -9,7 +9,7 @@ import { prepareHiveDir } from '../src/hooks-settings.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { RESULT_LINE } from '../src/workers.js';
-import type { SetupBody, Slot, State } from '../src/types.js';
+import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
 import { fakeBoardFactory, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
@@ -25,6 +25,7 @@ const postJson = (url: string, body?: unknown): Promise<Response> =>
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
 const line = (worker: FakeWorker, payload: unknown): void => worker.handlers.onLine(JSON.stringify(payload));
+const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 
 async function start(t: TestContext, body: SetupBody = BODY, withFocus = false): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
@@ -178,4 +179,23 @@ test('close() kills every live worker before the HTTP server goes down, and a se
   assert.equal(workers[0].killed, 1);
   await assert.rejects(fetch(`${base}/setup`));
   await server.close();
+});
+
+test('every poll reads the board quota afterwards and persists it; a board without quota stores nothing', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal(server.getState()?.boardQuota, undefined, 'the default fake has no quota, like markdown');
+  assert.deepEqual(await json(postJson(`${base}/board/refresh`)), { ok: true });
+  assert.equal(server.getState()?.boardQuota, undefined);
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const withQuota = createServer({ repo, boardFactory: fakeBoardFactory(0, QUOTA).factory, spawnWorker: fakeSpawn().spawn });
+  const port = await withQuota.listen(0);
+  t.after(() => withQuota.close());
+  assert.equal((await postJson(`http://127.0.0.1:${port}/setup`, BODY)).status, 200); // configure polls: the quota is read at boot
+  assert.deepEqual(withQuota.getState()?.boardQuota, QUOTA);
+  await withQuota.dispatch({ type: 'boardQuota', quota: { ...QUOTA, remaining: 1 } }); // overwrite, so the refresh below proves a re-read
+  assert.deepEqual(await json(postJson(`http://127.0.0.1:${port}/board/refresh`)), { ok: true });
+  assert.deepEqual(withQuota.getState()?.boardQuota, QUOTA, 'read again after the manual poll');
+  const saved = JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State;
+  assert.deepEqual(saved.boardQuota, QUOTA, 'persisted with the rest of the state');
+  assert.equal(withQuota.getState()?.error, undefined);
 });

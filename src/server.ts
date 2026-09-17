@@ -11,6 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
+import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
 import { createWorkerPool } from './workers.js';
@@ -21,7 +22,6 @@ import type {
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
-const POLL_INTERVAL_MS = 30_000;
 const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
@@ -200,6 +200,22 @@ export function createServer(deps: ServerDeps): HiveServer {
     } catch (err) {
       await fail('board.listQueue', err);
     }
+    await refreshQuota(runtime.board); // after every real poll, success or failure: the reset time matters most when the limit just hit
+  }
+
+  // Diagnostic only: a failed read is logged and never masks the board error or drops the poll.
+  async function refreshQuota(board: Board): Promise<void> {
+    try {
+      const quota = await board.quota?.();
+      if (quota) await dispatch({ type: 'boardQuota', quota });
+    } catch (err) {
+      console.error(`board.quota: ${errorMessage(err)}`);
+    }
+  }
+
+  // Only the timer asks shouldPoll; /board/refresh, configure, reconfigure and boot always poll: whoever asked wants the answer now.
+  async function tick(): Promise<void> {
+    if (live && shouldPoll(live.state, Date.now())) await poll();
   }
 
   async function resolveBranch(cwd: string): Promise<string | undefined> {
@@ -514,7 +530,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       httpServer = server;
     });
     boundPort = bound;
-    pollTimer = setInterval(() => void poll(), POLL_INTERVAL_MS); // no-op until configured
+    pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     return bound;
   }
 
