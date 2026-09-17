@@ -76,9 +76,11 @@ export function mergeCards(cards: Card[], columns: Column[], listed: BoardCard[]
     (listedIds.has(cardId(card)) ? result : [...result.slice(0, i), unlisted(card), ...result.slice(i)]), fromBoard);
 }
 
-/** Cards a free slot may take, best first: stopped, present on the board, unblocked, in a column with a prompt; higher weight wins, ties keep board order. */
+/** Cards a free slot may take, best first: stopped, present on the board, unblocked, without a spawn failure, in a column with a prompt;
+ * higher weight wins, ties keep board order. A card with `error` waits for a manual start: retrying would fail the same way. */
 export function candidates(cards: Card[], columns: Column[]): Card[] {
   const weight = (card: Card): number => columnOf(columns, card.column)?.weight ?? 0;
-  const runnable = cards.filter((c) => c.slotId === undefined && !c.missing && !isBlocked(c.task) && columnOf(columns, c.column)?.prompt !== undefined);
+  const runnable = cards.filter((c) =>
+    c.slotId === undefined && !c.missing && c.error === undefined && !isBlocked(c.task) && columnOf(columns, c.column)?.prompt !== undefined);
   return [...runnable].sort((a, b) => weight(b) - weight(a)); // sort is stable: equal weights keep the listing order
 }

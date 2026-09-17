@@ -3,7 +3,7 @@ import type { LogLevel } from './log.js';
 export type Language = 'pt' | 'en';
 
 export type Status = 'empty' | 'working' | 'waiting' | 'review';
-export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'turn';
+export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'turn' | 'continuing';
 /** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
 export interface SlotEvent {
   kind: SlotEventKind;
@@ -95,6 +95,7 @@ export interface Card {
   slotId?: string; // present while the command runs
   missing?: true; // gone from the board; waits for close or keep
   orphan?: true; // kept after going missing: runs to the end, no board writes, ignored by the poll
+  error?: string; // the last spawn failure; the card stays out of fill until a manual start clears it
 }
 
 /** A task as the adapter lists it: which board column it is in, in board order. */
@@ -115,6 +116,7 @@ export interface Slot {
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
   sessionId?: string; // Claude Code session id from SessionStart; must coincide with Card.sessionId. First one wins (#24)
+  done?: true; // /hooks/done received in this run: the next Stop ends the stage. Cleared on spawn and on continuation
 }
 
 export interface State {
@@ -180,7 +182,9 @@ export type HiveEvent =
   | { type: 'error'; message?: string }
   | { type: 'start'; itemId: string; raiseMax?: boolean } // the human override on a stopped card: past the signal, the cap and the budget
   | { type: 'closeCard'; cardId: string } // fechar on a missing card
-  | { type: 'keepCard'; cardId: string }; // manter on a missing card
+  | { type: 'keepCard'; cardId: string } // manter on a missing card
+  | { type: 'done'; workerId: string } // the worker says the command is finished (POST /hooks/done)
+  | { type: 'spawnFailed'; workerId: string; message: string }; // the spawner could not open the session / tab
 
 export interface ProjectSummary {
   number: number;
@@ -191,7 +195,8 @@ export interface ProjectSummary {
 export type Effect =
   | { type: 'spawn'; slot: Slot; card: Card; column: Column; session: SessionPolicy } // session already resolved: continue without an id runs as new
   | { type: 'setColumn'; itemId: string; column: string }
-  | { type: 'kill'; slug: string; workerId: string };
+  | { type: 'kill'; slug: string; workerId: string }
+  | { type: 'continue'; workerId: string; card: Card; column: Column }; // answers the worker's Stop with `column`'s prompt: same process, no spawn
 
 export interface SetupInfo {
   configured: boolean;
@@ -245,14 +250,15 @@ export type BoardSpec = Pick<Config, 'board' | 'columns' | 'epics'>;
 /** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
 export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
 
-/** What the server injects so tests never open a session. */
+/** What the server injects so tests never open a session. `onError` is for kill / focus failures: a spawn failure is `started` rejecting. */
 export interface WorkerHandlers {
-  onExit(): void; // once, on session end, kill or spawn failure
-  onError(message: string): void; // spawner failures (tmux / iTerm missing or refused): shown in the dashboard error bar
+  onExit(): void; // once, on session end or kill
+  onError(message: string): void; // shown in the dashboard error bar
 }
 
 export interface WorkerHandle {
-  kill(): void; // tmux kill-session, or pkill by slug for a tab
+  started: Promise<void>; // resolves when the session / tab exists; rejects with the spawner's error (`tmux: …`, `iTerm: …`)
+  kill(): Promise<void>; // resolves when the session / process no longer exists; one kill per handle
   focus(): Promise<void>; // opens (or brings to the front) the worker's terminal
 }
 

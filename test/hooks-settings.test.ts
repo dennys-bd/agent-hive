@@ -7,10 +7,12 @@ import { HOOK_EVENTS, hookCommand, prepareHiveDir, renderHooksSettings, statusCo
 
 test('hookCommand posts stdin to the hive with the worker header and never fails the hook', () => {
   const cmd = hookCommand(4242);
-  assert.match(cmd, /curl -s -m 2 -X POST http:\/\/127\.0\.0\.1:4242\/hooks\/event/);
+  assert.match(cmd, /curl -sf -m 30 -X POST http:\/\/127\.0\.0\.1:4242\/hooks\/event/);
   assert.match(cmd, /-H "x-hive-worker: \$HIVE_WORKER_ID"/);
   assert.match(cmd, /-d @-/);
-  assert.match(cmd, /; exit 0$/);
+  assert.match(cmd, /-d @-; exit 0$/);
+  assert.doesNotMatch(cmd, />\/dev\/null/, 'the reply is how a Stop continues in place: empty = no decision');
+  assert.match(cmd, /curl -sf /, 'an HTTP error body (Express HTML, the host guard JSON) must never reach the worker context');
 });
 
 test('renderHooksSettings registers every lifecycle event, Bash matcher only on PostToolUse', () => {
@@ -27,12 +29,12 @@ test('renderHooksSettings registers every lifecycle event, Bash matcher only on 
 
 test('statusCommand posts the status line JSON to /hooks/status, prints the reply and never fails; renderHooksSettings ships it as statusLine', () => {
   const cmd = statusCommand(4242);
-  assert.match(cmd, /curl -s -m 2 -X POST http:\/\/127\.0\.0\.1:4242\/hooks\/status/);
+  assert.match(cmd, /curl -sf -m 2 -X POST http:\/\/127\.0\.0\.1:4242\/hooks\/status/);
   assert.match(cmd, /-H "x-hive-worker: \$HIVE_WORKER_ID"/);
   assert.match(cmd, /-d @-; exit 0$/);
   assert.doesNotMatch(cmd, />\/dev\/null/, 'the reply is the line the worker shows');
   assert.deepEqual(renderHooksSettings(4242).statusLine, { type: 'command', command: cmd });
-  assert.equal(hookCommand(4242).endsWith('>/dev/null; exit 0'), true, 'hooks still discard the reply');
+  assert.match(cmd, /-m 2 /, 'the status line stays snappy; the hook waits for the board writes (-m 30)');
 });
 
 test('prepareHiveDir creates .hive/prompts, hooks.json and excludes .hive from git', async () => {

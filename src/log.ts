@@ -117,6 +117,8 @@ export function describeEvent(event: HiveEvent): string {
     case 'start': return `start #${event.itemId} raiseMax=${event.raiseMax === true}`;
     case 'closeCard': return `closeCard #${event.cardId}`;
     case 'keepCard': return `keepCard #${event.cardId}`;
+    case 'done': return `done worker=${shortId(event.workerId)}`;
+    case 'spawnFailed': return `spawnFailed worker=${shortId(event.workerId)} ${event.message}`;
   }
 }
 
@@ -128,6 +130,7 @@ export function describeEffect(effect: Effect): string {
     }
     case 'setColumn': return `setColumn #${effect.itemId} → ${effect.column}`;
     case 'kill': return `kill slug=${effect.slug} worker=${shortId(effect.workerId)}`;
+    case 'continue': return `continue column=${effect.column.name} worker=${shortId(effect.workerId)}`;
   }
 }
 

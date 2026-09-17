@@ -135,15 +135,18 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1', raiseMax: true }), 'start #PVTI_1 raiseMax=true');
   assert.equal(describeEvent({ type: 'closeCard', cardId: 'PVTI_1' }), 'closeCard #PVTI_1');
   assert.equal(describeEvent({ type: 'keepCard', cardId: 'PVTI_1' }), 'keepCard #PVTI_1');
+  assert.equal(describeEvent({ type: 'done', workerId: WORKER }), 'done worker=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'spawnFailed', workerId: WORKER, message: 'tmux: duplicate session: hive-30-logs' }), 'spawnFailed worker=1a2b3c4d tmux: duplicate session: hive-30-logs');
   assert.equal(describeEvent({ type: 'setColumns', columns: [{ name: 'a', weight: 2, from: [] }, { name: 'b', weight: 0, from: [] }] }), 'setColumns a(2)>b(0)');
 });
 
-test('describeEffect: spawn, setColumn and kill', () => {
+test('describeEffect: spawn, setColumn, kill and continue', () => {
   const slot: Slot = { id: SLOT, workerId: WORKER, status: 'working', cardId: 'I30' };
   const column: Column = { name: 'dev', weight: 1, from: ['Ready'], prompt: 'x' };
   assert.equal(describeEffect({ type: 'spawn', slot, card: cardFor('30'), column, session: 'new' }), 'spawn slot=9f8e7d6c #30 slug=hive-30-logs column=dev session=new worker=1a2b3c4d');
   assert.equal(describeEffect({ type: 'setColumn', itemId: 'PVTI_1', column: 'In review' }), 'setColumn #PVTI_1 → In review');
   assert.equal(describeEffect({ type: 'kill', slug: 'hive-30-logs', workerId: WORKER }), 'kill slug=hive-30-logs worker=1a2b3c4d');
+  assert.equal(describeEffect({ type: 'continue', workerId: WORKER, card: cardFor('30'), column }), 'continue column=dev worker=1a2b3c4d');
 });
 
 test('describeChanges lists each slot whose status changed (position in the grid, matched by id) and the signal change; [] when nothing moved', () => {

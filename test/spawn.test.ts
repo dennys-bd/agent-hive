@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killStray, renderPrompt, workerArgs, workerEnv, writePrompt } from '../src/spawn.js';
+import { doneTrailer, isStrayAlive, killStray, renderPrompt, workerArgs, workerEnv, writePrompt } from '../src/spawn.js';
 import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
 import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
@@ -33,8 +33,9 @@ test('workerEnv copies the base env without CLAUDECODE and NODE_PATH and adds HI
   assert.equal(base.NODE_PATH, '/hive/node_modules');
 });
 
-test('killStray resolves false when no process matches', async () => {
+test('killStray and isStrayAlive resolve false when no process matches', async () => {
   assert.equal(await killStray('definitely-not-running-slug-xyz'), false);
+  assert.equal(await isStrayAlive('definitely-not-running-slug-xyz'), false);
 });
 
 test('shellQuote single-quotes and escapes embedded quotes', () => {
@@ -81,4 +82,12 @@ test('workerArgs always opens the worktree, then the global claudeArgs, the colu
 test('workerCommand quotes every arg so a model or id with a quote cannot break out of the shell string', () => {
   const cmd = workerCommand({ ...LAUNCH, args: ['--model', "o'ps"] });
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
+});
+
+test('doneTrailer separates from the prompt, carries the literal port and worker id in the curl and ends with a newline', () => {
+  const trailer = doneTrailer(4242, 'W1');
+  assert.ok(trailer.startsWith('\n---\nHive: when this command is completely finished'), trailer);
+  assert.ok(trailer.includes("`curl -s -X POST http://127.0.0.1:4242/hooks/done -H 'x-hive-worker: W1'`"), trailer);
+  assert.match(trailer, /Never run it earlier\. If you need something from the user, ask and end your turn without it\.\n$/);
+  assert.equal(`${renderPrompt('/hive-build {url}', task)}${trailer}`.split('\n---\n')[0], '/hive-build https://github.com/a/b/issues/7');
 });

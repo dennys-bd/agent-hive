@@ -11,8 +11,9 @@ import { initialState, reduce } from '../src/orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
 import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { BoardQuota, Card, RateLimits, SetupBody, Slot, State } from '../src/types.js';
-import { COLUMNS, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
+import { doneTrailer } from '../src/spawn.js';
+import type { BoardQuota, Card, Column, Effect, RateLimits, SetupBody, Slot, State } from '../src/types.js';
+import { COLUMNS, type FakeSpawnOptions, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
@@ -34,9 +35,9 @@ const PLAN: RateLimits = {
 };
 const NO_TOKEN = 'no Claude Code OAuth token (env, .credentials.json or Keychain)';
 
-async function start(t: TestContext, body: SetupBody = BODY, log?: Logger): Promise<Started> {
+async function start(t: TestContext, body: SetupBody = BODY, log?: Logger, spawnOptions: FakeSpawnOptions = {}): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
-  const { spawn, workers } = fakeSpawn();
+  const { spawn, workers } = fakeSpawn(spawnOptions);
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn, log });
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -52,7 +53,7 @@ async function waitFor(check: () => boolean): Promise<void> {
   assert.ok(check(), 'condition not met in time');
 }
 
-const openPr = (server: HiveServer, workerId: string): Promise<void> =>
+const openPr = (server: HiveServer, workerId: string): Promise<Effect[]> =>
   server.dispatch({
     type: 'hook', workerId,
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
@@ -61,6 +62,9 @@ const openPr = (server: HiveServer, workerId: string): Promise<void> =>
 // What the worker's hook command posts: the JSON payload on the body, the worker id on the header.
 const hookEvent = (base: string, workerId: string, payload: unknown): Promise<Response> =>
   fetch(`${base}/hooks/event`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': workerId }, body: JSON.stringify(payload) });
+
+// The trailer's curl: the worker says the command is finished. No body, only the header.
+const hookDone = (base: string, workerId: string): Promise<Response> => fetch(`${base}/hooks/done`, { method: 'POST', headers: { 'x-hive-worker': workerId } });
 
 test('POST /setup does not override a maxConcurrent changed through POST /config', async (t) => {
   const { base, server } = await start(t);
@@ -85,7 +89,10 @@ test('saving the setup starts one worker with the launch: mode, repo, port, hook
     args: ['--worktree=hive-1-from-ready', '--session-id', server.getState()!.cards[0].sessionId!],
   });
   assert.match(workers[0].launch.args[2], /^[0-9a-f-]{36}$/);
-  assert.match(await readFile(promptPath, 'utf8'), /from Ready/, 'the command line reads the prompt from this file');
+  const prompt = await readFile(promptPath, 'utf8');
+  assert.match(prompt, /^Task #1: from Ready/, 'the command line reads the prompt from this file');
+  assert.ok(prompt.endsWith(doneTrailer(port, slot.workerId!)), 'the trailer tells the worker how to end the stage');
+  assert.ok(prompt.includes(`curl -s -X POST http://127.0.0.1:${port}/hooks/done -H 'x-hive-worker: ${slot.workerId}'`), prompt);
 });
 
 test('workers: iterm in the setup reaches the launch; POST /hooks/exit frees its slot and POST /slots/:id/focus reaches the tab', async (t) => {
@@ -130,20 +137,20 @@ test('GET /slots/:id/output is the formatted tail of the worker transcript Sessi
   const forged = join(configDir, 'projects', '-Users-x-secret', 'other.jsonl'); // another project's transcript: any local process can post a hook
   await mkdir(dirname(forged), { recursive: true });
   await writeFile(forged, lines);
-  assert.equal((await sessionStart(forged)).status, 200);
+  assert.equal((await sessionStart(forged)).status, 204);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'a path outside the worker transcript dir is dropped');
   assert.equal(slot0(server).transcriptPath, undefined);
   const own = join(transcriptDir(join(repo, '.claude', 'worktrees', slug)), 'abc.jsonl');
   await mkdir(dirname(own), { recursive: true });
   await writeFile(own, lines);
-  assert.equal((await sessionStart(own)).status, 200);
+  assert.equal((await sessionStart(own)).status, 204);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', '▶ Bash: gh issue view 1'] });
   await rm(own);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'an unreadable transcript is an empty excerpt, not an error');
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });
 
-test('a Stop ends the run: the session is killed, onFinish written, the card leaves (single column) and the slot frees; a PR seen before stays on the card until then', async (t) => {
+test('a Stop before /hooks/done leaves the slot waiting; after it the Stop ends the run: the session is killed, onFinish written, the card leaves (single column) and the slot frees; a PR seen before stays on the card until then', async (t) => {
   const { log, lines } = fakeLog();
   const { base, server, workers } = await start(t, BODY, log);
   const [worker] = workers;
@@ -152,7 +159,13 @@ test('a Stop ends the run: the session is killed, onFinish written, the card lea
   assert.equal(slot0(server).status, 'review');
   assert.equal(card0(server).prUrl, 'https://github.com/acme/r/pull/9');
   assert.equal(worker.killed, 0, 'a PR is not a transition any more');
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 204);
+  assert.equal(worker.killed, 0, 'no done yet: the worker is idle, not finished');
+  assert.equal(slot0(server).status, 'waiting');
+  assert.equal(card0(server).column, 'fila');
+  assert.equal((await hookDone(base, workerId)).status, 204);
+  assert.equal(slot0(server).done, true);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 204);
   assert.equal(worker.killed, 1, 'killed through the effect, before the answer');
   assert.equal(slot0(server).status, 'empty');
   assert.deepEqual(server.getState()?.cards, [], 'fila is the last column');
@@ -167,11 +180,12 @@ test('a Stop from a child session (a subagent or teammate) does not end the run;
   const [worker] = workers;
   const workerId = slot0(server).workerId!;
   const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 200);
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: 'another-child-session-0001' })).status, 200);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 204);
+  assert.equal((await hookDone(base, workerId)).status, 204);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: 'another-child-session-0001' })).status, 204);
   assert.equal(worker.killed, 0);
-  assert.equal(slot0(server).status, 'working');
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 200);
+  assert.equal(slot0(server).status, 'working', 'a child Stop is not even a turn end');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 204);
   assert.equal(worker.killed, 1);
 });
 
@@ -295,7 +309,7 @@ test('the log tells the story: slot transitions, signal and board writes at info
   has('DEBUG setSignal green');
   has(`DEBUG effects: setColumn #I1 → In progress; spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready column=fila session=new worker=${id8}`);
   const session = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: session })).status, 200);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: session })).status, 204);
   assert.equal(slot0(server).sessionId, session, 'the route hands the whole payload to the reducer');
   has(`DEBUG hook SessionStart worker=${id8}`);
   has(`INFO slot 1: session=${session} #1 worker=${id8}`);
@@ -491,4 +505,86 @@ test('GET / serves the built index.html and its hashed asset through express.sta
   assert.match(js.headers.get('content-type') ?? '', /javascript/);
   assert.equal((await fetch(`${base}/ui/app.js`)).status, 404);
   assert.equal((await fetch(`${base}/../package.json`)).status, 404, 'static never leaves UI_DIR');
+});
+
+test('a spawn failure frees the slot and marks the card with the message: the bar shows it, neither fill nor a poll retries, a manual start does', async (t) => {
+  const { base, server, workers } = await start(t, BODY, undefined, { startError: 'tmux: spawn tmux ENOENT' });
+  await waitFor(() => slot0(server).status === 'empty');
+  assert.equal(workers.length, 1, 'no retry');
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT');
+  assert.equal(card0(server).column, 'fila');
+  assert.equal(server.getState()?.error, 'tmux: spawn tmux ENOENT');
+  assert.deepEqual(await json(postJson(`${base}/board/refresh`)), { ok: true });
+  assert.equal(workers.length, 1, 'a poll does not retry either');
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT', 'the error survives the poll');
+  assert.deepEqual(await json(postJson(`${base}/cards/I1/start`)), { ok: true });
+  assert.equal(workers.length, 2, 'the manual start runs it again');
+  await waitFor(() => slot0(server).status === 'empty'); // the fake fails every time: the card shows the error again
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT');
+});
+
+test('the kill effect waits for the pool before the next effect: a new column of the same card only spawns after the old session is gone', async (t) => {
+  const columns: Column[] = [
+    { name: 'plan', weight: 2, from: ['Ready'], onFinish: 'In progress', prompt: '/hive-plan {url}' },
+    { name: 'dev', weight: 1, from: ['In progress'], onFinish: 'In review', prompt: '/hive-build {url}' },
+  ];
+  const { base, server, workers } = await start(t, { ...BODY, columns }, undefined, { holdKills: true });
+  const workerId = slot0(server).workerId!;
+  await hookDone(base, workerId);
+  const stop = hookEvent(base, workerId, { hook_event_name: 'Stop' }); // answered only after every effect ran
+  await waitFor(() => workers[0].killed === 1);
+  await sleep(20);
+  assert.equal(workers.length, 1, 'no spawn while the kill is pending');
+  assert.equal(card0(server).column, 'dev');
+  workers[0].releaseKill();
+  assert.equal((await stop).status, 204);
+  assert.equal(workers.length, 2);
+  assert.equal(workers[1].launch.slug, workers[0].launch.slug);
+  assert.equal(workers[1].launch.workerId, slot0(server).workerId);
+  workers[1].releaseKill(); // close() awaits killAll: nothing may stay pending
+});
+
+const CONTINUE_COLUMNS: Column[] = [
+  { name: 'plan', weight: 2, from: ['Ready'], onFinish: 'In progress', prompt: '/hive-plan {url}' },
+  { name: 'dev', weight: 1, from: ['In progress'], onStart: 'In progress', onFinish: 'In review', prompt: '/hive-build {url}', session: 'continue' },
+];
+
+test('POST /hooks/done marks the slot, is idempotent and ignores an unknown worker; a Stop without done answers an empty 204 and leaves the slot waiting with the session alive', async (t) => {
+  const { base, server, workers } = await start(t, { ...BODY, columns: CONTINUE_COLUMNS });
+  const workerId = slot0(server).workerId!;
+  const idle = await hookEvent(base, workerId, { hook_event_name: 'Stop' });
+  assert.equal(idle.status, 204);
+  assert.equal(await idle.text(), '', 'no decision: Claude Code sees an empty stdout');
+  assert.equal(slot0(server).status, 'waiting');
+  assert.deepEqual(slot0(server).lastEvent, { kind: 'turn' });
+  assert.equal(card0(server).column, 'plan');
+  assert.equal(workers[0].killed, 0);
+  assert.equal((await hookDone(base, 'ghost')).status, 204);
+  assert.equal(slot0(server).done, undefined, 'unknown worker: ignored');
+  assert.equal((await hookDone(base, workerId)).status, 204);
+  assert.equal((await hookDone(base, workerId)).status, 204);
+  assert.equal(slot0(server).done, true);
+  assert.equal(slot0(server).status, 'waiting', 'done alone changes nothing else');
+});
+
+test('a Stop with done and a next continue column answers 200 { decision: block, reason } with the next prompt and the trailer: same worker, no kill, no spawn, the card moves', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, port, repo, server, workers } = await start(t, { ...BODY, columns: CONTINUE_COLUMNS }, log);
+  const { id, workerId } = slot0(server);
+  await hookDone(base, workerId!);
+  const stop = await hookEvent(base, workerId!, { hook_event_name: 'Stop' });
+  assert.equal(stop.status, 200);
+  const reason = `/hive-build https://github.com/acme/r/issues/1${doneTrailer(port, workerId!)}`;
+  assert.deepEqual(await json(stop), { decision: 'block', reason });
+  assert.equal(workers.length, 1, 'no spawn');
+  assert.equal(workers[0].killed, 0, 'no kill');
+  const slot = slot0(server);
+  assert.deepEqual([slot.id, slot.workerId, slot.status, slot.done, slot.lastEvent], [id, workerId, 'working', undefined, { kind: 'continuing' }]);
+  assert.deepEqual([card0(server).column, card0(server).slotId], ['dev', id]);
+  assert.equal(await readFile(join(repo, '.hive', 'prompts', 'hive-1-from-ready.md'), 'utf8'), reason, 'the run prompt file follows the stage');
+  assert.ok(lines.includes('INFO setColumn #I1 → In progress ok'), lines.join('\n'));
+  assert.ok(lines.includes(`INFO continue column=dev worker=${workerId!.slice(0, 8)}`), lines.join('\n'));
+  const next = await hookEvent(base, workerId!, { hook_event_name: 'Stop' });
+  assert.equal(next.status, 204, 'the reply was taken once; the next Stop needs a new done');
+  assert.equal(slot0(server).status, 'waiting');
 });

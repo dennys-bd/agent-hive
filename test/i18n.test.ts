@@ -21,6 +21,7 @@ test('statusText and slotEventText follow the language: tool shows the detail, w
   assert.equal(slotEventText({ kind: 'tool', detail: 'Bash: pnpm test' }), 'Bash: pnpm test');
   assert.equal(slotEventText({ kind: 'waiting', detail: 'permission_prompt' }), 'aguardando: permission_prompt');
   assert.equal(slotEventText({ kind: 'turn' }), 'turno encerrado');
+  assert.equal(slotEventText({ kind: 'continuing' }), 'continuando na mesma sessão');
   setLanguage('en');
   assert.equal(statusText('working'), 'working');
   assert.equal(statusText('waiting'), 'waiting for you');
@@ -28,6 +29,7 @@ test('statusText and slotEventText follow the language: tool shows the detail, w
   assert.equal(slotEventText({ kind: 'tool', detail: 'Bash: pnpm test' }), 'Bash: pnpm test');
   assert.equal(slotEventText({ kind: 'waiting', detail: 'idle_prompt' }), 'waiting: idle_prompt');
   assert.equal(slotEventText({ kind: 'pr' }), 'PR open');
+  assert.equal(slotEventText({ kind: 'continuing' }), 'continuing in the same session');
   assert.equal(slotEventText({ kind: 'tool' }), '', 'a tool event without a summary shows nothing');
 });
 

@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { spawnItermWorker } from './spawn-iterm.js';
 import { spawnTmuxWorker } from './spawn-tmux.js';
-import type { Card, Column, SessionPolicy, SpawnWorker, Task } from './types.js';
+import type { Card, Column, Exec, SessionPolicy, SpawnWorker, Task } from './types.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync: Exec = promisify(execFile);
 const NO_MATCH_EXIT = 1;
 
 export function renderPrompt(template: string, task: Task): string {
@@ -14,6 +14,18 @@ export function renderPrompt(template: string, task: Task): string {
     id: task.id, number: task.id, title: task.title, body: task.body, url: task.url, // {number} is a synonym of {id}
   };
   return template.replace(/\{(id|number|title|body|url)\}/g, (_, key: string) => values[key]);
+}
+
+/** Appended to every rendered prompt (spawn and continuation): how the worker tells the Hive the command is finished. */
+export function doneTrailer(port: number, workerId: string): string {
+  return [
+    '', '---',
+    'Hive: when this command is completely finished — nothing left to do, no agent or background task still',
+    'running, no answer pending from the user — run',
+    `\`curl -s -X POST http://127.0.0.1:${port}/hooks/done -H 'x-hive-worker: ${workerId}'\``,
+    'and end your turn. Never run it earlier. If you need something from the user, ask and end your turn without it.',
+    '',
+  ].join('\n');
 }
 
 export async function writePrompt(promptsDir: string, slug: string, text: string): Promise<string> {
@@ -45,13 +57,19 @@ export function workerEnv(base: NodeJS.ProcessEnv, workerId: string, port: numbe
 export const spawnWorker: SpawnWorker = (launch, handlers) =>
   (launch.mode === 'iterm' ? spawnItermWorker(launch, handlers) : spawnTmuxWorker(launch, handlers));
 
-/** Boot-only orphan defense (and the tab's kill): kills a worker that may still hold the worktree. Resolves true when pkill matched. */
-export async function killStray(slug: string): Promise<boolean> {
+// pkill / pgrep by the worktree flag every worker carries: true when a process matched; exit 1 is "nothing matched", anything else throws.
+async function matchWorker(tool: 'pkill' | 'pgrep', slug: string, exec: Exec): Promise<boolean> {
   try {
-    await execFileAsync('pkill', ['-f', '--', `--worktree=${slug}`]);
+    await exec(tool, ['-f', '--', `--worktree=${slug}`]);
     return true;
   } catch (err) {
     if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
     return false;
   }
 }
+
+/** Boot-only orphan defense (and the tab's kill): kills a worker that may still hold the worktree. Resolves true when pkill matched. */
+export const killStray = (slug: string, exec: Exec = execFileAsync): Promise<boolean> => matchWorker('pkill', slug, exec);
+
+/** Whether a worker of that slug is still running: the tab's kill polls it until it is gone. */
+export const isStrayAlive = (slug: string, exec: Exec = execFileAsync): Promise<boolean> => matchWorker('pgrep', slug, exec);

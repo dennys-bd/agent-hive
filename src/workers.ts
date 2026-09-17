@@ -4,15 +4,16 @@ export interface StartWorker {
   workerId: string;
   launch: WorkerLaunch;
   onExit(): void;
-  onError(message: string): void; // a spawner failure: the server puts it in the error bar
+  onError(message: string): void; // a kill / focus failure: the server puts it in the error bar
+  onSpawnFailed(message: string): void; // `started` rejected: the entry is gone; the server frees the slot and marks the card
 }
 
 export interface WorkerPool {
   start(o: StartWorker): void;
-  kill(workerId: string): boolean; // false when the worker is unknown
+  kill(workerId: string): Promise<boolean>; // false when the worker is unknown; otherwise resolves with the handle's kill
   exit(workerId: string): boolean; // an exit reported from outside (the curl trailer): same as the handle exiting
   focus(workerId: string): Promise<boolean>; // false when unknown; rejects when the terminal cannot open
-  killAll(): void;
+  killAll(): Promise<void>;
   has(workerId: string): boolean;
 }
 
@@ -36,27 +37,34 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
     };
     const handle = spawn(o.launch, { onExit, onError: o.onError });
     if (!exited) entries.set(workerId, { handle, exit: onExit }); // a spawner may fail before returning
-  }
-
-  function call(workerId: string, action: (entry: Entry) => void): boolean {
-    const entry = entries.get(workerId);
-    if (!entry) return false;
-    action(entry);
-    return true;
+    handle.started.catch((err: Error) => { // the session never existed: no exit will ever come for it
+      entries.delete(workerId);
+      o.onSpawnFailed(err.message);
+    });
   }
 
   return {
     start,
-    kill: (workerId) => call(workerId, (entry) => entry.handle.kill()),
-    exit: (workerId) => call(workerId, (entry) => entry.exit()),
+    kill: async (workerId) => {
+      const entry = entries.get(workerId);
+      if (!entry) return false;
+      await entry.handle.kill(); // the entry itself only leaves on the exit
+      return true;
+    },
+    exit: (workerId) => {
+      const entry = entries.get(workerId);
+      if (!entry) return false;
+      entry.exit();
+      return true;
+    },
     focus: async (workerId) => {
       const entry = entries.get(workerId);
       if (!entry) return false;
       await entry.handle.focus();
       return true;
     },
-    killAll: () => {
-      for (const { handle } of entries.values()) handle.kill();
+    killAll: async () => {
+      await Promise.all([...entries.values()].map(({ handle }) => handle.kill()));
     },
     has: (workerId) => entries.has(workerId),
   };

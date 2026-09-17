@@ -50,3 +50,13 @@ test('iniciar posts start straight away with a free slot, and through the raiseM
   await user.click(within(dialog).getByRole('button', { name: 'iniciar' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/cards/I3/start', expect.objectContaining({ method: 'POST', body: JSON.stringify({ raiseMax: true }) }));
 });
+
+test('a card whose spawn failed shows the error (full message as title) and still offers iniciar, which posts start', async () => {
+  const user = userEvent.setup();
+  render(<HiveBoard state={state([card('1', 'dev', { error: 'tmux: spawn tmux ENOENT' })], [slot('s1')])} />);
+  const badge = screen.getByText('tmux: spawn tmux ENOENT').closest('[data-slot="badge"]');
+  expect(badge).toHaveAttribute('title', 'tmux: spawn tmux ENOENT');
+  expect(badge).toHaveAttribute('data-variant', 'destructive');
+  await user.click(screen.getByRole('button', { name: 'iniciar' }));
+  expect(fetchMock).toHaveBeenLastCalledWith('/cards/I1/start', expect.objectContaining({ method: 'POST' }));
+});
