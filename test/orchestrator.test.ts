@@ -263,12 +263,21 @@ test('hook for an empty or unknown slot is ignored', () => {
   assert.equal(effects.length, 0);
 });
 
-test('boot empties slots whose worker is dead and requeues their tasks; alive ones stay', () => {
+test('boot gives every occupied slot as dead: tasks without a PR go back to the queue, tasks with a PR just free the slot', () => {
   const first = filled(2, 2).state;
-  const { state, effects } = reduce(first, { type: 'boot', aliveSlugs: ['hive-2-task-2'] });
-  assert.equal(state.slots[0].status, 'vazio');
-  assert.equal(state.slots[1].task?.id, '2');
-  assert.deepEqual(state.queue.map((t) => t.id), ['1']);
+  const all = reduce(first, { type: 'boot' });
+  assert.deepEqual(all.state.slots.map((s) => s.status), ['vazio', 'vazio']);
+  assert.deepEqual(all.state.queue.map((t) => t.id), ['1', '2']);
+  assert.deepEqual(all.effects, [
+    { type: 'setStatus', itemId: 'item1', key: 'queue' },
+    { type: 'setStatus', itemId: 'item2', key: 'queue' },
+  ]);
+  const withPr = hook(first, first.slots[1].workerId!, {
+    hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create' }, tool_response: 'https://github.com/o/r/pull/9',
+  }).state;
+  const { state, effects } = reduce(withPr, { type: 'boot' });
+  assert.deepEqual(state.slots.map((s) => s.status), ['vazio', 'vazio']);
+  assert.deepEqual(state.queue.map((t) => t.id), ['1'], 'a task with a PR is not requeued');
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
 
@@ -276,12 +285,6 @@ test('kill emits a kill effect for the slot slug', () => {
   const first = filled(1, 1).state;
   const { effects } = reduce(first, { type: 'kill', slotId: first.slots[0].id });
   assert.deepEqual(effects, [{ type: 'kill', slug: 'hive-1-task-1', workerId: first.slots[0].workerId }]);
-});
-
-test('spawned stores the iTerm session id', () => {
-  const first = filled(1, 1).state;
-  const { state } = reduce(first, { type: 'spawned', workerId: first.slots[0].workerId!, itermSessionId: 'w0t1p0' });
-  assert.equal(state.slots[0].itermSessionId, 'w0t1p0');
 });
 
 test('error sets and poll clears state.error', () => {

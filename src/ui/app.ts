@@ -399,9 +399,6 @@ $('signal').addEventListener('click', (event) => {
   const signal = (event.target as HTMLElement).dataset.signal;
   if (signal) post('/signal', { signal });
 });
-$('focus').addEventListener('click', () => {
-  if (selectedSlotId) post(`/slots/${selectedSlotId}/focus`);
-});
 $('close').addEventListener('click', () => {
   selectedSlotId = undefined;
   renderDetail();

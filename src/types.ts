@@ -48,7 +48,6 @@ export interface Slot {
   slug?: string;
   worktree?: string;
   branch?: string;
-  itermSessionId?: string;
   startedAt?: string;
   lastEvent?: string;
   prUrl?: string;
@@ -90,7 +89,7 @@ export interface HookPayload {
 }
 
 export type HiveEvent =
-  | { type: 'boot'; aliveSlugs: string[] }
+  | { type: 'boot' }
   | { type: 'poll'; tasks: Task[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
@@ -99,7 +98,6 @@ export type HiveEvent =
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
-  | { type: 'spawned'; workerId: string; itermSessionId: string }
   | { type: 'error'; message?: string };
 
 export interface ProjectSummary {

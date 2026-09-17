@@ -61,7 +61,7 @@ export function extractPrUrl(command: string, response: unknown): string | undef
 
 export function reduce(state: State, event: HiveEvent): Reduced {
   switch (event.type) {
-    case 'boot': return boot(state, event.aliveSlugs); // no fill: bootHive polls right after, and the board is the truth
+    case 'boot': return boot(state); // no fill: bootHive polls right after, and the board is the truth
     case 'poll': return fill(poll(state, event.tasks)); // also where a dynamic red ages out: samples leave the window with time
     case 'setMax': return fill(setMax(state, event.max));
     case 'setSignal': return fill(setSignal(state, event.signal));
@@ -73,7 +73,6 @@ export function reduce(state: State, event: HiveEvent): Reduced {
       const slot = state.slots.find((s) => s.id === event.slotId);
       return { state, effects: slot?.slug && slot.workerId ? [{ type: 'kill', slug: slot.slug, workerId: slot.workerId }] : [] };
     }
-    case 'spawned': return patch(state, event.workerId, { itermSessionId: event.itermSessionId });
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
   }
 }
@@ -169,12 +168,14 @@ function exit(state: State, workerId: string): Reduced {
   };
 }
 
-function boot(state: State, aliveSlugs: string[]): Reduced {
-  const dead = state.slots.filter((s) => s.status !== 'vazio' && s.slug && !aliveSlugs.includes(s.slug));
-  return dead.reduce<Reduced>((r, s) => {
-    const next = exit(r.state, s.workerId!);
-    return { state: next.state, effects: [...r.effects, ...next.effects] };
-  }, none(state));
+// Workers are children of the Hive: none survives a restart, so every occupied slot is given as dead.
+function boot(state: State): Reduced {
+  return state.slots
+    .filter((s) => s.status !== 'vazio' && s.workerId)
+    .reduce<Reduced>((r, s) => {
+      const next = exit(r.state, s.workerId!);
+      return { state: next.state, effects: [...r.effects, ...next.effects] };
+    }, none(state));
 }
 
 function describeTool(p: HookPayload): string {

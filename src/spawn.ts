@@ -63,25 +63,6 @@ on run argv
   end tell
 end run`;
 
-const FOCUS_SCRIPT = `
-on run argv
-  tell application id "${ITERM_APP_ID}"
-    activate
-    repeat with w in windows
-      repeat with t in tabs of w
-        repeat with s in sessions of t
-          if unique id of s is (item 1 of argv) then
-            select t
-            set index of w to 1
-            return "ok"
-          end if
-        end repeat
-      end repeat
-    end repeat
-    return "not found"
-  end tell
-end run`;
-
 async function osascript(script: string, ...args: string[]): Promise<string> {
   const { stdout } = await execFileAsync('osascript', ['-e', script, ...args]);
   return stdout.trim();
@@ -89,11 +70,6 @@ async function osascript(script: string, ...args: string[]): Promise<string> {
 
 export async function openWorker(command: string): Promise<string> {
   return osascript(OPEN_TAB_SCRIPT, command);
-}
-
-export async function focusWorker(sessionId: string): Promise<void> {
-  const result = await osascript(FOCUS_SCRIPT, sessionId);
-  if (result !== 'ok') throw new Error(`iTerm session ${sessionId} not found`);
 }
 
 function worktreePattern(slug: string): string {
@@ -109,19 +85,4 @@ export async function killWorker(slug: string): Promise<boolean> {
     if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
     return false;
   }
-}
-
-export async function aliveSlugs(slugs: string[]): Promise<string[]> {
-  const checks = await Promise.all(
-    slugs.map(async (slug) => {
-      try {
-        await execFileAsync('pgrep', ['-f', '--', worktreePattern(slug)]);
-        return slug;
-      } catch (err) {
-        if ((err as { code?: number }).code !== NO_MATCH_EXIT) throw err;
-        return undefined;
-      }
-    }),
-  );
-  return checks.filter((s): s is string => s !== undefined);
 }

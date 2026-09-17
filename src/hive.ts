@@ -1,7 +1,7 @@
 import { createBoard } from './board.js';
 import { DEFAULT_CONFIG, loadConfigIfPresent } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
-import { createServer, detectAlive, type HiveServer } from './server.js';
+import { createServer, killStrays, type HiveServer } from './server.js';
 import { loadState } from './state-store.js';
 
 export interface BootedHive {
@@ -19,7 +19,8 @@ export async function bootHive(repo: string): Promise<BootedHive> {
   const saved = { ...(await loadState(hiveDir, config.maxConcurrent)), budget: config.budget, usageRules: config.usageRules };
   const server = createServer({ repo, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state: saved });
   const port = await server.listen(config.port);
-  await server.dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
+  await killStrays(saved);
+  await server.dispatch({ type: 'boot' });
   await server.poll();
   console.log(`Agent Hive em http://127.0.0.1:${port} (repo: ${repo})`);
   return { port, server };

@@ -11,7 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
-import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
+import { killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
 import type {
@@ -73,8 +73,10 @@ function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefine
 
 const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status], [b.board, b.status]);
 
-export async function detectAlive(state: State): Promise<string[]> {
-  return aliveSlugs(state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : [])));
+/** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
+export async function killStrays(state: State): Promise<void> {
+  const slugs = state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : []));
+  await Promise.all(slugs.map((slug) => killWorker(slug)));
 }
 
 function errorMessage(err: unknown): string {
@@ -107,10 +109,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     for (const res of clients) res.write(data);
   }
 
-  // Serializes writes: dispatch calls can overlap (a hook arriving mid-poll, or the
-  // nested `spawned` dispatch inside spawn()), and two concurrent saveState calls
-  // would race on the same state.json.tmp. Chaining onto saveChain queues them, and
-  // reading `live` inside the .then ensures a queued save always persists the latest.
+  // Serializes writes: dispatch calls can overlap (a hook arriving mid-poll, a worker exit landing
+  // inside a kill effect), and two concurrent saveState calls would race on the same state.json.tmp.
+  // Chaining onto saveChain queues them, and reading `live` inside the .then ensures a queued save
+  // always persists the latest.
   function persist(): Promise<void> {
     saveChain = saveChain
       .then(() => (live ? saveState(live.runtime.hiveDir, live.state) : undefined))
@@ -162,8 +164,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const command = workerCommand({
       repo, workerId: slot.workerId, port: config.port, slug: slot.slug, hooksPath, promptPath, claudeArgs: config.claudeArgs,
     });
-    const itermSessionId = await openWorker(command);
-    await dispatch({ type: 'spawned', workerId: slot.workerId, itermSessionId });
+    await openWorker(command);
   }
 
   async function poll(): Promise<void> {
@@ -214,7 +215,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     // Empty queue on boot: setMax's fill would otherwise spawn off a stale pre-restart
     // queue. The poll() below refills from the board, which is the source of truth.
     live = { runtime, state: { ...saved, queue: [] } };
-    await dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
+    await killStrays(saved);
+    await dispatch({ type: 'boot' });
     if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
@@ -400,22 +402,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!requireLive(res)) return;
     await dispatch({ type: 'kill', slotId: req.params.id as string });
     res.json({ ok: true });
-  });
-
-  app.post('/slots/:id/focus', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const slot = current.state.slots.find((s) => s.id === req.params.id);
-    if (!slot?.itermSessionId) {
-      res.status(404).json({ error: 'slot has no terminal session' });
-      return;
-    }
-    try {
-      await focusWorker(slot.itermSessionId);
-      res.json({ ok: true });
-    } catch (err) {
-      res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
-    }
   });
 
   app.post('/board/refresh', async (_req: Request, res: Response) => {
