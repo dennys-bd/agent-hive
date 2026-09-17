@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { columnOf, isBlocked } from './cards.js';
 import { isFree } from './orchestrator.js';
-import type { HiveEvent, State } from './types.js';
+import type { Effect, HiveEvent, State } from './types.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
@@ -11,7 +11,7 @@ const CARD_ON_BOARD_MESSAGE = 'card ainda está no board';
 
 export interface CardRouteDeps {
   requireLive(res: Response): { state: State } | undefined;
-  dispatch(event: HiveEvent): Promise<void>;
+  dispatch(event: HiveEvent): Promise<Effect[]>;
 }
 
 /** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. */

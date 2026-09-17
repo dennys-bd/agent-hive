@@ -325,7 +325,7 @@ test('POST /setup with a budget writes it to hive.config.json, GET /setup return
   assert.match((await json<{ error: string }>(bad)).error, /budget\.maxTokensPerHour/);
 });
 
-test('POST /hooks/event Stop with a transcript_path for an unknown worker answers 200, reads nothing and keeps serving', async (t) => {
+test('POST /hooks/event Stop with a transcript_path for an unknown worker answers 204, reads nothing and keeps serving', async (t) => {
   const { base, repo, server } = await start(t);
   assert.equal((await postSetup(base, BODY)).status, 200);
   const transcript = join(repo, 'transcript.jsonl');
@@ -334,9 +334,9 @@ test('POST /hooks/event Stop with a transcript_path for an unknown worker answer
     fetch(`${base}/hooks/event`, {
       method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': 'ghost' }, body: JSON.stringify(body),
     });
-  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: transcript })).status, 200);
-  assert.equal((await postHook({ hook_event_name: 'SessionEnd', transcript_path: join(repo, 'missing.jsonl') })).status, 200);
-  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: 'relative.jsonl' })).status, 200);
+  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: transcript })).status, 204);
+  assert.equal((await postHook({ hook_event_name: 'SessionEnd', transcript_path: join(repo, 'missing.jsonl') })).status, 204);
+  assert.equal((await postHook({ hook_event_name: 'Stop', transcript_path: 'relative.jsonl' })).status, 204);
   await sleep(20); // the route answers before dispatching; let the handlers finish
   assert.deepEqual(server.getState()?.usage, [], 'no occupied slot matches, so nothing is read or recorded');
   assert.equal((await fetch(`${base}/setup`)).status, 200, 'the server is still up');

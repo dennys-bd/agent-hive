@@ -16,6 +16,18 @@ export function renderPrompt(template: string, task: Task): string {
   return template.replace(/\{(id|number|title|body|url)\}/g, (_, key: string) => values[key]);
 }
 
+/** Appended to every rendered prompt (spawn and continuation): how the worker tells the Hive the command is finished. */
+export function doneTrailer(port: number, workerId: string): string {
+  return [
+    '', '---',
+    'Hive: when this command is completely finished — nothing left to do, no agent or background task still',
+    'running, no answer pending from the user — run',
+    `\`curl -s -X POST http://127.0.0.1:${port}/hooks/done -H 'x-hive-worker: ${workerId}'\``,
+    'and end your turn. Never run it earlier. If you need something from the user, ask and end your turn without it.',
+    '',
+  ].join('\n');
+}
+
 export async function writePrompt(promptsDir: string, slug: string, text: string): Promise<string> {
   const path = join(promptsDir, `${slug}.md`);
   await writeFile(path, text);

@@ -6,22 +6,26 @@ export const HOOK_EVENTS: readonly string[] = [
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'SessionEnd',
 ];
 
-function postStdin(port: number, path: string): string {
+const HOOK_TIMEOUT_S = 30; // a Stop is answered after the board writes of its dispatch (gh takes seconds); the reply is the continuation
+const STATUS_TIMEOUT_S = 2;
+
+function postStdin(port: number, path: string, timeout: number): string {
   return [
-    `curl -s -m 2 -X POST http://127.0.0.1:${port}${path}`,
+    `curl -s -m ${timeout} -X POST http://127.0.0.1:${port}${path}`,
     `-H "x-hive-worker: $HIVE_WORKER_ID"`,
     `-H 'content-type: application/json'`,
     `-d @-`,
   ].join(' ');
 }
 
+/** The hook command: stdout is what Claude Code reads. Empty (204) means no decision; the JSON of a continuing Stop is the decision. */
 export function hookCommand(port: number): string {
-  return `${postStdin(port, '/hooks/event')} >/dev/null; exit 0`;
+  return `${postStdin(port, '/hooks/event', HOOK_TIMEOUT_S)}; exit 0`;
 }
 
 /** The worker's status line: the Hive replies with the plan limits summary, which is what the worker's tab shows. */
 export function statusCommand(port: number): string {
-  return `${postStdin(port, '/hooks/status')}; exit 0`;
+  return `${postStdin(port, '/hooks/status', STATUS_TIMEOUT_S)}; exit 0`;
 }
 
 export function renderHooksSettings(port: number): { hooks: Record<string, unknown[]>; statusLine: { type: 'command'; command: string } } {

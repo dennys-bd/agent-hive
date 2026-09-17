@@ -17,14 +17,14 @@ import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { registerCardRoutes } from './server-cards.js';
-import { killStray, renderPrompt, spawnWorker, workerArgs, writePrompt } from './spawn.js';
+import { doneTrailer, killStray, renderPrompt, spawnWorker, workerArgs, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, BoardSpec, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
-  SpawnWorker, State,
+  Board, BoardSpec, Card, Column, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult,
+  Signal, Slot, SpawnWorker, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -72,7 +72,7 @@ export interface ServerDeps {
 }
 
 export interface HiveServer {
-  dispatch(event: HiveEvent): Promise<void>;
+  dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(): Promise<void>;
   refreshPlanLimits(): Promise<void>;
   listen(port: number): Promise<number>;
@@ -85,6 +85,12 @@ export interface HiveServer {
 interface Live {
   runtime: Runtime;
   state: State;
+}
+
+/** What a continuing Stop hook is answered with: Claude Code goes on with `reason` as the next prompt. */
+interface HookReply {
+  decision: 'block';
+  reason: string;
 }
 
 // epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or columns.
@@ -121,6 +127,18 @@ export function createServer(deps: ServerDeps): HiveServer {
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
   let setupChain: Promise<void> = Promise.resolve();
+  // The answer a Stop hook is waiting for: set by the `continue` effect of its own dispatch, taken once by the /hooks/event that dispatched it.
+  const pendingReplies = new Map<string, HookReply>();
+
+  function takeReply(workerId: string): HookReply | undefined {
+    const reply = pendingReplies.get(workerId);
+    pendingReplies.delete(workerId);
+    return reply;
+  }
+
+  // The rendered column prompt plus the done trailer: what every run (spawn or continuation) is told.
+  const stagePrompt = (runtime: Runtime, column: Column, card: Card, workerId: string): string =>
+    renderPrompt(column.prompt ?? '', card.task) + doneTrailer(runtime.config.port, workerId);
 
   function eventsPayload(): EventsPayload {
     return live?.state ?? { configured: false };
@@ -147,8 +165,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     return saveChain;
   }
 
-  async function dispatch(event: HiveEvent): Promise<void> {
-    if (!live) return;
+  async function dispatch(event: HiveEvent): Promise<Effect[]> {
+    if (!live) return [];
     log.debug(describeEvent(event));
     const prev = live.state;
     const result = reduce(prev, event);
@@ -159,6 +177,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     await persist();
     broadcast();
     for (const effect of result.effects) await runEffect(effect);
+    return result.effects;
   }
 
   async function fail(context: string, err: unknown): Promise<void> {
@@ -186,6 +205,14 @@ export function createServer(deps: ServerDeps): HiveServer {
         log.info(describeEffect(effect));
         await spawn(runtime, effect).catch((err) => fail(`spawn ${effect.card.slug}`, err));
         return;
+      case 'continue': {
+        log.info(describeEffect(effect));
+        const reason = stagePrompt(runtime, effect.column, effect.card, effect.workerId);
+        // the run's prompt file follows the stage, so the file shows what the worker was last told; the reply is what carries it
+        await writePrompt(runtime.promptsDir, effect.card.slug, reason).catch((err) => fail(`prompt ${effect.card.slug}`, err));
+        pendingReplies.set(effect.workerId, { decision: 'block', reason });
+        return;
+      }
     }
   }
 
@@ -193,7 +220,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { slot: { workerId }, card, column, session } = effect;
     if (!workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
-    const promptPath = await writePrompt(promptsDir, card.slug, renderPrompt(column.prompt ?? '', card.task)); // the command line reads it
+    const promptPath = await writePrompt(promptsDir, card.slug, stagePrompt(runtime, column, card, workerId)); // the command line reads it; the trailer tells the worker how to end the stage
     pool.start({
       workerId,
       launch: { mode: config.workers, workerId, slug: card.slug, repo, port: config.port, hooksPath, promptPath, args: workerArgs(card, column, session, config.claudeArgs) },
@@ -348,21 +375,26 @@ export function createServer(deps: ServerDeps): HiveServer {
     next();
   });
 
-  // Answers only after the dispatch: the worker's hook blocks until curl returns, so a PR seen on PostToolUse is applied before the worker goes on.
+  // Answers only after its own dispatch: the worker's hook blocks until curl returns, so a PR seen on PostToolUse is applied before the
+  // worker goes on. Empty 204 = no decision; the one exception is a Stop whose dispatch decided to continue in place: 200 with the JSON.
   app.post('/hooks/event', async (req: Request, res: Response) => {
     const workerId = req.header('x-hive-worker');
     const raw = req.body as HookPayload | undefined;
     const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
     // Computed once against the slot as it stands: a subagent/teammate Stop or SessionEnd must not read the transcript, same as the reducer ignores it (#24)
     const isChild = workerId !== undefined && payload !== undefined && isChildSession(slotOf(workerId), payload);
+    let effects: Effect[] = [];
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
       const tokens = isChild ? undefined : await turnTokens(workerId, payload);
-      await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+      effects = await dispatch({ type: 'hook', workerId, payload, branch, tokens });
     } else {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
-    res.sendStatus(200);
+    const continues = workerId !== undefined && effects.some((e) => e.type === 'continue' && e.workerId === workerId);
+    const reply = continues && workerId !== undefined ? takeReply(workerId) : undefined;
+    if (reply) res.json(reply);
+    else res.status(HTTP_NO_CONTENT).end();
   });
 
   // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.
