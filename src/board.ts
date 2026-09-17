@@ -8,10 +8,10 @@ export interface BoardDeps {
 }
 
 export function createBoard(config: Config, deps: BoardDeps): Board {
-  const { board, status } = config;
+  const { board, status, epics } = config;
   switch (board.type) {
     case 'github':
-      return createGithubBoard(board, status, deps.exec);
+      return createGithubBoard(board, status, epics, deps.exec);
     case 'markdown':
       return createMarkdownBoard(markdownPath(deps.repo, board.path), status);
   }
