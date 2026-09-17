@@ -1,5 +1,7 @@
 import type { LogLevel } from './log.js';
 
+export type Language = 'pt' | 'en';
+
 export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
