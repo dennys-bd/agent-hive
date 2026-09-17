@@ -46,6 +46,8 @@ cd /your/repo
 hive
 ```
 
+The command returns right away; the Hive and its workers keep running detached even if you close the terminal. stdout/stderr go to `<repo>/.hive/hive.log`. Running `hive` again while one is already up just prints the running instance's address instead of starting a second one.
+
 Without a `hive.config.json` in the repo, the window opens on a setup form: board type, columns (queue / in progress / in review), max workers and the worker prompt. Saving writes the file and shows the dashboard. "configurar" reopens the form at any time.
 
 On screen: `N/M workers ativos`, the `máx. workers` field (changes live and persists across restarts), the queue, and one card per slot. Click a card to see the pending question or the PR link, the worker's output, and to send it a message; `kill` stops the worker and returns the task to the queue.
@@ -110,7 +112,8 @@ Older files with `project: { owner, number }` are still accepted. Runtime state 
 
 ```sh
 pnpm test                        # tsc + node --test
-pnpm start -- /path/to/repo      # Electron
+pnpm start -- /path/to/repo      # goes through bin/hive.js, detaches
+node dist/src/main.js /repo      # Electron, stays attached (debugging)
 node dist/src/run.js /repo       # headless server at http://127.0.0.1:47821
 ```
 
