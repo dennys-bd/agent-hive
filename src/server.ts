@@ -9,7 +9,8 @@ import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
-import { prepareHiveDir } from './hooks-settings.js';
+import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
+import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
 import { reduce, SIGNALS } from './orchestrator.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
@@ -55,6 +56,7 @@ export interface ServerDeps {
   state?: State;
   boardFactory?: BoardFactory;
   spawnWorker?: SpawnWorker; // tests inject a fake; the default opens a real claude
+  log?: Logger; // tests inject a fake; the default writes <repo>/.hive/hive.log
   /** Setup mode with a config that failed to boot: prefills the form and explains why. */
   setupFallback?: { config: Config; error: string };
 }
@@ -102,6 +104,7 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
 
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
+  const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
   const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
@@ -128,14 +131,19 @@ export function createServer(deps: ServerDeps): HiveServer {
   function persist(): Promise<void> {
     saveChain = saveChain
       .then(() => (live ? saveState(live.runtime.hiveDir, live.state) : undefined))
-      .catch((err: Error) => console.error('persist failed:', err.message));
+      .catch((err: Error) => log.error(`persist failed: ${err.message}`));
     return saveChain;
   }
 
   async function dispatch(event: HiveEvent): Promise<void> {
     if (!live) return;
-    const result = reduce(live.state, event);
+    log.debug(describeEvent(event));
+    const prev = live.state;
+    const result = reduce(prev, event);
     live = { runtime: live.runtime, state: result.state };
+    // Transitions are derived here, not in the reducer: one place covers every rule, current or future, and the reducer stays pure.
+    for (const line of describeChanges(prev, result.state)) log.info(line);
+    if (result.effects.length > 0) log.debug(`effects: ${result.effects.map(describeEffect).join('; ')}`);
     await persist();
     broadcast();
     for (const effect of result.effects) await runEffect(effect);
@@ -143,7 +151,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function fail(context: string, err: unknown): Promise<void> {
     const message = `${context}: ${errorMessage(err)}`;
-    console.error(message);
+    log.error(message);
     await dispatch({ type: 'error', message });
   }
 
@@ -152,13 +160,17 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!runtime) return;
     switch (effect.type) {
       case 'setStatus':
-        await runtime.board.setStatus(effect.itemId, effect.key).catch((err) => fail(`board.setStatus(${effect.key})`, err));
+        await runtime.board.setStatus(effect.itemId, effect.key)
+          .then(() => log.info(`${describeEffect(effect)} ok`))
+          .catch((err) => fail(`board.setStatus(${effect.key})`, err));
         return;
       case 'kill':
+        log.info(describeEffect(effect));
         // unknown to the pool (started by a previous Hive): nothing to signal, free the slot ourselves
         if (!pool.kill(effect.workerId)) await dispatch({ type: 'exit', workerId: effect.workerId });
         return;
       case 'spawn':
+        log.info(describeEffect(effect));
         await spawn(runtime, effect.slot).catch((err) => fail(`spawn ${effect.slot.slug}`, err));
         return;
     }
@@ -197,6 +209,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!runtime) return;
     try {
       const tasks = await runtime.board.listQueue();
+      log.info(`poll queue=${tasks.length}`);
       await dispatch({ type: 'poll', tasks });
     } catch (err) {
       await fail('board.listQueue', err);
@@ -210,7 +223,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       const quota = await board.quota?.();
       if (quota) await dispatch({ type: 'boardQuota', quota });
     } catch (err) {
-      console.error(`board.quota: ${errorMessage(err)}`);
+      log.error(`board.quota: ${errorMessage(err)}`);
     }
   }
 
@@ -246,6 +259,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { hiveDir, hooksPath, promptsDir } = await prepareHiveDir(repo, boundPort);
     const board = current && sameBoard(current.config, effective) ? current.board : boardFactory(effective);
     await board.resolveFields();
+    log.setLevel(effective.logLevel); // read from the file on every save: a hand edit switches the level without a restart
+    log.info(`config port=${boundPort} board=${effective.board.type} workers=${effective.workers} logLevel=${effective.logLevel}`);
     return { config: effective, board, hiveDir, hooksPath, promptsDir };
   }
 
@@ -309,6 +324,8 @@ export function createServer(deps: ServerDeps): HiveServer {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
       const tokens = await turnTokens(workerId, payload);
       await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+    } else {
+      log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
   });
@@ -401,6 +418,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,
         epics: body.epics ?? current?.epics,
+        logLevel: current?.logLevel, // never in the body: the file is the switch
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
@@ -426,6 +444,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     try {
       await writeConfigFile(config);
+      log.info('setup saved');
       await (live ? reconfigure(config) : configure(config));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
@@ -530,6 +549,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       httpServer = server;
     });
     boundPort = bound;
+    log.info(`listening port=${bound}`);
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     return bound;
   }

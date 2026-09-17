@@ -1,16 +1,17 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseConfig } from '../src/config.js';
 import { prepareHiveDir } from '../src/hooks-settings.js';
+import type { Logger } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { RESULT_LINE } from '../src/workers.js';
 import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
-import { fakeBoardFactory, fakeSpawn, type FakeWorker } from './fakes.js';
+import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
@@ -27,10 +28,10 @@ const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
 const line = (worker: FakeWorker, payload: unknown): void => worker.handlers.onLine(JSON.stringify(payload));
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 
-async function start(t: TestContext, body: SetupBody = BODY, withFocus = false): Promise<Started> {
+async function start(t: TestContext, body: SetupBody = BODY, withFocus = false, log?: Logger): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
   const { spawn, workers } = fakeSpawn(withFocus);
-  const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn });
+  const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn, log });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
@@ -238,4 +239,44 @@ test('the timer skips the board while nothing could start, and reads it again on
   await sleep(10);
   assert.equal(polls, 2, 'fresh again: the next tick skips');
   assert.equal(server.getState()?.error, undefined);
+});
+
+test('the log tells the story: slot transitions, signal and board writes at info, events at debug, and never a tool_input', async (t) => {
+  const { log, lines } = fakeLog();
+  const { server } = await start(t, BODY, false, log);
+  const workerId = slot0(server).workerId!;
+  const id8 = workerId.slice(0, 8);
+  const has = (line: string): void => assert.ok(lines.includes(line), `missing "${line}" in:\n${lines.join('\n')}`);
+  has('INFO signal: green → yellow'); // boot
+  has('INFO poll queue=1');
+  has('INFO signal: yellow → green');
+  has(`INFO slot 1: vazio → trabalhando #1 worker=${id8}`);
+  has('INFO setStatus #I1 → working ok');
+  has(`INFO spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
+  has('DEBUG setSignal green');
+  has(`DEBUG effects: setStatus #I1 → working; spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
+  await openPr(server, workerId);
+  has(`DEBUG hook PostToolUse worker=${id8} tool=Bash`);
+  has(`INFO slot 1: trabalhando → aguardando_review #1 worker=${id8}`);
+  has('INFO setStatus #I1 → review ok');
+  assert.ok(!lines.some((l) => l.includes('gh pr create')), 'tool_input never reaches the log');
+  assert.ok(!lines.some((l) => l.includes('pull/9')), 'tool_response never reaches the log');
+  assert.ok(!lines.some((l) => l.startsWith('ERROR')), lines.filter((l) => l.startsWith('ERROR')).join('\n'));
+});
+
+test('POST /setup re-reads logLevel from hive.config.json and switches the logger level without a restart', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, repo, port } = await start(t, BODY, false, log);
+  assert.ok(lines.includes('LEVEL info'), 'the first save activates the default level');
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info`));
+  assert.ok(lines.includes('INFO setup saved'));
+  assert.ok(lines.includes(`INFO listening port=${port}`));
+  const file = join(repo, 'hive.config.json');
+  const saved = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+  await writeFile(file, JSON.stringify({ ...saved, logLevel: 'debug' })); // the hand edit the spec describes
+  const { maxConcurrent: _omitted, ...formBody } = BODY; // the form re-save: no logLevel in the body
+  assert.equal((await postJson(`${base}/setup`, formBody)).status, 200);
+  assert.ok(lines.includes('LEVEL debug'), lines.filter((l) => l.startsWith('LEVEL')).join('\n'));
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug`));
+  assert.equal((JSON.parse(await readFile(file, 'utf8')) as { logLevel: string }).logLevel, 'debug', 'the save keeps the level it read');
 });
