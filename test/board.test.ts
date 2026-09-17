@@ -165,3 +165,27 @@ test('listQueue treats issue: null, a null repository or a missing alias as no b
   assert.deepEqual(queue.map((t) => t.blockedBy), [undefined, undefined, undefined]);
   assert.equal(calls.filter((c) => c[0] === 'api').length, 1);
 });
+
+test('quota reads gh api rate_limit for the graphql resource and converts reset (epoch seconds) to ISO', async () => {
+  const { exec, calls } = fakeExec({ 'api rate_limit --jq': { limit: 5000, used: 680, remaining: 4320, reset: 1789563600 } });
+  const before = Date.now();
+  const quota = await createBoard(config, { repo: REPO, exec }).quota!();
+  assert.deepEqual(calls, [['api', 'rate_limit', '--jq', '.resources.graphql']]);
+  assert.equal(quota?.limit, 5000);
+  assert.equal(quota?.remaining, 4320);
+  assert.equal(quota?.resetsAt, '2026-09-16T13:00:00.000Z');
+  assert.ok(quota && Date.parse(quota.at) >= before && Date.parse(quota.at) <= Date.now(), 'at is when it was read');
+});
+
+test('quota is undefined for an unexpected shape, and a markdown board has no quota at all', async () => {
+  const shapes: unknown[] = [
+    null, 5, {}, { limit: '5000', remaining: 1, reset: 1789563600 }, { limit: 5000, remaining: 1 },
+    { limit: 5000, remaining: 1, reset: 'soon' }, { limit: 5000, remaining: null, reset: 1789563600 },
+  ];
+  for (const shape of shapes) {
+    const { exec } = fakeExec({ 'api rate_limit --jq': shape });
+    assert.equal(await createBoard(config, { repo: REPO, exec }).quota!(), undefined, JSON.stringify(shape));
+  }
+  await assert.rejects(createBoard(config, { repo: REPO, exec: fakeExec({}).exec }).quota!(), /unexpected gh call/, 'a failing gh rejects: the server logs it');
+  assert.equal(createBoard(parseConfig({ board: { type: 'markdown', path: 'board.md' } }), { repo: REPO }).quota, undefined);
+});

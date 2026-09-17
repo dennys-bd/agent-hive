@@ -176,6 +176,7 @@ export interface Board {
   listQueue(): Promise<Task[]>; // tasks in status.queue, in source order
   setStatus(itemId: string, key: StatusKey): Promise<void>;
   setupOptions(): Promise<string[]>; // status values available, for the setup form
+  quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
 
 /** What the server injects so tests never open a process. */
