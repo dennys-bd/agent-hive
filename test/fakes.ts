@@ -9,17 +9,34 @@ export interface FakeWorker {
   killed: number;
   focused: number;
   focusError?: Error; // set by a test: the next focus() rejects, like a terminal that cannot open
+  releaseKill(): void; // with holdKills: resolves the pending kill() and makes later kills resolve at once (the process is gone)
+}
+
+export interface FakeSpawnOptions {
+  startError?: string; // every worker's `started` rejects with it, like tmux missing or a taken name
+  holdKills?: boolean; // kill() stays pending until releaseKill(): what the awaited-kill tests need
 }
 
 /** A SpawnWorker that opens nothing: records every call and exposes the handlers so a test can report errors and exits. */
-export function fakeSpawn(): { spawn: SpawnWorker; workers: FakeWorker[] } {
+export function fakeSpawn(options: FakeSpawnOptions = {}): { spawn: SpawnWorker; workers: FakeWorker[] } {
   const workers: FakeWorker[] = [];
   const spawn: SpawnWorker = (launch, handlers) => {
-    const worker: FakeWorker = { launch, handlers, killed: 0, focused: 0 };
+    let released = false;
+    const pending: (() => void)[] = [];
+    const worker: FakeWorker = {
+      launch, handlers, killed: 0, focused: 0,
+      releaseKill: () => {
+        released = true;
+        for (const resolve of pending.splice(0)) resolve();
+      },
+    };
     workers.push(worker);
     return {
+      started: options.startError === undefined ? Promise.resolve() : Promise.reject(new Error(options.startError)),
       kill: () => {
         worker.killed += 1;
+        if (!options.holdKills || released) return Promise.resolve();
+        return new Promise<void>((resolve) => { pending.push(resolve); });
       },
       focus: async () => {
         worker.focused += 1;

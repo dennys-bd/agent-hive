@@ -178,8 +178,9 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'kill':
         log.info(describeEffect(effect));
-        // unknown to the pool (started by a previous Hive): nothing to signal, free the slot ourselves
-        if (!pool.kill(effect.workerId)) await dispatch({ type: 'exit', workerId: effect.workerId });
+        // Awaited: a spawn of the same slug later in this batch only starts once the session is gone (no `duplicate session`).
+        // Unknown to the pool (started by a previous Hive): nothing to signal, free the slot ourselves.
+        if (!(await pool.kill(effect.workerId))) await dispatch({ type: 'exit', workerId: effect.workerId });
         return;
       case 'spawn':
         log.info(describeEffect(effect));
@@ -197,7 +198,8 @@ export function createServer(deps: ServerDeps): HiveServer {
       workerId,
       launch: { mode: config.workers, workerId, slug: card.slug, repo, port: config.port, hooksPath, promptPath, args: workerArgs(card, column, session, config.claudeArgs) },
       onExit: () => void dispatch({ type: 'exit', workerId }),
-      onError: (message) => void fail(`worker ${card.slug}`, new Error(message)), // tmux / iTerm missing or refused: the error bar
+      onError: (message) => void fail(`worker ${card.slug}`, new Error(message)), // a kill / focus failure: the error bar
+      onSpawnFailed: (message) => void dispatch({ type: 'spawnFailed', workerId, message }), // the slot frees, the card keeps the message
     });
   }
 
@@ -588,7 +590,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function close(): Promise<void> {
     if (pollTimer) clearInterval(pollTimer);
     if (planLimitsTimer) clearInterval(planLimitsTimer);
-    pool.killAll(); // children of the Hive: none should outlive it
+    await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     const server = httpServer;
     httpServer = undefined; // a second close() (Electron will-quit after a test's after hook, or vice versa) is a no-op
     if (!server) return;

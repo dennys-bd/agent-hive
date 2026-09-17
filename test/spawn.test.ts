@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { killStray, renderPrompt, workerArgs, workerEnv, writePrompt } from '../src/spawn.js';
+import { isStrayAlive, killStray, renderPrompt, workerArgs, workerEnv, writePrompt } from '../src/spawn.js';
 import { openItermTab, shellQuote, workerCommand } from '../src/spawn-iterm.js';
 import type { Exec } from '../src/types.js';
 import { LAUNCH } from './fakes.js';
@@ -33,8 +33,9 @@ test('workerEnv copies the base env without CLAUDECODE and NODE_PATH and adds HI
   assert.equal(base.NODE_PATH, '/hive/node_modules');
 });
 
-test('killStray resolves false when no process matches', async () => {
+test('killStray and isStrayAlive resolve false when no process matches', async () => {
   assert.equal(await killStray('definitely-not-running-slug-xyz'), false);
+  assert.equal(await isStrayAlive('definitely-not-running-slug-xyz'), false);
 });
 
 test('shellQuote single-quotes and escapes embedded quotes', () => {

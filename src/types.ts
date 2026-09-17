@@ -250,14 +250,15 @@ export type BoardSpec = Pick<Config, 'board' | 'columns' | 'epics'>;
 /** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
 export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
 
-/** What the server injects so tests never open a session. */
+/** What the server injects so tests never open a session. `onError` is for kill / focus failures: a spawn failure is `started` rejecting. */
 export interface WorkerHandlers {
-  onExit(): void; // once, on session end, kill or spawn failure
-  onError(message: string): void; // spawner failures (tmux / iTerm missing or refused): shown in the dashboard error bar
+  onExit(): void; // once, on session end or kill
+  onError(message: string): void; // shown in the dashboard error bar
 }
 
 export interface WorkerHandle {
-  kill(): void; // tmux kill-session, or pkill by slug for a tab
+  started: Promise<void>; // resolves when the session / tab exists; rejects with the spawner's error (`tmux: …`, `iTerm: …`)
+  kill(): Promise<void>; // resolves when the session / process no longer exists; one kill per handle
   focus(): Promise<void>; // opens (or brings to the front) the worker's terminal
 }
 

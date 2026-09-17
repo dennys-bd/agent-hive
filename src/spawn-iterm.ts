@@ -1,10 +1,19 @@
 import { execFile } from 'node:child_process';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
-import { killStray } from './spawn.js';
+import { isStrayAlive, killStray } from './spawn.js';
 import type { Exec, WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const ITERM_APP_ID = 'com.googlecode.iterm2';
+const KILL_POLL_MS = 200;
+const KILL_TIMEOUT_MS = 10_000;
+const KILL_POLLS = KILL_TIMEOUT_MS / KILL_POLL_MS;
+
+export interface ItermDeps {
+  exec: Exec;
+  sleep(ms: number): Promise<void>;
+}
 
 export function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
@@ -73,19 +82,35 @@ async function inTab(sessionId: string, script: string, ...args: string[]): Prom
   if ((await osascript(script, sessionId, ...args)) !== 'ok') throw new Error(`iTerm session ${sessionId} not found`);
 }
 
+// pgrep by slug every 200 ms until nothing matches: the tab's shell only reaches its curl trailer once claude is gone, and a
+// respawn of the same slug must not race the old process. False past the cap.
+async function waitGone(slug: string, exec: Exec, wait: ItermDeps['sleep']): Promise<boolean> {
+  for (let i = 0; i < KILL_POLLS; i += 1) {
+    if (!(await isStrayAlive(slug, exec))) return true;
+    await wait(KILL_POLL_MS);
+  }
+  return false;
+}
+
 /**
  * A worker in an iTerm2 tab. The exit comes from the `; curl /hooks/exit` at the end of the command, which the server
- * forwards to the pool; a kill goes through pkill by slug and the exit arrives the same way.
+ * forwards to the pool; a kill goes through pkill by slug and resolves once pgrep no longer finds the process.
  */
-export function spawnItermWorker(launch: WorkerLaunch, handlers: WorkerHandlers): WorkerHandle {
+export function spawnItermWorker(launch: WorkerLaunch, handlers: WorkerHandlers, deps: Partial<ItermDeps> = {}): WorkerHandle {
+  const { exec = execFileAsync, sleep: wait = sleep } = deps;
   const report = (err: Error): void => handlers.onError(`iTerm: ${err.message}`);
-  const session = openItermTab(workerCommand(launch)).catch((err: Error) => {
-    report(err); // iTerm missing or refused: the worker never started, free the slot
-    handlers.onExit();
-    return undefined;
+  // iTerm missing or refused: the pool reports the rejection (spawnFailed). No onExit: the tab never existed.
+  const session = openItermTab(workerCommand(launch), exec).then((id) => id, (err: Error) => {
+    throw new Error(`iTerm: ${err.message}`);
   });
-  return {
-    kill: () => void killStray(launch.slug).catch(report),
-    focus: () => session.then((id) => (id === undefined ? undefined : inTab(id, FOCUS_SCRIPT))),
+  let killing: Promise<void> | undefined;
+  const kill = (): Promise<void> => {
+    killing ??= killStray(launch.slug, exec)
+      .then(() => waitGone(launch.slug, exec, wait))
+      .then((gone) => {
+        if (!gone) handlers.onError('kill: worker still alive after 10s');
+      }, report);
+    return killing;
   };
+  return { started: session.then(() => undefined), kill, focus: () => session.then((id) => inTab(id, FOCUS_SCRIPT)) };
 }

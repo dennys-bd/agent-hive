@@ -11,8 +11,8 @@ import { initialState, reduce } from '../src/orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
 import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { BoardQuota, Card, RateLimits, SetupBody, Slot, State } from '../src/types.js';
-import { COLUMNS, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
+import type { BoardQuota, Card, Column, RateLimits, SetupBody, Slot, State } from '../src/types.js';
+import { COLUMNS, type FakeSpawnOptions, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
@@ -34,9 +34,9 @@ const PLAN: RateLimits = {
 };
 const NO_TOKEN = 'no Claude Code OAuth token (env, .credentials.json or Keychain)';
 
-async function start(t: TestContext, body: SetupBody = BODY, log?: Logger): Promise<Started> {
+async function start(t: TestContext, body: SetupBody = BODY, log?: Logger, spawnOptions: FakeSpawnOptions = {}): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
-  const { spawn, workers } = fakeSpawn();
+  const { spawn, workers } = fakeSpawn(spawnOptions);
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn, log });
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -52,7 +52,7 @@ async function waitFor(check: () => boolean): Promise<void> {
   assert.ok(check(), 'condition not met in time');
 }
 
-const openPr = (server: HiveServer, workerId: string): Promise<void> =>
+const openPr = (server: HiveServer, workerId: string): Promise<unknown> =>
   server.dispatch({
     type: 'hook', workerId,
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
@@ -501,4 +501,41 @@ test('GET / serves the built index.html and its hashed asset through express.sta
   assert.match(js.headers.get('content-type') ?? '', /javascript/);
   assert.equal((await fetch(`${base}/ui/app.js`)).status, 404);
   assert.equal((await fetch(`${base}/../package.json`)).status, 404, 'static never leaves UI_DIR');
+});
+
+test('a spawn failure frees the slot and marks the card with the message: the bar shows it, neither fill nor a poll retries, a manual start does', async (t) => {
+  const { base, server, workers } = await start(t, BODY, undefined, { startError: 'tmux: spawn tmux ENOENT' });
+  await waitFor(() => slot0(server).status === 'empty');
+  assert.equal(workers.length, 1, 'no retry');
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT');
+  assert.equal(card0(server).column, 'fila');
+  assert.equal(server.getState()?.error, 'tmux: spawn tmux ENOENT');
+  assert.deepEqual(await json(postJson(`${base}/board/refresh`)), { ok: true });
+  assert.equal(workers.length, 1, 'a poll does not retry either');
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT', 'the error survives the poll');
+  assert.deepEqual(await json(postJson(`${base}/cards/I1/start`)), { ok: true });
+  assert.equal(workers.length, 2, 'the manual start runs it again');
+  await waitFor(() => slot0(server).status === 'empty'); // the fake fails every time: the card shows the error again
+  assert.equal(card0(server).error, 'tmux: spawn tmux ENOENT');
+});
+
+test('the kill effect waits for the pool before the next effect: a new column of the same card only spawns after the old session is gone', async (t) => {
+  const columns: Column[] = [
+    { name: 'plan', weight: 2, from: ['Ready'], onFinish: 'In progress', prompt: '/hive-plan {url}' },
+    { name: 'dev', weight: 1, from: ['In progress'], onFinish: 'In review', prompt: '/hive-build {url}' },
+  ];
+  const { base, server, workers } = await start(t, { ...BODY, columns }, undefined, { holdKills: true });
+  const workerId = slot0(server).workerId!;
+  await hookDone(base, workerId);
+  const stop = hookEvent(base, workerId, { hook_event_name: 'Stop' }); // answered only after every effect ran
+  await waitFor(() => workers[0].killed === 1);
+  await sleep(20);
+  assert.equal(workers.length, 1, 'no spawn while the kill is pending');
+  assert.equal(card0(server).column, 'dev');
+  workers[0].releaseKill();
+  assert.equal((await stop).status, 200);
+  assert.equal(workers.length, 2);
+  assert.equal(workers[1].launch.slug, workers[0].launch.slug);
+  assert.equal(workers[1].launch.workerId, slot0(server).workerId);
+  workers[1].releaseKill(); // close() awaits killAll: nothing may stay pending
 });

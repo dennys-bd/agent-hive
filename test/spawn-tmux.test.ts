@@ -40,34 +40,53 @@ test('spawnTmuxWorker starts a detached session named after the slug, in the rep
   assert.equal(TMUX_SOCKET, 'hive');
 });
 
-test('a new-session that fails reports the error and the exit, once', async () => {
+test('a new-session that fails rejects started with the tmux message and calls neither onError nor onExit', async () => {
   const { exec } = fakeExec('new-session');
   const h = handlers();
-  spawnTmuxWorker(LAUNCH, h.handlers, { exec, openTerminal: noTerminal });
-  await tick();
-  assert.deepEqual(h.errors, ['tmux: new-session boom']);
-  assert.equal(h.exits(), 1);
+  const handle = spawnTmuxWorker(LAUNCH, h.handlers, { exec, openTerminal: noTerminal });
+  await assert.rejects(handle.started, { message: 'tmux: new-session boom' });
+  assert.deepEqual(h.errors, []);
+  assert.equal(h.exits(), 0, 'the pool reports it as spawnFailed; there is no session to exit');
 });
 
-test('kill runs kill-session and reports the exit once, even when kill-session fails', async () => {
+test('kill runs kill-session and reports the exit once, even when kill-session fails; a second kill is the same kill', async () => {
   const ok = fakeExec();
   const h = handlers();
   const handle = spawnTmuxWorker(LAUNCH, h.handlers, { exec: ok.exec, openTerminal: noTerminal });
-  handle.kill();
-  await tick();
+  await handle.kill();
   assert.deepEqual(ok.calls[1], { file: 'tmux', args: ['-L', TMUX_SOCKET, 'kill-session', '-t', 'hive-1-task'], env: undefined });
   assert.equal(h.exits(), 1);
   assert.deepEqual(h.errors, []);
-  handle.kill();
-  await tick();
+  await handle.kill();
   assert.equal(h.exits(), 1, 'a second kill does not exit twice');
   assert.equal(ok.calls.length, 2, 'nor does it run kill-session again: the first kill is the kill');
   const failing = fakeExec('kill-session');
   const h2 = handlers();
-  spawnTmuxWorker(LAUNCH, h2.handlers, { exec: failing.exec, openTerminal: noTerminal }).kill();
-  await tick();
+  await spawnTmuxWorker(LAUNCH, h2.handlers, { exec: failing.exec, openTerminal: noTerminal }).kill();
   assert.deepEqual(h2.errors, ['tmux: kill-session boom']);
   assert.equal(h2.exits(), 1, 'the session is given as gone either way');
+});
+
+test('kill resolves only after kill-session returned, and reports the exit right after', async () => {
+  let release = (): void => {};
+  const subcommands: string[] = [];
+  const exec: Exec = async (_file, args) => {
+    subcommands.push(args[2]);
+    if (args.includes('kill-session')) await new Promise<void>((resolve) => { release = resolve; });
+    return { stdout: '' };
+  };
+  const h = handlers();
+  const handle = spawnTmuxWorker(LAUNCH, h.handlers, { exec, openTerminal: noTerminal });
+  await handle.started;
+  let resolved = false;
+  const kill = handle.kill().then(() => { resolved = true; });
+  await tick();
+  assert.deepEqual(subcommands, ['new-session', 'kill-session']);
+  assert.equal(resolved, false, 'tmux has not answered yet');
+  assert.equal(h.exits(), 0);
+  release();
+  await kill;
+  assert.equal(h.exits(), 1);
 });
 
 test('focus opens a terminal on the attach argv; attachArgv detaches other clients so the newest terminal wins', async () => {

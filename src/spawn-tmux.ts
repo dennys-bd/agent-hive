@@ -31,28 +31,28 @@ export function spawnTmuxWorker(launch: WorkerLaunch, handlers: WorkerHandlers, 
   const { exec = execFileAsync, openTerminal: open = openTerminal } = deps;
   const { slug } = launch;
   let exited = false;
-  let killing = false;
+  let killing: Promise<void> | undefined;
   const exitOnce = (): void => {
     if (exited) return;
     exited = true;
     handlers.onExit();
   };
   const report = (err: Error): void => handlers.onError(`tmux: ${err.message}`);
-  const session = exec('tmux', tmuxArgs(
+  // tmux missing or the name taken: the pool reports the rejection (spawnFailed). No onExit: there never was a session.
+  const started = exec('tmux', tmuxArgs(
     'new-session', '-d', '-s', slug, '-c', launch.repo, '-x', SESSION_COLS, '-y', SESSION_ROWS, workerCommand(launch),
-  ), { env: workerEnv(process.env, launch.workerId, launch.port) }).catch((err: Error) => {
-    report(err); // tmux missing or the name taken: the worker never started, free the slot
-    exitOnce();
+  ), { env: workerEnv(process.env, launch.workerId, launch.port) }).then(() => undefined, (err: Error) => {
+    throw new Error(`tmux: ${err.message}`);
   });
-  return {
-    // kill-session SIGHUPs the shell, so the curl trailer never runs: the handle reports the exit itself, after the kill.
-    // One kill per handle: a second call (Stop with the PR open racing the card's kill) would fail on the gone session and
-    // put a false error in the bar
-    kill: () => {
-      if (killing) return;
-      killing = true;
-      void session.then(() => exec('tmux', tmuxArgs('kill-session', '-t', slug))).catch(report).then(() => exitOnce());
-    },
-    focus: () => session.then(() => open(attachArgv(slug))),
+  // One kill per handle (a Stop racing the card's kill would fail on the gone session and put a false error in the bar). It resolves
+  // once kill-session returned: tmux only answers after the session is destroyed, so a new-session of the same name may follow.
+  // kill-session SIGHUPs the shell and the curl trailer never runs: the handle reports the exit itself, after the kill.
+  const kill = (): Promise<void> => {
+    killing ??= started.catch(() => undefined)
+      .then(() => exec('tmux', tmuxArgs('kill-session', '-t', slug)))
+      .then(() => undefined, report)
+      .then(exitOnce);
+    return killing;
   };
+  return { started, kill, focus: () => started.then(() => open(attachArgv(slug))) };
 }
