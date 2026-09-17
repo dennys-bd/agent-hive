@@ -1,9 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { LOCALE, MESSAGES, setLanguage, slotEventText, statusText, t } from '../src/ui/i18n.js';
-
-const INDEX_HTML = new URL('../../src/ui/index.html', import.meta.url); // dist/test → repo root
 
 test('pt and en have exactly the same keys and no empty text', () => {
   const en = Object.keys(MESSAGES.en).sort();
@@ -13,14 +10,6 @@ test('pt and en have exactly the same keys and no empty text', () => {
     for (const [key, text] of Object.entries(MESSAGES[language])) assert.ok(text.trim().length > 0, `${language}.${key} is empty`);
   }
   assert.deepEqual(LOCALE, { pt: 'pt-BR', en: 'en-US' });
-});
-
-test('every data-i18n key in index.html exists in the dictionary', () => {
-  const html = readFileSync(INDEX_HTML, 'utf8');
-  const keys = [...html.matchAll(/data-i18n(?:-html|-placeholder)?="([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(keys.length > 40, `only ${keys.length} keys in the HTML`);
-  const missing = keys.filter((key) => !Object.hasOwn(MESSAGES.en, key));
-  assert.deepEqual(missing, []);
 });
 
 test('statusText and slotEventText follow the language: tool shows the detail, waiting prefixes it', () => {

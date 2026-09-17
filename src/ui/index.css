@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+/* Dark only: the shadcn tokens live in :root and map to today's palette. A light theme is one more class later, not a rewrite. */
+:root {
+  --radius: 0.5rem;
+  --background: #111418;
+  --foreground: #e6e6e6;
+  --card: #1a1f26;
+  --card-foreground: #e6e6e6;
+  --popover: #1a1f26;
+  --popover-foreground: #e6e6e6;
+  --primary: #e6e6e6;
+  --primary-foreground: #111418;
+  --secondary: #2a313b;
+  --secondary-foreground: #e6e6e6;
+  --muted: #2a313b;
+  --muted-foreground: #8a94a6;
+  --accent: #2a313b;
+  --accent-foreground: #e6e6e6;
+  --destructive: #d9534f;
+  --border: #2a313b;
+  --input: #2a313b;
+  --ring: #3b82f6;
+  --empty: #3a4250;
+  --working: #2e9e5b;
+  --waiting: #e0b52a;
+  --review: #3b82f6;
+  --code-bg: #0b0e12;
+  --string: #d7a86e;
+  --number: #c792ea;
+  --keyword: #7fb4f5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-empty: var(--empty);
+  --color-working: var(--working);
+  --color-waiting: var(--waiting);
+  --color-review: var(--review);
+  --color-code-bg: var(--code-bg);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground text-sm; font-family: -apple-system, system-ui, sans-serif; }
+  a { color: var(--review); }
+}
+
+/* Worker output (renderOutput in highlight.ts): the classes are the module's contract. */
+.output { font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; }
+.output .code { margin: 0; padding: 6px 8px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; }
+.output code { background: var(--card); padding: 0 4px; border-radius: 4px; }
+.output .add { color: var(--working); }
+.output .del { color: var(--destructive); }
+.output .hunk { color: var(--review); }
+.output .comment { color: var(--muted-foreground); font-style: italic; }
+.output .string { color: var(--string); }
+.output .number { color: var(--number); }
+.output .keyword { color: var(--keyword); }
+
+@keyframes blink { 0%, 100% { background: var(--card); } 50% { background: #3a3110; } }
+.blink { animation: blink 1s ease-in-out infinite; }
