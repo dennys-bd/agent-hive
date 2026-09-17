@@ -148,7 +148,7 @@ git commit -m "feat(setup): accept usageRules in POST /setup, falling back to th
 
 Note: the fieldset is never `disabled` — `#setup fieldset[disabled] { display: none }` is for the per-board-type fieldsets only. `#setup input[type=number]` and `#setup select` already style the cells' controls (`width: 100%`), so the CSS below only adds the legend, the table and the small button.
 
-- [ ] **Step 1: Create `src/ui/limits.ts`**
+- [x] **Step 1: Create `src/ui/limits.ts`**
 
 ```ts
 import type { Signal, UsageRule } from '../types.js';
@@ -202,7 +202,7 @@ export function usageRulesFromForm(): UsageRule[] {
 }
 ```
 
-- [ ] **Step 2: Edit `src/ui/index.html` — the fieldset**
+- [x] **Step 2: Edit `src/ui/index.html` — the fieldset**
 
 Replace the five lines between `máx. workers` and `prompt do worker`:
 
@@ -233,7 +233,7 @@ with:
   </fieldset>
 ```
 
-- [ ] **Step 3: Edit `src/ui/index.html` — the CSS**
+- [x] **Step 3: Edit `src/ui/index.html` — the CSS**
 
 After the line `  #setup fieldset[disabled] { display: none; }` add:
 
@@ -246,7 +246,7 @@ After the line `  #setup fieldset[disabled] { display: none; }` add:
   #add-rule { margin-bottom: 12px; }
 ```
 
-- [ ] **Step 4: Edit `src/server.ts` — the route**
+- [x] **Step 4: Edit `src/server.ts` — the route**
 
 After `  app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));` add:
 
@@ -254,12 +254,12 @@ After `  app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(jo
   app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
 ```
 
-- [ ] **Step 5: Build and test**
+- [x] **Step 5: Build and test**
 
 Run: `pnpm test`
 Expected: build green (`limits.ts` compiles under `strict` with the `dom` lib already in `tsconfig.json`; `HTMLTableSectionElement.rows` is a `HTMLCollectionOf<HTMLTableRowElement>`, so `Array.from(…).map(ruleFromRow)` types); 154 tests PASS (nothing imports `limits.ts` yet). `ls dist/src/ui/` lists `app.js`, `limits.js`, `index.html`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/ui/limits.ts src/ui/index.html src/server.ts

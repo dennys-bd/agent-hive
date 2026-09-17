@@ -426,6 +426,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.get('/', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'index.html')));
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
+  app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {
