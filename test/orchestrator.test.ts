@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
+import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, isChildSession, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
-import type { BoardQuota, Budget, HookPayload, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
+import type { BoardQuota, Budget, HookPayload, RateLimits, Signal, Slot, State, Task, UsageRule } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -145,6 +145,56 @@ test('SessionStart keeps a well-formed session_id, the first one wins, and a mal
   assert.equal(missing.slots[0].sessionId, undefined);
   assert.equal(missing.slots[0].worktree, '/w', 'the rest of the hook still applies');
   assert.equal(JSON.stringify(first.slots[0].sessionId), undefined, 'the input state is untouched');
+});
+
+test('isChildSession: no slot id, no payload id, a malformed payload id and a matching id are all false; a different well-formed id is true (#24)', () => {
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const childId = 'another-child-session-0001';
+  const slot: Slot = { id: 's1', status: 'working', sessionId: mainId };
+  const bareSlot: Slot = { id: 's1', status: 'working' };
+  assert.equal(isChildSession(undefined, { hook_event_name: 'Stop', session_id: childId }), false, 'no slot at all');
+  assert.equal(isChildSession(bareSlot, { hook_event_name: 'Stop', session_id: childId }), false, 'slot never recorded a session id');
+  assert.equal(isChildSession(slot, { hook_event_name: 'Stop' }), false, 'no payload id');
+  assert.equal(isChildSession(slot, { hook_event_name: 'Stop', session_id: 'short' }), false, 'malformed payload id');
+  assert.equal(isChildSession(slot, { hook_event_name: 'Stop', session_id: mainId }), false, 'same id');
+  assert.equal(isChildSession(slot, { hook_event_name: 'Stop', session_id: childId }), true, 'different well-formed id');
+});
+
+test('Stop from a child session (a subagent or teammate) leaves status, lastEvent, the token sample and usage untouched (#24)', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const childId = 'another-child-session-0001';
+  const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w', session_id: mainId }).state;
+  const { state, effects } = reduce(started, { type: 'hook', workerId: id, payload: { hook_event_name: 'Stop', session_id: childId }, tokens: 999 });
+  assert.equal(state.slots[0].status, 'working', 'active status untouched');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'starting' }, 'unchanged from spawn, not a turn end');
+  assert.equal(state.slots[0].tokens, undefined, 'the token sample is not recorded');
+  assert.deepEqual(state.usage, []);
+  assert.equal(effects.length, 0);
+});
+
+test('SessionEnd from a child session does not free the slot and emits no effects (#24)', () => {
+  const first = filled(1, 2).state;
+  const id = first.slots[0].workerId!;
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const childId = 'another-child-session-0001';
+  const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w', session_id: mainId }).state;
+  const { state, effects } = hook(started, id, { hook_event_name: 'SessionEnd', session_id: childId });
+  assert.equal(state.slots[0].workerId, id, 'slot not freed');
+  assert.equal(state.slots[0].status, 'working');
+  assert.deepEqual(state.queue.map((t) => t.id), ['2'], 'nothing requeued');
+  assert.equal(effects.length, 0);
+});
+
+test('Stop still ends the turn from the main session id, with no session_id at all, or when the slot never recorded a sessionId (#24)', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
+  const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w', session_id: mainId }).state;
+  assert.deepEqual(hook(started, id, { hook_event_name: 'Stop', session_id: mainId }).state.slots[0].lastEvent, { kind: 'turn' }, 'main session id');
+  assert.deepEqual(hook(started, id, { hook_event_name: 'Stop' }).state.slots[0].lastEvent, { kind: 'turn' }, 'no session_id sent');
+  assert.deepEqual(stopped(first, id).slots[0].lastEvent, { kind: 'turn' }, 'slot never recorded a sessionId');
 });
 
 test('Notification of a waiting type turns the slot yellow with the message', () => {
