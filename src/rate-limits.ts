@@ -25,17 +25,39 @@ function parseWindow(raw: unknown): RateLimitWindow | undefined {
   return { usedPercent: Math.min(usedPercent, PERCENT_MAX), resetsAt: reset.toISOString() };
 }
 
-/** `body.rate_limits` of a status line JSON → the persisted shape, or nothing when no window survives (then nothing is dispatched). */
-export function parseRateLimits(body: unknown, now: Date): RateLimits | undefined {
-  if (!isRecord(body) || !isRecord(body.rate_limits)) return undefined;
-  const entries = Object.entries(body.rate_limits)
+type WindowParser = (raw: unknown) => RateLimitWindow | undefined;
+
+// Shared by both sources: key filter, cap at MAX_WINDOWS, nothing when no window survives (then nothing is dispatched).
+function collectWindows(source: Record<string, unknown>, parse: WindowParser, now: Date): RateLimits | undefined {
+  const entries = Object.entries(source)
     .filter(([key]) => WINDOW_KEY.test(key))
     .flatMap<[string, RateLimitWindow]>(([key, raw]) => {
-      const window = parseWindow(raw);
+      const window = parse(raw);
       return window ? [[key, window]] : [];
     })
-    .slice(0, MAX_WINDOWS); // any local process can post here: the State never grows past this
+    .slice(0, MAX_WINDOWS); // any local process can post here, and the endpoint is undocumented: the State never grows past this
   return entries.length === 0 ? undefined : { at: now.toISOString(), windows: Object.fromEntries(entries) };
+}
+
+/** `body.rate_limits` of a status line JSON → the persisted shape. */
+export function parseRateLimits(body: unknown, now: Date): RateLimits | undefined {
+  if (!isRecord(body) || !isRecord(body.rate_limits)) return undefined;
+  return collectWindows(body.rate_limits, parseWindow, now);
+}
+
+// The usage endpoint window: `utilization` percent and `resets_at` as a date string. `null` (a window the plan lacks) drops it.
+function parseUsageWindow(raw: unknown): RateLimitWindow | undefined {
+  if (!isRecord(raw)) return undefined;
+  const { utilization, resets_at: resetsAt } = raw;
+  if (!isPercent(utilization) || typeof resetsAt !== 'string') return undefined;
+  const reset = new Date(resetsAt);
+  if (Number.isNaN(reset.getTime())) return undefined;
+  return { usedPercent: Math.min(utilization, PERCENT_MAX), resetsAt: reset.toISOString() };
+}
+
+/** The body of GET /api/oauth/usage (undocumented: parsed defensively) → the same persisted shape. `extra_usage` falls to the filter. */
+export function parseUsage(body: unknown, now: Date): RateLimits | undefined {
+  return isRecord(body) ? collectWindows(body, parseUsageWindow, now) : undefined;
 }
 
 const isWindow = ([key, value]: [string, unknown]): boolean =>
