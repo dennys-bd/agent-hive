@@ -549,12 +549,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
-  app.get('/', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'index.html')));
-  app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
-  app.get('/ui/board.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'board.js')));
-  app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
-  app.get('/ui/highlight.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'highlight.js')));
-  app.get('/ui/i18n.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'i18n.js')));
+  // `root` + a bare name: with an absolute path, send() 404s when any directory on the way starts with a dot (a Hive under .claude/worktrees)
+  const ui = (file: string) => (_req: Request, res: Response) => res.sendFile(file, { root: UI_DIR });
+  app.get('/', ui('index.html'));
+  for (const script of ['app', 'board', 'limits', 'highlight', 'i18n']) app.get(`/ui/${script}.js`, ui(`${script}.js`));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {
