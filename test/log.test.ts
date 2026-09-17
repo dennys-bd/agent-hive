@@ -99,7 +99,7 @@ test('shortId keeps the first 8 characters and shows - for a missing id', () => 
   assert.equal(shortId('abc'), 'abc');
 });
 
-test('describeEvent names the hook, worker and tool but never the tool_input, the response, the message or the question', () => {
+test('describeEvent names the hook, worker and tool but never the tool_input, the response or the message', () => {
   const hook = describeEvent({
     type: 'hook', workerId: WORKER,
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
@@ -109,7 +109,6 @@ test('describeEvent names the hook, worker and tool but never the tool_input, th
     type: 'hook', workerId: WORKER, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to run rm' },
   });
   assert.equal(notification, 'hook Notification worker=1a2b3c4d');
-  assert.equal(describeEvent({ type: 'idle', workerId: WORKER, question: 'Posso apagar a pasta secrets/?' }), 'idle worker=1a2b3c4d');
 });
 
 test('describeEvent summarises every other event with names, ids and counts only', () => {

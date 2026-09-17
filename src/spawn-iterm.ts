@@ -1,9 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { killStray } from './spawn.js';
-import type { WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
+import type { Exec, WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
 
-const execFileAsync = promisify(execFile);
+const execFileAsync: Exec = promisify(execFile);
 const ITERM_APP_ID = 'com.googlecode.iterm2';
 
 export function shellQuote(s: string): string {
@@ -58,10 +58,15 @@ on run argv
 end run`;
 
 const FOCUS_SCRIPT = inSession('activate\n            select t\n            set index of w to 1');
-const WRITE_SCRIPT = inSession('tell s to write text (item 2 of argv)');
 
 async function osascript(script: string, ...args: string[]): Promise<string> {
   const { stdout } = await execFileAsync('osascript', ['-e', script, ...args]);
+  return stdout.trim();
+}
+
+/** Opens an iTerm2 tab typing `text` (a shell string) and resolves to the session's unique id. `terminal.ts` reuses it for the attach. */
+export async function openItermTab(text: string, exec: Exec = execFileAsync): Promise<string> {
+  const { stdout } = await exec('osascript', ['-e', OPEN_TAB_SCRIPT, text]);
   return stdout.trim();
 }
 
@@ -70,22 +75,18 @@ async function inTab(sessionId: string, script: string, ...args: string[]): Prom
 }
 
 /**
- * A worker in an iTerm2 tab. Output never reaches the panel (onLine is unused) and the exit comes from the
- * `; curl /hooks/exit` at the end of the command, which the server forwards to the pool.
+ * A worker in an iTerm2 tab. The exit comes from the `; curl /hooks/exit` at the end of the command, which the server
+ * forwards to the pool; a kill goes through pkill by slug and the exit arrives the same way.
  */
 export function spawnItermWorker(launch: WorkerLaunch, handlers: WorkerHandlers): WorkerHandle {
-  const report = (err: Error): void => handlers.onLine(`stderr: iTerm: ${err.message}`);
-  const session = osascript(OPEN_TAB_SCRIPT, workerCommand(launch)).catch((err: Error) => {
+  const report = (err: Error): void => handlers.onError(`iTerm: ${err.message}`);
+  const session = openItermTab(workerCommand(launch)).catch((err: Error) => {
     report(err); // iTerm missing or refused: the worker never started, free the slot
     handlers.onExit();
     return undefined;
   });
-  const withSession = (run: (id: string) => Promise<void>): Promise<void> =>
-    session.then((id) => (id === undefined ? undefined : run(id)));
   return {
-    send: (text) => void withSession((id) => inTab(id, WRITE_SCRIPT, text)).catch(report),
-    end: () => {}, // interactive claude has no stdin to close; the human ends the session in the tab
     kill: () => void killStray(launch.slug).catch(report),
-    focus: () => withSession((id) => inTab(id, FOCUS_SCRIPT)),
+    focus: () => session.then((id) => (id === undefined ? undefined : inTab(id, FOCUS_SCRIPT))),
   };
 }

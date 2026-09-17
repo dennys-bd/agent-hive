@@ -1,15 +1,15 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseConfig } from '../src/config.js';
 import { prepareHiveDir } from '../src/hooks-settings.js';
 import type { Logger } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
+import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { RESULT_LINE } from '../src/workers.js';
 import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
 import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
@@ -25,12 +25,11 @@ const postJson = (url: string, body?: unknown): Promise<Response> =>
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
-const line = (worker: FakeWorker, payload: unknown): void => worker.handlers.onLine(JSON.stringify(payload));
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 
-async function start(t: TestContext, body: SetupBody = BODY, withFocus = false, log?: Logger): Promise<Started> {
+async function start(t: TestContext, body: SetupBody = BODY, log?: Logger): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
-  const { spawn, workers } = fakeSpawn(withFocus);
+  const { spawn, workers } = fakeSpawn();
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn, log });
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -52,6 +51,10 @@ const openPr = (server: HiveServer, workerId: string): Promise<void> =>
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
   });
 
+// What the worker's hook command posts: the JSON payload on the body, the worker id on the header.
+const hookEvent = (base: string, workerId: string, payload: unknown): Promise<Response> =>
+  fetch(`${base}/hooks/event`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': workerId }, body: JSON.stringify(payload) });
+
 test('POST /setup does not override a maxConcurrent changed through POST /config', async (t) => {
   const { base, server } = await start(t);
   assert.equal(server.getState()?.maxConcurrent, 1);
@@ -62,7 +65,7 @@ test('POST /setup does not override a maxConcurrent changed through POST /config
   assert.equal(server.getState()?.maxConcurrent, 2, 'the form re-save does not revert the header change');
 });
 
-test('saving the setup starts one worker with the launch: mode, repo, port, hooks, prompt file and the rendered prompt', async (t) => {
+test('saving the setup starts one worker with the launch: mode, repo, port, hooks and the prompt file with the rendered prompt', async (t) => {
   const { repo, port, server, workers } = await start(t);
   const slot = slot0(server);
   assert.equal(slot.status, 'trabalhando');
@@ -71,12 +74,13 @@ test('saving the setup starts one worker with the launch: mode, repo, port, hook
   const promptPath = join(repo, '.hive', 'prompts', 'hive-1-from-ready.md');
   assert.deepEqual(workers[0].launch, {
     mode: 'embedded', workerId: slot.workerId, slug: 'hive-1-from-ready', repo, port,
-    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath, prompt: await readFile(promptPath, 'utf8'), claudeArgs: [],
+    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath, claudeArgs: [],
   });
+  assert.match(await readFile(promptPath, 'utf8'), /from Ready/, 'the command line reads the prompt from this file');
 });
 
 test('workers: iterm in the setup reaches the launch; POST /hooks/exit frees its slot and POST /slots/:id/focus reaches the tab', async (t) => {
-  const { base, server, workers } = await start(t, { ...BODY, workers: 'iterm' }, true);
+  const { base, server, workers } = await start(t, { ...BODY, workers: 'iterm' });
   const { id, workerId } = slot0(server);
   assert.equal(workers[0].launch.mode, 'iterm');
   assert.deepEqual(await json(postJson(`${base}/slots/${id}/focus`)), { ok: true });
@@ -85,64 +89,72 @@ test('workers: iterm in the setup reaches the launch; POST /hooks/exit frees its
   await waitFor(() => workers.length === 2); // the slot freed, the task requeued and picked up by a new worker
 });
 
-test('POST /slots/:id/focus is 404 for an embedded worker (no tab) and for an unknown slot', async (t) => {
-  const { base, server } = await start(t);
-  assert.equal((await postJson(`${base}/slots/${slot0(server).id}/focus`)).status, 404);
+test('POST /slots/:id/focus reaches the handle of an embedded worker too; an unknown slot is 404 and a terminal that fails is 500', async (t) => {
+  const { base, server, workers } = await start(t);
+  const id = slot0(server).id;
+  assert.deepEqual(await json(postJson(`${base}/slots/${id}/focus`)), { ok: true });
+  assert.equal(workers[0].focused, 1);
   assert.equal((await postJson(`${base}/slots/nope/focus`)).status, 404);
+  workers[0].focusError = new Error('terminal não suportado em win32');
+  const failed = await postJson(`${base}/slots/${id}/focus`);
+  assert.equal(failed.status, 500);
+  assert.deepEqual(await failed.json(), { error: 'terminal não suportado em win32' });
 });
 
-test('POST /slots/:id/input writes to the worker; blank text is 400 and an unknown slot is 404', async (t) => {
-  const { base, server, workers } = await start(t);
-  const id = slot0(server).id;
-  assert.deepEqual(await json(postJson(`${base}/slots/${id}/input`, { text: 'olha o CI também' })), { ok: true });
-  assert.deepEqual(workers[0].sent, ['olha o CI também']);
-  assert.equal((await postJson(`${base}/slots/${id}/input`, { text: '   ' })).status, 400);
-  assert.equal((await postJson(`${base}/slots/${id}/input`, {})).status, 400);
-  assert.equal((await postJson(`${base}/slots/nope/input`, { text: 'x' })).status, 404);
-  assert.equal(workers[0].sent.length, 1);
-});
-
-test('GET /slots/:id/output returns the formatted lines the worker emitted; an unknown slot is 404', async (t) => {
-  const { base, server, workers } = await start(t);
-  const id = slot0(server).id;
+test('GET /slots/:id/output is the formatted tail of the worker transcript SessionStart pointed at; [] before the hook, when unreadable or when the path is not the worker own; unknown slot is 404', async (t) => {
+  const { base, repo, server } = await start(t);
+  const { id, workerId, slug } = slot0(server);
+  const configDir = await mkdtemp(join(tmpdir(), 'hive-claude-'));
+  process.env.CLAUDE_CONFIG_DIR = configDir; // where transcriptDir looks; the suite runs one file per process
+  t.after(() => { delete process.env.CLAUDE_CONFIG_DIR; });
+  const lines = [
+    JSON.stringify({ type: 'user', message: { content: 'faz a task' } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'lendo o issue' }, { type: 'tool_use', name: 'Bash', input: { command: 'gh issue view 1' } }] } }),
+    '',
+  ].join('\n');
+  const sessionStart = (transcriptPath: string): Promise<Response> => fetch(`${base}/hooks/event`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': workerId! },
+    body: JSON.stringify({ hook_event_name: 'SessionStart', cwd: repo, transcript_path: transcriptPath }),
+  });
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] });
-  line(workers[0], { type: 'assistant', message: { content: [{ type: 'text', text: 'lendo o issue' }] } });
-  workers[0].handlers.onLine('stderr: aviso');
-  line(workers[0], { type: 'result' });
-  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', 'stderr: aviso', RESULT_LINE] });
+  const forged = join(configDir, 'projects', '-Users-x-secret', 'other.jsonl'); // another project's transcript: any local process can post a hook
+  await mkdir(dirname(forged), { recursive: true });
+  await writeFile(forged, lines);
+  assert.equal((await sessionStart(forged)).status, 200);
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'a path outside the worker transcript dir is dropped');
+  assert.equal(slot0(server).transcriptPath, undefined);
+  const own = join(transcriptDir(join(repo, '.claude', 'worktrees', slug!)), 'abc.jsonl');
+  await mkdir(dirname(own), { recursive: true });
+  await writeFile(own, lines);
+  assert.equal((await sessionStart(own)).status, 200);
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', '▶ Bash: gh issue view 1'] });
+  await rm(own);
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'an unreadable transcript is an empty excerpt, not an error');
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });
 
-test('a result closes stdin only once the PR is open; the exit then frees the slot without requeueing', async (t) => {
-  const { server, workers } = await start(t);
+test('a Stop kills the session only once the PR is open; the exit then frees the slot without requeueing', async (t) => {
+  const { base, server, workers } = await start(t);
   const [worker] = workers;
   const workerId = slot0(server).workerId!;
-  line(worker, { type: 'result', result: 'Abro o PR?' });
-  assert.equal(worker.ended, 0, 'no PR yet: the session stays open for follow-ups');
-  await waitFor(() => slot0(server).status === 'esperando_voce');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
+  assert.equal(worker.killed, 0, 'no PR yet: the session stays for the next turn');
+  assert.equal(slot0(server).status, 'trabalhando');
   await openPr(server, workerId);
   assert.equal(slot0(server).status, 'aguardando_review');
-  line(worker, { type: 'result' });
-  assert.equal(worker.ended, 1);
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
+  await waitFor(() => worker.killed === 1);
   worker.handlers.onExit();
   await waitFor(() => slot0(server).status === 'vazio');
   assert.deepEqual(server.getState()?.queue, []);
   assert.equal(workers.length, 1, 'nothing left to spawn');
 });
 
-test('a result without a PR marks the slot as waiting for you with the final text as the question; the answer clears it', async (t) => {
-  const { base, server, workers } = await start(t);
-  const [worker] = workers;
-  const { id, workerId } = slot0(server);
-  line(worker, { type: 'result', result: 'Quer que eu abra o PR agora?' });
-  await waitFor(() => slot0(server).status === 'esperando_voce');
-  assert.equal(slot0(server).question, 'Quer que eu abra o PR agora?');
-  assert.equal(slot0(server).lastEvent, 'aguardando resposta');
-  assert.equal(worker.ended, 0, 'stdin stays open for the answer');
-  assert.deepEqual(await json(postJson(`${base}/slots/${id}/input`, { text: 'abre' })), { ok: true });
-  await server.dispatch({ type: 'hook', workerId: workerId!, payload: { hook_event_name: 'UserPromptSubmit' } }); // what the worker's hook posts
-  assert.equal(slot0(server).status, 'trabalhando');
-  assert.equal(slot0(server).question, undefined);
+test('an error reported by the spawner lands in State.error with the worker slug', async (t) => {
+  const { server, workers } = await start(t);
+  workers[0].handlers.onError('tmux: spawn tmux ENOENT');
+  await waitFor(() => server.getState()?.error === 'worker hive-1-from-ready: tmux: spawn tmux ENOENT');
+  assert.equal(slot0(server).status, 'trabalhando', 'only the exit frees the slot');
 });
 
 test('an exit without a PR requeues the task, which the free slot picks up again with a new worker', async (t) => {
@@ -243,7 +255,7 @@ test('the timer skips the board while nothing could start, and reads it again on
 
 test('the log tells the story: slot transitions, signal and board writes at info, events at debug, and never a tool_input', async (t) => {
   const { log, lines } = fakeLog();
-  const { server } = await start(t, BODY, false, log);
+  const { server } = await start(t, BODY, log);
   const workerId = slot0(server).workerId!;
   const id8 = workerId.slice(0, 8);
   const has = (line: string): void => assert.ok(lines.includes(line), `missing "${line}" in:\n${lines.join('\n')}`);
@@ -266,7 +278,7 @@ test('the log tells the story: slot transitions, signal and board writes at info
 
 test('POST /setup re-reads logLevel from hive.config.json and switches the logger level without a restart', async (t) => {
   const { log, lines } = fakeLog();
-  const { base, repo, port } = await start(t, BODY, false, log);
+  const { base, repo, port } = await start(t, BODY, log);
   assert.ok(lines.includes('LEVEL info'), 'the first save activates the default level');
   assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info`));
   assert.ok(lines.includes('INFO setup saved'));

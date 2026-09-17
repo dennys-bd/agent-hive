@@ -15,9 +15,10 @@ import { reduce, SIGNALS } from './orchestrator.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
-import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
+import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
   Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
 } from './types.js';
@@ -36,8 +37,6 @@ const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
-const NO_TAB_MESSAGE = 'esse worker não tem terminal (modo embutido)';
-const INPUT_MESSAGE = 'text deve ser uma string não vazia';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (config: Config) => Board;
@@ -119,6 +118,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     return live?.state ?? { configured: false };
   }
 
+  const slotOf = (workerId: string): Slot | undefined => live?.state.slots.find((s) => s.workerId === workerId);
+
   function broadcast(): void {
     const data = `data: ${JSON.stringify(eventsPayload())}\n\n`;
     for (const res of clients) res.write(data);
@@ -180,28 +181,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!slot.task || !slot.slug || !slot.workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
     const { workerId } = slot;
-    const prompt = renderPrompt(config.promptTemplate, slot.task);
-    const promptPath = await writePrompt(promptsDir, slot.slug, prompt); // a record for embedded workers, the input for a tab
+    const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task)); // the command line reads it
     pool.start({
       workerId,
-      launch: {
-        mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, prompt,
-        claudeArgs: config.claudeArgs,
-      },
+      launch: { mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, claudeArgs: config.claudeArgs },
       onExit: () => void dispatch({ type: 'exit', workerId }),
-      onResult: (workerId, text) => void onTurnEnd(workerId, text),
+      onError: (message) => void fail(`worker ${slot.slug}`, new Error(message)), // tmux / iTerm missing or refused: the error bar
     });
-  }
-
-  // A turn ended. With the PR open the task is done: closing stdin lets the worker exit and free the slot.
-  // Without a PR nothing happens until someone types (print mode asks in text and stops), so the final text
-  // becomes the pending question. Stop arrives before this (hooks block the turn end), so idle wins.
-  async function onTurnEnd(workerId: string, text: string): Promise<void> {
-    if (live?.state.slots.find((s) => s.workerId === workerId)?.status === 'aguardando_review') {
-      pool.end(workerId);
-      return;
-    }
-    await dispatch({ type: 'idle', workerId, question: text });
   }
 
   async function poll(): Promise<void> {
@@ -241,11 +227,19 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
-  // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only an absolute `.jsonl`:
-  // any local process can hit /hooks/event, and the worst case here is reading a `.jsonl` and discarding it.
+  // Any local process can hit /hooks/event: a transcript path is honoured only when it is the worker's own, so a forged
+  // SessionStart cannot turn GET /slots/:id/output into a reader of any `.jsonl` the Hive can open. Dropped, not rejected:
+  // the rest of the hook (status, branch) still applies.
+  function scopeTranscript(workerId: string, payload: HookPayload): HookPayload {
+    const slug = slotOf(workerId)?.slug;
+    if (payload.transcript_path === undefined || (slug !== undefined && isWorkerTranscript(payload.transcript_path, repo, slug))) return payload;
+    return { ...payload, transcript_path: undefined };
+  }
+
+  // Reads the transcript only at a turn end, only for a worker this Hive spawned, and only the worker's own `.jsonl` (scopeTranscript).
   async function turnTokens(workerId: string, payload: HookPayload): Promise<number | undefined> {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
-    const slot = live?.state.slots.find((s) => s.workerId === workerId);
+    const slot = slotOf(workerId);
     if (!slot || slot.status === 'vazio') return undefined;
     return sumTranscriptTokens(payload.transcript_path).catch(() => undefined); // unreadable: the hook goes through without tokens
   }
@@ -316,10 +310,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   // Answers only after the dispatch: the worker's hook blocks until curl returns, so the state (a PR seen on
-  // PostToolUse, above all) is applied before the worker goes on and its `result` line reaches endWhenReviewed.
+  // PostToolUse, above all) is applied before the worker goes on. A Stop with the PR open is the end of the task:
+  // the session is killed after the answer and its exit frees the slot. Unknown to the pool: a previous Hive's worker, nothing to do.
   app.post('/hooks/event', async (req: Request, res: Response) => {
     const workerId = req.header('x-hive-worker');
-    const payload = req.body as HookPayload | undefined;
+    const raw = req.body as HookPayload | undefined;
+    const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
       const tokens = await turnTokens(workerId, payload);
@@ -328,10 +324,10 @@ export function createServer(deps: ServerDeps): HiveServer {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
+    if (workerId && payload?.hook_event_name === 'Stop' && slotOf(workerId)?.status === 'aguardando_review') pool.kill(workerId);
   });
 
-  // A tab's command ends with a curl here (embedded workers exit through the process). Unknown to the pool
-  // (started by a previous Hive): free the slot ourselves.
+  // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.
   app.post('/hooks/exit', async (req: Request, res: Response) => {
     res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
@@ -482,7 +478,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
-  app.get('/slots/:id/output', (req: Request, res: Response) => {
+  // The excerpt is the tail of the transcript SessionStart reported, read on every call: nothing is kept in memory.
+  // Unreadable (rotated, not written yet) is an empty excerpt, not an error.
+  app.get('/slots/:id/output', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const slot = current.state.slots.find((s) => s.id === req.params.id);
@@ -490,23 +488,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
       return;
     }
-    res.json({ lines: slot.workerId ? pool.output(slot.workerId) : [] });
-  });
-
-  app.post('/slots/:id/input', (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const text = (req.body as { text?: unknown }).text;
-    if (typeof text !== 'string' || text.trim() === '') {
-      res.status(HTTP_BAD_REQUEST).json({ error: INPUT_MESSAGE });
-      return;
-    }
-    const slot = current.state.slots.find((s) => s.id === req.params.id);
-    if (!slot?.workerId || !pool.send(slot.workerId, text)) {
-      res.status(HTTP_NOT_FOUND).json({ error: NO_WORKER_MESSAGE });
-      return;
-    }
-    res.json({ ok: true });
+    res.json({ lines: slot.transcriptPath ? await tailTranscript(slot.transcriptPath).catch(() => []) : [] });
   });
 
   app.post('/slots/:id/focus', async (req: Request, res: Response) => {
@@ -515,12 +497,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     const slot = current.state.slots.find((s) => s.id === req.params.id);
     try {
       if (!slot?.workerId || !(await pool.focus(slot.workerId))) {
-        res.status(HTTP_NOT_FOUND).json({ error: NO_TAB_MESSAGE });
+        res.status(HTTP_NOT_FOUND).json({ error: NO_WORKER_MESSAGE });
         return;
       }
       res.json({ ok: true });
     } catch (err) {
-      res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
+      res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // the terminal could not open: the message is the one the OS gave
     }
   });
 

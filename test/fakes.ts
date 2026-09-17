@@ -5,29 +5,25 @@ import type { Board, BoardQuota, Config, SpawnWorker, WorkerHandlers, WorkerLaun
 export interface FakeWorker {
   launch: WorkerLaunch;
   handlers: WorkerHandlers;
-  sent: string[];
-  ended: number;
   killed: number;
   focused: number;
+  focusError?: Error; // set by a test: the next focus() rejects, like a terminal that cannot open
 }
 
-/** A SpawnWorker that opens nothing: records every call and exposes the handlers so a test can emit lines and exits. */
-export function fakeSpawn(withFocus = false): { spawn: SpawnWorker; workers: FakeWorker[] } {
+/** A SpawnWorker that opens nothing: records every call and exposes the handlers so a test can report errors and exits. */
+export function fakeSpawn(): { spawn: SpawnWorker; workers: FakeWorker[] } {
   const workers: FakeWorker[] = [];
   const spawn: SpawnWorker = (launch, handlers) => {
-    const worker: FakeWorker = { launch, handlers, sent: [], ended: 0, killed: 0, focused: 0 };
+    const worker: FakeWorker = { launch, handlers, killed: 0, focused: 0 };
     workers.push(worker);
     return {
-      send: (text) => {
-        worker.sent.push(text);
-      },
-      end: () => {
-        worker.ended += 1;
-      },
       kill: () => {
         worker.killed += 1;
       },
-      ...(withFocus ? { focus: async () => { worker.focused += 1; } } : {}),
+      focus: async () => {
+        worker.focused += 1;
+        if (worker.focusError) throw worker.focusError;
+      },
     };
   };
   return { spawn, workers };
@@ -35,7 +31,7 @@ export function fakeSpawn(withFocus = false): { spawn: SpawnWorker; workers: Fak
 
 export const LAUNCH: WorkerLaunch = {
   mode: 'embedded', workerId: 'W1', slug: 'hive-1-task', repo: '/repo', port: 4242,
-  hooksPath: '/repo/.hive/hooks.json', promptPath: '/repo/.hive/prompts/hive-1-task.md', prompt: 'faz a task', claudeArgs: [],
+  hooksPath: '/repo/.hive/hooks.json', promptPath: '/repo/.hive/prompts/hive-1-task.md', claudeArgs: [],
 };
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
