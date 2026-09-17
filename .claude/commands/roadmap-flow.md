@@ -67,16 +67,16 @@ to `opus` by hand only when its real risk is higher than the table says
 (e.g. a TDD pass that changes the orchestrator reducer or `spawn.ts`), and
 say so.
 
-| Stage | Actor | Model |
-|---|---|---|
-| 1 — Spec | `superpowers:brainstorming` (inline) | session model |
-| 2 — Plan | `ecc:planner` agent | `opus` |
-| 3 — Branch | inline `git` | session model |
-| 4 — Implementation | `ecc:tdd-guide` | `sonnet` |
-| 4 — Build-fix | `ecc:build-error-resolver` | `sonnet` |
-| 5 — Code review | `ecc:typescript-reviewer` | `sonnet` |
-| 6 — Security | `ecc:security-reviewer` | `sonnet` |
-| 7 — PR | `ecc:pr` inline | session model |
+| Stage | Actor | Model | Why |
+|---|---|---|---|
+| 1 — Spec | `superpowers:brainstorming` (inline, main session) | session model | the questions are answered by the session itself from the issue and the specs; no dispatch |
+| 2 — Plan | `ecc:planner` agent | `opus` (`ecc:planner`'s declared default) | planning mistakes are the most expensive to unwind |
+| 3 — Branch | inline `git` | session model | trivial, no dispatch |
+| 4 — Implementation | `ecc:tdd-guide` | `sonnet` | high-volume, well-specified work once the plan exists |
+| 4 — Build-fix | `ecc:build-error-resolver` | `sonnet` | mechanical `tsc` error resolution |
+| 5 — Code review | `ecc:typescript-reviewer` | `sonnet` | ECC's own default for this agent |
+| 6 — Security | `ecc:security-reviewer` on the branch diff | `sonnet` | ECC's own default; escalate to `opus` by hand when the diff touches the hook routes, `spawn.ts` or a board adapter's token handling |
+| 7 — PR | `ecc:pr` inline (no subagent) | session model | mechanical push / template fill / `gh` metadata |
 
 ## Stage 0 — Read the issue
 
