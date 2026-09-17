@@ -27,6 +27,8 @@ const WEEKLY_PREFIX = 'seven_day_';
 const PERCENT_MAX = 100;
 // Mirrors src/polling.ts, which cannot be imported here (it pulls the orchestrator into the browser).
 const QUOTA_RESERVE = 500;
+// Mirrors isFree in src/orchestrator.ts, which cannot be imported here (it pulls node:crypto into the browser).
+const isFree = (slot: Slot): boolean => slot.status === 'empty' && !slot.draining;
 
 type BoardType = BoardConfig['type'];
 
@@ -98,7 +100,9 @@ function getJson<T>(path: string): Promise<T> {
 
 function postJson<T>(path: string, body?: unknown): Promise<T> {
   return fetch(path, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+    // x-hive-ui is the CSRF gate of every dashboard route: a form on another site cannot set it (see server.ts)
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   }).then((res) => parseJson<T>(res));
 }
 
@@ -184,11 +188,12 @@ function renderDetail(): void {
   syncOutputPolling(slot.id);
 }
 
+// A free task gets the manual-start button; a blocked one shows its blockers instead (the route would refuse it anyway).
 function renderQueued(task: Task): string {
-  const blockers = task.blockedBy?.length
+  const tail = task.blockedBy?.length
     ? `<span class="meta" style="color:var(--muted)"> · ${t('queue.blockedBy', { ids: esc(task.blockedBy.join(', ')) })}</span>`
-    : '';
-  return `<li>#${esc(task.id)} ${esc(task.title)}${blockers}</li>`;
+    : ` <button type="button" data-start="${esc(task.itemId)}">${t('queue.start')}</button>`;
+  return `<li>#${esc(task.id)} ${esc(task.title)}${tail}</li>`;
 }
 
 function renderSignal(signal: Signal): void {
@@ -506,6 +511,21 @@ $('grid').addEventListener('click', (event) => {
   if (!card) return;
   selectedSlotId = card.dataset.id;
   renderDetail();
+});
+
+// The human override: the route ignores the signal, the cap and the budget. Without a free slot the confirm offers the number the
+// reducer will set (occupied + 1: maxConcurrent + 1 unless slots are draining), on the same request so nothing races the raise.
+$('queue').addEventListener('click', (event) => {
+  const itemId = (event.target as HTMLElement).dataset.start;
+  const task = itemId === undefined ? undefined : state?.queue.find((t) => t.itemId === itemId);
+  if (!state || !task) return;
+  const path = `/queue/${encodeURIComponent(task.itemId)}/start`;
+  if (state.slots.some(isFree)) {
+    post(path);
+    return;
+  }
+  const next = state.slots.filter((s) => s.status !== 'empty').length + 1;
+  if (confirm(t('confirm.raiseMax', { from: state.maxConcurrent, to: next, id: task.id }))) post(path, { raiseMax: true });
 });
 
 $('max').addEventListener('change', (event) => {

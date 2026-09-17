@@ -21,6 +21,7 @@ const en = {
   'status.waiting': 'waiting for you',
   'status.review': 'awaiting review',
   'event.starting': 'starting',
+  'event.manualStart': 'started by hand',
   'event.prompt': 'prompt sent',
   'event.waiting': 'waiting: {detail}',
   'event.pr': 'PR open',
@@ -36,7 +37,9 @@ const en = {
   'queue.title': 'queue',
   'queue.empty': 'empty',
   'queue.blockedBy': 'blocked by {ids}',
+  'queue.start': 'start',
   'confirm.kill': 'Kill this worker? The task goes back to the queue.',
+  'confirm.raiseMax': 'No free slot. Raise max. workers from {from} to {to} and start #{id}?',
   'error.disconnected': 'connection to the Agent Hive lost; reconnecting…',
   'notice.restartPort': 'restart the Hive to use port {port}',
   'setup.title': 'configuration',
@@ -105,6 +108,7 @@ const pt: Record<MessageKey, string> = {
   'status.waiting': 'esperando você',
   'status.review': 'aguardando review',
   'event.starting': 'iniciando',
+  'event.manualStart': 'iniciado à mão',
   'event.prompt': 'prompt enviado',
   'event.waiting': 'aguardando: {detail}',
   'event.pr': 'PR aberto',
@@ -120,7 +124,9 @@ const pt: Record<MessageKey, string> = {
   'queue.title': 'fila',
   'queue.empty': 'vazia',
   'queue.blockedBy': 'bloqueada por {ids}',
+  'queue.start': 'iniciar',
   'confirm.kill': 'Matar esse worker? A task volta pra fila.',
+  'confirm.raiseMax': 'Nenhum slot livre. Subir máx. workers de {from} pra {to} e iniciar #{id}?',
   'error.disconnected': 'conexão com o Agent Hive perdida; reconectando…',
   'notice.restartPort': 'reinicie o Hive pra usar a porta {port}',
   'setup.title': 'configuração',
@@ -172,7 +178,7 @@ export const LOCALE: Record<Language, string> = { pt: 'pt-BR', en: 'en-US' };
 const PLACEHOLDER = /\{(\w+)\}/g;
 const STATUS_KEY: Record<Status, MessageKey> = { empty: 'status.empty', working: 'status.working', waiting: 'status.waiting', review: 'status.review' };
 const EVENT_KEY: Record<Exclude<SlotEventKind, 'tool'>, MessageKey> = {
-  starting: 'event.starting', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', paused: 'event.paused', turn: 'event.turn',
+  starting: 'event.starting', manualStart: 'event.manualStart', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', paused: 'event.paused', turn: 'event.turn',
 };
 
 let current: Language = 'en';

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, isChildSession, reduce, slugFor } from '../src/orchestrator.js';
+import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, isChildSession, isFree, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
 import type { BoardQuota, Budget, HookPayload, RateLimits, Signal, Slot, State, Task, UsageRule } from '../src/types.js';
 
@@ -28,6 +28,7 @@ const ruled = (state: State, tokens: number, ageMs = 0): State => ({
   usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
 });
 const polled = (state: State, n: number) => reduce(state, { type: 'poll', tasks: tasks(n) });
+const started = (state: State, itemId: string, raiseMax?: boolean) => reduce(state, { type: 'start', itemId, raiseMax });
 const LIMITS: RateLimits = {
   at: '2026-09-16T12:00:00.000Z',
   windows: {
@@ -79,6 +80,10 @@ test('reducer never mutates its input', () => {
   reduce(spentState, { type: 'hook', workerId: id, payload: { hook_event_name: 'Stop' }, tokens: 900 });
   reduce(spentState, { type: 'setBudget', budget: { maxTokensPerHour: 1 } });
   assert.equal(JSON.stringify(spentState), spentSnapshot);
+  const full = filled(1, 2).state; // no free slot: start with raiseMax goes through setMax and occupy
+  const fullSnapshot = JSON.stringify(full);
+  reduce(full, { type: 'start', itemId: 'item2', raiseMax: true });
+  assert.equal(JSON.stringify(full), fullSnapshot);
 });
 
 test('setMax up adds empty slots and fills them from the queue', () => {
@@ -778,4 +783,77 @@ test('extractPrUrl finds the PR url only for gh pr create', () => {
   assert.equal(extractPrUrl('gh pr create', { stdout: 'x https://github.com/a/b-c/pull/10 y' }), 'https://github.com/a/b-c/pull/10');
   assert.equal(extractPrUrl('gh pr view', 'https://github.com/a/b/pull/9'), undefined);
   assert.equal(extractPrUrl('gh pr create', 'error: not logged in'), undefined);
+});
+
+test('isFree is true only for an empty slot that is not draining', () => {
+  assert.equal(isFree({ id: 'x', status: 'empty' }), true);
+  assert.equal(isFree({ id: 'x', status: 'empty', draining: true }), false);
+  assert.equal(isFree(filled(1, 1).state.slots[0]), false, 'occupied');
+});
+
+test('start under yellow or red opens the task in the first free slot exactly like fill, marked manualStart, and leaves the rest queued', () => {
+  const yellow = polled(signaled(initialState(2), 'yellow').state, 3).state; // 2 free slots, 3 queued, nothing spawned
+  const { state, effects } = started(yellow, 'item2');
+  assert.equal(state.signal, 'yellow', 'the signal is untouched');
+  assert.equal(state.slots[0].task?.id, '2');
+  assert.equal(state.slots[0].status, 'working');
+  assert.equal(state.slots[0].slug, 'hive-2-task-2');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'manualStart' });
+  assert.ok(state.slots[0].workerId && state.slots[0].startedAt);
+  assert.equal(state.slots[1].status, 'empty', 'only the task asked for opens');
+  assert.deepEqual(state.queue.map((t) => t.id), ['1', '3']);
+  assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item2', key: 'working' }, { type: 'spawn', slot: state.slots[0] }]);
+  const red = started(signaled(yellow, 'red').state, 'item3');
+  assert.equal(red.state.slots[0].task?.id, '3');
+  assert.deepEqual(red.effects.map((e) => e.type), ['setStatus', 'spawn']);
+});
+
+test('start ignores the dynamic cap and the budget, and never calls fill: only the task asked for opens', () => {
+  const capped = polled(ruled(initialState(3), 550), 3).state; // 55%: cap 1 → one working, two queued, two free slots
+  assert.equal(occupied(capped).length, 1);
+  const { state, effects } = started(capped, 'item3');
+  assert.deepEqual(occupied(state).map((s) => s.task?.id), ['1', '3']);
+  assert.deepEqual(state.queue.map((t) => t.id), ['2'], 'task 2 stays queued: no fill after a manual start');
+  assert.deepEqual(effects.map((e) => e.type), ['setStatus', 'spawn']);
+  const broke = polled(spent(1000, 0, { maxTokensPerHour: 1000 }), 1).state; // budget exhausted: the free slot stayed empty
+  assert.equal(broke.slots[0].status, 'empty');
+  assert.equal(started(broke, 'item1').state.slots[0].task?.id, '1');
+});
+
+test('start leaves the state as is, with no effects, for an unknown or blocked task and for no free slot without raiseMax', () => {
+  const blocked = { ...task(1), blockedBy: ['3'] };
+  const queued = reduce(signaled(initialState(1), 'yellow').state, { type: 'poll', tasks: [blocked, task(2)] }).state;
+  for (const [itemId, why] of [['nope', 'unknown'], ['item1', 'blocked']] as const) {
+    const { state, effects } = started(queued, itemId, true);
+    assert.equal(state, queued, `${why}: same object, even with raiseMax`);
+    assert.equal(effects.length, 0, why);
+  }
+  const full = filled(1, 2).state; // one working, task 2 queued, no free slot
+  const { state, effects } = started(full, 'item2');
+  assert.equal(state, full, 'no free slot and no raiseMax: same object');
+  assert.equal(effects.length, 0);
+  assert.equal(state.maxConcurrent, 1);
+});
+
+test('start with raiseMax and no free slot sets maxConcurrent to occupied + 1 and opens the task in the new slot; a free slot ignores raiseMax', () => {
+  const full = filled(2, 3).state; // 2 working, task 3 queued
+  const { state, effects } = started(full, 'item3', true);
+  assert.equal(state.maxConcurrent, 3);
+  assert.equal(state.slots.length, 3);
+  assert.deepEqual(state.slots.map((s) => s.task?.id), ['1', '2', '3']);
+  assert.deepEqual(state.slots[2].lastEvent, { kind: 'manualStart' });
+  assert.deepEqual(state.queue, []);
+  assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item3', key: 'working' }, { type: 'spawn', slot: state.slots[2] }]);
+  // 3 working under a max of 1: two draining, the cap below the occupied count. +1 on the max would open nothing; occupied + 1 opens one.
+  const draining = reduce(filled(3, 4).state, { type: 'setMax', max: 1 }).state;
+  assert.deepEqual(draining.slots.map((s) => s.draining), [undefined, true, true]);
+  const raised = started(draining, 'item4', true).state;
+  assert.equal(raised.maxConcurrent, 4);
+  assert.ok(raised.slots.every((s) => !s.draining), 'nothing drains any more');
+  assert.deepEqual(raised.slots.map((s) => s.task?.id), ['1', '2', '3', '4']);
+  const roomy = polled(signaled(initialState(2), 'yellow').state, 1).state; // a free slot: the slot appeared between the render and the click
+  const kept = started(roomy, 'item1', true).state;
+  assert.equal(kept.maxConcurrent, 2);
+  assert.equal(kept.slots.length, 2);
+  assert.equal(kept.slots[0].task?.id, '1');
 });

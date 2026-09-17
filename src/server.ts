@@ -11,7 +11,7 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
 import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
-import { isChildSession, reduce, SIGNALS } from './orchestrator.js';
+import { isBlocked, isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
@@ -31,14 +31,19 @@ const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
-const HTTP_NOT_CONFIGURED = 409;
+const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
+const FORBIDDEN_ORIGIN_MESSAGE = 'origem não permitida';
+const HOOKS_PREFIX = '/hooks/';
+export const UI_HEADER = 'x-hive-ui'; // every dashboard POST carries it; the value is irrelevant
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
+const NOT_QUEUED_MESSAGE = 'task não está na fila';
+const NO_FREE_SLOT_MESSAGE = 'nenhum slot livre';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (config: Config) => Board;
@@ -105,6 +110,15 @@ function errorMessage(err: unknown): string {
 function boardFromQuery(query: Request['query']): Record<string, unknown> {
   const { type, owner, number, path } = query;
   return { type, owner, path, number: typeof number === 'string' && number !== '' ? Number(number) : number };
+}
+
+/** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. */
+function startRefusal(state: State, itemId: string, raiseMax: boolean): { status: number; message: string } | undefined {
+  const task = state.queue.find((t) => t.itemId === itemId);
+  if (!task) return { status: HTTP_NOT_FOUND, message: NOT_QUEUED_MESSAGE };
+  if (isBlocked(task)) return { status: HTTP_CONFLICT, message: `task bloqueada por ${(task.blockedBy ?? []).join(', ')}` };
+  if (!raiseMax && !state.slots.some(isFree)) return { status: HTTP_CONFLICT, message: NO_FREE_SLOT_MESSAGE };
+  return undefined;
 }
 
 export function createServer(deps: ServerDeps): HiveServer {
@@ -321,7 +335,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   function requireLive(res: Response): Live | undefined {
-    if (!live) res.status(HTTP_NOT_CONFIGURED).json({ error: NOT_CONFIGURED_MESSAGE });
+    if (!live) res.status(HTTP_CONFLICT).json({ error: NOT_CONFIGURED_MESSAGE });
     return live;
   }
 
@@ -334,6 +348,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     const allowedHosts = boundPort !== undefined ? [`127.0.0.1:${boundPort}`, `localhost:${boundPort}`] : [];
     if (!allowedHosts.includes(req.headers.host ?? '')) {
       res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_HOST_MESSAGE });
+      return;
+    }
+    // The Host check does not stop CSRF: a form on any site can post straight at the local port. Dashboard routes need a
+    // header only the UI sends; a form cannot set one, and a cross-origin fetch that does hits a preflight the server never
+    // answers. Hook routes stay open: without x-hive-worker they are no-ops already.
+    if (req.method === 'POST' && !req.path.startsWith(HOOKS_PREFIX) && req.header(UI_HEADER) === undefined) {
+      res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_ORIGIN_MESSAGE });
       return;
     }
     next();
@@ -539,6 +560,22 @@ export function createServer(deps: ServerDeps): HiveServer {
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // the terminal could not open: the message is the one the OS gave
     }
+  });
+
+  // The human override from the queue panel. The checks answer what the reducer would ignore in silence, so the UI is never left
+  // without an answer; a race between the check and the dispatch is a no-op in the reducer, never a spawn it should not do.
+  app.post('/queue/:itemId/start', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const itemId = req.params.itemId as string;
+    const raiseMax = (req.body as { raiseMax?: unknown } | undefined)?.raiseMax === true; // only a literal true raises the max
+    const refusal = startRefusal(current.state, itemId, raiseMax);
+    if (refusal) {
+      res.status(refusal.status).json({ error: refusal.message });
+      return;
+    }
+    await dispatch({ type: 'start', itemId, raiseMax });
+    res.json({ ok: true });
   });
 
   app.post('/board/refresh', async (_req: Request, res: Response) => {

@@ -130,6 +130,8 @@ test('describeEvent summarises every other event with names, ids and counts only
   );
   assert.equal(describeEvent({ type: 'error', message: 'board.listQueue: boom' }), 'error board.listQueue: boom');
   assert.equal(describeEvent({ type: 'error' }), 'error');
+  assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1' }), 'start #PVTI_1 raiseMax=false');
+  assert.equal(describeEvent({ type: 'start', itemId: 'PVTI_1', raiseMax: true }), 'start #PVTI_1 raiseMax=true');
 });
 
 test('describeEffect: spawn, setStatus and kill', () => {
@@ -152,6 +154,8 @@ test('describeChanges lists each slot whose status changed (position in the grid
   assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: review → empty #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
   assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
   assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'empty' }] }), [], 'a slot added by setMax is not a transition');
+  const added: Slot = { ...working, id: 'c0c0c0c0-4444-4444-8444-444444444444' };
+  assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, added] }), ['slot 3: empty → working #30 worker=1a2b3c4d'], 'a slot that appears already occupied (start with raiseMax) is a transition');
 });
 
 test('describeChanges emits the session line once, when the id appears, after the status lines and before the signal', () => {

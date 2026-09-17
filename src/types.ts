@@ -3,7 +3,7 @@ import type { LogLevel } from './log.js';
 export type Language = 'pt' | 'en';
 
 export type Status = 'empty' | 'working' | 'waiting' | 'review';
-export type SlotEventKind = 'starting' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
+export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
 /** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
 export interface SlotEvent {
   kind: SlotEventKind;
@@ -147,7 +147,8 @@ export type HiveEvent =
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
-  | { type: 'error'; message?: string };
+  | { type: 'error'; message?: string }
+  | { type: 'start'; itemId: string; raiseMax?: boolean }; // the human override from the queue panel: past the signal, the cap and the budget
 
 export interface ProjectSummary {
   number: number;
