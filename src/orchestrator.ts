@@ -13,6 +13,7 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 const SLUG_MAX = 30;
+const QUESTION_MAX = 500;
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 
 export function initialState(maxConcurrent: number): State {
@@ -69,6 +70,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'setUsageRules': return fill(setUsageRules(state, event.usageRules));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch, event.tokens);
     case 'exit': return fill(exit(state, event.workerId));
+    case 'idle': return idle(state, event.workerId, event.question); // no fill: nothing was freed
     case 'kill': {
       const slot = state.slots.find((s) => s.id === event.slotId);
       return { state, effects: slot?.slug && slot.workerId ? [{ type: 'kill', slug: slot.slug, workerId: slot.workerId }] : [] };
@@ -173,6 +175,15 @@ function exit(state: State, workerId: string): Reduced {
     state: { ...state, slots, queue: requeue ? [...state.queue, requeue] : state.queue },
     effects: requeue ? [{ type: 'setStatus', itemId: requeue.itemId, key: 'queue' }] : [],
   };
+}
+
+// In print mode the worker asks in plain text and ends the turn: a `result` without a PR means nothing happens
+// until someone types. Reuses the status and the card blink that Notification already has; the answer
+// (UserPromptSubmit) clears the question. With a PR the server closes stdin instead, so there is nothing to show.
+function idle(state: State, workerId: string, question: string): Reduced {
+  const slot = state.slots.find((s) => s.workerId === workerId);
+  if (!slot || slot.status === 'vazio' || slot.prUrl) return none(state);
+  return patch(state, workerId, { status: 'esperando_voce', question: question.slice(0, QUESTION_MAX), lastEvent: 'aguardando resposta' });
 }
 
 // Workers are children of the Hive: none survives a restart, so every occupied slot is given as dead.

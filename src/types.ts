@@ -114,6 +114,7 @@ export type HiveEvent =
   | { type: 'rateLimits'; workerId: string; rateLimits: RateLimits }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
+  | { type: 'idle'; workerId: string; question: string } // a `result` line without a PR: the worker waits for input
   | { type: 'kill'; slotId: string }
   | { type: 'error'; message?: string };
 

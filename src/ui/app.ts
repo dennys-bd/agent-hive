@@ -2,6 +2,7 @@ import type {
   BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
   Task, UsageSample, WorkersMode,
 } from '../types.js';
+import { esc, renderOutput } from './highlight.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 
 const STATUS_LABEL: Record<Slot['status'], string> = {
@@ -10,6 +11,8 @@ const STATUS_LABEL: Record<Slot['status'], string> = {
 const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
 const RERENDER_MS = 30_000;
 const OUTPUT_POLL_MS = 2_000;
+const INPUT_PLACEHOLDER = 'mensagem pro worker';
+const ANSWER_PLACEHOLDER = 'responder ao worker';
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
 const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
 const DEFAULT_MAX = 2;
@@ -35,12 +38,9 @@ let selectedSlotId: string | undefined;
 let setupInfo: SetupInfo | undefined;
 let outputTimer: ReturnType<typeof setInterval> | undefined;
 let outputSlotId: string | undefined; // the slot the output polling follows
+let lastOutput = '';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
-
-function esc(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
-}
 
 function elapsed(iso?: string): string {
   if (!iso) return '';
@@ -132,11 +132,12 @@ async function loadOutput(): Promise<void> {
   try {
     const { lines } = await getJson<{ lines: string[] }>(`/slots/${slotId}/output`);
     if (slotId !== outputSlotId) return; // the panel moved on while the request was in flight
-    const pre = $('output');
     const text = lines.join('\n');
-    if (text === pre.textContent) return;
-    pre.textContent = text;
-    pre.scrollTop = pre.scrollHeight; // follows the worker as the output grows
+    if (text === lastOutput) return;
+    lastOutput = text;
+    const el = $('output');
+    el.innerHTML = renderOutput(lines); // every worker character is escaped inside renderOutput
+    el.scrollTop = el.scrollHeight; // follows the worker as the output grows
   } catch (err) {
     showError((err as Error).message);
   }
@@ -156,7 +157,8 @@ function syncOutputPolling(slotId: string | undefined): void {
   if (outputTimer) clearInterval(outputTimer);
   outputTimer = undefined;
   outputSlotId = slotId;
-  $('output').textContent = '';
+  $('output').innerHTML = '';
+  lastOutput = '';
   if (!slotId || workersMode() === 'iterm') return;
   void loadOutput();
   outputTimer = setInterval(() => void loadOutput(), OUTPUT_POLL_MS);
@@ -188,6 +190,7 @@ function renderDetail(): void {
     slot.task ? taskLink(slot.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
+  $<HTMLInputElement>('input').placeholder = slot.status === 'esperando_voce' ? ANSWER_PLACEHOLDER : INPUT_PLACEHOLDER;
   panel.classList.add('show');
   syncOutputPolling(slot.id);
 }
