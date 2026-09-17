@@ -10,7 +10,9 @@
     "skipLibCheck": true,
     "rootDir": ".",
     "outDir": "dist",
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": { "@/*": ["./src/ui/*"] }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["src/ui/**/*.tsx", "src/ui/hooks/**", "src/ui/components/**", "test/ui/**"]
 }

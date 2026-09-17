@@ -1,4 +1,4 @@
-// The only place UI text lives. Served as /ui/i18n.js; no DOM at import time, so node:test covers t / statusText / slotEventText.
+// The only place UI text lives. No DOM at import time, so node:test covers t / statusText / slotEventText; the React components call t() and re-render when the language changes.
 import type { Language, SlotEvent, SlotEventKind, Status } from '../types.js';
 
 const en = {
@@ -95,6 +95,7 @@ const en = {
   'setup.columns.add': '+ column',
   'setup.columns.remove': 'remove',
   'setup.columns.none': 'none',
+  'setup.columns.error': 'column {n}: enter a name and an integer weight ≥ 0',
   'setup.columns.loadHint': '"load" fills the selects below with the board columns.',
   'setup.columns.hint': 'the card advances when the command ends; a higher weight takes the slot first; a column without a prompt only shows the card. Prompt placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), e.g. <code>/hive-build {url}</code>. On markdown, <code>{body}</code> is empty and <code>{url}</code> is the file path. Permissions and questions are answered in the worker\'s terminal (<code>terminal</code> button on the card). Embedded mode needs <code>tmux</code>.',
 };
@@ -195,6 +196,7 @@ const pt: Record<MessageKey, string> = {
   'setup.columns.add': '+ coluna',
   'setup.columns.remove': 'remover',
   'setup.columns.none': 'nenhum',
+  'setup.columns.error': 'coluna {n}: informe nome e peso inteiro ≥ 0',
   'setup.columns.loadHint': '"carregar" preenche os selects abaixo com as colunas do board.',
   'setup.columns.hint': 'o card avança quando o comando termina; peso maior pega o slot primeiro; coluna sem prompt só mostra o card. Placeholders do prompt: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), ex.: <code>/hive-build {url}</code>. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Permissões e perguntas são respondidas no terminal do worker (botão <code>terminal</code> no card). O modo embutido precisa do <code>tmux</code>.',
 };
@@ -226,12 +228,4 @@ export const statusText = (status: Status): string => t(STATUS_KEY[status]);
 export function slotEventText(event: SlotEvent): string {
   if (event.kind === 'tool') return event.detail ?? '';
   return t(EVENT_KEY[event.kind], { detail: event.detail ?? '' });
-}
-
-/** Static text from the keys in the HTML. innerHTML only for the hints with <code>: the dictionary is code, not input. */
-export function applyTranslations(): void {
-  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n as MessageKey); });
-  document.querySelectorAll<HTMLElement>('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml as MessageKey); });
-  document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => { el.placeholder = t(el.dataset.i18nPlaceholder as MessageKey); });
-  document.documentElement.lang = LOCALE[current];
 }

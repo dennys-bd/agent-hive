@@ -549,10 +549,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
-  // `root` + a bare name: with an absolute path, send() 404s when any directory on the way starts with a dot (a Hive under .claude/worktrees)
-  const ui = (file: string) => (_req: Request, res: Response) => res.sendFile(file, { root: UI_DIR });
-  app.get('/', ui('index.html'));
-  for (const script of ['app', 'board', 'limits', 'highlight', 'i18n']) app.get(`/ui/${script}.js`, ui(`${script}.js`));
+  // Vite emits assets/*-[hash].js|css: one static mount instead of a route per file. express.static never lists a
+  // directory nor leaves UI_DIR. Same position: after the host / origin middleware, so nothing changes for the API.
+  // root (not a joined path) so send()'s dotfile check only looks at segments under UI_DIR: a repo checked out
+  // under a dot-directory (e.g. a .claude worktree) would otherwise 404 every request, the leading segment
+  // of the absolute path always failing containsDotFile.
+  app.get('/', (_req: Request, res: Response) => res.sendFile('index.html', { root: UI_DIR }));
+  app.use(express.static(UI_DIR));
 
   async function listen(port: number): Promise<number> {
     const bound = await new Promise<number>((resolve, reject) => {

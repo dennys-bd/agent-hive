@@ -474,3 +474,21 @@ test('POST /setup with different columns dispatches setColumns: the state follow
   assert.deepEqual(server.getState()?.columns, columns);
   assert.equal(server.getState()?.cards[0].column, 'triagem', 'reconfigure polls: the card came back through the new from');
 });
+
+test('GET / serves the built index.html and its hashed asset through express.static; the old /ui/*.js routes are gone', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: fakeSpawn().spawn }); // setup mode: the page must load before any config
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${port}`;
+  const page = await fetch(`${base}/`);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  const asset = /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
+  assert.ok(asset, `no /assets/*.js script in:\n${html}`);
+  const js = await fetch(`${base}${asset}`);
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get('content-type') ?? '', /javascript/);
+  assert.equal((await fetch(`${base}/ui/app.js`)).status, 404);
+  assert.equal((await fetch(`${base}/../package.json`)).status, 404, 'static never leaves UI_DIR');
+});
