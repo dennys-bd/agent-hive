@@ -11,7 +11,7 @@ type Mode = 'dashboard' | 'setup';
 
 export function App() {
   const { info, error: setupError } = useSetupInfo();
-  const { state, connected } = useHiveState();
+  const { state, connected, tick } = useHiveState();
   const [language, setLanguageState] = useState<Language>();
   const [mode, setMode] = useState<Mode>('dashboard');
   const [selectedSlotId, setSelectedSlotId] = useState<string>();
@@ -33,7 +33,7 @@ export function App() {
     <>
       {mode === 'setup'
         ? <p className="p-4">setup</p> // Task 5 swaps this for <Setup />
-        : <Dashboard state={state} selectedSlotId={selectedSlotId} onSelect={setSelectedSlotId} onConfigure={() => setMode('setup')} />}
+        : <Dashboard state={state} selectedSlotId={selectedSlotId} locale={LOCALE[language]} tick={tick} onSelect={setSelectedSlotId} onConfigure={() => setMode('setup')} />}
       <Toaster theme="dark" />
     </>
   );
