@@ -78,8 +78,12 @@ export interface State {
   error?: string;
 }
 
+/** Where a worker runs: a child of the Hive (print mode, JSON over stdio) or an iTerm2 tab the Hive opens and watches. */
+export type WorkersMode = 'embedded' | 'iterm';
+
 export interface Config {
   board: BoardConfig;
+  workers: WorkersMode;
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -143,6 +147,8 @@ export interface SetupBody {
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */
   usageRules?: UsageRule[];
+  /** Optional; missing keeps the current mode (or `embedded` on first setup). */
+  workers?: WorkersMode;
 }
 
 export interface SetupResult {
@@ -168,13 +174,23 @@ export interface WorkerHandlers {
 }
 
 export interface WorkerHandle {
-  send(text: string): void; // one `user` message on stdin
-  end(): void; // close stdin: the session ends after the current turn
+  send(text: string): void; // one `user` message on stdin, or typed into the tab
+  end(): void; // close stdin: the session ends after the current turn (no-op for a tab)
   kill(): void; // SIGTERM
+  focus?(): Promise<void>; // tabs only: bring the worker's terminal to the front
 }
 
-export type SpawnWorker = (
-  argv: string[],
-  opts: { cwd: string; env: NodeJS.ProcessEnv },
-  handlers: WorkerHandlers,
-) => WorkerHandle;
+/** Everything a spawner needs to start one worker; each mode turns it into a process or a tab its own way. */
+export interface WorkerLaunch {
+  mode: WorkersMode;
+  workerId: string;
+  slug: string;
+  repo: string;
+  port: number;
+  hooksPath: string;
+  promptPath: string; // the rendered prompt on disk: a record for embedded, the input for the tab's command line
+  prompt: string;
+  claudeArgs: string[];
+}
+
+export type SpawnWorker = (launch: WorkerLaunch, handlers: WorkerHandlers) => WorkerHandle;

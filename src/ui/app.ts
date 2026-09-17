@@ -1,6 +1,6 @@
 import type {
   BoardConfig, Budget, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot, State, StatusKey,
-  Task, UsageSample,
+  Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 
@@ -142,14 +142,22 @@ async function loadOutput(): Promise<void> {
   }
 }
 
+const workersMode = (): WorkersMode => setupInfo?.config?.workers ?? 'embedded';
+
+// The CSS keys the panel off this: output for embedded workers, the "ir pro terminal" button for tabs.
+function applyWorkersMode(): void {
+  document.body.dataset.workers = workersMode();
+}
+
 // One timer, for the selected slot only: opening the panel starts it, closing or switching restarts it clean.
+// A tab has no output to poll.
 function syncOutputPolling(slotId: string | undefined): void {
   if (slotId === outputSlotId) return;
   if (outputTimer) clearInterval(outputTimer);
   outputTimer = undefined;
   outputSlotId = slotId;
   $('output').textContent = '';
-  if (!slotId) return;
+  if (!slotId || workersMode() === 'iterm') return;
   void loadOutput();
   outputTimer = setInterval(() => void loadOutput(), OUTPUT_POLL_MS);
 }
@@ -375,6 +383,7 @@ async function openSetup(): Promise<void> {
   $<HTMLInputElement>('md-path').value = board?.type === 'markdown' ? board.path : DEFAULT_MARKDOWN_PATH;
   for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
   $('md-options').innerHTML = '';
+  $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
   $<HTMLInputElement>('max-workers').value = String(config?.maxConcurrent ?? DEFAULT_MAX);
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
@@ -418,12 +427,14 @@ async function saveSetup(): Promise<void> {
       board,
       status: statusFromForm(),
       maxConcurrent: Number($<HTMLInputElement>('max-workers').value),
+      workers: $<HTMLSelectElement>('workers-mode').value as WorkersMode,
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
       usageRules: usageRulesFromForm(),
     };
     const result = await postJson<SetupResult>('/setup', body);
     setupInfo = await getJson<SetupInfo>('/setup');
+    applyWorkersMode();
     closeSetup();
     showNotice(result.restartForPort ? `reinicie o Hive pra usar a porta ${result.restartForPort}` : undefined);
   } catch (err) {
@@ -440,6 +451,7 @@ async function init(): Promise<void> {
     showError((err as Error).message);
     return;
   }
+  applyWorkersMode();
   if (!setupInfo.configured) await openSetup();
   connect();
 }
@@ -468,6 +480,9 @@ $('refresh').addEventListener('click', () => post('/board/refresh'));
 $('signal').addEventListener('click', (event) => {
   const signal = (event.target as HTMLElement).dataset.signal;
   if (signal) post('/signal', { signal });
+});
+$('focus').addEventListener('click', () => {
+  if (selectedSlotId) post(`/slots/${selectedSlotId}/focus`);
 });
 $('close').addEventListener('click', () => {
   selectedSlotId = undefined;

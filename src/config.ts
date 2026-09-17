@@ -1,13 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SIGNALS } from './orchestrator.js';
-import type { BoardConfig, Budget, Config, Signal, StatusKey, UsageRule } from './types.js';
+import type { BoardConfig, Budget, Config, Signal, StatusKey, UsageRule, WorkersMode } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
 export const BOARD_TYPES: readonly BoardConfig['type'][] = ['github', 'markdown'];
+export const WORKERS_MODES: readonly WorkersMode[] = ['embedded', 'iterm'];
 
 export const DEFAULT_CONFIG: Omit<Config, 'board'> = {
+  workers: 'embedded',
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
   maxConcurrent: 2,
   port: 47821,
@@ -109,6 +111,10 @@ export function parseConfig(raw: unknown): Config {
 
   return {
     board,
+    workers: optional(raw.workers, DEFAULT_CONFIG.workers, (v) => {
+      if (!WORKERS_MODES.includes(v as WorkersMode)) throw new Error(`${CONFIG_FILE}: "workers" must be one of: ${WORKERS_MODES.join(', ')}`);
+      return v as WorkersMode;
+    }),
     status,
     maxConcurrent: optional(raw.maxConcurrent, DEFAULT_CONFIG.maxConcurrent, (v) => requireInt(v, 'maxConcurrent')),
     port: optional(raw.port, DEFAULT_CONFIG.port, (v) => requireInt(v, 'port')),

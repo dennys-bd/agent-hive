@@ -1,4 +1,4 @@
-import type { SpawnWorker, WorkerHandle } from './types.js';
+import type { SpawnWorker, WorkerHandle, WorkerLaunch } from './types.js';
 
 export const OUTPUT_LINES = 200;
 export const RESULT_LINE = '✔ turno encerrado';
@@ -7,10 +7,7 @@ const TOOL_MAX = 120;
 
 export interface StartWorker {
   workerId: string;
-  argv: string[];
-  cwd: string;
-  env: NodeJS.ProcessEnv;
-  prompt: string; // first `user` message; the .hive/prompts file is only a record
+  launch: WorkerLaunch;
   onExit(): void;
   onResult(workerId: string): void; // a `result` line: the turn ended
 }
@@ -20,6 +17,8 @@ export interface WorkerPool {
   send(workerId: string, text: string): boolean; // false when the worker is unknown
   end(workerId: string): boolean;
   kill(workerId: string): boolean;
+  exit(workerId: string): boolean; // an exit reported from outside (the tab's curl): same as the handle exiting
+  focus(workerId: string): Promise<boolean>; // false when unknown or the handle has no tab
   killAll(): void;
   output(workerId: string): string[]; // copy of the last OUTPUT_LINES formatted lines; [] when unknown
   has(workerId: string): boolean;
@@ -29,6 +28,7 @@ interface Entry {
   handle: WorkerHandle;
   lines: string[];
   ended: boolean; // stdin closed: the process is on its way out, nothing more can be sent
+  exit(): void;
 }
 
 interface ContentBlock {
@@ -77,20 +77,19 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
 
   function start(o: StartWorker): void {
     const { workerId } = o;
-    const handle = spawn(o.argv, { cwd: o.cwd, env: o.env }, {
+    const onExit = (): void => {
+      if (entries.delete(workerId)) o.onExit(); // once: the handle and the external signal can both report it
+    };
+    const handle = spawn(o.launch, {
       onLine: (line) => {
         const entry = entries.get(workerId);
         if (!entry) return; // a line after the exit: nobody is watching this worker any more
         entry.lines = [...entry.lines, ...formatOutput(line)].slice(-OUTPUT_LINES);
         if (parseLine(line)?.type === 'result') o.onResult(workerId);
       },
-      onExit: () => {
-        entries.delete(workerId);
-        o.onExit();
-      },
+      onExit,
     });
-    entries.set(workerId, { handle, lines: [], ended: false });
-    handle.send(o.prompt);
+    entries.set(workerId, { handle, lines: [], ended: false, exit: onExit });
   }
 
   function call(workerId: string, action: (entry: Entry) => void, unlessEnded = false): boolean {
@@ -108,6 +107,13 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
       entry.handle.end();
     }),
     kill: (workerId) => call(workerId, (entry) => entry.handle.kill()),
+    exit: (workerId) => call(workerId, (entry) => entry.exit()),
+    focus: async (workerId) => {
+      const focus = entries.get(workerId)?.handle.focus;
+      if (!focus) return false;
+      await focus();
+      return true;
+    },
     killAll: () => {
       for (const { handle } of entries.values()) handle.kill();
     },

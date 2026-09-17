@@ -1,20 +1,20 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Board, Config, SpawnWorker, WorkerHandlers } from '../src/types.js';
+import type { Board, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
 
 export interface FakeWorker {
-  argv: string[];
-  opts: { cwd: string; env: NodeJS.ProcessEnv };
+  launch: WorkerLaunch;
   handlers: WorkerHandlers;
   sent: string[];
   ended: number;
   killed: number;
+  focused: number;
 }
 
 /** A SpawnWorker that opens nothing: records every call and exposes the handlers so a test can emit lines and exits. */
-export function fakeSpawn(): { spawn: SpawnWorker; workers: FakeWorker[] } {
+export function fakeSpawn(withFocus = false): { spawn: SpawnWorker; workers: FakeWorker[] } {
   const workers: FakeWorker[] = [];
-  const spawn: SpawnWorker = (argv, opts, handlers) => {
-    const worker: FakeWorker = { argv, opts, handlers, sent: [], ended: 0, killed: 0 };
+  const spawn: SpawnWorker = (launch, handlers) => {
+    const worker: FakeWorker = { launch, handlers, sent: [], ended: 0, killed: 0, focused: 0 };
     workers.push(worker);
     return {
       send: (text) => {
@@ -26,10 +26,16 @@ export function fakeSpawn(): { spawn: SpawnWorker; workers: FakeWorker[] } {
       kill: () => {
         worker.killed += 1;
       },
+      ...(withFocus ? { focus: async () => { worker.focused += 1; } } : {}),
     };
   };
   return { spawn, workers };
 }
+
+export const LAUNCH: WorkerLaunch = {
+  mode: 'embedded', workerId: 'W1', slug: 'hive-1-task', repo: '/repo', port: 4242,
+  hooksPath: '/repo/.hive/hooks.json', promptPath: '/repo/.hive/prompts/hive-1-task.md', prompt: 'faz a task', claudeArgs: [],
+};
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 

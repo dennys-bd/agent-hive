@@ -3,7 +3,8 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
-import type { SpawnWorker, Task } from './types.js';
+import { spawnItermWorker } from './spawn-iterm.js';
+import type { SpawnWorker, Task, WorkerHandle, WorkerHandlers, WorkerLaunch } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const NO_MATCH_EXIT = 1;
@@ -46,8 +47,11 @@ export function userMessage(text: string): string {
   return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
 }
 
-export const spawnWorker: SpawnWorker = (argv, { cwd, env }, handlers) => {
-  const child = spawn('claude', argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+/** The real embedded spawner. `bin` exists for the test, which points it at a script that echoes stdin. */
+export function spawnEmbeddedWorker(launch: WorkerLaunch, handlers: WorkerHandlers, bin = 'claude'): WorkerHandle {
+  const argv = workerArgv({ slug: launch.slug, hooksPath: launch.hooksPath, claudeArgs: launch.claudeArgs });
+  const env = workerEnv(process.env, launch.workerId, launch.port);
+  const child = spawn(bin, argv, { cwd: launch.repo, env, stdio: ['pipe', 'pipe', 'pipe'] });
   let exited = false;
   const exitOnce = (): void => {
     if (exited) return;
@@ -63,6 +67,7 @@ export const spawnWorker: SpawnWorker = (argv, { cwd, env }, handlers) => {
     exitOnce();
   });
   child.stdin.on('error', (err) => handlers.onLine(`stderr: stdin: ${err.message}`)); // EPIPE after the child died: exit already freed the slot
+  child.stdin.write(userMessage(launch.prompt)); // the first turn; the prompt file is only a record
   return {
     send: (text) => {
       child.stdin.write(userMessage(text));
@@ -74,7 +79,11 @@ export const spawnWorker: SpawnWorker = (argv, { cwd, env }, handlers) => {
       child.kill('SIGTERM');
     },
   };
-};
+}
+
+/** The default spawner: picks the implementation by `config.workers`. */
+export const spawnWorker: SpawnWorker = (launch, handlers) =>
+  (launch.mode === 'iterm' ? spawnItermWorker(launch, handlers) : spawnEmbeddedWorker(launch, handlers));
 
 /** Boot-only orphan defense: kills a worker of a previous Hive that may still hold the worktree. Resolves true when pkill matched. */
 export async function killStray(slug: string): Promise<boolean> {

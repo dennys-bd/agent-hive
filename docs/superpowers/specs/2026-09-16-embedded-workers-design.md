@@ -22,7 +22,11 @@ Extensão da v1 (`2026-09-15-agent-hive-design.md`). Objetivo: o próprio Hive (
 
 ## Config
 
-Sem campos novos. `claudeArgs` passa a ser onde o usuário define o modo de permissão do worker (o hint do formulário diz isso). `hive.config.json` continua sem tokens.
+`workers: "embedded" | "iterm"` (default `embedded`), no arquivo e no formulário de setup. `claudeArgs` passa a ser onde o usuário define o modo de permissão do worker embutido (o hint do formulário diz isso). `hive.config.json` continua sem tokens.
+
+## Modo `iterm` (adendo)
+
+O modo iTerm2 da v1 continua disponível atrás da mesma interface `SpawnWorker`, escolhido por `config.workers`. `src/spawn-iterm.ts` guarda o que era o `spawn.ts` da v1: `shellQuote`, `workerCommand` (a única shell string do repo, digitada na tab pelo `osascript`) e os scripts de abrir tab, focar e digitar. Diferenças em relação ao embutido: `send` digita na tab (`write text`), `end` é no-op, `kill` é `pkill` pelo slug, `focus` traz a tab pra frente (`POST /slots/:id/focus`, botão "ir pro terminal"), a saída não chega ao painel e o `exit` vem do `; curl /hooks/exit` no fim do comando (a rota volta e encaminha pro pool via `pool.exit`). Permissões viram prompt interativo no terminal. Restart do Hive não readota tabs: mata e devolve as tasks pra fila, igual ao embutido.
 
 ## Tipos
 

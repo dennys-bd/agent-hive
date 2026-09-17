@@ -2,9 +2,11 @@
 
 Run several Claude Code sessions in parallel, each in its own git worktree, pulling tasks from a board — and watch them all on one panel.
 
-Hive starts up to N `claude` workers as child processes (print mode, JSON over stdio), each working on one task; when a session ends, the next task in the queue starts on its own. One card per worker shows what it is doing, turns yellow when Claude needs you, and blue once the PR is open. Click a card to read the worker's output and send it a follow-up; Hive observes (through Claude Code hooks) and schedules.
+Hive starts up to N `claude` workers, each working on one task; when a session ends, the next task in the queue starts on its own. One card per worker shows what it is doing, turns yellow when Claude needs you, and blue once the PR is open. Click a card to read the worker's output and send it a follow-up; Hive observes (through Claude Code hooks) and schedules.
 
-Runs 100% locally, no external service. macOS and Linux.
+Workers run in one of two modes, chosen in the setup form (`workers` in the config): **embedded** (default) — child processes of the Hive in print mode, JSON over stdio, output and input in the panel, macOS and Linux; or **iterm** — one iTerm2 tab per worker, interactive `claude` that asks permissions in the terminal, "ir pro terminal" on the card, macOS only.
+
+Runs 100% locally, no external service.
 
 ## How it works
 
@@ -96,10 +98,11 @@ Default: `Task #{id}: {title}`, the body, and an instruction to open a PR with `
 |---|---|---|
 | `board` | — | form |
 | `status.queue` / `working` / `review` | `Ready` / `In progress` / `In review` | form |
+| `workers` | `embedded` | form (`embedded` or `iterm`) |
 | `maxConcurrent` | `2` | form / dashboard |
 | `promptTemplate` | see above | form |
 | `port` | `47821` | file (requires restart) |
-| `claudeArgs` | `[]` | file (e.g. `["--permission-mode", "acceptEdits"]`; print mode has no permission prompt, so this or the repo's `.claude/settings.json` must allow the tools) |
+| `claudeArgs` | `[]` | file (e.g. `["--permission-mode", "acceptEdits"]`; embedded workers have no permission prompt, so this or the repo's `.claude/settings.json` must allow the tools) |
 
 Older files with `project: { owner, number }` are still accepted. Runtime state lives in `<repo>/.hive/` (kept out of git through `.git/info/exclude`).
 
@@ -115,7 +118,8 @@ Architecture: `src/orchestrator.ts` is a pure reducer (state + event → new sta
 
 ## Known limitations
 
-- Print mode: there is no permission prompt; tools not allowed by `claudeArgs` or `.claude/settings.json` are denied. Questions from the worker show on the card; answer them from the card's input.
+- Embedded workers (print mode) have no permission prompt; tools not allowed by `claudeArgs` or `.claude/settings.json` are denied. Questions from the worker show on the card; answer them from the card's input.
+- iTerm workers show no output in the panel (the tab is the output) and do not free the slot by themselves when the PR opens: close the session in the tab or kill the card. A Hive restart does not readopt open tabs; it kills them and requeues their tasks.
 - No auth: the server listens on `127.0.0.1` and rejects other `Host` values.
 - Switching boards with live workers keeps those slots bound to the old ids until they exit.
 

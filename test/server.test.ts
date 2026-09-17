@@ -26,14 +26,14 @@ const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await 
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
 const line = (worker: FakeWorker, payload: unknown): void => worker.handlers.onLine(JSON.stringify(payload));
 
-async function start(t: TestContext): Promise<Started> {
+async function start(t: TestContext, body: SetupBody = BODY, withFocus = false): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
-  const { spawn, workers } = fakeSpawn();
+  const { spawn, workers } = fakeSpawn(withFocus);
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/setup`, BODY)).status, 200); // configure + poll + fill: the spawn runs before the answer
+  assert.equal((await postJson(`${base}/setup`, body)).status, 200); // configure + poll + fill: the spawn runs before the answer
   return { repo, base, port, server, workers };
 }
 
@@ -49,33 +49,44 @@ const openPr = (server: HiveServer, workerId: string): Promise<void> =>
     payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
   });
 
-test('saving the setup starts one worker in the repo with the stream-json argv, the hive env and the prompt as first message', async (t) => {
+test('saving the setup starts one worker with the launch: mode, repo, port, hooks, prompt file and the rendered prompt', async (t) => {
   const { repo, port, server, workers } = await start(t);
   const slot = slot0(server);
   assert.equal(slot.status, 'trabalhando');
   assert.equal(slot.slug, 'hive-1-from-ready');
   assert.equal(workers.length, 1);
-  const [worker] = workers;
-  assert.deepEqual(worker.argv, [
-    '--worktree=hive-1-from-ready', '--settings', join(repo, '.hive', 'hooks.json'),
-    '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-  ]);
-  assert.equal(worker.opts.cwd, repo);
-  assert.equal(worker.opts.env.HIVE_WORKER_ID, slot.workerId);
-  assert.equal(worker.opts.env.HIVE_PORT, String(port));
-  assert.equal(worker.opts.env.CLAUDECODE, undefined);
-  assert.deepEqual(worker.sent, [await readFile(join(repo, '.hive', 'prompts', 'hive-1-from-ready.md'), 'utf8')]);
+  const promptPath = join(repo, '.hive', 'prompts', 'hive-1-from-ready.md');
+  assert.deepEqual(workers[0].launch, {
+    mode: 'embedded', workerId: slot.workerId, slug: 'hive-1-from-ready', repo, port,
+    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath, prompt: await readFile(promptPath, 'utf8'), claudeArgs: [],
+  });
+});
+
+test('workers: iterm in the setup reaches the launch; POST /hooks/exit frees its slot and POST /slots/:id/focus reaches the tab', async (t) => {
+  const { base, server, workers } = await start(t, { ...BODY, workers: 'iterm' }, true);
+  const { id, workerId } = slot0(server);
+  assert.equal(workers[0].launch.mode, 'iterm');
+  assert.deepEqual(await json(postJson(`${base}/slots/${id}/focus`)), { ok: true });
+  assert.equal(workers[0].focused, 1);
+  await fetch(`${base}/hooks/exit`, { method: 'POST', headers: { 'x-hive-worker': workerId! } });
+  await waitFor(() => workers.length === 2); // the slot freed, the task requeued and picked up by a new worker
+});
+
+test('POST /slots/:id/focus is 404 for an embedded worker (no tab) and for an unknown slot', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal((await postJson(`${base}/slots/${slot0(server).id}/focus`)).status, 404);
+  assert.equal((await postJson(`${base}/slots/nope/focus`)).status, 404);
 });
 
 test('POST /slots/:id/input writes to the worker; blank text is 400 and an unknown slot is 404', async (t) => {
   const { base, server, workers } = await start(t);
   const id = slot0(server).id;
   assert.deepEqual(await json(postJson(`${base}/slots/${id}/input`, { text: 'olha o CI também' })), { ok: true });
-  assert.deepEqual(workers[0].sent.slice(1), ['olha o CI também']);
+  assert.deepEqual(workers[0].sent, ['olha o CI também']);
   assert.equal((await postJson(`${base}/slots/${id}/input`, { text: '   ' })).status, 400);
   assert.equal((await postJson(`${base}/slots/${id}/input`, {})).status, 400);
   assert.equal((await postJson(`${base}/slots/nope/input`, { text: 'x' })).status, 404);
-  assert.equal(workers[0].sent.length, 2);
+  assert.equal(workers[0].sent.length, 1);
 });
 
 test('GET /slots/:id/output returns the formatted lines the worker emitted; an unknown slot is 404', async (t) => {
@@ -113,7 +124,7 @@ test('an exit without a PR requeues the task, which the free slot picks up again
   const slot = slot0(server);
   assert.equal(slot.status, 'trabalhando');
   assert.notEqual(slot.workerId, first);
-  assert.equal(workers[1].opts.env.HIVE_WORKER_ID, slot.workerId);
+  assert.equal(workers[1].launch.workerId, slot.workerId);
   assert.deepEqual(server.getState()?.queue, []);
 });
 

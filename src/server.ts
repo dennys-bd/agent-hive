@@ -12,7 +12,7 @@ import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
-import { killStray, renderPrompt, spawnWorker, workerArgv, workerEnv, writePrompt } from './spawn.js';
+import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
@@ -35,6 +35,7 @@ const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
+const NO_TAB_MESSAGE = 'esse worker não tem terminal (modo embutido)';
 const INPUT_MESSAGE = 'text deve ser uma string não vazia';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
@@ -167,11 +168,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { config, hooksPath, promptsDir } = runtime;
     const { workerId } = slot;
     const prompt = renderPrompt(config.promptTemplate, slot.task);
-    await writePrompt(promptsDir, slot.slug, prompt); // kept as a record; the worker receives it over stdin
+    const promptPath = await writePrompt(promptsDir, slot.slug, prompt); // a record for embedded workers, the input for a tab
     pool.start({
-      workerId, prompt, cwd: repo,
-      argv: workerArgv({ slug: slot.slug, hooksPath, claudeArgs: config.claudeArgs }),
-      env: workerEnv(process.env, workerId, config.port),
+      workerId,
+      launch: {
+        mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, prompt,
+        claudeArgs: config.claudeArgs,
+      },
       onExit: () => void dispatch({ type: 'exit', workerId }),
       onResult: endWhenReviewed,
     });
@@ -290,6 +293,14 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.sendStatus(200);
   });
 
+  // A tab's command ends with a curl here (embedded workers exit through the process). Unknown to the pool
+  // (started by a previous Hive): free the slot ourselves.
+  app.post('/hooks/exit', async (req: Request, res: Response) => {
+    res.sendStatus(200);
+    const workerId = req.header('x-hive-worker');
+    if (workerId && !pool.exit(workerId)) await dispatch({ type: 'exit', workerId });
+  });
+
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
   app.post('/hooks/status', async (req: Request, res: Response) => {
     res.type('text/plain');
@@ -368,6 +379,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         maxConcurrent: body.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
+        workers: body.workers ?? current?.workers,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
@@ -455,6 +467,21 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     res.json({ ok: true });
+  });
+
+  app.post('/slots/:id/focus', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const slot = current.state.slots.find((s) => s.id === req.params.id);
+    try {
+      if (!slot?.workerId || !(await pool.focus(slot.workerId))) {
+        res.status(HTTP_NOT_FOUND).json({ error: NO_TAB_MESSAGE });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
+    }
   });
 
   app.post('/board/refresh', async (_req: Request, res: Response) => {
