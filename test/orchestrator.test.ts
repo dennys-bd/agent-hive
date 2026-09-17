@@ -324,6 +324,18 @@ test('boot gives every occupied slot as dead: tasks without a PR go back to the 
   assert.deepEqual(effects, [{ type: 'setStatus', itemId: 'item1', key: 'queue' }]);
 });
 
+test('boot opens under yellow unless the saved signal is red', () => {
+  assert.equal(reduce(initialState(1), { type: 'boot' }).state.signal, 'yellow', 'green becomes yellow');
+  const yellow = signaled(initialState(1), 'yellow').state;
+  assert.equal(reduce(yellow, { type: 'boot' }).state.signal, 'yellow', 'yellow stays yellow');
+  const red = signaled(initialState(1), 'red').state;
+  assert.equal(reduce(red, { type: 'boot' }).state.signal, 'red', 'a saved red survives the boot');
+  // a queued task waits for the user to look: boot never spawns, even with a free slot and green on the way in
+  const queued = filled(2, 3).state;
+  const { effects } = reduce(queued, { type: 'boot' });
+  assert.equal(effects.some((e) => e.type === 'spawn'), false, 'no spawn on boot');
+});
+
 test('kill emits a kill effect for the slot slug', () => {
   const first = filled(1, 1).state;
   const { effects } = reduce(first, { type: 'kill', slotId: first.slots[0].id });

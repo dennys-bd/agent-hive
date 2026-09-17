@@ -239,7 +239,7 @@ test('POST /signal answers 409 before setup, 400 for an unknown value, then 200 
     fetch(`${base}/signal`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await postSignal({ signal: 'red' })).status, 409);
   assert.equal((await postSetup(base, BODY)).status, 200);
-  assert.equal(server.getState()?.signal, 'green');
+  assert.equal(server.getState()?.signal, 'yellow', 'setup boots, and every boot opens under yellow');
   const bad = await postSignal({ signal: 'blue' });
   assert.equal(bad.status, 400);
   assert.equal((await json<{ error: string }>(bad)).error, 'signal must be one of: green, yellow, red');

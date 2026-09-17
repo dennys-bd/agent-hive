@@ -27,6 +27,22 @@ test('bootHive copies the budget from hive.config.json over the one saved in sta
   assert.deepEqual(server.getState()?.budget, { maxTokensPerHour: 50_000 });
 });
 
+test('bootHive opens under yellow even when state.json saved green, and under red when it saved red', async (t) => {
+  const repoGreen = await repoWithConfig({});
+  await mkdir(join(repoGreen, '.hive'));
+  await saveState(join(repoGreen, '.hive'), { ...initialState(0), signal: 'green' });
+  const green = await bootHive(repoGreen);
+  t.after(() => green.server.close());
+  assert.equal(green.server.getState()?.signal, 'yellow');
+
+  const repoRed = await repoWithConfig({});
+  await mkdir(join(repoRed, '.hive'));
+  await saveState(join(repoRed, '.hive'), { ...initialState(0), signal: 'red' });
+  const red = await bootHive(repoRed);
+  t.after(() => red.server.close());
+  assert.equal(red.server.getState()?.signal, 'red');
+});
+
 test('bootHive falls back to setup mode when the configured board is unusable', async (t) => {
   const repo = await repoWithConfig({});
   await rm(join(repo, 'board.md')); // the board file was deleted after the config was written
