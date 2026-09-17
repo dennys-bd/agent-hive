@@ -4,20 +4,25 @@ export const MAX_WINDOWS = 8;
 // Claude Code names windows like five_hour / seven_day; the key becomes a State key and a UI label, so it is kept to this.
 const WINDOW_KEY = /^[a-z][a-z0-9_]{0,31}$/;
 const MS_PER_SECOND = 1000;
+const PERCENT_MAX = 100;
 const WEEKLY_PREFIX = 'seven_day_';
 const LABELS: Record<string, string> = { five_hour: 'sessão', seven_day: 'semana' };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// `used_percentage` is a finite number from 0; `resets_at` is a positive integer in epoch seconds. Anything else drops the window.
+const isPercent = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+// `used_percentage` is a finite number from 0 (clamped to 100: the meter never overflows); `resets_at` is a positive integer in
+// epoch seconds. Anything else drops the window.
 function parseWindow(raw: unknown): RateLimitWindow | undefined {
   if (!isRecord(raw)) return undefined;
   const { used_percentage: usedPercent, resets_at: resetsAt } = raw;
-  if (typeof usedPercent !== 'number' || !Number.isFinite(usedPercent) || usedPercent < 0) return undefined;
+  if (!isPercent(usedPercent)) return undefined;
   if (typeof resetsAt !== 'number' || !Number.isInteger(resetsAt) || resetsAt <= 0) return undefined;
   const reset = new Date(resetsAt * MS_PER_SECOND);
-  return Number.isNaN(reset.getTime()) ? undefined : { usedPercent, resetsAt: reset.toISOString() }; // past the Date range: invalid
+  if (Number.isNaN(reset.getTime())) return undefined; // past the Date range: invalid
+  return { usedPercent: Math.min(usedPercent, PERCENT_MAX), resetsAt: reset.toISOString() };
 }
 
 /** `body.rate_limits` of a status line JSON → the persisted shape, or nothing when no window survives (then nothing is dispatched). */
@@ -33,12 +38,13 @@ export function parseRateLimits(body: unknown, now: Date): RateLimits | undefine
   return entries.length === 0 ? undefined : { at: now.toISOString(), windows: Object.fromEntries(entries) };
 }
 
-const isWindow = (value: unknown): value is RateLimitWindow =>
-  isRecord(value) && Number.isFinite(value.usedPercent) && typeof value.resetsAt === 'string';
+const isWindow = ([key, value]: [string, unknown]): boolean =>
+  WINDOW_KEY.test(key) && isRecord(value) && isPercent(value.usedPercent) && value.usedPercent <= PERCENT_MAX
+  && typeof value.resetsAt === 'string';
 
-/** The persisted shape, for state-store: a hand-edited state.json never feeds the UI garbage. */
+/** The persisted shape, for state-store: same bounds as parseRateLimits, so a hand-edited state.json never feeds the UI garbage. */
 export function isRateLimits(value: unknown): value is RateLimits {
-  return isRecord(value) && typeof value.at === 'string' && isRecord(value.windows) && Object.values(value.windows).every(isWindow);
+  return isRecord(value) && typeof value.at === 'string' && isRecord(value.windows) && Object.entries(value.windows).every(isWindow);
 }
 
 /** five_hour → sessão, seven_day → semana, seven_day_<x> → semana <x>; anything else reads as its key with spaces. */

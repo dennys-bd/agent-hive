@@ -47,6 +47,8 @@ test('parseRateLimits drops a window with a bad key, a non-numeric used_percenta
   assert.deepEqual(parseRateLimits(body, NOW), PARSED);
   const onlyBad = { rate_limits: { five_hour: { used_percentage: '23', resets_at: 1759744800 } } };
   assert.equal(parseRateLimits(onlyBad, NOW), undefined, 'no valid window: nothing to dispatch');
+  const over = { rate_limits: { five_hour: { used_percentage: 1e9, resets_at: 1759744800 } } };
+  assert.equal(parseRateLimits(over, NOW)?.windows.five_hour.usedPercent, 100, 'a percent above 100 is clamped, not dropped');
 });
 
 test('parseRateLimits keeps at most MAX_WINDOWS windows, in payload order', () => {
@@ -81,6 +83,9 @@ test('isRateLimits accepts the parsed shape and rejects anything else', () => {
   assert.equal(isRateLimits(withWindow({ usedPercent: '1', resetsAt: 'x' })), false);
   assert.equal(isRateLimits(withWindow({ resetsAt: 'x' })), false);
   assert.equal(isRateLimits(withWindow(null)), false);
+  assert.equal(isRateLimits(withWindow({ usedPercent: -1, resetsAt: 'x' })), false, 'same bounds as parseWindow');
+  assert.equal(isRateLimits(withWindow({ usedPercent: 101, resetsAt: 'x' })), false);
+  assert.equal(isRateLimits({ at: PARSED.at, windows: { 'Bad Key': { usedPercent: 1, resetsAt: 'x' } } }), false, 'same key rule as parseRateLimits');
   assert.equal(isRateLimits({ at: 5, windows: {} }), false);
   assert.equal(isRateLimits({ at: PARSED.at, windows: [] }), false);
   assert.equal(isRateLimits({ at: PARSED.at }), false);
