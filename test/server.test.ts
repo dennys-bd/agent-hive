@@ -104,8 +104,9 @@ test('a result closes stdin only once the PR is open; the exit then frees the sl
   const { server, workers } = await start(t);
   const [worker] = workers;
   const workerId = slot0(server).workerId!;
-  line(worker, { type: 'result' });
+  line(worker, { type: 'result', result: 'Abro o PR?' });
   assert.equal(worker.ended, 0, 'no PR yet: the session stays open for follow-ups');
+  await waitFor(() => slot0(server).status === 'esperando_voce');
   await openPr(server, workerId);
   assert.equal(slot0(server).status, 'aguardando_review');
   line(worker, { type: 'result' });
@@ -114,6 +115,21 @@ test('a result closes stdin only once the PR is open; the exit then frees the sl
   await waitFor(() => slot0(server).status === 'vazio');
   assert.deepEqual(server.getState()?.queue, []);
   assert.equal(workers.length, 1, 'nothing left to spawn');
+});
+
+test('a result without a PR marks the slot as waiting for you with the final text as the question; the answer clears it', async (t) => {
+  const { base, server, workers } = await start(t);
+  const [worker] = workers;
+  const { id, workerId } = slot0(server);
+  line(worker, { type: 'result', result: 'Quer que eu abra o PR agora?' });
+  await waitFor(() => slot0(server).status === 'esperando_voce');
+  assert.equal(slot0(server).question, 'Quer que eu abra o PR agora?');
+  assert.equal(slot0(server).lastEvent, 'aguardando resposta');
+  assert.equal(worker.ended, 0, 'stdin stays open for the answer');
+  assert.deepEqual(await json(postJson(`${base}/slots/${id}/input`, { text: 'abre' })), { ok: true });
+  await server.dispatch({ type: 'hook', workerId: workerId!, payload: { hook_event_name: 'UserPromptSubmit' } }); // what the worker's hook posts
+  assert.equal(slot0(server).status, 'trabalhando');
+  assert.equal(slot0(server).question, undefined);
 });
 
 test('an exit without a PR requeues the task, which the free slot picks up again with a new worker', async (t) => {

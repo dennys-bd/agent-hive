@@ -176,14 +176,19 @@ export function createServer(deps: ServerDeps): HiveServer {
         claudeArgs: config.claudeArgs,
       },
       onExit: () => void dispatch({ type: 'exit', workerId }),
-      onResult: endWhenReviewed,
+      onResult: (workerId, text) => void onTurnEnd(workerId, text),
     });
   }
 
-  // A turn ended with the PR already open: the task is done, so closing stdin lets the worker exit and free the slot.
-  // Without a PR the session stays open for follow-ups from the panel.
-  function endWhenReviewed(workerId: string): void {
-    if (live?.state.slots.find((s) => s.workerId === workerId)?.status === 'aguardando_review') pool.end(workerId);
+  // A turn ended. With the PR open the task is done: closing stdin lets the worker exit and free the slot.
+  // Without a PR nothing happens until someone types (print mode asks in text and stops), so the final text
+  // becomes the pending question. Stop arrives before this (hooks block the turn end), so idle wins.
+  async function onTurnEnd(workerId: string, text: string): Promise<void> {
+    if (live?.state.slots.find((s) => s.workerId === workerId)?.status === 'aguardando_review') {
+      pool.end(workerId);
+      return;
+    }
+    await dispatch({ type: 'idle', workerId, question: text });
   }
 
   async function poll(): Promise<void> {
