@@ -9,42 +9,14 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { newBoardText } from '../src/boards/markdown.js';
-import type { Board, Config, SetupBody, SetupInfo, State } from '../src/types.js';
+import type { Config, SetupBody, SetupInfo, State } from '../src/types.js';
+import { fakeBoardFactory, OPTIONS } from './fakes.js';
 
-const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
   status: { queue: 'Ready', working: 'In progress', review: 'In review' },
-  maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would open an iTerm tab)
+  maxConcurrent: 0, // zero slots: nothing is ever spawned (spawn would start a real claude)
 };
-
-// A board that has the OPTIONS columns and returns one task named after the configured queue column.
-// `resolveDelayMs` makes resolveFields slow so concurrent saves overlap.
-function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Board; configs: Config[] } {
-  const configs: Config[] = [];
-  const factory = (config: Config): Board => {
-    configs.push(config);
-    return {
-      async resolveFields() {
-        if (resolveDelayMs > 0) await sleep(resolveDelayMs);
-        for (const key of ['queue', 'working', 'review'] as const) {
-          const wanted = config.status[key];
-          if (!OPTIONS.includes(wanted)) {
-            throw new Error(`status.${key} "${wanted}" not found in board Status options: ${OPTIONS.join(', ')}`);
-          }
-        }
-      },
-      async listQueue() {
-        return [{ itemId: 'I1', id: '1', title: `from ${config.status.queue}`, body: '', url: 'https://github.com/acme/r/issues/1' }];
-      },
-      async setStatus() {},
-      async setupOptions() {
-        return OPTIONS;
-      },
-    };
-  };
-  return { factory, configs };
-}
 
 interface Started { repo: string; base: string; port: number; server: HiveServer; configs: Config[] }
 

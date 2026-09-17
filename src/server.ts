@@ -12,11 +12,12 @@ import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
-import { aliveSlugs, focusWorker, killWorker, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
+import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -25,12 +26,17 @@ const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
 const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
 const HTTP_NOT_CONFIGURED = 409;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
+const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
+const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
+const NO_TAB_MESSAGE = 'esse worker não tem terminal (modo embutido)';
+const INPUT_MESSAGE = 'text deve ser uma string não vazia';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (config: Config) => Board;
@@ -48,6 +54,7 @@ export interface ServerDeps {
   runtime?: Runtime;
   state?: State;
   boardFactory?: BoardFactory;
+  spawnWorker?: SpawnWorker; // tests inject a fake; the default opens a real claude
   /** Setup mode with a config that failed to boot: prefills the form and explains why. */
   setupFallback?: { config: Config; error: string };
 }
@@ -76,8 +83,10 @@ function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefine
 
 const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status], [b.board, b.status]);
 
-export async function detectAlive(state: State): Promise<string[]> {
-  return aliveSlugs(state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : [])));
+/** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
+export async function killStrays(state: State): Promise<void> {
+  const slugs = state.slots.flatMap((s) => (s.status !== 'vazio' && s.slug ? [s.slug] : []));
+  await Promise.all(slugs.map((slug) => killStray(slug)));
 }
 
 function errorMessage(err: unknown): string {
@@ -93,6 +102,7 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo }));
+  const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
   let httpServer: HttpServer | undefined;
@@ -110,10 +120,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     for (const res of clients) res.write(data);
   }
 
-  // Serializes writes: dispatch calls can overlap (a hook arriving mid-poll, or the
-  // nested `spawned` dispatch inside spawn()), and two concurrent saveState calls
-  // would race on the same state.json.tmp. Chaining onto saveChain queues them, and
-  // reading `live` inside the .then ensures a queued save always persists the latest.
+  // Serializes writes: dispatch calls can overlap (a hook arriving mid-poll, a worker exit landing
+  // inside a kill effect), and two concurrent saveState calls would race on the same state.json.tmp.
+  // Chaining onto saveChain queues them, and reading `live` inside the .then ensures a queued save
+  // always persists the latest.
   function persist(): Promise<void> {
     saveChain = saveChain
       .then(() => (live ? saveState(live.runtime.hiveDir, live.state) : undefined))
@@ -144,13 +154,8 @@ export function createServer(deps: ServerDeps): HiveServer {
         await runtime.board.setStatus(effect.itemId, effect.key).catch((err) => fail(`board.setStatus(${effect.key})`, err));
         return;
       case 'kill':
-        try {
-          // no live process (tab closed by hand, exit signal lost): free the slot ourselves
-          const matched = await killWorker(effect.slug);
-          if (!matched) await dispatch({ type: 'exit', workerId: effect.workerId });
-        } catch (err) {
-          await fail('kill', err);
-        }
+        // unknown to the pool (started by a previous Hive): nothing to signal, free the slot ourselves
+        if (!pool.kill(effect.workerId)) await dispatch({ type: 'exit', workerId: effect.workerId });
         return;
       case 'spawn':
         await spawn(runtime, effect.slot).catch((err) => fail(`spawn ${effect.slot.slug}`, err));
@@ -161,12 +166,24 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function spawn(runtime: Runtime, slot: Slot): Promise<void> {
     if (!slot.task || !slot.slug || !slot.workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
-    const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task));
-    const command = workerCommand({
-      repo, workerId: slot.workerId, port: config.port, slug: slot.slug, hooksPath, promptPath, claudeArgs: config.claudeArgs,
+    const { workerId } = slot;
+    const prompt = renderPrompt(config.promptTemplate, slot.task);
+    const promptPath = await writePrompt(promptsDir, slot.slug, prompt); // a record for embedded workers, the input for a tab
+    pool.start({
+      workerId,
+      launch: {
+        mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, prompt,
+        claudeArgs: config.claudeArgs,
+      },
+      onExit: () => void dispatch({ type: 'exit', workerId }),
+      onResult: endWhenReviewed,
     });
-    const itermSessionId = await openWorker(command);
-    await dispatch({ type: 'spawned', workerId: slot.workerId, itermSessionId });
+  }
+
+  // A turn ended with the PR already open: the task is done, so closing stdin lets the worker exit and free the slot.
+  // Without a PR the session stays open for follow-ups from the panel.
+  function endWhenReviewed(workerId: string): void {
+    if (live?.state.slots.find((s) => s.workerId === workerId)?.status === 'aguardando_review') pool.end(workerId);
   }
 
   async function poll(): Promise<void> {
@@ -217,7 +234,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     // Empty queue on boot: setMax's fill would otherwise spawn off a stale pre-restart
     // queue. The poll() below refills from the board, which is the source of truth.
     live = { runtime, state: { ...saved, queue: [] } };
-    await dispatch({ type: 'boot', aliveSlugs: await detectAlive(saved) });
+    await killStrays(saved);
+    await dispatch({ type: 'boot' });
     if (saved.maxConcurrent !== config.maxConcurrent) await dispatch({ type: 'setMax', max: config.maxConcurrent });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
@@ -262,20 +280,25 @@ export function createServer(deps: ServerDeps): HiveServer {
     next();
   });
 
+  // Answers only after the dispatch: the worker's hook blocks until curl returns, so the state (a PR seen on
+  // PostToolUse, above all) is applied before the worker goes on and its `result` line reaches endWhenReviewed.
   app.post('/hooks/event', async (req: Request, res: Response) => {
-    res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
     const payload = req.body as HookPayload | undefined;
-    if (!workerId || !payload?.hook_event_name) return;
-    const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
-    const tokens = await turnTokens(workerId, payload);
-    await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+    if (workerId && payload?.hook_event_name) {
+      const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
+      const tokens = await turnTokens(workerId, payload);
+      await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+    }
+    res.sendStatus(200);
   });
 
+  // A tab's command ends with a curl here (embedded workers exit through the process). Unknown to the pool
+  // (started by a previous Hive): free the slot ourselves.
   app.post('/hooks/exit', async (req: Request, res: Response) => {
     res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
-    if (workerId) await dispatch({ type: 'exit', workerId });
+    if (workerId && !pool.exit(workerId)) await dispatch({ type: 'exit', workerId });
   });
 
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.
@@ -356,6 +379,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         maxConcurrent: body.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
+        workers: body.workers ?? current?.workers,
         promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
@@ -418,16 +442,42 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
+  app.get('/slots/:id/output', (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const slot = current.state.slots.find((s) => s.id === req.params.id);
+    if (!slot || slot.status === 'vazio') {
+      res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
+      return;
+    }
+    res.json({ lines: slot.workerId ? pool.output(slot.workerId) : [] });
+  });
+
+  app.post('/slots/:id/input', (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const text = (req.body as { text?: unknown }).text;
+    if (typeof text !== 'string' || text.trim() === '') {
+      res.status(HTTP_BAD_REQUEST).json({ error: INPUT_MESSAGE });
+      return;
+    }
+    const slot = current.state.slots.find((s) => s.id === req.params.id);
+    if (!slot?.workerId || !pool.send(slot.workerId, text)) {
+      res.status(HTTP_NOT_FOUND).json({ error: NO_WORKER_MESSAGE });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   app.post('/slots/:id/focus', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const slot = current.state.slots.find((s) => s.id === req.params.id);
-    if (!slot?.itermSessionId) {
-      res.status(404).json({ error: 'slot has no terminal session' });
-      return;
-    }
     try {
-      await focusWorker(slot.itermSessionId);
+      if (!slot?.workerId || !(await pool.focus(slot.workerId))) {
+        res.status(HTTP_NOT_FOUND).json({ error: NO_TAB_MESSAGE });
+        return;
+      }
       res.json({ ok: true });
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
@@ -464,7 +514,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function close(): Promise<void> {
     if (pollTimer) clearInterval(pollTimer);
+    pool.killAll(); // children of the Hive: none should outlive it
     const server = httpServer;
+    httpServer = undefined; // a second close() (Electron will-quit after a test's after hook, or vice versa) is a no-op
     if (!server) return;
     server.closeAllConnections(); // drops open SSE streams so close() does not wait for them
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));

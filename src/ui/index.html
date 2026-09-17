@@ -50,6 +50,11 @@
   #detail { display: none; }
   #detail.show { display: block; }
   #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+  #output { font: 12px/1.4 ui-monospace, monospace; min-height: 60px; }
+  #detail .row { display: flex; gap: 8px; margin-top: 8px; }
+  body[data-workers=iterm] #output { display: none; }
+  body:not([data-workers=iterm]) #focus { display: none; }
+  #detail .row input { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
   a { color: var(--review); }
   #setup { display: none; max-width: 520px; margin: 24px auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
   #setup h2 { font-size: 15px; margin: 0 0 12px; }
@@ -124,6 +129,12 @@
     <label>coluna em review <input id="md-review" type="text" list="md-options" value="In review" required></label>
     <datalist id="md-options"></datalist>
   </fieldset>
+  <label>onde os workers rodam
+    <select id="workers-mode">
+      <option value="embedded">embutidos no app (saída e input no painel)</option>
+      <option value="iterm">tabs do iTerm2 (macOS; permissões respondidas no terminal)</option>
+    </select>
+  </label>
   <label>máx. workers <input id="max-workers" type="number" min="0" step="1" value="2" required></label>
   <fieldset id="limits">
     <legend>limites</legend>
@@ -140,7 +151,7 @@
     <div class="hint">faixas cumulativas: ao passar de uma faixa, valem todas as anteriores (o pior sinal e o menor teto). O sinal manual do dashboard vence quando é mais restritivo.</div>
   </fieldset>
   <label>prompt do worker <textarea id="prompt-template" rows="4" spellcheck="false" placeholder="vazio = padrão: Task #{number}: {title}, o body do issue e a instrução de abrir PR com gh pr create"></textarea></label>
-  <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo.</div>
+  <div class="hint">placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> é sinônimo de <code>{id}</code>) — ex.: <code>/ship #{id}</code>. Vazio mantém o atual. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Workers embutidos rodam em modo print, sem prompt de permissão: libere as ferramentas com <code>claudeArgs</code> no <code>hive.config.json</code> (ex.: <code>["--permission-mode", "acceptEdits"]</code>) ou no <code>.claude/settings.json</code> do repo. No iTerm2 o <code>claude</code> é interativo e pergunta no terminal.</div>
   <div id="setup-error"></div>
   <div class="actions">
     <button type="submit" id="save">salvar</button>
@@ -153,6 +164,11 @@
     <aside id="detail">
       <h2>detalhe</h2>
       <div id="detail-body"></div>
+      <pre id="output"></pre>
+      <div class="row">
+        <input id="input" type="text" placeholder="mensagem pro worker" autocomplete="off">
+        <button id="send">enviar</button>
+      </div>
       <div class="actions" style="margin-top: 8px; display: flex; gap: 8px;">
         <button id="focus">ir pro terminal</button>
         <button id="close">fechar</button>

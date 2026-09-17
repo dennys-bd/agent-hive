@@ -16,6 +16,12 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.equal(config.promptTemplate, DEFAULT_CONFIG.promptTemplate);
   assert.deepEqual(config.budget, {});
   assert.deepEqual(config.usageRules, []);
+  assert.equal(config.workers, 'embedded');
+});
+
+test('parseConfig accepts workers embedded or iterm and rejects anything else', () => {
+  assert.equal(parseConfig({ board: GITHUB, workers: 'iterm' }).workers, 'iterm');
+  assert.throws(() => parseConfig({ board: GITHUB, workers: 'tmux' }), /"workers" must be one of: embedded, iterm/);
 });
 
 test('parseConfig keeps explicit values', () => {

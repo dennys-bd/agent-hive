@@ -59,7 +59,6 @@ export interface Slot {
   slug?: string;
   worktree?: string;
   branch?: string;
-  itermSessionId?: string;
   startedAt?: string;
   lastEvent?: string;
   prUrl?: string;
@@ -79,8 +78,12 @@ export interface State {
   error?: string;
 }
 
+/** Where a worker runs: a child of the Hive (print mode, JSON over stdio) or an iTerm2 tab the Hive opens and watches. */
+export type WorkersMode = 'embedded' | 'iterm';
+
 export interface Config {
   board: BoardConfig;
+  workers: WorkersMode;
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -102,7 +105,7 @@ export interface HookPayload {
 }
 
 export type HiveEvent =
-  | { type: 'boot'; aliveSlugs: string[] }
+  | { type: 'boot' }
   | { type: 'poll'; tasks: Task[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
@@ -112,7 +115,6 @@ export type HiveEvent =
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
-  | { type: 'spawned'; workerId: string; itermSessionId: string }
   | { type: 'error'; message?: string };
 
 export interface ProjectSummary {
@@ -145,6 +147,8 @@ export interface SetupBody {
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */
   usageRules?: UsageRule[];
+  /** Optional; missing keeps the current mode (or `embedded` on first setup). */
+  workers?: WorkersMode;
 }
 
 export interface SetupResult {
@@ -162,3 +166,31 @@ export interface Board {
   setStatus(itemId: string, key: StatusKey): Promise<void>;
   setupOptions(): Promise<string[]>; // status values available, for the setup form
 }
+
+/** What the server injects so tests never open a process. */
+export interface WorkerHandlers {
+  onLine(line: string): void; // one stdout line, or one stderr line prefixed `stderr: `
+  onExit(): void; // once, on process exit or spawn error
+}
+
+export interface WorkerHandle {
+  send(text: string): void; // one `user` message on stdin, or typed into the tab
+  end(): void; // close stdin: the session ends after the current turn (no-op for a tab)
+  kill(): void; // SIGTERM
+  focus?(): Promise<void>; // tabs only: bring the worker's terminal to the front
+}
+
+/** Everything a spawner needs to start one worker; each mode turns it into a process or a tab its own way. */
+export interface WorkerLaunch {
+  mode: WorkersMode;
+  workerId: string;
+  slug: string;
+  repo: string;
+  port: number;
+  hooksPath: string;
+  promptPath: string; // the rendered prompt on disk: a record for embedded, the input for the tab's command line
+  prompt: string;
+  claudeArgs: string[];
+}
+
+export type SpawnWorker = (launch: WorkerLaunch, handlers: WorkerHandlers) => WorkerHandle;
