@@ -1,7 +1,8 @@
 import type {
-  BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, Language, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
-  State, StatusKey, Task, UsageSample, WorkersMode,
+  BoardConfig, BoardQuota, Budget, Card, EpicsMode, EventsPayload, Language, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  State, Task, UsageSample, WorkersMode,
 } from '../types.js';
+import { addColumnRow, columnsFromForm, fillColumnOptions, renderBoard, renderColumnRows } from './board.js';
 import { esc, renderOutput } from './highlight.js';
 import { LOCALE, applyTranslations, type MessageKey, setLanguage, slotEventText, statusText, t } from './i18n.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
@@ -9,12 +10,7 @@ import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 const SIGNAL_HINT: Record<Signal, MessageKey | undefined> = { green: undefined, yellow: 'signal.yellow', red: 'signal.red' };
 const RERENDER_MS = 30_000;
 const OUTPUT_POLL_MS = 2_000;
-// Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
-const PRESELECT: Record<StatusKey, string> = { queue: 'Ready', working: 'In progress', review: 'In review' };
 const DEFAULT_OWNER = '@me';
-const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
-const COLUMN_SELECT: Record<StatusKey, string> = { queue: 'col-queue', working: 'col-working', review: 'col-review' };
-const MARKDOWN_INPUT: Record<StatusKey, string> = { queue: 'md-queue', working: 'md-working', review: 'md-review' };
 const DEFAULT_MARKDOWN_PATH = 'board.md';
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
 const HOUR_MS = 3_600_000;
@@ -33,6 +29,7 @@ const isFree = (slot: Slot): boolean => slot.status === 'empty' && !slot.drainin
 type BoardType = BoardConfig['type'];
 
 let state: State | undefined;
+const cardOf = (slot: Slot): Card | undefined => state?.cards.find((c) => c.task.itemId === slot.cardId); // the card running in this slot
 let selectedSlotId: string | undefined;
 let setupInfo: SetupInfo | undefined;
 let outputTimer: ReturnType<typeof setInterval> | undefined;
@@ -114,15 +111,15 @@ function post(path: string, body?: unknown): void {
 
 function renderCard(slot: Slot): string {
   const occupied = slot.status !== 'empty';
-  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
+  const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : ''].join(' ');
   if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${statusText('empty')}</div></div>`;
-  const marks = `${slot.draining ? ` · ${t('card.draining')}` : ''}${slot.paused ? ` · ${t('card.paused')}` : ''}`;
   const tokens = slot.tokens === undefined ? '' : ` · ${fmt(slot.tokens)} tokens`;
+  const card = cardOf(slot);
   return `
     <div class="${classes}" data-id="${slot.id}">
-      <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
-      <div class="meta">${statusText(slot.status)} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
-      <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
+      <div class="title">#${esc(card?.task.id ?? '')} ${esc(card?.task.title ?? '')}</div>
+      <div class="meta">${statusText(slot.status)} · ${elapsed(slot.startedAt)}${slot.draining ? ` · ${t('card.draining')}` : ''}${tokens}</div>
+      <div class="meta">${t('card.column')} ${esc(card?.column ?? '')} · ${esc(card?.branch ?? card?.slug ?? '')}</div>
       <div class="meta">${esc(slot.lastEvent ? slotEventText(slot.lastEvent) : '')}</div>
       <div class="actions"><button data-focus="${slot.id}">terminal</button><button class="danger" data-kill="${slot.id}">kill</button></div>
     </div>`;
@@ -174,26 +171,18 @@ function renderDetail(): void {
     syncOutputPolling(undefined);
     return;
   }
+  const card = cardOf(slot);
   const lines = [
-    `<div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>`,
-    slot.prUrl ? `<p>PR: <a href="${esc(slot.prUrl)}" target="_blank" rel="noreferrer">${esc(slot.prUrl)}</a></p>` : '',
+    `<div class="title">#${esc(card?.task.id ?? '')} ${esc(card?.task.title ?? '')}</div>`,
+    card?.prUrl ? `<p>PR: <a href="${esc(card.prUrl)}" target="_blank" rel="noreferrer">${esc(card.prUrl)}</a></p>` : '',
     slot.question ? `<p>${t('detail.pending')}</p><pre>${esc(slot.question)}</pre>` : '',
-    `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
-    `<div class="meta">branch: ${esc(slot.branch ?? '—')}</div>`,
+    `<div class="meta">worktree: ${esc(card?.worktree ?? '—')}</div><div class="meta">branch: ${esc(card?.branch ?? '—')}</div>`,
     slot.sessionId ? `<div class="meta">${t('detail.session')} <code>claude --resume ${esc(slot.sessionId)}</code></div>` : '',
-    slot.task ? taskLink(slot.task) : '',
+    card ? taskLink(card.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
   panel.classList.add('show');
   syncOutputPolling(slot.id);
-}
-
-// A free task gets the manual-start button; a blocked one shows its blockers instead (the route would refuse it anyway).
-function renderQueued(task: Task): string {
-  const tail = task.blockedBy?.length
-    ? `<span class="meta" style="color:var(--muted)"> · ${t('queue.blockedBy', { ids: esc(task.blockedBy.join(', ')) })}</span>`
-    : ` <button type="button" data-start="${esc(task.itemId)}">${t('queue.start')}</button>`;
-  return `<li>#${esc(task.id)} ${esc(task.title)}${tail}</li>`;
 }
 
 function renderSignal(signal: Signal): void {
@@ -257,8 +246,7 @@ function render(): void {
   $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString(locale())}` : '';
   showError(state.error);
   $('grid').innerHTML = state.slots.map(renderCard).join('');
-  $('queue').innerHTML = state.queue.map(renderQueued).join('')
-    || `<li style="list-style:none;color:var(--muted)">${t('queue.empty')}</li>`;
+  $('board').innerHTML = renderBoard(state);
   renderDetail();
 }
 
@@ -319,39 +307,13 @@ function columnsUrl(board: BoardConfig): string {
   return `/setup/columns?${params.toString()}`;
 }
 
-async function loadColumns(): Promise<void> {
-  const owner = ownerValue();
-  const number = $<HTMLSelectElement>('project').value;
-  if (!owner || !number) return;
+// The board columns the editor offers (datalist behind from / onStart / onFinish): github by owner + project, markdown by path.
+async function loadColumnOptions(): Promise<void> {
+  const board = boardFromForm();
+  if (!board) return;
   setupError();
   try {
-    const options = await getJson<string[]>(columnsUrl({ type: 'github', owner, number: Number(number) }));
-    const current = setupInfo?.config;
-    for (const key of STATUS_KEYS) {
-      const wanted = current && options.includes(current.status[key]) ? current.status[key] : PRESELECT[key];
-      fillSelect($(COLUMN_SELECT[key]), options.map((o) => ({ value: o, label: o })), wanted);
-    }
-  } catch (err) {
-    setupError((err as Error).message);
-  }
-}
-
-// Fills the datalist behind the three markdown text fields with the statuses the file already uses.
-async function loadMarkdownColumns(): Promise<void> {
-  const path = markdownPathValue();
-  if (!path) {
-    setupError(t('setup.error.path'));
-    return;
-  }
-  setupError();
-  try {
-    const options = await getJson<string[]>(columnsUrl({ type: 'markdown', path }));
-    $('md-options').innerHTML = options.map((o) => `<option value="${esc(o)}"></option>`).join('');
-    $('md-found').textContent = t('setup.markdownFound', { list: options.join(', ') });
-    for (const key of STATUS_KEYS) {
-      const input = $<HTMLInputElement>(MARKDOWN_INPUT[key]);
-      if (!options.includes(input.value)) input.value = ''; // not in the file: clear so the full list shows
-    }
+    fillColumnOptions(await getJson<string[]>(columnsUrl(board)));
   } catch (err) {
     setupError((err as Error).message);
   }
@@ -375,7 +337,7 @@ async function loadProjects(selectedNumber?: number): Promise<void> {
       setupError(t('setup.error.noProjects', { owner }));
       return;
     }
-    await loadColumns();
+    await loadColumnOptions();
   } catch (err) {
     setupError((err as Error).message);
   }
@@ -404,15 +366,14 @@ async function openSetup(): Promise<void> {
   applyBoardType();
   $<HTMLInputElement>('owner').value = board?.type === 'github' ? board.owner : DEFAULT_OWNER;
   $<HTMLInputElement>('md-path').value = board?.type === 'markdown' ? board.path : DEFAULT_MARKDOWN_PATH;
-  for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
-  $('md-options').innerHTML = '';
   $<HTMLSelectElement>('language').value = setupInfo?.language ?? 'en'; // the effective one: saving writes it explicitly
   $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
   $<HTMLSelectElement>('epics').value = config?.epics ?? 'ignore';
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
   $<HTMLInputElement>('budget-day').value = budgetField(config?.budget.maxTokensPerDay);
   renderRules(config?.usageRules ?? []);
-  $<HTMLTextAreaElement>('prompt-template').value = config?.promptTemplate ?? '';
+  renderColumnRows(config?.columns ?? []);
+  fillColumnOptions([]);
   setupError(setupInfo?.configured ? undefined : setupInfo?.error);
   if (board?.type !== 'markdown') await loadProjects(board?.type === 'github' ? board.number : undefined);
 }
@@ -430,17 +391,16 @@ function boardFromForm(): BoardConfig | undefined {
   return project ? { type: 'github', owner: ownerValue(), number: Number(project) } : undefined;
 }
 
-function statusFromForm(): Record<StatusKey, string> {
-  const ids = boardType() === 'markdown' ? MARKDOWN_INPUT : COLUMN_SELECT;
-  const read = (key: StatusKey): string => $<HTMLInputElement | HTMLSelectElement>(ids[key]).value.trim();
-  return { queue: read('queue'), working: read('working'), review: read('review') };
-}
-
 async function saveSetup(): Promise<void> {
   const board = boardFromForm();
   if (!board) {
     showTab('board');
     setupError(boardType() === 'markdown' ? t('setup.error.path') : t('setup.error.project'));
+    return;
+  }
+  if (columnsFromForm().length === 0) {
+    showTab('board');
+    setupError(t('setup.columns.none'));
     return;
   }
   // usageRulesFromForm throws for a row with no effect; the row lives on a tab that may be hidden, so reveal it
@@ -458,10 +418,9 @@ async function saveSetup(): Promise<void> {
   try {
     const body: SetupBody = {
       board,
-      status: statusFromForm(),
+      columns: columnsFromForm(),
       workers: $<HTMLSelectElement>('workers-mode').value as WorkersMode,
       epics: $<HTMLSelectElement>('epics').value as EpicsMode,
-      promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
       usageRules,
       language: $<HTMLSelectElement>('language').value as Language,
@@ -513,19 +472,20 @@ $('grid').addEventListener('click', (event) => {
   renderDetail();
 });
 
-// The human override: the route ignores the signal, the cap and the budget. Without a free slot the confirm offers the number the
-// reducer will set (occupied + 1: maxConcurrent + 1 unless slots are draining), on the same request so nothing races the raise.
-$('queue').addEventListener('click', (event) => {
-  const itemId = (event.target as HTMLElement).dataset.start;
-  const task = itemId === undefined ? undefined : state?.queue.find((t) => t.itemId === itemId);
-  if (!state || !task) return;
-  const path = `/queue/${encodeURIComponent(task.itemId)}/start`;
-  if (state.slots.some(isFree)) {
-    post(path);
-    return;
-  }
+// Board actions. start: the human override (#47), with the confirm to raise the max when no slot is free. close / keep: the answer
+// to a card that left the board. The ids go escaped into the attributes and encoded into the URLs.
+$('board').addEventListener('click', (event) => {
+  const target = event.target as HTMLElement;
+  const { start, close, keep, focus } = target.dataset;
+  if (focus) { post(`/slots/${focus}/focus`); return; }
+  if (close) { if (confirm(t('confirm.close'))) post(`/cards/${encodeURIComponent(close)}/close`); return; }
+  if (keep) { post(`/cards/${encodeURIComponent(keep)}/keep`); return; }
+  const card = start === undefined ? undefined : state?.cards.find((c) => c.task.itemId === start);
+  if (!state || !card) return;
+  const path = `/cards/${encodeURIComponent(card.task.itemId)}/start`;
+  if (state.slots.some(isFree)) { post(path); return; }
   const next = state.slots.filter((s) => s.status !== 'empty').length + 1;
-  if (confirm(t('confirm.raiseMax', { from: state.maxConcurrent, to: next, id: task.id }))) post(path, { raiseMax: true });
+  if (confirm(t('confirm.raiseMax', { from: state.maxConcurrent, to: next, id: card.task.id }))) post(path, { raiseMax: true });
 });
 
 $('max').addEventListener('change', (event) => {
@@ -547,8 +507,9 @@ $('close').addEventListener('click', () => {
 $('configure').addEventListener('click', () => void openSetup());
 $('load-projects').addEventListener('click', () => void loadProjects());
 $('board-type').addEventListener('change', applyBoardType);
-$('load-columns').addEventListener('click', () => void loadMarkdownColumns());
-$('project').addEventListener('change', () => void loadColumns());
+$('load-columns').addEventListener('click', () => void loadColumnOptions());
+$('project').addEventListener('change', () => void loadColumnOptions());
+$('add-column').addEventListener('click', () => addColumnRow());
 $('setup').addEventListener('submit', (event) => {
   event.preventDefault();
   void saveSetup();

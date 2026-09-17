@@ -1,9 +1,9 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { initialState, SIGNALS, STATUSES } from './orchestrator.js';
+import { initialState, isSessionId, SIGNALS, STATUSES } from './orchestrator.js';
 import { isBoardQuota } from './polling.js';
 import { isRateLimits } from './rate-limits.js';
-import type { Signal, Slot, SlotEvent, SlotEventKind, State, Status, UsageRule, UsageSample } from './types.js';
+import type { Card, Signal, Slot, SlotEvent, SlotEventKind, State, Status, UsageRule, UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -22,7 +22,7 @@ const isRule = (value: unknown): value is UsageRule => {
 
 // Files written before the status keys were neutral carry the Portuguese words and a lastEvent sentence.
 const LEGACY_STATUS: Record<string, Status> = { vazio: 'empty', trabalhando: 'working', esperando_voce: 'waiting', aguardando_review: 'review' };
-const EVENT_KINDS: readonly SlotEventKind[] = ['starting', 'prompt', 'tool', 'waiting', 'pr', 'paused', 'turn'];
+const EVENT_KINDS: readonly SlotEventKind[] = ['starting', 'manualStart', 'prompt', 'tool', 'waiting', 'pr', 'turn'];
 
 const isSlotEvent = (value: unknown): value is SlotEvent =>
   typeof value === 'object' && value !== null && EVENT_KINDS.includes((value as SlotEvent).kind)
@@ -33,20 +33,35 @@ function statusOf(raw: unknown): Status | undefined {
   return typeof raw === 'string' && Object.hasOwn(LEGACY_STATUS, raw) ? LEGACY_STATUS[raw] : undefined; // hasOwn: "constructor" is not a status
 }
 
-// Unknown status: nothing to trust beyond the id (boot gives every occupied slot as dead anyway). A sentence or a bad object is not a lastEvent.
+// Unknown status: nothing to trust beyond the id (boot gives every occupied slot as dead anyway). A sentence or a bad object is not a
+// lastEvent. Files from before cards existed carry task, slug, prUrl, paused on the slot: dropped, only today's fields are picked.
 function normalizeSlot(slot: Slot): Slot {
   const status = statusOf(slot.status);
   if (status === undefined) return { id: slot.id, status: 'empty' };
-  const { lastEvent, ...rest } = slot;
-  return { ...rest, status, ...(isSlotEvent(lastEvent) ? { lastEvent } : {}) };
+  const { id, workerId, cardId, draining, tokens, startedAt, lastEvent, question, transcriptPath, sessionId } = slot;
+  const kept = { workerId, cardId, draining, tokens, startedAt, question, transcriptPath, sessionId, ...(isSlotEvent(lastEvent) ? { lastEvent } : {}) };
+  return { id, status, ...Object.fromEntries(Object.entries(kept).filter(([, v]) => v !== undefined)) };
 }
+
+const SLUG = /^hive-[a-z0-9-]+$/; // what slugFor produces; the slug names a path, a tmux session and a pkill pattern
+
+// The slug and the session id reach argv, a file path and the pkill pattern, so a hand-edited value that slugFor / randomUUID could not
+// have produced drops the card (the next poll re-enters it through a `from`).
+const isCard = (value: unknown): value is Card => {
+  if (typeof value !== 'object' || value === null) return false;
+  const { task, column, boardColumn, slug, sessionId } = value as Card;
+  return typeof task === 'object' && task !== null && typeof task.itemId === 'string' && typeof column === 'string' && typeof boardColumn === 'string'
+    && typeof slug === 'string' && SLUG.test(slug) && (sessionId === undefined || isSessionId(sessionId));
+};
 
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default.
 function normalize(parsed: State): State {
-  const { rateLimits, boardQuota, ...rest } = parsed;
+  const { rateLimits, boardQuota, queue: _queue, ...rest } = parsed as State & { queue?: unknown };
   return {
     ...rest,
     slots: parsed.slots.map(normalizeSlot),
+    columns: Array.isArray(parsed.columns) ? parsed.columns : [], // overwritten by the config on boot
+    cards: Array.isArray(parsed.cards) ? parsed.cards.filter(isCard) : [],
     signal: isSignal(parsed.signal) ? parsed.signal : 'green',
     usage: Array.isArray(parsed.usage) ? parsed.usage.filter(isSample) : [],
     budget: parsed.budget ?? {},
@@ -59,7 +74,7 @@ function normalize(parsed: State): State {
 export async function loadState(hiveDir: string, maxConcurrent: number): Promise<State> {
   try {
     const parsed = JSON.parse(await readFile(join(hiveDir, STATE_FILE), 'utf8')) as State;
-    if (Array.isArray(parsed.slots) && Array.isArray(parsed.queue) && Number.isInteger(parsed.maxConcurrent)) {
+    if (Array.isArray(parsed.slots) && Number.isInteger(parsed.maxConcurrent)) {
       return normalize(parsed);
     }
   } catch {

@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Effect, HiveEvent, Slot, State } from './types.js';
+import { cardOf } from './cards.js';
+import type { Column, Effect, HiveEvent, Slot, State } from './types.js';
 
 export type LogLevel = 'info' | 'debug';
 export const LOG_LEVELS: readonly LogLevel[] = ['info', 'debug'];
@@ -91,15 +92,19 @@ export function createLogger(dir: string, level: LogLevel = 'info', options: Log
 /** The first 8 characters of a uuid (worker or slot); `-` when the id is missing. */
 export const shortId = (id?: string): string => id?.slice(0, ID_WIDTH) ?? '-';
 
+/** The pipeline in one token per column: `spec(5)>dev(1)>review(0)`; the config line and the setColumns event use it. */
+export const describeColumns = (columns: Column[]): string => columns.map((c) => `${c.name}(${c.weight})`).join('>');
+
 /** A one-line summary of a reducer event: names, ids and counts, never a payload (tool_input, question, message). */
 export function describeEvent(event: HiveEvent): string {
   switch (event.type) {
     case 'boot': return 'boot';
-    case 'poll': return `poll tasks=${event.tasks.length} ids=${event.tasks.slice(0, POLL_IDS_MAX).map((t) => t.id).join(',')}`;
+    case 'poll': return `poll cards=${event.cards.length} ids=${event.cards.slice(0, POLL_IDS_MAX).map((c) => c.task.id).join(',')}`;
     case 'setMax': return `setMax ${event.max}`;
     case 'setSignal': return `setSignal ${event.signal}`;
     case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
     case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
+    case 'setColumns': return `setColumns ${describeColumns(event.columns)}`;
     case 'rateLimits': return event.workerId ? `rateLimits worker=${shortId(event.workerId)}` : 'rateLimits source=hive';
     case 'boardQuota': return `boardQuota remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
     case 'hook': {
@@ -110,22 +115,26 @@ export function describeEvent(event: HiveEvent): string {
     case 'kill': return `kill slot=${shortId(event.slotId)}`;
     case 'error': return event.message ? `error ${event.message}` : 'error';
     case 'start': return `start #${event.itemId} raiseMax=${event.raiseMax === true}`;
+    case 'closeCard': return `closeCard #${event.cardId}`;
+    case 'keepCard': return `keepCard #${event.cardId}`;
   }
 }
 
 export function describeEffect(effect: Effect): string {
   switch (effect.type) {
     case 'spawn': {
-      const { slot } = effect;
-      return `spawn slot=${shortId(slot.id)} #${slot.task?.id ?? '-'} slug=${slot.slug ?? '-'} worker=${shortId(slot.workerId)}`;
+      const { slot, card, column, session } = effect;
+      return `spawn slot=${shortId(slot.id)} #${card.task.id} slug=${card.slug} column=${column.name} session=${session} worker=${shortId(slot.workerId)}`;
     }
-    case 'setStatus': return `setStatus #${effect.itemId} → ${effect.key}`;
+    case 'setColumn': return `setColumn #${effect.itemId} → ${effect.column}`;
     case 'kill': return `kill slug=${effect.slug} worker=${shortId(effect.workerId)}`;
   }
 }
 
-const slotDetail = (slot: Slot): string =>
-  `${slot.task ? ` #${slot.task.id}` : ''}${slot.workerId ? ` worker=${shortId(slot.workerId)}` : ''}`;
+const slotDetail = (state: State, slot: Slot): string => {
+  const card = cardOf(state.cards, slot);
+  return `${card ? ` #${card.task.id}` : ''}${slot.workerId ? ` worker=${shortId(slot.workerId)}` : ''}`;
+};
 
 /** Slot and signal transitions between two states: one line per slot whose status changed, in grid order, matched by id; then the sessions that appeared; then the signal. */
 export function describeChanges(prev: State, next: State): string[] {
@@ -134,12 +143,12 @@ export function describeChanges(prev: State, next: State): string[] {
   const statuses = next.slots.flatMap((slot, i) => {
     const old = before(slot);
     if (old.status === slot.status) return [];
-    const detail = slotDetail(slot.status === 'empty' ? old : slot); // an emptied slot names what it held
+    const detail = slotDetail(slot.status === 'empty' ? prev : next, slot.status === 'empty' ? old : slot); // an emptied slot names what it held
     return [`slot ${i + 1}: ${old.status} → ${slot.status}${detail}`];
   });
   // The slot is wiped on exit / boot; this line is what ties a PR (same worker=) back to a `claude --resume` id afterwards
   const sessions = next.slots.flatMap((slot, i) =>
-    slot.sessionId && !before(slot).sessionId ? [`slot ${i + 1}: session=${slot.sessionId}${slotDetail(slot)}`] : []);
+    slot.sessionId && !before(slot).sessionId ? [`slot ${i + 1}: session=${slot.sessionId}${slotDetail(next, slot)}`] : []);
   const lines = [...statuses, ...sessions];
   return prev.signal === next.signal ? lines : [...lines, `signal: ${prev.signal} → ${next.signal}`];
 }

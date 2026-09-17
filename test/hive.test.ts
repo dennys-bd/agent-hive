@@ -8,12 +8,13 @@ import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
 import type { RateLimits, SetupInfo } from '../src/types.js';
+import { COLUMNS } from './fakes.js';
 
 // Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
   await writeFile(join(repo, 'board.md'), newBoardText());
-  const config = { board: { type: 'markdown', path: 'board.md' }, maxConcurrent: 0, port: 0, ...extra };
+  const config = { board: { type: 'markdown', path: 'board.md' }, columns: COLUMNS, maxConcurrent: 0, port: 0, ...extra };
   await writeFile(join(repo, 'hive.config.json'), JSON.stringify(config));
   return repo;
 }
@@ -64,7 +65,7 @@ test('bootHive writes the boot to <repo>/.hive/hive.log: mode=hive with a usable
   const lines = await logLines(repo);
   assert.ok(lines.includes(`INFO  boot repo=${repo} mode=hive`), lines.join('\n'));
   assert.ok(lines.includes(`INFO  listening port=${hive.port}`));
-  assert.ok(lines.includes('INFO  poll queue=0')); // newBoardText's example row is status Done, not the queue column
+  assert.ok(lines.includes('INFO  poll cards=0')); // newBoardText's example row is status Done, which no column cites
   assert.ok(!lines.some((l) => l.startsWith('DEBUG')), 'default level is info');
 
   const broken = await repoWithConfig({ logLevel: 'debug' });
@@ -98,6 +99,19 @@ test('bootHive turns the locale into the system language: pt-BR without a config
   const setup = await bootHive(broken, { locale: 'en-US' });
   t.after(() => setup.server.close());
   assert.equal((await setupInfo(setup.port)).language, 'en');
+});
+
+test('bootHive with a hive.config.json that predates columns opens in setup mode with the legacy proposal and the reason, instead of dying', async (t) => {
+  const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
+  await writeFile(join(repo, 'board.md'), newBoardText());
+  await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ board: { type: 'markdown', path: 'board.md' }, port: 0, promptTemplate: '/x {url}' }));
+  const { server, port } = await bootHive(repo);
+  t.after(() => server.close());
+  const info = await setupInfo(port);
+  assert.equal(info.configured, false);
+  assert.match(info.error ?? '', /"columns" is required/);
+  assert.equal(info.config?.columns[0].prompt, '/x {url}');
+  assert.ok((await logLines(repo)).some((l) => l.startsWith('INFO  boot repo=') && l.includes('mode=setup') && l.includes('"columns" is required')));
 });
 
 test('bootHive reads the plan limits through the injected reader on boot, so the header has them before any worker; no reader, no reading', async (t) => {

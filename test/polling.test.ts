@@ -11,7 +11,7 @@ const TASK = { itemId: 'item1', id: '1', title: 'Task 1', body: '', url: 'https:
 // `poll` stamps lastPolledAt with the real clock; the tests pin it against NOW instead
 const readAt = (state: State, ms: number): State => ({ ...state, lastPolledAt: iso(ms) });
 const free = readAt(initialState(1), NOW - POLL_INTERVAL_MS); // one empty slot, read 30 s ago
-const busy = readAt(reduce(initialState(1), { type: 'poll', tasks: [TASK] }).state, NOW - POLL_INTERVAL_MS); // the only slot working
+const busy = readAt(reduce({ ...initialState(1), columns: [{ name: 'c', weight: 1, from: ['Ready'], prompt: 'x' }] }, { type: 'poll', cards: [{ task: TASK, column: 'Ready' }] }).state, NOW - POLL_INTERVAL_MS); // the only slot working
 const quota = (remaining: number, resetsAt: number): BoardQuota => ({ limit: 5000, remaining, resetsAt: iso(resetsAt), at: iso(NOW) });
 
 test('shouldPoll is true whenever a job could start, however fresh the last read', () => {

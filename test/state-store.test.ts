@@ -10,7 +10,7 @@ test('loadState returns initialState when nothing is saved', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'hive-'));
   const state = await loadState(dir, 3);
   assert.equal(state.slots.length, 3);
-  assert.deepEqual(state.queue, []);
+  assert.deepEqual([state.cards, state.columns], [[], []]);
 });
 
 test('saveState then loadState round-trips and leaves no tmp file', async () => {
@@ -119,10 +119,30 @@ test('loadState maps the legacy Portuguese statuses, empties a slot with an unkn
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), slots }));
   const loaded = await loadState(dir, 8);
   assert.deepEqual(loaded.slots.map((s) => s.status), ['working', 'waiting', 'review', 'empty', 'empty', 'working', 'review', 'empty']);
-  assert.deepEqual(loaded.slots[0], { id: 'a', status: 'working', workerId: 'w1', task, slug: 'hive-1-t' }, 'the sentence is dropped, the rest is kept');
+  assert.deepEqual(loaded.slots[0], { id: 'a', status: 'working', workerId: 'w1' }, 'the sentence is dropped, the rest is kept');
   assert.equal('lastEvent' in loaded.slots[1], false);
   assert.deepEqual(loaded.slots[4], { id: 'e', status: 'empty' }, 'unknown status: only the id survives');
   assert.deepEqual(loaded.slots[5].lastEvent, { kind: 'tool', detail: 'Bash: ls' }, 'a SlotEvent object is kept as is');
   assert.equal('lastEvent' in loaded.slots[6], false, 'an unknown kind is dropped');
   assert.deepEqual(loaded.slots[7], { id: 'h', status: 'empty' }, 'an inherited property name is not a legacy status');
+});
+
+test('loadState drops a legacy queue and the task fields of slots, keeps cardId, keeps well-formed cards and defaults columns to []', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const task = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
+  const card = { task, column: 'dev', boardColumn: 'Ready', slug: 'hive-1-t', sessionId: 'abcdefgh-1' };
+  const legacy = {
+    signal: 'green', maxConcurrent: 1, queue: [task],
+    slots: [{ id: 'a', status: 'working', workerId: 'w1', task, slug: 'hive-1-t', prUrl: 'x', paused: true, cardId: 'I1', tokens: 5 }],
+    cards: [
+      card, { task, column: 7 }, null, { column: 'dev', boardColumn: 'Ready', slug: 's' },
+      { ...card, slug: '../../evil' }, { ...card, slug: 'hive-1-x|.' }, { ...card, sessionId: 'a b' }, // slug and session id reach argv, a path and a pkill pattern
+    ],
+  };
+  await writeFile(join(dir, 'state.json'), JSON.stringify(legacy));
+  const loaded = await loadState(dir, 1);
+  assert.equal('queue' in loaded, false);
+  assert.deepEqual(loaded.slots[0], { id: 'a', status: 'working', workerId: 'w1', cardId: 'I1', tokens: 5 });
+  assert.deepEqual(loaded.cards, [card]);
+  assert.deepEqual(loaded.columns, []);
 });

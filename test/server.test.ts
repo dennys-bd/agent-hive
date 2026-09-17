@@ -11,12 +11,12 @@ import { initialState, reduce } from '../src/orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
 import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { BoardQuota, RateLimits, SetupBody, Slot, State } from '../src/types.js';
-import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
+import type { BoardQuota, Card, RateLimits, SetupBody, Slot, State } from '../src/types.js';
+import { COLUMNS, fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
   board: { type: 'github', owner: 'acme', number: 6 },
-  status: { queue: 'Ready', working: 'In progress', review: 'In review' },
+  columns: COLUMNS,
   maxConcurrent: 1, // one slot: the fake board's single task is spawned into the fake worker
 };
 
@@ -26,6 +26,7 @@ const postJson = (url: string, body?: unknown): Promise<Response> =>
   fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
+const card0 = (server: HiveServer): Card => server.getState()!.cards[0];
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 const PLAN: RateLimits = {
   at: '2026-09-17T12:00:00.000Z',
@@ -75,13 +76,15 @@ test('saving the setup starts one worker with the launch: mode, repo, port, hook
   const { repo, port, server, workers } = await start(t);
   const slot = slot0(server);
   assert.equal(slot.status, 'working');
-  assert.equal(slot.slug, 'hive-1-from-ready');
+  assert.equal(card0(server).slug, 'hive-1-from-ready');
   assert.equal(workers.length, 1);
   const promptPath = join(repo, '.hive', 'prompts', 'hive-1-from-ready.md');
   assert.deepEqual(workers[0].launch, {
     mode: 'embedded', workerId: slot.workerId, slug: 'hive-1-from-ready', repo, port,
-    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath, claudeArgs: [],
+    hooksPath: join(repo, '.hive', 'hooks.json'), promptPath,
+    args: ['--worktree=hive-1-from-ready', '--session-id', server.getState()!.cards[0].sessionId!],
   });
+  assert.match(workers[0].launch.args[2], /^[0-9a-f-]{36}$/);
   assert.match(await readFile(promptPath, 'utf8'), /from Ready/, 'the command line reads the prompt from this file');
 });
 
@@ -92,7 +95,7 @@ test('workers: iterm in the setup reaches the launch; POST /hooks/exit frees its
   assert.deepEqual(await json(postJson(`${base}/slots/${id}/focus`)), { ok: true });
   assert.equal(workers[0].focused, 1);
   await fetch(`${base}/hooks/exit`, { method: 'POST', headers: { 'x-hive-worker': workerId! } });
-  await waitFor(() => workers.length === 2); // the slot freed, the task requeued and picked up by a new worker
+  await waitFor(() => workers.length === 2); // the slot freed, the card still in its column and run again by a new worker
 });
 
 test('POST /slots/:id/focus reaches the handle of an embedded worker too; an unknown slot is 404 and a terminal that fails is 500', async (t) => {
@@ -109,7 +112,8 @@ test('POST /slots/:id/focus reaches the handle of an embedded worker too; an unk
 
 test('GET /slots/:id/output is the formatted tail of the worker transcript SessionStart pointed at; [] before the hook, when unreadable or when the path is not the worker own; unknown slot is 404', async (t) => {
   const { base, repo, server } = await start(t);
-  const { id, workerId, slug } = slot0(server);
+  const { id, workerId } = slot0(server);
+  const { slug } = card0(server);
   const configDir = await mkdtemp(join(tmpdir(), 'hive-claude-'));
   process.env.CLAUDE_CONFIG_DIR = configDir; // where transcriptDir looks; the suite runs one file per process
   t.after(() => { delete process.env.CLAUDE_CONFIG_DIR; });
@@ -129,7 +133,7 @@ test('GET /slots/:id/output is the formatted tail of the worker transcript Sessi
   assert.equal((await sessionStart(forged)).status, 200);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'a path outside the worker transcript dir is dropped');
   assert.equal(slot0(server).transcriptPath, undefined);
-  const own = join(transcriptDir(join(repo, '.claude', 'worktrees', slug!)), 'abc.jsonl');
+  const own = join(transcriptDir(join(repo, '.claude', 'worktrees', slug)), 'abc.jsonl');
   await mkdir(dirname(own), { recursive: true });
   await writeFile(own, lines);
   assert.equal((await sessionStart(own)).status, 200);
@@ -139,37 +143,36 @@ test('GET /slots/:id/output is the formatted tail of the worker transcript Sessi
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });
 
-test('a Stop kills the session only once the PR is open; the exit then frees the slot without requeueing', async (t) => {
-  const { base, server, workers } = await start(t);
+test('a Stop ends the run: the session is killed, onFinish written, the card leaves (single column) and the slot frees; a PR seen before stays on the card until then', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, server, workers } = await start(t, BODY, log);
   const [worker] = workers;
   const workerId = slot0(server).workerId!;
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
-  assert.equal(worker.killed, 0, 'no PR yet: the session stays for the next turn');
-  assert.equal(slot0(server).status, 'working');
   await openPr(server, workerId);
   assert.equal(slot0(server).status, 'review');
+  assert.equal(card0(server).prUrl, 'https://github.com/acme/r/pull/9');
+  assert.equal(worker.killed, 0, 'a PR is not a transition any more');
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
-  await waitFor(() => worker.killed === 1);
+  assert.equal(worker.killed, 1, 'killed through the effect, before the answer');
+  assert.equal(slot0(server).status, 'empty');
+  assert.deepEqual(server.getState()?.cards, [], 'fila is the last column');
+  assert.ok(lines.includes('INFO setColumn #I1 → In review ok'), lines.join('\n'));
   worker.handlers.onExit();
-  await waitFor(() => slot0(server).status === 'empty');
-  assert.deepEqual(server.getState()?.queue, []);
-  assert.equal(workers.length, 1, 'nothing left to spawn');
+  await sleep(20);
+  assert.equal(workers.length, 1, 'the exit of a killed session is a no-op');
 });
 
-test('a Stop from a child session (a subagent or teammate) does not kill the session even with the PR open; the main session still does (#24)', async (t) => {
+test('a Stop from a child session (a subagent or teammate) does not end the run; the main session does (#24)', async (t) => {
   const { base, repo, server, workers } = await start(t);
   const [worker] = workers;
   const workerId = slot0(server).workerId!;
   const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
-  const childId = 'another-child-session-0001';
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 200);
-  await openPr(server, workerId);
-  assert.equal(slot0(server).status, 'review');
-  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: childId })).status, 200);
-  assert.equal(worker.killed, 0, 'a teammate/subagent Stop is not the worker turn end');
-  assert.equal(slot0(server).status, 'review', 'state untouched by the child Stop');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: 'another-child-session-0001' })).status, 200);
+  assert.equal(worker.killed, 0);
+  assert.equal(slot0(server).status, 'working');
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 200);
-  await waitFor(() => worker.killed === 1);
+  assert.equal(worker.killed, 1);
 });
 
 test('an error reported by the spawner lands in State.error with the worker slug', async (t) => {
@@ -179,16 +182,18 @@ test('an error reported by the spawner lands in State.error with the worker slug
   assert.equal(slot0(server).status, 'working', 'only the exit frees the slot');
 });
 
-test('an exit without a PR requeues the task, which the free slot picks up again with a new worker', async (t) => {
+test('an exit without Stop keeps the card in its column and a new worker runs it again with a fresh session id', async (t) => {
   const { server, workers } = await start(t);
   const first = slot0(server).workerId;
+  const session = card0(server).sessionId;
   workers[0].handlers.onExit();
   await waitFor(() => workers.length === 2);
   const slot = slot0(server);
   assert.equal(slot.status, 'working');
   assert.notEqual(slot.workerId, first);
   assert.equal(workers[1].launch.workerId, slot.workerId);
-  assert.deepEqual(server.getState()?.queue, []);
+  assert.equal(card0(server).column, 'fila');
+  assert.notEqual(card0(server).sessionId, session, 'new: a fresh id each run');
 });
 
 test('POST /slots/:id/kill sends kill to the live worker; the slot frees on its exit, not before', async (t) => {
@@ -198,7 +203,7 @@ test('POST /slots/:id/kill sends kill to the live worker; the slot frees on its 
   assert.equal(workers[0].killed, 1);
   assert.equal(slot0(server).status, 'working');
   workers[0].handlers.onExit();
-  await waitFor(() => workers.length === 2); // requeued and picked up again
+  await waitFor(() => workers.length === 2); // the card stays in its column and runs again
 });
 
 test('kill on a slot whose process the pool does not know (Hive restarted) frees the slot directly', async (t) => {
@@ -207,15 +212,15 @@ test('kill on a slot whose process the pool does not know (Hive restarted) frees
   const { factory } = fakeBoardFactory();
   const config = parseConfig(BODY);
   const board = factory(config);
-  const previous = reduce(initialState(1), { type: 'poll', tasks: await board.listQueue() }).state; // occupied by a worker of a previous run
-  const state: State = { ...previous, signal: 'yellow' }; // yellow: the requeued task is not picked up, so the freed slot stays visible
+  const previous = reduce({ ...initialState(1), columns: config.columns }, { type: 'poll', cards: await board.listCards() }).state; // occupied by a worker of a previous run
+  const state: State = { ...previous, signal: 'yellow' }; // yellow: the freed card is not run again, so the freed slot stays visible
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ repo, boardFactory: factory, spawnWorker: spawn, runtime: { config, board, hiveDir, hooksPath, promptsDir }, state });
   await server.listen(0);
   t.after(() => server.close());
   await server.dispatch({ type: 'kill', slotId: state.slots[0].id });
   assert.equal(slot0(server).status, 'empty');
-  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['1']);
+  assert.deepEqual(server.getState()?.cards.map((c) => [c.task.id, c.slotId]), [['1', undefined]]);
   assert.equal(workers.length, 0);
 });
 
@@ -255,7 +260,7 @@ test('the timer skips the board while nothing could start, and reads it again on
     repo, spawnWorker: fakeSpawn().spawn,
     boardFactory: (config) => {
       const board = inner(config);
-      return { ...board, listQueue: () => { polls += 1; return board.listQueue(); } };
+      return { ...board, listCards: () => { polls += 1; return board.listCards(); } };
     },
   });
   const port = await server.listen(0);
@@ -282,23 +287,23 @@ test('the log tells the story: slot transitions, signal and board writes at info
   const id8 = workerId.slice(0, 8);
   const has = (line: string): void => assert.ok(lines.includes(line), `missing "${line}" in:\n${lines.join('\n')}`);
   has('INFO signal: green → yellow'); // boot
-  has('INFO poll queue=1');
+  has('INFO poll cards=1');
   has('INFO signal: yellow → green');
   has(`INFO slot 1: empty → working #1 worker=${id8}`);
-  has('INFO setStatus #I1 → working ok');
-  has(`INFO spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
+  has('INFO setColumn #I1 → In progress ok');
+  has(`INFO spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready column=fila session=new worker=${id8}`);
   has('DEBUG setSignal green');
-  has(`DEBUG effects: setStatus #I1 → working; spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready worker=${id8}`);
+  has(`DEBUG effects: setColumn #I1 → In progress; spawn slot=${slot0(server).id.slice(0, 8)} #1 slug=hive-1-from-ready column=fila session=new worker=${id8}`);
   const session = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: session })).status, 200);
   assert.equal(slot0(server).sessionId, session, 'the route hands the whole payload to the reducer');
   has(`DEBUG hook SessionStart worker=${id8}`);
   has(`INFO slot 1: session=${session} #1 worker=${id8}`);
-  assert.equal(lines.filter((l) => l.includes('session=')).length, 1, 'one line per session');
+  assert.equal(lines.filter((l) => l.includes(`session=${session}`)).length, 1, 'one line per session');
   await openPr(server, workerId);
   has(`DEBUG hook PostToolUse worker=${id8} tool=Bash`);
   has(`INFO slot 1: working → review #1 worker=${id8}`);
-  has('INFO setStatus #I1 → review ok');
+  assert.ok(!lines.some((l) => l.includes('setColumn #I1 → In review')), 'a PR writes nothing');
   assert.ok(!lines.some((l) => l.includes('gh pr create')), 'tool_input never reaches the log');
   assert.ok(!lines.some((l) => l.includes('pull/9')), 'tool_response never reaches the log');
   assert.ok(!lines.some((l) => l.startsWith('ERROR')), lines.filter((l) => l.startsWith('ERROR')).join('\n'));
@@ -308,7 +313,7 @@ test('POST /setup re-reads logLevel from hive.config.json and switches the logge
   const { log, lines } = fakeLog();
   const { base, repo, port } = await start(t, BODY, log);
   assert.ok(lines.includes('LEVEL info'), 'the first save activates the default level');
-  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info`));
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=info columns=fila(1)`));
   assert.ok(lines.includes('INFO setup saved'));
   assert.ok(lines.includes(`INFO listening port=${port}`));
   const file = join(repo, 'hive.config.json');
@@ -317,7 +322,7 @@ test('POST /setup re-reads logLevel from hive.config.json and switches the logge
   const { maxConcurrent: _omitted, ...formBody } = BODY; // the form re-save: no logLevel in the body
   assert.equal((await postJson(`${base}/setup`, formBody)).status, 200);
   assert.ok(lines.includes('LEVEL debug'), lines.filter((l) => l.startsWith('LEVEL')).join('\n'));
-  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug`));
+  assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug columns=fila(1)`));
   assert.equal((JSON.parse(await readFile(file, 'utf8')) as { logLevel: string }).logLevel, 'debug', 'the save keeps the level it read');
 });
 
@@ -383,61 +388,89 @@ test('without a readPlanLimits dep the server never reads the plan limits and lo
   assert.ok(!lines.some((l) => l.includes('plan limits')), lines.join('\n'));
 });
 
-test('POST /queue/:itemId/start under yellow opens the task in the pool with its slug, marked manualStart; 404 for a task not in the queue, 409 before the setup', async (t) => {
+test('POST /cards/:id/start under yellow opens the card in the pool with its slug, marked manualStart; 404 for an unknown card, 409 before the setup', async (t) => {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
   const { spawn, workers } = fakeSpawn();
   const server = createServer({ repo, boardFactory: fakeBoardFactory().factory, spawnWorker: spawn });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/queue/I1/start`)).status, 409, 'not configured');
+  assert.equal((await postJson(`${base}/cards/I1/start`)).status, 409, 'not configured');
   assert.equal((await postJson(`${base}/setup`, { ...BODY, maxConcurrent: 2 })).status, 200); // boot opens under yellow: I1 queued, nothing spawned
   assert.equal(server.getState()?.signal, 'yellow');
-  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['1']);
+  assert.deepEqual(server.getState()?.cards.filter((c) => !c.slotId).map((c) => c.task.id), ['1']);
   assert.equal(workers.length, 0);
-  const missing = await postJson(`${base}/queue/nope/start`);
+  const missing = await postJson(`${base}/cards/nope/start`);
   assert.equal(missing.status, 404);
-  assert.deepEqual(await missing.json(), { error: 'task não está na fila' });
-  assert.deepEqual(await json(postJson(`${base}/queue/I1/start`)), { ok: true });
+  assert.deepEqual(await missing.json(), { error: 'card desconhecido' });
+  assert.deepEqual(await json(postJson(`${base}/cards/I1/start`)), { ok: true });
   const slot = slot0(server);
   assert.equal(slot.status, 'working');
   assert.deepEqual(slot.lastEvent, { kind: 'manualStart' });
   assert.equal(workers.length, 1, 'the spawn ran before the answer');
   assert.equal(workers[0].launch.slug, 'hive-1-from-ready');
   assert.equal(workers[0].launch.workerId, slot.workerId);
-  assert.deepEqual(server.getState()?.queue, []);
+  assert.equal(server.getState()?.cards.filter((c) => !c.slotId).length, 0);
   assert.equal(server.getState()?.signal, 'yellow', 'the signal is untouched');
   assert.equal(server.getState()?.maxConcurrent, 2, 'a free slot: nothing to raise');
 });
 
-test('POST /queue/:itemId/start is 409 for a blocked task and, without a free slot, unless raiseMax is true: then the max rises, persists and the worker opens', async (t) => {
+test('POST /cards/:id/start is 409 for a blocked card and, without a free slot, unless raiseMax is true: then the max rises, persists and the worker opens', async (t) => {
   const { log, lines } = fakeLog();
   const { base, repo, server, workers } = await start(t, BODY, log); // 1 slot, I1 working
   const blocked = { itemId: 'I2', id: '2', title: 'blocked', body: '', url: 'https://github.com/acme/r/issues/2', blockedBy: ['1'] };
   const free = { itemId: 'I3', id: '3', title: 'free', body: '', url: 'https://github.com/acme/r/issues/3' };
-  await server.dispatch({ type: 'poll', tasks: [blocked, free] }); // I1 stays in its slot; no free slot, so nothing spawns
-  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['2', '3']);
-  const refused = await postJson(`${base}/queue/I2/start`, { raiseMax: true });
+  await server.dispatch({ type: 'poll', cards: [{ task: { itemId: 'I1', id: '1', title: 'from Ready', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }, { task: blocked, column: 'Ready' }, { task: free, column: 'Ready' }] }); // I1 stays in its slot; no free slot, so nothing spawns
+  assert.deepEqual(server.getState()?.cards.filter((c) => !c.slotId).map((c) => c.task.id), ['2', '3']);
+  const refused = await postJson(`${base}/cards/I2/start`, { raiseMax: true });
   assert.equal(refused.status, 409);
-  assert.deepEqual(await refused.json(), { error: 'task bloqueada por 1' });
-  const noSlot = await postJson(`${base}/queue/I3/start`);
+  assert.deepEqual(await refused.json(), { error: 'card bloqueado por 1' });
+  const noSlot = await postJson(`${base}/cards/I3/start`);
   assert.equal(noSlot.status, 409);
   assert.deepEqual(await noSlot.json(), { error: 'nenhum slot livre' });
-  assert.equal((await postJson(`${base}/queue/I3/start`, { raiseMax: 'yes' })).status, 409, 'only a literal true raises the max');
+  assert.equal((await postJson(`${base}/cards/I3/start`, { raiseMax: 'yes' })).status, 409, 'only a literal true raises the max');
   assert.equal(workers.length, 1);
   assert.ok(!lines.some((l) => l.startsWith('DEBUG start')), 'a refusal never reaches the reducer');
-  assert.deepEqual(await json(postJson(`${base}/queue/I3/start`, { raiseMax: true })), { ok: true });
+  assert.deepEqual(await json(postJson(`${base}/cards/I3/start`, { raiseMax: true })), { ok: true });
   assert.equal(server.getState()?.maxConcurrent, 2);
   assert.equal(server.getState()?.slots.length, 2);
   const opened = server.getState()!.slots[1];
-  assert.equal(opened.task?.id, '3');
+  assert.equal(opened.cardId, 'I3');
   assert.deepEqual(opened.lastEvent, { kind: 'manualStart' });
   assert.equal(workers.length, 2);
   assert.equal(workers[1].launch.slug, 'hive-3-free');
-  assert.deepEqual(server.getState()?.queue.map((task) => task.id), ['2']);
+  assert.deepEqual(server.getState()?.cards.filter((c) => !c.slotId).map((c) => c.task.id), ['2']);
   assert.ok(lines.includes('DEBUG start #I3 raiseMax=true'), lines.filter((l) => l.includes('start')).join('\n'));
   assert.ok(lines.includes(`INFO slot 2: empty → working #3 worker=${opened.workerId!.slice(0, 8)}`), 'the slot that appeared occupied is a transition');
   const saved = JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State;
   assert.equal(saved.maxConcurrent, 2, 'the raised max survives a restart');
   assert.equal(server.getState()?.error, undefined);
+});
+
+test('POST /cards/:id/close and /keep answer a missing card: close kills and removes it, keep makes it an orphan; 404 unknown, 409 while it is still on the board', async (t) => {
+  const { base, server, workers } = await start(t); // I1 running
+  assert.equal((await postJson(`${base}/cards/nope/close`)).status, 404);
+  const early = await postJson(`${base}/cards/I1/keep`);
+  assert.equal(early.status, 409);
+  assert.deepEqual(await early.json(), { error: 'card ainda está no board' });
+  await server.dispatch({ type: 'poll', cards: [] }); // the board no longer lists it
+  assert.equal(server.getState()?.cards[0].missing, true);
+  assert.deepEqual(await json(postJson(`${base}/cards/I1/keep`)), { ok: true });
+  assert.deepEqual([server.getState()?.cards[0].orphan, server.getState()?.cards[0].missing], [true, undefined]);
+  assert.equal(workers[0].killed, 0);
+  const again = await start(t);
+  await again.server.dispatch({ type: 'poll', cards: [] });
+  assert.deepEqual(await json(postJson(`${again.base}/cards/I1/close`)), { ok: true });
+  assert.equal(again.workers[0].killed, 1);
+  assert.deepEqual(again.server.getState()?.cards, []);
+  assert.equal(slot0(again.server).status, 'empty');
+});
+
+test('POST /setup with different columns dispatches setColumns: the state follows and a stopped card in a vanished column is dropped until the next poll re-enters it', async (t) => {
+  const { base, server } = await start(t, { ...BODY, maxConcurrent: 0 }); // I1 stopped in fila
+  assert.equal(server.getState()?.cards[0].column, 'fila');
+  const columns = [{ name: 'triagem', weight: 2, from: ['Ready'], prompt: 'x' }];
+  assert.equal((await postJson(`${base}/setup`, { ...BODY, maxConcurrent: 0, columns })).status, 200);
+  assert.deepEqual(server.getState()?.columns, columns);
+  assert.equal(server.getState()?.cards[0].column, 'triagem', 'reconfigure polls: the card came back through the new from');
 });

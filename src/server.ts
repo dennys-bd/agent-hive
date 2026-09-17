@@ -8,20 +8,22 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createBoard } from './board.js';
 import { listProjects } from './boards/github.js';
 import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js';
-import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
+import { cardOf, citedColumns } from './cards.js';
+import { CONFIG_FILE, DEFAULT_CONFIG, loadConfigOrLegacy, parseBoard, parseConfig } from './config.js';
 import { HIVE_DIR, prepareHiveDir } from './hooks-settings.js';
-import { createLogger, describeChanges, describeEffect, describeEvent, type Logger } from './log.js';
-import { isBlocked, isChildSession, isFree, reduce, SIGNALS } from './orchestrator.js';
+import { createLogger, describeChanges, describeColumns, describeEffect, describeEvent, type Logger } from './log.js';
+import { isChildSession, reduce, SIGNALS } from './orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
-import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { registerCardRoutes } from './server-cards.js';
+import { killStray, renderPrompt, spawnWorker, workerArgs, writePrompt } from './spawn.js';
 import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, isWorkerTranscript, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  Board, BoardSpec, Config, Effect, EventsPayload, HiveEvent, HookPayload, Language, PlanLimitsReader, SetupBody, SetupInfo, SetupResult, Signal, Slot,
   SpawnWorker, State,
 } from './types.js';
 
@@ -42,11 +44,9 @@ export const UI_HEADER = 'x-hive-ui'; // every dashboard POST carries it; the va
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
-const NOT_QUEUED_MESSAGE = 'task não está na fila';
-const NO_FREE_SLOT_MESSAGE = 'nenhum slot livre';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
-export type BoardFactory = (config: Config) => Board;
+export type BoardFactory = (spec: BoardSpec) => Board;
 
 export interface Runtime {
   config: Config;
@@ -86,19 +86,12 @@ interface Live {
   state: State;
 }
 
-/** A blank template in the form means "keep what I have"; anything else must be a string (parseConfig validates). */
-function promptTemplateFrom(body: Partial<SetupBody>, current: Config | undefined): unknown {
-  if (body.promptTemplate === undefined) return current?.promptTemplate;
-  if (typeof body.promptTemplate === 'string' && body.promptTemplate.trim() === '') return current?.promptTemplate;
-  return body.promptTemplate;
-}
-
-// epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or status.
-const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, a.status, a.epics], [b.board, b.status, b.epics]);
+// epics is baked into the GitHub adapter at creation, so a change needs a new instance like a change of board or columns.
+const sameBoard = (a: Config, b: Config): boolean => isDeepStrictEqual([a.board, citedColumns(a.columns), a.epics], [b.board, citedColumns(b.columns), b.epics]);
 
 /** Boot-only orphan defense: a worker of a previous Hive may still hold a worktree. Every occupied slot is given as dead right after. */
 export async function killStrays(state: State): Promise<void> {
-  const slugs = state.slots.flatMap((s) => (s.status !== 'empty' && s.slug ? [s.slug] : []));
+  const slugs = state.cards.flatMap((c) => (c.slotId ? [c.slug] : []));
   await Promise.all(slugs.map((slug) => killStray(slug)));
 }
 
@@ -112,20 +105,11 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
   return { type, owner, path, number: typeof number === 'string' && number !== '' ? Number(number) : number };
 }
 
-/** Why a manual start would be a no-op in the reducer, as the answer the route gives; undefined when it can go through. */
-function startRefusal(state: State, itemId: string, raiseMax: boolean): { status: number; message: string } | undefined {
-  const task = state.queue.find((t) => t.itemId === itemId);
-  if (!task) return { status: HTTP_NOT_FOUND, message: NOT_QUEUED_MESSAGE };
-  if (isBlocked(task)) return { status: HTTP_CONFLICT, message: `task bloqueada por ${(task.blockedBy ?? []).join(', ')}` };
-  if (!raiseMax && !state.slots.some(isFree)) return { status: HTTP_CONFLICT, message: NO_FREE_SLOT_MESSAGE };
-  return undefined;
-}
-
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const log = deps.log ?? createLogger(join(repo, HIVE_DIR));
   const systemLanguage = deps.systemLanguage ?? 'en';
-  const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo, log }));
+  const boardFactory: BoardFactory = deps.boardFactory ?? ((spec) => createBoard(spec, { repo, log }));
   const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
@@ -186,10 +170,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = live?.runtime;
     if (!runtime) return;
     switch (effect.type) {
-      case 'setStatus':
-        await runtime.board.setStatus(effect.itemId, effect.key)
+      case 'setColumn':
+        await runtime.board.setColumn(effect.itemId, effect.column)
           .then(() => log.info(`${describeEffect(effect)} ok`))
-          .catch((err) => fail(`board.setStatus(${effect.key})`, err));
+          .catch((err) => fail(`board.setColumn(${effect.column})`, err));
         return;
       case 'kill':
         log.info(describeEffect(effect));
@@ -198,21 +182,21 @@ export function createServer(deps: ServerDeps): HiveServer {
         return;
       case 'spawn':
         log.info(describeEffect(effect));
-        await spawn(runtime, effect.slot).catch((err) => fail(`spawn ${effect.slot.slug}`, err));
+        await spawn(runtime, effect).catch((err) => fail(`spawn ${effect.card.slug}`, err));
         return;
     }
   }
 
-  async function spawn(runtime: Runtime, slot: Slot): Promise<void> {
-    if (!slot.task || !slot.slug || !slot.workerId) return;
+  async function spawn(runtime: Runtime, effect: Extract<Effect, { type: 'spawn' }>): Promise<void> {
+    const { slot: { workerId }, card, column, session } = effect;
+    if (!workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
-    const { workerId } = slot;
-    const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task)); // the command line reads it
+    const promptPath = await writePrompt(promptsDir, card.slug, renderPrompt(column.prompt ?? '', card.task)); // the command line reads it
     pool.start({
       workerId,
-      launch: { mode: config.workers, workerId, slug: slot.slug, repo, port: config.port, hooksPath, promptPath, claudeArgs: config.claudeArgs },
+      launch: { mode: config.workers, workerId, slug: card.slug, repo, port: config.port, hooksPath, promptPath, args: workerArgs(card, column, session, config.claudeArgs) },
       onExit: () => void dispatch({ type: 'exit', workerId }),
-      onError: (message) => void fail(`worker ${slot.slug}`, new Error(message)), // tmux / iTerm missing or refused: the error bar
+      onError: (message) => void fail(`worker ${card.slug}`, new Error(message)), // tmux / iTerm missing or refused: the error bar
     });
   }
 
@@ -220,11 +204,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = live?.runtime;
     if (!runtime) return;
     try {
-      const tasks = await runtime.board.listQueue();
-      log.info(`poll queue=${tasks.length}`);
-      await dispatch({ type: 'poll', tasks });
+      const cards = await runtime.board.listCards();
+      log.info(`poll cards=${cards.length}`);
+      await dispatch({ type: 'poll', cards });
     } catch (err) {
-      await fail('board.listQueue', err);
+      await fail('board.listCards', err);
     }
     await refreshQuota(runtime.board); // after every real poll, success or failure: the reset time matters most when the limit just hit
   }
@@ -274,7 +258,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // SessionStart cannot turn GET /slots/:id/output into a reader of any `.jsonl` the Hive can open. Dropped, not rejected:
   // the rest of the hook (status, branch) still applies.
   function scopeTranscript(workerId: string, payload: HookPayload): HookPayload {
-    const slug = slotOf(workerId)?.slug;
+    const slot = slotOf(workerId);
+    const slug = slot && live ? cardOf(live.state.cards, slot)?.slug : undefined;
     if (payload.transcript_path === undefined || (slug !== undefined && isWorkerTranscript(payload.transcript_path, repo, slug))) return payload;
     return { ...payload, transcript_path: undefined };
   }
@@ -297,7 +282,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const board = current && sameBoard(current.config, effective) ? current.board : boardFactory(effective);
     await board.resolveFields();
     log.setLevel(effective.logLevel); // read from the file on every save: a hand edit switches the level without a restart
-    log.info(`config port=${boundPort} board=${effective.board.type} workers=${effective.workers} logLevel=${effective.logLevel}`);
+    log.info(`config port=${boundPort} board=${effective.board.type} workers=${effective.workers} logLevel=${effective.logLevel} columns=${describeColumns(effective.columns)}`);
     return { config: effective, board, hiveDir, hooksPath, promptsDir };
   }
 
@@ -305,9 +290,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live) throw new Error('Hive já configurado: use reconfigure()');
     const runtime = await activate(config);
     const saved = await loadState(runtime.hiveDir, config.maxConcurrent);
-    // Empty queue on boot: the boot event's fill would otherwise spawn off a stale pre-restart
-    // queue. The poll() below refills from the board, which is the source of truth.
-    live = { runtime, state: { ...saved, queue: [] } };
+    // columns come from the config; cards from the saved state are re-listed by the poll() below, which is the source of truth
+    live = { runtime, state: { ...saved, columns: config.columns } };
     await killStrays(saved);
     await dispatch({ type: 'boot' });
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
@@ -324,6 +308,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!isDeepStrictEqual(live.state.usageRules, config.usageRules)) {
       await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     }
+    if (!isDeepStrictEqual(live.state.columns, config.columns)) await dispatch({ type: 'setColumns', columns: config.columns });
     await poll();
   }
 
@@ -360,15 +345,12 @@ export function createServer(deps: ServerDeps): HiveServer {
     next();
   });
 
-  // Answers only after the dispatch: the worker's hook blocks until curl returns, so the state (a PR seen on
-  // PostToolUse, above all) is applied before the worker goes on. A Stop with the PR open is the end of the task:
-  // the session is killed after the answer and its exit frees the slot. Unknown to the pool: a previous Hive's worker, nothing to do.
+  // Answers only after the dispatch: the worker's hook blocks until curl returns, so a PR seen on PostToolUse is applied before the worker goes on.
   app.post('/hooks/event', async (req: Request, res: Response) => {
     const workerId = req.header('x-hive-worker');
     const raw = req.body as HookPayload | undefined;
     const payload = workerId && raw?.hook_event_name ? scopeTranscript(workerId, raw) : raw;
-    // Computed once against the slot as it stands: a subagent/teammate Stop or SessionEnd must neither read the
-    // transcript nor trigger the post-PR kill below, same as the reducer ignores it (#24)
+    // Computed once against the slot as it stands: a subagent/teammate Stop or SessionEnd must not read the transcript, same as the reducer ignores it (#24)
     const isChild = workerId !== undefined && payload !== undefined && isChildSession(slotOf(workerId), payload);
     if (workerId && payload?.hook_event_name) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
@@ -378,7 +360,6 @@ export function createServer(deps: ServerDeps): HiveServer {
       log.debug(`hook ignored: ${workerId ? 'no event name' : 'no worker id'}`);
     }
     res.sendStatus(200);
-    if (workerId && payload?.hook_event_name === 'Stop' && !isChild && slotOf(workerId)?.status === 'review') pool.kill(workerId);
   });
 
   // The worker's command line ends with a curl here (both modes). Unknown to the pool (started by a previous Hive): free the slot ourselves.
@@ -434,15 +415,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
 
   app.get('/setup/columns', async (req: Request, res: Response) => {
-    let config: Config;
+    let spec: BoardSpec;
     try {
-      config = parseConfig({ board: boardFromQuery(req.query) }); // defaults fill the rest; only the board matters here
+      spec = { board: parseBoard(boardFromQuery(req.query), 'board'), columns: [], epics: DEFAULT_CONFIG.epics }; // only the board matters here
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });
       return;
     }
     try {
-      res.json(await boardFactory(config).setupOptions());
+      res.json(await boardFactory(spec).setupOptions());
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
@@ -460,17 +441,15 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function saveSetup(body: Partial<SetupBody>, res: Response): Promise<void> {
     let config: Config;
     try {
-      const current = await loadConfigIfPresent(repo);
+      const current = await loadConfigOrLegacy(repo);
       config = parseConfig({
-        board: body.board,
-        status: body.status,
+        board: body.board, columns: body.columns ?? current?.columns,
         maxConcurrent: body.maxConcurrent ?? current?.maxConcurrent,
         port: current?.port,
         claudeArgs: current?.claudeArgs,
         workers: body.workers ?? current?.workers,
         epics: body.epics ?? current?.epics,
         logLevel: current?.logLevel, // never in the body: the file is the switch
-        promptTemplate: promptTemplateFrom(body, current),
         budget: body.budget ?? current?.budget,
         usageRules: body.usageRules ?? current?.usageRules,
         language: body.language ?? current?.language, // the form always sends it; an API caller that omits it keeps the saved one
@@ -562,21 +541,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   });
 
-  // The human override from the queue panel. The checks answer what the reducer would ignore in silence, so the UI is never left
-  // without an answer; a race between the check and the dispatch is a no-op in the reducer, never a spawn it should not do.
-  app.post('/queue/:itemId/start', async (req: Request, res: Response) => {
-    const current = requireLive(res);
-    if (!current) return;
-    const itemId = req.params.itemId as string;
-    const raiseMax = (req.body as { raiseMax?: unknown } | undefined)?.raiseMax === true; // only a literal true raises the max
-    const refusal = startRefusal(current.state, itemId, raiseMax);
-    if (refusal) {
-      res.status(refusal.status).json({ error: refusal.message });
-      return;
-    }
-    await dispatch({ type: 'start', itemId, raiseMax });
-    res.json({ ok: true });
-  });
+  registerCardRoutes(app, { requireLive, dispatch }); // start, close, keep: same host/origin middleware ordering, registered here
 
   app.post('/board/refresh', async (_req: Request, res: Response) => {
     if (!requireLive(res)) return;
@@ -586,6 +551,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.get('/', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'index.html')));
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
+  app.get('/ui/board.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'board.js')));
   app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
   app.get('/ui/highlight.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'highlight.js')));
   app.get('/ui/i18n.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'i18n.js')));

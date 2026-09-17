@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { spawnItermWorker } from './spawn-iterm.js';
 import { spawnTmuxWorker } from './spawn-tmux.js';
-import type { SpawnWorker, Task } from './types.js';
+import type { Card, Column, SessionPolicy, SpawnWorker, Task } from './types.js';
 
 const execFileAsync = promisify(execFile);
 const NO_MATCH_EXIT = 1;
@@ -20,6 +20,14 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
   const path = join(promptsDir, `${slug}.md`);
   await writeFile(path, text);
   return path;
+}
+
+/** The argv the reducer decided: the card's worktree on every run, the global claudeArgs, the column model, then the session id as
+ * `--session-id` (new: the Hive generated it) or `--resume` (continue: the card's own). No id at all leaves the choice to claude. */
+export function workerArgs(card: Pick<Card, 'slug' | 'sessionId'>, column: Pick<Column, 'model'>, session: SessionPolicy, claudeArgs: string[]): string[] {
+  const model = column.model === undefined ? [] : ['--model', column.model];
+  const id = card.sessionId === undefined ? [] : [session === 'continue' ? '--resume' : '--session-id', card.sessionId];
+  return [`--worktree=${card.slug}`, ...claudeArgs, ...model, ...id];
 }
 
 /**

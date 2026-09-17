@@ -3,13 +3,12 @@ import type { LogLevel } from './log.js';
 export type Language = 'pt' | 'en';
 
 export type Status = 'empty' | 'working' | 'waiting' | 'review';
-export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
+export type SlotEventKind = 'starting' | 'manualStart' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'turn';
 /** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
 export interface SlotEvent {
   kind: SlotEventKind;
   detail?: string;
 }
-export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
 export interface Budget {
@@ -69,30 +68,61 @@ export interface Task {
   blockedBy?: string[]; // ids of blockers still open, per the adapter; absent or empty = free to start
 }
 
+export type SessionPolicy = 'new' | 'continue';
+
+/** One stage of the Hive's own board; the array order is the pipeline order. */
+export interface Column {
+  name: string;
+  prompt?: string; // template ({id} {number} {title} {body} {url}); absent = no action, the card just sits here
+  session?: SessionPolicy; // continue = --resume the card's session; absent = new
+  model?: string; // --model
+  weight: number; // higher wins a free slot; ties by board order
+  from: string[]; // board columns whose cards enter here (new cards, or a human move)
+  onStart?: string; // board column the card is moved to when the command starts
+  onFinish?: string; // idem when the command ends
+}
+
+/** A board task inside the Hive: it exists while it sits in a column, running or not. */
+export interface Card {
+  task: Task;
+  column: string;
+  boardColumn: string; // where the Hive last saw or left it on the board; the poll compares against it
+  slug: string;
+  worktree?: string;
+  branch?: string;
+  sessionId?: string; // set by the reducer at spawn (new) or kept (continue); what --resume takes
+  prUrl?: string;
+  slotId?: string; // present while the command runs
+  missing?: true; // gone from the board; waits for close or keep
+  orphan?: true; // kept after going missing: runs to the end, no board writes, ignored by the poll
+}
+
+/** A task as the adapter lists it: which board column it is in, in board order. */
+export interface BoardCard {
+  task: Task;
+  column: string;
+}
+
 export interface Slot {
   id: string;
   workerId?: string; // uuid per spawn; stale exit/hook signals from a previous occupant are ignored
+  cardId?: string; // the task.itemId of the card running here
   status: Status;
   draining?: boolean;
-  paused?: boolean; // stopped at a Stop hook under a red signal; cleared when the signal leaves red or the worker acts again
   tokens?: number; // session total at the last Stop / SessionEnd; the next delta is measured against it
-  task?: Task;
-  slug?: string;
-  worktree?: string;
-  branch?: string;
   startedAt?: string;
   lastEvent?: SlotEvent;
-  prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
-  sessionId?: string; // Claude Code session id from SessionStart; what `claude --resume` takes. First one wins (#24)
+  sessionId?: string; // Claude Code session id from SessionStart; must coincide with Card.sessionId. First one wins (#24)
 }
 
 export interface State {
   signal: Signal; // runtime gate for new jobs; lives here, not in the config, so a red set by hand survives a restart
   maxConcurrent: number;
   slots: Slot[];
-  queue: Task[];
+  columns: Column[]; // copied from Config.columns; the pipeline order
+  cards: Card[]; // every task the Hive holds, in board order
   usage: UsageSample[]; // last 24 h, oldest first; one sample per worker turn
   budget: Budget; // copied from Config.budget by setBudget
   usageRules: UsageRule[]; // copied from Config.usageRules by setUsageRules
@@ -114,11 +144,10 @@ export interface Config {
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
-  status: Record<StatusKey, string>;
+  columns: Column[]; // the Hive's board, in pipeline order
   maxConcurrent: number;
   port: number;
   claudeArgs: string[];
-  promptTemplate: string;
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
   usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
 }
@@ -137,18 +166,21 @@ export interface HookPayload {
 
 export type HiveEvent =
   | { type: 'boot' }
-  | { type: 'poll'; tasks: Task[] }
+  | { type: 'poll'; cards: BoardCard[] }
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
+  | { type: 'setColumns'; columns: Column[] }
   | { type: 'rateLimits'; workerId?: string; rateLimits: RateLimits } // no workerId: the Hive's own reading
   | { type: 'boardQuota'; quota: BoardQuota }
   | { type: 'hook'; workerId: string; payload: HookPayload; branch?: string; tokens?: number }
   | { type: 'exit'; workerId: string }
   | { type: 'kill'; slotId: string }
   | { type: 'error'; message?: string }
-  | { type: 'start'; itemId: string; raiseMax?: boolean }; // the human override from the queue panel: past the signal, the cap and the budget
+  | { type: 'start'; itemId: string; raiseMax?: boolean } // the human override on a stopped card: past the signal, the cap and the budget
+  | { type: 'closeCard'; cardId: string } // fechar on a missing card
+  | { type: 'keepCard'; cardId: string }; // manter on a missing card
 
 export interface ProjectSummary {
   number: number;
@@ -157,8 +189,8 @@ export interface ProjectSummary {
 }
 
 export type Effect =
-  | { type: 'spawn'; slot: Slot }
-  | { type: 'setStatus'; itemId: string; key: StatusKey }
+  | { type: 'spawn'; slot: Slot; card: Card; column: Column; session: SessionPolicy } // session already resolved: continue without an id runs as new
+  | { type: 'setColumn'; itemId: string; column: string }
   | { type: 'kill'; slug: string; workerId: string };
 
 export interface SetupInfo {
@@ -174,11 +206,10 @@ export interface SetupInfo {
 
 export interface SetupBody {
   board: BoardConfig;
-  status: Record<StatusKey, string>;
+  /** The form always sends it; an API caller that omits it keeps the current columns (or the legacy proposal). */
+  columns?: Column[];
   /** Optional; the form never sends it. Seeds the first boot; after that the header (POST /config) owns it. */
   maxConcurrent?: number;
-  /** Optional; blank or missing keeps the current template (or the default on first setup). */
-  promptTemplate?: string;
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current budget. */
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */
@@ -201,12 +232,15 @@ export type EventsPayload = State | { configured: false };
 
 /** What every board adapter implements; `src/board.ts` picks one by `config.board.type`. */
 export interface Board {
-  resolveFields(): Promise<void>; // validates the config against the source (options / table exist)
-  listQueue(): Promise<Task[]>; // tasks in status.queue, in source order
-  setStatus(itemId: string, key: StatusKey): Promise<void>;
+  resolveFields(): Promise<void>; // every column name the config cites exists on the board
+  listCards(): Promise<BoardCard[]>; // tasks in any cited column, in board order
+  setColumn(itemId: string, column: string): Promise<void>;
   setupOptions(): Promise<string[]>; // status values available, for the setup form
   quota?(): Promise<BoardQuota | undefined>; // the polling account's API quota; a board without one (markdown) leaves it out
 }
+
+/** What a board adapter is built from; the rest of the config is not its business. */
+export type BoardSpec = Pick<Config, 'board' | 'columns' | 'epics'>;
 
 /** `execFile` promisified. Every spawner and the terminal opener take one, so tests never run a command. */
 export type Exec = (file: string, args: string[], opts?: { env?: NodeJS.ProcessEnv }) => Promise<{ stdout: string }>;
@@ -231,7 +265,7 @@ export interface WorkerLaunch {
   port: number;
   hooksPath: string;
   promptPath: string; // the rendered prompt on disk: the command line reads it with $(cat …)
-  claudeArgs: string[];
+  args: string[]; // the claude argv after --settings: worktree, claudeArgs, model, session (workerArgs)
 }
 
 export type SpawnWorker = (launch: WorkerLaunch, handlers: WorkerHandlers) => WorkerHandle;
