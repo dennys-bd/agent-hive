@@ -142,3 +142,21 @@ export interface Board {
   setStatus(itemId: string, key: StatusKey): Promise<void>;
   setupOptions(): Promise<string[]>; // status values available, for the setup form
 }
+
+/** What the server injects so tests never open a process. */
+export interface WorkerHandlers {
+  onLine(line: string): void; // one stdout line, or one stderr line prefixed `stderr: `
+  onExit(): void; // once, on process exit or spawn error
+}
+
+export interface WorkerHandle {
+  send(text: string): void; // one `user` message on stdin
+  end(): void; // close stdin: the session ends after the current turn
+  kill(): void; // SIGTERM
+}
+
+export type SpawnWorker = (
+  argv: string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv },
+  handlers: WorkerHandlers,
+) => WorkerHandle;
