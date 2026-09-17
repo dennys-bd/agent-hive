@@ -1,7 +1,5 @@
-import { formatOutput, OUTPUT_LINES, parseLine, type TranscriptLine } from './transcript.js';
+import { parseLine } from './transcript.js';
 import type { SpawnWorker, WorkerHandle, WorkerLaunch } from './types.js';
-
-export const RESULT_LINE = '✔ turno encerrado';
 
 export interface StartWorker {
   workerId: string;
@@ -18,21 +16,13 @@ export interface WorkerPool {
   exit(workerId: string): boolean; // an exit reported from outside (the tab's curl): same as the handle exiting
   focus(workerId: string): Promise<boolean>; // false when unknown or the handle has no tab
   killAll(): void;
-  output(workerId: string): string[]; // copy of the last OUTPUT_LINES formatted lines; [] when unknown
   has(workerId: string): boolean;
 }
 
 interface Entry {
   handle: WorkerHandle;
-  lines: string[];
   ended: boolean; // stdin closed: the process is on its way out, nothing more can be sent
   exit(): void;
-}
-
-// The stdout ring: stderr (not JSON) passes through and a `result` gets its mark; the rest is what the transcript shows.
-function ringLines(line: string, parsed: TranscriptLine | undefined): string[] {
-  if (!parsed) return [line];
-  return parsed.type === 'result' ? [RESULT_LINE] : formatOutput(line);
 }
 
 /** In-memory registry of live workers keyed by workerId. Process state, not domain state: it is never persisted. */
@@ -50,15 +40,13 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
     };
     const handle = spawn(o.launch, {
       onLine: (line) => {
-        const entry = entries.get(workerId);
-        if (!entry) return; // a line after the exit: nobody is watching this worker any more
+        if (!entries.has(workerId)) return; // a line after the exit: nobody is watching this worker any more
         const parsed = parseLine(line);
-        entry.lines = [...entry.lines, ...ringLines(line, parsed)].slice(-OUTPUT_LINES);
         if (parsed?.type === 'result') o.onResult(workerId, String(parsed.result ?? ''));
       },
       onExit,
     });
-    if (!exited) entries.set(workerId, { handle, lines: [], ended: false, exit: onExit }); // a spawner may fail before returning
+    if (!exited) entries.set(workerId, { handle, ended: false, exit: onExit }); // a spawner may fail before returning
   }
 
   function call(workerId: string, action: (entry: Entry) => void, unlessEnded = false): boolean {
@@ -86,7 +74,6 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
     killAll: () => {
       for (const { handle } of entries.values()) handle.kill();
     },
-    output: (workerId) => [...(entries.get(workerId)?.lines ?? [])],
     has: (workerId) => entries.has(workerId),
   };
 }

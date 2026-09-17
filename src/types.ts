@@ -73,6 +73,7 @@ export interface Slot {
   lastEvent?: string;
   prUrl?: string;
   question?: string;
+  transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
 }
 
 export interface State {

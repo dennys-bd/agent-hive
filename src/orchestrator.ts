@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Effect, HiveEvent, HookPayload, RateLimits, Signal, Slot, State, Status, Task, UsageLimits, UsageRule } from './types.js';
-import { hasBudget, pruneUsage } from './usage.js';
+import { hasBudget, isTranscriptPath, pruneUsage } from './usage.js';
 import { applyUsageRules, worstSignal } from './usage-rules.js';
 
 export interface Reduced {
@@ -234,8 +234,8 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
   // Only the server sets `tokens` (Stop / SessionEnd): the sample lands first, then the event applies on top of it
   const state = tokens === undefined ? initial : recordUsage(initial, slot, tokens);
   switch (p.hook_event_name) {
-    case 'SessionStart':
-      return patch(state, workerId, { worktree: p.cwd, branch });
+    case 'SessionStart': // the transcript path is kept only when it is what Claude Code sends: an absolute .jsonl
+      return patch(state, workerId, { worktree: p.cwd, branch, transcriptPath: isTranscriptPath(p.transcript_path) ? p.transcript_path : undefined });
     case 'UserPromptSubmit':
       return patch(state, workerId, { status: activeStatus(slot), question: undefined, paused: undefined, lastEvent: 'prompt enviado' });
     case 'PreToolUse':

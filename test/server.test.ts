@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -9,7 +9,6 @@ import { prepareHiveDir } from '../src/hooks-settings.js';
 import type { Logger } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { RESULT_LINE } from '../src/workers.js';
 import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
 import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
@@ -102,14 +101,20 @@ test('POST /slots/:id/input writes to the worker; blank text is 400 and an unkno
   assert.equal(workers[0].sent.length, 1);
 });
 
-test('GET /slots/:id/output returns the formatted lines the worker emitted; an unknown slot is 404', async (t) => {
-  const { base, server, workers } = await start(t);
-  const id = slot0(server).id;
+test('GET /slots/:id/output is the formatted tail of the transcript SessionStart pointed at; [] before the hook or when unreadable; unknown slot is 404', async (t) => {
+  const { base, repo, server } = await start(t);
+  const { id, workerId } = slot0(server);
   assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] });
-  line(workers[0], { type: 'assistant', message: { content: [{ type: 'text', text: 'lendo o issue' }] } });
-  workers[0].handlers.onLine('stderr: aviso');
-  line(workers[0], { type: 'result' });
-  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', 'stderr: aviso', RESULT_LINE] });
+  const transcriptPath = join(repo, 'session.jsonl');
+  await writeFile(transcriptPath, [
+    JSON.stringify({ type: 'user', message: { content: 'faz a task' } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'lendo o issue' }, { type: 'tool_use', name: 'Bash', input: { command: 'gh issue view 1' } }] } }),
+    '',
+  ].join('\n'));
+  await server.dispatch({ type: 'hook', workerId: workerId!, payload: { hook_event_name: 'SessionStart', cwd: repo, transcript_path: transcriptPath } });
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: ['lendo o issue', '▶ Bash: gh issue view 1'] });
+  await rm(transcriptPath);
+  assert.deepEqual(await json(fetch(`${base}/slots/${id}/output`)), { lines: [] }, 'an unreadable transcript is an empty excerpt, not an error');
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });
 

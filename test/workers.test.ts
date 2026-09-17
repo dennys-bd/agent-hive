@@ -1,7 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWorkerPool, RESULT_LINE } from '../src/workers.js';
-import { OUTPUT_LINES } from '../src/transcript.js';
+import { createWorkerPool } from '../src/workers.js';
 import { fakeSpawn, LAUNCH } from './fakes.js';
 
 const noop = (): void => {};
@@ -28,18 +27,6 @@ test('start hands the launch to the spawner (the prompt goes in as the spawner s
   assert.equal(pool.has('W2'), false);
 });
 
-test('output keeps the last 200 formatted lines and returns a copy', () => {
-  const { worker, pool } = started();
-  for (let i = 0; i < OUTPUT_LINES + 5; i += 1) worker.handlers.onLine(`line ${i}`);
-  const lines = pool.output('W1');
-  assert.equal(lines.length, OUTPUT_LINES);
-  assert.equal(lines[0], 'line 5');
-  assert.equal(lines.at(-1), `line ${OUTPUT_LINES + 4}`);
-  lines.push('mutated');
-  assert.equal(pool.output('W1').length, OUTPUT_LINES);
-  assert.deepEqual(pool.output('nope'), []);
-});
-
 test('a result line calls onResult with the worker id and the final text; other lines do not', () => {
   const { worker, results } = started();
   worker.handlers.onLine(assistant({ type: 'text', text: 'oi' }));
@@ -58,7 +45,6 @@ test('exit removes the worker and calls onExit; later calls report it unknown', 
   worker.handlers.onExit();
   assert.deepEqual(exits, ['W1']);
   assert.equal(pool.has('W1'), false);
-  assert.deepEqual(pool.output('W1'), []);
   assert.equal(pool.send('W1', 'x'), false);
   assert.equal(pool.end('W1'), false);
   assert.equal(pool.kill('W1'), false);

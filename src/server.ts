@@ -15,6 +15,7 @@ import { reduce, SIGNALS } from './orchestrator.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { formatRateLimits, parseRateLimits } from './rate-limits.js';
 import { killStray, renderPrompt, spawnWorker, writePrompt } from './spawn.js';
+import { tailTranscript } from './transcript.js';
 import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
@@ -482,7 +483,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
-  app.get('/slots/:id/output', (req: Request, res: Response) => {
+  // The excerpt is the tail of the transcript SessionStart reported, read on every call: nothing is kept in memory.
+  // Unreadable (rotated, not written yet) is an empty excerpt, not an error.
+  app.get('/slots/:id/output', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
     const slot = current.state.slots.find((s) => s.id === req.params.id);
@@ -490,7 +493,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
       return;
     }
-    res.json({ lines: slot.workerId ? pool.output(slot.workerId) : [] });
+    res.json({ lines: slot.transcriptPath ? await tailTranscript(slot.transcriptPath).catch(() => []) : [] });
   });
 
   app.post('/slots/:id/input', (req: Request, res: Response) => {

@@ -114,15 +114,19 @@ test('setMax down drops surplus empty slots', () => {
   assert.equal(state.slots.length, 1);
 });
 
-test('SessionStart records worktree and branch', () => {
+test('SessionStart records worktree, branch and the transcript path; a path that is not an absolute .jsonl is ignored', () => {
   const first = filled(1, 1).state;
   const id = first.slots[0].workerId!;
   const { state } = reduce(first, {
     type: 'hook', workerId: id, branch: 'hive-1-task-1',
-    payload: { hook_event_name: 'SessionStart', cwd: '/repo/.claude/worktrees/hive-1-task-1' },
+    payload: { hook_event_name: 'SessionStart', cwd: '/repo/.claude/worktrees/hive-1-task-1', transcript_path: '/Users/x/.claude/projects/p/abc.jsonl' },
   });
   assert.equal(state.slots[0].worktree, '/repo/.claude/worktrees/hive-1-task-1');
   assert.equal(state.slots[0].branch, 'hive-1-task-1');
+  assert.equal(state.slots[0].transcriptPath, '/Users/x/.claude/projects/p/abc.jsonl');
+  const relative = hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w', transcript_path: 'abc.jsonl' }).state;
+  assert.equal(relative.slots[0].transcriptPath, undefined);
+  assert.equal(hook(first, id, { hook_event_name: 'SessionStart', cwd: '/w' }).state.slots[0].transcriptPath, undefined);
 });
 
 test('Notification of a waiting type turns the slot yellow with the message', () => {
