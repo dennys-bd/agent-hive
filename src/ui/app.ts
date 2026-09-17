@@ -192,32 +192,38 @@ function renderSignal(signal: Signal): void {
   $('signal-hint').textContent = SIGNAL_HINT[signal];
 }
 
-// Every interpolated value is a number, so no escaping is needed.
+// Every interpolated value is a number, so no escaping is needed. The header shows a meter per configured limit
+// (same shape as the plan meters) and nothing without a budget; the raw counter lives in the settings "limites" tab.
 function renderUsage(usage: UsageSample[], budget: Budget): void {
   const { hour, day } = usageTotals(usage, Date.now());
   const over = !withinLimit(hour, budget.maxTokensPerHour) || !withinLimit(day, budget.maxTokensPerDay);
+  const line = (label: string, used: number, limit?: number): string =>
+    limit ? `<span>${label} ${Math.round((used / limit) * PERCENT_MAX)}% ${meter(used, limit)}</span>` : '';
   const el = $('usage');
   el.classList.toggle('over', over);
   el.innerHTML = [
-    `tokens: ${fmt(hour)}/h`, budget.maxTokensPerHour ? meter(hour, budget.maxTokensPerHour) : '',
-    `· ${fmt(day)}/dia`, budget.maxTokensPerDay ? meter(day, budget.maxTokensPerDay) : '',
-    over ? '· sem orçamento' : '',
-  ].filter(Boolean).join(' ');
+    line('hora', hour, budget.maxTokensPerHour),
+    line('dia', day, budget.maxTokensPerDay),
+    over ? '<span>sem orçamento</span>' : '',
+  ].filter(Boolean).join('');
+  $('usage-raw').textContent = `consumo atual: ${fmt(hour)}/h · ${fmt(day)}/dia`;
 }
 
 // Percent and times are numbers / Date output; the label derives from a key another process chose, so it is escaped.
+// One line per window in the order the status line sent them (session first, week below); the reading time is a tooltip.
 function renderLimits(limits?: RateLimits): void {
   const el = $('limits');
   if (!limits) {
     el.textContent = '';
+    el.title = '';
     return;
   }
-  const windows = Object.entries(limits.windows).map(([key, w]) =>
-    `${esc(windowLabel(key))} ${Math.round(w.usedPercent)}% ${meter(w.usedPercent, PERCENT_MAX)} reseta ${clock(w.resetsAt)}`);
-  el.innerHTML = [...windows, `às ${clock(limits.at)}`].join(' · ');
+  el.innerHTML = Object.entries(limits.windows).map(([key, w]) =>
+    `<span>${esc(windowLabel(key))} ${Math.round(w.usedPercent)}% ${meter(w.usedPercent, PERCENT_MAX)} reseta ${clock(w.resetsAt)}</span>`).join('');
+  el.title = `lido às ${clock(limits.at)}`;
 }
 
-// Numbers and a Date: nothing to escape. Empty without a reading (markdown board, or no poll yet).
+// Numbers and a Date: nothing to escape. Rendered into the settings board tab; empty without a reading (markdown board, or no poll yet).
 function renderQuota(quota?: BoardQuota): void {
   const el = $('quota');
   el.classList.toggle('low', quota !== undefined && quota.remaining < QUOTA_RESERVE);

@@ -24,10 +24,8 @@
   button.active[data-signal=yellow] { border-color: var(--esperando); color: var(--esperando); }
   button.active[data-signal=red] { border-color: var(--danger); color: var(--danger); }
   #signal-hint { color: var(--muted); }
-  #usage { color: var(--muted); }
+  #usage, #limits { color: var(--muted); display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 1.2; }
   #usage.over { color: var(--danger); }
-  #limits { color: var(--muted); }
-  #quota { color: var(--muted); }
   #quota.low { color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
@@ -106,7 +104,6 @@
   </span>
   <span id="usage" class="dash"></span>
   <span id="limits" class="dash"></span>
-  <span id="quota" class="dash"></span>
   <button type="button" id="refresh" class="dash">atualizar board</button>
   <button type="button" id="configure">configurar</button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
@@ -138,6 +135,7 @@
           <label>coluna da fila <select id="col-queue" required></select></label>
           <label>coluna em andamento <select id="col-working" required></select></label>
           <label>coluna em review <select id="col-review" required></select></label>
+          <div class="hint" id="quota"></div>
           <label>épicos (issues com sub-issues)
             <select id="epics">
               <option value="ignore">ignorar: só as sub-issues entram na fila</option>
@@ -173,6 +171,7 @@
           <label>tokens por dia <input id="budget-day" type="number" min="0" step="1"></label>
         </div>
         <div class="hint">totais por hora e por dia; ao estourar, nenhum job novo abre (os que estão rodando terminam). Vazio = sem limite.</div>
+        <div class="hint" id="usage-raw"></div>
         <table id="rules">
           <thead><tr><th>% do orçamento</th><th>máx. workers</th><th>sinal</th><th></th></tr></thead>
           <tbody></tbody>
