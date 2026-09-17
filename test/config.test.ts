@@ -39,6 +39,15 @@ test('parseConfig accepts logLevel info or debug and rejects anything else', () 
   assert.throws(() => parseConfig({ board: GITHUB, logLevel: true }), /"logLevel" must be one of: info, debug/);
 });
 
+test('parseConfig accepts language pt or en, leaves the key absent when unset and rejects anything else', () => {
+  assert.equal(parseConfig({ board: GITHUB, language: 'en' }).language, 'en');
+  assert.equal(parseConfig({ board: GITHUB, language: 'pt' }).language, 'pt');
+  assert.equal('language' in parseConfig({ board: GITHUB }), false, 'absent stays absent so writeConfigFile keeps the file clean');
+  assert.throws(() => parseConfig({ board: GITHUB, language: 'fr' }), /"language" must be one of: pt, en/);
+  assert.throws(() => parseConfig({ board: GITHUB, language: 'pt-BR' }), /"language" must be one of: pt, en/);
+  assert.throws(() => parseConfig({ board: GITHUB, language: true }), /"language" must be one of: pt, en/);
+});
+
 test('parseConfig keeps explicit values', () => {
   const config = parseConfig({
     board: { type: 'github', owner: 'acme', number: 3 },

@@ -103,6 +103,7 @@ export interface Config {
   workers: WorkersMode;
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
+  language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
