@@ -49,8 +49,17 @@ function openWindow(port: number): void {
   win.loadURL(`${origin}/`).catch((err: Error) => dialog.showErrorBox('Agent Hive', err.message));
 }
 
+function setDockIcon(): void {
+  try {
+    app.dock?.setIcon(ICON);
+  } catch (err) {
+    // a bad icon file is not worth refusing to start
+    console.error('dock icon failed:', (err as Error).message);
+  }
+}
+
 app.whenReady().then(async () => {
-  app.dock?.setIcon(ICON);
+  setDockIcon();
   const repo = await pickRepo();
   if (!repo) {
     app.quit();
