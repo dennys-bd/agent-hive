@@ -9,8 +9,11 @@ Runs this repo's development pipeline end to end for **one** GitHub issue,
 without stopping for approval. Each stage delegates to an existing skill or
 agent; this file only sequences them. The issue is the card: it carries the
 intent and the open decisions, and the PR that closes it links the spec and
-plan artifacts. Nothing else tracks status (the Hive moves the board column
-itself; this flow never touches columns, labels or `docs/`).
+plan artifacts. The flow does not move board columns: when it runs inside a
+Hive worker the Hive already sets `working` on spawn and `review` when the
+session ends, and when run by hand the flow has no way to know which board
+the issue lives on. `Closes #<n>` closes the issue on merge; whether that
+moves the card to done is the project's own workflow.
 
 **Input**: `$ARGUMENTS` — required. One of:
 
@@ -57,8 +60,11 @@ Rules:
 
 - Spec and plan files are committed on the feature branch (`docs: spec and
   plan for #<n>`), so the PR carries them.
-- Never comment on the issue, edit its body, or change its labels; the PR
-  with `Closes #<n>` is the only write to GitHub besides the branch.
+- Comment on the issue only when the information would otherwise be lost:
+  on a stop (the gap found and what would unblock it), or a decision from
+  Stage 1 that changes what the issue asked for. Status never goes in a
+  comment; the PR and the board carry it. Do not edit the issue body or
+  its labels.
 
 ## Model routing
 
@@ -225,6 +231,6 @@ which stage stopped and why, and what input would unblock it.
 ## Explicitly out of scope
 
 - Any superpowers skill other than `brainstorming`.
-- Moving the issue on the board, labelling it, or commenting on it; the
-  Hive owns the board and `Closes #<n>` does the rest.
+- Moving the issue between board columns or labelling it (see the
+  tracking section for why).
 - Releasing / publishing the package.
