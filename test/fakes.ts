@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { Board, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
+import type { Board, BoardQuota, Config, SpawnWorker, WorkerHandlers, WorkerLaunch } from '../src/types.js';
 
 export interface FakeWorker {
   launch: WorkerLaunch;
@@ -40,8 +40,8 @@ export const LAUNCH: WorkerLaunch = {
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 
 // A board that has the OPTIONS columns and returns one task named after the configured queue column.
-// `resolveDelayMs` makes resolveFields slow so concurrent saves overlap.
-export function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config) => Board; configs: Config[] } {
+// `resolveDelayMs` makes resolveFields slow so concurrent saves overlap; `quota` gives it a fixed quota reading (none by default, like markdown).
+export function fakeBoardFactory(resolveDelayMs = 0, quota?: BoardQuota): { factory: (config: Config) => Board; configs: Config[] } {
   const configs: Config[] = [];
   const factory = (config: Config): Board => {
     configs.push(config);
@@ -62,6 +62,7 @@ export function fakeBoardFactory(resolveDelayMs = 0): { factory: (config: Config
       async setupOptions() {
         return OPTIONS;
       },
+      ...(quota ? { quota: async () => quota } : {}),
     };
   };
   return { factory, configs };

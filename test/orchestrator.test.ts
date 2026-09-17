@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
+import { canSchedule, canStart, extractPrUrl, initialState, isBlocked, reduce, slugFor } from '../src/orchestrator.js';
 import { HOUR_MS } from '../src/usage.js';
-import type { Budget, HookPayload, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
+import type { BoardQuota, Budget, HookPayload, RateLimits, Signal, State, Task, UsageRule } from '../src/types.js';
 
 const task = (n: number): Task => ({
   itemId: `item${n}`, id: String(n), title: `Task ${n}`, body: `body ${n}`,
@@ -38,6 +38,7 @@ const LIMITS: RateLimits = {
 const limited = (state: State, workerId: string, rateLimits: RateLimits = LIMITS) =>
   reduce(state, { type: 'rateLimits', workerId, rateLimits });
 const idled = (state: State, workerId: string, question: string) => reduce(state, { type: 'idle', workerId, question });
+const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
 
 test('poll fills slots in board order up to maxConcurrent and queues the rest', () => {
   const { state, effects } = filled(3, 5);
@@ -629,6 +630,35 @@ test('rateLimits never mutates its input and the reading survives poll, setMax a
   const later = reduce(reduce(state, { type: 'poll', tasks: tasks(1) }).state, { type: 'setMax', max: 2 }).state;
   assert.deepEqual(later.rateLimits, LIMITS, 'the last reading stays until a newer one arrives');
   assert.deepEqual(reduce(later, { type: 'boot' }).state.rateLimits, LIMITS, 'a reopened Hive shows the last value');
+});
+
+test('canSchedule is the fill gate: green with a free slot and budget; not under yellow, a reached cap or an exhausted budget', () => {
+  const now = Date.now();
+  assert.equal(canSchedule(initialState(1), now), true);
+  assert.equal(canSchedule(filled(1, 1).state, now), false, 'all occupied');
+  assert.equal(canSchedule(signaled(initialState(1), 'yellow').state, now), false);
+  assert.equal(canSchedule(signaled(initialState(1), 'red').state, now), false);
+  assert.equal(canSchedule(spent(1000, 0, { maxTokensPerHour: 1000 }), now), false, 'budget exhausted');
+  assert.equal(canSchedule(spent(1000, 2 * HOUR_MS, { maxTokensPerHour: 1000 }), now), true, 'the sample left the hour');
+  assert.equal(canSchedule(ruled(filled(2, 1).state, 550), now), false, '55%: cap 1 with one occupied');
+  assert.equal(canSchedule(ruled(initialState(1), 850), now), false, '85%: dynamic yellow');
+  assert.equal(canSchedule(ruled(initialState(1), 100), now), true, '10%: no rule applies');
+});
+
+test('boardQuota stores the reading, emits no effect and never fills, even with a free slot next to a queue', () => {
+  const first = filled(1, 2).state; // one working, task 2 queued
+  const roomy: State = { ...first, maxConcurrent: 2, slots: [...first.slots, { id: 'free', status: 'vazio' }] };
+  const snapshot = JSON.stringify(roomy);
+  const { state, effects } = reduce(roomy, { type: 'boardQuota', quota: QUOTA });
+  assert.deepEqual(state.boardQuota, QUOTA);
+  assert.equal(effects.length, 0, 'display and backoff only: no fill, no spawn');
+  assert.equal(state.slots[1].status, 'vazio');
+  assert.deepEqual(state.queue.map((t) => t.id), ['2']);
+  assert.deepEqual({ ...state, boardQuota: undefined }, { ...roomy, boardQuota: undefined }, 'nothing else changes');
+  assert.equal(JSON.stringify(roomy), snapshot, 'no mutation');
+  const drained: BoardQuota = { ...QUOTA, remaining: 12, at: '2026-09-16T12:05:00.000Z' };
+  assert.deepEqual(reduce(state, { type: 'boardQuota', quota: drained }).state.boardQuota, drained, 'the latest reading replaces the previous one');
+  assert.deepEqual(reduce(state, { type: 'poll', tasks: tasks(2) }).state.boardQuota, QUOTA, 'a poll keeps the last reading');
 });
 
 test('slugFor strips accents, lowercases, and caps the title at 30 chars', () => {

@@ -27,6 +27,8 @@
   #usage { color: var(--muted); }
   #usage.over { color: var(--danger); }
   #limits { color: var(--muted); }
+  #quota { color: var(--muted); }
+  #quota.low { color: var(--danger); }
   #error { display: none; background: var(--danger); color: #fff; padding: 8px 20px; }
   #error.show { display: block; }
   #notice { display: none; background: #3a3110; color: var(--esperando); padding: 8px 20px; }
@@ -104,6 +106,7 @@
   </span>
   <span id="usage" class="dash"></span>
   <span id="limits" class="dash"></span>
+  <span id="quota" class="dash"></span>
   <button id="refresh" class="dash">atualizar board</button>
   <button id="configure">configurar</button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>

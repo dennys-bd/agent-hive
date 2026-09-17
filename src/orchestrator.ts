@@ -38,6 +38,12 @@ function limits(state: State, now: number): UsageLimits {
   };
 }
 
+/** Whether a job could start right now: token budget with balance and `canStart` under the effective signal and cap. */
+export function canSchedule(state: State, now: number): boolean {
+  const { signal, maxWorkers } = limits(state, now);
+  return hasBudget(state.usage, state.budget, now) && canStart(signal, state.slots, maxWorkers);
+}
+
 function kebab(text: string): string {
   return text
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -77,6 +83,7 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     }
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
     case 'rateLimits': return setRateLimits(state, event.workerId, event.rateLimits); // display only: no fill, no effects
+    case 'boardQuota': return none({ ...state, boardQuota: event.quota }); // display and timer backoff only: no fill, no effects
   }
 }
 
@@ -101,8 +108,8 @@ function setRateLimits(state: State, workerId: string, rateLimits: RateLimits): 
 function fill(reduced: Reduced): Reduced {
   const { state, effects } = reduced;
   const now = Date.now();
+  if (!canSchedule(state, now)) return reduced; // nothing could start: whatever happened stands
   const { signal, maxWorkers } = limits(state, now);
-  if (!hasBudget(state.usage, state.budget, now)) return reduced; // no budget left: whatever happened stands, nothing new starts
   let queue = state.queue;
   let slots = state.slots;
   const spawned: Effect[] = [];

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { Board, BoardConfig, EpicsMode, ProjectSummary, StatusKey, Task } from '../types.js';
+import type { Board, BoardConfig, BoardQuota, EpicsMode, ProjectSummary, StatusKey, Task } from '../types.js';
 
 const execFileAsync = promisify(execFile);
 const GH_MAX_BUFFER = 20 * 1024 * 1024;
@@ -9,6 +9,7 @@ const PROJECT_LIMIT = 100;
 const STATUS_KEYS: StatusKey[] = ['queue', 'working', 'review'];
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
 const RELATION_LIMIT = 50; // ponytail: no pagination, an issue with more open blockers/sub-issues than this is under-reported
+const MS_PER_SECOND = 1000;
 
 export type Exec = (args: string[]) => Promise<string>;
 export type GithubBoardConfig = Extract<BoardConfig, { type: 'github' }>;
@@ -36,6 +37,7 @@ interface GhIssueRef { number: number; state: string }
 interface GhIssueRelations { blockedBy?: { nodes: GhIssueRef[] } | null; subIssues?: { nodes: GhIssueRef[] } | null }
 // One entry per alias; the repository (null) or the issue (issue: null) may be gone by the time we ask.
 type GhRelationsData = Record<string, { issue: GhIssueRelations | null } | null | undefined>;
+interface GhRateLimit { limit?: unknown; remaining?: unknown; reset?: unknown }
 
 function projectArgs(sub: string, owner: string, number: number): string[] {
   return ['project', sub, String(number), '--owner', owner, '--format', 'json'];
@@ -98,6 +100,16 @@ async function withBlockers(tasks: Task[], epics: EpicsMode, exec: Exec): Promis
   });
 }
 
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+// `gh api rate_limit` does not count against the quota; `reset` comes in epoch seconds. Any other shape → undefined, nothing dispatched.
+async function readQuota(exec: Exec): Promise<BoardQuota | undefined> {
+  const parsed = JSON.parse(await exec(['api', 'rate_limit', '--jq', '.resources.graphql'])) as GhRateLimit | null;
+  const { limit, remaining, reset } = parsed ?? {};
+  if (!isCount(limit) || !isCount(remaining) || !isCount(reset)) return undefined;
+  return { limit, remaining, resetsAt: new Date(reset * MS_PER_SECOND).toISOString(), at: new Date().toISOString() };
+}
+
 export function createGithubBoard(
   board: GithubBoardConfig, statusNames: Record<StatusKey, string>, epics: EpicsMode, exec: Exec = ghExec,
 ): Board {
@@ -141,5 +153,5 @@ export function createGithubBoard(
     return listStatusOptions(owner, number, exec);
   }
 
-  return { resolveFields, listQueue, setStatus, setupOptions };
+  return { resolveFields, listQueue, setStatus, setupOptions, quota: () => readQuota(exec) };
 }

@@ -87,3 +87,18 @@ test('loadState drops a rateLimits with the wrong shape and leaves the key absen
     assert.equal('rateLimits' in loaded, false, JSON.stringify(rateLimits));
   }
 });
+
+test('loadState keeps a valid boardQuota and drops one with the wrong shape, leaving the key absent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const boardQuota = { limit: 5000, remaining: 320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
+  await saveState(dir, { ...initialState(1), boardQuota });
+  assert.deepEqual((await loadState(dir, 1)).boardQuota, boardQuota);
+  const bad: unknown[] = [
+    5, 'x', null, [], { ...boardQuota, remaining: -1 }, { ...boardQuota, limit: 'x' }, { ...boardQuota, resetsAt: undefined },
+    { ...boardQuota, at: 7 },
+  ];
+  for (const value of bad) {
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), boardQuota: value }));
+    assert.equal('boardQuota' in (await loadState(dir, 1)), false, JSON.stringify(value));
+  }
+});
