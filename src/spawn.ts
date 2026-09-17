@@ -37,7 +37,7 @@ export function workerArgv(o: WorkerArgvOptions): string[] {
   ];
 }
 
-/** The child's env: the Hive's own minus CLAUDECODE (a Hive launched from inside Claude Code would stop the child from starting). */
+/** The env the worker (and the tmux server, born with its first client) gets: the Hive's own minus CLAUDECODE (a Hive launched from inside Claude Code would stop the child from starting), plus the worker id and port. */
 export function workerEnv(base: NodeJS.ProcessEnv, workerId: string, port: number): NodeJS.ProcessEnv {
   const { CLAUDECODE: _inherited, ...env } = base;
   return { ...env, HIVE_WORKER_ID: workerId, HIVE_PORT: String(port) };
