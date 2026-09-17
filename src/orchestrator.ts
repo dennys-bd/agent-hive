@@ -81,6 +81,8 @@ export function reduce(state: State, event: HiveEvent): Reduced {
     case 'setColumns': return fill(setColumns(state, event.columns));
     case 'hook': return applyHook(state, event.workerId, event.payload, event.branch, event.tokens);
     case 'exit': return fill(exit(state, event.workerId));
+    case 'done': return done(state, event.workerId); // no fill: nothing freed, nothing loosened
+    case 'spawnFailed': return fill(spawnFailed(state, event.workerId, event.message)); // the slot frees; the failed card is out of the candidates, the next one may take it
     case 'kill': return killSlot(state, event.slotId);
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
     case 'rateLimits': return setRateLimits(state, event.workerId, event.rateLimits); // display only: no fill, no effects
@@ -124,7 +126,7 @@ const shouldWrite = (card: Card, target: string | undefined): target is string =
 // Runs `card` in `slots[index]`: the session policy is resolved here (continue needs an id to resume; without one the run is new,
 // with an id the Hive generates so it never waits for the hook), onStart is written when the board does not show it yet, then the spawn.
 function occupy(state: State, index: number, card: Card, column: Column, kind: SlotEventKind): Reduced {
-  const slot: Slot = { id: state.slots[index].id, workerId: randomUUID(), cardId: cardId(card), status: 'working', startedAt: new Date().toISOString(), lastEvent: { kind } };
+  const slot: Slot = { id: state.slots[index].id, workerId: randomUUID(), cardId: cardId(card), status: 'working', startedAt: new Date().toISOString(), lastEvent: { kind }, done: undefined };
   const session = column.session === 'continue' && card.sessionId !== undefined ? 'continue' : 'new';
   const { onStart } = column;
   const write = shouldWrite(card, onStart);
@@ -165,7 +167,8 @@ function start(state: State, itemId: string, raiseMax: boolean): Reduced {
   if (!hasFree && !raiseMax) return none(state);
   const base = hasFree ? state : setMax(state, occupiedCount(state.slots) + 1).state;
   const index = base.slots.findIndex(isFree);
-  return index < 0 ? none(state) : occupy(base, index, card, column, 'manualStart'); // never throws: a reducer that throws takes the route with it
+  const { error: _error, ...retried } = card; // a manual start clears the last spawn failure and tries again
+  return index < 0 ? none(state) : occupy(base, index, retried, column, 'manualStart'); // never throws: a reducer that throws takes the route with it
 }
 
 function poll(state: State, listed: BoardCard[]): Reduced {
@@ -205,7 +208,24 @@ function exit(state: State, workerId: string): Reduced {
   return none({ ...stopped, slots: freeSlot(state.slots, slot) });
 }
 
-// The end of the command: the session dies, the board learns the outcome, the card moves on (or leaves after the last column).
+// /hooks/done from the worker: the command says it is finished, so the next Stop of this run ends the stage. Unknown or empty slot: ignored.
+function done(state: State, workerId: string): Reduced {
+  const slot = state.slots.find((s) => s.workerId === workerId);
+  return !slot || slot.status === 'empty' ? none(state) : patch(state, workerId, { done: true });
+}
+
+// The worker never started (tmux missing, a name taken, iTerm refused): as exit, and the card carries the message and leaves the
+// candidates until a manual start; the bar shows it too. No automatic retry: the same fill would fail the same way, in a tight loop.
+function spawnFailed(state: State, workerId: string, message: string): Reduced {
+  const slot = state.slots.find((s) => s.workerId === workerId);
+  if (!slot || slot.status === 'empty') return none(state);
+  const card = cardOf(state.cards, slot);
+  const freed = exit(state, workerId).state;
+  return none({ ...(card ? withCard(freed, { ...dropSlot(card), error: message }) : freed), error: message });
+}
+
+// The end of the command (a Stop after /hooks/done): the board learns the outcome and the card moves on (or leaves after the last
+// column). The worker goes on in place with the next column's prompt when it can, otherwise the session dies and the card waits for a slot.
 function finish(state: State, workerId: string): Reduced {
   const slot = state.slots.find((s) => s.workerId === workerId);
   const card = slot && cardOf(state.cards, slot);
@@ -215,9 +235,31 @@ function finish(state: State, workerId: string): Reduced {
   const next = column && nextColumn(state.columns, column.name);
   const moved: Card = { ...dropSlot(card), column: next?.name ?? card.column, ...(write ? { boardColumn: column?.onFinish as string } : {}) };
   const cards = next ? state.cards.map((c) => (cardId(c) === cardId(card) ? moved : c)) : state.cards.filter((c) => cardId(c) !== cardId(card));
+  const freed: State = { ...state, slots: freeSlot(state.slots, slot), cards }; // as if the slot were free: what fill would see
+  const finished: Effect[] = write ? [{ type: 'setColumn', itemId: cardId(card), column: column?.onFinish as string }] : [];
+  if (next && canContinue(freed, slot, moved, next)) return continueInPlace(freed, slot, workerId, moved, next, finished);
+  return { state: freed, effects: [{ type: 'kill', slug: card.slug, workerId }, ...finished] };
+}
+
+// In-place continuation: the next column continues the session with a prompt, the slot is not draining, the gate is open on the state
+// as if freed, and the card is what fill would pick for that slot (a heavier card waiting wins it; the card then resumes later).
+function canContinue(freed: State, slot: Slot, moved: Card, next: Column): boolean {
+  if (next.prompt === undefined || next.session !== 'continue' || slot.draining) return false;
+  if (!canSchedule(freed, Date.now())) return false;
+  const top = candidates(freed.cards, freed.columns)[0];
+  return top !== undefined && cardId(top) === cardId(moved);
+}
+
+// Same process, same slot, same workerId: the Stop is answered with the next column's prompt (the `continue` effect). onFinish is
+// written first, then onStart against the board column as just updated, so the board sees both moves in order.
+function continueInPlace(freed: State, slot: Slot, workerId: string, moved: Card, next: Column, finished: Effect[]): Reduced {
+  const { onStart } = next;
+  const write = shouldWrite(moved, onStart);
+  const kept: Slot = { ...slot, status: 'working', done: undefined, question: undefined, lastEvent: { kind: 'continuing' } };
+  const card: Card = { ...moved, slotId: slot.id, ...(write ? { boardColumn: onStart } : {}) };
   return {
-    state: { ...state, slots: freeSlot(state.slots, slot), cards },
-    effects: [{ type: 'kill', slug: card.slug, workerId }, ...(write ? [{ type: 'setColumn' as const, itemId: cardId(card), column: column?.onFinish as string }] : [])],
+    state: withCard({ ...freed, slots: freed.slots.map((s) => (s.id === slot.id ? kept : s)) }, card),
+    effects: [...finished, ...(write ? [{ type: 'setColumn' as const, itemId: cardId(card), column: onStart }] : []), { type: 'continue', workerId, card, column: next }],
   };
 }
 
@@ -307,7 +349,8 @@ function applyHook(initial: State, workerId: string, p: HookPayload, branch?: st
       if (!prUrl || !card) return none(state);
       return none(withCard(patch(state, workerId, { status: 'review', question: undefined, lastEvent: { kind: 'pr' } }).state, { ...card, prUrl }));
     }
-    case 'Stop': return fill(finish(state, workerId)); // the end of the turn is the end of the command
+    case 'Stop': // the end of the command only after /hooks/done; otherwise the worker is idle (an agent running, a question asked): the slot waits
+      return slot.done ? fill(finish(state, workerId)) : patch(state, workerId, { status: 'waiting', question: undefined, lastEvent: { kind: 'turn' } });
     case 'SessionEnd': return fill(exit(state, workerId));
     default: return none(state);
   }

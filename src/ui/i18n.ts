@@ -26,6 +26,7 @@ const en = {
   'event.waiting': 'waiting: {detail}',
   'event.pr': 'PR open',
   'event.turn': 'turn ended',
+  'event.continuing': 'continuing in the same session',
   'card.draining': 'draining',
   'detail.title': 'detail',
   'detail.pending': 'pending:',
@@ -127,6 +128,7 @@ const pt: Record<MessageKey, string> = {
   'event.waiting': 'aguardando: {detail}',
   'event.pr': 'PR aberto',
   'event.turn': 'turno encerrado',
+  'event.continuing': 'continuando na mesma sessão',
   'card.draining': 'drenando',
   'detail.title': 'detalhe',
   'detail.pending': 'pendente:',
@@ -207,6 +209,7 @@ const PLACEHOLDER = /\{(\w+)\}/g;
 const STATUS_KEY: Record<Status, MessageKey> = { empty: 'status.empty', working: 'status.working', waiting: 'status.waiting', review: 'status.review' };
 const EVENT_KEY: Record<Exclude<SlotEventKind, 'tool'>, MessageKey> = {
   starting: 'event.starting', manualStart: 'event.manualStart', prompt: 'event.prompt', waiting: 'event.waiting', pr: 'event.pr', turn: 'event.turn',
+  continuing: 'event.continuing',
 };
 
 let current: Language = 'en';

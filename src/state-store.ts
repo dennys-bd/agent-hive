@@ -22,7 +22,7 @@ const isRule = (value: unknown): value is UsageRule => {
 
 // Files written before the status keys were neutral carry the Portuguese words and a lastEvent sentence.
 const LEGACY_STATUS: Record<string, Status> = { vazio: 'empty', trabalhando: 'working', esperando_voce: 'waiting', aguardando_review: 'review' };
-const EVENT_KINDS: readonly SlotEventKind[] = ['starting', 'manualStart', 'prompt', 'tool', 'waiting', 'pr', 'turn'];
+const EVENT_KINDS: readonly SlotEventKind[] = ['starting', 'manualStart', 'prompt', 'tool', 'waiting', 'pr', 'turn', 'continuing'];
 
 const isSlotEvent = (value: unknown): value is SlotEvent =>
   typeof value === 'object' && value !== null && EVENT_KINDS.includes((value as SlotEvent).kind)

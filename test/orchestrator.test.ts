@@ -21,9 +21,11 @@ const hook = (state: State, workerId: string, payload: Partial<HookPayload> & { 
 const occupied = (s: State) => s.slots.filter((x) => x.status !== 'empty');
 const card = (s: State, n: number): Card | undefined => s.cards.find((c) => c.task.itemId === `item${n}`);
 const signaled = (state: State, signal: Signal) => reduce(state, { type: 'setSignal', signal });
-const stopped = (state: State, workerId: string) => hook(state, workerId, { hook_event_name: 'Stop' });
+const done = (state: State, workerId: string): State => reduce(state, { type: 'done', workerId }).state;
+// The worker's Stop after its /hooks/done: what ends a stage now
+const stopped = (state: State, workerId: string) => hook(done(state, workerId), workerId, { hook_event_name: 'Stop' });
 const counted = (state: State, workerId: string, tokens: number) =>
-  reduce(state, { type: 'hook', workerId, payload: { hook_event_name: 'Stop' }, tokens }).state;
+  reduce(done(state, workerId), { type: 'hook', workerId, payload: { hook_event_name: 'Stop' }, tokens }).state;
 const spent = (tokens: number, ageMs: number, budget: Budget): State => ({
   ...base(1), budget, usage: [{ at: new Date(Date.now() - ageMs).toISOString(), tokens }],
 });
@@ -198,6 +200,8 @@ test('reducer never mutates its input', () => {
   reduce(first, { type: 'poll', cards: [] });
   reduce(first, { type: 'start', itemId: 'item2', raiseMax: true });
   reduce(first, { type: 'setColumns', columns: [] });
+  reduce(first, { type: 'done', workerId: id });
+  reduce(first, { type: 'spawnFailed', workerId: id, message: 'tmux: boom' });
   assert.equal(JSON.stringify(first), firstSnapshot);
   const gone = polled(first, []).state;
   const goneSnapshot = JSON.stringify(gone);
@@ -272,7 +276,7 @@ test('Stop or SessionEnd from a child session changes nothing: no finish, no exi
   const end = hook(started, id, { hook_event_name: 'SessionEnd', session_id: 'another-child-session-0001' });
   assert.equal(end.state, started);
   assert.deepEqual(stopped(started, id).effects.map((e) => e.type), ['kill', 'setColumn', 'spawn'], 'the main session still finishes (and card 2 starts)');
-  assert.deepEqual(hook(started, id, { hook_event_name: 'Stop', session_id: mainId }).effects[0].type, 'kill');
+  assert.deepEqual(hook(done(started, id), id, { hook_event_name: 'Stop', session_id: mainId }).effects[0].type, 'kill');
 });
 
 test('Notification of a waiting type turns the slot yellow with the message; other types are ignored; a prompt or a tool brings it back', () => {
@@ -556,4 +560,91 @@ test('mergeCards is pure: an empty listing over no cards is no cards, and a card
   assert.deepEqual(mergeCards([], COLUMNS, []), []);
   const stray: Card = { task: task(1), column: 'gone', boardColumn: 'Backlog', slug: 'x' };
   assert.deepEqual(mergeCards([stray], COLUMNS, [listed(1)]), [{ ...stray, task: task(1) }]);
+});
+
+test('done marks the occupied slot; a Stop without it leaves the slot waiting with no effects and the card in place; a prompt or a tool brings it back; boot clears it', () => {
+  const first = filled(1, 1).state;
+  const id = first.slots[0].workerId!;
+  const { state, effects } = hook(first, id, { hook_event_name: 'Stop' });
+  assert.equal(effects.length, 0, 'no kill, no write, no spawn');
+  assert.equal(state.slots[0].status, 'waiting');
+  assert.deepEqual(state.slots[0].lastEvent, { kind: 'turn' });
+  assert.equal(state.slots[0].workerId, id, 'the session stays alive');
+  assert.deepEqual([card(state, 1)?.column, card(state, 1)?.slotId], ['spec', first.slots[0].id]);
+  assert.equal(hook(state, id, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }).state.slots[0].status, 'working');
+  assert.equal(hook(state, id, { hook_event_name: 'UserPromptSubmit' }).state.slots[0].status, 'working');
+  const marked = done(state, id);
+  assert.equal(marked.slots[0].done, true);
+  assert.equal(marked.slots[0].status, 'waiting', 'done alone changes nothing else');
+  assert.equal(done(marked, id).slots[0].done, true, 'idempotent');
+  assert.equal(done(first, 'ghost'), first, 'unknown worker: same object');
+  assert.equal(reduce(marked, { type: 'boot' }).state.slots[0].done, undefined);
+  assert.equal(stopped(signaled(state, 'yellow').state, id).effects[0].type, 'kill', 'with done the Stop ends the stage');
+});
+
+test('Stop with done continues in place when the next column has a prompt and session continue and the card is next in line: no kill, same worker, onFinish then onStart written, card in the next column with its slot', () => {
+  const first = filled(1, 1).state; // green: spec → dev, dev continues the session
+  const id = first.slots[0].workerId!;
+  const { state, effects } = stopped(first, id);
+  const moved = card(state, 1)!;
+  assert.deepEqual(effects, [
+    { type: 'setColumn', itemId: 'item1', column: 'Ready' },
+    { type: 'setColumn', itemId: 'item1', column: 'In progress' },
+    { type: 'continue', workerId: id, card: moved, column: COLUMNS[1] },
+  ]);
+  assert.deepEqual([moved.column, moved.boardColumn, moved.slotId, moved.sessionId], ['dev', 'In progress', first.slots[0].id, card(first, 1)?.sessionId]);
+  const slot = state.slots[0];
+  assert.deepEqual([slot.workerId, slot.status, slot.done, slot.question, slot.cardId], [id, 'working', undefined, undefined, 'item1']);
+  assert.deepEqual(slot.lastEvent, { kind: 'continuing' });
+  assert.equal(slot.startedAt, first.slots[0].startedAt, 'the same run goes on');
+  assert.equal(hook(state, id, { hook_event_name: 'Stop' }).effects.length, 0, 'done was cleared: the next Stop waits for a new done');
+  const again = stopped(state, id); // dev is the last column with a prompt: the card parks in review, the session dies
+  assert.deepEqual(again.effects, [{ type: 'kill', slug: 'hive-1-task-1', workerId: id }, { type: 'setColumn', itemId: 'item1', column: 'In review' }]);
+  assert.deepEqual([card(again.state, 1)?.column, card(again.state, 1)?.slotId, again.state.slots[0].status], ['review', undefined, 'empty']);
+});
+
+test('Stop with done kills and respawns instead when a heavier card waits, when the next column is new, under yellow, or on a draining slot', () => {
+  const two = filled(1, 2).state; // 1 runs in spec, 2 waits in spec (5): heavier than 1 in dev (1)
+  const heavier = stopped(two, two.slots[0].workerId!);
+  assert.deepEqual(heavier.effects.map((e) => e.type), ['kill', 'setColumn', 'spawn']);
+  assert.ok(heavier.effects[2].type === 'spawn' && heavier.effects[2].card.task.id === '2', 'the heavier card takes the slot');
+  assert.deepEqual([card(heavier.state, 1)?.column, card(heavier.state, 1)?.slotId], ['dev', undefined]);
+  const fresh: Column[] = [COLUMNS[0], { ...COLUMNS[1], session: 'new' }, COLUMNS[2]];
+  const one = polled(base(1, fresh), many(1)).state;
+  const renewed = stopped(one, one.slots[0].workerId!);
+  assert.deepEqual(renewed.effects.map((e) => e.type), ['kill', 'setColumn', 'setColumn', 'spawn'], 'same card, new session: kill then spawn in the same batch');
+  assert.ok(renewed.effects[3].type === 'spawn' && renewed.effects[3].card.task.id === '1' && renewed.effects[3].session === 'new');
+  assert.notEqual(renewed.state.slots[0].workerId, one.slots[0].workerId);
+  const single = filled(1, 1).state;
+  const yellow = stopped(signaled(single, 'yellow').state, single.slots[0].workerId!);
+  assert.deepEqual(yellow.effects.map((e) => e.type), ['kill', 'setColumn']);
+  assert.deepEqual([card(yellow.state, 1)?.column, card(yellow.state, 1)?.slotId, yellow.state.slots[0].status], ['dev', undefined, 'empty']);
+  assert.equal(card(yellow.state, 1)?.sessionId, card(single, 1)?.sessionId, 'waits for a slot and resumes later');
+  const drained = reduce(filled(2, 2).state, { type: 'setMax', max: 1 }).state; // slot 2 draining
+  const gone = stopped(drained, drained.slots[1].workerId!);
+  assert.deepEqual(gone.effects.map((e) => e.type), ['kill', 'setColumn']);
+  assert.equal(gone.state.slots.length, 1, 'the draining slot leaves');
+  assert.deepEqual([card(gone.state, 2)?.column, card(gone.state, 2)?.slotId], ['dev', undefined]);
+});
+
+test('spawnFailed frees the slot, keeps the card in its column with the error and sets the bar; fill skips it, another card may take the slot; start clears it and runs', () => {
+  const two = filled(1, 2).state; // 1 runs, 2 waits
+  const { state, effects } = reduce(two, { type: 'spawnFailed', workerId: two.slots[0].workerId!, message: 'tmux: duplicate session: hive-1-task-1' });
+  assert.equal(card(state, 1)?.error, 'tmux: duplicate session: hive-1-task-1');
+  assert.deepEqual([card(state, 1)?.column, card(state, 1)?.slotId], ['spec', undefined]);
+  assert.equal(state.error, 'tmux: duplicate session: hive-1-task-1');
+  assert.equal(state.slots[0].cardId, 'item2', 'the freed slot goes to the next card, never back to the failed one');
+  assert.deepEqual(effects.map((e) => e.type), ['spawn']);
+  assert.deepEqual(candidates(state.cards, state.columns), [], 'a card with an error is never picked');
+  assert.equal(reduce(two, { type: 'spawnFailed', workerId: 'ghost', message: 'x' }).state, two, 'unknown worker: same object');
+  const single = filled(1, 1).state;
+  const failed = reduce(single, { type: 'spawnFailed', workerId: single.slots[0].workerId!, message: 'tmux: spawn tmux ENOENT' });
+  assert.equal(failed.effects.length, 0, 'no retry');
+  assert.equal(failed.state.slots[0].status, 'empty');
+  assert.equal(polled(failed.state, many(1)).effects.length, 0, 'a poll does not retry either');
+  assert.equal(card(polled(failed.state, many(1)).state, 1)?.error, 'tmux: spawn tmux ENOENT', 'the error survives the poll');
+  const retried = started(failed.state, 'item1');
+  assert.equal(card(retried.state, 1)?.error, undefined, 'start clears it');
+  assert.deepEqual(retried.effects.map((e) => e.type), ['spawn']);
+  assert.deepEqual(retried.state.slots[0].lastEvent, { kind: 'manualStart' });
 });

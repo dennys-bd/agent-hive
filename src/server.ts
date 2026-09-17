@@ -36,6 +36,7 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
+const HTTP_NO_CONTENT = 204; // hook routes: an empty body is "no decision" for Claude Code
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const FORBIDDEN_ORIGIN_MESSAGE = 'origem não permitida';
@@ -367,6 +368,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
     if (workerId && !pool.exit(workerId)) await dispatch({ type: 'exit', workerId });
+  });
+
+  // The worker's own word that the command is finished (the trailer's curl): the next Stop of this run ends the stage.
+  app.post('/hooks/done', async (req: Request, res: Response) => {
+    res.status(HTTP_NO_CONTENT).end();
+    const workerId = req.header('x-hive-worker');
+    if (workerId) await dispatch({ type: 'done', workerId });
   });
 
   // The worker's status line posts its whole JSON here; only `rate_limits` is kept, and the reply is the line the worker's tab shows.

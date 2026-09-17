@@ -62,6 +62,9 @@ const openPr = (server: HiveServer, workerId: string): Promise<void> =>
 const hookEvent = (base: string, workerId: string, payload: unknown): Promise<Response> =>
   fetch(`${base}/hooks/event`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-worker': workerId }, body: JSON.stringify(payload) });
 
+// The trailer's curl: the worker says the command is finished. No body, only the header.
+const hookDone = (base: string, workerId: string): Promise<Response> => fetch(`${base}/hooks/done`, { method: 'POST', headers: { 'x-hive-worker': workerId } });
+
 test('POST /setup does not override a maxConcurrent changed through POST /config', async (t) => {
   const { base, server } = await start(t);
   assert.equal(server.getState()?.maxConcurrent, 1);
@@ -143,7 +146,7 @@ test('GET /slots/:id/output is the formatted tail of the worker transcript Sessi
   assert.equal((await fetch(`${base}/slots/nope/output`)).status, 404);
 });
 
-test('a Stop ends the run: the session is killed, onFinish written, the card leaves (single column) and the slot frees; a PR seen before stays on the card until then', async (t) => {
+test('a Stop before /hooks/done leaves the slot waiting; after it the Stop ends the run: the session is killed, onFinish written, the card leaves (single column) and the slot frees; a PR seen before stays on the card until then', async (t) => {
   const { log, lines } = fakeLog();
   const { base, server, workers } = await start(t, BODY, log);
   const [worker] = workers;
@@ -152,6 +155,12 @@ test('a Stop ends the run: the session is killed, onFinish written, the card lea
   assert.equal(slot0(server).status, 'review');
   assert.equal(card0(server).prUrl, 'https://github.com/acme/r/pull/9');
   assert.equal(worker.killed, 0, 'a PR is not a transition any more');
+  assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
+  assert.equal(worker.killed, 0, 'no done yet: the worker is idle, not finished');
+  assert.equal(slot0(server).status, 'waiting');
+  assert.equal(card0(server).column, 'fila');
+  assert.equal((await hookDone(base, workerId)).status, 204);
+  assert.equal(slot0(server).done, true);
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop' })).status, 200);
   assert.equal(worker.killed, 1, 'killed through the effect, before the answer');
   assert.equal(slot0(server).status, 'empty');
@@ -168,9 +177,10 @@ test('a Stop from a child session (a subagent or teammate) does not end the run;
   const workerId = slot0(server).workerId!;
   const mainId = '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b';
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'SessionStart', cwd: repo, session_id: mainId })).status, 200);
+  assert.equal((await hookDone(base, workerId)).status, 204);
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: 'another-child-session-0001' })).status, 200);
   assert.equal(worker.killed, 0);
-  assert.equal(slot0(server).status, 'working');
+  assert.equal(slot0(server).status, 'working', 'a child Stop is not even a turn end');
   assert.equal((await hookEvent(base, workerId, { hook_event_name: 'Stop', session_id: mainId })).status, 200);
   assert.equal(worker.killed, 1);
 });
