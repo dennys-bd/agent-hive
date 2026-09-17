@@ -134,7 +134,10 @@ test('loadState drops a legacy queue and the task fields of slots, keeps cardId,
   const legacy = {
     signal: 'green', maxConcurrent: 1, queue: [task],
     slots: [{ id: 'a', status: 'working', workerId: 'w1', task, slug: 'hive-1-t', prUrl: 'x', paused: true, cardId: 'I1', tokens: 5 }],
-    cards: [card, { task, column: 7 }, null, { column: 'dev', boardColumn: 'Ready', slug: 's' }],
+    cards: [
+      card, { task, column: 7 }, null, { column: 'dev', boardColumn: 'Ready', slug: 's' },
+      { ...card, slug: '../../evil' }, { ...card, slug: 'hive-1-x|.' }, { ...card, sessionId: 'a b' }, // slug and session id reach argv, a path and a pkill pattern
+    ],
   };
   await writeFile(join(dir, 'state.json'), JSON.stringify(legacy));
   const loaded = await loadState(dir, 1);

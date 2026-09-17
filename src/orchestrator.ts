@@ -249,9 +249,13 @@ function keepCard(state: State, id: string): Reduced {
 // yellow so nothing new is dispatched before the user looks; a saved red is manual mode and survives the restart.
 function boot(state: State): Reduced {
   const signal = state.signal === 'red' ? 'red' : 'yellow';
-  return state.slots
+  const exited = state.slots
     .flatMap((s) => (s.status !== 'empty' && s.workerId ? [s.workerId] : []))
     .reduce<Reduced>((r, workerId) => exit(r.state, workerId), none({ ...state, signal }));
+  // A slotId with no occupied slot behind it (a slot normalize emptied, a half-written file) would keep the card out of the fill forever
+  const occupied = new Set(exited.state.slots.flatMap((s) => (s.status !== 'empty' ? [s.id] : [])));
+  const cards = exited.state.cards.map((c) => (c.slotId !== undefined && !occupied.has(c.slotId) ? { ...c, slotId: undefined } : c));
+  return { ...exited, state: { ...exited.state, cards } };
 }
 
 function describeTool(p: HookPayload): string {

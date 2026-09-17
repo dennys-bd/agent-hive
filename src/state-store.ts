@@ -1,6 +1,6 @@
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { initialState, SIGNALS, STATUSES } from './orchestrator.js';
+import { initialState, isSessionId, SIGNALS, STATUSES } from './orchestrator.js';
 import { isBoardQuota } from './polling.js';
 import { isRateLimits } from './rate-limits.js';
 import type { Card, Signal, Slot, SlotEvent, SlotEventKind, State, Status, UsageRule, UsageSample } from './types.js';
@@ -43,10 +43,15 @@ function normalizeSlot(slot: Slot): Slot {
   return { id, status, ...Object.fromEntries(Object.entries(kept).filter(([, v]) => v !== undefined)) };
 }
 
+const SLUG = /^hive-[a-z0-9-]+$/; // what slugFor produces; the slug names a path, a tmux session and a pkill pattern
+
+// The slug and the session id reach argv, a file path and the pkill pattern, so a hand-edited value that slugFor / randomUUID could not
+// have produced drops the card (the next poll re-enters it through a `from`).
 const isCard = (value: unknown): value is Card => {
   if (typeof value !== 'object' || value === null) return false;
-  const { task, column, boardColumn, slug } = value as Card;
-  return typeof task === 'object' && task !== null && typeof task.itemId === 'string' && typeof column === 'string' && typeof boardColumn === 'string' && typeof slug === 'string';
+  const { task, column, boardColumn, slug, sessionId } = value as Card;
+  return typeof task === 'object' && task !== null && typeof task.itemId === 'string' && typeof column === 'string' && typeof boardColumn === 'string'
+    && typeof slug === 'string' && SLUG.test(slug) && (sessionId === undefined || isSessionId(sessionId));
 };
 
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default.

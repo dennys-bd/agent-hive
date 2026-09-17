@@ -337,6 +337,14 @@ test('boot gives every occupied slot as dead: slots empty, cards keep their colu
   assert.equal(reduce(signaled(base(1), 'red').state, { type: 'boot' }).state.signal, 'red');
 });
 
+test('boot clears a slotId that points at no occupied slot, so a card from a tampered or half-written state.json is not stuck', () => {
+  const first = filled(1, 1).state;
+  const stale: State = { ...first, slots: first.slots.map((s) => ({ id: s.id, status: 'empty' as const })) }; // normalizeSlot on an unknown status
+  const { state } = reduce(stale, { type: 'boot' });
+  assert.equal(card(state, 1)?.slotId, undefined);
+  assert.equal(card(state, 1)?.column, 'spec');
+});
+
 test('kill emits a kill effect with the card slug; error sets and poll clears state.error', () => {
   const first = filled(1, 1).state;
   assert.deepEqual(reduce(first, { type: 'kill', slotId: first.slots[0].id }).effects, [{ type: 'kill', slug: 'hive-1-task-1', workerId: first.slots[0].workerId }]);
