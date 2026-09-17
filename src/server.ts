@@ -560,6 +560,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.get('/', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'index.html')));
   app.get('/ui/app.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'app.js')));
+  app.get('/ui/board.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'board.js')));
   app.get('/ui/limits.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'limits.js')));
   app.get('/ui/highlight.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'highlight.js')));
   app.get('/ui/i18n.js', (_req: Request, res: Response) => res.sendFile(join(UI_DIR, 'i18n.js')));

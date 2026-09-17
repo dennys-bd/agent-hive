@@ -32,13 +32,13 @@
   #notice { display: none; background: #3a3110; color: var(--waiting); padding: 8px 20px; }
   #notice.show { display: block; }
   main { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px 20px; }
+  main > .work { min-width: 0; }
   #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
   .card { background: var(--panel); border: 1px solid var(--border); border-left: 6px solid var(--empty); border-radius: 8px; padding: 12px; min-height: 120px; cursor: default; }
   .card.occupied { cursor: pointer; }
   .card.working { border-left-color: var(--working); }
   .card.review { border-left-color: var(--review); }
   .card.waiting { border-left-color: var(--waiting); animation: blink 1s ease-in-out infinite; }
-  .card.paused { opacity: 0.6; }
   .card .title { font-weight: 600; margin-bottom: 4px; }
   .card.draining .title { text-decoration: line-through; }
   .card .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -48,7 +48,15 @@
   aside h2 { font-size: 13px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
   ol { margin: 0; padding-left: 20px; }
   li { margin: 4px 0; }
-  #queue button { padding: 2px 8px; font-size: 12px; margin-left: 6px; }
+  #board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px; margin-bottom: 16px; overflow-x: auto; }
+  .column { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  .column h3 { font-size: 12px; color: var(--muted); margin: 0 0 8px; text-transform: uppercase; }
+  .bcard { border: 1px solid var(--border); border-left: 4px solid var(--empty); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 13px; }
+  .bcard.working { border-left-color: var(--working); } .bcard.review { border-left-color: var(--review); } .bcard.waiting { border-left-color: var(--waiting); }
+  .bcard.missing { border-left-color: var(--danger); } .bcard.orphan { opacity: 0.7; }
+  .bcard button { padding: 2px 8px; font-size: 12px; margin-right: 6px; }
+  .bcard .missing-bar { color: var(--danger); margin-top: 6px; }
+  #columns-rows .column-row { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
   #detail { display: none; }
   #detail.show { display: block; }
   #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
@@ -85,6 +93,7 @@
   #setup .row button { margin-bottom: 12px; }
   #add-rule { margin-bottom: 12px; }
   #setup textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
+  #columns-rows .column-row .row button { margin-bottom: 12px; }
   #setup-error { color: var(--danger); min-height: 1.4em; margin-bottom: 8px; white-space: pre-wrap; }
   #setup .actions { display: flex; gap: 8px; }
   body.setup #setup { display: block; }
@@ -138,12 +147,6 @@
           </div>
           <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
           <label><span data-i18n="setup.project"></span> <select id="project" required><option value="" data-i18n="setup.projectPlaceholder"></option></select></label>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnQueue"></span> <select id="col-queue" required></select></label>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnWorking"></span> <select id="col-working" required></select></label>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnReview"></span> <select id="col-review" required></select></label>
           <div class="hint" id="quota"></div>
           <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
           <label><span data-i18n="setup.epics"></span>
@@ -159,14 +162,16 @@
             <label><span data-i18n="setup.markdownPath"></span> <input id="md-path" type="text" value="board.md" required></label>
             <button type="button" id="load-columns" data-i18n="setup.load"></button>
           </div>
-          <div class="hint"><span data-i18n-html="setup.markdownHint"></span> <span id="md-found"></span></div>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnQueue"></span> <input id="md-queue" type="text" list="md-options" value="Ready" required></label>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnWorking"></span> <input id="md-working" type="text" list="md-options" value="In progress" required></label>
-          <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-          <label><span data-i18n="setup.columnReview"></span> <input id="md-review" type="text" list="md-options" value="In review" required></label>
-          <datalist id="md-options"></datalist>
+          <div class="hint"><span data-i18n-html="setup.markdownHint"></span></div>
+        </fieldset>
+        <fieldset id="columns-fields">
+          <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
+          <h3 data-i18n="setup.columns"></h3>
+          <div class="hint" data-i18n="setup.columns.loadHint"></div>
+          <div id="columns-rows"></div>
+          <button type="button" id="add-column" data-i18n="setup.columns.add"></button>
+          <div class="hint" data-i18n-html="setup.columns.hint"></div>
+          <datalist id="column-options"></datalist>
         </fieldset>
       </section>
       <section data-panel="geral" hidden>
@@ -183,9 +188,6 @@
             <option value="iterm" data-i18n="setup.workers.iterm"></option>
           </select>
         </label>
-        <!-- biome-ignore lint/a11y/noLabelWithoutControl: the span's text comes from applyTranslations, not static markup -->
-        <label><span data-i18n="setup.promptTemplate"></span> <textarea id="prompt-template" rows="4" spellcheck="false" data-i18n-placeholder="setup.promptPlaceholder"></textarea></label>
-        <div class="hint" data-i18n-html="setup.promptHint"></div>
       </section>
       <section data-panel="limites" hidden>
         <div class="row">
@@ -212,7 +214,7 @@
   </div>
 </form>
 <main>
-  <section id="grid"></section>
+  <div class="work"><section id="board"></section><section id="grid"></section></div>
   <div>
     <aside id="detail">
       <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
@@ -223,11 +225,6 @@
         <button type="button" id="focus" data-i18n="detail.focus"></button>
         <button type="button" id="close" data-i18n="detail.close"></button>
       </div>
-    </aside>
-    <aside id="queue-panel">
-      <!-- biome-ignore lint/a11y/useHeadingContent: the text comes from applyTranslations, not static markup -->
-      <h2 data-i18n="queue.title"></h2>
-      <ol id="queue"></ol>
     </aside>
   </div>
 </main>
