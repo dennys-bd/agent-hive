@@ -219,9 +219,9 @@ function done(state: State, workerId: string): Reduced {
 function spawnFailed(state: State, workerId: string, message: string): Reduced {
   const slot = state.slots.find((s) => s.workerId === workerId);
   if (!slot || slot.status === 'empty') return none(state);
-  const card = cardOf(state.cards, slot);
   const freed = exit(state, workerId).state;
-  return none({ ...(card ? withCard(freed, { ...dropSlot(card), error: message }) : freed), error: message });
+  const card = cardOf(freed.cards, slot); // the card as exit left it (slot already dropped): one source, never two
+  return none({ ...(card ? withCard(freed, { ...card, error: message }) : freed), error: message });
 }
 
 // The end of the command (a Stop after /hooks/done): the board learns the outcome and the card moves on (or leaves after the last

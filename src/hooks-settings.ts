@@ -9,9 +9,11 @@ export const HOOK_EVENTS: readonly string[] = [
 const HOOK_TIMEOUT_S = 30; // a Stop is answered after the board writes of its dispatch (gh takes seconds); the reply is the continuation
 const STATUS_TIMEOUT_S = 2;
 
+// -f: an HTTP error answers nothing on stdout (Express's HTML page, the host guard's JSON would otherwise reach the worker's
+// context on UserPromptSubmit / SessionStart); its exit 22 is masked by the `; exit 0` every command ends with.
 function postStdin(port: number, path: string, timeout: number): string {
   return [
-    `curl -s -m ${timeout} -X POST http://127.0.0.1:${port}${path}`,
+    `curl -sf -m ${timeout} -X POST http://127.0.0.1:${port}${path}`,
     `-H "x-hive-worker: $HIVE_WORKER_ID"`,
     `-H 'content-type: application/json'`,
     `-d @-`,
