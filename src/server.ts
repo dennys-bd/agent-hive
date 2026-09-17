@@ -274,14 +274,17 @@ export function createServer(deps: ServerDeps): HiveServer {
     next();
   });
 
+  // Answers only after the dispatch: the worker's hook blocks until curl returns, so the state (a PR seen on
+  // PostToolUse, above all) is applied before the worker goes on and its `result` line reaches endWhenReviewed.
   app.post('/hooks/event', async (req: Request, res: Response) => {
-    res.sendStatus(200);
     const workerId = req.header('x-hive-worker');
     const payload = req.body as HookPayload | undefined;
-    if (!workerId || !payload?.hook_event_name) return;
-    const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
-    const tokens = await turnTokens(workerId, payload);
-    await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+    if (workerId && payload?.hook_event_name) {
+      const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
+      const tokens = await turnTokens(workerId, payload);
+      await dispatch({ type: 'hook', workerId, payload, branch, tokens });
+    }
+    res.sendStatus(200);
   });
 
   app.get('/events', (req: Request, res: Response) => {

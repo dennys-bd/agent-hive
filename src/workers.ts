@@ -28,6 +28,7 @@ export interface WorkerPool {
 interface Entry {
   handle: WorkerHandle;
   lines: string[];
+  ended: boolean; // stdin closed: the process is on its way out, nothing more can be sent
 }
 
 interface ContentBlock {
@@ -88,22 +89,25 @@ export function createWorkerPool(spawn: SpawnWorker): WorkerPool {
         o.onExit();
       },
     });
-    entries.set(workerId, { handle, lines: [] });
+    entries.set(workerId, { handle, lines: [], ended: false });
     handle.send(o.prompt);
   }
 
-  function call(workerId: string, action: (handle: WorkerHandle) => void): boolean {
+  function call(workerId: string, action: (entry: Entry) => void, unlessEnded = false): boolean {
     const entry = entries.get(workerId);
-    if (!entry) return false;
-    action(entry.handle);
+    if (!entry || (unlessEnded && entry.ended)) return false;
+    action(entry);
     return true;
   }
 
   return {
     start,
-    send: (workerId, text) => call(workerId, (handle) => handle.send(text)),
-    end: (workerId) => call(workerId, (handle) => handle.end()),
-    kill: (workerId) => call(workerId, (handle) => handle.kill()),
+    send: (workerId, text) => call(workerId, (entry) => entry.handle.send(text), true),
+    end: (workerId) => call(workerId, (entry) => {
+      entry.ended = true;
+      entry.handle.end();
+    }),
+    kill: (workerId) => call(workerId, (entry) => entry.handle.kill()),
     killAll: () => {
       for (const { handle } of entries.values()) handle.kill();
     },

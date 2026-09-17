@@ -116,3 +116,11 @@ test('killAll sends kill to every live worker and skips the ones that already ex
   pool.killAll();
   assert.deepEqual(workers.map((w) => w.killed), [0, 1, 1]);
 });
+
+test('send after end reports the worker as gone: stdin is closed even though the process is still exiting', () => {
+  const { pool, worker } = started();
+  assert.equal(pool.end('W1'), true);
+  assert.equal(pool.send('W1', 'mais uma'), false);
+  assert.deepEqual(worker.sent, ['faz a task'], 'nothing is written to a closed stdin');
+  assert.equal(pool.has('W1'), true, 'the entry stays until the exit so its output is still readable');
+});
