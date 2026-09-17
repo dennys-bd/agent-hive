@@ -199,9 +199,9 @@ function idle(state: State, workerId: string, question: string): Reduced {
 function boot(state: State): Reduced {
   const signal = state.signal === 'red' ? 'red' : 'yellow';
   return state.slots
-    .filter((s) => s.status !== 'vazio' && s.workerId)
-    .reduce<Reduced>((r, s) => {
-      const next = exit(r.state, s.workerId!);
+    .flatMap((s) => (s.status !== 'vazio' && s.workerId ? [s.workerId] : []))
+    .reduce<Reduced>((r, workerId) => {
+      const next = exit(r.state, workerId);
       return { state: next.state, effects: [...r.effects, ...next.effects] };
     }, none({ ...state, signal }));
 }

@@ -40,9 +40,9 @@
   .card.trabalhando { border-left-color: var(--trabalhando); }
   .card.aguardando_review { border-left-color: var(--review); }
   .card.esperando_voce { border-left-color: var(--esperando); animation: blink 1s ease-in-out infinite; }
-  .card.draining .title { text-decoration: line-through; }
   .card.paused { opacity: 0.6; }
   .card .title { font-weight: 600; margin-bottom: 4px; }
+  .card.draining .title { text-decoration: line-through; }
   .card .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card .actions { margin-top: 8px; display: flex; gap: 8px; }
   @keyframes blink { 0%, 100% { background: var(--panel); } 50% { background: #3a3110; } }
@@ -53,6 +53,8 @@
   #detail { display: none; }
   #detail.show { display: block; }
   #detail pre { white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; max-height: 300px; overflow: auto; }
+  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+  .hint code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
   #output { font: 12px/1.4 ui-monospace, monospace; min-height: 60px; max-height: 300px; overflow: auto; white-space: pre-wrap; background: var(--bg); padding: 8px; border-radius: 6px; }
   #output .code { margin: 0; padding: 6px 8px; max-height: none; background: var(--code-bg); border: 1px solid var(--border); }
   #output code { background: var(--panel); padding: 0 4px; border-radius: 4px; }
@@ -74,7 +76,6 @@
   #setup input[type=text], #setup select, #setup input[type=number] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
   #setup .row { display: flex; gap: 8px; align-items: flex-end; }
   #setup .row label { flex: 1; }
-  #setup .row button { margin-bottom: 12px; }
   #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   #setup fieldset[disabled] { display: none; }
   #setup .tabs { display: flex; gap: 20px; align-items: flex-start; }
@@ -86,10 +87,9 @@
   #rules th { text-align: left; font-weight: normal; color: var(--muted); font-size: 12px; padding: 0 4px 4px 0; }
   #rules td { padding: 0 4px 4px 0; }
   #rules td button { padding: 3px 8px; font-size: 12px; }
+  #setup .row button { margin-bottom: 12px; }
   #add-rule { margin-bottom: 12px; }
   #setup textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font: 12px/1.4 ui-monospace, monospace; resize: vertical; }
-  .hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
-  .hint code { background: var(--bg); padding: 0 4px; border-radius: 4px; }
   #setup-error { color: var(--danger); min-height: 1.4em; margin-bottom: 8px; white-space: pre-wrap; }
   #setup .actions { display: flex; gap: 8px; }
   body.setup #setup { display: block; }
@@ -103,16 +103,16 @@
   <span id="summary" class="dash">0/0 workers ativos</span>
   <label class="dash">máx. workers <input id="max" type="number" min="0" step="1"></label>
   <span id="signal" class="dash">
-    <button data-signal="green">green</button>
-    <button data-signal="yellow">yellow</button>
-    <button data-signal="red">red</button>
+    <button type="button" data-signal="green">green</button>
+    <button type="button" data-signal="yellow">yellow</button>
+    <button type="button" data-signal="red">red</button>
     <span id="signal-hint"></span>
   </span>
   <span id="usage" class="dash"></span>
   <span id="limits" class="dash"></span>
   <span id="quota" class="dash"></span>
-  <button id="refresh" class="dash">atualizar board</button>
-  <button id="configure">configurar</button>
+  <button type="button" id="refresh" class="dash">atualizar board</button>
+  <button type="button" id="configure">configurar</button>
   <span id="polled" class="dash" style="color: var(--muted); margin-left: auto;"></span>
 </header>
 <div id="error"></div>
@@ -201,11 +201,11 @@
       <div id="output"></div>
       <div class="row">
         <input id="input" type="text" placeholder="mensagem pro worker" autocomplete="off">
-        <button id="send">enviar</button>
+        <button type="button" id="send">enviar</button>
       </div>
       <div class="actions" style="margin-top: 8px; display: flex; gap: 8px;">
-        <button id="focus">ir pro terminal</button>
-        <button id="close">fechar</button>
+        <button type="button" id="focus">ir pro terminal</button>
+        <button type="button" id="close">fechar</button>
       </div>
     </aside>
     <aside id="queue-panel">

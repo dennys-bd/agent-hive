@@ -42,7 +42,7 @@ function openWindow(port: number): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith(origin + '/')) return;
+    if (url.startsWith(`${origin}/`)) return;
     event.preventDefault();
     shell.openExternal(url).catch((err: Error) => console.error('openExternal failed:', err.message));
   });

@@ -55,7 +55,7 @@ export async function prepareHiveDir(repo: string, port: number): Promise<{ hive
   const promptsDir = join(hiveDir, 'prompts');
   const hooksPath = join(hiveDir, 'hooks.json');
   await mkdir(promptsDir, { recursive: true });
-  await writeFile(hooksPath, JSON.stringify(renderHooksSettings(port), null, 2) + '\n');
+  await writeFile(hooksPath, `${JSON.stringify(renderHooksSettings(port), null, 2)}\n`);
   await excludeFromGit(repo);
   return { hiveDir, hooksPath, promptsDir };
 }

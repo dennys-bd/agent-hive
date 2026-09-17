@@ -279,7 +279,7 @@ function connect(): void {
 // Panels are hidden, never disabled, so native validation still covers every tab.
 function showTab(name: string): void {
   document.querySelectorAll<HTMLButtonElement>('#setup-tabs [data-tab]')
-    .forEach((tab) => tab.setAttribute('aria-pressed', String(tab.dataset.tab === name)));
+    .forEach((tab) => { tab.setAttribute('aria-pressed', String(tab.dataset.tab === name)); });
   document.querySelectorAll<HTMLElement>('#setup [data-panel]')
     .forEach((panel) => { panel.hidden = panel.dataset.panel !== name; });
 }

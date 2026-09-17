@@ -53,8 +53,10 @@ test('hive exits 1 with an install hint when electron is not installed', async (
   await writeFile(join(root, 'package.json'), '{ "type": "module" }\n');
   await writeFile(join(root, 'dist', 'src', 'main.js'), '');
   await copyFile(HIVE_BIN, join(root, 'bin', 'hive.js'));
+  // NODE_PATH (set by some launchers, Hive's workers included) would let require('electron') find the repo's copy
+  const env = { ...process.env, NODE_PATH: '' };
   await assert.rejects(
-    execFileAsync(process.execPath, [join(root, 'bin', 'hive.js'), root]),
+    execFileAsync(process.execPath, [join(root, 'bin', 'hive.js'), root], { env }),
     (err: { code?: number; stderr?: string }) => {
       assert.equal(err.code, 1);
       assert.match(err.stderr ?? '', /pnpm install/);

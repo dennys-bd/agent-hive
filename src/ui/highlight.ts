@@ -4,6 +4,7 @@
 const FENCE = /^```(\w*)\s*$/;
 const INLINE_CODE = /`([^`\n]+)`/g;
 const COMMENT = String.raw`\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/`;
+// biome-ignore lint/style/useTemplate: the backtick alternative cannot live inside a template literal without escapes
 const STRING = String.raw`'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|` + '`[^`]*`';
 const NUMBER = String.raw`\b\d+(?:\.\d+)?\b`;
 // Short list shared by TS/JS, Python, Go, Rust and shell: enough to give a block some shape, no grammar per language.

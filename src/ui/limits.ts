@@ -28,7 +28,7 @@ export function addRuleRow(rule?: UsageRule): void {
 /** Clears the table and adds one row per rule, in array order (no sorting: applyUsageRules ignores order). */
 export function renderRules(rules: UsageRule[]): void {
   tbody().innerHTML = '';
-  rules.forEach((rule) => addRuleRow(rule));
+  for (const rule of rules) addRuleRow(rule);
 }
 
 // Absent keys stay absent (never an explicit undefined), so hive.config.json stays clean, like budgetFromForm.

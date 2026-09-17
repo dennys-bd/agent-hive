@@ -4,11 +4,13 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "packageManager": "pnpm@10.22.0",
   "main": "dist/src/main.js",
   "bin": { "hive": "bin/hive.js" },
   "scripts": {
     "build": "tsc && mkdir -p dist/src/ui && cp src/ui/index.html dist/src/ui/",
     "test": "pnpm build && node --test \"dist/test/*.test.js\" \"dist/test/boards/*.test.js\"",
+    "lint": "biome lint --error-on-warnings",
     "start": "pnpm build && electron dist/src/main.js",
     "run:headless": "pnpm build && node dist/src/run.js"
   },
@@ -16,12 +18,15 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.14",
     "@types/express": "^5.0.0",
     "@types/node": "^24.0.0",
     "electron": "^38.0.0",
     "typescript": "^5.9.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron"]
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   }
 }
