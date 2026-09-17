@@ -23,7 +23,7 @@ const BODY: SetupBody = {
 interface Started { repo: string; base: string; port: number; server: HiveServer; workers: FakeWorker[] }
 
 const postJson = (url: string, body?: unknown): Promise<Response> =>
-  fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+  fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };

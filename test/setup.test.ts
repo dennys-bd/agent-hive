@@ -29,8 +29,9 @@ async function start(t: TestContext, resolveDelayMs = 0): Promise<Started> {
   return { repo, base: `http://127.0.0.1:${port}`, port, server, configs };
 }
 
+const UI_HEADERS = { 'content-type': 'application/json', 'x-hive-ui': '1' }; // what the dashboard sends on every POST
 const postSetup = (base: string, body: unknown): Promise<Response> =>
-  fetch(`${base}/setup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  fetch(`${base}/setup`, { method: 'POST', headers: UI_HEADERS, body: JSON.stringify(body) });
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const configFile = (repo: string): string => join(repo, 'hive.config.json');
 
@@ -76,7 +77,7 @@ test('setup listings reject a missing owner, number, path or type with 400 namin
 
 test('dashboard routes answer 409 before setup', async (t) => {
   const { base } = await start(t);
-  assert.equal((await fetch(`${base}/board/refresh`, { method: 'POST' })).status, 409);
+  assert.equal((await fetch(`${base}/board/refresh`, { method: 'POST', headers: UI_HEADERS })).status, 409);
 });
 
 test('POST /setup writes the config with defaults, boots the runtime and reports the port mismatch', async (t) => {
@@ -189,6 +190,20 @@ test('requests with a Host header that does not match the bound address get 403'
   assert.equal(await getWithHost(port, `evil.example:${port}`), 403);
 });
 
+// A form on another site can post at the local port with a matching Host and no JSON: only the x-hive-ui header, which a
+// form cannot set, tells the dashboard apart. Hook routes are exempt (a worker's curl never sends it).
+test('a dashboard POST without x-hive-ui gets 403 and changes nothing; hook routes do not need it', async (t) => {
+  const { base, server } = await start(t);
+  assert.equal((await postSetup(base, BODY)).status, 200);
+  const form = await fetch(`${base}/board/refresh`, { method: 'POST', body: new URLSearchParams({ x: '1' }) });
+  assert.equal(form.status, 403);
+  assert.deepEqual(await form.json(), { error: 'origem não permitida' });
+  const bare = await fetch(`${base}/signal`, { method: 'POST' });
+  assert.equal(bare.status, 403);
+  assert.equal(server.getState()?.signal, 'yellow');
+  assert.equal((await fetch(`${base}/hooks/exit`, { method: 'POST' })).status, 200);
+});
+
 test('requests with a matching Host header are not rejected by the allowlist', async (t) => {
   const { port } = await start(t);
   assert.equal(await getWithHost(port, `127.0.0.1:${port}`), 200);
@@ -254,7 +269,7 @@ test('POST /setup with a markdown board creates the file and boots the queue fro
 test('POST /signal answers 409 before setup, 400 for an unknown value, then 200 and the state carries it', async (t) => {
   const { base, repo, server } = await start(t);
   const postSignal = (body: unknown): Promise<Response> =>
-    fetch(`${base}/signal`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    fetch(`${base}/signal`, { method: 'POST', headers: UI_HEADERS, body: JSON.stringify(body) });
   assert.equal((await postSignal({ signal: 'red' })).status, 409);
   assert.equal((await postSetup(base, BODY)).status, 200);
   assert.equal(server.getState()?.signal, 'yellow', 'setup boots, and every boot opens under yellow');

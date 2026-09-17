@@ -493,7 +493,7 @@ $('queue').addEventListener('click', (event) => {
 
 1. A repo with `máx. workers = 2`, a board with 3 free tasks: `pnpm start <repo>`. The Hive opens under yellow, both slots empty, the 3 tasks in the queue panel each with `iniciar`. Click it on the second: only that task opens (card `iniciado à mão`, terminal spawns), the other two stay queued, the signal stays yellow, the header shows `1/2`.
 2. Click `iniciar` on a second task, then on the third with both slots occupied: the browser asks `Nenhum slot livre. Subir máx. workers de 2 pra 3 e iniciar #<n>?`. Cancel: nothing happens, no request. OK: the header shows `3/3`, the worker opens, `hive.log` has `INFO  slot 3: vazio → trabalhando #<n> worker=…` and, at `logLevel: debug`, `DEBUG start #<itemId> raiseMax=true`. Quit and `pnpm start <repo>` again: `máx. workers` still reads 3 (`grep maxConcurrent <repo>/.hive/state.json`).
-3. A task with an open blocker (GitHub: blocked by an open issue; markdown: a `blockedBy` cell naming an open id) shows `· bloqueada por …` and no button. `curl -s -X POST localhost:<port>/queue/<itemId>/start` on it answers `409 {"error":"task bloqueada por …"}`; on an id not in the queue, `404`.
+3. A task with an open blocker (GitHub: blocked by an open issue; markdown: a `blockedBy` cell naming an open id) shows `· bloqueada por …` and no button. `curl -s -X POST -H 'x-hive-ui: 1' localhost:<port>/queue/<itemId>/start` on it answers `409 {"error":"task bloqueada por …"}`; on an id not in the queue, `404`.
 4. Under red, a worker started by hand stops at its first `Stop` with `pausado: sinal red`, like any other. Signal buttons, `máx. workers`, `kill`, the token meter and the automatic fill under green behave exactly as before.
 
 - [ ] **Step 5: Commit**

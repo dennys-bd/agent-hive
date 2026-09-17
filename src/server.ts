@@ -36,6 +36,9 @@ const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
+const FORBIDDEN_ORIGIN_MESSAGE = 'origem não permitida';
+const HOOKS_PREFIX = '/hooks/';
+export const UI_HEADER = 'x-hive-ui'; // every dashboard POST carries it; the value is irrelevant
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
 const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
@@ -340,6 +343,13 @@ export function createServer(deps: ServerDeps): HiveServer {
     const allowedHosts = boundPort !== undefined ? [`127.0.0.1:${boundPort}`, `localhost:${boundPort}`] : [];
     if (!allowedHosts.includes(req.headers.host ?? '')) {
       res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_HOST_MESSAGE });
+      return;
+    }
+    // The Host check does not stop CSRF: a form on any site can post straight at the local port. Dashboard routes need a
+    // header only the UI sends; a form cannot set one, and a cross-origin fetch that does hits a preflight the server never
+    // answers. Hook routes stay open: without x-hive-worker they are no-ops already.
+    if (req.method === 'POST' && !req.path.startsWith(HOOKS_PREFIX) && req.header(UI_HEADER) === undefined) {
+      res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_ORIGIN_MESSAGE });
       return;
     }
     next();

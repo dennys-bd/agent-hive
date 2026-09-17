@@ -95,7 +95,9 @@ function getJson<T>(path: string): Promise<T> {
 
 function postJson<T>(path: string, body?: unknown): Promise<T> {
   return fetch(path, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body),
+    // x-hive-ui is the CSRF gate of every dashboard route: a form on another site cannot set it (see server.ts)
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   }).then((res) => parseJson<T>(res));
 }
 
