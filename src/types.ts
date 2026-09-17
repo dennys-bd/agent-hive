@@ -81,9 +81,13 @@ export interface State {
 /** Where a worker runs: a child of the Hive (print mode, JSON over stdio) or an iTerm2 tab the Hive opens and watches. */
 export type WorkersMode = 'embedded' | 'iterm';
 
+/** What the GitHub adapter does with an issue that has sub-issues: drop it (only the sub-issues are tasks) or queue it like any other. */
+export type EpicsMode = 'ignore' | 'queue';
+
 export interface Config {
   board: BoardConfig;
   workers: WorkersMode;
+  epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -150,6 +154,8 @@ export interface SetupBody {
   usageRules?: UsageRule[];
   /** Optional; missing keeps the current mode (or `embedded` on first setup). */
   workers?: WorkersMode;
+  /** Optional; missing keeps the current mode (or `ignore` on first setup). */
+  epics?: EpicsMode;
 }
 
 export interface SetupResult {
