@@ -41,6 +41,7 @@ let setupInfo: SetupInfo | undefined;
 let outputTimer: ReturnType<typeof setInterval> | undefined;
 let outputSlotId: string | undefined; // the slot the output polling follows
 let lastOutput = '';
+let revealing = false; // guards the invalid listener below against re-entry from later controls in the same submit
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -276,6 +277,14 @@ function connect(): void {
 
 // ---------- setup form ----------
 
+// Panels are hidden, never disabled, so native validation still covers every tab.
+function showTab(name: string): void {
+  document.querySelectorAll<HTMLButtonElement>('#setup-tabs [data-tab]')
+    .forEach((tab) => tab.setAttribute('aria-selected', String(tab.dataset.tab === name)));
+  document.querySelectorAll<HTMLElement>('#setup [data-panel]')
+    .forEach((panel) => { panel.hidden = panel.dataset.panel !== name; });
+}
+
 function setupError(message?: string): void {
   $('setup-error').textContent = message ?? '';
 }
@@ -391,6 +400,7 @@ async function openSetup(): Promise<void> {
   const config = setupInfo?.config;
   const board = config?.board;
   document.body.classList.add('setup');
+  showTab('board');
   $<HTMLButtonElement>('cancel').hidden = !setupInfo?.configured;
   $<HTMLSelectElement>('board-type').value = board?.type ?? 'github';
   applyBoardType();
@@ -431,6 +441,7 @@ function statusFromForm(): Record<StatusKey, string> {
 async function saveSetup(): Promise<void> {
   const board = boardFromForm();
   if (!board) {
+    showTab('board');
     setupError(boardType() === 'markdown' ? 'informe o caminho do arquivo' : 'escolha um project');
     return;
   }
@@ -521,6 +532,18 @@ $('setup').addEventListener('submit', (event) => {
 });
 $('cancel').addEventListener('click', closeSetup);
 $('add-rule').addEventListener('click', () => addRuleRow());
+$('setup-tabs').addEventListener('click', (event) => {
+  const tab = (event.target as HTMLElement).closest<HTMLElement>('[data-tab]')?.dataset.tab;
+  if (tab) showTab(tab);
+});
+// invalid fires once per invalid control in tree order; only react to the first one per submit attempt
+$('setup').addEventListener('invalid', (event) => {
+  if (revealing) return;
+  revealing = true;
+  queueMicrotask(() => { revealing = false; });
+  const panel = (event.target as HTMLElement).closest<HTMLElement>('[data-panel]');
+  if (panel?.dataset.panel) showTab(panel.dataset.panel);
+}, { capture: true });
 
 setInterval(render, RERENDER_MS);
 void init();
