@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const MISSING_BUILD = 2;
 const MISSING_REPO = 2;
+const BAD_CONFIG = 2;
 // mirrors DEFAULT_CONFIG.port in src/config.ts
 const DEFAULT_PORT = 47821;
 const PORT_CHECK_TIMEOUT_MS = 1000;
@@ -34,13 +35,20 @@ try {
 }
 
 function readConfiguredPort() {
+  let raw;
   try {
-    const raw = JSON.parse(readFileSync(join(repo, 'hive.config.json'), 'utf8'));
-    return typeof raw.port === 'number' ? raw.port : DEFAULT_PORT;
+    raw = JSON.parse(readFileSync(join(repo, 'hive.config.json'), 'utf8'));
   } catch {
-    // missing or unparsable file just means the default
+    // missing or unparsable file: the app itself reports it on boot; the probe just uses the default
     return DEFAULT_PORT;
   }
+  if (raw.port === undefined) return DEFAULT_PORT;
+  // same rule as requireInt in src/config.ts, so a bad port fails here instead of probing the wrong one
+  if (!Number.isInteger(raw.port) || raw.port < 0) {
+    console.error('hive.config.json: "port" must be a non-negative integer');
+    process.exit(BAD_CONFIG);
+  }
+  return raw.port;
 }
 
 const port = readConfiguredPort();
@@ -49,13 +57,16 @@ async function checkRunningInstance() {
   let res;
   try {
     res = await fetch(`http://127.0.0.1:${port}/setup`, { signal: AbortSignal.timeout(PORT_CHECK_TIMEOUT_MS) });
-  } catch {
-    // nothing is there, proceed to spawn
-    return;
+  } catch (err) {
+    // only a refused connection means the port is free; a timeout or reset means someone holds it
+    if (err?.cause?.code === 'ECONNREFUSED') return;
+    console.error(`porta ${port} em uso e sem resposta (veja: lsof -i :${port})`);
+    process.exit(1);
   }
   const body = await res.json().catch(() => undefined);
   if (body && typeof body.repo === 'string') {
-    console.log(`Agent Hive já está rodando em http://127.0.0.1:${port} (repo: ${body.repo})`);
+    const shownRepo = body.repo.replace(/[\x00-\x1f\x7f]/g, ''); // no terminal escapes from a stranger on the port
+    console.log(`Agent Hive já está rodando em http://127.0.0.1:${port} (repo: ${shownRepo})`);
     process.exit(0);
   }
   console.error(`porta ${port} em uso por outro processo (veja: lsof -i :${port})`);
@@ -66,9 +77,15 @@ await checkRunningInstance();
 
 // detach: keep the Hive and its workers alive after the launching terminal closes
 const hiveDir = join(repo, '.hive');
-mkdirSync(hiveDir, { recursive: true });
 const logPath = join(hiveDir, 'hive.log');
-const fd = openSync(logPath, 'a');
+let fd;
+try {
+  mkdirSync(hiveDir, { recursive: true, mode: 0o700 });
+  fd = openSync(logPath, 'a', 0o600); // the log is only for this user
+} catch (err) {
+  console.error(`não consegui abrir ${logPath}: ${err.message}`);
+  process.exit(1);
+}
 
 const child = spawn(electronPath, [mainJs, repo], {
   detached: true,

@@ -192,3 +192,40 @@ test('hive exits 1 when the port is taken by something that is not a Hive', asyn
     server.close();
   }
 });
+
+test('hive exits 1 when the port is held by a listener that never answers', async () => {
+  // a Hive still booting, or a hung process: occupied is the safe reading, never "free"
+  const root = await setupLaunchableRoot();
+  const repo = await mkdtemp(join(tmpdir(), 'hive-repo-'));
+  const server = createNetServer(() => { /* accept and stay silent */ });
+  try {
+    await new Promise<void>((resolvePromise) => server.listen(0, '127.0.0.1', () => resolvePromise()));
+    const { port } = server.address() as AddressInfo;
+    await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ port }));
+    await assert.rejects(
+      execFileAsync(process.execPath, [join(root, 'bin', 'hive.js'), repo], { env: envWithoutNodePath }),
+      (err: { code?: number; stderr?: string }) => {
+        assert.equal(err.code, 1);
+        assert.match(err.stderr ?? '', /em uso e sem resposta/);
+        return true;
+      },
+    );
+    assert.equal(existsSync(join(repo, 'marker')), false); // nothing was spawned
+  } finally {
+    server.close();
+  }
+});
+
+test('hive exits 2 when hive.config.json has a port that is not an integer', async () => {
+  const root = await setupLaunchableRoot();
+  const repo = await mkdtemp(join(tmpdir(), 'hive-repo-'));
+  await writeFile(join(repo, 'hive.config.json'), JSON.stringify({ port: '47821' }));
+  await assert.rejects(
+    execFileAsync(process.execPath, [join(root, 'bin', 'hive.js'), repo], { env: envWithoutNodePath }),
+    (err: { code?: number; stderr?: string }) => {
+      assert.equal(err.code, 2);
+      assert.match(err.stderr ?? '', /"port" must be a non-negative integer/);
+      return true;
+    },
+  );
+});
