@@ -8,7 +8,7 @@ import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
 
-// Markdown board, zero slots and port 0 (random free port): boots without gh, iTerm or a fixed port.
+// Markdown board, zero slots and port 0 (random free port): boots without gh, a claude process or a fixed port.
 async function repoWithConfig(extra: Record<string, unknown>): Promise<string> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-boot-'));
   await writeFile(join(repo, 'board.md'), newBoardText());

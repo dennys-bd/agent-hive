@@ -11,11 +11,12 @@ import { createMarkdownFileIfMissing, markdownPath } from './boards/markdown.js'
 import { CONFIG_FILE, loadConfigIfPresent, parseConfig } from './config.js';
 import { prepareHiveDir } from './hooks-settings.js';
 import { reduce, SIGNALS } from './orchestrator.js';
-import { killStray, openWorker, renderPrompt, workerCommand, writePrompt } from './spawn.js';
+import { killStray, renderPrompt, spawnWorker, workerArgv, workerEnv, writePrompt } from './spawn.js';
+import { createWorkerPool } from './workers.js';
 import { loadState, saveState } from './state-store.js';
 import { isTranscriptPath, sumTranscriptTokens } from './usage.js';
 import type {
-  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, State,
+  Board, Config, Effect, EventsPayload, HiveEvent, HookPayload, SetupBody, SetupInfo, SetupResult, Signal, Slot, SpawnWorker, State,
 } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -24,12 +25,16 @@ const SSE_HEARTBEAT_MS = 25_000;
 const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
 const HTTP_FORBIDDEN = 403;
+const HTTP_NOT_FOUND = 404;
 const HTTP_NOT_CONFIGURED = 409;
 const HTTP_SERVER_ERROR = 500;
 const HTTP_BAD_GATEWAY = 502;
 const NOT_CONFIGURED_MESSAGE = 'Hive não configurado: salve o setup primeiro';
 const FORBIDDEN_HOST_MESSAGE = 'host não permitido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
+const SLOT_EMPTY_MESSAGE = 'slot vazio ou inexistente';
+const NO_WORKER_MESSAGE = 'nenhum worker vivo nesse slot';
+const INPUT_MESSAGE = 'text deve ser uma string não vazia';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'SessionEnd']; // the only stable points to read a transcript
 
 export type BoardFactory = (config: Config) => Board;
@@ -47,6 +52,7 @@ export interface ServerDeps {
   runtime?: Runtime;
   state?: State;
   boardFactory?: BoardFactory;
+  spawnWorker?: SpawnWorker; // tests inject a fake; the default opens a real claude
 }
 
 export interface HiveServer {
@@ -92,6 +98,7 @@ function boardFromQuery(query: Request['query']): Record<string, unknown> {
 export function createServer(deps: ServerDeps): HiveServer {
   const { repo } = deps;
   const boardFactory: BoardFactory = deps.boardFactory ?? ((config) => createBoard(config, { repo }));
+  const pool = createWorkerPool(deps.spawnWorker ?? spawnWorker);
   let live: Live | undefined = deps.runtime && deps.state ? { runtime: deps.runtime, state: deps.state } : undefined;
   let boundPort: number | undefined;
   let httpServer: HttpServer | undefined;
@@ -143,13 +150,8 @@ export function createServer(deps: ServerDeps): HiveServer {
         await runtime.board.setStatus(effect.itemId, effect.key).catch((err) => fail(`board.setStatus(${effect.key})`, err));
         return;
       case 'kill':
-        try {
-          // no live process (tab closed by hand, exit signal lost): free the slot ourselves
-          const matched = await killStray(effect.slug);
-          if (!matched) await dispatch({ type: 'exit', workerId: effect.workerId });
-        } catch (err) {
-          await fail('kill', err);
-        }
+        // unknown to the pool (started by a previous Hive): nothing to signal, free the slot ourselves
+        if (!pool.kill(effect.workerId)) await dispatch({ type: 'exit', workerId: effect.workerId });
         return;
       case 'spawn':
         await spawn(runtime, effect.slot).catch((err) => fail(`spawn ${effect.slot.slug}`, err));
@@ -160,11 +162,22 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function spawn(runtime: Runtime, slot: Slot): Promise<void> {
     if (!slot.task || !slot.slug || !slot.workerId) return;
     const { config, hooksPath, promptsDir } = runtime;
-    const promptPath = await writePrompt(promptsDir, slot.slug, renderPrompt(config.promptTemplate, slot.task));
-    const command = workerCommand({
-      repo, workerId: slot.workerId, port: config.port, slug: slot.slug, hooksPath, promptPath, claudeArgs: config.claudeArgs,
+    const { workerId } = slot;
+    const prompt = renderPrompt(config.promptTemplate, slot.task);
+    await writePrompt(promptsDir, slot.slug, prompt); // kept as a record; the worker receives it over stdin
+    pool.start({
+      workerId, prompt, cwd: repo,
+      argv: workerArgv({ slug: slot.slug, hooksPath, claudeArgs: config.claudeArgs }),
+      env: workerEnv(process.env, workerId, config.port),
+      onExit: () => void dispatch({ type: 'exit', workerId }),
+      onResult: endWhenReviewed,
     });
-    await openWorker(command);
+  }
+
+  // A turn ended with the PR already open: the task is done, so closing stdin lets the worker exit and free the slot.
+  // Without a PR the session stays open for follow-ups from the panel.
+  function endWhenReviewed(workerId: string): void {
+    if (live?.state.slots.find((s) => s.workerId === workerId)?.status === 'aguardando_review') pool.end(workerId);
   }
 
   async function poll(): Promise<void> {
@@ -269,12 +282,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
     const tokens = await turnTokens(workerId, payload);
     await dispatch({ type: 'hook', workerId, payload, branch, tokens });
-  });
-
-  app.post('/hooks/exit', async (req: Request, res: Response) => {
-    res.sendStatus(200);
-    const workerId = req.header('x-hive-worker');
-    if (workerId) await dispatch({ type: 'exit', workerId });
   });
 
   app.get('/events', (req: Request, res: Response) => {
@@ -404,6 +411,33 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
+  app.get('/slots/:id/output', (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const slot = current.state.slots.find((s) => s.id === req.params.id);
+    if (!slot || slot.status === 'vazio') {
+      res.status(HTTP_NOT_FOUND).json({ error: SLOT_EMPTY_MESSAGE });
+      return;
+    }
+    res.json({ lines: slot.workerId ? pool.output(slot.workerId) : [] });
+  });
+
+  app.post('/slots/:id/input', (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const text = (req.body as { text?: unknown }).text;
+    if (typeof text !== 'string' || text.trim() === '') {
+      res.status(HTTP_BAD_REQUEST).json({ error: INPUT_MESSAGE });
+      return;
+    }
+    const slot = current.state.slots.find((s) => s.id === req.params.id);
+    if (!slot?.workerId || !pool.send(slot.workerId, text)) {
+      res.status(HTTP_NOT_FOUND).json({ error: NO_WORKER_MESSAGE });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
   app.post('/board/refresh', async (_req: Request, res: Response) => {
     if (!requireLive(res)) return;
     await poll();
@@ -433,7 +467,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function close(): Promise<void> {
     if (pollTimer) clearInterval(pollTimer);
+    pool.killAll(); // children of the Hive: none should outlive it
     const server = httpServer;
+    httpServer = undefined; // a second close() (Electron will-quit after a test's after hook, or vice versa) is a no-op
     if (!server) return;
     server.closeAllConnections(); // drops open SSE streams so close() does not wait for them
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
