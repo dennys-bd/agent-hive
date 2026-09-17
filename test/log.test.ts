@@ -123,6 +123,7 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'setBudget', budget: { maxTokensPerHour: 10 } }), 'setBudget {"maxTokensPerHour":10}');
   assert.equal(describeEvent({ type: 'setUsageRules', usageRules: [{ percent: 80, signal: 'yellow' }] }), 'setUsageRules rules=1');
   assert.equal(describeEvent({ type: 'rateLimits', workerId: WORKER, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits worker=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'rateLimits', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits source=hive');
   assert.equal(
     describeEvent({ type: 'boardQuota', quota: { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' } }),
     'boardQuota remaining=4320/5000 resetsAt=2026-09-16T13:00:00.000Z',

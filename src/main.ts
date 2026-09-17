@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, dialog, shell } from 'electron';
 import { bootHive } from './hive.js';
+import { readPlanLimits } from './plan-limits.js';
 
 const APP_NAME = 'Agent Hive';
 const WINDOW = { width: 1280, height: 820, backgroundColor: '#111418' };
@@ -66,7 +67,7 @@ app.whenReady().then(async () => {
     return;
   }
   await rememberRepo(repo);
-  const { port, server } = await bootHive(repo);
+  const { port, server } = await bootHive(repo, { readPlanLimits });
   // Workers are children of this process: SIGTERM them before Electron goes away. Best effort, no waiting.
   app.on('will-quit', () => void server.close().catch((err: Error) => console.error('close failed:', err.message)));
   openWindow(port);

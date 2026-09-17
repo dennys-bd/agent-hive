@@ -8,9 +8,10 @@ import { parseConfig } from '../src/config.js';
 import { prepareHiveDir } from '../src/hooks-settings.js';
 import type { Logger } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
+import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
 import { transcriptDir } from '../src/usage.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { BoardQuota, SetupBody, Slot, State } from '../src/types.js';
+import type { BoardQuota, RateLimits, SetupBody, Slot, State } from '../src/types.js';
 import { fakeBoardFactory, fakeLog, fakeSpawn, type FakeWorker } from './fakes.js';
 
 const BODY: SetupBody = {
@@ -26,6 +27,11 @@ const postJson = (url: string, body?: unknown): Promise<Response> =>
 const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const slot0 = (server: HiveServer): Slot => server.getState()!.slots[0];
 const QUOTA: BoardQuota = { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' };
+const PLAN: RateLimits = {
+  at: '2026-09-17T12:00:00.000Z',
+  windows: { five_hour: { usedPercent: 23.4, resetsAt: '2026-09-17T15:00:00.000Z' }, seven_day_opus: { usedPercent: 7.5, resetsAt: '2026-09-21T00:00:00.000Z' } },
+};
+const NO_TOKEN = 'no Claude Code OAuth token (env, .credentials.json or Keychain)';
 
 async function start(t: TestContext, body: SetupBody = BODY, log?: Logger): Promise<Started> {
   const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
@@ -297,4 +303,66 @@ test('POST /setup re-reads logLevel from hive.config.json and switches the logge
   assert.ok(lines.includes('LEVEL debug'), lines.filter((l) => l.startsWith('LEVEL')).join('\n'));
   assert.ok(lines.includes(`INFO config port=${port} board=github workers=embedded logLevel=debug`));
   assert.equal((JSON.parse(await readFile(file, 'utf8')) as { logLevel: string }).logLevel, 'debug', 'the save keeps the level it read');
+});
+
+test('POST /setup reads the plan limits through the injected reader with no worker alive, and the timer reads again every 5 min', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval'] }); // before listen: the timer is armed there
+  let reads = 0;
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const server = createServer({
+    repo, boardFactory: fakeBoardFactory().factory, spawnWorker: fakeSpawn().spawn,
+    readPlanLimits: async () => { reads += 1; return { ...PLAN, at: `2026-09-17T12:0${reads}:00.000Z` }; },
+  });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  assert.equal(reads, 0, 'nothing to read before the Hive is configured');
+  assert.equal((await postJson(`http://127.0.0.1:${port}/setup`, { ...BODY, maxConcurrent: 0 })).status, 200); // no slot: no worker ever
+  assert.equal(reads, 1, 'configure reads once, after the poll');
+  assert.deepEqual(server.getState()?.rateLimits, { ...PLAN, at: '2026-09-17T12:01:00.000Z' });
+  t.mock.timers.tick(PLAN_LIMITS_INTERVAL_MS);
+  await waitFor(() => server.getState()?.rateLimits?.at === '2026-09-17T12:02:00.000Z');
+  assert.equal(reads, 2);
+  const saved = JSON.parse(await readFile(join(repo, '.hive', 'state.json'), 'utf8')) as State;
+  assert.deepEqual(saved.rateLimits, server.getState()?.rateLimits, 'persisted like any other reading');
+  assert.equal(server.getState()?.error, undefined);
+});
+
+test('a reader that rejects keeps the last value and the Hive going; the reason is logged once per change and the recovery once', async (t) => {
+  const { log, lines } = fakeLog();
+  let failWith: string | undefined = NO_TOKEN;
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const server = createServer({
+    repo, boardFactory: fakeBoardFactory().factory, spawnWorker: fakeSpawn().spawn, log,
+    readPlanLimits: async () => { if (failWith) throw new Error(failWith); return PLAN; },
+  });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const planLines = (): string[] => lines.filter((l) => l.includes('plan limits'));
+  assert.equal((await postJson(`http://127.0.0.1:${port}/setup`, { ...BODY, maxConcurrent: 0 })).status, 200, 'setup succeeds without limits');
+  assert.equal(server.getState()?.rateLimits, undefined);
+  assert.equal(server.getState()?.error, undefined, 'never the error bar: an API-key user has no token, by design');
+  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`]);
+  await server.refreshPlanLimits();
+  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`], 'same reason again: silent');
+  failWith = 'HTTP 401';
+  await server.refreshPlanLimits();
+  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`, 'INFO plan limits: HTTP 401']);
+  failWith = undefined;
+  await server.refreshPlanLimits();
+  assert.deepEqual(server.getState()?.rateLimits, PLAN);
+  assert.deepEqual(planLines().at(-1), 'INFO plan limits: ok');
+  await server.refreshPlanLimits();
+  assert.equal(planLines().length, 3, 'a success after a success logs nothing');
+  failWith = 'HTTP 401';
+  await server.refreshPlanLimits();
+  assert.deepEqual(server.getState()?.rateLimits, PLAN, 'the last value stays');
+  assert.ok(!lines.some((l) => l.startsWith('ERROR')), lines.filter((l) => l.startsWith('ERROR')).join('\n'));
+});
+
+test('without a readPlanLimits dep the server never reads the plan limits and logs nothing about them', async (t) => {
+  const { log, lines } = fakeLog();
+  const { server } = await start(t, BODY, log);
+  await server.refreshPlanLimits();
+  assert.equal(server.getState()?.rateLimits, undefined);
+  assert.ok(!lines.some((l) => l.includes('plan limits')), lines.join('\n'));
 });

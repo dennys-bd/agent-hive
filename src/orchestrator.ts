@@ -103,8 +103,10 @@ function patch(state: State, workerId: string, changes: Partial<Slot>): Reduced 
   return none({ ...state, slots: state.slots.map((s) => (s.workerId === workerId ? { ...s, ...changes } : s)) });
 }
 
-// Account-wide data, but only a live worker feeds it, as with hooks. Nothing here gates a spawn: signal and budget stay item 6's.
-function setRateLimits(state: State, workerId: string, rateLimits: RateLimits): Reduced {
+// Account-wide data. From a worker it needs a live slot, as with hooks (any local process can post to the route); the Hive's own
+// reading never passes through a route, so it is always kept. Nothing here gates a spawn: signal and budget stay item 6's.
+function setRateLimits(state: State, workerId: string | undefined, rateLimits: RateLimits): Reduced {
+  if (workerId === undefined) return none({ ...state, rateLimits });
   const slot = state.slots.find((s) => s.workerId === workerId);
   return !slot || slot.status === 'vazio' ? none(state) : none({ ...state, rateLimits });
 }

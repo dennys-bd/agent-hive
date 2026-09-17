@@ -100,7 +100,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'setSignal': return `setSignal ${event.signal}`;
     case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
     case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
-    case 'rateLimits': return `rateLimits worker=${shortId(event.workerId)}`;
+    case 'rateLimits': return event.workerId ? `rateLimits worker=${shortId(event.workerId)}` : 'rateLimits source=hive';
     case 'boardQuota': return `boardQuota remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
     case 'hook': {
       const tool = event.payload.tool_name ? ` tool=${event.payload.tool_name}` : '';
