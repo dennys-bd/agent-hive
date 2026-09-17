@@ -33,7 +33,8 @@ test('adding, moving and removing rows reach onChange with the new list, in orde
   const { rerender } = render(<ColumnEditor columns={columns} options={['Ready']} onChange={onChange} />);
   expect(screen.getAllByLabelText('nome').map((el) => (el as HTMLInputElement).value)).toEqual(['spec', 'dev']);
   await user.click(screen.getByRole('button', { name: '+ coluna' }));
-  expect(onChange).toHaveBeenLastCalledWith([...columns, emptyColumn()]);
+  // the new row's id is generated fresh (not the literal one emptyColumn() would return here), so match its shape, not its id
+  expect(onChange).toHaveBeenLastCalledWith([...columns, expect.objectContaining({ name: '', weight: '1', session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' })]);
   const rows = screen.getAllByTestId('column-row');
   await user.click(within(rows[1]).getByRole('button', { name: '↑' }));
   expect(onChange).toHaveBeenLastCalledWith([columns[1], columns[0]]);
@@ -46,4 +47,13 @@ test('adding, moving and removing rows reach onChange with the new list, in orde
   expect(onChange).toHaveBeenLastCalledWith([{ ...columns[0], weight: '7' }, columns[1]]);
   rerender(<ColumnEditor columns={[]} options={[]} onChange={onChange} />);
   expect(screen.queryAllByTestId('column-row')).toHaveLength(0);
+});
+
+test('removing a row keeps the surviving rows keyed by their own draft, not by screen position', () => {
+  const columns = [column('spec'), column('dev'), column('review')];
+  const onChange = vi.fn();
+  const { rerender } = render(<ColumnEditor columns={columns} options={[]} onChange={onChange} />);
+  const remaining = columns.filter((c) => c.name !== 'spec');
+  rerender(<ColumnEditor columns={remaining} options={[]} onChange={onChange} />);
+  expect(screen.getAllByLabelText('nome').map((el) => (el as HTMLInputElement).value)).toEqual(['dev', 'review']);
 });

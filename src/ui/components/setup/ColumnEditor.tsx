@@ -104,8 +104,7 @@ export function ColumnEditor({ columns, options, onChange }: ColumnEditorProps) 
     <div className="flex flex-col gap-3">
       {columns.map((column, i) => (
         <ColumnRow
-          // biome-ignore lint/suspicious/noArrayIndexKey: a ColumnDraft has no stable id; rows have no per-instance state to misattach
-          key={i} column={column} index={i} total={columns.length} options={options}
+          key={column.id} column={column} index={i} total={columns.length} options={options}
           onUpdate={(patch) => update(i, patch)} onMove={(to) => move(i, to)} onRemove={() => remove(i)}
         />
       ))}

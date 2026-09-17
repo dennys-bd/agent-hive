@@ -26,6 +26,13 @@ export function App() {
   useEffect(() => { if (language) document.documentElement.lang = LOCALE[language]; }, [language]);
   useEffect(() => { if (state?.error) toast.error(state.error); }, [state?.error]);
   useEffect(() => { if (!connected) toast.error(t('error.disconnected')); }, [connected]);
+  // A slot id is a fixed pool a later task can reuse: once the selected slot empties, drop the selection so a
+  // new occupant of the same id never reopens the sheet on its own (mirrors the old renderDetail()'s guard).
+  useEffect(() => {
+    if (!selectedSlotId) return;
+    const slot = state?.slots.find((s) => s.id === selectedSlotId);
+    if (!slot || slot.status === 'empty') setSelectedSlotId(undefined);
+  }, [state, selectedSlotId]);
 
   if (setupError) return <p className="p-4 text-destructive">{setupError}</p>;
   if (!info || !language) return null;

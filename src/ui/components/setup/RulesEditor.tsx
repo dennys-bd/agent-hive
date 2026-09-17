@@ -47,8 +47,7 @@ export function RulesEditor({ rules, onChange }: RulesEditorProps) {
   return (
     <div className="flex flex-col gap-2">
       {rules.map((rule, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a RuleDraft has no stable id; rows have no per-instance state to misattach
-        <RuleRow key={i} rule={rule} onUpdate={(patch) => update(i, patch)} onRemove={() => remove(i)} />
+        <RuleRow key={rule.id} rule={rule} onUpdate={(patch) => update(i, patch)} onRemove={() => remove(i)} />
       ))}
       <Button type="button" variant="outline" onClick={() => onChange([...rules, emptyRule()])}>{t('setup.rules.add')}</Button>
     </div>

@@ -10,7 +10,10 @@ import type { BoardConfig, BoardQuota, EpicsMode, ProjectSummary } from '../../.
 
 interface BoardTabProps {
   draft: SetupDraft; options: string[]; projects: ProjectSummary[]; quota?: BoardQuota; locale: string;
-  onChange(patch: Partial<SetupDraft>): void; onLoadProjects(): void; onLoadColumns(): void;
+  onChange(patch: Partial<SetupDraft>): void; onLoadProjects(): void;
+  /** Loads columns for `project` when given (the Select passes its new value directly, never through the `draft` prop,
+   * which would still read the project just left — see onChange({ project }) below); omitted, it reloads the current draft. */
+  onLoadColumns(project?: string): void;
 }
 
 export function BoardTab({ draft, options, projects, quota, locale, onChange, onLoadProjects, onLoadColumns }: BoardTabProps) {
@@ -37,7 +40,7 @@ export function BoardTab({ draft, options, projects, quota, locale, onChange, on
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor="setup-project">{t('setup.project')}</Label>
-            <Select value={draft.project} onValueChange={(v) => { onChange({ project: v }); onLoadColumns(); }}>
+            <Select value={draft.project} onValueChange={(v) => { onChange({ project: v }); onLoadColumns(v); }}>
               <SelectTrigger id="setup-project"><SelectValue placeholder={t('setup.projectPlaceholder')} /></SelectTrigger>
               <SelectContent>
                 {projects.map((p) => <SelectItem key={p.number} value={String(p.number)}>{`#${p.number} ${p.title}`}</SelectItem>)}
@@ -66,7 +69,7 @@ export function BoardTab({ draft, options, projects, quota, locale, onChange, on
             <Label htmlFor="setup-md-path">{t('setup.markdownPath')}</Label>
             <Input id="setup-md-path" defaultValue={draft.markdownPath} onChange={(e) => onChange({ markdownPath: e.target.value })} />
           </div>
-          <Button type="button" variant="outline" onClick={onLoadColumns}>{t('setup.load')}</Button>
+          <Button type="button" variant="outline" onClick={() => onLoadColumns()}>{t('setup.load')}</Button>
         </div>
       )}
       {draft.boardType === 'markdown' && (

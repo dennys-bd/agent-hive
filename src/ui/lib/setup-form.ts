@@ -3,8 +3,11 @@
 import type { BoardConfig, Column, EpicsMode, Language, SetupBody, SetupInfo, Signal, UsageRule, WorkersMode } from '../../types.js';
 import { t } from '../i18n.js';
 
-export interface ColumnDraft { name: string; weight: string; session: 'new' | 'continue'; model: string; from: string[]; onStart: string; onFinish: string; prompt: string }
-export interface RuleDraft { percent: string; maxWorkers: string; signal: Signal | '' }
+// id: a per-row React key, generated once when the draft row is created and never sent to the server (toSetupBody
+// never spreads the draft, only picks named fields) — lets ColumnEditor/RulesEditor key rows by the row itself
+// instead of by screen position, so move/remove never leaves a surviving row showing another row's stale text.
+export interface ColumnDraft { id: string; name: string; weight: string; session: 'new' | 'continue'; model: string; from: string[]; onStart: string; onFinish: string; prompt: string }
+export interface RuleDraft { id: string; percent: string; maxWorkers: string; signal: Signal | '' }
 export interface SetupDraft {
   boardType: BoardConfig['type']; owner: string; project: string; markdownPath: string;
   columns: ColumnDraft[]; language: Language; workers: WorkersMode; epics: EpicsMode;
@@ -18,16 +21,16 @@ const DEFAULT_MARKDOWN_PATH = 'board.md';
 const DEFAULT_WEIGHT = '1';
 const PERCENT_MAX = 100;
 
-export const emptyColumn = (): ColumnDraft => ({ name: '', weight: DEFAULT_WEIGHT, session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
-export const emptyRule = (): RuleDraft => ({ percent: '', maxWorkers: '', signal: '' });
+export const emptyColumn = (): ColumnDraft => ({ id: crypto.randomUUID(), name: '', weight: DEFAULT_WEIGHT, session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
+export const emptyRule = (): RuleDraft => ({ id: crypto.randomUUID(), percent: '', maxWorkers: '', signal: '' });
 
 const numberField = (n?: number): string => (n ? String(n) : ''); // 0 or absent = no limit = empty field
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
 
 const columnDraft = (c: Column): ColumnDraft => ({
-  name: c.name, weight: String(c.weight), session: c.session ?? 'new', model: c.model ?? '', from: c.from, onStart: c.onStart ?? '', onFinish: c.onFinish ?? '', prompt: c.prompt ?? '',
+  id: crypto.randomUUID(), name: c.name, weight: String(c.weight), session: c.session ?? 'new', model: c.model ?? '', from: c.from, onStart: c.onStart ?? '', onFinish: c.onFinish ?? '', prompt: c.prompt ?? '',
 });
-const ruleDraft = (r: UsageRule): RuleDraft => ({ percent: String(r.percent), maxWorkers: r.maxWorkers === undefined ? '' : String(r.maxWorkers), signal: r.signal ?? '' });
+const ruleDraft = (r: UsageRule): RuleDraft => ({ id: crypto.randomUUID(), percent: String(r.percent), maxWorkers: r.maxWorkers === undefined ? '' : String(r.maxWorkers), signal: r.signal ?? '' });
 
 /** Today's defaults (@me, board.md, ignore, embedded, the effective language) under whatever the saved config has. */
 export function draftFrom(info?: SetupInfo): SetupDraft {

@@ -71,7 +71,7 @@ export function Setup({ info, state, onSaved, onCancel }: SetupProps) {
             draft={draft} options={options} projects={projects} quota={state?.boardQuota} locale={LOCALE[info.language]}
             onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
             onLoadProjects={() => void loadProjects()}
-            onLoadColumns={() => void loadColumns(draft)}
+            onLoadColumns={(project) => void loadColumns(project === undefined ? draft : { ...draft, project })}
           />
         </TabsContent>
         <TabsContent value="general">
