@@ -79,6 +79,7 @@
   #setup input[type=text], #setup select, #setup input[type=number] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
   #setup .row { display: flex; gap: 8px; align-items: flex-end; }
   #setup .row label { flex: 1; }
+  #setup select[multiple] { padding: 2px 4px; }
   #setup fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
   #setup fieldset[disabled] { display: none; }
   #setup .tabs { display: flex; gap: 20px; align-items: flex-start; }
@@ -171,7 +172,6 @@
           <div id="columns-rows"></div>
           <button type="button" id="add-column" data-i18n="setup.columns.add"></button>
           <div class="hint" data-i18n-html="setup.columns.hint"></div>
-          <datalist id="column-options"></datalist>
         </fieldset>
       </section>
       <section data-panel="geral" hidden>
