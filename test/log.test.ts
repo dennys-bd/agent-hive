@@ -4,11 +4,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLogger, LOG_FILE } from '../src/log.js';
+import { createLogger, describeChanges, describeEffect, describeEvent, LOG_FILE, shortId } from '../src/log.js';
+import { initialState } from '../src/orchestrator.js';
+import type { Slot, State, Task } from '../src/types.js';
 
 const LINE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (ERROR|INFO |DEBUG) /;
 const ISO_WIDTH = 25; // "2026-09-17T12:00:00.000Z " — what precedes the level tag
 const quiet = (): void => {};
+const WORKER = '1a2b3c4d-1111-4111-8111-111111111111';
+const SLOT = '9f8e7d6c-2222-4222-8222-222222222222';
+const task = (id: string): Task => ({ itemId: `I${id}`, id, title: 'Logs', body: 'the body is never logged', url: `https://github.com/acme/r/issues/${id}` });
 
 async function logDir(): Promise<string> {
   return join(await mkdtemp(join(tmpdir(), 'hive-log-')), '.hive'); // does not exist yet: the logger creates it
@@ -86,4 +91,65 @@ test('a write failure prints once on stderr, disables the file and never throws;
   log.error('board.listQueue: boom');
   assert.deepEqual(calls.slice(1), ['board.listQueue: boom']);
   assert.equal(readFileSync(dir, 'utf8'), 'not a directory', 'the Hive kept running and touched nothing');
+});
+
+test('shortId keeps the first 8 characters and shows - for a missing id', () => {
+  assert.equal(shortId(WORKER), '1a2b3c4d');
+  assert.equal(shortId(undefined), '-');
+  assert.equal(shortId('abc'), 'abc');
+});
+
+test('describeEvent names the hook, worker and tool but never the tool_input, the response, the message or the question', () => {
+  const hook = describeEvent({
+    type: 'hook', workerId: WORKER,
+    payload: { hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'gh pr create --fill' }, tool_response: 'https://github.com/acme/r/pull/9' },
+  });
+  assert.equal(hook, 'hook PostToolUse worker=1a2b3c4d tool=Bash');
+  const notification = describeEvent({
+    type: 'hook', workerId: WORKER, payload: { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to run rm' },
+  });
+  assert.equal(notification, 'hook Notification worker=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'idle', workerId: WORKER, question: 'Posso apagar a pasta secrets/?' }), 'idle worker=1a2b3c4d');
+});
+
+test('describeEvent summarises every other event with names, ids and counts only', () => {
+  assert.equal(describeEvent({ type: 'boot' }), 'boot');
+  assert.equal(describeEvent({ type: 'poll', tasks: [task('1'), task('2')] }), 'poll tasks=2 ids=1,2');
+  const ids = Array.from({ length: 25 }, (_, i) => String(i + 1));
+  assert.equal(describeEvent({ type: 'poll', tasks: ids.map(task) }), `poll tasks=25 ids=${ids.slice(0, 20).join(',')}`);
+  assert.equal(describeEvent({ type: 'exit', workerId: WORKER }), 'exit worker=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'kill', slotId: SLOT }), 'kill slot=9f8e7d6c');
+  assert.equal(describeEvent({ type: 'setSignal', signal: 'red' }), 'setSignal red');
+  assert.equal(describeEvent({ type: 'setMax', max: 3 }), 'setMax 3');
+  assert.equal(describeEvent({ type: 'setBudget', budget: { maxTokensPerHour: 10 } }), 'setBudget {"maxTokensPerHour":10}');
+  assert.equal(describeEvent({ type: 'setUsageRules', usageRules: [{ percent: 80, signal: 'yellow' }] }), 'setUsageRules rules=1');
+  assert.equal(describeEvent({ type: 'rateLimits', workerId: WORKER, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits worker=1a2b3c4d');
+  assert.equal(
+    describeEvent({ type: 'boardQuota', quota: { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' } }),
+    'boardQuota remaining=4320/5000 resetsAt=2026-09-16T13:00:00.000Z',
+  );
+  assert.equal(describeEvent({ type: 'error', message: 'board.listQueue: boom' }), 'error board.listQueue: boom');
+  assert.equal(describeEvent({ type: 'error' }), 'error');
+});
+
+test('describeEffect: spawn, setStatus and kill', () => {
+  const slot: Slot = { id: SLOT, workerId: WORKER, status: 'trabalhando', task: task('30'), slug: 'hive-30-logs' };
+  assert.equal(describeEffect({ type: 'spawn', slot }), 'spawn slot=9f8e7d6c #30 slug=hive-30-logs worker=1a2b3c4d');
+  assert.equal(describeEffect({ type: 'setStatus', itemId: 'PVTI_1', key: 'review' }), 'setStatus #PVTI_1 → review');
+  assert.equal(describeEffect({ type: 'kill', slug: 'hive-30-logs', workerId: WORKER }), 'kill slug=hive-30-logs worker=1a2b3c4d');
+});
+
+test('describeChanges lists each slot whose status changed (position in the grid, matched by id) and the signal change; [] when nothing moved', () => {
+  const empty: Slot = { id: SLOT, status: 'vazio' };
+  const other: Slot = { id: 'b0b0b0b0-3333-4333-8333-333333333333', status: 'vazio' };
+  const working: Slot = { ...empty, workerId: WORKER, status: 'trabalhando', task: task('30'), slug: 'hive-30-logs' };
+  const prev: State = { ...initialState(0), signal: 'yellow', slots: [empty, other] };
+  const next: State = { ...prev, signal: 'green', slots: [working, other] };
+  assert.deepEqual(describeChanges(prev, next), ['slot 1: vazio → trabalhando #30 worker=1a2b3c4d', 'signal: yellow → green']);
+  const reviewed: State = { ...next, slots: [{ ...working, status: 'aguardando_review', prUrl: 'https://github.com/acme/r/pull/9' }, other] };
+  assert.deepEqual(describeChanges(next, reviewed), ['slot 1: trabalhando → aguardando_review #30 worker=1a2b3c4d']);
+  const freed: State = { ...reviewed, slots: [empty, other] };
+  assert.deepEqual(describeChanges(reviewed, freed), ['slot 1: aguardando_review → vazio #30 worker=1a2b3c4d'], 'an emptied slot names what it held');
+  assert.deepEqual(describeChanges(next, { ...next, queue: [task('1')], lastPolledAt: '2026-09-17T12:00:00.000Z' }), []);
+  assert.deepEqual(describeChanges(next, { ...next, slots: [working, other, { id: 'c0c0c0c0-4444-4444-8444-444444444444', status: 'vazio' }] }), [], 'a slot added by setMax is not a transition');
 });

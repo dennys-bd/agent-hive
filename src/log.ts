@@ -1,11 +1,14 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Effect, HiveEvent, Slot, State } from './types.js';
 
 export type LogLevel = 'info' | 'debug';
 export const LOG_LEVELS: readonly LogLevel[] = ['info', 'debug'];
 export const LOG_FILE = 'hive.log';
 export const LOG_MAX_BYTES = 5 * 1024 * 1024;
 const TAG_WIDTH = 5; // ERROR / INFO  / DEBUG
+const ID_WIDTH = 8; // enough of a uuid to grep for
+const POLL_IDS_MAX = 20;
 
 export interface Logger {
   error(message: string): void; // file + stderr
@@ -80,4 +83,54 @@ export function createLogger(dir: string, level: LogLevel = 'info', options: Log
       current = next;
     },
   };
+}
+
+/** The first 8 characters of a uuid (worker or slot); `-` when the id is missing. */
+export const shortId = (id?: string): string => id?.slice(0, ID_WIDTH) ?? '-';
+
+/** A one-line summary of a reducer event: names, ids and counts, never a payload (tool_input, question, message). */
+export function describeEvent(event: HiveEvent): string {
+  switch (event.type) {
+    case 'boot': return 'boot';
+    case 'poll': return `poll tasks=${event.tasks.length} ids=${event.tasks.slice(0, POLL_IDS_MAX).map((t) => t.id).join(',')}`;
+    case 'setMax': return `setMax ${event.max}`;
+    case 'setSignal': return `setSignal ${event.signal}`;
+    case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
+    case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
+    case 'rateLimits': return `rateLimits worker=${shortId(event.workerId)}`;
+    case 'boardQuota': return `boardQuota remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
+    case 'hook': {
+      const tool = event.payload.tool_name ? ` tool=${event.payload.tool_name}` : '';
+      return `hook ${event.payload.hook_event_name} worker=${shortId(event.workerId)}${tool}`;
+    }
+    case 'exit': return `exit worker=${shortId(event.workerId)}`;
+    case 'idle': return `idle worker=${shortId(event.workerId)}`;
+    case 'kill': return `kill slot=${shortId(event.slotId)}`;
+    case 'error': return event.message ? `error ${event.message}` : 'error';
+  }
+}
+
+export function describeEffect(effect: Effect): string {
+  switch (effect.type) {
+    case 'spawn': {
+      const { slot } = effect;
+      return `spawn slot=${shortId(slot.id)} #${slot.task?.id ?? '-'} slug=${slot.slug ?? '-'} worker=${shortId(slot.workerId)}`;
+    }
+    case 'setStatus': return `setStatus #${effect.itemId} → ${effect.key}`;
+    case 'kill': return `kill slug=${effect.slug} worker=${shortId(effect.workerId)}`;
+  }
+}
+
+const slotDetail = (slot: Slot): string =>
+  `${slot.task ? ` #${slot.task.id}` : ''}${slot.workerId ? ` worker=${shortId(slot.workerId)}` : ''}`;
+
+/** Slot and signal transitions between two states: one line per slot whose status changed, in grid order, matched by id; then the signal. */
+export function describeChanges(prev: State, next: State): string[] {
+  const slots = next.slots.flatMap((slot, i) => {
+    const before = prev.slots.find((s) => s.id === slot.id);
+    if (!before || before.status === slot.status) return [];
+    const detail = slotDetail(slot.status === 'vazio' ? before : slot); // an emptied slot names what it held
+    return [`slot ${i + 1}: ${before.status} → ${slot.status}${detail}`];
+  });
+  return prev.signal === next.signal ? slots : [...slots, `signal: ${prev.signal} → ${next.signal}`];
 }
