@@ -199,3 +199,32 @@ test('every poll reads the board quota afterwards and persists it; a board witho
   assert.deepEqual(saved.boardQuota, QUOTA, 'persisted with the rest of the state');
   assert.equal(withQuota.getState()?.error, undefined);
 });
+
+test('the timer skips the board while nothing could start, and reads it again once the last poll is 5 min old', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'], now: Date.now() }); // the timer and the clock shouldPoll reads
+  let polls = 0;
+  const inner = fakeBoardFactory().factory;
+  const repo = await mkdtemp(join(tmpdir(), 'hive-server-'));
+  const server = createServer({
+    repo, spawnWorker: fakeSpawn().spawn,
+    boardFactory: (config) => {
+      const board = inner(config);
+      return { ...board, listQueue: () => { polls += 1; return board.listQueue(); } };
+    },
+  });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  assert.equal((await postJson(`http://127.0.0.1:${port}/setup`, { ...BODY, maxConcurrent: 0 })).status, 200); // no slot: nothing can start
+  assert.equal(polls, 1, 'configure always polls');
+  for (let i = 1; i <= 9; i += 1) { // one interval at a time, as the clock does: 9 ticks = 4 min 30 s since the configure poll
+    t.mock.timers.tick(30_000);
+    await sleep(5);
+    assert.equal(polls, 1, `tick ${i} with no free slot: the board is not asked`);
+  }
+  t.mock.timers.tick(30_000); // 5 min: stale
+  await waitFor(() => polls === 2);
+  t.mock.timers.tick(30_000);
+  await sleep(10);
+  assert.equal(polls, 2, 'fresh again: the next tick skips');
+  assert.equal(server.getState()?.error, undefined);
+});
