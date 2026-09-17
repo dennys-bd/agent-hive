@@ -102,3 +102,27 @@ test('loadState keeps a valid boardQuota and drops one with the wrong shape, lea
     assert.equal('boardQuota' in (await loadState(dir, 1)), false, JSON.stringify(value));
   }
 });
+
+test('loadState maps the legacy Portuguese statuses, empties a slot with an unknown status and drops a lastEvent that is not a SlotEvent', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'hive-'));
+  const task = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
+  const slots = [
+    { id: 'a', status: 'trabalhando', workerId: 'w1', task, slug: 'hive-1-t', lastEvent: 'iniciando' },
+    { id: 'b', status: 'esperando_voce', workerId: 'w2', task, lastEvent: 'aguardando: permission_prompt' },
+    { id: 'c', status: 'aguardando_review', workerId: 'w3', task, prUrl: 'https://github.com/o/r/pull/1' },
+    { id: 'd', status: 'vazio' },
+    { id: 'e', status: 'busy', workerId: 'w5', task },
+    { id: 'f', status: 'working', workerId: 'w6', task, lastEvent: { kind: 'tool', detail: 'Bash: ls' } },
+    { id: 'g', status: 'review', workerId: 'w7', task, lastEvent: { kind: 'nope' } },
+    { id: 'h', status: 'constructor' },
+  ];
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), slots }));
+  const loaded = await loadState(dir, 8);
+  assert.deepEqual(loaded.slots.map((s) => s.status), ['working', 'waiting', 'review', 'empty', 'empty', 'working', 'review', 'empty']);
+  assert.deepEqual(loaded.slots[0], { id: 'a', status: 'working', workerId: 'w1', task, slug: 'hive-1-t' }, 'the sentence is dropped, the rest is kept');
+  assert.equal('lastEvent' in loaded.slots[1], false);
+  assert.deepEqual(loaded.slots[4], { id: 'e', status: 'empty' }, 'unknown status: only the id survives');
+  assert.deepEqual(loaded.slots[5].lastEvent, { kind: 'tool', detail: 'Bash: ls' }, 'a SlotEvent object is kept as is');
+  assert.equal('lastEvent' in loaded.slots[6], false, 'an unknown kind is dropped');
+  assert.deepEqual(loaded.slots[7], { id: 'h', status: 'empty' }, 'an inherited property name is not a legacy status');
+});

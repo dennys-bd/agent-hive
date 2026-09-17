@@ -1,14 +1,12 @@
 import type {
-  BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
+  BoardConfig, BoardQuota, Budget, EpicsMode, EventsPayload, Language, ProjectSummary, RateLimits, SetupBody, SetupInfo, SetupResult, Signal, Slot,
   State, StatusKey, Task, UsageSample, WorkersMode,
 } from '../types.js';
 import { esc, renderOutput } from './highlight.js';
+import { LOCALE, applyTranslations, type MessageKey, setLanguage, slotEventText, statusText, t } from './i18n.js';
 import { addRuleRow, renderRules, usageRulesFromForm } from './limits.js';
 
-const STATUS_LABEL: Record<Slot['status'], string> = {
-  vazio: 'vazio', trabalhando: 'trabalhando', esperando_voce: 'esperando você', aguardando_review: 'aguardando review',
-};
-const SIGNAL_HINT: Record<Signal, string> = { green: '', yellow: 'sem jobs novos', red: 'modo manual' };
+const SIGNAL_HINT: Record<Signal, MessageKey | undefined> = { green: undefined, yellow: 'signal.yellow', red: 'signal.red' };
 const RERENDER_MS = 30_000;
 const OUTPUT_POLL_MS = 2_000;
 // Mirrors DEFAULT_CONFIG in config.ts, which cannot be imported here (it pulls node:fs into the browser).
@@ -23,8 +21,8 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const THOUSAND = 1_000;
 const MILLION = 1_000_000;
-// Mirrors src/rate-limits.ts, which cannot be imported here (the served module graph only has app.js).
-const WINDOW_LABEL: Record<string, string> = { five_hour: 'sessão', seven_day: 'semana' };
+// Mirrors src/rate-limits.ts, which cannot be imported here (the served module graph only has app.js); the text comes from the dictionary.
+const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week' };
 const WEEKLY_PREFIX = 'seven_day_';
 const PERCENT_MAX = 100;
 // Mirrors src/polling.ts, which cannot be imported here (it pulls the orchestrator into the browser).
@@ -65,12 +63,19 @@ function usageTotals(usage: UsageSample[], now: number): { hour: number; day: nu
 const withinLimit = (total: number, limit?: number): boolean => limit === undefined || limit <= 0 || total < limit;
 const meter = (value: number, max: number): string => `<meter min="0" max="${max}" value="${value}"></meter>`;
 
-const clock = (iso: string): string => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const locale = (): string => LOCALE[setupInfo?.language ?? 'en'];
+const clock = (iso: string): string => new Date(iso).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
 
 function windowLabel(key: string): string {
-  if (Object.hasOwn(WINDOW_LABEL, key)) return WINDOW_LABEL[key];
-  if (key.startsWith(WEEKLY_PREFIX)) return `semana ${key.slice(WEEKLY_PREFIX.length)}`;
+  if (Object.hasOwn(WINDOW_LABEL, key)) return t(WINDOW_LABEL[key]);
+  if (key.startsWith(WEEKLY_PREFIX)) return `${t('window.week')} ${key.slice(WEEKLY_PREFIX.length)}`;
   return key.replaceAll('_', ' ');
+}
+
+// Static text first, then whatever is already rendered: the caller renders again when there is a State on screen.
+function applyLanguage(language: Language): void {
+  setLanguage(language);
+  applyTranslations();
 }
 
 function showBanner(id: 'error' | 'notice', message?: string): void {
@@ -104,17 +109,17 @@ function post(path: string, body?: unknown): void {
 // ---------- dashboard ----------
 
 function renderCard(slot: Slot): string {
-  const occupied = slot.status !== 'vazio';
+  const occupied = slot.status !== 'empty';
   const classes = ['card', slot.status, occupied ? 'occupied' : '', slot.draining ? 'draining' : '', slot.paused ? 'paused' : ''].join(' ');
-  if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${STATUS_LABEL.vazio}</div></div>`;
-  const marks = `${slot.draining ? ' · drenando' : ''}${slot.paused ? ' · pausado' : ''}`;
+  if (!occupied) return `<div class="${classes}" data-id="${slot.id}"><div class="meta">${statusText('empty')}</div></div>`;
+  const marks = `${slot.draining ? ` · ${t('card.draining')}` : ''}${slot.paused ? ` · ${t('card.paused')}` : ''}`;
   const tokens = slot.tokens === undefined ? '' : ` · ${fmt(slot.tokens)} tokens`;
   return `
     <div class="${classes}" data-id="${slot.id}">
       <div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>
-      <div class="meta">${STATUS_LABEL[slot.status]} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
+      <div class="meta">${statusText(slot.status)} · ${elapsed(slot.startedAt)}${marks}${tokens}</div>
       <div class="meta">${esc(slot.branch ?? slot.slug ?? '')}</div>
-      <div class="meta">${esc(slot.lastEvent ?? '')}</div>
+      <div class="meta">${esc(slot.lastEvent ? slotEventText(slot.lastEvent) : '')}</div>
       <div class="actions"><button data-focus="${slot.id}">terminal</button><button class="danger" data-kill="${slot.id}">kill</button></div>
     </div>`;
 }
@@ -159,7 +164,7 @@ function syncOutputPolling(slotId: string | undefined): void {
 function renderDetail(): void {
   const slot = state?.slots.find((s) => s.id === selectedSlotId);
   const panel = $('detail');
-  if (!slot || slot.status === 'vazio') {
+  if (!slot || slot.status === 'empty') {
     panel.classList.remove('show');
     selectedSlotId = undefined;
     syncOutputPolling(undefined);
@@ -168,10 +173,10 @@ function renderDetail(): void {
   const lines = [
     `<div class="title">#${esc(slot.task?.id ?? '')} ${esc(slot.task?.title ?? '')}</div>`,
     slot.prUrl ? `<p>PR: <a href="${esc(slot.prUrl)}" target="_blank" rel="noreferrer">${esc(slot.prUrl)}</a></p>` : '',
-    slot.question ? `<p>pendente:</p><pre>${esc(slot.question)}</pre>` : '',
+    slot.question ? `<p>${t('detail.pending')}</p><pre>${esc(slot.question)}</pre>` : '',
     `<div class="meta">worktree: ${esc(slot.worktree ?? '—')}</div>`,
     `<div class="meta">branch: ${esc(slot.branch ?? '—')}</div>`,
-    slot.sessionId ? `<div class="meta">sessão: <code>claude --resume ${esc(slot.sessionId)}</code></div>` : '',
+    slot.sessionId ? `<div class="meta">${t('detail.session')} <code>claude --resume ${esc(slot.sessionId)}</code></div>` : '',
     slot.task ? taskLink(slot.task) : '',
   ];
   $('detail-body').innerHTML = lines.join('');
@@ -181,7 +186,7 @@ function renderDetail(): void {
 
 function renderQueued(task: Task): string {
   const blockers = task.blockedBy?.length
-    ? `<span class="meta" style="color:var(--muted)"> · bloqueada por ${esc(task.blockedBy.join(', '))}</span>`
+    ? `<span class="meta" style="color:var(--muted)"> · ${t('queue.blockedBy', { ids: esc(task.blockedBy.join(', ')) })}</span>`
     : '';
   return `<li>#${esc(task.id)} ${esc(task.title)}${blockers}</li>`;
 }
@@ -190,7 +195,8 @@ function renderSignal(signal: Signal): void {
   document.querySelectorAll<HTMLButtonElement>('#signal button').forEach((button) => {
     button.classList.toggle('active', button.dataset.signal === signal);
   });
-  $('signal-hint').textContent = SIGNAL_HINT[signal];
+  const hint = SIGNAL_HINT[signal];
+  $('signal-hint').textContent = hint ? t(hint) : '';
 }
 
 // Every interpolated value is a number, so no escaping is needed. The header shows a meter per configured limit
@@ -203,11 +209,11 @@ function renderUsage(usage: UsageSample[], budget: Budget): void {
   const el = $('usage');
   el.classList.toggle('over', over);
   el.innerHTML = [
-    line('hora', hour, budget.maxTokensPerHour),
-    line('dia', day, budget.maxTokensPerDay),
-    over ? '<span>sem orçamento</span>' : '',
+    line(t('usage.hour'), hour, budget.maxTokensPerHour),
+    line(t('usage.day'), day, budget.maxTokensPerDay),
+    over ? `<span>${t('usage.over')}</span>` : '',
   ].filter(Boolean).join('');
-  $('usage-raw').textContent = `consumo atual: ${fmt(hour)}/h · ${fmt(day)}/dia`;
+  $('usage-raw').textContent = t('usage.raw', { hour: fmt(hour), day: fmt(day) });
 }
 
 // Percent and times are numbers / Date output; the label derives from a key another process chose, so it is escaped.
@@ -220,8 +226,8 @@ function renderLimits(limits?: RateLimits): void {
     return;
   }
   el.innerHTML = Object.entries(limits.windows).map(([key, w]) =>
-    `<span>${esc(windowLabel(key))} ${Math.round(w.usedPercent)}% ${meter(w.usedPercent, PERCENT_MAX)} reseta ${clock(w.resetsAt)}</span>`).join('');
-  el.title = `lido às ${clock(limits.at)}`;
+    `<span>${esc(windowLabel(key))} ${Math.round(w.usedPercent)}% ${meter(w.usedPercent, PERCENT_MAX)} ${t('limits.resets', { time: clock(w.resetsAt) })}</span>`).join('');
+  el.title = t('limits.at', { time: clock(limits.at) });
 }
 
 // Numbers and a Date: nothing to escape. Rendered into the settings board tab; empty without a reading (markdown board, or no poll yet).
@@ -229,25 +235,25 @@ function renderQuota(quota?: BoardQuota): void {
   const el = $('quota');
   el.classList.toggle('low', quota !== undefined && quota.remaining < QUOTA_RESERVE);
   el.textContent = quota
-    ? `GitHub ${quota.remaining.toLocaleString('pt-BR')}/${quota.limit.toLocaleString('pt-BR')} · reseta ${clock(quota.resetsAt)}`
+    ? `GitHub ${quota.remaining.toLocaleString(locale())}/${quota.limit.toLocaleString(locale())} · ${t('limits.resets', { time: clock(quota.resetsAt) })}`
     : '';
 }
 
 function render(): void {
   if (!state) return;
-  const active = state.slots.filter((s) => s.status !== 'vazio').length;
-  $('summary').textContent = `${active}/${state.maxConcurrent} workers ativos`;
+  const active = state.slots.filter((s) => s.status !== 'empty').length;
+  $('summary').textContent = t('header.activeWorkers', { active, max: state.maxConcurrent });
   renderSignal(state.signal);
   renderUsage(state.usage, state.budget);
   renderLimits(state.rateLimits);
   renderQuota(state.boardQuota);
   const max = $<HTMLInputElement>('max');
   if (document.activeElement !== max) max.value = String(state.maxConcurrent);
-  $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString()}` : '';
+  $('polled').textContent = state.lastPolledAt ? `board: ${new Date(state.lastPolledAt).toLocaleTimeString(locale())}` : '';
   showError(state.error);
   $('grid').innerHTML = state.slots.map(renderCard).join('');
   $('queue').innerHTML = state.queue.map(renderQueued).join('')
-    || '<li style="list-style:none;color:var(--muted)">vazia</li>';
+    || `<li style="list-style:none;color:var(--muted)">${t('queue.empty')}</li>`;
   renderDetail();
 }
 
@@ -259,7 +265,7 @@ function connect(): void {
     state = payload;
     render();
   };
-  source.onerror = () => showError('conexão com o Agent Hive perdida; reconectando…');
+  source.onerror = () => showError(t('error.disconnected'));
 }
 
 // ---------- setup form ----------
@@ -329,14 +335,14 @@ async function loadColumns(): Promise<void> {
 async function loadMarkdownColumns(): Promise<void> {
   const path = markdownPathValue();
   if (!path) {
-    setupError('informe o caminho do arquivo');
+    setupError(t('setup.error.path'));
     return;
   }
   setupError();
   try {
     const options = await getJson<string[]>(columnsUrl({ type: 'markdown', path }));
     $('md-options').innerHTML = options.map((o) => `<option value="${esc(o)}"></option>`).join('');
-    $('md-found').textContent = `status encontrados: ${options.join(', ')} — clique no campo para escolher.`;
+    $('md-found').textContent = t('setup.markdownFound', { list: options.join(', ') });
     for (const key of STATUS_KEYS) {
       const input = $<HTMLInputElement>(MARKDOWN_INPUT[key]);
       if (!options.includes(input.value)) input.value = ''; // not in the file: clear so the full list shows
@@ -349,7 +355,7 @@ async function loadMarkdownColumns(): Promise<void> {
 async function loadProjects(selectedNumber?: number): Promise<void> {
   const owner = ownerValue();
   if (!owner) {
-    setupError('informe o owner (@me, usuário ou org)');
+    setupError(t('setup.error.owner'));
     return;
   }
   setupError();
@@ -361,7 +367,7 @@ async function loadProjects(selectedNumber?: number): Promise<void> {
       selectedNumber === undefined ? undefined : String(selectedNumber),
     );
     if (projects.length === 0) {
-      setupError(`nenhum project aberto em ${owner}`);
+      setupError(t('setup.error.noProjects', { owner }));
       return;
     }
     await loadColumns();
@@ -395,6 +401,7 @@ async function openSetup(): Promise<void> {
   $<HTMLInputElement>('md-path').value = board?.type === 'markdown' ? board.path : DEFAULT_MARKDOWN_PATH;
   for (const key of STATUS_KEYS) $<HTMLInputElement>(MARKDOWN_INPUT[key]).value = config?.status[key] ?? PRESELECT[key];
   $('md-options').innerHTML = '';
+  $<HTMLSelectElement>('language').value = setupInfo?.language ?? 'en'; // the effective one: saving writes it explicitly
   $<HTMLSelectElement>('workers-mode').value = config?.workers ?? 'embedded';
   $<HTMLSelectElement>('epics').value = config?.epics ?? 'ignore';
   $<HTMLInputElement>('budget-hour').value = budgetField(config?.budget.maxTokensPerHour);
@@ -428,7 +435,7 @@ async function saveSetup(): Promise<void> {
   const board = boardFromForm();
   if (!board) {
     showTab('board');
-    setupError(boardType() === 'markdown' ? 'informe o caminho do arquivo' : 'escolha um project');
+    setupError(boardType() === 'markdown' ? t('setup.error.path') : t('setup.error.project'));
     return;
   }
   // usageRulesFromForm throws for a row with no effect; the row lives on a tab that may be hidden, so reveal it
@@ -452,11 +459,14 @@ async function saveSetup(): Promise<void> {
       promptTemplate: $<HTMLTextAreaElement>('prompt-template').value,
       budget: budgetFromForm(),
       usageRules,
+      language: $<HTMLSelectElement>('language').value as Language,
     };
     const result = await postJson<SetupResult>('/setup', body);
     setupInfo = await getJson<SetupInfo>('/setup');
+    applyLanguage(setupInfo.language); // the save may have changed it: static text now, the dashboard on the render below
     closeSetup();
-    showNotice(result.restartForPort ? `reinicie o Hive pra usar a porta ${result.restartForPort}` : undefined);
+    render(); // no-op without a State; otherwise cards, queue and header switch without waiting for the next event
+    showNotice(result.restartForPort ? t('notice.restartPort', { port: result.restartForPort }) : undefined);
   } catch (err) {
     setupError((err as Error).message);
   } finally {
@@ -471,6 +481,7 @@ async function init(): Promise<void> {
     showError((err as Error).message);
     return;
   }
+  applyLanguage(setupInfo.language); // before any render: neither the form nor the dashboard ever shows the wrong language
   if (!setupInfo.configured) await openSetup();
   connect();
 }
@@ -482,7 +493,7 @@ $('grid').addEventListener('click', (event) => {
   const killId = target.dataset.kill;
   if (killId) {
     event.stopPropagation();
-    if (confirm('Matar esse worker? A task volta pra fila.')) post(`/slots/${killId}/kill`);
+    if (confirm(t('confirm.kill'))) post(`/slots/${killId}/kill`);
     return;
   }
   const focusId = target.dataset.focus;

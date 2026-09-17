@@ -132,7 +132,7 @@ export function describeChanges(prev: State, next: State): string[] {
   const statuses = next.slots.flatMap((slot, i) => {
     const old = before(slot);
     if (!old || old.status === slot.status) return [];
-    const detail = slotDetail(slot.status === 'vazio' ? old : slot); // an emptied slot names what it held
+    const detail = slotDetail(slot.status === 'empty' ? old : slot); // an emptied slot names what it held
     return [`slot ${i + 1}: ${old.status} → ${slot.status}${detail}`];
   });
   // The slot is wiped on exit / boot; this line is what ties a PR (same worker=) back to a `claude --resume` id afterwards

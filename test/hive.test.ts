@@ -84,6 +84,22 @@ test('bootHive logs a hive.config.json that cannot be parsed before rethrowing, 
   assert.ok(lines.some((l) => l.startsWith('ERROR config: ') && l.includes('JSON inválido')), lines.join('\n'));
 });
 
+const setupInfo = async (port: number): Promise<SetupInfo> => (await fetch(`http://127.0.0.1:${port}/setup`)).json() as Promise<SetupInfo>;
+
+test('bootHive turns the locale into the system language: pt-BR without a config language gives pt, the config wins when set, and setup mode carries it too', async (t) => {
+  const pt = await bootHive(await repoWithConfig({}), { locale: 'pt-BR' });
+  t.after(() => pt.server.close());
+  assert.equal((await setupInfo(pt.port)).language, 'pt');
+  const en = await bootHive(await repoWithConfig({ language: 'en' }), { locale: 'pt-BR' });
+  t.after(() => en.server.close());
+  assert.equal((await setupInfo(en.port)).language, 'en', 'the config wins over the system');
+  const broken = await repoWithConfig({});
+  await rm(join(broken, 'board.md')); // setup fallback: port 0 comes from the saved config, so no fixed port is touched
+  const setup = await bootHive(broken, { locale: 'en-US' });
+  t.after(() => setup.server.close());
+  assert.equal((await setupInfo(setup.port)).language, 'en');
+});
+
 test('bootHive reads the plan limits through the injected reader on boot, so the header has them before any worker; no reader, no reading', async (t) => {
   const repo = await repoWithConfig({});
   const rateLimits: RateLimits = { at: '2026-09-17T12:00:00.000Z', windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-17T15:00:00.000Z' } } };

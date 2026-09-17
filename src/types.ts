@@ -1,6 +1,14 @@
 import type { LogLevel } from './log.js';
 
-export type Status = 'vazio' | 'trabalhando' | 'esperando_voce' | 'aguardando_review';
+export type Language = 'pt' | 'en';
+
+export type Status = 'empty' | 'working' | 'waiting' | 'review';
+export type SlotEventKind = 'starting' | 'prompt' | 'tool' | 'waiting' | 'pr' | 'paused' | 'turn';
+/** What the slot last did, as a key the UI turns into text; `detail` is the tool summary (`Bash: pnpm test`) or the notification kind. */
+export interface SlotEvent {
+  kind: SlotEventKind;
+  detail?: string;
+}
 export type StatusKey = 'queue' | 'working' | 'review';
 export type Signal = 'green' | 'yellow' | 'red';
 
@@ -73,7 +81,7 @@ export interface Slot {
   worktree?: string;
   branch?: string;
   startedAt?: string;
-  lastEvent?: string;
+  lastEvent?: SlotEvent;
   prUrl?: string;
   question?: string;
   transcriptPath?: string; // from SessionStart; where GET /slots/:id/output reads the excerpt
@@ -105,6 +113,7 @@ export interface Config {
   workers: WorkersMode;
   epics: EpicsMode; // GitHub only; the markdown adapter has no epics and ignores it
   logLevel: LogLevel; // info: what the Hive did; debug: also what it received. Read on boot and on every POST /setup
+  language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
   status: Record<StatusKey, string>;
   maxConcurrent: number;
   port: number;
@@ -158,6 +167,8 @@ export interface SetupInfo {
   config?: Config;
   /** Why the saved config could not boot (board missing, unreadable…); shown in the setup form. */
   error?: string;
+  /** Effective UI language: the config's when set, else the system's. Read by app.ts before any render. */
+  language: Language;
 }
 
 export interface SetupBody {
@@ -175,6 +186,8 @@ export interface SetupBody {
   workers?: WorkersMode;
   /** Optional; missing keeps the current mode (or `ignore` on first setup). */
   epics?: EpicsMode;
+  /** The form always sends it; an API caller that omits it keeps the current one (or the system's on first setup). */
+  language?: Language;
 }
 
 export interface SetupResult {

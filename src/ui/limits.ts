@@ -1,4 +1,5 @@
 import type { Signal, UsageRule } from '../types.js';
+import { t } from './i18n.js';
 
 // Mirrors SIGNALS in orchestrator.ts, which cannot be imported here (it pulls node:crypto into the browser).
 const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
@@ -14,10 +15,10 @@ function rowHtml(rule?: UsageRule): string {
     <td><input class="percent" type="number" min="0" max="100" step="1" required value="${rule?.percent ?? ''}"></td>
     <td><input class="max-workers" type="number" min="0" step="1" value="${rule?.maxWorkers ?? ''}"></td>
     <td><select class="signal"><option value="${NO_SIGNAL}">—</option>${options.join('')}</select></td>
-    <td><button type="button" class="remove">remover</button></td>`;
+    <td><button type="button" class="remove">${t('setup.rules.remove')}</button></td>`;
 }
 
-/** Appends a row (empty when no rule) and wires its "remover" button. */
+/** Appends a row (empty when no rule) and wires its "remove" button. */
 export function addRuleRow(rule?: UsageRule): void {
   const row = document.createElement('tr');
   row.innerHTML = rowHtml(rule);
@@ -35,7 +36,7 @@ export function renderRules(rules: UsageRule[]): void {
 function ruleFromRow(row: Element, index: number): UsageRule {
   const maxWorkers = field<HTMLInputElement>(row, 'input.max-workers').value;
   const signal = field<HTMLSelectElement>(row, 'select.signal').value;
-  if (maxWorkers === '' && signal === NO_SIGNAL) throw new Error(`faixa ${index + 1}: informe máx. workers ou sinal`);
+  if (maxWorkers === '' && signal === NO_SIGNAL) throw new Error(t('setup.rules.error', { n: index + 1 }));
   return {
     percent: Number(field<HTMLInputElement>(row, 'input.percent').value),
     ...(maxWorkers === '' ? {} : { maxWorkers: Number(maxWorkers) }),
