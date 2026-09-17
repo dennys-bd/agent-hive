@@ -286,7 +286,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function writeConfigFile(config: Config): Promise<void> {
     const path = join(repo, CONFIG_FILE);
     const tmp = `${path}.tmp`;
-    await writeFile(tmp, JSON.stringify(config, null, 2) + '\n');
+    await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`);
     await rename(tmp, path);
   }
 

@@ -31,7 +31,7 @@ export function spawnTmuxWorker(launch: WorkerLaunch, handlers: WorkerHandlers, 
   const { exec = execFileAsync, openTerminal: open = openTerminal } = deps;
   const { slug } = launch;
   let exited = false;
-  let killing: Promise<void> | undefined;
+  let killing = false;
   const exitOnce = (): void => {
     if (exited) return;
     exited = true;
@@ -49,7 +49,9 @@ export function spawnTmuxWorker(launch: WorkerLaunch, handlers: WorkerHandlers, 
     // One kill per handle: a second call (Stop with the PR open racing the card's kill) would fail on the gone session and
     // put a false error in the bar
     kill: () => {
-      killing ??= session.then(() => exec('tmux', tmuxArgs('kill-session', '-t', slug))).catch(report).then(() => exitOnce());
+      if (killing) return;
+      killing = true;
+      void session.then(() => exec('tmux', tmuxArgs('kill-session', '-t', slug))).catch(report).then(() => exitOnce());
     },
     focus: () => session.then(() => open(attachArgv(slug))),
   };

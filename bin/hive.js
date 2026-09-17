@@ -65,7 +65,9 @@ async function checkRunningInstance() {
   }
   const body = await res.json().catch(() => undefined);
   if (body && typeof body.repo === 'string') {
-    const shownRepo = body.repo.replace(/[\x00-\x1f\x7f]/g, ''); // no terminal escapes from a stranger on the port
+    // no terminal escapes from a stranger on the port
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
+    const shownRepo = body.repo.replace(/[\x00-\x1f\x7f]/g, '');
     console.log(`Agent Hive já está rodando em http://127.0.0.1:${port} (repo: ${shownRepo})`);
     process.exit(0);
   }
