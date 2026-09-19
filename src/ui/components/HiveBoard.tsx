@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { columnOf, isBlocked } from '../../cards';
-import type { Card as CardModel, Status, State } from '../../types';
+import type { Card as CardModel, Column, Status, State } from '../../types';
 import { act } from '@/components/actions';
 import { Confirm } from '@/components/Confirm';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +59,30 @@ function BoardCard({ card, state }: { card: CardModel; state: State }) {
   );
 }
 
-/** One card per configured column, each column's cards in board order; a card's actions match what today's board offers. */
+interface ColumnCardsProps { cards: CardModel[]; column: Column; state: State }
+
+/** Running cards always show and count against `column.visible`; the first stopped cards fill what is left, until the toggle reveals all. Absent or 0 = no cap. */
+function ColumnCards({ cards, column, state }: ColumnCardsProps) {
+  const [expanded, setExpanded] = useState(false);
+  const cap = column.visible ?? 0;
+  const running = cards.filter((c) => c.slotId);
+  const stopped = cards.filter((c) => !c.slotId).slice(0, Math.max(cap - running.length, 0));
+  const collapsed = cap === 0 ? cards : cards.filter((c) => c.slotId || stopped.includes(c)); // board order, only filtered
+  const hidden = cards.length - collapsed.length; // 0 once a card leaves or the cap changes: the button goes and `expanded` no longer matters
+
+  return (
+    <>
+      {(expanded ? cards : collapsed).map((card) => <BoardCard key={card.task.itemId} card={card} state={state} />)}
+      {hidden > 0 && (
+        <Button type="button" variant="ghost" size="xs" onClick={() => setExpanded((e) => !e)}>
+          {expanded ? t('column.less') : t('column.more', { n: hidden })}
+        </Button>
+      )}
+    </>
+  );
+}
+
+/** One card per configured column, each column's cards in board order behind the column's cap; a card's actions match what today's board offers. */
 export function HiveBoard({ state }: HiveBoardProps) {
   return (
     <div className="flex gap-4 overflow-x-auto">
@@ -66,10 +90,12 @@ export function HiveBoard({ state }: HiveBoardProps) {
         const cards = state.cards.filter((c) => c.column === column.name);
         return (
           <Card key={column.name} className="min-w-56 flex-1 gap-2 p-3">
-            <h3 className="text-muted-foreground text-xs uppercase">{`${column.name} · ${column.weight}`}</h3>
+            <h3 className="text-muted-foreground text-xs uppercase">
+              {`${column.name} · ${t('column.cards', { n: cards.length })} · ${t('column.weight', { w: column.weight })}`}
+            </h3>
             {cards.length === 0
               ? <p className="text-muted-foreground text-xs">{t('column.empty')}</p>
-              : cards.map((card) => <BoardCard key={card.task.itemId} card={card} state={state} />)}
+              : <ColumnCards cards={cards} column={column} state={state} />}
           </Card>
         );
       })}
