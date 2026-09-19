@@ -7,7 +7,7 @@ import type { Config, SetupInfo } from '../src/types.js';
 const CONFIG: Config = {
   board: { type: 'github', owner: 'acme', number: 6 }, workers: 'iterm', epics: 'queue', logLevel: 'info', language: 'pt',
   columns: [
-    { name: 'spec', weight: 5, from: ['Backlog'], onFinish: 'Ready', prompt: '/hive-spec {url}', model: 'opus' },
+    { name: 'spec', weight: 5, visible: 5, from: ['Backlog'], onFinish: 'Ready', prompt: '/hive-spec {url}', model: 'opus' },
     { name: 'dev', weight: 1, from: ['Ready'], onStart: 'In progress', onFinish: 'In review', prompt: '/hive-build {url}', session: 'continue' },
   ],
   maxConcurrent: 2, port: 47821, claudeArgs: [], budget: { maxTokensPerHour: 50_000 }, usageRules: [{ percent: 80, signal: 'yellow' }, { percent: 90, maxWorkers: 1, signal: 'red' }],
@@ -23,7 +23,8 @@ test('draftFrom fills every field as strings from a github config, keeps a markd
   const github = draftFrom(info(CONFIG));
   assert.equal(github.boardType, 'github');
   assert.deepEqual([github.owner, github.project, github.markdownPath], ['acme', '6', 'board.md']);
-  assert.deepEqual(withoutId(github.columns[0]), { name: 'spec', weight: '5', session: 'new', model: 'opus', from: ['Backlog'], onStart: '', onFinish: 'Ready', prompt: '/hive-spec {url}' });
+  assert.deepEqual(withoutId(github.columns[0]), { name: 'spec', weight: '5', visible: '5', session: 'new', model: 'opus', from: ['Backlog'], onStart: '', onFinish: 'Ready', prompt: '/hive-spec {url}' });
+  assert.equal(github.columns[1].visible, '', 'no visible in the config = no limit = empty field');
   assert.equal(github.columns[1].session, 'continue');
   assert.notEqual(github.columns[0].id, github.columns[1].id, 'each row gets its own id');
   assert.deepEqual([github.language, github.workers, github.epics, github.budgetHour, github.budgetDay], ['pt', 'iterm', 'queue', '50000', '']);
@@ -49,6 +50,9 @@ test('validateSetup answers the tab and message of the first problem, in the ord
   assert.deepEqual(validateSetup({ ...valid, columns: [valid.columns[0], { ...emptyColumn(), name: ' ' }] }), { tab: 'board', message: t('setup.columns.error', { n: 2 }) });
   assert.deepEqual(validateSetup({ ...valid, columns: [{ ...valid.columns[0], weight: '1.5' }] }), { tab: 'board', message: t('setup.columns.error', { n: 1 }) });
   assert.deepEqual(validateSetup({ ...valid, columns: [{ ...valid.columns[0], weight: '-1' }] }), { tab: 'board', message: t('setup.columns.error', { n: 1 }) });
+  assert.deepEqual(validateSetup({ ...valid, columns: [{ ...valid.columns[0], visible: '-1' }] }), { tab: 'board', message: t('setup.columns.error', { n: 1 }) });
+  assert.deepEqual(validateSetup({ ...valid, columns: [valid.columns[0], { ...valid.columns[1], visible: '1.5' }] }), { tab: 'board', message: t('setup.columns.error', { n: 2 }) });
+  assert.equal(validateSetup({ ...valid, columns: [{ ...valid.columns[0], visible: '' }, { ...valid.columns[1], visible: '0' }] }), undefined, 'empty and 0 mean no limit');
   assert.deepEqual(validateSetup({ ...valid, rules: [{ ...emptyRule(), percent: '50' }] }), { tab: 'limits', message: t('setup.rules.error', { n: 1 }) });
   assert.deepEqual(validateSetup({ ...valid, rules: [valid.rules[0], { ...emptyRule(), percent: '101', maxWorkers: '1' }] }), { tab: 'limits', message: t('setup.rules.error', { n: 2 }) });
   assert.deepEqual(validateSetup({ ...valid, budgetHour: 'abc' }), { tab: 'limits', message: t('setup.budgetHint') });
@@ -69,12 +73,14 @@ test('toSetupBody emits only filled keys, keeps column and rule order, and reads
   assert.equal('id' in body.usageRules![0]!, false, 'id is a draft-only field, never sent to the server');
   const bare = toSetupBody({ ...draftFrom(undefined), boardType: 'markdown', markdownPath: ' docs/b.md ', columns: [{ ...emptyColumn(), name: 'fila', weight: '1', from: ['Ready'] }], rules: [{ ...emptyRule(), percent: '80', signal: 'red' }] });
   assert.deepEqual(bare.board, { type: 'markdown', path: 'docs/b.md' });
-  assert.deepEqual(bare.columns, [{ name: 'fila', weight: 1, from: ['Ready'] }], 'session=new, empty model / onStart / onFinish / prompt stay absent');
+  assert.deepEqual(bare.columns, [{ name: 'fila', weight: 1, visible: 5, from: ['Ready'] }], 'session=new, empty model / onStart / onFinish / prompt stay absent; the editor default visible=5 is sent');
   assert.deepEqual(bare.usageRules, [{ percent: 80, signal: 'red' }]);
   assert.deepEqual(bare.budget, {});
   assert.equal('id' in bare.columns[0]!, false);
   assert.equal('id' in bare.usageRules![0]!, false);
-  assert.deepEqual(withoutId(emptyColumn()), { name: '', weight: '1', session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
+  const unlimited = toSetupBody({ ...draftFrom(undefined), columns: [{ ...emptyColumn(), name: 'a', from: ['x'], visible: '' }, { ...emptyColumn(), name: 'b', from: [], visible: '0' }] });
+  assert.deepEqual(unlimited.columns?.map((c) => 'visible' in c), [false, false], 'empty or 0 = no limit = key absent, so the file stays clean');
+  assert.deepEqual(withoutId(emptyColumn()), { name: '', weight: '1', visible: '5', session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
   assert.deepEqual(withoutId(emptyRule()), { percent: '', maxWorkers: '', signal: '' });
   assert.notEqual(emptyColumn().id, emptyColumn().id, 'ids are unique per call');
 });

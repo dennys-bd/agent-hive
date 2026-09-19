@@ -77,6 +77,7 @@ export interface Column {
   session?: SessionPolicy; // continue = --resume the card's session; absent = new
   model?: string; // --model
   weight: number; // higher wins a free slot; ties by board order
+  visible?: number; // cards shown before the "show more" toggle; absent or 0 = all; running cards always show and count against it
   from: string[]; // board columns whose cards enter here (new cards, or a human move)
   onStart?: string; // board column the card is moved to when the command starts
   onFinish?: string; // idem when the command ends

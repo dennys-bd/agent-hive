@@ -34,7 +34,7 @@ test('adding, moving and removing rows reach onChange with the new list, in orde
   expect(screen.getAllByLabelText('nome').map((el) => (el as HTMLInputElement).value)).toEqual(['spec', 'dev']);
   await user.click(screen.getByRole('button', { name: '+ coluna' }));
   // the new row's id is generated fresh (not the literal one emptyColumn() would return here), so match its shape, not its id
-  expect(onChange).toHaveBeenLastCalledWith([...columns, expect.objectContaining({ name: '', weight: '1', session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' })]);
+  expect(onChange).toHaveBeenLastCalledWith([...columns, expect.objectContaining({ name: '', weight: '1', visible: '5', session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' })]);
   const rows = screen.getAllByTestId('column-row');
   await user.click(within(rows[1]).getByRole('button', { name: '↑' }));
   expect(onChange).toHaveBeenLastCalledWith([columns[1], columns[0]]);
@@ -45,6 +45,9 @@ test('adding, moving and removing rows reach onChange with the new list, in orde
   await user.clear(within(rows[0]).getByLabelText('peso'));
   await user.type(within(rows[0]).getByLabelText('peso'), '7');
   expect(onChange).toHaveBeenLastCalledWith([{ ...columns[0], weight: '7' }, columns[1]]);
+  await user.clear(within(rows[0]).getByLabelText('visíveis'));
+  await user.type(within(rows[0]).getByLabelText('visíveis'), '3');
+  expect(onChange).toHaveBeenLastCalledWith([{ ...columns[0], visible: '3' }, columns[1]]);
   rerender(<ColumnEditor columns={[]} options={[]} onChange={onChange} />);
   expect(screen.queryAllByTestId('column-row')).toHaveLength(0);
 });
