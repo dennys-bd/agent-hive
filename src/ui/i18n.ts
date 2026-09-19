@@ -74,6 +74,10 @@ const en = {
   'setup.error.project': 'choose a project',
   'board.title': 'board',
   'column.empty': 'empty',
+  'column.cards': '{n} cards',
+  'column.weight': 'weight {w}',
+  'column.more': '+{n} more',
+  'column.less': 'show less',
   'card.blockedBy': 'blocked by {ids}',
   'card.start': 'start',
   'card.missing': 'gone from the board',
@@ -85,6 +89,7 @@ const en = {
   'setup.columns': 'Hive columns',
   'setup.columns.name': 'name',
   'setup.columns.weight': 'weight',
+  'setup.columns.visible': 'visible',
   'setup.columns.from': 'enters from (board columns)',
   'setup.columns.onStart': 'on start → board column',
   'setup.columns.onFinish': 'on finish → board column',
@@ -96,9 +101,9 @@ const en = {
   'setup.columns.add': '+ column',
   'setup.columns.remove': 'remove',
   'setup.columns.none': 'none',
-  'setup.columns.error': 'column {n}: enter a name and an integer weight ≥ 0',
+  'setup.columns.error': 'column {n}: enter a name, an integer weight ≥ 0 and, if set, an integer visible ≥ 0',
   'setup.columns.loadHint': '"load" fills the selects below with the board columns.',
-  'setup.columns.hint': 'the card advances when the command ends; a higher weight takes the slot first; a column without a prompt only shows the card. Prompt placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), e.g. <code>/hive-build {url}</code>. On markdown, <code>{body}</code> is empty and <code>{url}</code> is the file path. Permissions and questions are answered in the worker\'s terminal (<code>terminal</code> button on the card). Embedded mode needs <code>tmux</code>.',
+  'setup.columns.hint': 'the card advances when the command ends; a higher weight takes the slot first; a column without a prompt only shows the card; <code>visible</code> caps the cards shown before "show more" (empty = all; running cards always show). Prompt placeholders: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), e.g. <code>/hive-build {url}</code>. On markdown, <code>{body}</code> is empty and <code>{url}</code> is the file path. Permissions and questions are answered in the worker\'s terminal (<code>terminal</code> button on the card). Embedded mode needs <code>tmux</code>.',
 };
 
 export type MessageKey = keyof typeof en;
@@ -176,6 +181,10 @@ const pt: Record<MessageKey, string> = {
   'setup.error.project': 'escolha um project',
   'board.title': 'board',
   'column.empty': 'vazia',
+  'column.cards': '{n} cards',
+  'column.weight': 'peso {w}',
+  'column.more': '+{n} mais',
+  'column.less': 'mostrar menos',
   'card.blockedBy': 'bloqueada por {ids}',
   'card.start': 'iniciar',
   'card.missing': 'sumiu do board',
@@ -187,6 +196,7 @@ const pt: Record<MessageKey, string> = {
   'setup.columns': 'colunas do Hive',
   'setup.columns.name': 'nome',
   'setup.columns.weight': 'peso',
+  'setup.columns.visible': 'visíveis',
   'setup.columns.from': 'entra de (colunas do board)',
   'setup.columns.onStart': 'ao começar → coluna do board',
   'setup.columns.onFinish': 'ao terminar → coluna do board',
@@ -198,9 +208,9 @@ const pt: Record<MessageKey, string> = {
   'setup.columns.add': '+ coluna',
   'setup.columns.remove': 'remover',
   'setup.columns.none': 'nenhum',
-  'setup.columns.error': 'coluna {n}: informe nome e peso inteiro ≥ 0',
+  'setup.columns.error': 'coluna {n}: informe nome, peso inteiro ≥ 0 e, se preenchido, visíveis inteiro ≥ 0',
   'setup.columns.loadHint': '"carregar" preenche os selects abaixo com as colunas do board.',
-  'setup.columns.hint': 'o card avança quando o comando termina; peso maior pega o slot primeiro; coluna sem prompt só mostra o card. Placeholders do prompt: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), ex.: <code>/hive-build {url}</code>. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Permissões e perguntas são respondidas no terminal do worker (botão <code>terminal</code> no card). O modo embutido precisa do <code>tmux</code>.',
+  'setup.columns.hint': 'o card avança quando o comando termina; peso maior pega o slot primeiro; coluna sem prompt só mostra o card; <code>visíveis</code> limita os cards mostrados antes do "mostrar mais" (vazio = todos; cards rodando sempre aparecem). Placeholders do prompt: <code>{id}</code> <code>{title}</code> <code>{body}</code> <code>{url}</code> (<code>{number}</code> = <code>{id}</code>), ex.: <code>/hive-build {url}</code>. No markdown, <code>{body}</code> é vazio e <code>{url}</code> é o caminho do arquivo. Permissões e perguntas são respondidas no terminal do worker (botão <code>terminal</code> no card). O modo embutido precisa do <code>tmux</code>.',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
