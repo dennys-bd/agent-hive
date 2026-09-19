@@ -162,14 +162,25 @@ test('parseConfig reads columns as written, keeps absent optional keys absent an
   assert.throws(bad([{ name: 'a', weight: 1, from: [] }]), { message: 'hive.config.json: "columns" must have at least one column with "from"' });
 });
 
+test('parseConfig reads columns[].visible as a non-negative integer, leaves it absent when unset and rejects the rest naming the index', () => {
+  const column = (visible?: unknown) => ({ name: 'a', weight: 1, from: ['x'], ...(visible === undefined ? {} : { visible }) });
+  assert.equal('visible' in parseConfig({ ...GITHUB, columns: [column()] }).columns[0], false, 'absent stays absent: no limit, and the file stays clean');
+  assert.equal(parseConfig({ ...GITHUB, columns: [column(0)] }).columns[0].visible, 0, '0 is kept as written: no limit either');
+  assert.equal(parseConfig({ ...GITHUB, columns: [column(3)] }).columns[0].visible, 3);
+  for (const bad of [-1, 1.5, '5', null]) {
+    assert.throws(() => parseConfig({ ...GITHUB, columns: [column(bad)] }), { message: 'hive.config.json: "columns[0].visible" must be a non-negative integer' }, JSON.stringify(bad));
+  }
+});
+
 test('legacyColumns turns status and promptTemplate into the one-column pipeline of today, with defaults for what is missing', () => {
   assert.deepEqual(legacyColumns({ status: { queue: 'Todo', working: 'Doing', review: 'Review' }, promptTemplate: '/ship #{id}' }), [
-    { name: 'fila', weight: 1, session: 'new', from: ['Todo'], onStart: 'Doing', onFinish: 'Review', prompt: '/ship #{id}' },
+    { name: 'fila', weight: 1, visible: 5, session: 'new', from: ['Todo'], onStart: 'Doing', onFinish: 'Review', prompt: '/ship #{id}' },
   ]);
   const [defaults] = legacyColumns({});
   assert.deepEqual([defaults.from, defaults.onStart, defaults.onFinish], [['Ready'], 'In progress', 'In review']);
   assert.match(defaults.prompt ?? '', /^Task #\{number\}: \{title\}/);
   assert.equal(legacyColumns({ status: { queue: '' } })[0].from[0], 'Ready', 'an empty value falls back too');
+  assert.equal(defaults.visible, 5, 'a new column in the user\'s eyes: same default as the editor');
 });
 
 test('legacyConfig proposes a config for a file without columns and is undefined for a file that has them or that is broken', () => {

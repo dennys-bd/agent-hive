@@ -108,9 +108,10 @@ function parseColumn(raw: unknown, field: string): Column {
   const from = raw.from;
   if (!Array.isArray(from) || !from.every((x) => typeof x === 'string')) throw new Error(`${CONFIG_FILE}: "${field}.from" must be an array of strings`);
   const session = raw.session === undefined ? {} : { session: requireSessionPolicy(raw.session, `${field}.session`) };
+  const visible = raw.visible === undefined ? {} : { visible: requireInt(raw.visible, `${field}.visible`) }; // absent stays absent: no limit
   return {
     name: requireString(raw.name, `${field}.name`), weight: requireInt(raw.weight, `${field}.weight`), from: from as string[],
-    ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...optionalString(raw.model, `${field}.model`),
+    ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...visible, ...optionalString(raw.model, `${field}.model`),
     ...optionalString(raw.onStart, `${field}.onStart`), ...optionalString(raw.onFinish, `${field}.onFinish`),
   };
 }
@@ -138,7 +139,7 @@ const textOr = (value: unknown, fallback: string): string => (typeof value === '
 export function legacyColumns(raw: Record<string, unknown>): Column[] {
   const status = isRecord(raw.status) ? raw.status : {};
   return [{
-    name: LEGACY_COLUMN_NAME, weight: 1, session: 'new', from: [textOr(status.queue, LEGACY_STATUS.queue)],
+    name: LEGACY_COLUMN_NAME, weight: 1, visible: 5, session: 'new', from: [textOr(status.queue, LEGACY_STATUS.queue)],
     onStart: textOr(status.working, LEGACY_STATUS.working), onFinish: textOr(status.review, LEGACY_STATUS.review),
     prompt: textOr(raw.promptTemplate, LEGACY_PROMPT),
   }];

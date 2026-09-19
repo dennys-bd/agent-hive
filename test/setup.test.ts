@@ -237,11 +237,12 @@ test('GET /setup in setup mode over a legacy file proposes legacyColumns with th
   const info = await json<SetupInfo>(fetch(`${base}/setup`));
   assert.equal(info.configured, false);
   assert.match(info.error ?? '', /"columns" is required/);
-  assert.deepEqual(info.config?.columns, [{ name: 'fila', weight: 1, session: 'new', from: ['Todo'], onStart: 'In progress', onFinish: 'In review', prompt: '/ship #{id}' }]);
+  assert.deepEqual(info.config?.columns, [{ name: 'fila', weight: 1, visible: 5, session: 'new', from: ['Todo'], onStart: 'In progress', onFinish: 'In review', prompt: '/ship #{id}' }]);
   const res = await postSetup(base, { board: BODY.board, columns: [{ ...info.config!.columns[0], from: ['Ready'] }], maxConcurrent: 0 });
   assert.equal(res.status, 200);
   const saved = JSON.parse(await readFile(configFile(repo), 'utf8')) as Config;
   assert.deepEqual(saved.columns[0].from, ['Ready']);
+  assert.equal(saved.columns[0].visible, 5, 'the proposal\'s visible goes through parseColumn and lands in the file');
   assert.deepEqual(server.getState()?.cards.map((c) => c.task.title), ['from Ready']);
 });
 
