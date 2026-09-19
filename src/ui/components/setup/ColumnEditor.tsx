@@ -26,7 +26,7 @@ function ColumnRow({ column, index, total, options, onUpdate, onMove, onRemove }
 
   return (
     <Card data-testid="column-row" className="gap-3 p-3">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <div className="flex flex-col gap-1">
           <Label htmlFor={`${id}-name`}>{t('setup.columns.name')}</Label>
           <Input id={`${id}-name`} defaultValue={column.name} onChange={(e) => onUpdate({ name: e.target.value })} />
@@ -34,6 +34,10 @@ function ColumnRow({ column, index, total, options, onUpdate, onMove, onRemove }
         <div className="flex flex-col gap-1">
           <Label htmlFor={`${id}-weight`}>{t('setup.columns.weight')}</Label>
           <Input id={`${id}-weight`} type="number" min={0} step={1} defaultValue={column.weight} onChange={(e) => onUpdate({ weight: e.target.value })} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor={`${id}-visible`}>{t('setup.columns.visible')}</Label>
+          <Input id={`${id}-visible`} type="number" min={0} step={1} defaultValue={column.visible} onChange={(e) => onUpdate({ visible: e.target.value })} />
         </div>
         <div className="flex flex-col gap-1">
           <Label htmlFor={`${id}-session`}>{t('setup.columns.session')}</Label>
