@@ -48,7 +48,7 @@ hive
 
 The command returns right away; the Hive and its workers keep running detached even if you close the terminal. stdout/stderr go to `<repo>/.hive/hive.log`. Running `hive` again while one is already up just prints the running instance's address instead of starting a second one.
 
-Without a `hive.config.json` in the repo, the window opens on a setup form: board type, the Hive columns (name, prompt, session, model, weight and the board columns each one maps to) and max workers. Saving writes the file and shows the dashboard. "configurar" reopens the form at any time.
+Without a `hive.config.json` in the repo, the window opens on a setup form: board type, the Hive columns (name, prompt, session, model, weight, visible cards and the board columns each one maps to) and max workers. Saving writes the file and shows the dashboard. "configurar" reopens the form at any time.
 
 On screen: `N/M workers ativos`, the `máx. workers` field (changes live and persists across restarts), the Hive board with one column per configured column, and one card per slot. Click a card to see the pending question or the PR link, the worktree and branch and an excerpt of the transcript; `terminal` opens the worker's session in a terminal (iTerm2 or Terminal.app on macOS, `$TERMINAL` on Linux) to answer permissions and questions; `kill` stops the worker and the card stays in its column, free to run again.
 
@@ -90,7 +90,7 @@ If the file does not exist, setup creates it with one example row in `Done`.
 
 ```json
 "columns": [
-  { "name": "spec", "weight": 5, "from": ["Backlog"], "onFinish": "Ready",
+  { "name": "spec", "weight": 5, "visible": 5, "from": ["Backlog"], "onFinish": "Ready",
     "prompt": "/hive-spec {url}", "session": "new", "model": "opus" },
   { "name": "dev", "weight": 1, "from": ["Ready"], "onStart": "In progress", "onFinish": "In review",
     "prompt": "/hive-build {url}", "session": "continue" },
@@ -98,7 +98,7 @@ If the file does not exist, setup creates it with one example row in `Done`.
 ]
 ```
 
-Each column has a `prompt` (placeholders: `{id}`, `{title}`, `{body}`, `{url}`, `{number}` = `{id}`), a `session` policy (`new` starts a fresh session, `continue` resumes the card's own), a `model`, a `weight` (higher wins a free slot when several columns have stopped cards; ties by board order) and the board columns it enters `from` / writes to on `onStart` and `onFinish`. The card advances when the command ends (`Stop`), not by hand. A column without a `prompt` only shows the card — nothing runs there.
+Each column has a `prompt` (placeholders: `{id}`, `{title}`, `{body}`, `{url}`, `{number}` = `{id}`), a `session` policy (`new` starts a fresh session, `continue` resumes the card's own), a `model`, a `weight` (higher wins a free slot when several columns have stopped cards; ties by board order), a `visible` cap (how many cards the column shows before a "show more" toggle; absent or `0` = all; running cards always show and count against it) and the board columns it enters `from` / writes to on `onStart` and `onFinish`. The card advances when the command ends (`Stop`), not by hand. A column without a `prompt` only shows the card — nothing runs there.
 
 ## Config (`hive.config.json`)
 
