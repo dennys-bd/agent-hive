@@ -6,7 +6,7 @@ import { t } from '../i18n.js';
 // id: a per-row React key, generated once when the draft row is created and never sent to the server (toSetupBody
 // never spreads the draft, only picks named fields) — lets ColumnEditor/RulesEditor key rows by the row itself
 // instead of by screen position, so move/remove never leaves a surviving row showing another row's stale text.
-export interface ColumnDraft { id: string; name: string; weight: string; session: 'new' | 'continue'; model: string; from: string[]; onStart: string; onFinish: string; prompt: string }
+export interface ColumnDraft { id: string; name: string; weight: string; visible: string; session: 'new' | 'continue'; model: string; from: string[]; onStart: string; onFinish: string; prompt: string }
 export interface RuleDraft { id: string; percent: string; maxWorkers: string; signal: Signal | '' }
 export interface SetupDraft {
   boardType: BoardConfig['type']; owner: string; project: string; markdownPath: string;
@@ -19,16 +19,19 @@ export interface SetupProblem { tab: SetupTab; message: string }
 const DEFAULT_OWNER = '@me';
 const DEFAULT_MARKDOWN_PATH = 'board.md';
 const DEFAULT_WEIGHT = '1';
+const DEFAULT_VISIBLE = '5'; // only for a column created in the editor; a config without the field keeps showing everything
 const PERCENT_MAX = 100;
 
-export const emptyColumn = (): ColumnDraft => ({ id: crypto.randomUUID(), name: '', weight: DEFAULT_WEIGHT, session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
+export const emptyColumn = (): ColumnDraft => ({ id: crypto.randomUUID(), name: '', weight: DEFAULT_WEIGHT, visible: DEFAULT_VISIBLE, session: 'new', model: '', from: [], onStart: '', onFinish: '', prompt: '' });
 export const emptyRule = (): RuleDraft => ({ id: crypto.randomUUID(), percent: '', maxWorkers: '', signal: '' });
 
 const numberField = (n?: number): string => (n ? String(n) : ''); // 0 or absent = no limit = empty field
 const isNonNegativeInt = (text: string): boolean => /^\d+$/.test(text.trim());
+const isEmptyOrNonNegativeInt = (text: string): boolean => text.trim() === '' || isNonNegativeInt(text);
+const limitFrom = (text: string): number | undefined => (isNonNegativeInt(text) && Number(text) > 0 ? Number(text) : undefined); // empty or 0 = no limit
 
 const columnDraft = (c: Column): ColumnDraft => ({
-  id: crypto.randomUUID(), name: c.name, weight: String(c.weight), session: c.session ?? 'new', model: c.model ?? '', from: c.from, onStart: c.onStart ?? '', onFinish: c.onFinish ?? '', prompt: c.prompt ?? '',
+  id: crypto.randomUUID(), name: c.name, weight: String(c.weight), visible: numberField(c.visible), session: c.session ?? 'new', model: c.model ?? '', from: c.from, onStart: c.onStart ?? '', onFinish: c.onFinish ?? '', prompt: c.prompt ?? '',
 });
 const ruleDraft = (r: UsageRule): RuleDraft => ({ id: crypto.randomUUID(), percent: String(r.percent), maxWorkers: r.maxWorkers === undefined ? '' : String(r.maxWorkers), signal: r.signal ?? '' });
 
@@ -58,7 +61,7 @@ function boardProblem(draft: SetupDraft): SetupProblem | undefined {
 
 function columnsProblem(columns: ColumnDraft[]): SetupProblem | undefined {
   if (columns.length === 0) return { tab: 'board', message: t('setup.columns.none') };
-  const bad = columns.findIndex((c) => c.name.trim() === '' || !isNonNegativeInt(c.weight));
+  const bad = columns.findIndex((c) => c.name.trim() === '' || !isNonNegativeInt(c.weight) || !isEmptyOrNonNegativeInt(c.visible));
   return bad === -1 ? undefined : { tab: 'board', message: t('setup.columns.error', { n: bad + 1 }) };
 }
 
@@ -68,7 +71,7 @@ function rulesProblem(rules: RuleDraft[]): SetupProblem | undefined {
 }
 
 function budgetProblem(draft: SetupDraft): SetupProblem | undefined {
-  const bad = [draft.budgetHour, draft.budgetDay].some((v) => v.trim() !== '' && !isNonNegativeInt(v));
+  const bad = [draft.budgetHour, draft.budgetDay].some((v) => !isEmptyOrNonNegativeInt(v));
   return bad ? { tab: 'limits', message: t('setup.budgetHint') } : undefined;
 }
 
@@ -80,15 +83,18 @@ export function validateSetup(draft: SetupDraft): SetupProblem | undefined {
 const optional = <K extends string>(key: K, value: string): { [P in K]?: string } => (value.trim() === '' ? {} : { [key]: value.trim() }) as { [P in K]?: string };
 
 // Absent keys stay absent (never an explicit undefined), so hive.config.json stays clean; the server validates the rest.
-const columnFrom = (c: ColumnDraft): Column => ({
-  name: c.name.trim(), weight: Number(c.weight), from: c.from,
-  ...(c.session === 'continue' ? { session: 'continue' as const } : {}),
-  ...optional('model', c.model), ...optional('onStart', c.onStart), ...optional('onFinish', c.onFinish), ...optional('prompt', c.prompt),
-});
+const columnFrom = (c: ColumnDraft): Column => {
+  const visible = limitFrom(c.visible); // '' or '0' = no limit = key absent, like the budget fields
+  return {
+    name: c.name.trim(), weight: Number(c.weight), from: c.from,
+    ...(c.session === 'continue' ? { session: 'continue' as const } : {}),
+    ...(visible === undefined ? {} : { visible }),
+    ...optional('model', c.model), ...optional('onStart', c.onStart), ...optional('onFinish', c.onFinish), ...optional('prompt', c.prompt),
+  };
+};
 const ruleFrom = (r: RuleDraft): UsageRule => ({
   percent: Number(r.percent), ...(r.maxWorkers === '' ? {} : { maxWorkers: Number(r.maxWorkers) }), ...(r.signal === '' ? {} : { signal: r.signal }),
 });
-const limitFrom = (text: string): number | undefined => (isNonNegativeInt(text) && Number(text) > 0 ? Number(text) : undefined);
 
 function boardFrom(draft: SetupDraft): BoardConfig {
   return draft.boardType === 'markdown'
