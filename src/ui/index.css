@@ -1,0 +1,97 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+/* The shadcn components' dark: classes follow the page's resolved theme (data-theme, lib/theme.ts), not the OS: a forced theme wins (#296). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Not a color: the same in both themes, so it stays out of theme.css. */
+:root { --radius: 0.5rem; }
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-empty: var(--empty);
+  --color-working: var(--working);
+  --color-waiting: var(--waiting);
+  --color-review: var(--review);
+  --color-approval: var(--approval);
+  --color-backoff: var(--backoff);
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
+  --color-signal-green: var(--signal-green);
+  --color-signal-yellow: var(--signal-yellow);
+  --color-signal-red: var(--signal-red);
+  --color-agent-claude: var(--agent-claude);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  /* Every scroll area the lib does not wrap (#143): thin, in the theme's own tokens, where the OS reserves space, native where it already overlays. No ::-webkit-scrollbar. */
+  * { scrollbar-width: thin; scrollbar-color: var(--empty) transparent; }
+  body { @apply bg-background text-foreground text-sm; font-family: -apple-system, system-ui, sans-serif; }
+  a { color: var(--review); }
+}
+
+@keyframes blink { 0%, 100% { background: var(--card); } 50% { background: var(--blink); } }
+.blink { animation: blink 1s ease-in-out infinite; }
+/* The close-tab notice's countdown (#614): the bar empties over the notice's duration, set inline from NOTICE_MS, and stops where sonner's
+   timer stops, while the pointer is over the toaster. ponytail: sonner also pauses while the window is hidden and the bar does not; a hidden
+   window rarely has a notice open. */
+@keyframes close-tab-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.close-tab-countdown { transform-origin: left; animation-name: close-tab-countdown; animation-timing-function: linear; animation-fill-mode: forwards; }
+[data-sonner-toaster]:hover .close-tab-countdown { animation-play-state: paused; }
+
+/* Muted file icons in the files tree (#754): the icon theme's own colours, toned down by the two theme.css tokens. */
+.file-icon-muted { filter: saturate(var(--file-icon-saturate)) opacity(var(--file-icon-opacity)); }
+
+/* The stage scrollbar (OverlayScrollbars, #143): the lib's --os-* knobs from the theme tokens, so both themes follow (#296). index.css loads
+   after overlayscrollbars.css in main.tsx, so this single class outranks the lib's .os-scrollbar defaults by order. */
+.os-theme-hive {
+  --os-size: 6px;
+  --os-padding-perpendicular: 2px; /* off the card's border */
+  --os-padding-axis: 6px; /* the ends stay inside the card's 12px corner radius */
+  --os-track-bg: transparent;
+  --os-handle-border-radius: 3px;
+  --os-handle-bg: var(--empty);
+  --os-handle-bg-hover: var(--muted-foreground);
+  --os-handle-bg-active: var(--muted-foreground);
+  --os-handle-interactive-area-offset: 4px; /* a 6px bar is hard to grab with a mouse */
+}
+
+/* The signal colours: the selected toggle item and the effective-signal strip above the stages (#87), with an ink token of their own (#296). */
+.signal-pill, [data-slot="toggle-group-item"][data-state="on"][data-signal] { color: var(--signal-ink); }
+.signal-pill[data-signal="green"], [data-slot="toggle-group-item"][data-state="on"][data-signal="green"] { background: var(--signal-green); }
+.signal-pill[data-signal="yellow"], [data-slot="toggle-group-item"][data-state="on"][data-signal="yellow"] { background: var(--signal-yellow); }
+.signal-pill[data-signal="red"], [data-slot="toggle-group-item"][data-state="on"][data-signal="red"] { background: var(--signal-red); }
+
+/* #797: the wide dialog (the workspace's memory); unlayered, so it wins over the primitive's sm:max-w-lg */
+[data-slot="dialog-content"][data-size="wide"] { max-width: min(1040px, calc(100vw - 64px)); width: min(1040px, calc(100vw - 64px)); max-height: calc(100vh - 64px); overflow-y: auto; }
+
+/* The editor's change marks (#668), VS Code's quick diff in status colours: added working, modified waiting, deleted destructive; the diff-add / diff-del tints are
+   backgrounds, too dark to read as a 3px bar. Monaco
+   sizes the .cldr box of its lines-decorations column; the bar is 3px of it, the triangle a border at the top of the line after the deletion. */
+.monaco-editor .hive-change-add, .monaco-editor .hive-change-modify, .monaco-editor .hive-change-delete { cursor: pointer; }
+.monaco-editor .hive-change-add::before, .monaco-editor .hive-change-modify::before { content: ''; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; }
+.monaco-editor .hive-change-add::before { background: var(--working); }
+.monaco-editor .hive-change-modify::before { background: var(--waiting); }
+.monaco-editor .hive-change-delete::before { content: ''; position: absolute; top: -4px; left: 3px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 4px solid var(--destructive); }

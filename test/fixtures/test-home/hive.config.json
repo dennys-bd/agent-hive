@@ -1,0 +1,88 @@
+{
+  "comb": {
+    "prefix": "TEST",
+    "workspaces": [
+      { "name": "agent-hive", "path": "/path/to/project", "env": {}, "fork": null }
+    ],
+    "sources": [
+      {
+        "type": "github",
+        "name": "test",
+        "owner": "@me",
+        "number": 0,
+        "filter": [],
+        "taskProps": { "defaults": { "workspace": "agent-hive", "auto": true }, "rules": [] },
+        "qualifyId": false
+      }
+    ],
+    "stages": [
+      {
+        "name": "Backlog",
+        "from": { "test": ["Backlog"] },
+        "prompt": "Chame a skill hive-spec para a task {url}; A discussão / explicação deve ser oferecida em português, mas no fim escreva a skill em inglês",
+        "visible": 5,
+        "onFinish": { "test": [{ "type": "move", "column": "Ready" }] }
+      },
+      {
+        "name": "Plan",
+        "from": { "test": ["Ready"] },
+        "prompt": "Chame a skill hive-plan para a spec que foi criada. Assim como antes, discussão e explicação em português, documento em inglês",
+        "session": "continue",
+        "visible": 5,
+        "onStart": { "test": [{ "type": "move", "column": "In progress" }] }
+      },
+      {
+        "name": "Dev",
+        "from": { "test": ["In progress"] },
+        "prompt": "Atualize sua branch com o que tem em main e então chame a skill hive-build para o plano",
+        "session": "continue",
+        "visible": 5,
+        "onFinish": { "test": [{ "type": "move", "column": "In review" }] }
+      },
+      {
+        "name": "In Review",
+        "from": { "test": ["In review"] },
+        "session": "continue",
+        "visible": 5,
+        "onFinish": { "test": [{ "type": "move", "column": "Done" }] },
+        "approval": true
+      },
+      {
+        "name": "Done",
+        "from": { "test": ["Done"] },
+        "visible": 5,
+        "onFinish": { "test": [{ "type": "archive" }] },
+        "action": "deleteActivity",
+        "after": "1d"
+      }
+    ],
+    "commands": []
+  },
+  "auth": { "github": "cli" },
+  "onClose": "quit",
+  "deleteActivity": { "session": true, "transcripts": false, "nonAutoTasks": false },
+  "shutdownIdleMinutes": 30,
+  "approvalMinutes": 10,
+  "rateLimitWaitMinutes": 300,
+  "showGithubQuota": true,
+  "closeSessionTab": "keep",
+  "closeStageTab": "keep",
+  "closeSessionTabNotice": true,
+  "closeStageTabNotice": true,
+  "sleepNotice": true,
+  "sleepAutoNotice": true,
+  "sleepIdleNotice": true,
+  "sleepAllNotice": true,
+  "closeTerminalTab": "sleep",
+  "closeTerminalTabNotice": true,
+  "theme": "system",
+  "terminalFont": "",
+  "consoleLines": 5000,
+  "trustedDomains": [],
+  "shortcuts": {},
+  "fileIcons": { "set": "material", "scope": "all", "muted": false },
+  "sidebarsPerView": { "left": true, "right": true, "rightTab": true },
+  "notifications": { "waiting": true, "approval": true, "pr": true, "failed": true },
+  "signals": { "yellow": { "newTasks": false, "started": "resumeAndContinue", "workerless": true }, "red": { "newTasks": false, "started": "stay", "workerless": true }, "onOpen": "yellow" },
+  "editor": { "formatOnSave": { "enabled": false, "workspaces": "all" }, "languages": {} }
+}

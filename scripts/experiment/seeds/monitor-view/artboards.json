@@ -1,0 +1,14 @@
+[
+  { "id": "4a", "file": "4a-padrao.png", "title": "padrao", "delivery": 1, "live": false },
+  { "id": "4b", "file": "4b-menu.png", "title": "menu", "delivery": 3, "live": false },
+  { "id": "4c", "file": "4c-comandos.png", "title": "comandos", "delivery": 6, "live": true },
+  { "id": "4c2", "file": "4c2-executar.png", "title": "executar", "delivery": 6, "live": false },
+  { "id": "4d", "file": "4d-layout.png", "title": "layout", "delivery": 4, "live": false },
+  { "id": "4e", "file": "4e-laterais.png", "title": "laterais", "delivery": 5, "live": false },
+  { "id": "4f", "file": "4f-maquina.png", "title": "maquina", "delivery": 8, "live": false },
+  { "id": "4g", "file": "4g-processos.png", "title": "processos", "delivery": 8, "live": true },
+  { "id": "4h", "file": "4h-alerta.png", "title": "alerta", "delivery": 8, "live": true },
+  { "id": "4i", "file": "4i-arquivos.png", "title": "arquivos", "delivery": 7, "live": false },
+  { "id": "4j", "file": "4j-muitas.png", "title": "muitas", "delivery": 2, "live": false },
+  { "id": "4k", "file": "4k-vazio.png", "title": "vazio", "delivery": 1, "live": false }
+]

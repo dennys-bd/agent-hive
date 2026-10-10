@@ -1,0 +1,5 @@
+{
+  "name": "hive",
+  "description": "The Agent Hive pipeline: /hive:new-spec, /hive:new-plan, /hive:new-build and /hive:new-pr, with the subagents they dispatch. Self-contained: no other plugin required.",
+  "version": "0.1.0"
+}

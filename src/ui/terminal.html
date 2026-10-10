@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Hive</title>
+<style>
+  /* Full-viewport terminal in the theme's --background (#296), so this window and the main window read as one app. Until index.css loads, Canvas
+     follows the page's color scheme, and the window's own background (the saved theme's, main.ts) covers the rest. These rules are
+     unlayered: they win over the Tailwind preflight index.css brings for the link dialog (#404), which sits in @layer base. */
+  html, body, #terminal { height: 100%; margin: 0; background: var(--background, Canvas); overflow: hidden; }
+  /* A detached run's own title strip (#340): the native bar is hidden (hiddenInset), with the traffic lights in its left 80px. Its height is
+     the one value to tune against where macOS draws them. No -webkit-app-region (#377): the page drags the window by pointer events
+     (terminal.ts), which keeps the strip's right-click as it is (#440). */
+  :root { --titlebar-height: 32px; }
+  #titlebar { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: var(--titlebar-height); padding: 0 8px 0 80px; border-bottom: 1px solid var(--border, GrayText); color: var(--foreground, CanvasText); font: 12px system-ui, sans-serif; cursor: default; user-select: none; }
+  #titlebar + #terminal { height: calc(100% - var(--titlebar-height)); }
+  #title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The way back to the main window's panel (#252), on the strip's right, in the theme's tokens */
+  #dock { margin-left: auto; padding: 2px 8px; border: 1px solid var(--border, GrayText); border-radius: 6px; background: var(--secondary, Canvas); color: var(--foreground, CanvasText); font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script type="module" src="./terminal.ts"></script>
+</body>
+</html>

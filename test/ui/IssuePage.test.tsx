@@ -1,0 +1,77 @@
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { IssuePage } from '@/components/IssuePage';
+import { setLanguage } from '@/i18n';
+import type { IssuePage as Issue, State, Task } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+
+const URL12 = 'https://github.com/acme/site/issues/12';
+const ISSUE: Issue = {
+  repository: 'acme/site', number: 12, title: 'Pager breaks', url: URL12, labels: ['bug'], assignees: ['ana'], updatedAt: '2026-10-05T09:00:00Z',
+  body: 'The **pager** breaks', author: 'bia', createdAt: '2026-10-01T09:00:00Z',
+  pullRequests: [{ number: 7, url: 'https://github.com/acme/site/pull/7', state: 'merged' }, { number: 9, url: 'https://github.com/acme/site/pull/9', state: 'open', checks: 'green' }],
+  comments: [
+    { author: 'ana', createdAt: '2026-10-02T09:00:00Z', body: 'first', url: `${URL12}#c1` },
+    { author: 'bia', createdAt: '2026-10-03T09:00:00Z', body: 'second', url: `${URL12}#c2` },
+  ],
+  commentCount: 3,
+};
+const state = (tasks: Task[] = [], extra: Partial<State> = {}): State => ({
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: { roadmap: ['Ready'] }, prompt: 'x' }], tasks, sourceOrder: [], localCount: 0,
+  activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['site'], sourceWorkspaces: {}, commands: {}, syncs: {},
+  deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
+});
+const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(String(input) === '/repositories/acme/site/issues/12' ? ISSUE : { ok: true });
+const fetchMock = vi.fn(answer);
+beforeEach(() => {
+  setLanguage('pt');
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(answer);
+  vi.mocked(toast.error).mockClear();
+  vi.stubGlobal('fetch', fetchMock);
+});
+afterEach(() => vi.unstubAllGlobals());
+
+const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}) => render(
+  <IssuePage state={state(tasks, extra)} locale="pt-BR" issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} />,
+);
+
+test('the page reads its issue: the header it came from, the title, the meta, the PR line, the description and the comments, the rest on GitHub (#757)', async () => {
+  renderPage();
+  expect(await screen.findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/issues/12');
+  expect(screen.getByText('HEADER')).toBeInTheDocument();
+  expect(screen.getByText('acme/site · site')).toBeInTheDocument();
+  expect(screen.getByText('⇅ 1/2 mergeados')).toBeInTheDocument(); // two closing PRs: the short summary
+  expect(screen.getByText('pager')).toBeInTheDocument(); // the description's markdown, its bold included
+  const comments = screen.getByRole('region', { name: 'comentários · 3' });
+  expect(within(comments).getByText('first')).toBeInTheDocument();
+  expect(within(comments).getByRole('link', { name: 'mais 1 no GitHub ›' })).toHaveAttribute('href', URL12);
+});
+
+test('abrir PR › opens the first open closing PR on GitHub; on a task, its own next PR (#757)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  const { unmount } = renderPage();
+  await user.click(await screen.findByRole('button', { name: 'abrir PR ›' }));
+  expect(open).toHaveBeenCalledWith('https://github.com/acme/site/pull/9', '_blank', 'noreferrer');
+  unmount();
+  const task: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  renderPage([task], { activityRecords: [{ id: 'A1', taskIds: [task.item.itemId], sessions: [], prs: [{ url: 'https://github.com/acme/site/pull/31', state: 'open' }] }] });
+  await user.click(await screen.findByRole('button', { name: 'abrir PR ›' }));
+  expect(open).toHaveBeenLastCalledWith('https://github.com/acme/site/pull/31', '_blank', 'noreferrer'); // no dock here: GitHub
+  expect(screen.getByText('#31')).toHaveClass('text-review');
+  open.mockRestore();
+});
+
+test('a failed read with nothing shown is its message and a toast (#757)', async () => {
+  fetchMock.mockImplementationOnce(async () => jsonRes({ error: 'Could not resolve to an Issue' }, 502));
+  renderPage();
+  expect(await screen.findByText('Could not resolve to an Issue')).toBeInTheDocument();
+  expect(toast.error).toHaveBeenCalledWith('Could not resolve to an Issue');
+});

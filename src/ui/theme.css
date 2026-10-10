@@ -1,0 +1,76 @@
+/* The Hive's color tokens (#296), one set for the main window (index.css imports it) and the terminal page (terminal.ts): dark in :root, the
+   light overrides under data-theme="light", which lib/theme.ts sets on <html>. Plain CSS: the terminal page has no Tailwind.
+   The two --background values are also WINDOW_BACKGROUND in src/main.ts (the window paints before the page); test/theme.test.ts keeps them in sync. */
+:root {
+  color-scheme: dark;
+  --background: #111418;
+  --foreground: #e6e6e6;
+  --card: #1a1f26;
+  --card-foreground: #e6e6e6;
+  --popover: #1a1f26;
+  --popover-foreground: #e6e6e6;
+  --primary: #e6e6e6;
+  --primary-foreground: #111418;
+  --secondary: #2a313b;
+  --secondary-foreground: #e6e6e6;
+  --muted: #2a313b;
+  --muted-foreground: #8a94a6;
+  --accent: #2a313b;
+  --accent-foreground: #e6e6e6;
+  --destructive: #d9534f;
+  --border: #2a313b;
+  --input: #2a313b;
+  --ring: #3b82f6;
+  --empty: #3a4250;
+  --working: #2e9e5b;
+  --waiting: #e0b52a;
+  --review: #3b82f6;
+  --approval: #0ea5e9; /* #268: sky, apart from review's blue */
+  --backoff: #f08a3c; /* #805: orange, a run waiting out an API error */
+  --diff-add: #1c3a28; /* #270: an added line's background, --foreground on it */
+  --diff-del: #45211f; /* #270: a deleted line's background */
+  --blink: #3a3110;
+  --signal-ink: #111418;
+  --signal-green: var(--working);
+  --signal-yellow: var(--waiting);
+  --signal-red: var(--destructive);
+  --agent-claude: #d97757; /* #669: the agent's own colour, the header's agent mark only */
+  --file-icon-saturate: 0.45; /* #754: muted file icons, through .file-icon-muted in index.css; tuned here, not in code */
+  --file-icon-opacity: 0.7;
+}
+
+/* Darker green / yellow / red with white ink: the dark theme's bright yellow is unreadable on white. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: #f5f6f8;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #1f2328;
+  --primary-foreground: #ffffff;
+  --secondary: #e3e7ed;
+  --secondary-foreground: #1f2328;
+  --muted: #e3e7ed;
+  --muted-foreground: #5a6372;
+  --accent: #e3e7ed;
+  --accent-foreground: #1f2328;
+  --destructive: #c9302c;
+  --border: #e3e7ed;
+  --input: #e3e7ed;
+  --ring: #2563eb;
+  --empty: #c3c9d3;
+  --working: #1a7f45;
+  --waiting: #9a6700;
+  --review: #2563eb;
+  --approval: #0284c7; /* #268: a darker sky, apart from review's blue */
+  --backoff: #c2410c; /* #805: a darker orange for white, as --waiting is */
+  --diff-add: #dafbe1; /* #270 */
+  --diff-del: #ffebe9; /* #270 */
+  --blink: #fbecc0;
+  --signal-ink: #ffffff;
+  --agent-claude: #d97757; /* #669: the same on both themes; redeclared because test/theme.test.ts wants every literal token here */
+  --file-icon-saturate: 0.55; /* #754: a little more of each on white, where a faded icon washes out */
+  --file-icon-opacity: 0.8;
+}

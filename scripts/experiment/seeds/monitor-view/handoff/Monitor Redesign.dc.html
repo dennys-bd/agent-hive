@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><meta name="design_doc_mode" content="canvas"><style>html,body{margin:0;background:#0b0d10} a{color:#3b82f6} a:hover{color:#e6e6e6}</style></helmet>
+<section style="background:#0b0d10;width:max-content;min-width:100%;box-sizing:border-box;padding:48px;display:flex;flex-direction:column;gap:24px;color:#e6e6e6;font-family:-apple-system,system-ui,sans-serif">
+  <div style="font-size:22px;font-weight:600">monitor</div>
+  <div style="display:flex;flex-wrap:wrap;gap:48px">
+    <sc-for list="{{ items }}" as="i" hint-placeholder-count="12">
+      <div id="{{ i.id }}" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:10px;align-items:center;font-size:14px"><span style="padding:2px 8px;border-radius:4px;background:#e6e6e6;color:#111418;font-weight:600">{{ i.id }}</span>{{ i.label }}</div>
+        <dc-import name="Monitor" variant="{{ i.v }}" hint-size="1440px,900px"></dc-import>
+      </div>
+    </sc-for>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const L = [
+      ['4a', 'padrao', 'várias atividades lado a lado, só com o que os agentes estão fazendo'],
+      ['4b', 'menu', 'grid personalizado (2×1 e 1×2) · menu ⋯ com executar aberto'],
+      ['4c', 'comandos', 'comandos do hive: executando, 2 ao mesmo tempo, concluído, falhou'],
+      ['4c2', 'executar', '⌘R no painel em foco: executar na worktree'],
+      ['4d', 'layout', 'organizar: tamanhos, arrastar e fixar atividade'],
+      ['4e', 'laterais', 'laterais abertas por atalho (⌘B e ⌘⇧B)'],
+      ['4f', 'maquina', 'lateral direita na aba saúde (⌘⇧M abre direto nela)'],
+      ['4g', 'processos', 'saúde · processos da atividade clicada'],
+      ['4h', 'alerta', 'saúde em alerta: memória em pressão alta e sync atrasado'],
+      ['4i', 'arquivos', 'lateral direita na aba arquivos, do painel em foco'],
+      ['4j', 'muitas', 'mais fixadas do que cabem · painel de atividade parada'],
+      ['4k', 'vazio', 'nenhuma atividade fixada']
+    ];
+    return { items: L.map(([id, v, label]) => ({ id, v, label })) };
+  }
+}
+</script>
+</body>
+</html>

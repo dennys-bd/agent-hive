@@ -1,0 +1,8 @@
+node_modules
+dist
+.hive
+.omc/
+.claude/worktrees
+.claude/ideate.json
+.DS_Store
+/docs/

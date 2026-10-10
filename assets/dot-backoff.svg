@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <title>backoff</title>
+  <!-- A worker line's dot in the menu bar menu (#805): the main window's backoff color (src/ui/theme.css), drawn as is, not a template image -->
+  <circle cx="8" cy="8" r="5" fill="#f08a3c"/>
+</svg>

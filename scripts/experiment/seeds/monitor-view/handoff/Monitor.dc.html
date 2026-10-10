@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/agent-hive-design-system-3f7441a6-b828-4a33-ba57-5116b3c14ea2/tokens/colors.css">
+  <link rel="stylesheet" href="_ds/agent-hive-design-system-3f7441a6-b828-4a33-ba57-5116b3c14ea2/tokens/typography.css">
+  <link rel="stylesheet" href="_ds/agent-hive-design-system-3f7441a6-b828-4a33-ba57-5116b3c14ea2/tokens/spacing.css">
+  <link rel="stylesheet" href="_ds/agent-hive-design-system-3f7441a6-b828-4a33-ba57-5116b3c14ea2/tokens/base.css">
+  <script src="_ds/agent-hive-design-system-3f7441a6-b828-4a33-ba57-5116b3c14ea2/_ds_bundle.js"></script>
+  <style>@keyframes hv-spin{to{transform:rotate(360deg)}} a{color:#3b82f6} a:hover{color:#e6e6e6}</style>
+</helmet>
+<div style="width:1440px;height:900px;background:#111418;color:#e6e6e6;font-family:-apple-system,system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;overflow:hidden;position:relative;border:1px solid #2a313b;border-radius:10px">
+  <div style="height:44px;flex:none;display:flex;align-items:center;gap:16px;padding:0 12px 0 84px;border-bottom:1px solid #2a313b;position:relative">
+    <div style="position:absolute;left:14px;top:16px;display:flex;gap:8px"><div style="width:12px;height:12px;border-radius:6px;background:#3a4250"></div><div style="width:12px;height:12px;border-radius:6px;background:#3a4250"></div><div style="width:12px;height:12px;border-radius:6px;background:#3a4250"></div></div>
+    <div style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px"><span style="color:#e0b52a;font-size:15px">⬢</span>agent hive</div>
+    <div style="display:flex;gap:2px;background:#2a313b;border-radius:6px;padding:2px">
+      <div style="padding:3px 10px;border-radius:4px;font-size:13px;font-weight:500">fluxo<span style="font-size:11px;font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌘1</span></div>
+      <div style="padding:3px 10px;border-radius:4px;font-size:13px;font-weight:500">atividades<span style="font-size:11px;font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌘2</span></div>
+      <div style="padding:3px 10px;border-radius:4px;font-size:13px;font-weight:500;background:#111418">monitor<span style="font-size:11px;font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌘3</span></div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:6px;border:1px solid #2a313b;font-size:12px;color:#8a94a6"><span>claude</span><span>5h 2%</span><span style="color:#d9534f">sem 95%</span></div>
+    <div style="display:flex;align-items:center;gap:8px;padding:3px 8px;border-radius:6px;border:1px solid #2a313b;font-size:12px;color:#8a94a6"><span>codex</span><span>5h 12%</span><span>sem 40%</span></div>
+  </div>
+  <div style="flex:1;min-height:0;display:flex">
+  <sc-if value="{{ leftOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="width:248px;flex:none;border-right:1px solid #2a313b;display:flex;flex-direction:column;gap:2px;padding:0 6px">
+      <div style="height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 6px;font-size:12px;color:#8a94a6"><span>atividades</span><span>⌘B</span></div>
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;font-size:12px;font-weight:500"><span style="color:#8a94a6">⌄</span><span style="width:8px;height:8px;border-radius:2px;background:#a58bdf"></span>agent-hive</div>
+      <sc-for list="{{ sideList }}" as="a" hint-placeholder-count="6">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 6px 20px;border-radius:6px;font-size:13px;background:{{ a.bg }}">
+          <span style="width:6px;height:6px;border-radius:3px;flex:none;background:{{ a.dot }}"></span>
+          <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.title }}</span>
+          <span title="{{ a.pinTitle }}" style="display:flex;color:{{ a.pinColor }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="{{ a.pinFill }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path></svg></span>
+        </div>
+      </sc-for>
+      <div style="display:flex;align-items:center;gap:6px;padding:10px 6px 4px;font-size:12px;font-weight:500"><span style="color:#8a94a6">›</span><span style="width:8px;height:8px;border-radius:2px;background:#d97fb0"></span>hive-site<span style="flex:1"></span><span style="font-weight:400;color:#8a94a6">3</span></div>
+      <div style="flex:1"></div>
+      <div style="padding:10px 6px;font-size:12px;color:#8a94a6;line-height:16px">o alfinete fixa no monitor. clique no título para focar o painel.</div>
+    </div>
+  </sc-if>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  <div style="height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 16px;font-size:12px;color:#8a94a6;position:relative">
+    <span style="font-size:13px;font-weight:600;color:#e6e6e6">monitor</span>
+    <span>{{ summary }}</span>
+    <span style="flex:1"></span>
+    <sc-if value="{{ notLayout }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;gap:2px;background:#2a313b;border-radius:6px;padding:2px;font-weight:500">
+        <span style="padding:2px 8px;border-radius:4px;background:#111418;color:#e6e6e6">fixadas<span style="font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌥1</span></span>
+        <span style="padding:2px 8px;border-radius:4px;color:#e6e6e6">todas ativas<span style="font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌥2</span></span>
+        <span style="padding:2px 8px;border-radius:4px;color:#e6e6e6">precisam de você<span style="font-weight:400;color:#8a94a6;letter-spacing:.1em;margin-left:6px">⌥3</span></span>
+      </div>
+      <span style="display:flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid {{ maqBorder }};background:{{ maqBg }};border-radius:6px;color:#e6e6e6;font-weight:500"><sc-if value="{{ alert }}" hint-placeholder-val="{{ false }}"><span title="memória em pressão alta" style="width:6px;height:6px;border-radius:3px;background:#e0b52a"></span></sc-if>saúde<span style="color:#8a94a6;font-weight:400;letter-spacing:.1em">⌘⇧M</span></span>
+      <span style="display:flex;gap:6px;padding:3px 10px;border:1px solid #2a313b;border-radius:6px;color:#e6e6e6;font-weight:500">organizar<span style="color:#8a94a6;font-weight:400;letter-spacing:.1em">⌘⇧O</span></span>
+    </sc-if>
+    <sc-if value="{{ isLayout }}" hint-placeholder-val="{{ false }}">
+      <span style="color:#e6e6e6">arraste para mover · escolha o tamanho em cada painel</span>
+      <div style="display:flex;align-items:center;gap:6px"><span>colunas</span>
+        <div style="display:flex;gap:2px;background:#2a313b;border-radius:6px;padding:2px;font-weight:500"><span style="padding:2px 8px;border-radius:4px;color:#e6e6e6">2</span><span style="padding:2px 8px;border-radius:4px;background:#111418;color:#e6e6e6">3</span><span style="padding:2px 8px;border-radius:4px;color:#e6e6e6">4</span></div>
+      </div>
+      <span style="padding:3px 10px;border:1px solid #2a313b;border-radius:6px;color:#e6e6e6;font-weight:500">restaurar</span>
+      <span style="padding:3px 12px;border-radius:6px;background:#e6e6e6;color:#111418;font-weight:500">concluir</span>
+    </sc-if>
+  </div>
+  <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;margin:0 16px 14px;border:1px dashed #3a4250;border-radius:8px;display:flex;align-items:center;justify-content:center">
+      <div style="width:340px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+        <div style="font-size:14px;font-weight:500;color:#e6e6e6">Nenhuma atividade fixada</div>
+        <div style="font-size:12px;line-height:16px;color:#8a94a6;text-wrap:pretty">fixe pelo alfinete na lateral de atividades (⌘B) ou em organizar. 4 atividades estão ativas agora.</div>
+        <div style="display:flex;gap:8px;padding-top:8px;font-size:13px;font-weight:500">
+          <span style="padding:4px 12px;border-radius:6px;background:#e6e6e6;color:#111418">+ fixar atividade</span>
+          <span style="padding:4px 12px;border-radius:6px;border:1px solid #2a313b">ver todas ativas</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ notEmpty }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat({{ cols }},minmax(0,1fr));grid-auto-rows:{{ rowH }};gap:10px;padding:0 16px 14px;position:relative;overflow-y:{{ gridOv }};scrollbar-width:thin;scrollbar-color:#3a4250 transparent">
+    <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="6">
+      <div style="grid-column:span {{ t.cs }};grid-row:span {{ t.rs }};display:flex;flex-direction:column;min-height:0;min-width:0;background:#1a1f26;border:1px {{ t.borderStyle }} {{ t.border }};border-radius:8px;overflow:visible;box-shadow:{{ t.ring }};position:relative">
+        <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #2a313b;font-size:12px;color:#8a94a6;position:relative">
+          <sc-if value="{{ t.layout }}" hint-placeholder-val="{{ false }}"><span style="cursor:grab;letter-spacing:-2px">⋮⋮</span></sc-if>
+          <span style="width:8px;height:8px;border-radius:2px;background:{{ t.ws }};flex:none"></span>
+          <span style="flex:1;min-width:0;font-size:13px;font-weight:500;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.title }}</span>
+          <sc-if value="{{ t.notLayout }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ t.runs }}" as="r" hint-placeholder-count="0">
+              <span title="{{ r.title }}" style="display:flex;align-items:center;gap:5px;padding:1px 6px;border-radius:4px;border:1px solid {{ r.border }};background:{{ r.bg }};white-space:nowrap;color:#e6e6e6;flex:none">
+                {{ r.spin }}
+                <sc-if value="{{ r.hasGlyph }}" hint-placeholder-val="{{ false }}"><span style="color:{{ r.gc }}">{{ r.glyph }}</span></sc-if>
+                <span style="font-family:{{ r.ff }}">{{ r.name }}</span>
+                <span style="color:{{ r.tc }}">{{ r.time }}</span>
+                <sc-if value="{{ r.hasX }}" hint-placeholder-val="{{ false }}"><span title="cancelar" style="color:#8a94a6">×</span></sc-if>
+              </span>
+            </sc-for>
+            <span style="white-space:nowrap">{{ t.stage }}</span>
+            <span style="display:flex;align-items:center;gap:5px;white-space:nowrap;color:{{ t.color }}"><span style="width:6px;height:6px;border-radius:3px;background:{{ t.dot }}"></span>{{ t.status }}</span>
+            <span title="{{ t.pinTitle }}" style="display:flex;color:{{ t.pinColor }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="{{ t.pinFill }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"></path></svg></span>
+            <span style="padding:0 4px;border-radius:4px;color:{{ t.dotsColor }};background:{{ t.dotsBg }}">⋯</span>
+          </sc-if>
+          <sc-if value="{{ t.layout }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:2px;background:#2a313b;border-radius:5px;padding:2px;font-size:11px;font-weight:500">
+              <sc-for list="{{ t.sizes }}" as="z" hint-placeholder-count="4"><span style="padding:1px 6px;border-radius:3px;color:#e6e6e6;background:{{ z.bg }}">{{ z.label }}</span></sc-for>
+            </div>
+            <span style="color:#8a94a6">×</span>
+          </sc-if>
+          <sc-if value="{{ t.runPop }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;right:120px;top:32px;z-index:10;width:280px;background:#1a1f26;border:1px solid #2a313b;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgb(0 0 0/.45);display:flex;flex-direction:column;font-size:13px;color:#e6e6e6">
+              <div style="padding:4px 8px;font-size:12px;color:#8a94a6">executando na worktree de HIVE-11</div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;background:#2a313b">{{ spinA }}<span style="flex:1;font-family:ui-monospace,monospace;font-size:12px">hive test</span><span style="font-size:12px;color:#8a94a6">1:05</span><span style="font-size:12px;color:#8a94a6">cancelar</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px">{{ spinB }}<span style="flex:1;font-family:ui-monospace,monospace;font-size:12px">pnpm lint</span><span style="font-size:12px;color:#8a94a6">0:03</span><span style="font-size:12px;color:#8a94a6">cancelar</span></div>
+              <div style="height:1px;background:#2a313b;margin:4px -4px"></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>ver no console</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>executar outro…</span><span style="font-size:12px;color:#8a94a6;letter-spacing:.1em">⌘R</span></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ t.menu }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;right:6px;top:32px;z-index:10;width:240px;background:#1a1f26;border:1px solid #2a313b;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgb(0 0 0/.45);display:flex;flex-direction:column;font-size:13px;color:#e6e6e6">
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>abrir em atividades</span><span style="font-size:12px;color:#8a94a6">↵</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>expandir</span><span style="font-size:12px;color:#8a94a6">⌘⇧↵</span></div>
+              <div style="height:1px;background:#2a313b;margin:4px -4px"></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>sessão exibida</span><span style="color:#8a94a6">claude ›</span></div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px;background:#2a313b;position:relative"><span>executar</span><span style="color:#8a94a6">›</span>
+                <div style="position:absolute;right:calc(100% + 8px);top:-4px;width:210px;background:#1a1f26;border:1px solid #2a313b;border-radius:6px;padding:4px;box-shadow:0 4px 12px rgb(0 0 0/.45);display:flex;flex-direction:column">
+                  <div style="padding:4px 8px;font-size:12px;color:#8a94a6">na worktree de HIVE-11</div>
+                  <div style="padding:6px 8px;border-radius:4px;background:#2a313b">hive test</div>
+                  <div style="padding:6px 8px;border-radius:4px">seed</div>
+                  <div style="padding:6px 8px;border-radius:4px">build</div>
+                  <div style="height:1px;background:#2a313b;margin:4px -4px"></div>
+                  <div style="padding:6px 8px;border-radius:4px;display:flex;justify-content:space-between"><span>outro comando…</span><span style="font-size:12px;color:#8a94a6">⌘R</span></div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px"><span>tamanho</span><span style="color:#8a94a6">2×1 ›</span></div>
+              <div style="height:1px;background:#2a313b;margin:4px -4px"></div>
+              <div style="padding:6px 8px;border-radius:4px">desafixar</div>
+              <div style="display:flex;justify-content:space-between;padding:6px 8px;border-radius:4px;color:#d9534f"><span>parar</span><span style="font-size:12px">⌘.</span></div>
+            </div>
+          </sc-if>
+        </div>
+        <div style="height:26px;flex:none;display:flex;align-items:center;gap:10px;padding:0 10px;font-size:12px;color:#8a94a6">
+          <sc-for list="{{ t.sessions }}" as="s" hint-placeholder-count="1">
+            <span style="display:flex;align-items:center;gap:6px;padding:1px 6px;border-radius:4px;color:{{ s.color }};background:{{ s.bg }}"><sc-if value="{{ s.claude }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex:none"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"></path></svg></sc-if>{{ s.agent }}<span style="font-family:ui-monospace,monospace;color:#8a94a6">{{ s.id }}</span></span>
+          </sc-for>
+          <span style="flex:1"></span><span>{{ t.meta }}</span>
+        </div>
+        <div style="flex:1;min-height:0;padding:6px 12px 10px;font-family:ui-monospace,monospace;font-size:12px;line-height:18px;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;overflow:hidden;opacity:{{ t.dim }}">
+          <sc-for list="{{ t.lines }}" as="l" hint-placeholder-count="4"><div style="color:{{ l.c }};white-space:pre-wrap">{{ l.t }}</div></sc-for>
+        </div>
+        <sc-if value="{{ t.ask }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid #2a313b;background:#111418;border-radius:0 0 8px 8px">
+            <span style="flex:1;padding:5px 10px;border:1px solid #2a313b;border-radius:6px;font-size:13px;color:#8a94a6">responder ao agente…</span>
+            <span style="font-size:12px;color:#8a94a6;letter-spacing:.1em">↵</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ t.approve }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid #2a313b;background:#111418;font-size:13px;font-weight:500;border-radius:0 0 8px 8px">
+            <span style="padding:4px 12px;border-radius:6px;background:#e6e6e6;color:#111418">aprovar</span>
+            <span style="padding:4px 12px;border-radius:6px;border:1px solid #2a313b">enviar feedback…</span>
+            <span style="flex:1"></span><span style="font-size:12px;font-weight:400;color:#3b82f6">ver diff</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ t.stopped }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid #2a313b;background:#111418;border-radius:0 0 8px 8px">
+            <span style="flex:1;font-size:12px;color:#8a94a6">parada por você · a sessão continua no histórico</span>
+            <span style="padding:4px 12px;border-radius:6px;border:1px solid #2a313b;font-size:13px;font-weight:500">retomar</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ t.picker }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:10px;top:40px;width:400px;z-index:10;background:#1a1f26;border:1px solid #2a313b;border-radius:6px;box-shadow:0 4px 12px rgb(0 0 0/.45);display:flex;flex-direction:column;font-size:13px;color:#e6e6e6">
+            <div style="padding:8px 10px 4px;font-size:12px;color:#8a94a6">executar na worktree de HIVE-11</div>
+            <div style="padding:4px 8px 8px;border-bottom:1px solid #2a313b">
+              <div style="display:flex;align-items:center;padding:5px 10px;border:1px solid #3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.5);border-radius:6px;font-family:ui-monospace,monospace;font-size:12px">pnpm vitest run rules<span style="display:inline-block;width:1px;height:15px;background:#e6e6e6;margin-left:1px"></span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;padding:4px">
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;background:#2a313b"><span style="color:#8a94a6">executar</span><span style="flex:1;font-family:ui-monospace,monospace;font-size:12px">pnpm vitest run rules</span><span style="font-size:12px;color:#8a94a6">↵</span></div>
+              <div style="padding:6px 8px 4px;font-size:12px;color:#8a94a6">comandos do workspace</div>
+              <div style="display:flex;gap:8px;padding:6px 8px;border-radius:4px"><span style="font-family:ui-monospace,monospace;font-size:12px">hive test</span></div>
+              <div style="display:flex;gap:8px;padding:6px 8px;border-radius:4px"><span style="font-family:ui-monospace,monospace;font-size:12px">seed</span></div>
+              <div style="display:flex;gap:8px;padding:6px 8px;border-radius:4px"><span style="font-family:ui-monospace,monospace;font-size:12px">build</span></div>
+              <div style="padding:6px 8px 4px;font-size:12px;color:#8a94a6">recentes</div>
+              <div style="display:flex;gap:8px;padding:6px 8px;border-radius:4px"><span style="flex:1;font-family:ui-monospace,monospace;font-size:12px">pnpm lint</span><span style="font-size:12px;color:#8a94a6">há 20 min</span></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 10px;border-top:1px solid #2a313b;font-size:12px;color:#8a94a6"><span>a saída vai para o console</span><span>esc fecha</span></div>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+    <sc-if value="{{ isLayout }}" hint-placeholder-val="{{ false }}">
+      <div style="position:relative;display:flex;align-items:center;justify-content:center;border:1px dashed #3a4250;border-radius:8px;font-size:13px;color:#8a94a6">
+        <span style="padding:4px 12px;border:1px solid #2a313b;border-radius:6px;color:#e6e6e6;font-weight:500;background:#2a313b">+ fixar atividade</span>
+        <div style="position:absolute;left:50%;top:calc(50% + 20px);transform:translateX(-50%);z-index:10;width:300px;background:#1a1f26;border:1px solid #2a313b;border-radius:6px;box-shadow:0 4px 12px rgb(0 0 0/.45);display:flex;flex-direction:column;font-size:13px;color:#e6e6e6">
+          <div style="display:flex;gap:8px;padding:8px 10px;border-bottom:1px solid #2a313b"><span style="color:#8a94a6">⌕</span><span style="color:#8a94a6">buscar atividade</span></div>
+          <div style="display:flex;flex-direction:column;padding:4px">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;background:#2a313b"><span style="width:8px;height:8px;border-radius:2px;background:#d97fb0"></span><span style="flex:1">SITE-7 Pricing page</span><span style="font-size:12px;color:#2e9e5b">trabalhando</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px"><span style="width:8px;height:8px;border-radius:2px;background:#a58bdf"></span><span style="flex:1">#488 A glossary of the Hive</span><span style="font-size:12px;color:#3b82f6">PR aberto</span></div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px"><span style="width:8px;height:8px;border-radius:2px;background:#d97fb0"></span><span style="flex:1">SITE-4 Landing copy review</span><span style="font-size:12px;color:#8a94a6">parada</span></div>
+          </div>
+          <div style="height:1px;background:#2a313b"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;font-size:12px;color:#8a94a6"><span>fixar sozinho o que precisa de você</span><span style="width:26px;height:14px;border-radius:7px;background:#e6e6e6;position:relative"><span style="position:absolute;right:2px;top:2px;width:10px;height:10px;border-radius:5px;background:#111418"></span></span></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+  </sc-if>
+  </div>
+  <sc-if value="{{ rightOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="width:340px;flex:none;border-left:1px solid #2a313b;display:flex;flex-direction:column;min-height:0">
+      <div style="height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px;font-size:12px;color:#8a94a6">
+        <div style="display:flex;gap:2px;background:#2a313b;border-radius:6px;padding:2px;font-weight:500"><span style="padding:2px 8px;border-radius:4px;color:#e6e6e6;background:{{ tabArqBg }}">arquivos</span><span style="padding:2px 8px;border-radius:4px;color:#e6e6e6;background:{{ tabDetBg }}">detalhes</span><span style="padding:2px 8px;border-radius:4px;color:#e6e6e6;background:{{ tabMaqBg }}">saúde</span></div>
+        <span style="flex:1"></span><span>⌘⇧B</span>
+      </div>
+      <sc-if value="{{ tabArq }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:4px 14px 6px;font-size:12px;color:#8a94a6">do painel em foco · HIVE-11 510 a 516</div>
+        <div style="padding:0 14px 8px;font-size:12px;color:#8a94a6;font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">hive/HIVE-11-510-a-516</div>
+        <div style="flex:1;display:flex;flex-direction:column;padding:0 6px;font-size:13px">
+          <sc-for list="{{ files }}" as="f" hint-placeholder-count="10">
+            <div style="display:flex;align-items:center;gap:6px;height:24px;padding-left:{{ f.pad }};border-radius:4px;background:{{ f.bg }}"><span style="width:10px;color:#8a94a6;font-size:11px">{{ f.caret }}</span><span style="flex:1;color:{{ f.color }}">{{ f.name }}</span><span style="font-size:12px;padding-right:6px;color:{{ f.markColor }}">{{ f.mark }}</span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ tabMaq }}" hint-placeholder-val="{{ false }}"><div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:18px;padding:0 14px 14px">
+        <sc-if value="{{ alert }}" hint-placeholder-val="{{ false }}">
+          <div style="border:1px solid #e0b52a;background:rgba(224,181,42,.12);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px;font-size:12px">
+            <div style="display:flex;gap:8px"><span style="color:#e0b52a;font-weight:500;flex:1">memória em pressão alta</span><span style="color:#8a94a6">swap subindo</span></div>
+            <div style="color:#8a94a6;line-height:16px">#542, #543 e SITE-4 não estão executando e seguram 4.6 GB.</div>
+          </div>
+        </sc-if>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#8a94a6;padding-bottom:2px"><span style="color:#e6e6e6;font-weight:600">máquina</span><span>macOS · 10 núcleos · 32 GB</span></div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">cpu</span><span style="flex:1;color:#e6e6e6">62%</span><span style="color:#8a94a6">média 5 min 48%</span></div>
+            <div style="height:4px;border-radius:2px;background:#2a313b"><div style="width:62%;height:4px;border-radius:2px;background:#e6e6e6"></div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">memória</span><span style="flex:1;color:{{ mem.c }}">{{ mem.word }}</span><span style="color:#8a94a6">{{ mem.used }}</span></div>
+            <div style="height:4px;border-radius:2px;background:#2a313b"><div style="width:{{ mem.w }};height:4px;border-radius:2px;background:{{ mem.c }}"></div></div>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">swap</span><span style="flex:1;color:{{ mem.swapC }}">{{ mem.swap }}</span><span style="color:#8a94a6">{{ mem.swapNote }}</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">disco</span><span style="flex:1;color:#e6e6e6">412 GB livres</span><span style="color:#8a94a6">worktrees 18 GB</span></div>
+        </div>
+        <div style="height:1px;background:#2a313b;flex:none"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#8a94a6;padding-bottom:2px"><span style="color:#e6e6e6;font-weight:600">daemon</span><span>pid 48213</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">event loop</span><span style="flex:1;color:#e6e6e6">4 ms</span><span style="color:#8a94a6">p99 11 ms</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">rss</span><span style="flex:1;color:#e6e6e6">186 MB</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">uptime</span><span style="flex:1;color:#e6e6e6">2d 6h</span></div>
+          <div style="display:flex;align-items:baseline;gap:6px;font-size:12px"><span style="color:#8a94a6;width:64px;flex:none">sync</span><span style="flex:1">hive roadmap <span style="color:#8a94a6">github</span></span><span style="color:#8a94a6">há 40 s</span></div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="width:64px;flex:none"></span><span style="flex:1">SITE <span style="color:#8a94a6">jira</span></span><span style="color:{{ mem.syncC }}">{{ mem.sync }}</span></div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="width:64px;flex:none"></span><span style="flex:1">hive <span style="color:#8a94a6">local</span></span><span style="color:#8a94a6">agora</span></div>
+        </div>
+        <div style="height:1px;background:#2a313b;flex:none"></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#8a94a6;padding-bottom:2px"><span><span style="color:#e6e6e6;font-weight:600">atividades</span> · 7</span><span>23 processos vivos</span></div>
+          <div style="display:flex;gap:6px;font-size:11px;color:#8a94a6"><span style="width:8px"></span><span style="flex:1">ordenado por ram ⌄</span><span style="width:32px;text-align:right">cpu</span><span style="width:48px;text-align:right">ram</span><span style="width:32px;text-align:right">proc</span></div>
+          <sc-for list="{{ health }}" as="h" hint-placeholder-count="7">
+            <div style="display:flex;flex-direction:column;gap:2px;margin:0 -6px;padding:2px 6px;border-radius:4px;background:{{ h.bg }}">
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="width:8px;height:8px;border-radius:2px;background:{{ h.ws }};flex:none"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ h.title }}</span><span style="width:32px;text-align:right;color:{{ h.cpuC }}">{{ h.cpu }}</span><span style="width:48px;text-align:right;color:#8a94a6">{{ h.ram }}</span><span style="width:32px;text-align:right;color:#8a94a6">{{ h.proc }}</span></div>
+              <sc-if value="{{ h.open }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:4px;padding:4px 0 4px 14px">
+                  <sc-for list="{{ h.procs }}" as="p" hint-placeholder-count="6">
+                    <div style="display:flex;align-items:center;gap:6px;font-size:12px"><span style="flex:1;min-width:0;display:flex;gap:6px;white-space:nowrap;overflow:hidden"><span>{{ p.name }}</span><span style="color:#8a94a6;overflow:hidden;text-overflow:ellipsis">{{ p.what }}</span></span><span style="font-family:ui-monospace,monospace;font-size:11px;color:#8a94a6">{{ p.pid }}</span><span style="width:32px;text-align:right;color:#8a94a6">{{ p.cpu }}</span><span style="width:48px;text-align:right;color:#8a94a6">{{ p.ram }}</span><span style="width:32px"></span></div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <div style="font-size:12px;color:#8a94a6;line-height:16px;padding-top:4px">proc inclui agente, terminais e comandos executando na worktree. clique para ver os processos.</div>
+        </div>
+      </div>
+      </sc-if>
+      <sc-if value="{{ tabDet }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;display:flex;flex-direction:column;gap:14px;padding:4px 14px;overflow:hidden">
+        <div style="font-size:12px;color:#8a94a6">do painel em foco</div>
+        <div style="font-size:15px;font-weight:600;line-height:20px">HIVE-11 510 a 516</div>
+        <div style="border:1px solid #2e9e5b;background:rgba(46,158,91,.12);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px"><span style="color:#2e9e5b;font-weight:500">trabalhando</span><span style="flex:1"></span><span style="color:#8a94a6">etapa dev</span></div>
+          <div style="font-size:12px;color:#8a94a6">2 sessões · há 4h42m · 22.4k tokens</div>
+        </div>
+        <div style="display:grid;grid-template-columns:56px minmax(0,1fr);row-gap:6px;column-gap:8px;font-size:12px">
+          <span style="color:#8a94a6">início</span><span>por você</span>
+          <span style="color:#8a94a6">PR</span><span style="color:#8a94a6">sem PR</span>
+          <span style="color:#8a94a6">branch</span><span style="font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">hive/HIVE-11-510-a-516</span>
+          <span style="color:#8a94a6">worktree</span><span>±5 · ↑4</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px"><span style="color:#8a94a6">sessões</span>
+          <div style="display:flex;gap:8px"><span style="font-family:ui-monospace,monospace">750fe5b0</span><span style="color:#8a94a6;flex:1">claude · dev</span><span style="color:#8a94a6">exibida</span></div>
+          <div style="display:flex;gap:8px"><span style="font-family:ui-monospace,monospace">e41f2c07</span><span style="color:#8a94a6;flex:1">codex · dev</span><span style="color:#3b82f6">exibir</span></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;padding:12px 14px;border-top:1px solid #2a313b;font-size:13px;font-weight:500"><span style="padding:4px 12px;border-radius:6px;border:1px solid #2a313b">abrir em atividades</span><span style="flex:1"></span><span style="padding:4px 10px;border-radius:6px;border:1px solid #2a313b">⋯</span></div>
+      </sc-if>
+    </div>
+  </sc-if>
+  </div>
+  <div style="height:30px;flex:none;border-top:1px solid #2a313b;display:flex;align-items:center;gap:12px;padding:0 12px;font-size:12px;color:#8a94a6">
+    <span style="display:flex;align-items:center;gap:6px"><span style="padding:1px 8px;border-radius:4px;background:#e0b52a;color:#111418;font-weight:500">amarelo</span>sem cards novos</span>
+    <span>workers 1/5</span>
+    <span style="width:1px;height:14px;background:#2a313b"></span>
+    <span>{{ hint }}</span>
+    <span style="flex:1"></span>
+    <span style="display:flex;align-items:center;gap:6px;padding:1px 8px;border-radius:4px;background:#2a313b;color:#e6e6e6">{{ conSpin }}<sc-if value="{{ conDot }}" hint-placeholder-val="{{ true }}"><span style="width:6px;height:6px;border-radius:3px;background:#2e9e5b"></span></sc-if>{{ conText }}</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;padrao&quot;,&quot;menu&quot;,&quot;comandos&quot;,&quot;executar&quot;,&quot;layout&quot;,&quot;laterais&quot;,&quot;arquivos&quot;,&quot;maquina&quot;,&quot;processos&quot;,&quot;alerta&quot;,&quot;muitas&quot;,&quot;vazio&quot;],&quot;default&quot;:&quot;padrao&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const v = this.props.variant ?? 'padrao';
+    const layout = v === 'layout', menu = v === 'menu', cmds = v === 'comandos', pick = v === 'executar';
+    const right = ['laterais', 'arquivos', 'maquina', 'processos', 'alerta'].includes(v);
+    const health = ['maquina', 'processos', 'alerta'].includes(v);
+    const alert = v === 'alerta', many = v === 'muitas', empty = v === 'vazio';
+    const custom = ['menu', 'comandos', 'executar', 'layout'].includes(v);
+    const f = '#e6e6e6', g = '#8a94a6', gr = '#2e9e5b', red = '#d9534f', amb = '#e0b52a';
+    const S = { w: [gr, 'trabalhando', gr], a: ['#0ea5e9', 'aguardando aprovação', '#0ea5e9'], y: [amb, 'aguardando você', amb], r: ['#3b82f6', 'PR aberto', '#3b82f6'], p: [g, 'parada', '#3a4250'] };
+    const spin = () => React.createElement('svg', { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', style: { flex: 'none', color: g, animation: 'hv-spin 1s linear infinite' } }, React.createElement('path', { d: 'M21 12a9 9 0 1 1-6.219-8.56' }));
+    const mono = 'ui-monospace,monospace', sans = 'inherit';
+    const base = { spin: null, hasGlyph: false, glyph: '', gc: f, tc: g, hasX: false, border: '#2a313b', bg: 'transparent', ff: mono };
+    const RUN = {
+      run: (name, time) => ({ ...base, spin: spin(), name, time, hasX: true, title: 'executando na worktree · × cancela' }),
+      multi: (n, time) => ({ ...base, spin: spin(), name: `${n} comandos`, time, ff: sans, title: 'executando na worktree' }),
+      ok: (name, time) => ({ ...base, hasGlyph: true, glyph: '✓', gc: gr, name, time, title: 'concluído · saída no console' }),
+      fail: (name, code) => ({ ...base, name, time: `falhou · exit ${code}`, tc: red, border: red, bg: 'rgba(217,83,79,.12)', title: 'falhou · saída no console' })
+    };
+    const se = (agent, id, focus) => ({ agent, id, claude: agent === 'claude', color: focus ? f : g, bg: focus ? '#2a313b' : 'transparent' });
+    const SZ = ['1×1', '2×1', '1×2', '2×2'];
+    const T = (ws, title, stage, s, sessions, meta, lines, o = {}) => {
+      const cs = custom ? (o.cs || 1) : 1, rs = custom ? (o.rs || 1) : 1;
+      const cur = `${cs}×${rs}`;
+      const quiet = s === 'w' || s === 'p';
+      return {
+        ws, title, stage, sessions, meta, lines, cs, rs,
+        status: S[s][1], color: S[s][0], dot: S[s][2],
+        border: layout ? '#3a4250' : (quiet ? '#2a313b' : S[s][0]),
+        borderStyle: layout ? 'dashed' : 'solid',
+        ring: !layout && o.focus ? '0 0 0 2px rgba(230,230,230,.35)' : 'none',
+        ask: !layout && s === 'y', approve: !layout && s === 'a', stopped: !layout && s === 'p',
+        runs: layout ? [] : (o.runs || []), runPop: !!o.runPop, picker: pick && o.focus,
+        menu: menu && o.focus, dotsBg: menu && o.focus ? '#2a313b' : 'transparent', dotsColor: menu && o.focus ? f : g,
+        layout, notLayout: !layout, dim: layout ? '.45' : '1',
+        pinFill: o.unpinned ? 'none' : 'currentColor', pinColor: o.unpinned ? '#3a4250' : g, pinTitle: o.unpinned ? 'fixar' : 'fixada',
+        sizes: SZ.map(label => ({ label, bg: label === cur ? '#111418' : 'transparent' }))
+      };
+    };
+    const P = '#a58bdf', R = '#d97fb0';
+    const r = (k) => ({
+      h11: cmds ? [RUN.multi(2, '1:05')] : v === 'processos' ? [RUN.run('hive test', '0:12')] : [],
+      542: cmds ? [RUN.fail('seed', 1)] : [],
+      543: cmds ? [RUN.ok('build', '0:41')] : [],
+      562: cmds ? [RUN.run('hive test', '0:12')] : []
+    })[k];
+    const all = [
+      T(P, 'HIVE-11 510 a 516', 'dev', 'w', [se('claude', '750fe5b0', true), se('codex', 'e41f2c07')], '4h42m · 22.4k', [
+        { t: '● O code review bloqueou por um HIGH: se uma ação comum falha antes de uma de saída, o card fica preso.', c: f },
+        { t: '● ecc:tdd-guide(Fix #515 review findings)', c: gr },
+        { t: '  └ agente em segundo plano', c: g },
+        { t: '● As correções da #515 estão sendo aplicadas com TDD.', c: f },
+        { t: '* aguardando 1 agente em segundo plano', c: g }
+      ], { focus: 1, cs: 2, runs: r('h11'), runPop: cmds }),
+      T(P, '#542 Redesign 10 · Board', 'dev', 'y', [se('claude', 'dda6461b', true)], 'há 4 min', [
+        { t: '● Paginação pronta nas colunas. Antes de seguir:', c: f },
+        { t: '  o "mais 20" deve manter a posição do scroll ou voltar ao topo?', c: f },
+        { t: '  1. manter a posição   2. voltar ao topo', c: g }
+      ], { rs: 2, runs: r(542) }),
+      T(P, '#543 Redesign 11 · Start / New activity dialog', 'in review', 'a', [se('claude', '838a0b1e', true)], '±6 · ↑3', [
+        { t: '● PR #551 aberto. Etapa in review concluída.', c: f },
+        { t: '  ✓ 42 testes · ✓ lint · ✓ typecheck', c: gr }
+      ], { runs: r(543) }),
+      T(P, '#562 Settings › Maintenance: worktrees', 'dev', 'w', [se('claude', 'ae9f7023', true)], '1h33m', [
+        { t: '● Update(src/ui/settings/Maintenance.tsx)', c: gr },
+        { t: '  └ +48 −12', c: g },
+        { t: '● Bash(pnpm vitest run maintenance)', c: gr },
+        { t: '  └ ✓ 9 passed', c: g }
+      ], { runs: r(562) }),
+      T(P, '#479 Two daemons can take over the same state', 'backlog · worker', 'w', [se('claude', '5b20c4e1', true)], '1m', [
+        { t: '● Lendo a issue e o código do daemon para escrever a spec.', c: f },
+        { t: '● Read(src/daemon.ts)', c: gr }
+      ], { unpinned: 1 }),
+      T(R, 'SITE-7 Pricing page for the hosted plan', 'plan', 'w', [se('codex', '9d31be02', true)], '12m', [
+        { t: '● Plano em rascunho: 3 tiers, toggle mensal/anual.', c: f },
+        { t: '● Write(docs/plans/2026-09-29-pricing.md)', c: gr }
+      ])
+    ];
+    const site4 = T(R, 'SITE-4 Landing copy review', 'review', 'p', [se('claude', '1c4e8a2f', true)], 'parada há 2h', [
+      { t: '● Revisei o hero e as três seções de features.', c: g },
+      { t: '● Edit(content/landing.md)', c: g },
+      { t: '  └ +22 −19', c: g }
+    ]);
+    const g488 = T(P, '#488 A glossary of the Hive', 'in review', 'r', [se('claude', '7f02bb19', true)], '±3 · ↑2', [
+      { t: '● PR #549 aberto: docs/glossary.md.', c: f }
+    ]);
+    const tiles = empty ? [] : many ? [all[0], all[1], all[2], all[3], site4, all[5], all[4], g488]
+      : right ? all.slice(0, 4) : custom ? (layout ? all.slice(0, 3) : all.slice(0, 4)) : all;
+    const count = (s) => tiles.filter(t => t.status === S[s][1]).length;
+    const parts = [count('y') && `${count('y')} aguardando você`, count('a') && `${count('a')} aguardando aprovação`, count('p') && `${count('p')} parada`].filter(Boolean);
+    const pin = (title, dot, pinned, sel) => ({ title, dot, bg: sel ? '#2a313b' : 'transparent', pinFill: pinned ? 'currentColor' : 'none', pinColor: pinned ? g : '#3a4250', pinTitle: pinned ? 'desafixar' : 'fixar' });
+    const dash = '—', dc = '#3a4250';
+    const pr = (name, what, pid, cpu, ram) => ({ name, what, pid, cpu, ram });
+    const H = (ws, title, cpu, ram, proc, o = {}) => ({ ws, title, cpu, cpuC: cpu === dash ? dc : g, ram, proc, open: !!o.open, bg: o.open ? '#2a313b' : 'transparent', procs: o.procs || [] });
+    const procOpen = v === 'processos';
+    const fl = (name, depth, opts = {}) => ({ name, pad: 6 + depth * 12 + 'px', caret: opts.dir ? (opts.open ? '⌄' : '›') : '', color: opts.mark === 'M' ? amb : opts.mark === 'A' ? gr : f, mark: opts.mark || '', markColor: opts.mark === 'M' ? amb : gr, bg: 'transparent' });
+    const running = cmds ? '3 executando' : procOpen ? 'hive test · 0:12' : null;
+    let summary;
+    if (layout) summary = 'organizando · 3 fixadas';
+    else if (empty) summary = 'nenhuma atividade fixada';
+    else if (many) summary = [`8 fixadas · 2 abaixo`, ...parts].join(' · ');
+    else summary = [`${tiles.length} atividades`, ...parts].join(' · ');
+    const hints = {
+      laterais: '⌘B lateral esquerda · ⌘⇧B lateral direita · as duas começam fechadas',
+      layout: 'esc sai sem salvar',
+      comandos: '⋯ › executar ou ⌘R executa na worktree do painel em foco · saída no console',
+      executar: '↵ executa na worktree de HIVE-11 · esc fecha',
+      muitas: 'role para ver as outras 2 · ⌘1–9 foca o painel',
+      vazio: 'o alfinete na lateral (⌘B) fixa a atividade no monitor'
+    };
+    return {
+      tiles, isLayout: layout, notLayout: !layout, isEmpty: empty, notEmpty: !empty,
+      leftOpen: v === 'laterais', rightOpen: right, alert,
+      tabArq: v === 'arquivos', tabMaq: health, tabDet: v === 'laterais',
+      tabArqBg: v === 'arquivos' ? '#111418' : 'transparent', tabDetBg: v === 'laterais' ? '#111418' : 'transparent', tabMaqBg: health ? '#111418' : 'transparent',
+      cols: right ? 2 : 3, rowH: many ? '340px' : 'minmax(0,1fr)', gridOv: many ? 'auto' : 'visible',
+      maqBg: health ? '#2a313b' : 'transparent', maqBorder: health ? f : '#2a313b',
+      spinA: spin(), spinB: spin(),
+      conSpin: running ? spin() : null, conDot: !running, conText: `console · ${running || 'hive test'}`,
+      mem: alert
+        ? { word: 'pressão alta', c: amb, used: '27.1 / 32 GB', w: '85%', swap: '2.1 GB', swapC: amb, swapNote: 'subindo', sync: 'há 6 min · atrasado', syncC: amb }
+        : { word: 'normal', c: f, used: '24.3 / 32 GB', w: '76%', swap: '0 GB', swapC: f, swapNote: 'estável', sync: 'há 1 min', syncC: g },
+      health: [
+        H(P, 'HIVE-11 510 a 516', '31%', '6.2 GB', '6', { open: procOpen, procs: [
+          pr('claude', 'agente · 750fe5b0', '51022', '14%', '2.3 GB'),
+          pr('codex', 'agente · e41f2c07', '51388', '6%', '1.5 GB'),
+          pr('node', 'hive test · 0:12', '53110', '9%', '1.6 GB'),
+          pr('node', 'vitest · de hive test', '53142', '2%', '0.8 GB'),
+          pr('zsh', 'terminal', '51490', '0%', '12 MB'),
+          pr('zsh', 'terminal', '51511', '0%', '9 MB')
+        ] }),
+        H(P, '#562 Settings › Maintenance', '18%', '4.1 GB', '4'),
+        H(P, '#479 Two daemons can take over', '9%', '3.4 GB', '3'),
+        H(R, 'SITE-7 Pricing page', '4%', '2.9 GB', '3'),
+        H(P, '#542 Redesign 10 · Board', dash, '1.8 GB', '2'),
+        H(P, '#543 Redesign 11 · Start dialog', dash, '1.6 GB', '2'),
+        H(R, 'SITE-4 Landing copy review', dash, '1.2 GB', '3')
+      ],
+      files: [
+        fl('src', 0, { dir: 1, open: 1 }), fl('daemon.ts', 1, { mark: 'M' }), fl('ui', 1, { dir: 1, open: 1 }),
+        fl('board', 2, { dir: 1, open: 1 }), fl('Card.tsx', 3, { mark: 'M' }), fl('Column.tsx', 3), fl('rules.test.ts', 3, { mark: 'A' }),
+        fl('components', 2, { dir: 1 }), fl('theme.css', 2), fl('i18n.ts', 2),
+        fl('scripts', 0, { dir: 1 }), fl('docs', 0, { dir: 1 }), fl('package.json', 0), fl('README.md', 0)
+      ],
+      sideList: [pin('HIVE-11 510 a 516', gr, 1, 1), pin('#542 Redesign 10 · Board', amb, 1), pin('#543 Redesign 11 · Start dialog', '#0ea5e9', 1), pin('#562 Settings › Maintenance', gr, 1), pin('#479 Two daemons can take over', gr, 0), pin('#488 A glossary of the Hive', '#3b82f6', 0)],
+      summary,
+      hint: hints[v] || 'clique para focar · ↵ abre em atividades · ⌘1–9 foca o painel'
+    };
+  }
+}
+</script>
+</body>
+</html>

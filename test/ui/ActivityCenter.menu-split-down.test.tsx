@@ -1,0 +1,18 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { Center, openShell, resetCenterTest, saved, SHELL, STAGE, strips } from './center-harness';
+
+vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
+vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
+
+// Its own file (#458): Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx)
+beforeEach(resetCenterTest);
+afterEach(() => vi.unstubAllGlobals());
+
+test('Dividir abaixo puts the tab in a new group under its own (#458)', async () => {
+  render(<Center runs={[STAGE, SHELL]} request={openShell} />);
+  fireEvent.contextMenu(screen.getByRole('tab', { name: 'Terminal' }));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Dividir abaixo' }));
+  expect(strips()).toEqual([['Claude'], ['Terminal']]);
+  expect(saved().I1.root).toMatchObject({ kind: 'split', axis: 'column', sizes: [50, 50] });
+});

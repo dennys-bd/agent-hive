@@ -1,0 +1,86 @@
+{
+  "signal": "green",
+  "maxConcurrent": 0,
+  "workers": [],
+  "terminals": [],
+  "stages": [],
+  "workspaces": [],
+  "sourceWorkspaces": {},
+  "commands": {},
+  "syncs": {},
+  "sourceOrder": [],
+  "localCount": 15,
+  "usage": [],
+  "budget": {},
+  "usageRules": [],
+  "disabledRules": [],
+  "deleteActivity": { "session": true, "transcripts": false, "nonAutoTasks": false },
+  "shutdownIdleMinutes": 30,
+  "approvalMinutes": 10,
+  "tasks": [
+    {
+      "item": { "itemId": "local:1", "id": "TEST-1", "title": "Add a dark theme toggle", "body": "Fake task for the test Hive: a toggle in the header.", "url": "" },
+      "stage": "Backlog", "boardColumn": "", "slug": "hive-test-1-add-a-dark-theme-toggle", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:2", "id": "TEST-2", "title": "Export the board as CSV", "body": "Fake task for the test Hive: one row per task.", "url": "" },
+      "stage": "Backlog", "boardColumn": "", "slug": "hive-test-2-export-the-board-as-csv", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:3", "id": "TEST-3", "title": "Keyboard shortcuts help", "body": "Fake task for the test Hive: a `?` overlay.", "url": "" },
+      "stage": "Backlog", "boardColumn": "", "slug": "hive-test-3-keyboard-shortcuts-help", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:4", "id": "TEST-4", "title": "Rename the default stage", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Backlog", "boardColumn": "", "slug": "hive-test-4-rename-the-default-stage", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:5", "id": "TEST-5", "title": "Show blockers on the task", "body": "Fake task for the test Hive: blocked by TEST-1.", "url": "", "blockedBy": ["TEST-1"] },
+      "stage": "Plan", "boardColumn": "", "slug": "hive-test-5-show-blockers-on-the-task", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:6", "id": "TEST-6", "title": "Retry a failed board write", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Plan", "boardColumn": "", "slug": "hive-test-6-retry-a-failed-board-write", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:7", "id": "TEST-7", "title": "Group tasks by project", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Plan", "boardColumn": "", "slug": "hive-test-7-group-tasks-by-project", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:8", "id": "TEST-8", "title": "Paginate the issue list", "body": "Fake task for the test Hive: its last run was stopped.", "url": "" },
+      "stage": "Dev", "boardColumn": "", "slug": "hive-test-8-paginate-the-issue-list", "auto": true, "created": true, "workspace": "agent-hive", "stopped": true
+    },
+    {
+      "item": { "itemId": "local:9", "id": "TEST-9", "title": "Cache the column lookup", "body": "Fake task for the test Hive: its worktree is gone.", "url": "" },
+      "stage": "Dev", "boardColumn": "", "slug": "hive-test-9-cache-the-column-lookup", "auto": true, "created": true, "workspace": "agent-hive",
+      "worktree": "/path/to/project/.hive/worktrees/hive-test-9-cache-the-column-lookup", "branch": "hive/TEST-9-cache-the-column-lookup", "worktreeGone": true
+    },
+    {
+      "item": { "itemId": "local:10", "id": "TEST-10", "title": "Trim long task titles", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Dev", "boardColumn": "", "slug": "hive-test-10-trim-long-task-titles", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:11", "id": "TEST-11", "title": "Sort the worktrees tab", "body": "Fake task for the test Hive: awaiting approval.", "url": "" },
+      "stage": "In Review", "boardColumn": "", "slug": "hive-test-11-sort-the-worktrees-tab", "auto": true, "created": true, "workspace": "agent-hive",
+      "approval": { "since": "2026-09-26T09:00:00.000Z" }
+    },
+    {
+      "item": { "itemId": "local:12", "id": "TEST-12", "title": "Log the poll duration", "body": "Fake task for the test Hive: awaiting approval.", "url": "" },
+      "stage": "In Review", "boardColumn": "", "slug": "hive-test-12-log-the-poll-duration", "auto": true, "created": true, "workspace": "agent-hive",
+      "approval": { "since": "2026-09-26T09:30:00.000Z" }
+    },
+    {
+      "item": { "itemId": "local:13", "id": "TEST-13", "title": "Validate the port field", "body": "Fake task for the test Hive: awaiting approval.", "url": "" },
+      "stage": "In Review", "boardColumn": "", "slug": "hive-test-13-validate-the-port-field", "auto": true, "created": true, "workspace": "agent-hive",
+      "approval": { "since": "2026-09-26T10:00:00.000Z" }
+    },
+    {
+      "item": { "itemId": "local:14", "id": "TEST-14", "title": "Fix the empty stage label", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Done", "boardColumn": "", "slug": "hive-test-14-fix-the-empty-stage-label", "auto": true, "created": true, "workspace": "agent-hive"
+    },
+    {
+      "item": { "itemId": "local:15", "id": "TEST-15", "title": "Update the README example", "body": "Fake task for the test Hive.", "url": "" },
+      "stage": "Done", "boardColumn": "", "slug": "hive-test-15-update-the-readme-example", "auto": true, "created": true, "workspace": "agent-hive"
+    }
+  ]
+}

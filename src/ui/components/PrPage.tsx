@@ -1,0 +1,119 @@
+import { type ReactNode, useEffect, useState } from 'react';
+import { taskOfPr } from '../../activities';
+import { prLink, prRepo, repoName } from '../../pull-requests';
+import { issueOfLink } from '../../repos/issue-task';
+import type { PrData, RepoSummary, State, Task } from '../../types';
+import { useIsFlowShown } from '@/components/MainDock';
+import { PrConversation } from '@/components/PrConversation';
+import { PrTitle } from '@/components/PrDescription';
+import { PrFiles, PrStatus } from '@/components/PrFiles';
+import { PrProperties } from '@/components/PrProperties';
+import { ReviewBar } from '@/components/ReviewBar';
+import { ReviewPopover } from '@/components/ReviewPopover';
+import { ReviewSurfaceContext } from '@/components/review-surface';
+import { usePr } from '@/hooks/use-pr';
+import { type PrReviewView, usePrView } from '@/hooks/use-pr-view';
+import { t } from '@/i18n';
+import { timelineItems } from '@/lib/pr-timeline';
+
+/** The PR a page shows (#758): its repository and number. */
+export interface PrRef { repository: string; number: number }
+type PageTab = 'conversation' | 'files';
+
+export interface PrPageProps {
+  state: State; locale: string; pr: PrRef;
+  summary: RepoSummary; // the PR's repository: what a PR without a task shows as its properties
+  header(reload: () => Promise<void>): ReactNode; // the repository header; its atualizar reads the PR again
+  onGoTo(taskId: string): void; // a task with no GitHub issue: its detail in the flow
+  onOpenIssue(url: string): void; // task #N: its issue's page
+  onOpenPr(url: string): void; // a stack's part: its PR's page, or GitHub
+}
+
+// The inner tabs (handoff 03 "Topo"): conversation N and files N, a spacer, then what the page puts on the right
+function PageTabs({ tab, pr, onTab, children }: { tab: PageTab; pr: PrData; onTab(tab: PageTab): void; children: ReactNode }) {
+  const item = (id: PageTab, label: string, n: number) => (
+    <button
+      key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => onTab(id)}
+      className={`border-b-2 px-3 py-2 font-medium text-[13px] ${tab === id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+    >
+      {label} <span className="font-normal text-muted-foreground text-xs">{n}</span>
+    </button>
+  );
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-b px-6">
+      <div role="tablist" className="flex">{item('conversation', t('pr.tab.conversation'), timelineItems(pr).length)}{item('files', t('pr.tab.files'), pr.files.length)}</div>
+      <span className="flex-1" />
+      {children}
+    </div>
+  );
+}
+
+// task #N · {repo} (handoff 03): the task's issue page, or the task's detail when it has no GitHub issue
+function TaskLink({ task, pr, onGoTo, onOpenIssue }: { task: Task; pr: PrData; onGoTo(taskId: string): void; onOpenIssue(url: string): void }) {
+  const issue = issueOfLink(task.item.url);
+  const open = (): void => (issue === undefined ? onGoTo(task.item.itemId) : onOpenIssue(task.item.url));
+  return (
+    <button type="button" className="text-muted-foreground text-xs hover:text-foreground" onClick={open}>
+      {t('pr.task', { n: task.item.id, repo: repoName(issue?.repository ?? prRepo(pr.url)) })}
+    </button>
+  );
+}
+
+// files (handoff 03 "Aba arquivos"): 12px 16px 16px, no properties; the bar's counts, layout and hide reviewed over the diff
+function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onRefresh(): void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col px-4 pt-3 pb-4 text-xs">
+      <ReviewBar
+        label={t('pr.tab.files')} left={null} files={pr.files} notice={pr.truncated ? <span>{t('pr.truncated')}</span> : undefined}
+        layout={view.layout} reviewed={view.reviewedCount} hideReviewed={view.nav.hideReviewed} onLayout={view.setLayout} onRefresh={onRefresh} onHideReviewed={view.nav.setHideReviewed}
+      />
+      <PrFiles pr={pr} view={view} />
+    </div>
+  );
+}
+
+/** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation with the properties
+ * column, or files. Read on opening, on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. */
+export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr }: PrPageProps) {
+  const url = prLink(ref.repository, ref.number);
+  const isShown = useIsFlowShown();
+  const { load, refresh, review, reread } = usePr(url, isShown);
+  const [tab, setTab] = useState<PageTab>('conversation');
+  const pr = load.status === 'ready' ? load.pr : undefined;
+  const reload = async (): Promise<void> => {
+    reread();
+    await refresh();
+  };
+  const view = usePrView(pr, review, reread, () => void reload());
+  const [jump, setJump] = useState<string>();
+  // open in diff (#758): once files has drawn its sections, the thread's file comes into view, as ] and [ bring one
+  useEffect(() => {
+    if (tab !== 'files' || jump === undefined) return;
+    view.nav.show(jump);
+    setJump(undefined);
+  }, [tab, jump, view.nav]);
+  const openInDiff = (path: string): void => {
+    setTab('files');
+    setJump(path);
+  };
+  if (pr === undefined || view.surface === undefined) return <div className="flex min-h-0 flex-1 flex-col">{header(reload)}<PrStatus load={load} /></div>;
+  const task = taskOfPr(state, url);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {header(reload)}
+      <div className="px-6 pt-4 pb-2"><PrTitle pr={pr} onChanged={reload} /></div>
+      <PageTabs tab={tab} pr={pr} onTab={setTab}>
+        {pr.state === 'open' && <ReviewPopover pr={pr} drafts={review?.drafts.length ?? 0} onSent={() => void reload()} />}
+        {task && <TaskLink task={task} pr={pr} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />}
+      </PageTabs>
+      <ReviewSurfaceContext.Provider value={view.surface}>
+        {tab === 'conversation' ? (
+          <div className="flex min-h-0 flex-1">
+            <PrConversation pr={pr} task={task} state={state} onChanged={reload} onOpenPr={onOpenPr} onOpenInDiff={openInDiff} />
+            <PrProperties pr={pr} task={task} summary={summary} state={state} locale={locale} onGoTo={onGoTo} />
+          </div>
+        ) : <FilesTab pr={pr} view={view} onRefresh={() => void refresh()} />}
+      </ReviewSurfaceContext.Provider>
+    </div>
+  );
+}

@@ -1,0 +1,62 @@
+name: Bug report
+description: A bug in the Hive, filed from a report.
+title: ""
+labels: [bug]
+body:
+  - type: input
+    id: reporter
+    attributes:
+      label: Reported by
+      description: Who sent the report.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Hive version
+      description: The version of the release that was downloaded.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: macOS 15.3 / Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        `hive.log` is in the Hive's home: `~/.config/agent-hive/hive.log`, or `$XDG_CONFIG_HOME/agent-hive/hive.log` when `XDG_CONFIG_HOME` is set, or `$HIVE_HOME/hive.log` when `HIVE_HOME` is set.
+        Paste only the part around the bug, and remove tokens and private paths first.
+  - type: textarea
+    id: log
+    attributes:
+      label: hive.log
+      description: The relevant lines.
+      render: text
+    validations:
+      required: false
