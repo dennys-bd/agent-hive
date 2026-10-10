@@ -20,7 +20,7 @@ const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', u
 // #629: the branch is the activity's; #633: the sidebar takes the whole activity, a task's or a workspace's local one
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
 const local: LocalActivity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'src/b.ts', 'README.md', '.env'], marks: { 'src/a.ts': 'M', 'src/b.ts': 'A' }, folders: [] };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'src/b.ts', 'README.md', '.env'], marks: { 'src/a.ts': 'M', 'src/b.ts': 'A' }, folders: [], ignored: { files: [], folders: [] } };
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (url.endsWith('/tree') ? json(TREE) : new Response(null, { status: 204 })));
 const openFile = vi.fn<OpenFile>(() => true); // the dock's file opener (#717)

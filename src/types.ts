@@ -664,11 +664,25 @@ export type GitMark = 'M' | 'A';
 
 /** A task's worktree as the files sidebar lists it (redesign 07): every path git does not ignore, relative to the worktree, and the marks;
  * its empty folders (#818), relative; and its root, absolute (#818): copy path, the clipboard and the untitled save need it, and a local
- * activity has no worktree on the page. */
+ * activity has no worktree on the page; and what git ignores, with the nested repositories (HIVE-22), outermost. */
 export interface TaskTree {
   root: string;
   files: string[];
   marks: Record<string, GitMark>;
+  folders: string[];
+  ignored: IgnoredEntries;
+}
+
+/** The worktree's entries git ignores, and its nested repositories (HIVE-22): relative, outermost only. A folder's children are not listed;
+ *  GET /activities/:id/tree/folder reads them when it is expanded. */
+export interface IgnoredEntries {
+  files: string[];
+  folders: string[]; // without the trailing /
+}
+
+/** A folder's direct children on disk (HIVE-22), names only, `.git` left out. */
+export interface FolderEntries {
+  files: string[];
   folders: string[];
 }
 

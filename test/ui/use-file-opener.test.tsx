@@ -8,7 +8,7 @@ import { localPairOf } from '../fixtures/work';
 // #818: a path that climbs out of a local activity's checkout resolves against the tree's root, read from the tree route, and opens in the
 // editor pane: the IDE it went to before is gone
 const local: LocalActivity = { kind: 'local', ...localPairOf('site'), workspace: 'site', runs: [], sessions: [], kept: [] };
-const fetchMock = vi.fn(async (_url: string) => jsonResponse({ root: '/work/site', files: [], marks: {}, folders: [] }));
+const fetchMock = vi.fn(async (_url: string) => jsonResponse({ root: '/work/site', files: [], marks: {}, folders: [], ignored: { files: [], folders: [] } }));
 
 beforeEach(() => { fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { vi.unstubAllGlobals(); });
