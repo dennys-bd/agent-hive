@@ -1,4 +1,4 @@
-import { access, lstat } from 'node:fs/promises';
+import { access, lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
@@ -7,8 +7,8 @@ import type { TaskRouteDeps, Refusal } from './server-tasks.js';
 import { liveTarget } from './activity-routes.js';
 import { revealCommand } from './platform-commands.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from './server-files.js';
-import { treeItem } from './tree-paths.js';
-import type { IgnoredEntries, TaskTree, Exec, GitMark, State } from './types.js';
+import { treeFolder, treeItem } from './tree-paths.js';
+import type { FolderEntries, IgnoredEntries, TaskTree, Exec, GitMark, State } from './types.js';
 import { taskDir, wordsOf } from './worktree.js';
 
 // The files sidebar (redesign 07): the worktree's paths with their git marks, and the ⋯'s show in folder.
@@ -17,6 +17,7 @@ const HTTP_CONFLICT = 409;
 const HTTP_NOT_FOUND = 404;
 const HTTP_BAD_REQUEST = 400;
 export const REVEAL_BODY_MESSAGE = 'path must be a non-empty string';
+export const FOLDER_QUERY_MESSAGE = 'path must be a string';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_NO_CONTENT = 204;
 const NO_WORKTREE_MESSAGE = 'tarefa sem worktree no disco';
@@ -130,7 +131,34 @@ function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
   });
 }
 
-/** GET /activities/:id/tree, what the files sidebar polls, and POST /activities/:id/reveal. No value of the request picks the folder: it comes
+// A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it
+async function folderEntries(folder: string): Promise<FolderEntries> {
+  const entries = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
+  const namesOf = (isFolder: boolean): string[] => entries.filter((entry) => entry.isDirectory() === isFolder).map((entry) => entry.name).sort();
+  return { files: namesOf(false), folders: namesOf(true) };
+}
+
+// GET /activities/:id/tree/folder (HIVE-22): a folder's children from disk, what an expanded ignored folder shows. Any folder of the tree is
+// taken: the route reads names only, and telling an ignored one apart would cost a git run
+function registerFolderRoute(app: Express, { requireLive }: Pick<TaskRouteDeps, 'requireLive'>): void {
+  app.get('/activities/:id/tree/folder', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
+    if (typeof root !== 'string') return refuse(res, root);
+    const { path } = req.query;
+    if (typeof path !== 'string') return refuse(res, { status: HTTP_BAD_REQUEST, message: FOLDER_QUERY_MESSAGE });
+    try {
+      const folder = await treeFolder(root, path);
+      if (typeof folder !== 'string') return refuse(res, folder);
+      res.json(await folderEntries(folder));
+    } catch (err) {
+      res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
+    }
+  });
+}
+
+/** GET /activities/:id/tree, what the files sidebar polls, POST /activities/:id/reveal and GET /activities/:id/tree/folder (HIVE-22). No value of the request picks the folder: it comes
  *  from the task's slug and workspace, or the local activity's workspace (#633). */
 export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
   app.get('/activities/:id/tree', async (req: Request, res: Response) => {
@@ -145,4 +173,5 @@ export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     }
   });
   registerRevealRoute(app, deps);
+  registerFolderRoute(app, deps);
 }

@@ -4,9 +4,9 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { parseStatus, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, parseStatus, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
-import { OUTSIDE_MESSAGE } from '../src/tree-paths.js';
+import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
 import { LOCAL_ACTIVITY_MESSAGE } from '../src/activity-routes.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-files.js';
@@ -138,6 +138,24 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
   };
   const tree = await taskTree('/wt', exec, async (folder) => folder.endsWith('vendor/lib/'));
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
+});
+
+test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused (HIVE-22)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const wt = worktreePath(f.repo, 'hive-1-task');
+  await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
+  await writeFile(join(wt, 'docs', 'glossary.md'), 'g');
+  await writeFile(join(wt, 'docs', 'README.md'), 'r');
+  await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
+  const folder = (query: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder${query}`);
+  const res = await folder('?path=docs');
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'] }]);
+  const refusals = [['?path=..%2Fx', OUTSIDE_MESSAGE], ['?path=vendor%2Flib%2F.git', GIT_MESSAGE], ['?path=nope', FOLDER_MISSING_MESSAGE], ['', FOLDER_QUERY_MESSAGE], ['?path=a&path=b', FOLDER_QUERY_MESSAGE]] as const;
+  for (const [query, message] of refusals) {
+    const refused = await folder(query);
+    assert.deepEqual([refused.status, await refused.json()], [400, { error: message }], query);
+  }
+  assert.deepEqual(f.calls, []);
 });
 
 test('POST /activities/:id/reveal with a path shows that item, by its real path; one outside the root or a bad path runs nothing (#818)', async (t) => {
