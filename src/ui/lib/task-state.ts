@@ -5,7 +5,7 @@ import { activityOf, prsOf, resultOf } from '../../activities.js';
 import { decompositionPending } from '../../decomposition.js';
 import { hasOpenPr } from '../../pull-requests.js';
 import { type WorkersState, workersOf } from '../../tasks.js';
-import type { Activity, Task, State } from '../../types.js';
+import { TRIES_OUT, type Activity, type Task, type State } from '../../types.js';
 import { mostUrgent, type TaskState } from './status.js';
 
 /** Whether a run is at work (#663): working or waiting, or waiting out an API error, which still holds its run (#805). A held approval run is
@@ -41,3 +41,7 @@ export function answerableActivity(task: Task, state: WorkersState): Activity | 
  * today and State names the sources, not their kind; read the kind here once another adapter lands. */
 export const createsIssues = (task: Task, state: Pick<State, 'activityRecords' | 'syncs'>): boolean =>
   Object.keys(state.syncs).length > 0 && decompositionPending(resultOf(state, task.item.itemId));
+
+/** Whether the task stopped out of tries (#913): its live activity halted with TRIES_OUT. The card and the node read it as destructive. */
+export const isExhausted = (task: Task, state: Pick<State, 'activities' | 'activityRecords'>): boolean =>
+  activityOf(state, task.item.itemId)?.error?.startsWith(TRIES_OUT) ?? false;
