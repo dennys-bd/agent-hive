@@ -147,3 +147,8 @@ test('withPrStates stores the times the poll read; a read with nothing new keeps
   const [same] = withPrStates([stored], [{ url: `${PR}7`, state: 'open', openedAt: '2026-10-01T10:00:00Z' }]);
   assert.equal(same, stored);
 });
+
+test('withPrStates keeps the session that opened the PR: the poll never reads one (#62)', () => {
+  const [polled] = withPrStates([record(1, [{ ...open(7), sessionId: 'session-a' }])], [{ url: `${PR}7`, state: 'merged', mergedAt: '2026-10-02T10:00:00Z' }]);
+  assert.deepEqual(polled.prs, [{ url: `${PR}7`, state: 'merged', mergedAt: '2026-10-02T10:00:00Z', sessionId: 'session-a' }]);
+});

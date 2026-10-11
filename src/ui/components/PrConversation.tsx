@@ -1,4 +1,6 @@
+import { prsOf } from '../../activities';
 import { prRepo } from '../../pull-requests';
+import { taskId } from '../../tasks';
 import type { PrData, State, Task } from '../../types';
 import { IssueCommentBox } from '@/components/IssueCommentBox';
 import { PrChecks } from '@/components/PrChecks';
@@ -33,23 +35,28 @@ function PrLine({ pr }: { pr: PrData }) {
 
 export interface PrConversationProps { pr: PrData; task?: Task; state: State; onChanged(): Promise<void>; onOpenPr(url: string): void; onOpenInDiff(path: string): void }
 
-/** conversation (#758, handoff 03): 16px 24px, gap 16, beside the properties; a merged or closed PR says first that it is read only. Then the
- * PR line, the description, the stack, the checks, the timeline and, on an open PR, the comment box and the merge box. */
+// The Claude session that opened this PR (#62), as the task's records hold it: none for a PR with no task, or one recorded before #62
+const openerOf = (pr: PrData, state: State, task?: Task): string | undefined =>
+  task && prsOf(state, taskId(task)).find((p) => p.url === pr.url)?.sessionId;
+
+/** conversation (#758, #62, handoff 6): 16px 24px, gap 16, beside the properties, with no visible scrollbar. A merged or closed PR says first
+ * that it is read only. Then the PR line, the stack, the description, the timeline and, on an open PR, the comment box; then the checks and the
+ * merge box, last, so what decides the merge sits together at the foot. */
 export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInDiff }: PrConversationProps) {
   const scroller = useNavScroll(); // #911: the PR page's conversation; files keeps its own (out of scope)
   return (
-    <div ref={scroller} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+    <div ref={scroller} className="scrollbar-none flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
       {pr.state !== 'open' && <p className="text-muted-foreground text-xs">{t('pr.readOnly', { state: t(`prs.state.${pr.state}`) })}</p>}
       <PrLine pr={pr} />
-      <PrDescription pr={pr} onChanged={onChanged} />
       {task && <PrStack pr={pr} task={task} state={state} onOpenPr={onOpenPr} />}
-      <PrChecks checks={pr.checks} pr={pr} onChanged={() => void onChanged()} />
+      <PrDescription pr={pr} sessionId={openerOf(pr, state, task)} onChanged={onChanged} />
       <PrTimeline pr={pr} onOpenInDiff={onOpenInDiff} />
       {pr.state === 'open' && (
         <div className="max-w-[680px]">
           <IssueCommentBox path={prPath(pr.url, '/comments')} repository={prRepo(pr.url)} label={t('pr.comment.placeholder')} onPosted={onChanged} />
         </div>
       )}
+      <PrChecks checks={pr.checks} pr={pr} onChanged={() => void onChanged()} />
       <PrMergeBox pr={pr} task={task} state={state} onMerged={() => void onChanged()} />
     </div>
   );

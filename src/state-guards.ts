@@ -66,7 +66,8 @@ const savedPrTimes = (pr: TaskPr): Pick<TaskPr, 'openedAt' | 'mergedAt' | 'close
 export function savedPrs(prs: unknown, legacy: unknown): TaskPr[] {
   if (prs === undefined) return typeof legacy === 'string' && isPrUrl(legacy) ? [{ url: legacy, state: 'open' }] : [];
   return Array.isArray(prs)
-    ? prs.filter(isTaskPr).map((pr) => ({ url: pr.url, state: pr.state, ...(isPrSlice(pr.slice) ? { slice: { k: pr.slice.k, type: pr.slice.type } } : {}), ...savedPrTimes(pr) }))
+    ? prs.filter(isTaskPr).map((pr) => ({ url: pr.url, state: pr.state, ...(isPrSlice(pr.slice) ? { slice: { k: pr.slice.k, type: pr.slice.type } } : {}),
+      ...(isUuid(pr.sessionId) ? { sessionId: pr.sessionId } : {}), ...savedPrTimes(pr) })) // #62: only a session id's uuid shape is shown
     : [];
 }
 

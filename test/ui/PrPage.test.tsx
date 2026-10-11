@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { AT, fakePrHive, type FakePrHive, prData, renderPage, thread, WITH_TASK } from './pr-harness';
+import { AT, fakePrHive, type FakePrHive, PR, PR2, PRS, prData, renderPage, thread, WITH_TASK } from './pr-harness';
 
 let hive: FakePrHive;
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); hive = fakePrHive(); });
@@ -55,4 +55,32 @@ test('files keeps its footer\'s counts and key hint, with no enviar revisão and
   expect(footer).toHaveTextContent('revisão do PR · 0 comentários · 1 conversa aberta');
   expect(within(footer).queryByRole('button', { name: /enviar revisão/ })).toBeNull();
   expect(within(footer).queryByRole('textbox')).toBeNull();
+});
+
+// Whether `b` comes after `a` in the document
+const follows = (a: Element, b: Element): boolean => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+test('the conversation reads stack, description, timeline, comment box, checks and the merge box last, and scrolls with no visible bar (#62)', async () => {
+  hive.pr = prData({ checks: { state: 'success', items: [{ name: 'test', state: 'success' }] } });
+  renderPage({ ...WITH_TASK, activityRecords: [{ ...WITH_TASK.activityRecords[0], prs: [...PRS, { url: PR2, state: 'open' }] }] });
+  await screen.findByRole('heading', { name: 'The PR' });
+  const order = [
+    screen.getByRole('region', { name: 'pilha' }),
+    screen.getByRole('region', { name: 'descrição' }),
+    screen.getByRole('region', { name: 'conversa' }),
+    screen.getByRole('textbox', { name: 'comentar no PR…' }),
+    screen.getByRole('region', { name: 'checks' }),
+    screen.getByRole('region', { name: 'mergear' }),
+  ];
+  for (const [i, section] of order.slice(1).entries()) expect(follows(order[i], section), `section ${i + 1}`).toBe(true);
+  expect(order[0].parentElement).toHaveClass('scrollbar-none', 'overflow-y-auto');
+});
+
+test('a task\'s PR reads the session that opened it from the task\'s records, not another PR\'s (#62)', async () => {
+  renderPage({
+    ...WITH_TASK,
+    activityRecords: [{ ...WITH_TASK.activityRecords[0], prs: [{ url: PR, state: 'open', sessionId: 'f9f0456a-1b2c-4d5e-8f90-123456789abc' }, { url: PR2, state: 'open', sessionId: '0badc0de-1b2c-4d5e-8f90-123456789abc' }] }],
+  });
+  expect(await screen.findByText('f9f0456a')).toHaveClass('font-mono');
+  expect(screen.queryByText('0badc0de')).toBeNull();
 });

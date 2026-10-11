@@ -1617,6 +1617,9 @@ const en = {
   'pr.readOnly': '{state}: read only',
   'pr.props.repository': 'repository',
   'pr.description': 'description', 'pr.changed': 'the PR changed on GitHub; reloaded, your text is kept', // #758: the PR page's edits
+  'pr.description.opened': 'opened', 'pr.description.viaSession': 'via session {id}', // #62: the description panel
+  'pr.description.showAll': 'show all', 'pr.description.moreLines.one': '+{n} line', 'pr.description.moreLines.other': '+{n} lines',
+  'pr.description.collapse': 'collapse', 'pr.description.empty': 'no description',
   'pr.checks.passed': 'checks · {n} of {m} passed', 'pr.checks.failed': '{n} failed', 'pr.checks.pending': '{n} pending', // #758: the PR page's checks
   'pr.stack': 'stack', 'pr.stack.this': 'this PR', 'pr.stack.outside': 'outside the stack', 'pr.stack.base': 'base #{n}', // #758: the PR page's stack
   'pr.notListed': 'repository not listed by the Hive: opening on GitHub',
@@ -3334,6 +3337,9 @@ const pt: Record<MessageKey, string> = {
   'pr.readOnly': '{state}: só leitura',
   'pr.props.repository': 'repositório',
   'pr.description': 'descrição', 'pr.changed': 'o PR mudou no GitHub; recarregado, seu texto foi mantido',
+  'pr.description.opened': 'abriu', 'pr.description.viaSession': 'via sessão {id}',
+  'pr.description.showAll': 'mostrar tudo', 'pr.description.moreLines.one': '+{n} linha', 'pr.description.moreLines.other': '+{n} linhas',
+  'pr.description.collapse': 'recolher', 'pr.description.empty': 'sem descrição',
   'pr.checks.passed': 'checks · {n} de {m} passaram', 'pr.checks.failed': '{n} falharam', 'pr.checks.pending': '{n} pendentes',
   'pr.stack': 'pilha', 'pr.stack.this': 'este PR', 'pr.stack.outside': 'fora da pilha', 'pr.stack.base': 'base #{n}',
   'pr.notListed': 'repositório fora da lista do Hive: abrindo no GitHub',
@@ -3466,7 +3472,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions';
+export type PluralFamily = 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

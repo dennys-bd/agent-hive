@@ -67,6 +67,13 @@
 /* Muted file icons in the files tree (#754): the icon theme's own colours, toned down by the two theme.css tokens. */
 .file-icon-muted { filter: saturate(var(--file-icon-saturate)) opacity(var(--file-icon-opacity)); }
 
+/* A scroll area with no visible bar (#62, handoff 6): the PR conversation, still scrolled by wheel, trackpad and keyboard. A utility, so it
+   outranks the base layer's thin bar; the WebKit pseudo-element too, for an engine that ignores scrollbar-width. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
 /* The stage scrollbar (OverlayScrollbars, #143): the lib's --os-* knobs from the theme tokens, so both themes follow (#296). index.css loads
    after overlayscrollbars.css in main.tsx, so this single class outranks the lib's .os-scrollbar defaults by order. */
 .os-theme-hive {

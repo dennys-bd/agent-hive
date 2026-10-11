@@ -693,6 +693,15 @@ test('markPr keeps hive_pr\'s slice: a new link is appended with it, a link the 
   assert.deepEqual(prsN(fresh, 1), [{ url: 'https://github.com/o/r/pull/8', state: 'open', slice: { k: 1, type: 'integration' } }]);
 });
 
+test('hive_pr and the gh pr create detection record the reporting worker\'s session on the task\'s PR (#62)', () => {
+  const { state: started, id, first } = sessionStarted();
+  const url = 'https://github.com/o/r/pull/7';
+  const told = reduce(started, { type: 'pr', ptyId: id, url }).state;
+  assert.deepEqual(prsN(told, 1), [{ url, state: 'open', sessionId: first }]);
+  const detected = hook(started, id, { hook_event_name: 'PostToolUse', tool_input: { command: 'gh pr create --fill' }, tool_response: url }).state;
+  assert.deepEqual(prsN(detected, 1), [{ url, state: 'open', sessionId: first }]);
+});
+
 test('prStates takes the states the PR query read (#207): the matching PRs change, a task with nothing new is the same object, and no worker changes (#663)', () => {
   const PR = 'https://github.com/o/r/pull/';
   const pr = (state: State, ptyId: string, n: number): State => reduce(state, { type: 'pr', ptyId, url: `${PR}${n}` }).state;

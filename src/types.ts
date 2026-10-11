@@ -403,6 +403,7 @@ export interface TaskPr {
   url: string; // a GitHub pull request link, the shape hive_pr and the gh pr create detection accept
   state: PrState;
   slice?: PrSlice; // #698: hive_pr's slice; absent on single, on the detection and on old data
+  sessionId?: string; // #62: the Claude session of the worker that reported the PR first (hive_pr or the gh pr create detection); absent on old data
   openedAt?: string; mergedAt?: string; closedAt?: string; // #742: ISO, as the PR poll last read them; absent until it does
 }
 

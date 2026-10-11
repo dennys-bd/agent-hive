@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadActivity, savedWork } from '../src/state-guards.js';
+import { loadActivity, savedPrs, savedWork } from '../src/state-guards.js';
 import { FEEDBACK_MAX, type Activity, type Checkpoint } from '../src/types.js';
 
 // #134: a state file is read back, never trusted: the routing keys, a pending handoff and its feedback, and a handover's prompt are capped on load
@@ -42,4 +42,11 @@ test('savedWork keeps checkpoints in their written shape and drops a malformed e
 test('an activity with checkpoints round-trips through state.json\'s shape (#619)', () => {
   const activity: Activity = { id: '00000000-0000-4000-8000-000000000001', kind: 'task', workspace: 'hive', slug: 'hive-1-x', worktree: '/wt', checkpoints: [CHECKPOINT] };
   assert.deepEqual(loadActivity(JSON.parse(JSON.stringify(activity))), activity);
+});
+
+test('savedPrs keeps the session that opened a PR across a load, only in the uuid shape a session id has (#62)', () => {
+  const url = 'https://github.com/o/r/pull/7';
+  const id = 'f9f0456a-1b2c-4d5e-8f90-123456789abc';
+  assert.deepEqual(savedPrs([{ url, state: 'open', sessionId: id }], undefined), [{ url, state: 'open', sessionId: id }]);
+  assert.deepEqual(savedPrs([{ url, state: 'open', sessionId: '--settings' }], undefined), [{ url, state: 'open' }]);
 });

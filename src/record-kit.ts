@@ -79,10 +79,11 @@ export const withDecompositionIssue = (state: State, task: Task, id: string, num
   withLive(state, task, (r) => ({ ...r, result: { ...r.result, decompositionIssues: { ...recordedIssues(r.result), [id]: number } } }));
 
 /** A PR appended once to the live record, open (#207): both hive_pr and the gh pr create detection may report it. A url reported again takes
- * hive_pr's slice, which the detection never has (#698); without one the record is the same object. */
-export const withPr = (state: State, task: Task, url: string, slice?: PrSlice): State =>
+ * hive_pr's slice, which the detection never has (#698); without one the record is the same object. The reporting session is written only
+ * with a new url (#62): the session that opened the PR is the first to say so, and a later report never overwrites it. */
+export const withPr = (state: State, task: Task, url: string, slice?: PrSlice, sessionId?: string): State =>
   withLive(state, task, (r) => {
-    if (!r.prs?.some((pr) => pr.url === url)) return { ...r, prs: [...(r.prs ?? []), { url, state: 'open' as const, ...(slice ? { slice } : {}) }] };
+    if (!r.prs?.some((pr) => pr.url === url)) return { ...r, prs: [...(r.prs ?? []), { url, state: 'open' as const, ...(slice ? { slice } : {}), ...(sessionId ? { sessionId } : {}) }] };
     return slice === undefined ? r : { ...r, prs: r.prs.map((pr) => (pr.url === url ? { ...pr, slice } : pr)) };
   });
 
