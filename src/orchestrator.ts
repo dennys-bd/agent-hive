@@ -26,6 +26,7 @@ import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 import { followEpics } from './epic-follow.js';
+import { blockerSet, closeRefsTo } from './hive-blockers.js';
 
 export { isFree } from './reducer-kit.js';
 export { canSchedule, canStart, effectiveLimits } from './fill.js';
@@ -108,6 +109,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'boot': return dropCopiesAtBoot(state, boot(state)); // no fill: bootHive polls right after, and the source is the truth; opens on signals.onOpen, a saved red always red (#727), and that poll's fill resumes the tasks in flight (#224)
     case 'poll': return fill(poll(state, event)); // also where a dynamic red ages out: samples leave the window with time, a plan window passes its reset
     case 'itemRead': return afterCommands(state, none(itemRead(state, event))); // #686: a field write's re-read item; once its task changed, the due actions and the fill follow, as after a poll
+    case 'blockerSet': return refillIfChanged(state, blockerSet(state, event)); // #56: a removed blocker may free a task a free worker can take
     case 'setMax': return fill(setMax(state, event.max));
     case 'setSignal': return fill(runActions({ ...state, signal: event.signal })); // #727: a looser workerless row acts at once
     case 'setSignals': return fill(runActions({ ...state, signals: event.signals })); // #727: idem, and a looser row may start work at once
@@ -658,7 +660,7 @@ function dropTask(state: State, task: Task): Reduced {
   const closed = closeTerminals(state, task);
   const kills: Effect[] = held.flatMap((s) => (s.runId ? [{ type: 'kill' as const, slug: slugOf(state, taskId(task)), ptyId: s.runId }] : []));
   return {
-    state: { ...closed.state, tasks: closed.state.tasks.filter((c) => c !== task), workers: held.reduce(releaseWorker, closed.state.workers) },
+    state: { ...closed.state, tasks: closeRefsTo(closed.state.tasks.filter((c) => c !== task), task), workers: held.reduce(releaseWorker, closed.state.workers) }, // #56: its relations stay, closed
     effects: [...kills, ...closed.effects],
   };
 }

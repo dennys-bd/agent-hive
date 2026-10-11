@@ -40,7 +40,7 @@ function withStages(view: ProjectView, stages: Stage[], source: string): Project
 }
 
 // Refused inside the source's quota backoff, as its poll would be (no reading yet: it reads); true when the 429 went out
-function refusedInBackoff(state: State, name: string, res: Response): boolean {
+export function refusedInBackoff(state: State, name: string, res: Response): boolean {
   const sync = Object.hasOwn(state.syncs, name) ? state.syncs[name] : undefined;
   if (!inBackoff(sync, Date.now())) return false;
   res.status(HTTP_TOO_MANY_REQUESTS).json({ error: QUOTA_MESSAGE, resetsAt: sync?.quota?.resetsAt });

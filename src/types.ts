@@ -254,6 +254,17 @@ export interface ItemFacets {
   fields: Record<string, string>; // single-select GitHub Project field name → the item's option; Status left out
 }
 
+/** One end of a blocker relation (#56): the other item, as the UI shows it. */
+export interface BlockerRef {
+  id: string; // the display id: `12` in the item's own repository, `owner/repo#12` in another; a hive task's id (`HIVE-3`)
+  title: string;
+  state: 'open' | 'closed';
+}
+/** An item's blocker relations (#56), both directions. */
+export interface ItemBlockers { blockedBy: BlockerRef[]; blocking: BlockerRef[] }
+/** One edit of a relation (#56), as the route takes it: `ref` the other item's display id. */
+export interface BlockerChange { action: 'add' | 'remove'; kind: 'blockedBy' | 'blocking'; ref: string }
+
 /** What a source adapter reads for a task (glossary: item): the raw record; its id is itemId. */
 export interface Item {
   itemId: string; // `${source}:${adapter id}` for a source task (#180); `local:<n>` for a local one; the adapter's own key after the source's name
@@ -272,6 +283,7 @@ export interface Item {
   children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
   epic?: { follows: EpicFollows; switchAt: string }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise
+  blockers?: ItemBlockers; // #56: the relations the UI shows and edits, both directions, sub-issues never; absent = none read. Not the start gate: that is blockedBy
 }
 
 export type SessionPolicy = 'new' | 'continue';
@@ -1234,6 +1246,7 @@ export type HiveEvent =
   | { type: 'boot' }
   | { type: 'poll'; source?: string; items: SourceItem[] } // source absent: a Comb with no sources (#132), merge nothing
   | { type: 'itemRead'; source: string; itemId: string; entry?: SourceItem } // #686: one item re-read after a field write; entry absent when it is out of the source's listing
+  | { type: 'blockerSet'; itemId: string; change: BlockerChange } // #56: a hive task's relation, written on both tasks; POST …/blockers checked it
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setSignals'; signals: SignalSettings } // like setUsageRules: the signal table, from a save that changed it (#727)
@@ -1569,6 +1582,9 @@ export interface ItemField {
 /** What a field write answers (#686): the item re-read after it. `entry` is absent when the item is out of the source's listing. */
 export interface FieldWrite { fields: ItemField[]; row: ProjectItem; entry?: SourceItem }
 
+/** What a relation write answers (#56): the item's relations after it, and the re-read entry when the item is a listed task (as FieldWrite.entry). */
+export interface BlockerWrite { blockers: ItemBlockers; entry?: SourceItem }
+
 /** A repository the flow sidebar lists (#757): a workspace's origin or an open PR's repository. */
 export interface RepoSummary {
   repository: string; // owner/name
@@ -1621,6 +1637,7 @@ export interface Source {
   comments?(itemId: string): Promise<TaskComment[]>; // oldest first, read when the panel opens on a task; a source without comments leaves it out
   fieldsOf?(itemId: string): Promise<ItemField[]>; // #686: in the project's order, Status included
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
+  relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   create?(fields: { title: string; body?: string; column: string }): Promise<string>; // #846: a new item in column, resolving to its adapter id (namespaced: its itemId); a type that cannot create leaves it out
   project?(): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; read on demand by its route, never by the poll
 }

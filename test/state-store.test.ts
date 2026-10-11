@@ -55,6 +55,14 @@ test('saveState then loadState round-trips and leaves no tmp file', async (t) =>
   assert.deepEqual(await readdir(dir), ['state.json']);
 });
 
+test('a hive task\'s blockers and its blockedBy round-trip through saveState and loadState (#56)', async (t) => {
+  const dir = await tempDir(t, '');
+  const blockers = { blockedBy: [{ id: 'HIVE-2', title: 'Blocker', state: 'open' as const }], blocking: [{ id: 'HIVE-3', title: 'Next', state: 'closed' as const }] };
+  const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '', blockers, blockedBy: ['HIVE-2'] }, stage: 'dev', boardColumn: '', created: true, auto: false };
+  await saveState(dir, { ...initialState(1), tasks: [task] });
+  assert.deepEqual((await loadState(dir)).tasks[0].item, task.item);
+});
+
 test('loadState ignores a corrupt file and falls back to initialState', async (t) => {
   const dir = await tempDir(t, '');
   await writeFile(join(dir, 'state.json'), '{not json');

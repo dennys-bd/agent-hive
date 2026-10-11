@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceSpec, createSource, createSources, namespaced, resolveSources } from '../src/source.js';
 import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions, treeLinks } from '../src/sources/github.js';
+import { RelationRereadError } from '../src/sources/github-blockers.js';
 import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queries.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
@@ -31,9 +32,13 @@ const item = (n: number, status = 'Ready') => ({
   fieldValueByName: { name: status },
   content: { __typename: 'Issue', number: n, title: `T${n}`, body: '', url: `https://github.com/acme/r/issues/${n}` },
 });
-const relations = (blockedBy: [number, string][], subIssues: [number, string][] = []) => ({
+type Rel = [number, string, string?];
+// A blocker relation's other issue as the relations query asks it (#56): in acme/r unless named, titled T<n>
+const relRef = ([number, state, repo = 'acme/r']: Rel) => ({ number, title: `T${number}`, state, repository: { nameWithOwner: repo } });
+const relations = (blockedBy: Rel[], subIssues: [number, string][] = [], blocking: Rel[] = []) => ({
   issue: {
-    blockedBy: { nodes: blockedBy.map(([number, state]) => ({ number, state })) },
+    blockedBy: { nodes: blockedBy.map(relRef) },
+    blocking: { nodes: blocking.map(relRef) },
     subIssues: { nodes: subIssues.map(([number, state]) => ({ number, state })) },
   },
 });
@@ -196,7 +201,7 @@ test('with epics: ignore, listItems keeps epics and resolves open blockers with 
   const graphql = calls.filter((c) => c.name === 'relations');
   assert.equal(graphql.length, 1);
   const { query } = graphql[0];
-  assert.match(query, /^query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blockedBy\(first: 50\) \{ nodes \{ number state \} \} subIssues\(first: 50\) \{ nodes \{ number state \} \} \} \} i1: /);
+  assert.match(query, /^query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \} blocking\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \} subIssues\(first: 50\) \{ nodes \{ number state \} \} \} \} i1: /);
   assert.match(query, /i1: repository\(owner: "acme", name: "r"\) \{ issue\(number: 3\)/);
   assert.match(query, /i2: repository\(owner: "acme", name: "r"\) \{ issue\(number: 4\)/);
   assert.ok(!query.includes('i3:'), 'no alias for issues outside the cited columns');
@@ -217,6 +222,27 @@ test('listItems treats issue: null, a null repository or a missing alias as no b
   assert.deepEqual(tasks.map((c) => c.item.blockedBy), [undefined, undefined, undefined]);
   assert.deepEqual(tasks.map((c) => c.item.id), ['1', '2', '3'], 'nothing dropped: no item is an epic');
   assert.equal(calls.filter((c) => c.name === 'relations').length, 1);
+});
+
+test('listItems reads an issue\'s blocker relations both ways with titles and states into blockers, sub-issues never; blockedBy stays the start gate (#56)', async () => {
+  const { gql, calls } = fakeGql({
+    items: page([item(1), item(2), item(3)]),
+    relations: {
+      i0: relations([[7, 'OPEN'], [8, 'CLOSED', 'other/lib']], [[9, 'OPEN']], [[5, 'OPEN']]),
+      i1: relations([]),
+      i2: { issue: null },
+    },
+  });
+  const [blocked, free, unread] = (await createSource(config, { gql }).listItems()).map((c) => c.item);
+  assert.deepEqual(blocked.blockers, {
+    blockedBy: [{ id: '7', title: 'T7', state: 'open' }, { id: 'other/lib#8', title: 'T8', state: 'closed' }],
+    blocking: [{ id: '5', title: 'T5', state: 'open' }],
+  }, 'the open sub-issue 9 is no relation');
+  assert.deepEqual(blocked.blockedBy, ['7', '9'], 'the start gate as before: open blockers and open sub-issues');
+  assert.deepEqual(free.blockers, { blockedBy: [], blocking: [] }, 'read and none: not absent');
+  assert.equal('blockers' in unread, false, 'not read: absent');
+  const { query } = calls.find((c) => c.name === 'relations')!;
+  assert.match(query, /blocking\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
 });
 
 test('with epics: hide, listItems drops epics (subIssuesSummary.total > 0) straight from the listing, with no relations alias spent on them', async () => {
@@ -652,6 +678,34 @@ test('namespaced wraps fieldsOf and setField only when the adapter has them: the
   assert.deepEqual(answer?.entry?.item, { itemId: 'work:PVTI_1', id: 'W-12', title: 'T', body: '', url: '', source: 'work' });
   const { entry: _entry, ...unlisted } = written;
   assert.equal((await namespaced(entry, { ...bare, setField: async () => unlisted }).setField?.('work:PVTI_1', 'Priority', 'P0'))?.entry, undefined);
+});
+
+test('namespaced shows a short blocker id like the item\'s own under qualifyId, keeps owner/repo#n, and hands relate the adapter\'s ids back (#56)', async () => {
+  const blockers = { blockedBy: [{ id: '7', title: 'T7', state: 'open' as const }, { id: 'other/lib#3', title: 'T3', state: 'closed' as const }], blocking: [{ id: '5', title: 'T5', state: 'open' as const }] };
+  const shown = { blockedBy: [{ ...blockers.blockedBy[0], id: 'W-7' }, blockers.blockedBy[1]], blocking: [{ ...blockers.blocking[0], id: 'W-5' }] };
+  const listedItem = { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', blockers };
+  const asked: string[] = [];
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    listItems: async () => [{ item: listedItem, column: 'Ready' }],
+  };
+  const adapter: Source = { ...bare, relate: async (itemId, change) => { asked.push(`${itemId} ${change.ref}`); return { blockers, entry: { item: listedItem, column: 'Ready' } }; } };
+  const entry = (qualifyId: boolean): SourceConfig => ({ name: 'work', qualifyId, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS });
+  const qualified = namespaced(entry(true), adapter);
+  assert.deepEqual((await qualified.listItems())[0].item.blockers, shown);
+  const answer = await qualified.relate?.('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: 'W-7' });
+  assert.deepEqual([answer?.blockers, answer?.entry?.item.blockers, answer?.entry?.item.itemId], [shown, shown, 'work:PVTI_1']);
+  await qualified.relate?.('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: 'other/lib#3' });
+  assert.deepEqual(asked, ['PVTI_1 7', 'PVTI_1 other/lib#3'], 'the adapter gets its own ids');
+  assert.deepEqual((await namespaced(entry(false), adapter).listItems())[0].item.blockers, blockers, 'unqualified: as the adapter reads them');
+  assert.equal(namespaced(entry(true), bare).relate, undefined);
+  const failing = namespaced(entry(true), { ...bare, relate: async () => { throw new RelationRereadError('timeout', blockers); } });
+  assert.ok(failing.relate);
+  await assert.rejects(failing.relate('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: '7' }), (err: unknown) => {
+    assert.ok(err instanceof RelationRereadError);
+    assert.deepEqual(err.blockers, shown, 'a failed re-read still answers shown ids');
+    return true;
+  });
 });
 
 test('createSources builds one namespaced source per entry in order; given the live sources it keeps each instance whose entry (its epics keys included), columns and auth did not change; resolveSources names the source that fails (#180)', async () => {

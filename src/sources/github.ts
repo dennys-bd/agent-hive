@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -12,7 +12,8 @@ import {
   type ProjectsData, type RelationsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
-import { readItemFields, writeItemField } from './github-fields.js';
+import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
+import { blockersOf, relateItem } from './github-blockers.js';
 import { readProject, type ProjectRead } from './github-project.js';
 
 const ITEM_LIMIT = 200; // the ceiling the gh --limit used to enforce; two pages of 100: the poll's and the filter options'
@@ -188,14 +189,18 @@ const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig)
 
 // Every listed task gets its relations (#441): a stage's view filter and a source's blocked rule read blocked on any task, and a blocked task
 // refuses a session wherever it sits. relationsQuery aliases each task by its index here, a task with no
-// issue url being skipped, so `i<index>` finds its answer.
+// issue url being skipped, so `i<index>` finds its answer. #56: a task whose issue was read also gets its blocker relations both ways,
+// empty lists included, so "none" and "not read" differ
 async function withBlockers(tasks: SourceItem[], gql: Gql): Promise<SourceItem[]> {
   const query = relationsQuery(tasks.map((c) => c.item));
   if (!query) return tasks;
   const data = (await gql(query)) as RelationsData;
   return tasks.map((task, i) => {
-    const blockedBy = openBlockers(data[`i${i}`]?.issue);
-    return blockedBy.length > 0 ? { ...task, item: { ...task.item, blockedBy } } : task;
+    const issue = data[`i${i}`]?.issue;
+    const blockedBy = openBlockers(issue);
+    const repo = issueRepo(task.item.url);
+    const blockers = issue && repo ? { blockers: blockersOf(issue, `${repo.owner}/${repo.name}`) } : {};
+    return { ...task, item: { ...task.item, ...(blockedBy.length > 0 ? { blockedBy } : {}), ...blockers } };
   });
 }
 
@@ -361,19 +366,28 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return { statuses, ...(await readProject(gql, await projectRead())) };
   }
 
+  // #686, #56: what a write on one item needs. listed([node]) is the poll's steps on one item. groupUnderEpics only reorders a list, the
+  // tree links (#28) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so the
+  // one-item entry equals the poll's for that item
+  async function fieldsContext(): Promise<FieldsContext> {
+    if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => (await listed([node], treeLinks(inPlace(lastNodes, node))))[0];
+    return { gql, projectId: resolved.projectId, read: await projectRead(), entry };
+  }
+
   // #686: a field write, then the item re-read and run through the poll's own steps, so `entry` is what the next poll would list
   async function setField(itemId: string, field: string, value: FieldValue): Promise<FieldWrite> {
-    if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    // listed([node]) is the poll's steps on one item. groupUnderEpics only reorders a list and changes no item's data, the tree links (#28)
-    // are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so the one-item entry
-    // equals the poll's for that item
-    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => (await listed([node], treeLinks(inPlace(lastNodes, node))))[0];
-    return writeItemField({ gql, projectId: resolved.projectId, read: await projectRead(), entry }, itemId, field, value);
+    return writeItemField(await fieldsContext(), itemId, field, value);
+  }
+
+  // #56: a blocker relation added or removed, then the item's relations and entry re-read as a field write's
+  async function relate(itemId: string, change: BlockerChange): Promise<BlockerWrite> {
+    return relateItem(await fieldsContext(), itemId, change);
   }
 
   async function fieldsOf(itemId: string): Promise<ItemField[]> { // #686
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     return readItemFields(gql, itemId, resolved.projectId);
   }
-  return { resolveFields, listItems, setColumn, create, apply, settingsOptions, comments, project, fieldsOf, setField, quota: async () => lastQuota };
+  return { resolveFields, listItems, setColumn, create, apply, settingsOptions, comments, project, fieldsOf, setField, relate, quota: async () => lastQuota };
 }
