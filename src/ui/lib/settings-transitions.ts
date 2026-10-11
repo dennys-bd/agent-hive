@@ -70,6 +70,13 @@ export function transitionsKept(transitions: readonly TransitionDraft[], stages:
   return gone.reduce((list, id) => withoutStage(list, id), [...transitions]);
 }
 
+/** The transitions once a stage's approval switch moved (#918): a stage with approval is only left by approved, so its done exits become approved,
+ * and turning it off undoes that. Its verdict and feedback exits and every other stage's stay as they are. */
+export function withApproval(transitions: readonly TransitionDraft[], stageId: string, approval: boolean): TransitionDraft[] {
+  const [from, to]: [Trigger, Trigger] = approval ? ['done', 'approved'] : ['approved', 'done'];
+  return transitions.map((d) => (d.from === stageId && d.when === from ? { ...d, when: to } : d));
+}
+
 /** A transition's pill (#134): its own label, else its trigger's, with its tries on an automatic one. */
 export function draftLabel(d: TransitionDraft): string {
   const label = d.label.trim() || triggerLabel(d.when, d.verdict);

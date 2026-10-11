@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage } from '../src/ui/i18n.js';
 import { emptyStage, type StageDraft } from '../src/ui/lib/settings-stages.js';
-import { draftLabel, draftVerdicts, emptyTransition, transitionDraft, transitionFrom, transitionsProblem, triggersOf, withoutStage } from '../src/ui/lib/settings-transitions.js';
-import type { Transition } from '../src/types.js';
+import { draftLabel, draftVerdicts, emptyTransition, transitionDraft, transitionFrom, transitionsProblem, triggersOf, withApproval, withoutStage, type TransitionDraft } from '../src/ui/lib/settings-transitions.js';
+import type { Transition, Trigger } from '../src/types.js';
 
 // Settings › fluxo's transitions (#134): keyed by the stage drafts' ids, round-tripped to the config.
 const ROWS = [{ id: 'r1', name: 'board' }];
@@ -42,4 +42,19 @@ test('the verdicts and triggers a stage offers, a pill\'s words, and the form\'s
   assert.equal(transitionsProblem([{ ...draft, verdict: '' }], STAGES), 0);
   assert.equal(transitionsProblem([{ ...draft, maxTries: '0' }], STAGES), 0);
   assert.equal(transitionsProblem([{ ...draft, to: 'gone' }], STAGES), 0);
+});
+
+test('withApproval swaps a stage\'s done exits to approved and back, keeps its verdict and feedback exits and every other stage\'s, and returns a new list (#918)', () => {
+  const plan = stage('Plan', { prompt: '/p', verdicts: ['redo'] });
+  const stages = [plan, ...STAGES];
+  const exit = (from: StageDraft, when: Trigger, extra: Partial<TransitionDraft> = {}): TransitionDraft => ({ ...emptyTransition(from, stages), when, ...extra });
+  const list = [exit(plan, 'done', { maxTries: '2' }), exit(plan, 'verdict', { verdict: 'redo', to: plan.id }), exit(STAGES[0], 'done')];
+  const on = withApproval(list, plan.id, true);
+  assert.deepEqual(on.map((d) => d.when), ['approved', 'verdict', 'done']);
+  assert.equal(on[0].maxTries, '2', 'kept in the draft; transitionFrom drops it on a non-automatic trigger');
+  assert.notEqual(on, list);
+  assert.equal(on[1], list[1], 'an exit it does not swap is the same object');
+  assert.deepEqual(list.map((d) => d.when), ['done', 'verdict', 'done'], 'the input is not mutated');
+  const off = withApproval([...on, exit(plan, 'feedback', { to: plan.id })], plan.id, false);
+  assert.deepEqual(off.map((d) => d.when), ['done', 'verdict', 'done', 'feedback'], 'feedback stays for the save check to point at');
 });
