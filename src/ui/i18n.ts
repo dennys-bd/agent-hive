@@ -1549,7 +1549,7 @@ const en = {
   'project.col.created': 'created', 'project.col.updated': 'updated', 'project.col.closed': 'closed', // #756, addendum 2: the issue's own dates
   'project.col.resize': 'resize {column}', // #756, addendum 2: a header's drag handle
   'project.footer.count': '{x} of {n}',
-  'project.footer.open': '⇧↵ opens the issue',
+  'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue', // #60
   'project.action.goto': 'flow ›',
   'project.error.quota': 'GitHub quota is low; try again after {time}',
   'project.status.head': 'status', // #756: the status select's menu
@@ -3273,7 +3273,7 @@ const pt: Record<MessageKey, string> = {
   'project.col.created': 'criada', 'project.col.updated': 'atualizada', 'project.col.closed': 'fechada',
   'project.col.resize': 'redimensionar {column}',
   'project.footer.count': '{x} de {n}',
-  'project.footer.open': '⇧↵ abre a issue',
+  'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue',
   'project.action.goto': 'fluxo ›',
   'project.error.quota': 'quota do GitHub baixa; tente depois de {time}',
   'project.status.head': 'status',

@@ -116,7 +116,7 @@ function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source
 }
 
 // The table (handoff 01, 01b, item 4): a 34px header on card that stays as the body scrolls, 40px rows, a handle on each column's left edge
-// and its divider down to the footer, then the footer's X de N and the ⇧↵ hint. The box fills the pane, so the dividers reach the footer
+// and its divider down to the footer, then the footer's X de N and the hint that explains the table. The box fills the pane, so the dividers reach the footer
 function ProjectGrid(props: ProjectGridProps) {
   const { view, visible, rows, sort, onSort, onDrag, onResize } = props;
   return (
@@ -136,7 +136,7 @@ function ProjectGrid(props: ProjectGridProps) {
       </ColumnScroll>
       <div className="flex h-8 shrink-0 items-center justify-between border-t px-3 text-muted-foreground text-xs">
         <span>{t('project.footer.count', { x: rows.length, n: view?.items.length ?? 0 })}</span>
-        <span>{t('project.footer.open')}</span>
+        <span>{t('project.footer.hint')}</span>
       </div>
     </div>
   );
