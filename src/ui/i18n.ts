@@ -1726,6 +1726,7 @@ const en = {
   'pr.block.merge.ready': 'ready · {method}', 'pr.block.merge.conflicts': 'conflicts', 'pr.block.merge.noPermission': 'no permission',
   'pr.block.base.merged.one': '{list} merged', 'pr.block.base.merged.other': '{list} merged', 'pr.block.base.waits': 'waits for #{n}', 'pr.block.and': 'and',
   'pr.block.closes.onMerge': 'on merge',
+  'pr.block.branch': 'branch', 'pr.block.you': 'you', // #68: this PR on a PR no task holds
   'pr.others': 'other PRs of the task', // #66: below the this PR block
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
@@ -3496,6 +3497,7 @@ const pt: Record<MessageKey, string> = {
   'pr.block.merge.ready': 'pronto · {method}', 'pr.block.merge.conflicts': 'conflitos', 'pr.block.merge.noPermission': 'sem permissão',
   'pr.block.base.merged.one': '{list} mergeado', 'pr.block.base.merged.other': '{list} mergeados', 'pr.block.base.waits': 'aguarda #{n}', 'pr.block.and': 'e',
   'pr.block.closes.onMerge': 'ao fazer merge',
+  'pr.block.branch': 'branch', 'pr.block.you': 'você',
   'pr.others': 'outros PRs da tarefa',
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
