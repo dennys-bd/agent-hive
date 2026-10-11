@@ -1730,6 +1730,9 @@ const en = {
   'pr.others': 'other PRs of the task', // #66: below the this PR block
   'pr.other.create': 'create task…', // #68: the PR without activity
   'pr.other.createBody': '#{n} is linked to a new task in the hive source, without sync: changes on GitHub do not reach the task.',
+  'pr.other.by': 'PR by {author}', 'pr.other.opened': 'opened {time} · no activity in the Hive', 'pr.other.requested': 'review requested from you',
+  'pr.other.note': 'create task links this PR to a new task in the hive source, without sync with GitHub.',
+  'pr.other.inFlow': 'in the flow', 'pr.other.noTask': 'no task in the flow', 'pr.other.taskLink': 'task ›',
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
   'pr.error.unexpected': 'Unexpected error.',
@@ -3503,6 +3506,9 @@ const pt: Record<MessageKey, string> = {
   'pr.others': 'outros PRs da tarefa',
   'pr.other.create': 'criar tarefa…',
   'pr.other.createBody': '#{n} fica ligado a uma tarefa nova na source hive, sem sync: mudanças no GitHub não chegam à tarefa.',
+  'pr.other.by': 'PR de {author}', 'pr.other.opened': 'abriu {time} · sem atividade no Hive', 'pr.other.requested': 'review pedido a você',
+  'pr.other.note': 'criar tarefa liga este PR a uma tarefa nova na source hive, sem sync com o GitHub.',
+  'pr.other.inFlow': 'no fluxo', 'pr.other.noTask': 'sem tarefa no fluxo', 'pr.other.taskLink': 'tarefa ›',
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
   'pr.error.unexpected': 'Erro inesperado.',

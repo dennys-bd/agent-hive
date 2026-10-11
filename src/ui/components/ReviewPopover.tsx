@@ -28,12 +28,16 @@ function EventOption({ choice, isChecked, isOff, onPick }: { choice: EventChoice
   );
 }
 
-export interface ReviewPopoverProps { pr: PrData; drafts: number; onSent(): void }
+export interface ReviewPopoverProps {
+  pr: PrData; drafts: number; onSent(): void;
+  trigger?: 'bar' | 'primary'; // #68: primary, the PR without activity's "review": a default button with no chevron
+}
 
 /** review (#758, handoff 03): an outline button with the pending drafts and ⌄ that opens a 380px popover on both tabs, Esc closing it: the
  * summary, comment / approve / request changes, how many drafts go along, send review. One review with that event, the summary and every
- * draft; GitHub's refusal stays in the popover; the page reads again either way. */
-export function ReviewPopover({ pr, drafts, onSent }: ReviewPopoverProps) {
+ * draft; GitHub's refusal stays in the popover; the page reads again either way. In the details panel's PR without activity (#68) the trigger
+ * is a primary button instead. */
+export function ReviewPopover({ pr, drafts, onSent, trigger = 'bar' }: ReviewPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [summary, setSummary] = useState('');
   const [event, setEvent] = useState<PrReviewEventInput>('comment');
@@ -51,13 +55,13 @@ export function ReviewPopover({ pr, drafts, onSent }: ReviewPopoverProps) {
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" size="xs" variant="outline">
+        <Button type="button" size="xs" variant={trigger === 'bar' ? 'outline' : 'default'}>
           {t('pr.review')}
-          {drafts > 0 && <span className="text-muted-foreground">{t('pr.review.pending', { n: drafts })}</span>}
-          <ChevronDownIcon />
+          {drafts > 0 && <span className={trigger === 'bar' ? 'text-muted-foreground' : 'opacity-70'}>{t('pr.review.pending', { n: drafts })}</span>}
+          {trigger === 'bar' && <ChevronDownIcon />}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-[380px] flex-col gap-2.5 p-3">
+      <PopoverContent align={trigger === 'bar' ? 'end' : 'start'} className="flex w-[380px] flex-col gap-2.5 p-3">
         <h3 className="font-semibold text-[13px]">{t('pr.review.title')}</h3>
         <Textarea aria-label={t('pr.review.summary')} placeholder={t('pr.review.summary')} value={summary} className="h-[72px]" onChange={(e) => setSummary(e.target.value)} />
         <fieldset aria-label={t('pr.review.title')} className="flex flex-col gap-1">
