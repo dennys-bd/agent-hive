@@ -33,7 +33,7 @@ export function prReadError(err: unknown): string {
 }
 
 const isPrReviewFile = (value: unknown): value is PrReviewFile => isObject(value) && Array.isArray(value.reviewed) && Array.isArray(value.drafts);
-const isChecksRead = (value: unknown): value is PrChecksRead => isObject(value) && typeof value.mergeState === 'string' && typeof value.updatedAt === 'string';
+export const isChecksRead = (value: unknown): value is PrChecksRead => isObject(value) && typeof value.mergeState === 'string' && typeof value.updatedAt === 'string';
 
 // The checks' poll (#758): while a check of the PR shown is pending and its page shows, GET …/checks every CHECKS_POLL_MS. A failed read waits
 // for the next one: a toast every 30 s would only nag

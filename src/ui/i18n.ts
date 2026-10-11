@@ -1627,6 +1627,8 @@ const en = {
   'issue.openPr': 'open PR ›',
   'issue.props.stage': 'stage', 'issue.props.labels': 'labels', 'issue.props.assignee': 'assignee',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
+  'issue.prs.open': 'open', // #65: the issue page's PRs list: "open" opens the PR, the marks' labels
+  'issue.prs.checks.success': 'checks passed', 'issue.prs.checks.failure': 'checks failed', 'issue.prs.checks.pending': 'checks running',
   'issue.edit': 'edit', 'issue.save': 'save', 'issue.cancel': 'cancel', // #757: the issue page's edit in place
   'issue.title': 'title',
   'issue.changed': 'the issue changed on GitHub; reloaded. your draft is still in the field.', 'issue.comment.placeholder': 'comment on the issue…', // #757: the issue page's comment box and labels
@@ -3383,6 +3385,8 @@ const pt: Record<MessageKey, string> = {
   'issue.openPr': 'abrir PR ›',
   'issue.props.stage': 'etapa', 'issue.props.labels': 'labels', 'issue.props.assignee': 'responsável',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
+  'issue.prs.open': 'abrir',
+  'issue.prs.checks.success': 'checks passaram', 'issue.prs.checks.failure': 'checks falharam', 'issue.prs.checks.pending': 'checks executando',
   'issue.edit': 'editar', 'issue.save': 'salvar', 'issue.cancel': 'cancelar',
   'issue.title': 'título',
   'issue.changed': 'a issue mudou no GitHub; recarregada. seu rascunho continua no campo.',  'issue.comment.placeholder': 'comentar na issue…',
