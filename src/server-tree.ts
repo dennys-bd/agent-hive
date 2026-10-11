@@ -26,7 +26,8 @@ const RENAME_OR_COPY = /^[RC]/;
 const MIN_ENTRY = 4; // `XY p`: two status letters, a space, at least one character of path
 const IGNORED_XY = '!!'; // #1: what a status run with --ignored says of an ignored path
 // #1: a nested repository's marks and what it ignores in one run; `matching` names an ignored folder `dir/` instead of every file under it
-const NESTED_STATUS_ARGS = ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching'];
+// --literal-pathspecs: a folder named `:(top)` or `*` is a name, not pathspec magic
+const NESTED_STATUS_ARGS = ['--literal-pathspecs', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching'];
 // HIVE-22: what git ignores, outermost: `dir/` for a folder it never walked into, a path for a file
 const IGNORED_ARGS = ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'];
 
@@ -178,8 +179,9 @@ async function folderEntries(root: string, path: string, folder: string, exec: E
   const repo = await nestedRepoOf(root, inTree, holdsGit);
   if (repo === undefined) return children;
   const inRepo = inTree === repo ? '' : inTree.slice(repo.length + 1);
-  const status = await git(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], exec);
-  return { ...children, repo: repoViewOf(status, inRepo, children) };
+  // A broken nested repository (a gitdir gone, dubious ownership) must not empty the folder: it reads as HIVE-22 showed it, dimmed
+  const status = await git(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], exec).catch(() => undefined);
+  return status === undefined ? children : { ...children, repo: repoViewOf(status, inRepo, children) };
 }
 
 // GET /activities/:id/tree/folder (HIVE-22): a folder's children from disk, what an expanded ignored folder shows. Any folder of the tree is

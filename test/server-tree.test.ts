@@ -46,7 +46,10 @@ async function startTree(t: TestContext, tasks: (repo: string) => WithWork[]): P
   const calls: [string, string[]][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, args]);
-    if (args.includes('--ignored=matching')) return { stdout: NESTED_STATUS };
+    if (args.includes('--ignored=matching')) {
+      if (args[2].endsWith('broken')) throw new Error('fatal: not a git repository');
+      return { stdout: NESTED_STATUS };
+    }
     if (args.includes('--ignored')) return { stdout: IGNORED };
     if (args.includes('--directory')) return { stdout: DIRS };
     if (args.includes('ls-files')) return { stdout: LISTED };
@@ -195,10 +198,20 @@ test('GET /activities/:id/tree/folder answers a nested repository\'s marks and i
   const folder = (path: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder?path=${encodeURIComponent(path)}`);
   const res = await folder('docs/agent');
   assert.deepEqual([res.status, await res.json()], [200, { files: ['bar.md', 'foo.md', 'x.log'], folders: [], repo: { marks: { 'foo.md': 'M' }, ignored: ['x.log'] } }]);
-  assert.deepEqual(f.calls, [['git', ['--no-optional-locks', '-C', join(wt, 'docs'), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--', 'agent']]]);
+  assert.deepEqual(f.calls, [['git', ['--no-optional-locks', '-C', join(wt, 'docs'), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', '--literal-pathspecs', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--', 'agent']]]);
+  f.calls.length = 0;
+  // a path written with `..` finds the same repository and pathspec
+  assert.deepEqual((await (await folder('src/../docs/agent')).json()).repo, { marks: { 'foo.md': 'M' }, ignored: ['x.log'] });
+  assert.deepEqual(f.calls.map(([, args]) => [args[2], args.at(-1)]), [[join(wt, 'docs'), 'agent']]);
   f.calls.length = 0;
   assert.deepEqual(await (await folder('src')).json(), { files: ['b.ts'], folders: [] });
   assert.deepEqual(f.calls, []);
+  // a nested repository whose status fails still lists its folder, without marks
+  await mkdir(join(wt, 'broken'), { recursive: true });
+  await writeFile(join(wt, 'broken', '.git'), 'gitdir: gone');
+  await writeFile(join(wt, 'broken', 'a.md'), 'a');
+  const broken = await folder('broken');
+  assert.deepEqual([broken.status, await broken.json()], [200, { files: ['a.md'], folders: [] }]);
 });
 
 test('POST /activities/:id/reveal with a path shows that item, by its real path; one outside the root or a bad path runs nothing (#818)', async (t) => {
