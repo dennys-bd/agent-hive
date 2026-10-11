@@ -21,7 +21,7 @@ interface HandleProps { label: string; width: number; right: number; onDrag(widt
 
 // A column's handle (handoff item 4): 9px on the column's left edge, centred on the gap, its 1px line at the centre. Dragging right narrows
 // the column at its right (the handoff's w0 - dx) and the fluid title takes up the difference. The width follows the pointer from where the
-// drag began and is saved once, on release: a save per move would rewrite the view state on every pixel. A double-click hands back the default
+// drag began and is saved once, on release: a save per move would rewrite the view state on every pixel. A double-click hands back the default.
 function ResizeHandle({ label, width, right, onDrag, onResize }: HandleProps) {
   const drag = useRef<{ x: number; width: number; last: number } | undefined>(undefined);
   const end = (isKept: boolean): void => {
@@ -34,7 +34,7 @@ function ResizeHandle({ label, width, right, onDrag, onResize }: HandleProps) {
     // biome-ignore lint/a11y/useSemanticElements: an <hr> cannot take pointer drags; a separator between columns is the splitter pattern
     <span
       role="separator" aria-orientation="vertical" aria-label={t('project.col.resize', { column: label })}
-      className="group pointer-events-auto absolute inset-y-0 -mr-1 w-[9px] cursor-col-resize" style={{ right }}
+      className="group pointer-events-auto absolute inset-y-0 -mr-1 w-[9px] cursor-col-resize touch-none select-none" style={{ right }}
       onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, width, last: width }; }}
       onPointerMove={(e) => {
         if (!drag.current) return;
@@ -83,8 +83,8 @@ function BodyDividers({ columns, trailing }: { columns: WidthColumn[]; trailing?
 export function ColumnScroll({ columns, trailing, hasRows, children }: { columns: WidthColumn[]; trailing?: number; hasRows: boolean; children: ReactNode }) {
   const scroller = useNavScroll(); // #911: a back restores this table's scroll
   return (
-    <div ref={scroller} className="min-h-0 flex-1 overflow-auto [scrollbar-width:none]">
-      <div className="relative min-h-full" style={{ minWidth: tableMinWidth(columns, trailing) }}>
+    <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto [scrollbar-width:none]">
+      <div className="relative flex-1" style={{ minWidth: tableMinWidth(columns, trailing) }}>
         {children}
         {hasRows && <BodyDividers columns={columns} trailing={trailing} />}
       </div>
