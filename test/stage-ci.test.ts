@@ -304,3 +304,25 @@ test('a failed wait with a failed transition takes it with the logs on the recor
   const { state } = failedOf(collecting, ['build'], 'build log');
   assert.deepEqual([state.tasks[0].stage, live(state)?.ci, live(state)?.stopped, outputOf(state)], ['review', undefined, undefined, 'build log']);
 });
+
+test('a read writes the considered checks for the running block; a check that changes state writes them again; the same read twice keeps the activity (#914)', () => {
+  const T0 = '2026-10-10T10:00:00Z';
+  const build = check('build', 'success', { startedAt: T0, at: '2026-10-10T10:01:30Z' });
+  const running = [build, check('test', 'pending', { startedAt: '2026-10-10T10:02:00Z' }), check('lint', 'pending')];
+  const first = read(polled().state, [pr(running)]).state;
+  assert.deepEqual(live(first)?.ci?.checks, [
+    { name: 'build', state: 'success', startedAt: T0, completedAt: '2026-10-10T10:01:30Z' },
+    { name: 'test', state: 'pending', startedAt: '2026-10-10T10:02:00Z' },
+    { name: 'lint', state: 'pending' },
+  ]);
+  assert.equal(live(read(first, [pr(running)]).state), live(first), 'nothing new to save');
+  const moved = read(first, [pr([build, check('test', 'success', { startedAt: '2026-10-10T10:02:00Z', at: '2026-10-10T10:04:00Z' }), check('lint', 'pending')])]).state;
+  assert.deepEqual(live(moved)?.ci?.checks?.map((c) => [c.name, c.state]), [['build', 'success'], ['test', 'success'], ['lint', 'pending']]);
+});
+
+test('a failure re-run keeps its ✕ line on the wait while the re-run is awaited; the input is never mutated (#914)', () => {
+  const s = deepFreeze(polled({ rerunOnce: true }).state);
+  const asked = read(s, [pr([check('build', 'failure', { runId: 11, startedAt: '2026-10-10T10:00:00Z', at: '2026-10-10T10:01:00Z' }), check('lint', 'pending')])]).state;
+  assert.deepEqual(live(asked)?.ci?.checks?.map((c) => [c.name, c.state]), [['build', 'failure'], ['lint', 'pending']]);
+  assert.deepEqual(live(asked)?.ci?.reran, ['h1']);
+});

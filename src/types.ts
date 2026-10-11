@@ -413,6 +413,9 @@ export interface CiCheck extends PrCheck { pr: string; runId?: number }
 export interface CiPrRead { url: string; head: string; required?: string[]; checks: CiCheck[]; awaiting?: string[]; canPush?: boolean }
 /** A failed Actions run to re-run (#834), by its repository (owner/name) and id. */
 export interface CiRerun { repo: string; runId: number }
+/** One considered check as the running block shows it (#914): completedAt only once it finished; url only an https link. */
+export interface StageCiCheck { name: string; state: PrCheck['state']; url?: string; startedAt?: string; completedAt?: string }
+
 /** A wait-for-CI stage in flight (#834): when it started (the timeout's clock), the head commits whose failures were re-run, the last read's
  * count for the card, and the flags that keep a read from acting twice. Persisted: the wait goes on after a boot. */
 export interface StageCi {
@@ -423,6 +426,7 @@ export interface StageCi {
   fellBack?: true; // required fell back to all and the event log said so, once
   awaiting?: number; // #854: workflows awaiting a maintainer's approval at the last read, for the card; dropped by a read without any
   noRerun?: true; // #854: a failure rerunOnce could not re-run (no push rights): the wait holds for a new push or a maintainer
+  checks?: StageCiCheck[]; // #914: the last read's considered checks, ordered for the running block; not persisted, the next read writes them
 }
 /** How a wait-for-CI stage's failure starts on its activity's error (#834), the failed checks after it: the card shows it in the viewer's language. */
 export const CI_FAILED = 'CI failed: ';
@@ -751,7 +755,7 @@ export interface PrComment { id: string; author: string; at: string; text: strin
 export interface PrThread { id: string; anchor: LineAnchor; outdated: boolean; resolved: boolean; subject: 'line' | 'file'; more: boolean; comments: PrComment[] }
 /** A check on a PR's head commit (#758): a check run or a status context, as success, failure or pending; url: its page on GitHub; at: when
  * it completed (a status context: when it was set). */
-export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string }
+export interface PrCheck { name: string; state: 'success' | 'failure' | 'pending'; url?: string; at?: string; startedAt?: string } // startedAt: a CheckRun's startedAt, or a pending StatusContext's createdAt (#914)
 /** The head commit's checks (#758): GitHub's rollup state, the latest completion, each check; awaiting: the workflows awaiting a maintainer's
  * approval (#854). */
 export interface PrChecks { state: PrCheck['state']; at?: string; items: PrCheck[]; awaiting?: string[] }
