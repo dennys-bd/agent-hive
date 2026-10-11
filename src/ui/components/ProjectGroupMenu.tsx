@@ -34,7 +34,8 @@ export function ProjectGroupMenu({ options, groupBy, onChange }: ProjectGroupMen
 export function ProjectGroupRow({ group, isCollapsed, onToggle }: { group: ProjectGroup; isCollapsed: boolean; onToggle(): void }) {
   const Chevron = isCollapsed ? ChevronRightIcon : ChevronDownIcon;
   return (
-    <tr className="flex h-8 items-center border-b px-3 text-muted-foreground text-xs">
+    // opaque and stacked above the dividers' overlay, so a divider stops at it (#59); the header's full look is 3.2's
+    <tr className="relative z-[1] flex h-8 items-center border-b bg-background px-3 text-muted-foreground text-xs">
       <td className="min-w-0 flex-1">
         <button type="button" aria-expanded={!isCollapsed} onClick={onToggle} className="flex w-full min-w-0 items-center gap-1.5">
           <Chevron aria-hidden="true" className="size-3.5 shrink-0" />

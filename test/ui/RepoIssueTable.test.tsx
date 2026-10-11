@@ -1,10 +1,11 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { resetRepoIssues } from '@/hooks/use-repo-issues';
 import { setLanguage } from '@/i18n';
+import { readView } from '@/lib/view-state';
 import type { RepoIssue, RepoIssues, RepoSummary, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
@@ -19,6 +20,8 @@ const OPEN: RepoIssues = {
   issues: [issue(12, { labels: ['bug'], assignees: ['ana'] }), issue(30, { pullRequests: [{ number: 7, url: 'https://github.com/acme/site/pull/7', state: 'open', draft: true }] })],
 };
 const CLOSED: RepoIssues = { state: 'closed', total: 1, truncated: false, issues: [issue(4)] };
+const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://github.com/acme/other' };
+const EMPTY: RepoIssues = { state: 'open', total: 0, truncated: false, issues: [] };
 // #12 is a task of roadmap, sitting in dev
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const state: State = {
@@ -31,6 +34,7 @@ const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Re
   const url = String(input);
   if (url === '/repositories/acme/site/issues?state=open') return jsonRes(OPEN);
   if (url === '/repositories/acme/site/issues?state=closed') return jsonRes(CLOSED);
+  if (url === '/repositories/acme/other/issues?state=open') return jsonRes(EMPTY);
   return jsonRes(url === '/repositories' ? [SITE] : { ok: true });
 };
 const fetchMock = vi.fn(answer);
@@ -118,4 +122,51 @@ test('a row click and ↵ on a focused row open its issue page; ⇧↵ opens it 
   expect(open).toHaveBeenCalledWith('https://github.com/acme/site/issues/12', '_blank', 'noreferrer');
   expect(onOpen).toHaveBeenCalledTimes(2);
   open.mockRestore();
+});
+
+const tracks = (): string[] => screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ');
+const handle = (name: string): HTMLElement => screen.getByRole('separator', { name: `redimensionar ${name}` });
+const lines = (): string[] => [...screen.getByTestId('column-dividers').children].map((line) => (line as HTMLElement).style.right);
+
+test('each column but the issue has a handle on its left edge, a divider at the same offset; a drag saves the width for the repository\'s issues, a remount reads it, another repository keeps the defaults (#59)', async () => {
+  const { unmount } = renderTable();
+  await screen.findByText('Issue 12');
+  expect(tracks()).toEqual(['minmax(160px,1fr)', '132px', '40px', '112px', '120px', '80px']);
+  expect(screen.getAllByRole('separator').map((h) => h.getAttribute('aria-label'))).toEqual([
+    'redimensionar labels', 'redimensionar resp.', 'redimensionar no fluxo', 'redimensionar PR', 'redimensionar atualizado',
+  ]);
+  expect(handle('labels').style.right).toBe('550px'); // 18 + 4×12 + 484
+  expect(lines()).toEqual(['550px', '406px', '354px', '230px', '98px']);
+  const scroller = screen.getByRole('table').parentElement?.parentElement;
+  expect(scroller).toHaveClass('[scrollbar-width:none]');
+  expect(scroller?.parentElement).toHaveClass('flex-1');
+  fireEvent.pointerDown(handle('labels'), { pointerId: 1, clientX: 100 });
+  fireEvent.pointerMove(handle('labels'), { pointerId: 1, clientX: 130 });
+  fireEvent.pointerUp(handle('labels'), { pointerId: 1, clientX: 130 });
+  expect(tracks()[1]).toBe('102px');
+  expect(rowOf('Issue 12').style.gridTemplateColumns).toBe(tracks().join(' '));
+  expect(readView('repoLists')).toEqual({ 'acme/site': { issues: { labels: 102 } } });
+  unmount();
+  const again = renderTable();
+  await screen.findByText('Issue 12');
+  expect(tracks()[1]).toBe('102px');
+  again.unmount();
+  render(<RepoIssueTable state={state} summary={OTHER} onTab={vi.fn()} />);
+  await waitFor(() => expect(screen.queryByText('lendo…')).not.toBeInTheDocument());
+  expect(tracks()[1]).toBe('132px');
+});
+
+test('an empty list, or a search that leaves no row, draws no body divider; the handles stay (#59)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = renderTable();
+  await screen.findByText('Issue 12');
+  expect(screen.getByTestId('column-dividers')).toBeInTheDocument();
+  await user.type(screen.getByRole('textbox', { name: 'buscar no repositório' }), 'nada');
+  expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('separator')).toHaveLength(5);
+  unmount();
+  render(<RepoIssueTable state={state} summary={OTHER} onTab={vi.fn()} />);
+  await waitFor(() => expect(screen.queryByText('lendo…')).not.toBeInTheDocument());
+  expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('separator')).toHaveLength(5);
 });

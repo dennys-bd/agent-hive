@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { mergeCell } from '@/components/RepoPrRow';
@@ -6,6 +6,7 @@ import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { resetRepoIssues } from '@/hooks/use-repo-issues';
 import { setLanguage } from '@/i18n';
+import { readView, resetViewState } from '@/lib/view-state';
 import type { PrRow, RepoPrs, RepoSummary, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
@@ -17,6 +18,8 @@ const OPEN: RepoPrs = {
   rows: [row(7, { checks: 'success', decision: 'approved' }), row(8, { isDraft: true, mergeState: 'draft' }), row(9, { checks: 'failure', decision: 'changes', mergeState: 'conflicts' })],
 };
 const MERGED: RepoPrs = { canPush: true, counts: { open: 3, merged: 1, closed: 0 }, truncated: true, rows: [row(5, { state: 'merged', mergeState: 'unknown' })] };
+const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://github.com/acme/other' };
+const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, rows: [] };
 // #12 is a task of roadmap whose stack is #6 (merged) then #7
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const STACK = [{ url: `${LINK}6`, state: 'merged' as const, slice: { k: 1, type: 'stacked' as const } }, { url: `${LINK}7`, state: 'open' as const, slice: { k: 2, type: 'stacked' as const } }];
@@ -30,6 +33,7 @@ const jsonRes = (body: unknown): Response => new Response(JSON.stringify(body), 
 const answer = async (input: RequestInfo | URL): Promise<Response> => {
   const url = String(input);
   if (url === '/repositories/acme/site/pulls?state=open') return jsonRes(OPEN);
+  if (url === '/repositories/acme/other/pulls?state=open') return jsonRes(EMPTY);
   return jsonRes(url === '/repositories/acme/site/pulls?state=merged' ? MERGED : { ok: true });
 };
 const fetchMock = vi.fn(answer);
@@ -114,12 +118,14 @@ test('a fork whose workspace sends PRs to the original shows the empty states wi
   const FORK: RepoSummary = { ...SITE, repository: 'me/site', role: 'fork', pr: 'original', fork: { parent: 'acme/site' }, canPush: true, issuesEnabled: false };
   const prs = render(<RepoPrTable state={state} summary={FORK} onTab={vi.fn()} onRepository={onRepository} />);
   expect(screen.getByText('nenhum PR em me/site. neste workspace, os PRs dos agentes vão para o original.')).toBeInTheDocument();
+  expect(screen.queryAllByRole('separator')).toHaveLength(0); // ForkEmpty renders no table
   expect(screen.getByRole('tab', { name: /issues/ })).toHaveTextContent('issues —');
   await user.click(screen.getByRole('button', { name: 'abrir acme/site ›' }));
   expect(onRepository).toHaveBeenCalledWith('acme/site');
   prs.unmount();
   const issues = render(<RepoIssueTable state={state} summary={FORK} onTab={vi.fn()} onRepository={onRepository} />);
   expect(screen.getByText('as issues estão desativadas em me/site. as issues deste workspace ficam no original.')).toBeInTheDocument();
+  expect(screen.queryAllByRole('separator')).toHaveLength(0); // ForkEmpty renders no table
   issues.unmount();
   fetchMock.mockImplementation(async () => jsonRes({ ...OPEN, canPush: false, rows: [row(7, { checks: 'awaiting', decision: 'approved' })] }));
   render(<RepoPrTable state={state} summary={{ ...SITE, role: 'original', pr: 'original' }} onTab={vi.fn()} />);
@@ -135,4 +141,33 @@ test('a PR whose checks still run shows the spinner in the waiting tone, not a d
   expect(spinner?.parentElement).toHaveClass('text-waiting');
   expect(spinner).toHaveClass('animate-spin', 'motion-reduce:animate-none');
   expect(rowOf('PR 7').queryByText('●')).toBeNull();
+});
+
+const tracks = (): string[] => screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ');
+const handle = (name: string): HTMLElement => screen.getByRole('separator', { name: `redimensionar ${name}` });
+
+test('a drag on a PR column\'s left-edge handle saves its width for the repository\'s PRs and keeps its issues\' widths; a remount reads it; another repository, empty, keeps the defaults and draws no body divider (#59)', async () => {
+  resetViewState({ repoLists: { 'acme/site': { issues: { labels: 102 } } } });
+  const { unmount } = renderTable();
+  await screen.findByText('PR 7');
+  expect(tracks()).toEqual(['minmax(160px,1fr)', '80px', '56px', '120px', '112px', '56px', '64px', '80px']);
+  expect(screen.getAllByRole('separator').map((h) => h.getAttribute('aria-label'))).toEqual([
+    'redimensionar estado', 'redimensionar checks', 'redimensionar review', 'redimensionar merge', 'redimensionar pilha', 'redimensionar tarefa', 'redimensionar atualizado',
+  ]);
+  expect(screen.getByTestId('column-dividers').children).toHaveLength(7);
+  fireEvent.pointerDown(handle('review'), { pointerId: 1, clientX: 0 });
+  fireEvent.pointerMove(handle('review'), { pointerId: 1, clientX: -40 });
+  fireEvent.pointerUp(handle('review'), { pointerId: 1, clientX: -40 });
+  expect(tracks()[3]).toBe('160px'); // dragged left: wider
+  expect(readView('repoLists')).toEqual({ 'acme/site': { issues: { labels: 102 }, prs: { review: 160 } } });
+  unmount();
+  const again = renderTable();
+  await screen.findByText('PR 7');
+  expect(tracks()[3]).toBe('160px');
+  again.unmount();
+  render(<RepoPrTable state={state} summary={OTHER} onTab={vi.fn()} />);
+  await waitFor(() => expect(screen.queryByText('lendo…')).not.toBeInTheDocument());
+  expect(tracks()[3]).toBe('120px');
+  expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('separator')).toHaveLength(7);
 });

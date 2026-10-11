@@ -1,18 +1,24 @@
 import { useState } from 'react';
 import { taskOfIssue } from '../../repos/issue-task';
 import type { RepoIssue, RepoIssues, RepoSummary, State } from '../../types';
+import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { ForkEmpty } from '@/components/ForkEmpty';
 import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoIssueRow } from '@/components/RepoIssueRow';
-import { useNavScroll } from '@/hooks/use-back-stack';
 import { useRepoIssues } from '@/hooks/use-repo-issues';
 import { reloadRepositories } from '@/hooks/use-repositories';
 import { type MessageKey, t } from '@/i18n';
+import { gridTemplate, type WidthColumn, withWidths } from '@/lib/column-widths';
+import { readRepoListWidths, writeRepoListWidths } from '@/lib/repo-list-views';
 
-const COLUMNS = 'minmax(0,1fr) 132px 40px 112px 120px 80px'; // handoff 02: issue · labels · resp. · in the flow · PR · updated
+interface ListColumn extends WidthColumn { head: MessageKey }
+// handoff 02's widths (the handoff gives no defaults of its own for the lists): labels · resp. · in the flow · PR · updated, after the issue
+const COLUMNS: ListColumn[] = [
+  { key: 'labels', width: 132, head: 'repos.col.labels' }, { key: 'assignee', width: 40, head: 'repos.col.assignee' },
+  { key: 'flow', width: 112, head: 'repos.col.flow' }, { key: 'pr', width: 120, head: 'repos.col.pr' }, { key: 'updated', width: 80, head: 'repos.col.updated' },
+];
 const SUBBAR = 'flex h-10 shrink-0 items-center gap-3 px-3.5 text-muted-foreground text-xs';
-const HEAD: MessageKey[] = ['repos.col.issue', 'repos.col.labels', 'repos.col.assignee', 'repos.col.flow', 'repos.col.pr', 'repos.col.updated'];
 type IssueState = RepoIssues['state'];
 
 // The search (#757): the title or #number, case-insensitive, over the issues read in the current state
@@ -42,25 +48,34 @@ function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
   );
 }
 
-// The table (handoff 02): a 34px header on card, 40px rows, then the footer's X de N and the ↵ hint
-function IssueGrid({ rows, total, state, onOpen }: { rows: RepoIssue[]; total: number; state: State; onOpen?(issue: RepoIssue): void }) {
-  const scroller = useNavScroll(); // #911
+// The table (handoff 02): a 34px header on card with a handle on each column's left edge, 40px rows, the dividers down to the footer, then
+// the footer's X de N and the ↵ hint. Widths are saved per repository; the box fills the pane
+function IssueGrid({ repository, rows, total, state, onOpen }: { repository: string; rows: RepoIssue[]; total: number; state: State; onOpen?(issue: RepoIssue): void }) {
+  const [saved, setSaved] = useState(() => readRepoListWidths(repository, 'issues'));
+  const { widths, onDrag, onResize } = useColumnWidths(saved, (next) => {
+    setSaved(next);
+    writeRepoListWidths(repository, 'issues', next);
+  });
+  const columns = withWidths(COLUMNS, widths);
+  const template = gridTemplate(columns);
   return (
-    <div className="mx-3.5 mb-3.5 flex min-h-0 flex-col overflow-hidden rounded-[10px] border">
-      <div ref={scroller} className="min-h-0 overflow-auto">
+    <div className="mx-3.5 mb-3.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border">
+      <ColumnScroll columns={columns} hasRows={rows.length > 0}>
         <table className="block w-full">
           <thead className="block">
-            <tr className="grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: COLUMNS }}>
-              {HEAD.map((key) => <th key={key} className="min-w-0 truncate text-left font-normal">{t(key)}</th>)}
+            <tr className="relative grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: template }}>
+              <th className="min-w-0 truncate text-left font-normal">{t('repos.col.issue')}</th>
+              {columns.map((c) => <th key={c.key} className="min-w-0 truncate text-left font-normal">{t(c.head)}</th>)}
+              <HeaderHandles columns={columns} labelOf={(c) => t(c.head)} onDrag={onDrag} onResize={onResize} />
             </tr>
           </thead>
           <tbody className="block">
             {rows.map((issue) => (
-              <RepoIssueRow key={issue.number} issue={issue} task={taskOfIssue(state.tasks, issue.url)} columns={COLUMNS} state={state} onOpen={onOpen} />
+              <RepoIssueRow key={issue.number} issue={issue} task={taskOfIssue(state.tasks, issue.url)} columns={template} state={state} onOpen={onOpen} />
             ))}
           </tbody>
         </table>
-      </div>
+      </ColumnScroll>
       <div className="flex h-8 shrink-0 items-center justify-between border-t px-3 text-muted-foreground text-xs">
         <span>{t('project.footer.count', { x: rows.length, n: total })}</span>
         <span>{t('repos.footer.open')}</span>
@@ -91,7 +106,7 @@ export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository }: 
       ) : (
         <>
           <Subbar summary={summary} value={issueState} onChange={setIssueState} issues={issues} isLoading={isLoading} />
-          <IssueGrid rows={rows} total={issues?.total ?? 0} state={state} onOpen={onOpen} />
+          <IssueGrid repository={summary.repository} rows={rows} total={issues?.total ?? 0} state={state} onOpen={onOpen} />
         </>
       )}
     </div>
