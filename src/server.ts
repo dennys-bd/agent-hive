@@ -46,6 +46,7 @@ import { registerApprovalRoutes } from './server-approval.js';
 import { registerDecompositionRoutes } from './server-decomposition.js';
 import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerProjectRoutes } from './server-project.js';
+import { registerBlockerRoutes } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -1059,6 +1060,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
   registerProjectRoutes(app, { requireLive, dispatch, log }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll
+  registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log }); // GET /repositories and a repository's issues, read and written with the Hive's own login (#757)
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 
