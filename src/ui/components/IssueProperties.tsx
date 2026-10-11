@@ -12,6 +12,7 @@ import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { type FieldAnswer, useItemFields } from '@/hooks/use-item-fields';
+import type { Optimistic } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 import { workspaceColor } from '@/lib/workspace-color';
 
@@ -88,12 +89,13 @@ export interface IssuePropertiesProps {
   meta: string; // the source or owner/name the page was opened from: what fluxo…'s warning names
   onGoTo(taskId: string): void;
   onChanged(): Promise<void>; // the page's reload, after a label write
+  optimistic?: Optimistic; // #765 spike: the page's, for the label writes
 }
 
 /** propriedades (#757, handoff 01): the stage and the labels (#757), then the source's fields (#686), each edited and written at once. The
  * fields are read for the task's source item, or for the native view item the page was opened from. An issue in no source shows its
  * assignees read only. A task shows its source and its activity; an issue out of the flow shows fluxo… in the stage's place (handoff 02). */
-export function IssueProperties({ issue, task, state, locale, workspace, itemId, meta, onGoTo, onChanged }: IssuePropertiesProps) {
+export function IssueProperties({ issue, task, state, locale, workspace, itemId, meta, onGoTo, onChanged, optimistic }: IssuePropertiesProps) {
   const sourced = task?.item.source === undefined ? undefined : task;
   const fieldsItem = sourced?.item.itemId ?? itemId;
   const { fields, replace } = useItemFields(fieldsItem);
@@ -113,10 +115,10 @@ export function IssueProperties({ issue, task, state, locale, workspace, itemId,
             {issue.labels.map((label) => (
               <span key={label} className={`flex items-center ${CHIP}`}>
                 {label}
-                <button type="button" aria-label={t('issue.labels.remove', { label })} className="pl-1 hover:text-foreground" onClick={() => void writeLabels(issue, [], [label], onChanged)}>×</button>
+                <button type="button" aria-label={t('issue.labels.remove', { label })} className="pl-1 hover:text-foreground" onClick={() => void writeLabels(issue, [], [label], onChanged, optimistic)}>×</button>
               </span>
             ))}
-            <IssueLabelsPopover issue={issue} onChanged={onChanged} />
+            <IssueLabelsPopover issue={issue} onChanged={onChanged} optimistic={optimistic} />
           </Prop>
           {fieldsItem !== undefined && fields !== undefined
             ? <FieldRows itemId={fieldsItem} fields={fields} onWritten={(answer) => replace(fieldsItem, answer.fields)} />

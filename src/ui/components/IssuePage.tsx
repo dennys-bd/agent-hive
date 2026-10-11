@@ -22,7 +22,7 @@ export interface IssuePageProps {
  * and after every write, never polled. */
 export function IssuePage(props: IssuePageProps) {
   const { state, locale, issue: ref, meta, workspace, header, onGoTo } = props;
-  const { load, reload } = useIssue(ref.repository, ref.number);
+  const { load, reload, optimistic } = useIssue(ref.repository, ref.number);
   if (load.kind !== 'issue') {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -40,7 +40,7 @@ export function IssuePage(props: IssuePageProps) {
       <div className="flex min-h-0 flex-1">
         <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} />
         <IssueProperties
-          issue={issue} task={task} state={state} locale={locale} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload}
+          issue={issue} task={task} state={state} locale={locale} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload} optimistic={optimistic}
         />
       </div>
     </div>

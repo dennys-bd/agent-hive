@@ -5,19 +5,21 @@ import type { IssuePage } from '../../types';
 import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { issuePath } from '@/hooks/use-issue';
+import { issuePath, type Optimistic } from '@/hooks/use-issue';
 import { readQuotaJson } from '@/hooks/use-project';
 import { repoPath } from '@/hooks/use-repositories';
 import { t } from '@/i18n';
 
-/** A label write (#757): straight to GitHub; once it took it, the page reads the issue again. A refusal is act's toast. */
-export async function writeLabels(issue: IssuePage, add: string[], remove: string[], onChanged: () => Promise<void>): Promise<void> {
-  const answer = await act<unknown>(`${issuePath(issue.repository, issue.number)}/labels`, { add, remove });
-  if (answer !== undefined) await onChanged();
+/** A label write (#757): straight to GitHub. #765 spike: shown at once through `optimistic`; the reload after it reads the read model, which
+ * holds the write's answer when GitHub took it and the old labels when it refused (act toasts that): the confirmation or the rollback. */
+export async function writeLabels(issue: IssuePage, add: string[], remove: string[], onChanged: () => Promise<void>, optimistic?: Optimistic): Promise<void> {
+  optimistic?.((shown) => ({ ...shown, labels: [...shown.labels.filter((l) => !remove.includes(l)), ...add.filter((l) => !shown.labels.includes(l))] }));
+  await act<unknown>(`${issuePath(issue.repository, issue.number)}/labels`, { add, remove });
+  await onChanged();
 }
 
 /** labels + (#757, handoff 01): the repository's labels, read when the popover opens, as checkboxes; a toggle adds or removes at once. */
-export function IssueLabelsPopover({ issue, onChanged }: { issue: IssuePage; onChanged(): Promise<void> }) {
+export function IssueLabelsPopover({ issue, onChanged, optimistic }: { issue: IssuePage; onChanged(): Promise<void>; optimistic?: Optimistic }) {
   const [labels, setLabels] = useState<string[]>();
   const [isOpen, setIsOpen] = useState(false);
   const [hasFailed, setHasFailed] = useState(false);
@@ -42,7 +44,7 @@ export function IssueLabelsPopover({ issue, onChanged }: { issue: IssuePage; onC
             const isOn = issue.labels.includes(label);
             return (
               <label key={label} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted">
-                <input type="checkbox" checked={isOn} onChange={() => void writeLabels(issue, isOn ? [] : [label], isOn ? [label] : [], onChanged)} />
+                <input type="checkbox" checked={isOn} onChange={() => void writeLabels(issue, isOn ? [] : [label], isOn ? [label] : [], onChanged, optimistic)} />
                 {label}
               </label>
             );

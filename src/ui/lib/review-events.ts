@@ -9,8 +9,11 @@ function channel(): { on(listener: (key: string) => void): () => void; emit(key:
 
 const review = channel(); // a task's review file changed: its item id
 const prReview = channel(); // a PR's review file changed, or a write reached GitHub (#592): its link
+const readModel = channel(); // #765 spike: a repository's rows changed in the read model: its owner/name
 
 export const onReviewEvent = (listener: (taskId: string) => void): (() => void) => review.on(listener);
 export const emitReviewEvent = (taskId: string): void => review.emit(taskId);
 export const onPrReviewEvent = (listener: (url: string) => void): (() => void) => prReview.on(listener);
 export const emitPrReviewEvent = (url: string): void => prReview.emit(url);
+export const onReadModelEvent = (listener: (repository: string) => void): (() => void) => readModel.on(listener);
+export const emitReadModelEvent = (repository: string): void => readModel.emit(repository);
