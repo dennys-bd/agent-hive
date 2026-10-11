@@ -262,7 +262,7 @@ test('conventionsAnswer: a stage run reads its task\'s workspace and its stage\'
   const conventions: Conventions = { specsDir: 'docs/specs', delivery: 'stacked' };
   const config = {
     language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }, { name: 'site', path: '/site', env: {}, fork: null, conventions }] },
+    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, conventions }] },
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
@@ -418,7 +418,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
     if (args.includes('get-url')) return { stdout: urls[args.at(-1) ?? ''] ?? '' };
     return { stdout: args.includes('symbolic-ref') ? 'upstream/master\n' : '' };
   };
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' } };
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, memoryCap: 4000 };
   const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
   assert.deepEqual(await forkConventions(exec, app, {}), original);
   assert.deepEqual(await forkConventions(exec, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });

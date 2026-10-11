@@ -39,7 +39,7 @@ async function harness(t: AfterHost, setup: string, run: RunShell): Promise<Harn
   };
   const store = createConsoleStore(() => 1000);
   const ptys = createPtyHost(NO_PTY);
-  const workspace: Workspace = { name: 'hive', path: repo, env: {}, fork: null, setup };
+  const workspace: Workspace = { name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000, setup };
   return { deps: { exec, log: { info: () => undefined }, dispatch, ptys, consoleStore: store, run }, workspace, worktree, gitDir, events, store, ptys };
 }
 

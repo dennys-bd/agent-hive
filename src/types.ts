@@ -1041,6 +1041,7 @@ export interface Workspace {
   name: string; // WORKSPACE_NAME: safe in a URL segment and a select value; unique in the Comb
   path: string; // absolute, a git work tree's top level (POST /settings checks it); unique in the Comb
   env: Record<string, string>; // in the env of every run of this workspace (#348, #738): workers, sessions, terminals, run commands, setup and teardown RUN steps; a command's own env overrides a name; names match ENV_NAME and are not in RESERVED_ENV_NAMES; never logged
+  memoryCap: number; // #73: required, no default; the sum of this workspace's lesson texts, MEMORY_CAP_MIN..MEMORY_CAP_MAX
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
@@ -1708,6 +1709,9 @@ export interface MemoryFile { nextId: number; entries: MemoryEntry[] } // empty:
 /** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the entries' text lengths */
 export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number; textMax: number }
 export const MEMORY_CAP = 4000; // characters: the sum of a workspace's lesson texts; a candidate setting in docs/agent/settings-candidates.md
+export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least one full lesson (MEMORY_TEXT_MAX)
+export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
+export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default
 export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;
 export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];

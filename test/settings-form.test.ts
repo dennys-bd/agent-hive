@@ -32,7 +32,7 @@ const CONFIG: Config = {
   auth: { github: 'api' },
   comb: {
     prefix: 'HIVE',
-    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }],
+    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }],
     commands: [FRONT], hiveSource: true, createIn: 'hive',
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     transitions: TRANSITIONS,
@@ -68,7 +68,7 @@ const withoutId = <T extends { id: string }>(draft: T): Omit<T, 'id'> => {
   const { id: _id, ...rest } = draft;
   return rest;
 };
-const NO_SETUP = { setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '' }; // a workspace row's worktree setup and teardown fields (#299, #654) and conventions (#692), empty
+const NO_SETUP = { setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000' }; // a workspace row's worktree setup and teardown fields (#299, #654) and conventions (#692), empty
 
 test('draftFrom fills every field as strings from a github config, and defaults an empty setup', () => {
   const github = draftFrom(info(CONFIG));
@@ -164,7 +164,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.deepEqual(body, {
     hiveSource: true, createIn: 'hive',
     prefix: 'HIVE',
-    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }],
+    workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }],
     commands: [FRONT],
     auth: { github: 'api' },
     sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
@@ -317,7 +317,7 @@ test('the workspaces: the saved rows, else one row named after the proposed fold
   assert.deepEqual(validateSettings({ ...valid, workspaces: [valid.workspaces[0], { ...site, name: ' hive ' }] }), { section: 'workspaces', message: t('settings.error.workspaceDuplicate', { name: 'hive' }) });
   assert.equal(validateSettings({ ...valid, workspaces: [{ ...site, path: '' }], budgetHour: 'x' })?.section, 'rules', 'the limits are still checked first');
   assert.equal(validateSettings({ ...valid, workspaces: [{ ...site, path: '' }], branch: 'feat/{title}' })?.message, t('settings.error.workspaces', { n: 1 }), 'before the branch');
-  assert.deepEqual(toSettingsBody({ ...valid, workspaces: [{ ...site, name: ' site ', path: ' /site ' }, valid.workspaces[0]] }).workspaces, [{ name: 'site', path: '/site', env: {}, fork: null }, { name: 'hive', path: '/repo', env: {}, fork: null }]);
+  assert.deepEqual(toSettingsBody({ ...valid, workspaces: [{ ...site, name: ' site ', path: ' /site ' }, valid.workspaces[0]] }).workspaces, [{ name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 }, { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }]);
 });
 
 test('env rows (#348, #511): a blank row is dropped, the name trimmed, the value kept as typed, in the workspace and in a command; a bad name stops the save on workspaces, the workspace env first', () => {
@@ -496,10 +496,10 @@ test('a renamed source row (#278): savedName holds the loaded name, the body sen
 
 test('a workspace row carries its worktree setup as typed and its timeout per step as a timeout text; a blank field sends no key (#299, #511)', () => {
   const setup = 'COPY .env\nRUN pnpm install\n';
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, setup, setupTimeout: '5m' }] } }));
-  assert.deepEqual(saved.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], setup, setupTimeout: '5m', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '' }]);
-  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setupTimeout: ' 10m ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, setup, setupTimeout: '10m' }], 'as typed: the line numbers the server names are the textarea\'s');
-  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setup: ' \n ', setupTimeout: '' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null }]);
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup, setupTimeout: '5m' }] } }));
+  assert.deepEqual(saved.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], setup, setupTimeout: '5m', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000' }]);
+  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setupTimeout: ' 10m ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup, setupTimeout: '10m' }], 'as typed: the line numbers the server names are the textarea\'s');
+  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setup: ' \n ', setupTimeout: '' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }]);
 });
 
 test('a timeout per step that is not a timeout text stops the save on workspaces, naming the workspace (#511)', () => {
@@ -598,11 +598,18 @@ test('validateSettings refuses a wait for CI under só estes with no check, and 
 
 test('a workspace row keeps its fork and its own base branch through the draft; an empty base branch sends no key; a new row starts undecided (#854)', () => {
   const fork = { remote: 'upstream', pr: 'fork' as const, sync: 'manual' as const };
-  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork, baseBranch: 'devtest' }] } }));
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork, memoryCap: 4000, baseBranch: 'devtest' }] } }));
   assert.deepEqual([saved.workspaces[0].fork, saved.workspaces[0].baseBranch], [fork, 'devtest']);
-  assert.deepEqual(toSettingsBody(saved).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork, baseBranch: 'devtest' }]);
-  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], fork: false, baseBranch: ' ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: false }]);
+  assert.deepEqual(toSettingsBody(saved).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork, memoryCap: 4000, baseBranch: 'devtest' }]);
+  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], fork: false, baseBranch: ' ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: false, memoryCap: 4000 }]);
   assert.deepEqual([emptyWorkspace().fork, emptyWorkspace().baseBranch], [null, '']);
+});
+
+test('a workspace row keeps its memory total limit as typed through the draft and sends it as a number; a new row starts at 4000 (#73)', () => {
+  const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 6000 }] } }));
+  assert.equal(saved.workspaces[0].memoryCap, '6000');
+  assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], memoryCap: ' 12000 ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 12000 }]);
+  assert.equal(emptyWorkspace().memoryCap, '4000');
 });
 
 test('the form loads the saved transitions by stage id and sends them back; a broken one is refused on the flow section, named as the chart names it, with its id (#134, #918)', () => {

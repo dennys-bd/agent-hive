@@ -147,7 +147,7 @@ test('a local activity\'s diff and files still answer 409: only the tree routes 
 
 // A save removes a workspace's local activity with it (withLocalActivities), so the route cannot reach this; treeRoot still refuses it
 test('treeRoot resolves a local activity to its frozen workspace\'s checkout, and one whose workspace left the config to a 404 (#633)', () => {
-  const config: Pick<Config, 'comb'> = { comb: { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' } };
+  const config: Pick<Config, 'comb'> = { comb: { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' } };
   const state = withLocal(withLocal({ ...initialState(0), workspaces: ['hive', 'site'] }, 'hive'), 'site');
   assert.equal(treeRoot(state, config, localActivityId('hive')), '/repo');
   assert.deepEqual(treeRoot(state, config, localActivityId('site')), { status: 404, message: UNKNOWN_WORKSPACE_MESSAGE });
