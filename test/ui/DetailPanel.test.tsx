@@ -6,7 +6,7 @@ import { FileOpenerContext, type OpenFile } from '@/components/terminal-tabs';
 import type { CommentsState } from '@/hooks/use-comments';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import type { ActivityRecord, Stage, StageCommands, TaskFile, TaskPr, Shortcuts, Worker, State } from '../../src/types';
+import type { ActivityRecord, Stage, StageCommands, TaskFile, TaskPr, Shortcuts, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork, withTasks, movedWork, withWork } from '../fixtures/work';
 
@@ -515,4 +515,20 @@ test('while a commands stage runs, the running block takes the status box\'s pla
   rerender(<Panel state={IDLE} initial={TASK} />);
   expect(screen.queryByRole('region', { name: 'executando checks' })).not.toBeInTheDocument();
   expect(screen.getByText(/^etapa dev/)).toBeInTheDocument();
+});
+
+test('a task out of tries shows the exhausted block in place of the status box and no raw error line; with tries left the tentativas section sits under the status box (#916)', () => {
+  const key = '["dev","verdict","failed"]';
+  const loop: Transition = { from: 'dev', to: 'dev', when: 'verdict', verdict: 'failed', maxTries: 3 };
+  const at = '2026-10-11T10:00:00.000Z';
+  const out = withWork({ ...IDLE, transitions: [loop] }, 'I1', { stopped: true, error: 'tries out: verdict:failed · 3', tries: { [key]: 3 } }, { sessions: RAN[0].sessions });
+  const { unmount } = render(<Panel state={out} initial={TASK} />);
+  expect(screen.getByRole('region', { name: 'tentativas esgotadas' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  unmount();
+  const left = withWork({ ...IDLE, transitions: [loop] }, 'I1', { via: key, tries: { [key]: 1 }, tryLog: [{ transition: key, n: 1, max: 3, cause: 'lint', error: '', at, stage: 'dev' }] }, { sessions: RAN[0].sessions });
+  render(<Panel state={left} initial={TASK} />);
+  expect(screen.queryByRole('region', { name: 'tentativas esgotadas' })).not.toBeInTheDocument();
+  const tries = screen.getByText('tentativas').closest('details') as HTMLElement;
+  expect(before(screen.getAllByRole('region')[0], tries)).toBe(true); // the status box first, then the section
 });

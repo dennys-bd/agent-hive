@@ -9,6 +9,7 @@ import { CheckpointsList } from '@/components/CheckpointsList';
 import { CiNotice } from '@/components/CiProgress';
 import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
+import { ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import { useTaskFiles } from '@/hooks/use-task-files';
 import { type CommentsState, useComments } from '@/hooks/use-comments';
 import type { CenterMode } from '@/hooks/use-activity';
 import { t } from '@/i18n';
+import { isExhausted } from '@/lib/task-state';
 
 /** The task Detalhes shows. `fromActivity` (#457): picked through the Activities tab, so Detalhes follows it without opening its panel. */
 export interface Selection { taskId: string; fromActivity?: true }
@@ -50,18 +52,27 @@ function Comments({ comments, locale }: { comments: CommentsState; locale: strin
   );
 }
 
-// The scrolling body (redesign 06): the title, the task's error in full, which the flow's chip truncates (#482), the status box (or, while a wait for CI or a commands stage runs, the running block in its place, #914), the
+// The one status block (#914, #916): out of tries, the exhausted block; a wait for CI or a commands stage in flight, the running block; else the
+// status box
+function StatusBlock({ task, state, locale, isActivity }: { task: Task; state: State; locale: string; isActivity: boolean }) {
+  const live = activityOf(state, task.item.itemId);
+  if (isExhausted(task, state)) return <ExhaustedBlock task={task} state={state} locale={locale} />;
+  if (live?.ci !== undefined || live?.commands !== undefined) return <RunningBlock task={task} state={state} />;
+  return <StatusBox task={task} state={state} isActivity={isActivity} />;
+}
+
+// The scrolling body (redesign 06): the title, the task's error in full, which the flow's chip truncates (#482), the status block (the status box, the running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries section under it, the
 // metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
 function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProps) {
   const { item } = task;
   const live = activityOf(state, item.itemId); // the activity's (#629)
-  const error = live?.error;
-  const isRunning = live?.ci !== undefined || live?.commands !== undefined; // #914: a stage in flight with no agent gets the running block
+  const error = live?.error; // #916: not shown while the exhausted block says it in words
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-3.5 py-3.5">
       <h2 className="break-words font-semibold text-[15px] text-foreground leading-5">{taskLabel(task)}</h2>
-      {error && <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>}
-      {isRunning ? <RunningBlock task={task} state={state} /> : <StatusBox task={task} state={state} isActivity={isActivity} />}
+      {error && !isExhausted(task, state) && <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>}
+      <StatusBlock task={task} state={state} locale={locale} isActivity={isActivity} />
+      <TriesSection task={task} state={state} />
       <SyncBlock task={task} state={state} />
       <CiNotice task={task} state={state} />
       <MetaGrid task={task} state={state} isActivity={isActivity} />
