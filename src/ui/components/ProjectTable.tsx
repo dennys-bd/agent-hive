@@ -1,14 +1,15 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../types';
+import { ColumnScroll, HeaderHandles, useColumnWidths } from '@/components/ColumnDividers';
 import { FlowHeader, type SourceTabs } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
 import { ProjectRow } from '@/components/ProjectRow';
-import { useNavScroll } from '@/hooks/use-back-stack';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
-import { clampWidth, columnLabel, DATES, defaultColumns, FIELD_KEY, gridTemplate, minWidth, type ProjectColumn, projectColumns, withWidths } from '@/lib/project-columns';
+import { gridTemplate, withWidths } from '@/lib/column-widths';
+import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, type ProjectColumn, projectColumns } from '@/lib/project-columns';
 import { defaultCollapsed, groupItems, groupOptions, type ProjectGroup } from '@/lib/project-groups';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
@@ -57,48 +58,15 @@ function tasksByItem(tasks: Task[]): Map<string, Task> {
   return new Map([...origins, ...tasks.map((c): [string, Task] => [c.item.itemId, c])]);
 }
 
-/** A column's resize: `onDrag` draws a width while the pointer moves (undefined: the drag ended), `onResize` saves one (undefined: back to
- * the kind's width). */
-interface Resize { width: number; onDrag(width?: number): void; onResize(width?: number): void }
+interface HeadCellProps { id: string; label: string; sort?: ProjectSort; onSort(key: string): void }
 
-// A header's drag handle (addendum 2): 4px on its right edge, in the gap to the next column. The width follows the pointer from where the
-// drag began and is saved once, on release: a save per move would rewrite the view state and redraw every row on each pixel. A double-click
-// hands back the kind's width
-function ResizeHandle({ label, width, onDrag, onResize }: Resize & { label: string }) {
-  const drag = useRef<{ x: number; width: number; last: number } | undefined>(undefined);
-  const end = (isKept: boolean): void => {
-    const done = drag.current;
-    drag.current = undefined;
-    if (isKept && done !== undefined && done.last !== done.width) onResize(done.last);
-    onDrag(undefined);
-  };
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: an <hr> cannot take pointer drags; a separator between columns is the splitter pattern
-    <span
-      role="separator" aria-orientation="vertical" aria-label={t('project.col.resize', { column: label })}
-      className="absolute inset-y-0 -right-2 w-1 cursor-col-resize hover:bg-border"
-      onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, width, last: width }; }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        drag.current = { ...drag.current, last: clampWidth(drag.current.width + e.clientX - drag.current.x) };
-        onDrag(drag.current.last);
-      }}
-      onPointerUp={() => end(true)} onPointerCancel={() => end(false)}
-      onDoubleClick={() => onResize(undefined)}
-    />
-  );
-}
-
-interface HeadCellProps { id: string; label: string; sort?: ProjectSort; onSort(key: string): void; resize?: Resize }
-
-function HeadCell({ id, label, sort, onSort, resize }: HeadCellProps) {
+function HeadCell({ id, label, sort, onSort }: HeadCellProps) {
   const direction = sort?.key === id ? (sort.desc ? 'descending' : 'ascending') : undefined;
   return (
-    <th aria-sort={direction} className="relative min-w-0 text-left font-normal">
+    <th aria-sort={direction} className="min-w-0 text-left font-normal">
       <button type="button" className={`max-w-full truncate hover:text-foreground ${direction ? 'text-foreground' : ''}`} onClick={() => onSort(id)}>
         {label}{direction === undefined ? '' : direction === 'ascending' ? ' ↑' : ' ↓'}
       </button>
-      {resize && <ResizeHandle label={label} {...resize} />}
     </th>
   );
 }
@@ -128,7 +96,7 @@ interface ProjectGridProps {
 
 // The rows, each group's under its group row unless it is folded; ungrouped, the rows alone
 function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source, onRow, onOpenIssue }: Omit<ProjectGridProps, 'sort' | 'onSort' | 'onDrag' | 'onResize'>) {
-  const columns = gridTemplate(visible);
+  const columns = gridTemplate(visible, ACTION_WIDTH);
   const row = (item: ProjectItem) => (
     <ProjectRow
       key={item.itemId} item={item} task={linked.get(item.itemId)} visible={visible} columns={columns} state={state} onGoTo={onGoTo}
@@ -147,29 +115,25 @@ function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source
   );
 }
 
-// The table (handoff 01, 01b): a 34px header on card that stays as the body scrolls, 40px rows, then the footer's X de N and the ⇧↵ hint
+// The table (handoff 01, 01b, item 4): a 34px header on card that stays as the body scrolls, 40px rows, a handle on each column's left edge
+// and its divider down to the footer, then the footer's X de N and the ⇧↵ hint. The box fills the pane, so the dividers reach the footer
 function ProjectGrid(props: ProjectGridProps) {
   const { view, visible, rows, sort, onSort, onDrag, onResize } = props;
-  const scroller = useNavScroll(); // #911: a back restores this table's scroll
   return (
-    <div className="mx-3.5 mb-3.5 flex min-h-0 flex-col overflow-hidden rounded-[10px] border">
-      <div ref={scroller} className="min-h-0 overflow-auto">
-        <table className="block w-full" style={{ minWidth: minWidth(visible) }}>
+    <div className="mx-3.5 mb-3.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-[10px] border">
+      <ColumnScroll columns={visible} trailing={ACTION_WIDTH} hasRows={rows.length > 0}>
+        <table className="block w-full">
           <thead className="sticky top-0 z-10 block">
-            <tr className="grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: gridTemplate(visible) }}>
+            <tr className="relative grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: gridTemplate(visible, ACTION_WIDTH) }}>
               <HeadCell id="issue" label={t('project.col.issue')} sort={sort} onSort={onSort} />
-              {visible.map((c) => (
-                <HeadCell
-                  key={c.key} id={c.key} label={columnLabel(c)} sort={sort} onSort={onSort}
-                  resize={{ width: c.width, onDrag: (width) => onDrag(c.key, width), onResize: (width) => onResize(c.key, width) }}
-                />
-              ))}
+              {visible.map((c) => <HeadCell key={c.key} id={c.key} label={columnLabel(c)} sort={sort} onSort={onSort} />)}
               <th />
+              <HeaderHandles columns={visible} trailing={ACTION_WIDTH} labelOf={columnLabel} onDrag={onDrag} onResize={onResize} />
             </tr>
           </thead>
           <GridBody {...props} />
         </table>
-      </div>
+      </ColumnScroll>
       <div className="flex h-8 shrink-0 items-center justify-between border-t px-3 text-muted-foreground text-xs">
         <span>{t('project.footer.count', { x: rows.length, n: view?.items.length ?? 0 })}</span>
         <span>{t('project.footer.open')}</span>
@@ -222,13 +186,8 @@ export function ProjectTable({ state, source, tabs, onGoTo, onOpenIssue }: Proje
   const rows = view === undefined ? [] : sortedRows(view.items.filter((item) => matches(item, term)), shownSort, view);
   // a new column sorts ascending; the sorted one again reverses
   const onSort = (key: string): void => update({ sort: { key, desc: sort?.key === key && !sort.desc } });
-  // a drag saves the clamped width; no width (a double-click) drops the column's entry, back to its kind's
-  // the width a drag draws before its release saves it
-  const [dragging, setDragging] = useState<{ key: string; width: number }>();
-  const onDrag = (key: string, width?: number): void => setDragging(width === undefined ? undefined : { key, width });
-  const widths = dragging === undefined ? prefs.widths : { ...prefs.widths, [dragging.key]: dragging.width };
-  const onResize = (key: string, width?: number): void =>
-    update({ widths: width === undefined ? Object.fromEntries(Object.entries(prefs.widths).filter(([k]) => k !== key)) : { ...prefs.widths, [key]: clampWidth(width) } });
+  // a drag draws its width live and saves it on release; a double-click drops the column's entry, back to its kind's
+  const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <FlowHeader state={state} source={source.name} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} onRefresh={reload} />

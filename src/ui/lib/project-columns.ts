@@ -9,12 +9,7 @@ import { type MessageKey, t } from '../i18n.js';
 export interface ProjectColumn { key: string; width: number; field?: ProjectField }
 
 export const FIELD_KEY = 'field:';
-export const ISSUE_MIN_WIDTH = 220; // what the issue column keeps before the table scrolls sideways
 export const ACTION_WIDTH = 76;
-export const COLUMN_GAP = 12; // the rows' gap-3
-const ROW_PADDING = 24; // the rows' px-3, both sides
-const MIN_RESIZE = 40; // addendum 2: a dragged column keeps room for a chip's edge, and never takes the whole pane
-const MAX_RESIZE = 480;
 
 type Builtin = 'status' | 'labels' | 'assignee';
 /** The issue's own dates (addendum 2): after the project's fields, before PR, each read off the item's property of the same name. */
@@ -22,15 +17,15 @@ export const DATES = { created: 'createdAt', updated: 'updatedAt', closed: 'clos
 export type DateKey = keyof typeof DATES;
 const DATE_WIDTH = 72;
 const BUILTINS: { key: Builtin; at: keyof ProjectView['builtins']; width: number }[] = [
-  { key: 'status', at: 'status', width: 112 }, { key: 'labels', at: 'labels', width: 120 }, { key: 'assignee', at: 'assignees', width: 40 },
+  { key: 'status', at: 'status', width: 128 }, { key: 'labels', at: 'labels', width: 136 }, { key: 'assignee', at: 'assignees', width: 56 },
 ];
 const PR: ProjectColumn = { key: 'pr', width: 104 };
 const FIELD_WIDTH: Record<ProjectField['type'], number> = {
-  singleSelect: 88, iteration: 88, number: 56, date: 72, progress: 56, text: 120, milestone: 88, repository: 120, parentIssue: 120, issueType: 72, other: 88,
+  singleSelect: 88, iteration: 88, number: 72, date: 72, progress: 56, text: 120, milestone: 88, repository: 120, parentIssue: 120, issueType: 72, other: 88,
 };
 // What shows with nothing saved (handoff 01b, addendum 2): the kinds the view had before every field became a column, iteration and number aside
 const DEFAULT_KINDS = new Set<ProjectField['type']>(['singleSelect', 'text', 'date', 'progress']);
-const PRIORITY_WIDTH = 48; // a P0–P3 chip
+const PRIORITY_WIDTH = 64; // a P0–P3 chip
 const HEAD: Record<Builtin | DateKey | 'pr', MessageKey> = {
   status: 'project.col.status', labels: 'project.col.labels', assignee: 'project.col.assignee', pr: 'project.col.pr',
   created: 'project.col.created', updated: 'project.col.updated', closed: 'project.col.closed',
@@ -56,19 +51,3 @@ export const defaultColumns = (columns: ProjectColumn[]): string[] =>
 
 export const columnLabel = (column: ProjectColumn): string =>
   column.field?.name ?? t(HEAD[column.key as Builtin | DateKey | 'pr']);
-
-/** The grid: issue takes what is left, each visible column its width, the action last. */
-export const gridTemplate = (visible: ProjectColumn[]): string =>
-  ['minmax(0,1fr)', ...visible.map((c) => `${c.width}px`), `${ACTION_WIDTH}px`].join(' ');
-
-/** Past this the table scrolls sideways: the issue column at its least, every other column, their gaps and the rows' padding. */
-export const minWidth = (visible: ProjectColumn[]): number =>
-  ISSUE_MIN_WIDTH + visible.reduce((sum, c) => sum + c.width, 0) + ACTION_WIDTH + (visible.length + 1) * COLUMN_GAP + ROW_PADDING;
-
-/** A dragged width (addendum 2), whole px within 40–480. */
-export const clampWidth = (px: number): number => Math.min(MAX_RESIZE, Math.max(MIN_RESIZE, Math.round(px)));
-
-/** The columns at the widths the source saved, clamped: a hand-edited or old value never draws past 40–480px; a column it never resized
- * keeps its kind's. */
-export const withWidths = (columns: ProjectColumn[], widths: Record<string, number>): ProjectColumn[] =>
-  columns.map((c) => (Object.hasOwn(widths, c.key) ? { ...c, width: clampWidth(widths[c.key]) } : c));

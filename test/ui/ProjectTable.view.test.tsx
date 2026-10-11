@@ -62,36 +62,53 @@ test('a header sort is saved for the source and restored on reopening; nothing s
 // The header's and a row's track of each column, issue first
 const tracks = (): string[] => screen.getAllByRole('row')[0].style.gridTemplateColumns.split(' ');
 const statusWidth = (): string | undefined => tracks()[1];
+const handle = (name: string): HTMLElement => screen.getByRole('separator', { name: `redimensionar ${name}` });
+const lines = (): string[] => [...screen.getByTestId('column-dividers').children].map((line) => (line as HTMLElement).style.right);
 
-test('dragging a header\'s handle resizes its column within 40–480px on the header and the rows, saves it for the source, and a double-click restores its default; issue and the action have none (#756)', async () => {
+test('a handle sits on the left edge of each column, the action having none: dragging it right narrows that column within 40–480px, saved on release for the source; a double-click restores its default (#59)', async () => {
   const { unmount } = renderTable();
   await screen.findByText('3 de 3');
   expect(screen.getAllByRole('separator').map((h) => h.getAttribute('aria-label'))).toEqual([
     'redimensionar status', 'redimensionar Priority', 'redimensionar labels', 'redimensionar resp.', 'redimensionar Estimate',
     'redimensionar Target', 'redimensionar Progress', 'redimensionar Sprint', 'redimensionar PR',
   ]);
-  const handle = screen.getByRole('separator', { name: 'redimensionar status' });
-  expect(statusWidth()).toBe('112px');
-  fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100 });
-  fireEvent.pointerMove(handle, { pointerId: 1, clientX: 150 });
-  expect(statusWidth()).toBe('162px');
+  expect(statusWidth()).toBe('128px');
+  fireEvent.pointerDown(handle('status'), { pointerId: 1, clientX: 100 });
+  fireEvent.pointerMove(handle('status'), { pointerId: 1, clientX: 150 });
+  expect(statusWidth()).toBe('78px'); // the handoff's w0 - dx: the title takes up the 50px
   expect(rowOf('#12').style.gridTemplateColumns).toBe(tracks().join(' '));
-  expect(readView('projectViews')).not.toEqual({ roadmap: expect.objectContaining({ widths: expect.objectContaining({ status: expect.any(Number) }) }) }); // a drag in progress saves nothing: the width is saved once, on release
-  fireEvent.pointerMove(handle, { pointerId: 1, clientX: -1000 });
+  expect(readView('projectViews')).not.toEqual({ roadmap: expect.objectContaining({ widths: expect.objectContaining({ status: expect.any(Number) }) }) }); // saved once, on release
+  fireEvent.pointerMove(handle('status'), { pointerId: 1, clientX: 2000 });
   expect(statusWidth()).toBe('40px');
-  fireEvent.pointerMove(handle, { pointerId: 1, clientX: 2000 });
+  fireEvent.pointerMove(handle('status'), { pointerId: 1, clientX: -1000 });
   expect(statusWidth()).toBe('480px');
-  fireEvent.pointerUp(handle, { pointerId: 1, clientX: 2000 });
-  fireEvent.pointerMove(handle, { pointerId: 1, clientX: 100 }); // released: a move no longer resizes
+  fireEvent.pointerUp(handle('status'), { pointerId: 1, clientX: -1000 });
+  fireEvent.pointerMove(handle('status'), { pointerId: 1, clientX: 100 }); // released: a move no longer resizes
   expect(statusWidth()).toBe('480px');
   expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ widths: { status: 480 } }) });
   unmount();
   renderTable();
   await screen.findByText('3 de 3');
   expect(statusWidth()).toBe('480px');
-  fireEvent.doubleClick(screen.getByRole('separator', { name: 'redimensionar status' }));
-  expect(statusWidth()).toBe('112px');
+  fireEvent.doubleClick(handle('status'));
+  expect(statusWidth()).toBe('128px');
   expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ widths: {} }) });
+});
+
+test('the handoff\'s defaults; the handles and the body dividers sit at the same right offsets; the table is at least as wide as its columns; no row, no body divider, the handles stay (#59)', async () => {
+  const user = userEvent.setup();
+  renderTable();
+  await screen.findByText('3 de 3');
+  expect(tracks()).toEqual(['minmax(160px,1fr)', '128px', '64px', '136px', '56px', '72px', '72px', '56px', '88px', '104px', '76px']);
+  expect(handle('status').style.right).toBe('978px'); // 18 + 9×12 + 852
+  expect(handle('PR').style.right).toBe('210px'); // 18 + 12 + 104 + 76
+  expect(lines()).toHaveLength(9);
+  expect([lines()[0], lines()[8]]).toEqual(['978px', '210px']);
+  expect(screen.getByRole('table').parentElement).toHaveStyle({ minWidth: '1156px' }); // 160 + 852 + 10×12 + 24
+  await user.type(screen.getByRole('textbox', { name: 'buscar tarefas' }), 'nada');
+  expect(screen.getByText('0 de 3')).toBeInTheDocument();
+  expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('separator')).toHaveLength(9);
 });
 
 test('a saved width out of 40–480px is drawn clamped (#756)', async () => {

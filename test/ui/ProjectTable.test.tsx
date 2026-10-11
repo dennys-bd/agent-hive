@@ -127,14 +127,17 @@ test('an issue a Hive task was created from counts in the flow and shows fluxo �
   expect(onGoTo).toHaveBeenCalledWith('local:1');
 });
 
-test('with nothing saved every column shows but the iteration and number fields, each as wide as its kind, under a header that stays as the body scrolls (#756)', async () => {
+test('with nothing saved every column shows but the iteration and number fields, at the handoff\'s widths, under a header that stays as the body scrolls, in a box that fills the pane with no visible scrollbar (#756, #59)', async () => {
   resetViewState();
   renderTable();
   await screen.findByText('3 issues · 1 no fluxo');
   expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'PR', '']);
   const head = screen.getAllByRole('row')[0];
-  expect(head.style.gridTemplateColumns).toBe('minmax(0,1fr) 112px 48px 120px 40px 72px 56px 104px 76px'); // Priority 48, date 72, progress 56
+  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 104px 76px'); // Priority 64, date 72, progress 56
   expect(head.closest('thead')).toHaveClass('sticky');
+  const scroller = screen.getByRole('table').parentElement?.parentElement;
+  expect(scroller).toHaveClass('[scrollbar-width:none]');
+  expect(scroller?.parentElement).toHaveClass('flex-1');
 });
 
 test('the columns menu lists every hideable column in project order with its origin, never issue nor action; a toggle shows or hides it and is saved for the source (#756)', async () => {
@@ -180,6 +183,7 @@ test('with nothing saved the rows group by status in Status order with counts an
   renderTable();
   await screen.findByText('5 issues · 1 no fluxo');
   expect(groups()).toEqual(['Todo2sem etapa', 'Ready1→ dev', 'Done1sem etapa', 'sem status1']);
+  expect(groupRows()[0]).toHaveClass('relative', 'z-[1]', 'bg-background'); // opaque and above the overlay: a divider stops at it
   expect(group(/^Done/)).toHaveAttribute('aria-expanded', 'false');
   expect(numbers()).toEqual(['#3', '#5', '#12', '#7']);
   await user.click(group(/^Done/));
