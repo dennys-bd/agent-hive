@@ -462,3 +462,12 @@ test('describeEvent and describeEffect name a checkpoint by number, stage and en
   const activity = { id: 'a', kind: 'task' as const, workspace: 'hive', slug: 'hive-1-x' };
   assert.equal(describeEffect({ type: 'captureCheckpoint', activity, task, stage: 'dev', ended: 'done' }), 'captureCheckpoint #1 slug=hive-1-x stage=dev');
 });
+
+test('the createTask line says pr=yes for a task made from a PR, never its link (#67)', () => {
+  const event = { type: 'createTask', title: 'T', body: '', stage: 'fila', prefix: 'HIVE', auto: false } as const;
+  const link = 'https://github.com/acme/app/pull/7';
+  const line = describeEvent({ ...event, pr: { url: link, recordId: '0d9a2f3e-1111-4222-8333-444455556666' } });
+  assert.equal(line, 'createTask stage=fila prefix=HIVE pr=yes');
+  assert.ok(!line.includes(link));
+  assert.equal(describeEvent(event), 'createTask stage=fila prefix=HIVE');
+});

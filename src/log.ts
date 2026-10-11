@@ -207,7 +207,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'taskDeleted': return `taskDeleted #${event.taskId}`;
     case 'moveTask': return `moveTask #${event.taskId} before=${event.before === undefined ? 'end' : `#${event.before}`}`;
     case 'resetOrder': return `resetOrder stage=${event.stage}`;
-    case 'createTask': return `createTask stage=${event.stage} prefix=${event.prefix}`; // the title is the user's text: never logged
+    case 'createTask': return `createTask stage=${event.stage} prefix=${event.prefix}${event.pr === undefined ? '' : ' pr=yes'}`; // the title is the user's text and the link a third party's: never logged
     case 'setAuto': return `setAuto #${event.taskId} ${event.auto}`;
     case 'openSession': return `openSession ${act(event.activityId)}${event.continueId === undefined ? '' : ` continue=${shortId(event.continueId)}`}`;
     case 'openTerminal': return `openTerminal ${act(event.activityId)}`; // the command's name reaches only the spawn's line (#300)
