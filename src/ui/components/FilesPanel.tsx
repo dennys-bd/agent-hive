@@ -22,7 +22,8 @@ import { activityCounts, type Counts, foldersWithErrors } from '@/lib/diagnostic
 import { type Activity, activityKey, isTask } from '@/lib/activities';
 import { ancestorsOf, buildTree, type TreeNode, type TreeRow, visibleRows } from '@/lib/file-tree';
 import { isMac } from '@/lib/shortcut-bindings';
-import { onTreeSelect, rememberFolder } from '@/lib/tree-place';
+import { expandedOf, onTreeSelect, rememberExpanded, rememberFolder } from '@/lib/tree-place';
+import { readView, writeView } from '@/lib/view-state';
 
 /** Which of the activity sidebar's two views shows (redesign 07). */
 export type SideTab = 'files' | 'details';
@@ -57,6 +58,17 @@ const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'n
 const activityUrl = (activityId: string, route: string): string => `/activities/${encodeURIComponent(activityId)}/${route}`; // #629
 
 interface FilesView { expanded: ReadonlySet<string>; showHidden: boolean }
+
+// What the tree remembers (#947): show hidden files is the user's, in the view state across activities and restarts; the open folders are the
+// activity's, for the page only. Anything stored but true reads as off.
+function useFilesView(activityId: string): [FilesView, Dispatch<SetStateAction<FilesView>>] {
+  const [view, setView] = useState<FilesView>(() => ({ expanded: expandedOf(activityId), showHidden: readView('filesShowHidden') === true }));
+  useEffect(() => { // only a change posts: the sidebar remounts on every switch of activity
+    if ((readView('filesShowHidden') === true) !== view.showHidden) writeView('filesShowHidden', view.showHidden);
+  }, [view.showHidden]);
+  useEffect(() => rememberExpanded(activityId, view.expanded), [activityId, view.expanded]);
+  return [view, setView];
+}
 
 interface HeaderProps { tab: SideTab; hasDetails: boolean; activityId: string; view: FilesView; onTab(tab: SideTab): void; onView(view: FilesView): void }
 
@@ -284,7 +296,7 @@ export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: bo
  *  has no task to detail, so it shows arquivos alone, whatever tab a task left. MainDock keys it by activity, so another activity starts
  *  collapsed. */
 export function ActivitySide({ target, tab, isShown, details, onTab }: ActivitySideProps) {
-  const [view, setView] = useState<FilesView>({ expanded: new Set(), showHidden: false });
+  const [view, setView] = useFilesView(target.activity.id);
   const task = isTask(target) ? target.task : undefined;
   const openFile = useOpenFile();
   const onOpen = (path: string): void => { openFile?.(activityKey(target), path); }; // a click or abrir: the editor pane (#717)

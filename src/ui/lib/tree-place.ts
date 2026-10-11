@@ -43,6 +43,21 @@ export const rememberFolder = (activityId: string, folder: string): void => {
 };
 export const selectionFolderOf = (activityId: string): string => folders.get(activityId) ?? '';
 
+// The page's, by activity id (#947): never view state, so a restart starts every tree collapsed
+const expandedFolders = new Map<string, ReadonlySet<string>>();
+const NONE_EXPANDED: ReadonlySet<string> = new Set();
+
+/** The folders open in the activity's tree when it was last shown (#947): the sidebar remounts on every switch of activity. */
+export const expandedOf = (activityId: string): ReadonlySet<string> => expandedFolders.get(activityId) ?? NONE_EXPANDED;
+export const rememberExpanded = (activityId: string, expanded: ReadonlySet<string>): void => {
+  expandedFolders.set(activityId, expanded);
+};
+
+/** Tests only: forgets every activity's open folders. */
+export const resetExpanded = (): void => {
+  expandedFolders.clear();
+};
+
 /** Selects `path` in the activity's tree (#818): the file an untitled tab was just saved as. */
 export const selectInTree = (activityId: string, path: string): void => {
   events.dispatchEvent(new CustomEvent('select', { detail: { activityId, path } }));

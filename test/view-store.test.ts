@@ -10,8 +10,8 @@ import { tempDir } from './temp-dir.js';
 const LAYOUT = { docks: { automation: 'left', activities: 'left', detail: 'right' } };
 const onDisk = async (home: string): Promise<unknown> => JSON.parse(await readFile(join(home, VIEW_STATE_FILE), 'utf8'));
 
-test('the view state has ten keys, activitiesView (#779), projectViews (#756) and changesBase (#668) and repositories (#757) among them, columnFilters and closeTabNotice not, and a 256 KiB cap per value (#484, #614)', () => {
-  assert.deepEqual([...VIEW_KEYS], ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories']);
+test('the view state has eleven keys, activitiesView (#779), projectViews (#756), changesBase (#668), repositories (#757) and filesShowHidden (#947) among them, columnFilters and closeTabNotice not, and a 256 KiB cap per value (#484, #614)', () => {
+  assert.deepEqual([...VIEW_KEYS], ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories', 'filesShowHidden']);
   assert.equal(VIEW_VALUE_MAX_BYTES, 262_144);
   assert.deepEqual(['splitEdge', 'columnFilters', 'toString', 42].map((value) => isViewKey(value)), [true, false, false, false]);
 });
