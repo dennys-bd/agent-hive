@@ -21,6 +21,7 @@ import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
 import { registerRetryRoute } from './server-retry.js';
 import type { Activity, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree } from './worktree.js';
 import type { Logger } from './log.js';
@@ -461,6 +462,7 @@ export async function deleteActivityOnDisk(
     await removeInRun(deps, target, (before) => (force ? removeWorktree(repo, activity, branch, force.promptsDir, exec) : cleanWorktree(repo, activity, branch, exec, before)));
     await dropBranches(repo, extras, force !== undefined, exec);
     await dropStageStart(repo, activity.slug ?? slugFor(task.item), exec); // #812: a stage entry clears stageStart, never the ref; a missing ref is nothing
+    await dropCheckpoints(repo, activity.slug ?? slugFor(task.item), exec); // #619: every checkpoint's restore point goes with the activity; none is nothing
   }
   if (!scope.transcripts) return;
   await removeTranscripts(taskDir(repo, activity), repo, sessions, log) // a repo session in the main repo's dir too (#208)

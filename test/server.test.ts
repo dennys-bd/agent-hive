@@ -1190,7 +1190,7 @@ test('the deleteActivity effect runs git inside the batch: deleteActivityFailed 
   assert.equal(listings.length, 1, 'errored: no retry on the next poll');
   refuse = false;
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true }, 'a delete activity stage: no worker needed, no "etapa sem prompt"');
-  assert.equal(listings.length, 4, 'the delete activity ran before the answer: the listing and the stage-start ref\'s check and drop (#812)');
+  assert.equal(listings.length, 5, 'the delete activity ran before the answer: the listing and the stage-start ref\'s check and drop and the checkpoint refs\' listing (#812, #619)');
   assert.deepEqual(server.getState()?.tasks, [], 'done is the last stage: the task left the Hive');
   assert.equal(server.getState()?.error, undefined, 'the previous poll already cleared the bar (a poll always resets it, as after a spawn failure); a successful delete activity needs no further poll to do it');
   assert.ok(lines.includes(`DEBUG activityDeleted activity=${activity}`), lines.join('\n'));
@@ -1499,6 +1499,7 @@ test('POST /activities/:id/delete without a literal force checks what git would 
     ['worktree', 'remove', '--', worktree],
     ['branch', '-d', '--', TASK_BRANCH],
     ['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], // #812: always
+    ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`], // #619
   ]);
   const task = task0(server);
   const { id: _id, stoppedAt, ...held } = work0(server)!; // a fresh empty activity holds the stopped mark, so the fill leaves the task (#629)
@@ -1545,6 +1546,7 @@ test('a refusal answers 200 { removed: false, refused } with the reason and remo
     ['worktree', 'prune'],
     ['branch', '-D', '--', TASK_BRANCH],
     ['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], // #812: always
+    ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`], // #619
   ], 'force skips the pre-check');
   await assert.rejects(readFile(join(home, 'prompts', `${TASK_SLUG}.md`)), { code: 'ENOENT' });
   assert.deepEqual([work0(server)?.sessionId, sessions0(server).map((s) => [s.id, s.repo]), work0(server)?.worktree, work0(server)?.deleting], [undefined, [[ran, true]], undefined, undefined]);
@@ -1617,6 +1619,7 @@ test('POST /activities/:id/delete follows the delete-activity scope (#236, #573)
     ['worktree', 'remove', '--', worktree],
     ['branch', '-d', '--', TASK_BRANCH],
     ['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], // #812: always
+    ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`], // #619
   ], 'the worktree and the branch always go (#573)');
   assert.deepEqual(await readdir(dir), ['other-session-0001.jsonl'], 'only the task\'s session goes');
   const task = task0(server);
@@ -2384,6 +2387,45 @@ test('Restart on a published branch that moved checks out <branch>-r2 and the ta
   assert.deepEqual([two.workers.length, work0(two.server)?.stopped, work0(two.server)?.deleting], [1, true, undefined], 'nothing was dispatched, and the mark went with the failure');
 });
 
+test('a stage end captures its checkpoint inside the Stop\'s batch, before the continuation records the next stage\'s start (#619)', async (t) => {
+  const git = restartGit(HEAD_SHA);
+  const { base, repo, server } = await start(t, { ...BODY, stages: CONTINUE_STAGES }, undefined, {}, { exec: git.exec });
+  const ptyId = worker0(server).runId!;
+  await hookEvent(base, ptyId, { hook_event_name: 'SessionStart', cwd: repo }); // the worktree recorded: something to capture
+  git.calls.length = 0;
+  await markDone(server, ptyId);
+  assert.equal((await hookEvent(base, ptyId, { hook_event_name: 'Stop' })).status, 200);
+  const { at, ...checkpoint } = work0(server)!.checkpoints![0];
+  assert.deepEqual(checkpoint, { n: 1, stage: 'plan', start: HEAD_SHA, head: HEAD_SHA, commit: HEAD_SHA, branch: TASK_BRANCH, ended: 'done' });
+  assert.equal(typeof at, 'string');
+  const index = (ref: string): number => git.calls.findIndex((c) => c[0] === 'update-ref' && c[1] === ref);
+  assert.ok(index(`refs/hive/${TASK_SLUG}/checkpoint/1`) >= 0 && index(`refs/hive/${TASK_SLUG}/checkpoint/1`) < index(`refs/hive/${TASK_SLUG}/stage-start`), JSON.stringify(git.calls));
+});
+
+test('Restart captures the checkpoint it throws away before its git, and still restarts when the capture fails (#619)', async (t) => {
+  const stoppedOn = async (exec: Exec): Promise<Started> => {
+    const started = await start(t, BODY, undefined, {}, { exec });
+    await hookEvent(started.base, worker0(started.server).runId!, { hook_event_name: 'SessionStart', cwd: started.repo });
+    started.workers[0].handlers.onExit();
+    await waitFor(() => work0(started.server)?.stopped === true);
+    return started;
+  };
+  const git = restartGit(HEAD_SHA);
+  const one = await stoppedOn(git.exec);
+  git.calls.length = 0;
+  assert.deepEqual(await json(postJson(`${one.base}${workPath(one.server, 'board:I1')}/restart`)), { ok: true });
+  assert.deepEqual(git.calls.slice(0, 5), [
+    ['rev-parse', 'HEAD'], ['symbolic-ref', '--short', 'HEAD'], ['status', '--porcelain'], ['update-ref', `refs/hive/${TASK_SLUG}/checkpoint/1`, HEAD_SHA],
+    ['cat-file', '-e', `${HEAD_SHA}^{commit}`],
+  ]);
+  assert.deepEqual(work0(one.server)?.checkpoints?.map((a) => [a.n, a.stage, a.ended]), [[1, 'fila', 'restart']]);
+  const broken = restartGit(HEAD_SHA, undefined, 'status');
+  const two = await stoppedOn(broken.exec);
+  assert.deepEqual(await json(postJson(`${two.base}${workPath(two.server, 'board:I1')}/restart`)), { ok: true }, 'a failed capture never fails the Restart');
+  assert.equal(work0(two.server)?.checkpoints, undefined);
+  assert.ok(broken.calls.some((c) => c[0] === 'reset'), 'Restart\'s git still ran');
+});
+
 test('an in-place continuation records the next stage\'s starting commit before the Stop is answered (#283)', async (t) => {
   const git = restartGit(HEAD_SHA);
   const { base, server } = await start(t, { ...BODY, stages: CONTINUE_STAGES }, undefined, {}, { exec: git.exec });
@@ -2462,6 +2504,7 @@ test('deleteActivityOnDisk also checks and deletes the own branches a Restart le
     ['branch', '-d', '--', `${TASK_BRANCH}-r3`],
     ['branch', '-d', '--', TASK_BRANCH], ['branch', '-d', '--', `${TASK_BRANCH}-r2`],
     ['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`],
+    ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`], // #619
   ]);
 });
 
@@ -2475,7 +2518,7 @@ test('deleteActivityOnDisk drops the stage-start ref of an activity whose start 
   const activity: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: TASK_SLUG, branch: TASK_BRANCH }; // entered a stage: no stageStart
   const deps = { log: fakeLog().log, exec, ptys: createPtyHost(NO_PTY), consoleStore: createConsoleStore(() => 1000) };
   await deleteActivityOnDisk({ workspace: { name: 'hive', path: await tempDir(t, 'repo-'), env: {}, fork: null }, activity, task, sessions: [], branch: TASK_BRANCH, scope: DELETE_ACTIVITY_DEFAULTS }, deps);
-  assert.deepEqual(calls.slice(-2), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`]]);
+  assert.deepEqual(calls.slice(-3), [['rev-parse', '--verify', '--quiet', `refs/hive/${TASK_SLUG}/stage-start`], ['update-ref', '-d', `refs/hive/${TASK_SLUG}/stage-start`], ['for-each-ref', '--format=%(refname)', `refs/hive/${TASK_SLUG}/checkpoint/`]]);
 });
 
 test('Restart is refused while a session or a terminal runs on the task; while its git runs the task is marked, so a continue or a start is refused (#283)', async (t) => {
