@@ -217,7 +217,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           shows its empty state meanwhile */}
       <MainDock
         sidebarsPerView={sidebarsPerView}
-        fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={prOpener(picks, repositories)}
+        fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={prOpener(picks, repositories)} openIssue={issueOpener(picks, repositories)}
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels}
         header={(center, go) => <Header state={state} signal={limits.signal} center={center} onView={go} />}
         automation={() => (

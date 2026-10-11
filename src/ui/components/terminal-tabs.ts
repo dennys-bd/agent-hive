@@ -56,6 +56,12 @@ export const PrOpenerContext = createContext<OpenPr | undefined>(undefined);
 
 export const useOpenPr = (): OpenPr | undefined => useContext(PrOpenerContext);
 
+/** The Dashboard's issue opener (#895): the issue's page under its repository, or its URL when the Hive does not list the repository or the
+ * item is not a GitHub issue. Undefined outside a Dashboard: the issue link then opens its URL as any link does. */
+export const IssueOpenerContext = createContext<OpenPr | undefined>(undefined);
+
+export const useOpenIssue = (): OpenPr | undefined => useContext(IssueOpenerContext);
+
 /** How a file opens (#697): preview, a preview pane tab that renders it; changes (#668), a changes pane tab against its base; else the editor
  * pane. */
 export interface OpenFileHow { preview?: boolean; changes?: boolean }
