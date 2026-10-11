@@ -91,6 +91,7 @@ function taskStatus(task: Task, state: State): TaskStatus {
   }
   if (live?.error !== undefined) return { text: taskError(live.error) }; // #755, #834: a stage action's failure in the viewer's language
   const blocked = startMode(task, state) === 'none' && isBlocked(task.item) && stageOf(state.stages, task.stage)?.action === undefined;
+  if (byAction) return { tone: 'working', text: statusText('working') }; // an action whose progress has nothing to say yet
   return blocked ? { text: blockedText(task) } : current === 'new' ? { text: statusText('new') } : {}; // #727: new, muted
 }
 

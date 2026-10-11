@@ -288,8 +288,8 @@ export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: list
   return followSource(stamped, order, runs);
 }
 
-/** In the queue (#15): a free worker would take the task once it is due and has a workspace. Its stage runs (a prompt or commands), the task is
- * idle, held by no worker at all and unblocked. What candidates picks from and what keeps an open PR from reading review. */
+/** In the queue (#15): its stage runs (a prompt or commands), the task is idle, held by no worker at all and unblocked. A task still waiting out
+ * its stage's `after`, or with no workspace to run in, is queued too: candidates adds those two checks, an open PR's review does not. */
 export function isQueued(task: Task, stages: Stage[], state: WorkersState): boolean {
   const stage = stageOf(stages, task.stage);
   return stage !== undefined && (canRunIn(stage) || stage.action === 'commands') && isIdle(task, activityOf(state, taskId(task)))
