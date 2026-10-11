@@ -157,3 +157,28 @@ test('a pick in the sidebar or the source\'s tab starts the stack again; Ativida
   expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
   expect(main().queryByRole('button', { name: 'issues · site' })).not.toBeInTheDocument();
 });
+
+const right = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock="right"]')!;
+// toggleSideTab is Ctrl+Alt+Shift+E off macOS (#585): opens the activity sidebar on detalhes
+const sideKey = (): void => { fireEvent.keyDown(document.body, { key: 'E', code: 'KeyE', ctrlKey: true, altKey: true, shiftKey: true }); };
+
+test('an issue opened from the Atividades view goes back to that view, the stack holding only it; on the flow again the page shows with no button (#911)', async () => {
+  const user = userEvent.setup();
+  render(<Home shown={working} />);
+  showFlow();
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
+  await user.click(await main().findByText('Fix the pager'));
+  expect(await main().findByRole('button', { name: 'PRs · site' })).toBeInTheDocument(); // an entry the Atividades view replaces below
+  showActivities();
+  await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#12 Pager breaks').closest('button') as HTMLElement);
+  sideKey();
+  await user.click(within(right()).getByRole('link', { name: 'site#12' }));
+  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  await user.click(main().getByRole('button', { name: 'atividade #12' }));
+  expect(screen.getByRole('main', { hidden: true }).closest('[hidden]')).not.toBeNull(); // Atividades shows again
+  expect(within(right()).getByRole('link', { name: 'site#12' })).toBeInTheDocument(); // on the same activity, still picked
+  showFlow();
+  expect(main().getByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  expect(main().queryByRole('button', { name: 'atividade #12' })).not.toBeInTheDocument();
+  expect(main().queryByRole('button', { name: 'PRs · site' })).not.toBeInTheDocument(); // the reset left nothing below
+});

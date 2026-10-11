@@ -68,6 +68,8 @@ const en = {
   'back.pr': 'PR #{n}',
   'back.repoPrs': 'PRs · {repo}',
   'back.repoIssues': 'issues · {repo}',
+  'back.activity': 'activity #{n}',
+  'back.activityTitled': 'activity · {title}', // a workspace's local activity, which has no number
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -1779,6 +1781,8 @@ const pt: Record<MessageKey, string> = {
   'back.pr': 'PR #{n}',
   'back.repoPrs': 'PRs · {repo}',
   'back.repoIssues': 'issues · {repo}',
+  'back.activity': 'atividade #{n}',
+  'back.activityTitled': 'atividade · {title}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
