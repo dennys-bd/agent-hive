@@ -18,7 +18,7 @@ const state = (tasks: WithWork[], workers: Worker[] = []): State => withPointedW
 });
 function Node({ s, tasks, onList = () => {} }: { s: State; tasks: Task[]; onList?(): void }) {
   const drag = useRef<Dragging | undefined>(undefined);
-  return <FlowNode stage={STAGE} state={s} tasks={tasks} order={tasks} shown={tasks.length} filteredOut={0} rules={[]} drag={drag} isListed={false} maxHeight={400} onFilter={() => {}} onClearFilter={() => {}} onList={onList} onHeight={() => {}} />;
+  return <FlowNode stage={STAGE} state={s} tasks={tasks} order={tasks} shown={tasks.length} filteredOut={0} rules={[]} drag={drag} isListed={false} maxHeight={400} onFilter={() => {}} onClearFilter={() => {}} onList={onList} />;
 }
 // jsdom keeps the box metrics on Element.prototype, all zeros: an overflowing list is stubbed there
 const overflow = (scrollHeight: number, clientHeight: number) => {

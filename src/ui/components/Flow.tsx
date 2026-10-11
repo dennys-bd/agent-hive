@@ -40,13 +40,13 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const isShown = useIsFlowShown();
   const shown = source === undefined ? state.tasks : state.tasks.filter((c) => sourceOf(c) === source);
   const of = (stage: string) => stageTasks(state, stage, source, filters.rulesOf(stage), search);
-  const node = (stage: Stage, maxHeight: number, onHeight: (name: string, height: number) => void) => {
+  const node = (stage: Stage, maxHeight: number) => {
     const { all, ofSource, filtered, tasks } = of(stage.name);
     return (
       <FlowNode
         stage={stage} state={state} tasks={tasks} order={all} shown={ofSource.length} filteredOut={ofSource.length - filtered.length} rules={filters.rulesOf(stage.name)} drag={drag}
         selectedId={selectedId} isListed={listed === stage.name} maxHeight={maxHeight}
-        cap={stageCaps !== undefined && Object.hasOwn(stageCaps, stage.name) ? stageCaps[stage.name] : undefined} onOpen={onOpen} onHeight={onHeight}
+        cap={stageCaps !== undefined && Object.hasOwn(stageCaps, stage.name) ? stageCaps[stage.name] : undefined} onOpen={onOpen}
         onFilter={() => setEditing(stage.name)} onClearFilter={() => filters.set(stage.name, [])} onList={() => setListed(stage.name)}
       />
     );
@@ -57,7 +57,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
     <div className="flex min-h-0 flex-1 flex-col">
       <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} />
       <MenuBoundaryContext.Provider value={canvas}>
-        <section ref={setCanvas} aria-label={t('flow.chart')} className="relative mx-3.5 mb-3.5 min-h-0 flex-1 overflow-hidden rounded-[10px] border bg-background">
+        <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart stages={state.stages} transitions={state.transitions} renderNode={node} />
           {listedStage && listedTasks && (
             <FlowListPanel stage={listedStage} state={state} tasks={listedTasks.tasks} order={listedTasks.all} drag={drag} selectedId={selectedId} onOpen={onOpen} onClose={() => setListed(undefined)} />

@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Flow } from '@/components/Flow';
 import { setLanguage, t } from '@/i18n';
-import type { ActivityRecord, BaseOptions, Task, Session, Stage, Worker, State } from '../../src/types';
+import { MARGIN } from '@/lib/flow-layout';
+import type { ActivityRecord, BaseOptions, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 
@@ -334,21 +335,48 @@ test('a task its stage run holds gets no drop line in another stage but still re
   rect.mockRestore();
 });
 
-test('the flow is a canvas (#134): one node per stage with its executor line, the arrows\' pills and the end circle; lista › opens the node\'s list panel and selects the node', async () => {
+test('the flow is a canvas (#134, #908): one node per stage with its executor line, the arrows\' pills and no end circle; lista › opens the node\'s list panel and selects the node', async () => {
   const user = userEvent.setup();
   const transitions = [{ from: 'dev', to: 'review', when: 'done' as const }, { from: 'review', to: 'end', when: 'done' as const }];
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400);
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
   render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions }} />);
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
-  expect(canvas).toHaveClass('rounded-[10px]', 'border', 'bg-background');
+  expect(canvas).toHaveClass('relative', 'min-h-0', 'flex-1', 'overflow-hidden', 'bg-background'); // fills the area below the header (#908)
+  expect(canvas.className.split(' ').filter((c) => c === 'border' || c.startsWith('rounded-') || /^m[xytblr]?-/.test(c))).toEqual([]);
   expect(within(canvas).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['dev', 'review']);
-  expect(within(canvas).getAllByText('terminou')).toHaveLength(2);
-  expect(within(canvas).getByText('fim')).toBeInTheDocument();
+  expect(within(canvas).queryByText('terminou')).not.toBeInTheDocument(); // the default path goes unlabelled, the arrow to end is Settings' (#908)
+  expect(within(canvas).queryByText('fim')).not.toBeInTheDocument();
   await user.click(within(canvas).getAllByRole('button', { name: 'lista ›' })[0]);
   expect(screen.getByRole('region', { name: 'dev' })).toBeInTheDocument();
   expect(canvas.querySelector('[data-stage="dev"]')).toHaveClass('border-foreground');
   vi.restoreAllMocks();
+});
+
+test('every node may grow to the canvas\'s bottom and the chart is exactly as tall as the canvas, with no node measured (#908)', () => {
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(800);
+  render(<Flow state={{ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] }} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${800 - 2 * MARGIN}px`);
+  expect(canvas.querySelector<HTMLElement>('[data-flow-stages] > div')!.style.height).toBe('800px');
+  vi.restoreAllMocks();
+});
+
+test('the flow view draws no pill on the default path; a labelled arrow, a verdict, a back edge with its tries and a loop keep theirs (#908)', () => {
+  const cols: Stage[] = [...stages, { name: 'pr', from: { board: ['PR'] } }];
+  const transitions: Transition[] = [
+    { from: 'dev', to: 'review', when: 'done' },
+    { from: 'review', to: 'pr', when: 'approved' },
+    { from: 'dev', to: 'review', when: 'approved', label: 'design' },
+    { from: 'dev', to: 'review', when: 'verdict', verdict: 'passed' },
+    { from: 'review', to: 'dev', when: 'verdict', verdict: 'failed', maxTries: 3 },
+    { from: 'pr', to: 'pr', when: 'feedback' },
+  ];
+  render(<Flow state={{ ...state([], [worker('s1')], cols), transitions }} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(within(canvas).queryByText('terminou')).not.toBeInTheDocument();
+  expect(within(canvas).queryByText('aprovado')).not.toBeInTheDocument();
+  for (const pill of ['design', 'passou', 'falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
 });
 
 // Radix opens a DropdownMenu on pointerdown, which jsdom does not deliver as a PointerEvent; the keyboard path opens the same menu.
