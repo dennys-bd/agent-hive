@@ -3,8 +3,8 @@ import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
-import { DONE_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { deliverDecomposition, fileCheckout } from './decomposition-deliver.js';
+import { DONE_KEY, PR_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
+import { deliverDecomposition, deliveryRefusal, type FileCheckout, fileCheckout } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
 import { issueOfLink } from './repos/issue-task.js';
@@ -31,6 +31,7 @@ const WRITTEN_MESSAGE = 'a decomposição já foi escrita no GitHub';
 const PROBLEMS_MESSAGE = 'decomposition.md tem problemas: corrija antes de criar as issues';
 const NO_REPOSITORY_MESSAGE = 'o workspace não tem origin no GitHub';
 const CHOICE_MESSAGE = 'source precisa ser uma source do GitHub e column uma opção do seu Status';
+const NOT_MD_MESSAGE = 'a decomposição precisa ser um arquivo .md';
 const WRITING_MESSAGE = 'as issues desta decomposição já estão sendo criadas';
 
 /** What the decomposition's routes need (#865). */
@@ -78,6 +79,7 @@ async function readGoal(deps: DecompositionRouteDeps, current: Live, activityId:
   if (!target.activity.approval) return { status: HTTP_CONFLICT, message: NOT_AWAITING_MESSAGE };
   const result = resultOf(current.state, target.task.item.itemId) ?? {};
   if (typeof result.decomposition !== 'string') return { status: HTTP_CONFLICT, message: NO_DECOMPOSITION_MESSAGE };
+  if (!result.decomposition.endsWith('.md')) return { status: HTTP_CONFLICT, message: NOT_MD_MESSAGE };
   const read = await readDecompositionFile(current.runtime.config, target, result.decomposition);
   if ('status' in read) return read;
   const issue = issueOfLink(target.task.item.url);
@@ -104,14 +106,34 @@ async function sourcesOf(config: Pick<Config, 'comb'>, gql: GqlJson, own?: strin
   }));
 }
 
-function preview(goal: Goal, sources: DecompositionSource[]): DecompositionPreview {
+// Where the file is delivered (#936): its checkout and the default branch of that checkout's repository. Throws when there is no checkout
+interface Delivery { checkout: FileCheckout; docs: { id: string; defaultBranch: string } }
+async function deliveryOf(deps: DecompositionRouteDeps, goal: Goal): Promise<Delivery> {
+  const checkout = await fileCheckout(deps.exec, goal.file);
+  return { checkout, docs: await readRepository(deps.gql, checkout.repository) };
+}
+
+// What the dialog shows of the delivery: the checkout's repository, branch and path, or the reason it cannot go. Nothing once pr is recorded
+async function deliveryPreview(deps: DecompositionRouteDeps, goal: Goal): Promise<Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'>> {
+  const recorded = recordedIssues(goal.result);
+  if (recorded[PR_KEY] !== undefined) return {};
+  try {
+    const { checkout, docs } = await deliveryOf(deps, goal);
+    const refusal = deliveryRefusal(checkout, docs.defaultBranch, recorded);
+    return { delivery: { repository: checkout.repository, branch: checkout.branch, path: checkout.path }, ...(refusal === undefined ? {} : { deliveryRefusal: refusal }) };
+  } catch (err) {
+    return { deliveryRefusal: errorMessage(err) };
+  }
+}
+
+function preview(goal: Goal, sources: DecompositionSource[], delivery: Pick<DecompositionPreview, 'delivery' | 'deliveryRefusal'>): DecompositionPreview {
   const { decomposition: d, problems, suggestions, warnings } = goal.parsed;
   const nodes = d?.nodes ?? [];
   return {
     ...(d ? { title: d.title } : {}), problems, warnings, suggestions, sources,
     issues: d === undefined ? 0 : nodes.length + (goal.number === undefined ? 1 : 0), // a local goal's root issue too
     blockers: nodes.reduce((n, node) => n + node.blockedBy.length, 0),
-    ...(goal.repository === undefined ? {} : { repository: goal.repository }),
+    ...(goal.repository === undefined ? {} : { repository: goal.repository }), ...delivery,
   };
 }
 
@@ -146,9 +168,10 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   if ('status' in project) return refuse(res, project);
   const taskId = goal.task.item.itemId;
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
-  const checkout = await fileCheckout(deps.exec, goal.file);
-  const issues = await readRepository(deps.gql, ready.repository);
-  const docs = checkout.repository === ready.repository ? issues : await readRepository(deps.gql, checkout.repository);
+  const { checkout, docs } = await deliveryOf(deps, goal);
+  const refusal = deliveryRefusal(checkout, docs.defaultBranch, recordedIssues(goal.result)); // before any issue: a refused delivery writes nothing
+  if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
+  const issues = checkout.repository === ready.repository ? docs : await readRepository(deps.gql, ready.repository);
   const target: WriteTarget = {
     repository: ready.repository, repositoryId: issues.id, address: fileAddress(checkout.repository, docs.defaultBranch, checkout.path), project,
     ...(goal.number === undefined ? {} : { goal: goal.number }),
@@ -174,7 +197,7 @@ export function registerDecompositionRoutes(app: Express, deps: DecompositionRou
     try {
       const goal = await readGoal(deps, current, activityParam(req));
       if ('status' in goal) return refuse(res, goal);
-      res.json(preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source)));
+      res.json(preview(goal, await sourcesOf(current.runtime.config, deps.gql, goal.task.item.source), await deliveryPreview(deps, goal)));
     } catch (err) {
       refuse(res, { status: HTTP_BAD_GATEWAY, message: errorMessage(err) });
     }

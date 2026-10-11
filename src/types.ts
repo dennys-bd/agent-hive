@@ -1247,6 +1247,8 @@ export interface DecompositionSource { name: string; statuses: string[]; column?
  * problems; repository is absent for a local goal whose workspace has no GitHub origin; warnings are the overlaps (#936), which never block. */
 export interface DecompositionPreview {
   title?: string; issues: number; blockers: number; suggestions: number; problems: DecompositionProblem[]; warnings: DecompositionProblem[]; repository?: string;
+  delivery?: { repository: string; branch: string; path: string }; // #936: where the file is pushed: its checkout's repository, branch and path in it
+  deliveryRefusal?: string; // #936: why it cannot be (default branch, not .md, no checkout): the dialog disables create issues
   sources: DecompositionSource[];
 }
 
