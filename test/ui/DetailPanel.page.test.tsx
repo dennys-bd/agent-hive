@@ -98,3 +98,15 @@ test('a page with no task in the flow: the panel holds the page\'s block alone, 
   expect(footer()).toBeNull();
   expect(read.at(-1)).toBeUndefined();
 });
+
+test('the properties grid leaves its PRs row to the issue page\'s block; a PR page and the panel away from pages keep it (#65)', () => {
+  const issue = renderPanel({ kind: 'issue', url: URL1, task: TASK });
+  expect(screen.getByText('branch', { selector: 'dt' })).toBeInTheDocument();
+  expect(screen.queryByText('PRs', { selector: 'dt' })).not.toBeInTheDocument();
+  issue.unmount();
+  const pr = renderPanel({ kind: 'pr', url: 'https://github.com/acme/r/pull/7', task: TASK });
+  expect(screen.getByText('PRs', { selector: 'dt' })).toBeInTheDocument();
+  pr.unmount();
+  renderPanel();
+  expect(screen.getByText('PRs', { selector: 'dt' })).toBeInTheDocument();
+});

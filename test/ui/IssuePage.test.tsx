@@ -34,13 +34,15 @@ beforeEach(() => {
   fetchMock.mockReset();
   fetchMock.mockImplementation(answer);
   vi.mocked(toast.error).mockClear();
+  onOpenPr.mockClear();
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
+const onOpenPr = vi.fn();
 
 // With `slotted`, beside the details panel's slot, as the dock mounts it (#64)
 const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}, slotted = false) => render(
-  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} />,
+  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} onOpenPr={onOpenPr} />,
   slotted ? { wrapper: WithSlot } : {},
 );
 const TASK12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
@@ -88,14 +90,15 @@ test('an issue out of the flow: while it is read the slot shows the read line; t
   answerRead(jsonRes(ISSUE));
   expect(await slot().findByRole('heading', { name: 'Pager breaks' })).toHaveClass('text-[15px]');
   expect(slot().getByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
-  expect(slot().getByText('etapa', { selector: 'dt' })).toBeInTheDocument();
+  expect(slot().getByText('fluxo', { selector: 'dt' })).toBeInTheDocument();
   expect(slot().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
 });
 
 test('an issue of a task: the slot holds its properties with no title, which the panel draws as the task\'s (#64)', async () => {
   renderPage([TASK12], { activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [] }] }, true);
-  expect(await slot().findByRole('button', { name: 'etapa' })).toHaveTextContent('dev');
+  expect(await slot().findByText('responsável', { selector: 'dt' })).toBeInTheDocument(); // the fields route answers none: today's rows
+  expect(slot().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
   expect(slot().queryByRole('heading')).not.toBeInTheDocument();
   expect(slot().queryByText('hive/12-pager')).not.toBeInTheDocument();
 });
@@ -104,4 +107,27 @@ test('a failed read shows its message in the slot as well (#64)', async () => {
   fetchMock.mockImplementationOnce(async () => jsonRes({ error: 'Could not resolve to an Issue' }, 502));
   renderPage([], {}, true);
   expect(await slot().findByText('Could not resolve to an Issue')).toBeInTheDocument();
+});
+
+test('an issue of a task with PRs: the slot lists them under the properties, and abrir hands the PR to the dashboard\'s opener (#65)', async () => {
+  const user = userEvent.setup();
+  const pr = 'https://github.com/acme/site/pull/31';
+  renderPage([TASK12], { activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [], prs: [{ url: pr, state: 'open' }] }] }, true);
+  const prs = within(await slot().findByRole('region', { name: 'PRs' }));
+  expect(prs.getByText('#31 aberto')).toBeInTheDocument();
+  await user.click(prs.getByRole('button', { name: 'abrir' }));
+  expect(onOpenPr).toHaveBeenCalledWith(pr);
+});
+
+test('a failed read of a task\'s issue still lists its PRs under the message: the details grid leaves them to the slot (#65)', async () => {
+  fetchMock.mockImplementationOnce(async () => jsonRes({ error: 'Could not resolve to an Issue' }, 502));
+  renderPage([TASK12], { activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [], prs: [{ url: 'https://github.com/acme/site/pull/31', state: 'open' }] }] }, true);
+  expect(await slot().findByText('Could not resolve to an Issue')).toBeInTheDocument();
+  expect(within(slot().getByRole('region', { name: 'PRs' })).getByText('#31 aberto')).toBeInTheDocument();
+});
+
+test('an issue out of the flow lists no PRs in the slot (#65)', async () => {
+  renderPage([], {}, true);
+  expect(await slot().findByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
+  expect(slot().queryByRole('region', { name: 'PRs' })).not.toBeInTheDocument();
 });

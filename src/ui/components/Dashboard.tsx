@@ -229,7 +229,7 @@ function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: R
   // #69: the merge goes back as the header's button does; an empty stack has no back, so the page stays and shows the PR merged
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} summary={repo} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
   if (issue) {
-    return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} />;
+    return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} onOpenPr={onOpenPr} />;
   }
   if (picks.repoTab === 'prs') {
     return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={picks.onRepoTab} onRepository={picks.pickRepository} onOpen={(row) => picks.openPrPage({ repository: repo.repository, number: row.number })} />;
@@ -253,7 +253,7 @@ function Center({ state, selected, picks, repositories, onSelect, goTo, stageCap
         <IssuePage
           key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={external.name}
           workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
-          header={(reload) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} />} onGoTo={goTo}
+          header={(reload) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} />} onGoTo={goTo} onOpenPr={prOpener(picks, repositories)}
         />
       );
     }

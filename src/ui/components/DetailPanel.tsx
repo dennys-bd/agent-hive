@@ -124,7 +124,7 @@ function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask
       {page && <div ref={slotRef} className="flex flex-col gap-3.5" />}
       {onOpenTask && <TreeSection task={task} state={state} onOpenTask={onOpenTask} />} {/* #36: after the status and its notices, before the properties */}
       <BlockersSection key={item.itemId} task={task} state={state} />
-      <MetaGrid task={task} state={state} isActivity={isActivity} onOpenTask={onOpenTask} />
+      <MetaGrid task={task} state={state} isActivity={isActivity} onOpenTask={onOpenTask} hasPrs={page?.kind !== 'issue'} />
       <SessionsList task={task} state={state} locale={locale} />
       <CheckpointsList task={task} state={state} />
       <ResultsList task={task} files={files} />
