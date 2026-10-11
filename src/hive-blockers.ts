@@ -73,3 +73,13 @@ export function closeRefsTo(tasks: Task[], dropped: Task): Task[] {
     return withRelations(t, { blockedBy: closed(b.blockedBy), blocking: closed(b.blocking) });
   });
 }
+
+const CANDIDATES_MAX = 8; // the add row's list (#57), as the GitHub search's first: 8
+
+/** The blockers add row's suggestions on a hive task (#57): the other hive tasks whose id or title holds the text, case-blind, at most 8,
+ * each an open ref as a relation would store it. */
+export function hiveCandidates(tasks: readonly Task[], itemId: string, text: string): BlockerRef[] {
+  const needle = text.toLowerCase();
+  const matches = (t: Task): boolean => t.item.id.toLowerCase().includes(needle) || t.item.title.toLowerCase().includes(needle);
+  return tasks.filter((t) => isHive(t) && t.item.itemId !== itemId && matches(t)).slice(0, CANDIDATES_MAX).map(refTo);
+}

@@ -9,7 +9,7 @@ import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfB
 import type { BlockerChange, HiveEvent, ItemBlockers, Source, SourceItem, State, Task } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 
-type RelateSource = Partial<Pick<Source, 'relate'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers'>>;
 const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z', at: '2026-10-06T12:00:00.000Z' };
 const hive = (n: number, blockers?: ItemBlockers): Task =>
   ({ item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `T${n}`, body: '', url: '', ...(blockers ? { blockers } : {}) }, stage: 'dev', boardColumn: '', created: true, auto: false });
@@ -114,4 +114,43 @@ test('a source write whose re-read failed answers 200 with the relations read, l
   assert.deepEqual(await post(h.base, 'work', 'work:PVTI_1', add('7')), [200, { blockers: SEVEN }]);
   assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('timeout')));
   assert.deepEqual(h.dispatched, []);
+});
+
+async function search(base: string, source: string, itemId: string, q?: string): Promise<[number, unknown]> {
+  const query = q === undefined ? '' : `?q=${encodeURIComponent(q)}`;
+  const res = await fetch(`${base}/sources/${source}/items/${encodeURIComponent(itemId)}/blockers/candidates${query}`);
+  return [res.status, await res.json()];
+}
+
+test('GET …/blockers/candidates on hive answers the other hive tasks whose id or title holds q, case-blind, at most 8, never the item or a source\'s task (#57)', async (t) => {
+  const titled = (n: number, title: string): Task => ({ ...hive(n), item: { ...hive(n).item, title } });
+  const h = routes(t, {}, [titled(1, 'Pager'), titled(2, 'pager rewrite'), titled(3, 'Docs'), { ...GH_TASK, item: { ...GH_TASK.item, title: 'Pager' } }]);
+  assert.deepEqual(await search(h.base, 'hive', 'local:1', 'PAGER'), [200, { candidates: [{ id: 'HIVE-2', title: 'pager rewrite', state: 'open' }] }]);
+  assert.deepEqual(await search(h.base, 'hive', 'local:1', 'hive-3'), [200, { candidates: [{ id: 'HIVE-3', title: 'Docs', state: 'open' }] }]);
+  const many = routes(t, {}, Array.from({ length: 12 }, (_, i) => hive(i + 1)));
+  const [, body] = await search(many.base, 'hive', 'local:1', 'T');
+  assert.equal((body as { candidates: unknown[] }).candidates.length, 8);
+  assert.deepEqual(h.dispatched, []);
+});
+
+test('the candidates route on a source asks its findBlockers with the namespaced id and the trimmed text; a missing or too long q is a 400, no findBlockers a 404, the backoff a 429 (#57)', async (t) => {
+  const asked: string[] = [];
+  const findBlockers: NonNullable<RelateSource['findBlockers']> = async (itemId, text) => { asked.push(`${itemId} ${text}`); return SEVEN.blockedBy; };
+  const h = routes(t, { work: { findBlockers }, bare: {}, low: { findBlockers } }, [], { syncs: { low: { quota: LOW } } });
+  assert.deepEqual(await search(h.base, 'work', 'work:PVTI_1', ' pager '), [200, { candidates: SEVEN.blockedBy }]);
+  assert.deepEqual(codeOf(await search(h.base, 'work', 'work:PVTI_1')), [400, 'blockers.badRequest']);
+  assert.deepEqual(codeOf(await search(h.base, 'work', 'work:PVTI_1', ' ')), [400, 'blockers.badRequest']);
+  assert.deepEqual(codeOf(await search(h.base, 'work', 'work:PVTI_1', 'x'.repeat(201))), [400, 'blockers.badRequest']);
+  assert.deepEqual(codeOf(await search(h.base, 'bare', 'bare:PVTI_1', 'pager')), [404, 'blockers.unknownItem'], 'no findBlockers');
+  assert.deepEqual(codeOf(await search(h.base, 'work', 'notes:PVTI_1', 'pager')), [404, 'blockers.unknownItem'], 'another source\'s item');
+  assert.equal((await search(h.base, 'low', 'low:PVTI_1', 'pager'))[0], 429);
+  assert.deepEqual(asked, ['work:PVTI_1 pager'], 'every refusal comes before the search');
+});
+
+test('a refused search answers 502 refused without the source\'s words, which go to the log (#57)', async (t) => {
+  const h = routes(t, { work: { findBlockers: async () => { throw new Error('Resource not accessible by integration'); } } });
+  const [status, body] = await search(h.base, 'work', 'work:PVTI_1', 'pager');
+  assert.deepEqual([status, (body as { code?: unknown }).code], [502, 'blockers.refused']);
+  assert.equal(JSON.stringify(body).includes('Resource not accessible'), false, 'GitHub\'s words stay out of the answer');
+  assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('Resource not accessible by integration')), 'and go to the log');
 });

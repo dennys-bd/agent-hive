@@ -1,11 +1,11 @@
 import type { Express, Request, Response } from 'express';
 import { ItemNotOnSourceError } from './field-values.js';
-import { blockerProblem } from './hive-blockers.js';
+import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
 import { refusedInBackoff } from './server-project.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './sources/github-blockers.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
-import type { BlockerChange, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
+import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
 
 /** The route's refusal codes (#56): stable keys the details panel maps to its copy (#57); `error` beside them is an English sentence. */
 export const BLOCKER_CODES = {
@@ -18,6 +18,7 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_BAD_GATEWAY = 502;
+const SEARCH_MAX = 200; // #57: the add row's text, as long as the longest ref may be; a longer one is no search
 const REF_MAX = 200; // an owner (39), a repository (100), `/`, `#` and a number fit; anything longer names nothing
 
 const REFUSALS: Record<Refusal, { status: number; error: string }> = {
@@ -35,7 +36,7 @@ const KNOWN: [new (...args: never[]) => Error, Refusal][] = [
   [BadBlockerRefError, 'badRequest'], [BlockerRefNotFoundError, 'unknownRef'], [SelfBlockerError, 'self'], [ItemNotOnSourceError, 'unknownItem'],
 ];
 
-type RelateSource = Partial<Pick<Source, 'relate'>>;
+type RelateSource = Partial<Pick<Source, 'relate' | 'findBlockers'>>;
 
 /** What the blocker route needs (#56): the live state and sources, the dispatch, the state after it, and the log a source's words go to. */
 export interface BlockerRouteDeps {
@@ -109,8 +110,31 @@ async function relateOnSource(deps: BlockerRouteDeps, res: Response, current: Li
   res.json({ blockers: written.blockers });
 }
 
+// #57: the add row's text, trimmed; absent, empty or too long is no search
+function searchOf(q: unknown): string | undefined {
+  if (typeof q !== 'string') return undefined;
+  const trimmed = q.trim();
+  return trimmed === '' || trimmed.length > SEARCH_MAX ? undefined : trimmed;
+}
+
+// #57: a source item's candidates through its findBlockers, refused as relate is; the source's words go to the log, never to the answer
+async function findOnSource(deps: BlockerRouteDeps, res: Response, current: Live, name: string, itemId: string, text: string): Promise<void> {
+  const find = current.runtime.sources.get(name)?.findBlockers;
+  if (find === undefined || itemSource(itemId) !== name) return refuse(res, 'unknownItem');
+  if (refusedInBackoff(current.state, name, res)) return;
+  let candidates: BlockerRef[];
+  try {
+    candidates = await find(itemId, text);
+  } catch (err) {
+    deps.log?.error(`blocker search on ${itemId} refused: ${errorMessage(err)}`);
+    return refuse(res, 'refused');
+  }
+  res.json({ candidates });
+}
+
 /** POST /sources/:name/items/:itemId/blockers (#56): one relation added or removed, `{ action, kind, ref }`, answering the item's
- * `{ blockers }`. `hive` edits the Hive's own tasks (item `local:<n>`, ref a hive task's id); any other source goes through its relate. */
+ * `{ blockers }`. `hive` edits the Hive's own tasks (item `local:<n>`, ref a hive task's id); any other source goes through its relate.
+ * GET …/blockers/candidates?q= (#57): the add row's suggestions, `{ candidates }`, from the hive tasks or the source's findBlockers. */
 export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): void {
   app.post('/sources/:name/items/:itemId/blockers', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
@@ -120,5 +144,15 @@ export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): voi
     const name = req.params.name as string;
     const itemId = req.params.itemId as string;
     await (name === HIVE_SOURCE ? relateHive(deps, res, current.state, itemId, change) : relateOnSource(deps, res, current, name, itemId, change));
+  });
+  app.get('/sources/:name/items/:itemId/blockers/candidates', async (req: Request, res: Response) => {
+    const current = deps.requireLive(res);
+    if (!current) return;
+    const text = searchOf(req.query.q);
+    if (text === undefined) return refuse(res, 'badRequest');
+    const name = req.params.name as string;
+    const itemId = req.params.itemId as string;
+    if (name === HIVE_SOURCE) return void res.json({ candidates: hiveCandidates(current.state.tasks, itemId, text) });
+    await findOnSource(deps, res, current, name, itemId, text);
   });
 }
