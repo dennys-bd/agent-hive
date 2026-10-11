@@ -46,3 +46,27 @@ export function segmentTone(state: Pick<State, 'tasks'> & TaskStateInput, parent
   const child = state.tasks.find((task) => idOf(task) === childId);
   return child === undefined ? 'empty' : taskState(child, state);
 }
+
+/** A row of a stage node's list (#34): a group's header, or a card with its indent. */
+export type NodeRow =
+  | { kind: 'group'; key: string; root?: Task; count: number; isCollapsed: boolean }
+  | { kind: 'task'; task: Task; indent: number };
+
+const INDENT_PX = 10; // per level below the root's direct children, the handoff's
+
+/** The node's list with the tree toggle off (#34): every card where it sits today, unindented. */
+export const flatRows = (tasks: readonly Task[]): NodeRow[] => tasks.map((task): NodeRow => ({ kind: 'task', task, indent: 0 }));
+
+/** The node's list with the tree toggle on (#34): with no tree group, the cards as today; otherwise each group's header and, unless collapsed
+ * in this node, its cards indented by depth. A collapsed group's cards are not rows at all, so the fold counts only what shows. */
+export function nodeRows(all: readonly Task[], shown: readonly Task[], stage: string, collapsed: readonly string[]): NodeRow[] {
+  const groups = groupTasks(all, shown);
+  if (!groups.some((group) => group.root !== undefined)) return flatRows(shown);
+  return groups.flatMap((group): NodeRow[] => {
+    const key = collapseKey(stage, group.root);
+    const isCollapsed = collapsed.includes(key);
+    const header: NodeRow = { kind: 'group', key, root: group.root, count: group.tasks.length, isCollapsed };
+    if (isCollapsed) return [header];
+    return [header, ...group.tasks.map(({ task, depth }): NodeRow => ({ kind: 'task', task, indent: Math.max(depth - 1, 0) * INDENT_PX }))];
+  });
+}
