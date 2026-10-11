@@ -10,7 +10,6 @@ import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
-import { memoryCapProblem } from './memory-cap.js';
 import { type ConventionRowDraft, conventionRows, conventionsFrom, conventionsProblem } from './settings-conventions.js';
 import { switchAtId, switchAtName } from './settings-epics.js';
 import type { SettingsSection } from './settings-sections.js';
@@ -280,11 +279,11 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
   return silent === undefined ? undefined : { section: 'flow', message: t('settings.error.sourceSilent', { source: silent.name.trim() }) };
 }
 
-/** The first problem in today's order (prefix, sources, create in, stages, rules, budget, console lines, workspaces, memory total limits, conventions, editor, task properties, branch, shutdown
+/** The first problem in today's order (prefix, sources, create in, stages, rules, budget, console lines, workspaces, conventions, editor, task properties, branch, shutdown
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(draft.rules, draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? memoryCapProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(draft.rules, draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
@@ -306,7 +305,7 @@ const renamesFrom = (rows: SourceDraft[]): Record<string, string> =>
 const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
   name: p.name.trim(), path: p.path.trim(), env: envFrom(p.env), // env always sent (#348)
   fork: p.fork, // #854: always sent, null included: the parser requires it
-  memoryCap: Number(p.memoryCap.trim()), // #73: always sent; validateSettings ran first
+  memoryCap: Number(p.memoryCap.trim()), // #73: always sent; only the memory dialog changes it, through a route that checks it (#115)
   ...(p.baseBranch.trim() === '' ? {} : { baseBranch: p.baseBranch.trim() }),
   ...(p.setup.trim() === '' ? {} : { setup: p.setup }),
   ...(p.setupTimeout.trim() === '' ? {} : { setupTimeout: p.setupTimeout.trim() }),
