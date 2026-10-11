@@ -1158,6 +1158,17 @@ const en = {
   'running.skipped': 'skipped', // #914: a command onMissing skip passed over
   'running.output': 'see output', // #914: the execution's console, or the running check's page
   'running.stop': 'stop', // #914: the stage's own stop
+  // #916: the details panel's exhausted block and tries section
+  'tries.exhausted.title': 'out of tries',
+  'tries.exhausted.text': '{stage} {trigger} {max} of {max} times and went back to {destination} each time. the task stopped here and waits for you.',
+  'tries.exhausted.gone': '{stage} ran out of tries.',
+  'tries.exhausted.retry': 'try again',
+  'tries.exhausted.move': 'move to…',
+  'tries.exhausted.openSession': 'open session',
+  'tries.exhausted.note': 'try again resets the counter and runs {destination}.',
+  'tries.section': 'tries',
+  'tries.sectionOf': 'tries · {trigger} {n}/{max}',
+  'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
   'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
   'flow.trigger.done': 'done', // #134: the triggers and fixed verdicts as a pill and the card read them
@@ -2800,6 +2811,16 @@ const pt: Record<MessageKey, string> = {
   'running.skipped': 'pulado',
   'running.output': 'ver saída',
   'running.stop': 'parar',
+  'tries.exhausted.title': 'tentativas esgotadas',
+  'tries.exhausted.text': '{stage} {trigger} {max} de {max} vezes e voltou para {destination} a cada vez. a tarefa parou aqui e espera você.',
+  'tries.exhausted.gone': '{stage} esgotou as tentativas.',
+  'tries.exhausted.retry': 'tentar de novo',
+  'tries.exhausted.move': 'mover para…',
+  'tries.exhausted.openSession': 'abrir sessão',
+  'tries.exhausted.note': 'tentar de novo zera o contador e executa {destination}.',
+  'tries.section': 'tentativas',
+  'tries.sectionOf': 'tentativas · {trigger} {n}/{max}',
+  'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
   'stage.error.triesOut': 'esgotou · {trigger} {n}x',
   'flow.trigger.done': 'terminou',

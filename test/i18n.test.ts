@@ -338,3 +338,20 @@ test('the running block\'s copy reads as the spec writes it, in both languages (
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['aguardando CI', 'executando checks', 'etapa {name}', 'volta {n}/{max}', 'sem saída há {n} min · {name}', 'pulado', 'ver saída', 'parar']);
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['waiting for CI', 'running checks', 'stage {name}', 'loop {n}/{max}', 'no output for {n} min · {name}', 'skipped', 'see output', 'stop']);
 });
+
+test('the tries and exhausted blocks\' copy reads as the spec writes it, in both languages (#916)', () => {
+  const keys = [
+    'tries.exhausted.title', 'tries.exhausted.text', 'tries.exhausted.gone', 'tries.exhausted.retry', 'tries.exhausted.move',
+    'tries.exhausted.openSession', 'tries.exhausted.note', 'tries.section', 'tries.sectionOf', 'tries.line',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'tentativas esgotadas', '{stage} {trigger} {max} de {max} vezes e voltou para {destination} a cada vez. a tarefa parou aqui e espera você.',
+    '{stage} esgotou as tentativas.', 'tentar de novo', 'mover para…', 'abrir sessão', 'tentar de novo zera o contador e executa {destination}.',
+    'tentativas', 'tentativas · {trigger} {n}/{max}', '{n}/{max} ✕ {cause}',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'out of tries', '{stage} {trigger} {max} of {max} times and went back to {destination} each time. the task stopped here and waits for you.',
+    '{stage} ran out of tries.', 'try again', 'move to…', 'open session', 'try again resets the counter and runs {destination}.',
+    'tries', 'tries · {trigger} {n}/{max}', '{n}/{max} ✕ {cause}',
+  ]);
+});
