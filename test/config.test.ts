@@ -7,7 +7,7 @@ import { type LegacyStage, transitionsOf } from '../src/config-migrate.js';
 import { SHORTCUTS } from '../src/shortcut-registry.js';
 import type { SourceTaskProps, Config } from '../src/types.js';
 import { EDITOR_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { sourceEntry, FIXED, STAGES, FILTER, LOCAL_STAGES, chained, combConfig, move } from './fakes.js';
+import { sourceEntry, FIXED, STAGES, FILTER, LOCAL_STAGES, chained, combConfig, move, EPICS } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: '@me', number: 6, filter: FILTER };
@@ -25,7 +25,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   assert.deepEqual(config.claudeArgs, []);
   assert.deepEqual(config.budget, {});
   assert.deepEqual(config.usageRules, []);
-  assert.equal(config.epics, 'ignore');
+  assert.equal('epics' in config, false, 'the epics keys live on each source (#30)');
   assert.equal(config.logLevel, 'info');
 });
 
@@ -121,10 +121,31 @@ test('parseConfig reads no terminal key: a file that still holds one parses as i
   assert.deepEqual(leftover, parseConfig(GITHUB));
 });
 
-test('parseConfig accepts epics ignore or queue and rejects anything else', () => {
-  assert.equal(parseConfig({ ...GITHUB, epics: 'queue' }).epics, 'queue');
-  assert.equal(parseConfig({ ...GITHUB, epics: 'ignore' }).epics, 'ignore');
-  assert.throws(() => parseConfig({ ...GITHUB, epics: 'label' }), /"epics" must be one of: ignore, queue/);
+test('a GitHub source requires epics, epicFollows and switchAt, naming the field; an unknown value is refused (#30)', () => {
+  const source = (patch: Record<string, unknown>) => () => parseConfig(github({ source: { ...GITHUB_SOURCE, ...patch } }));
+  const missing: [string, string][] = [
+    ['epics', '"comb.sources[0].epics" must be one of: ignore, show, hide'],
+    ['epicFollows', '"comb.sources[0].epicFollows" must be one of: behind, ahead, aheadThenBehind'],
+    ['switchAt', '"comb.sources[0].switchAt" is required'],
+  ];
+  for (const [key, message] of missing) assert.throws(source({ [key]: undefined }), { message: `hive.config.json: ${message}` }, `${key} missing`);
+  assert.throws(source({ epics: 'queue' }), { message: 'hive.config.json: "comb.sources[0].epics" must be one of: ignore, show, hide' }, 'the old mode');
+  assert.throws(source({ epicFollows: 'middle' }), { message: 'hive.config.json: "comb.sources[0].epicFollows" must be one of: behind, ahead, aheadThenBehind' });
+  assert.throws(source({ switchAt: '' }), { message: 'hive.config.json: "comb.sources[0].switchAt" must be a non-empty string' });
+  assert.throws(source({ switchAt: 3 }), { message: 'hive.config.json: "comb.sources[0].switchAt" must be a non-empty string' });
+});
+
+test('a switchAt that is no stage of the flow is refused, compared exactly; a valid source round-trips its three keys (#30)', () => {
+  assert.throws(() => parseConfig(github({ source: { ...GITHUB_SOURCE, switchAt: 'Build' } })), { message: 'hive.config.json: "comb.sources[0].switchAt" is "Build", which is not a stage of the flow' });
+  assert.throws(() => parseConfig(github({ source: { ...GITHUB_SOURCE, switchAt: 'Fila' } })), /"comb\.sources\[0\]\.switchAt" is "Fila"/, 'compared exactly');
+  const [source] = parseConfig(github({ source: { ...GITHUB_SOURCE, epics: 'hide', epicFollows: 'behind', switchAt: 'fila' } })).comb.sources;
+  assert.deepEqual([source.epics, source.epicFollows, source.switchAt], ['hide', 'behind', 'fila']);
+  for (const epics of ['ignore', 'show', 'hide']) assert.equal(parseConfig(github({ source: { ...GITHUB_SOURCE, epics } })).comb.sources[0].epics, epics);
+});
+
+test('a top-level epics is refused, saying it moved into each source and how the values changed (#30)', () => {
+  const message = 'hive.config.json: "epics" moved into each source (comb.sources[].epics); the old "ignore" is now "hide" and the old "queue" is now "ignore"';
+  for (const epics of ['ignore', 'queue']) assert.throws(() => parseConfig({ ...GITHUB, epics }), { message }, epics);
 });
 
 test('parseConfig accepts logLevel warn, info or debug and rejects anything else, error included (#742)', () => {
@@ -330,7 +351,7 @@ test('a maxConcurrent left in hive.config.json is dropped on load: the state own
 });
 
 test('parseConfig accepts a github source as a comb.sources entry', () => {
-  assert.deepEqual(parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER } })).comb.sources, [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED }]);
+  assert.deepEqual(parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER } })).comb.sources, [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }]);
 });
 
 test('parseConfig rejects missing or wrong-typed fields with the field name', () => {
@@ -345,7 +366,7 @@ test('loadConfig reads hive.config.json from the home and reports a missing file
   const home = await tempDir(t, '');
   await assert.rejects(loadConfig(home), /hive\.config\.json/);
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(GITHUB));
-  assert.deepEqual((await loadConfig(home)).comb.sources, [sourceEntry(GITHUB_SOURCE)]);
+  assert.deepEqual((await loadConfig(home)).comb.sources, [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })]);
 });
 
 test('loadConfigIfPresent returns undefined only when the file is missing', async (t) => {
@@ -354,7 +375,7 @@ test('loadConfigIfPresent returns undefined only when the file is missing', asyn
   await writeFile(join(home, 'hive.config.json'), '{not json');
   await assert.rejects(loadConfigIfPresent(home), /JSON inválido/);
   await writeFile(join(home, 'hive.config.json'), JSON.stringify(GITHUB));
-  assert.deepEqual((await loadConfigIfPresent(home))?.comb.sources, [sourceEntry(GITHUB_SOURCE)]);
+  assert.deepEqual((await loadConfigIfPresent(home))?.comb.sources, [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })]);
 });
 
 test('parseConfig reads budget, leaves absent limits absent and defaults to {}', () => {
@@ -559,10 +580,10 @@ test('filter rules parse trimmed and in order, [] means no restriction (#245)', 
     { field: 'projectField', name: ' Priority ', op: 'any', values: ['P0', 'P1'] },
   ];
   assert.deepEqual(parseConfig(github({ source: { ...GITHUB_SOURCE, filter } })).comb.sources[0], sourceEntry({
-    ...GITHUB_SOURCE,
+    ...GITHUB_SOURCE, ...EPICS,
     filter: [{ field: 'assignee', op: 'any', values: ['@me'] }, filter[1], filter[2], { field: 'projectField', name: 'Priority', op: 'any', values: ['P0', 'P1'] }],
   }));
-  assert.deepEqual(parseConfig(github()).comb.sources[0], sourceEntry(GITHUB_SOURCE), '[] parses as []');
+  assert.deepEqual(parseConfig(github()).comb.sources[0], sourceEntry({ ...GITHUB_SOURCE, ...EPICS }), '[] parses as []');
 });
 
 test('a bad filter rule is refused naming its index and key (#245)', () => {
@@ -581,7 +602,7 @@ test('a bad filter rule is refused naming its index and key (#245)', () => {
 
 test('a blocked rule (#441) parses with its operator alone; values (even []) or name on it is refused naming the rule', () => {
   const filter = [{ field: 'label', op: 'any', values: ['hive'] }, { field: 'blocked', op: 'none' }];
-  assert.deepEqual(parseConfig(github({ source: { ...GITHUB_SOURCE, filter } })).comb.sources[0], sourceEntry({ ...GITHUB_SOURCE, filter }));
+  assert.deepEqual(parseConfig(github({ source: { ...GITHUB_SOURCE, filter } })).comb.sources[0], sourceEntry({ ...GITHUB_SOURCE, ...EPICS, filter }));
   const at = (bad: unknown) => () => parseConfig(github({ source: { ...GITHUB_SOURCE, filter: [filter[0], bad] } }));
   const key = (name: string): string => `hive.config.json: "comb.sources[0].filter[1].${name}"`;
   assert.throws(at({ field: 'blocked', op: 'none', values: ['yes'] }), { message: `${key('values')} is not allowed on a blocked rule` });
@@ -591,7 +612,7 @@ test('a blocked rule (#441) parses with its operator alone; values (even []) or 
 });
 
 test('parseConfig reads a Comb with its prefix, its one workspace and its stages, with a source or without one', () => {
-  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [sourceEntry(GITHUB_SOURCE)], ...chained(STAGES), commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], ...chained(STAGES), commands: [], hiveSource: true, createIn: 'hive' });
   const bare = parseConfig(combConfig({ stages: LOCAL_STAGES, auth: undefined })).comb;
   assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [], stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES), commands: [], hiveSource: true, createIn: 'hive' });
 });
@@ -623,7 +644,7 @@ test('comb.sources holds named sources: a name like a workspace\'s but not "loca
   const work = { name: 'work', qualifyId: true, prefix: 'W', ...GITHUB_SOURCE, taskProps: FIXED };
   const notes = { name: 'notes', qualifyId: false, ...GITHUB_SOURCE, number: 7, taskProps: FIXED };
   const stages = [{ name: 'dev', from: { work: ['Ready'], notes: ['todo'] } }];
-  assert.deepEqual(parseConfig(combConfig({ sources: [work, notes], stages })).comb.sources, [work, notes]);
+  assert.deepEqual(parseConfig(combConfig({ sources: [work, notes], stages })).comb.sources, [{ ...work, ...EPICS, switchAt: 'dev' }, { ...notes, ...EPICS, switchAt: 'dev' }]);
   assert.equal('prefix' in parseConfig(combConfig({ sources: [work, notes], stages })).comb.sources[1], false, 'absent stays absent');
   const second = (patch: Record<string, unknown>) => () => parseConfig(combConfig({ sources: [work, { ...notes, ...patch }], stages }));
   const nameMessage = 'hive.config.json: "comb.sources[1].name" must be a letter or digit followed by up to 39 letters, digits, ".", "_" or "-"';
@@ -750,7 +771,7 @@ test('a workspace env or a command env that sets a name the Hive sets is refused
 
 test('comb.sources[i].taskProps is required, parsed at its path; the #293 workspace setting is refused; unnamedWorkspacePath spots a file from before names (#179, #688)', () => {
   const site: SourceTaskProps = { defaults: { workspace: 'site', auto: false }, rules: [] };
-  assert.deepEqual(parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: site } })).comb.sources[0], { name: 'board', qualifyId: false, ...GITHUB_SOURCE, taskProps: site });
+  assert.deepEqual(parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: site } })).comb.sources[0], { name: 'board', qualifyId: false, ...GITHUB_SOURCE, ...EPICS, taskProps: site });
   assert.deepEqual(parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: DYNAMIC } })).comb.sources[0].taskProps, DYNAMIC);
   const message = 'hive.config.json: "comb.sources[0].taskProps" must be an object like { "defaults": { "auto": true }, "rules": [] }';
   assert.throws(() => parseConfig(combConfig({ sources: [{ name: 'board', qualifyId: false, ...GITHUB_SOURCE }] })), { message }, 'required: no default');

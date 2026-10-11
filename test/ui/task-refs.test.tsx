@@ -20,7 +20,7 @@ test('findTaskRefs: PREFIX-N only for a known prefix, on word boundaries and cas
 
 test('refPrefixes: the Comb\'s prefix, then each qualifyId source\'s prefix, or its name without one; a source without qualifyId adds none (#588)', () => {
   const source = (name: string, qualifyId: boolean, prefix?: string): SourceConfig => ({
-    type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, name, qualifyId, ...(prefix === undefined ? {} : { prefix }),
+    type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila', name, qualifyId, ...(prefix === undefined ? {} : { prefix }),
   });
   expect(refPrefixes({ comb: { prefix: 'HIVE', sources: [source('gh', true, 'GH'), source('notes', true), source('plain', false)] } })).toEqual(['HIVE', 'GH', 'notes']);
 });

@@ -11,7 +11,7 @@ import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFo
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
 import { activityOfWorker, taskOfActivity, taskOfWorker } from './activities.js';
-import { CONFIG_FILE, taskWorkspace, DEFAULT_CONFIG, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
+import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
@@ -77,7 +77,7 @@ import { trustedCopies } from './copy-sides.js';
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, readTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
-  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX,
+  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Signal, type SourceItem, type Worker, type LaunchPty, type State,
@@ -183,10 +183,15 @@ const exists = (path: string): Promise<boolean> => access(path).then(() => true,
 // What a caller that never checked gets: run.ts headless and every test that does not care about the IDEs.
 
 // Query values are strings: `number` is converted, the rest goes to parseConfig as is so it names the bad field. Listing the Status options
-// reads neither the task filter nor the task properties: the source gets the empty filter parseSource requires and a placeholder default workspace (#293, #688).
+// reads neither the task filter, the task properties nor the epics keys: the source gets the empty filter parseSource requires, a placeholder
+// default workspace (#293, #688) and a new source's epics keys (#30).
 function sourceFromQuery(query: Request['query']): Record<string, unknown> {
   const { type, owner, number } = query;
-  return { type, owner, number: typeof number === 'string' && number !== '' ? Number(number) : number, filter: [], taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] } };
+  return {
+    type, owner, number: typeof number === 'string' && number !== '' ? Number(number) : number, filter: [], taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] },
+    // only lists the project's options and never reaches parseConfig, so a flow without the default stage cannot refuse it
+    ...NEW_SOURCE_EPICS, switchAt: SWITCH_AT_DEFAULT,
+  };
 }
 
 // The settings form works before anything is saved, so the transport rides on the query; absent (or anything unknown) is cli,
@@ -865,7 +870,6 @@ export function createServer(deps: ServerDeps): HiveServer {
       // only the source and the transport matter here; the name cites no source column
       spec = {
         auth: authFromQuery(req.query), source: { ...parseSource(sourceFromQuery(req.query), 'source', ['setup']), name: 'setup', qualifyId: false }, stages: [], transitions: [],
-        epics: DEFAULT_CONFIG.epics,
       };
     } catch (err) {
       res.status(HTTP_BAD_REQUEST).json({ error: errorMessage(err) });

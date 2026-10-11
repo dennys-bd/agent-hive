@@ -228,6 +228,8 @@ export interface SourceTaskProps { defaults: TaskProps; rules: TaskRule[] }
 export type SourceFields = {
   type: 'github'; owner: string; number: number; filter: TaskFilter; taskProps: SourceTaskProps;
   repository?: string; // #846: owner/name new issues are created in; absent = the source is no destination
+  epics: EpicsMode; epicFollows: EpicFollows; // #30: required whatever the mode
+  switchAt: string; // #30: a stage name of comb.stages, checked by the parser
 };
 
 /** One external source of the Comb (#180): its fields under the key the columns, the item ids, the state and the UI use. */
@@ -655,8 +657,17 @@ export interface State {
   error?: string;
 }
 
-/** What the GitHub adapter does with an issue that has sub-issues: drop it (only the sub-issues are tasks) or queue it like any other. */
-export type EpicsMode = 'ignore' | 'queue';
+/** What the GitHub adapter does with an issue that has sub-issues (#30): ignore = a regular task; show = listed with its children (#31 keeps it
+ * from running); hide = dropped, only its sub-issues are tasks. The parser and the source's select read EPICS_MODES. */
+export const EPICS_MODES = ['ignore', 'show', 'hide'] as const;
+export type EpicsMode = (typeof EPICS_MODES)[number];
+/** Which child an epic's stage follows (#30, computed by #31): the furthest behind, the furthest ahead, or ahead up to switchAt and behind after. */
+export const EPIC_FOLLOWS = ['behind', 'ahead', 'aheadThenBehind'] as const;
+export type EpicFollows = (typeof EPIC_FOLLOWS)[number];
+/** A new source's epics keys (#27, #30). The parser itself has no default. */
+export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = { epics: 'show', epicFollows: 'aheadThenBehind' };
+/** The stage a new source switches at, else the flow's first (#30). */
+export const SWITCH_AT_DEFAULT = 'Build';
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude'] as const;
@@ -1040,7 +1051,6 @@ export type Shortcuts = Partial<Record<OperationId, string | null>>;
 export interface Config {
   auth?: AuthConfig; // required only by a github source (parseConfig); no default: a silent one would hide which transport is live
   comb: CombConfig;
-  epics: EpicsMode; // GitHub only; a source without epics ignores it
   logLevel: LogLevel; // warn: only refusals and failures (#742); info: what the Hive did; debug: also what it received. Read on boot and on every POST /settings
   branch?: string; // branch name template for a task's worktree ({id}, {title}, {slug}); absent = DEFAULT_BRANCH_TEMPLATE
   language?: Language; // UI language; absent = the system's (never written as undefined: the file stays clean)
@@ -1392,8 +1402,6 @@ export interface SettingsBody {
   budget?: Budget;
   /** The form always sends it (empty table = []); an API caller that omits it keeps the current rules. */
   usageRules?: UsageRule[];
-  /** Optional; missing keeps the current mode (or `ignore` on first setup). */
-  epics?: EpicsMode;
   /** The form always sends it (empty field = key absent); an API caller that omits it keeps the current template. */
   branch?: string;
   /** The form always sends it; an API caller that omits it keeps the current one (or the system's on first setup). */
@@ -1504,7 +1512,7 @@ export interface ProjectBuiltins { status?: number; labels?: number; assignees?:
 /** A pull request linked to a project item, as the source reads it (#756). */
 export interface ProjectPr { number: number; url: string; state: PrState; checks?: Signal; draft?: true } // draft: #757, read by the repository list
 
-/** One issue of a source's project, unfiltered (#756). `out` only when the source's filter or `epics: ignore` keeps it from the Hive; an
+/** One issue of a source's project, unfiltered (#756). `out` only when the source's filter or `epics: hide` keeps it from the Hive; an
  * uncited column is not `out`, the UI knows it from the stages. Field values are keyed by field name: number for number fields, `done/total`
  * for progress, an ISO date for dates, else text. `body` is what a task created from it starts with. */
 export interface ProjectItem {
@@ -1603,8 +1611,8 @@ export interface Source {
   project?(): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; read on demand by its route, never by the poll
 }
 
-/** What one source adapter is built from (#180): that source, the Comb's stages, the transport and the epics mode. */
-export type SourceSpec = Pick<Config, 'auth' | 'epics'> & { source: SourceConfig; stages: Stage[]; transitions: Transition[] };
+/** What one source adapter is built from (#180): that source (its epics keys included, #30), the Comb's stages and the transport. */
+export type SourceSpec = Pick<Config, 'auth'> & { source: SourceConfig; stages: Stage[]; transitions: Transition[] };
 
 /** `execFile` promisified. The git, gh and pkill calls take one, so tests never run a command. `maxBuffer` reaches execFile as is:
  * the task diff (#270) raises it past the 1 MB default and tells an overflow apart. `input` is what a PR write sends to gh's stdin (#592):

@@ -114,13 +114,15 @@ With no sources, nothing is polled from or written to a source, no `auth` is nee
 
 ```json
 "comb": { "prefix": "HIVE", "workspaces": [{ "name": "app", "path": "/path/to/repo", "format": { "onSave": true, "formatters": {}, "custom": [] } }],
-  "sources": [{ "name": "work", "qualifyId": false, "type": "github", "owner": "@me", "number": 6, "filter": [{ "field": "assignee", "op": "any", "values": ["@me"] }, { "field": "label", "op": "none", "values": ["blocked"] }], "taskProps": { "defaults": { "workspace": "app", "auto": true }, "rules": [] } }],
+  "sources": [{ "name": "work", "qualifyId": false, "type": "github", "owner": "@me", "number": 6, "filter": [{ "field": "assignee", "op": "any", "values": ["@me"] }, { "field": "label", "op": "none", "values": ["blocked"] }], "taskProps": { "defaults": { "workspace": "app", "auto": true }, "rules": [] }, "epics": "show", "epicFollows": "aheadThenBehind", "switchAt": "Build" }],
   "stages": [ … ] }
 ```
 
 The source's columns are the options of the GitHub Project's `Status` field. Hive moves items between them.
 
 `filter` narrows which issues in those columns the Hive takes. It is a list of rules, and a task must pass every one. A rule names a `field`: `assignee`, `label`, `milestone`, `repository` (as `owner/name`), or `projectField` with the GitHub Project's single-select field in `name` (priority, size, any custom field). It also names an `op` and its `values`. `any` takes a task carrying at least one of the values, and `none` a task carrying none of them. A task with no value for the field fails `any` and passes `none`, and `[]` takes every task. A `blocked` rule takes no `values`: `{ "field": "blocked", "op": "none" }` keeps out an issue with an open blocker (an open blocked-by dependency or an open sub-issue), and `any` keeps only those. Matching is case-insensitive. `@me` in an `assignee` rule is the account the Hive polls with: the `gh` login on `cli`, the Hive's own on `api`. A task that stops matching is treated like one that left its source: `missing` if it is running, dropped if it is stopped. `filter` is required on a GitHub source; edit it in Settings, where each rule's values are picked from the source's own or typed.
+
+`epics`, `epicFollows` and `switchAt` are required on a GitHub source. `epics` says what an issue with sub-issues is: `ignore` makes it a regular task, `show` lists it with its children (its open sub-issues block it), and `hide` keeps it out, so only its sub-issues come in. `epicFollows` (`behind`, `ahead` or `aheadThenBehind`) and `switchAt`, a stage name of `comb.stages`, say which child the epic's stage follows. A `switchAt` that names no stage is refused, and so is a top-level `epics`: the key lives in each source.
 
 The Hive reaches a GitHub source through `auth.github`:
 

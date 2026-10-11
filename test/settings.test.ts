@@ -8,10 +8,10 @@ import { DEFAULT_CONFIG } from '../src/config.js';
 import { readCredentials } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, Workspace, SettingsBody, SettingsInfo, State } from '../src/types.js';
+import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../src/types.js';
 import { isDeepStrictEqual } from 'node:util';
-import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained } from './fakes.js';
+import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -342,7 +342,7 @@ test('POST /settings saves the filter rules; unchanged rules keep the adapter, c
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   workspaces.set(base, repo);
-  const withFilter = (filter: TaskFilter): Omit<SettingsBody, 'workspaces'> => ({ ...BODY, sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter, taskProps: FIXED }] });
+  const withFilter = (filter: TaskFilter): Omit<SettingsBody, 'workspaces'> => ({ ...BODY, sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter, taskProps: FIXED, ...EPICS }] });
   const mine = withFilter([{ field: 'assignee', op: 'any', values: ['@me'] }]);
   assert.equal((await postSettings(base, mine)).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.sources, mine.sources);
@@ -419,11 +419,11 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
   const { base, home } = await start(t);
   const posted: LegacyStage[] = [{ name: 'spec', from: { board: ['Ready'] }, onFinish: { board: [move('In review')] }, prompt: '/hive-spec {url}', session: 'new' }, { name: 'review', from: { board: ['In review'] } }];
   const { stages } = chained(posted); // #134: onFinish is saved as the transitions' sources
-  assert.equal((await postSettings(base, { ...BODY, stages: posted })).status, 200);
+  assert.equal((await postSettings(base, onOwnStages({ ...BODY, stages: posted }))).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.stages, stages);
   assert.deepEqual((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.comb.stages, stages);
   const { stages: _omitted, ...withoutStages } = BODY;
-  assert.equal((await postSettings(base, withoutStages)).status, 200);
+  assert.equal((await postSettings(base, { ...withoutStages, sources: [{ ...GITHUB_ENTRY, switchAt: 'spec' }] })).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.stages, stages, 'an API caller that omits it keeps the saved ones');
   const bad = await postSettings(base, { ...BODY, stages: [{ name: 'a', from: { board: ['Ready'] }, session: 'resume' }] });
   assert.equal(bad.status, 400);
@@ -433,7 +433,7 @@ test('POST /settings with stages persists them, GET /settings returns them, an o
 test('GET /settings/source-columns builds the source from the query and answers its settingsOptions', async (t) => {
   const { base, configs } = await start(t);
   assert.deepEqual(await json(hiveFetch(`${base}/settings/source-columns?type=github&owner=acme&number=6`)), OPTIONS);
-  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] } }, 'the query carries no filter and no routing: listing Status options gets the empty filter and a placeholder workspace');
+  assert.deepEqual(configs.at(-1)?.source, { name: 'setup', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: { defaults: { workspace: 'setup', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'Build' }, 'the query carries no filter, no routing and no epics keys: listing Status options gets the empty filter, a placeholder workspace and a new source\'s epics keys');
 });
 
 test('GET /settings/source-columns carries the transport: auth=api is honoured, anything else is cli', async (t) => {
@@ -603,23 +603,27 @@ test('POST /hooks/status answers the limits line for a valid payload, an empty b
   assert.equal((await hiveFetch(`${base}/settings`)).status, 200, 'the server is still up');
 });
 
-test('POST /settings with epics writes it, a save without the key keeps it, a change rebuilds the source and a bad value answers 400', async (t) => {
+test('POST /settings carries each source\'s epics keys: written inside the source, a change rebuilds it, and a missing key, an unknown mode or a switchAt off the flow answers 400 before the write (#30)', async (t) => {
   const { base, home, configs } = await start(t);
+  const saved = async (): Promise<SourceConfig> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).comb.sources[0];
+  const epicsOf = ({ epics, epicFollows, switchAt }: SourceConfig) => ({ epics, epicFollows, switchAt });
   assert.equal((await postSettings(base, BODY)).status, 200);
-  assert.equal((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).epics, 'ignore', 'default on first setup');
+  assert.deepEqual(epicsOf(await saved()), EPICS);
   const before = configs.length;
-  assert.equal((await postSettings(base, { ...BODY, epics: 'queue' })).status, 200);
-  assert.equal((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).epics, 'queue');
-  assert.equal((await json<SettingsInfo>(hiveFetch(`${base}/settings`))).config?.epics, 'queue');
-  assert.equal(configs.at(-1)?.epics, 'queue', 'the live board is built with the new mode');
-  assert.equal(configs.length, before + 1, 'a different epics mode needs a new board, resolved once');
-  // a save without the key keeps the file's (the API caller that omits it, like `workers`)
-  assert.equal((await postSettings(base, BODY)).status, 200);
-  assert.equal((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).epics, 'queue');
-  const bad = await postSettings(base, { ...BODY, epics: 'label' });
-  assert.equal(bad.status, 400);
-  assert.match((await json<{ error: string }>(bad)).error, /"epics" must be one of: ignore, queue/);
-  assert.equal((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).epics, 'queue', 'rejected before the write');
+  assert.equal((await postSettings(base, { ...BODY, sources: [{ ...GITHUB_ENTRY, epics: 'hide', epicFollows: 'behind' }] })).status, 200);
+  assert.deepEqual(epicsOf(await saved()), { epics: 'hide', epicFollows: 'behind', switchAt: 'fila' });
+  assert.equal(configs.at(-1)?.source.epics, 'hide', 'the live source is built with the new mode');
+  assert.equal(configs.length, before + 1, 'a different mode needs a new source, resolved once');
+  const refused = async (source: unknown, error: RegExp): Promise<void> => {
+    const bad = await postSettings(base, { ...BODY, sources: [source] });
+    assert.equal(bad.status, 400);
+    assert.match((await json<{ error: string }>(bad)).error, error);
+  };
+  const { switchAt: _missing, ...noSwitchAt } = GITHUB_ENTRY;
+  await refused(noSwitchAt, /"comb\.sources\[0\]\.switchAt" is required/);
+  await refused({ ...GITHUB_ENTRY, epics: 'queue' }, /"comb\.sources\[0\]\.epics" must be one of: ignore, show, hide/);
+  await refused({ ...GITHUB_ENTRY, switchAt: 'Build' }, /"comb\.sources\[0\]\.switchAt" is "Build", which is not a stage of the flow/);
+  assert.equal((await saved()).epics, 'hide', 'rejected before the write');
 });
 
 test('GET /settings carries the effective language: the system one until a save sets it, then the file; an omitted key keeps it; a bad value is 400', async (t) => {

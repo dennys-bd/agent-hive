@@ -6,13 +6,14 @@ import { ITEMS, type GhItemNode } from '../src/sources/github-queries.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
 import type { FieldWrite, ProjectView, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
-import { SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, move } from './fakes.js';
+import { EPICS, SOURCE, STAGES, FILTER, FIXED, chained, combConfig, fakeGql, fakeLog, move } from './fakes.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
 /** The SourceSpec the server would build from a Comb with the GitHub source and `extra` on top (source, columns or a top-level key). */
 const specOf = (extra: Record<string, unknown> = {}) => { const config = parseConfig(combConfig({ source: GITHUB_SOURCE, ...extra })); return sourceSpec(config, config.comb.sources[0]); };
 const config = specOf();
-const queued = specOf({ epics: 'queue' });
+const ignored = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore' } });
+const hidden = specOf({ source: { ...GITHUB_SOURCE, epics: 'hide' } });
 
 const options = [{ id: 'O_ready', name: 'Ready' }, { id: 'O_prog', name: 'In progress' }, { id: 'O_rev', name: 'In review' }, { id: 'O_done', name: 'Done' }];
 const fields = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options } } } };
@@ -178,7 +179,7 @@ test('citedColumns lists every source column the config mentions once, naming th
   ]);
 });
 
-test('with epics: queue, listItems keeps epics and resolves open blockers with one graphql call, one alias per queued issue, OPEN only and deduped', async () => {
+test('with epics: ignore, listItems keeps epics and resolves open blockers with one graphql call, one alias per listed issue, OPEN only and deduped', async () => {
   const { gql, calls } = fakeGql({
     items: page([item(1), item(2, 'Done'), item(3), item(4)]),
     relations: {
@@ -187,7 +188,7 @@ test('with epics: queue, listItems keeps epics and resolves open blockers with o
       i2: relations([], []),
     },
   });
-  const tasks = await createSource(queued, { gql }).listItems();
+  const tasks = await createSource(ignored, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
   assert.ok(!('blockedBy' in tasks[1].item), 'field omitted when there is no open blocker');
   const graphql = calls.filter((c) => c.name === 'relations');
@@ -212,39 +213,47 @@ test('listItems treats issue: null, a null repository or a missing alias as no b
   });
   const tasks = await createSource(config, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => c.item.blockedBy), [undefined, undefined, undefined]);
-  assert.deepEqual(tasks.map((c) => c.item.id), ['1', '2', '3'], 'nothing dropped under the default epics: ignore');
+  assert.deepEqual(tasks.map((c) => c.item.id), ['1', '2', '3'], 'nothing dropped: no item is an epic');
   assert.equal(calls.filter((c) => c.name === 'relations').length, 1);
 });
 
-test('listItems drops epics (subIssuesSummary.total > 0) by default straight from the listing, with no relations alias spent on them', async () => {
+test('with epics: hide, listItems drops epics (subIssuesSummary.total > 0) straight from the listing, with no relations alias spent on them', async () => {
   const epic = (n: number, total: number) => ({ ...item(n), content: { ...item(n).content, subIssuesSummary: { total } } });
   const { gql, calls } = fakeGql({
     items: page([epic(1, 1), epic(2, 3), item(3), item(4)]),
     relations: { i0: relations([[7, 'OPEN']]), i1: relations([[9, 'CLOSED']]) },
   });
-  const tasks = await createSource(config, { gql }).listItems();
+  const tasks = await createSource(hidden, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['3', ['7']], ['4', undefined]]);
   const { query } = calls.find((c) => c.name === 'relations')!;
   assert.ok(!query.includes('issue(number: 1)') && !query.includes('issue(number: 2)'), 'epics cost no relations alias');
   assert.equal(calls.filter((c) => c.name === 'relations').length, 1);
 });
 
-test('epics: ignore drops an epic wherever it sits on the source, before the relations query: it costs no alias', async () => {
+test('epics: hide drops an epic wherever it sits on the source, before the relations query: it costs no alias', async () => {
   const epic = { ...item(2), fieldValueByName: { name: 'In progress' }, content: { ...item(2).content, subIssuesSummary: { total: 2 } } };
   const other = { ...item(3), fieldValueByName: { name: 'In review' } };
   const { gql, calls } = fakeGql({ items: page([epic, other]), relations: {} });
-  const tasks = await createSource(config, { gql }).listItems();
+  const tasks = await createSource(hidden, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => c.item.id), ['3'], 'the epic is dropped wherever it sits');
   const { query } = calls.find((c) => c.name === 'relations')!;
   assert.ok(!query.includes('issue(number: 2)'), 'the epic gets no alias');
   assert.match(query, /^query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 3\)/, 'a task outside a prompt-entry column is asked for (#441)');
 });
 
-test('epics: queue keeps an epic (unlike ignore) and its open sub-issues block it', async () => {
+test('epics: ignore keeps an epic (unlike hide) and its open sub-issues block it', async () => {
   const epic = { ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } }; // 'Ready': the prompt-entry column
   const { gql } = fakeGql({ items: page([epic]), relations: { i0: relations([], [[5, 'OPEN'], [6, 'CLOSED']]) } });
-  const tasks = await createSource(queued, { gql }).listItems();
+  const tasks = await createSource(ignored, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['5']]]);
+});
+
+test('epics: show, the default, lists an epic exactly as ignore does until #31: its open sub-issues block it (#30)', async () => {
+  const epic = { ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } };
+  const read = async (spec: SourceSpec) =>
+    createSource(spec, { gql: fakeGql({ items: page([epic]), relations: { i0: relations([], [[5, 'OPEN'], [6, 'CLOSED']]) } }).gql }).listItems();
+  assert.deepEqual((await read(config)).map((c) => [c.item.id, c.item.blockedBy]), [['1', ['5']]], 'show is what combConfig gives a source');
+  assert.deepEqual(await read(config), await read(ignored));
 });
 
 test('groupUnderEpics puts an epic\'s sub-issues right after it in the epic\'s own order; one in another column or past the listed ones keeps its source position; the input is untouched (#211)', () => {
@@ -270,20 +279,20 @@ test('groupUnderEpics goes depth first through epics inside epics, gives a sub-i
   assert.deepEqual(ids(groupUnderEpics([linked(1, [1]), linked(2)])), ['I1', 'I2'], 'an item is never its own sub-issue');
 });
 
-test('listItems groups before it drops: with epics: ignore the epic\'s sub-issues take its place, with epics: queue they follow it; the items query asks each issue for its node id and its sub-issue ids, at no extra call (#211)', async () => {
+test('listItems groups before it drops: with epics: hide the epic\'s sub-issues take its place, with epics: ignore they follow it; the items query asks each issue for its node id and its sub-issue ids, at no extra call (#211)', async () => {
   // A B C D F G, where B (2) is an epic with sub-issues F (6) then G (7)
   const nodes = [linked(1), linked(2, [6, 7]), linked(3), linked(4), linked(6), linked(7)];
   const { gql, calls } = fakeGql({ items: page(nodes), relations: {} });
-  assert.deepEqual((await createSource(config, { gql }).listItems()).map((c) => c.item.id), ['1', '6', '7', '3', '4'], 'A F G C D');
-  const kept = await createSource(queued, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
+  assert.deepEqual((await createSource(hidden, { gql }).listItems()).map((c) => c.item.id), ['1', '6', '7', '3', '4'], 'A F G C D');
+  const kept = await createSource(ignored, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
   assert.deepEqual(kept.map((c) => c.item.id), ['1', '2', '6', '7', '3', '4'], 'A B F G C D');
   assert.match(calls[0].query, /\.\.\. on Issue \{ id number .* subIssues\(first: 50\) \{ nodes \{ id \} \}/);
   assert.deepEqual(calls.map((c) => c.name), ['items', 'relations'], 'the grouping costs no call of its own');
 });
 
-test('an epic the task filter hides still lends its place to the sub-issues that pass the filter, even under epics: queue (#211)', async () => {
+test('an epic the task filter hides still lends its place to the sub-issues that pass the filter, even under epics: ignore (#211)', async () => {
   const hive = (n: number) => ({ ...linked(n), content: { ...linked(n).content, labels: { nodes: [{ name: 'hive' }] } } });
-  const labelled = specOf({ epics: 'queue', source: { ...GITHUB_SOURCE, filter: [{ field: 'label', op: 'any', values: ['hive'] }] } });
+  const labelled = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', filter: [{ field: 'label', op: 'any', values: ['hive'] }] } });
   // the epic 2 (no label) lists 6 (labelled) and 7 (no label); 3 sits between them on the source
   const { gql } = fakeGql({ items: page([hive(1), linked(2, [6, 7]), hive(3), hive(6), linked(7)]), relations: {} });
   assert.deepEqual((await createSource(labelled, { gql }).listItems()).map((c) => c.item.id), ['1', '6', '3'], 'the epic and 7 are filtered out; 6 still takes the epic\'s place');
@@ -543,7 +552,7 @@ test('namespaced lists <name>:<id> with the source set, qualifies the id with th
     apply: async (itemId, action) => { calls.push(`apply ${itemId} ${action.type}`); },
     comments: async (itemId) => { calls.push(`comments ${itemId}`); return []; },
   };
-  const entry = (extra: { qualifyId?: boolean; prefix?: string } = {}): SourceConfig => ({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...extra });
+  const entry = (extra: { qualifyId?: boolean; prefix?: string } = {}): SourceConfig => ({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS, ...extra });
   const first = async (source: Source) => (await source.listItems())[0].item;
   assert.deepEqual(await first(namespaced(entry(), adapter)), { itemId: 'work:PVTI_1', id: '12', source: 'work', title: 'T', body: '', url: '' });
   assert.equal((await first(namespaced(entry({ qualifyId: true }), adapter))).id, 'work-12', 'no prefix: the name');
@@ -565,7 +574,7 @@ test('namespaced wraps project only when the adapter has one: its rows under <na
     items: [{ itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', labels: [], assignees: [], fields: {}, pullRequests: [] }],
   };
   const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
-  const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED };
+  const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   assert.equal(namespaced(entry, bare).project, undefined);
   assert.deepEqual(await namespaced(entry, { ...bare, project: async () => view }).project?.(), { ...view, items: [{ ...view.items[0], itemId: 'work:PVTI_1' }] });
 });
@@ -573,7 +582,7 @@ test('namespaced wraps project only when the adapter has one: its rows under <na
 test('namespaced wraps fieldsOf and setField only when the adapter has them: the adapter gets its own id, the answer comes back under the listed ids (#686)', async () => {
   const asked: string[] = [];
   const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
-  const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED };
+  const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   const written: FieldWrite = {
     fields: [{ name: 'Priority', type: 'singleSelect', value: 'P0', options: ['P0'] }],
     row: { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', labels: [], assignees: [], fields: {}, pullRequests: [] },
@@ -594,7 +603,7 @@ test('namespaced wraps fieldsOf and setField only when the adapter has them: the
   assert.equal((await namespaced(entry, { ...bare, setField: async () => unlisted }).setField?.('work:PVTI_1', 'Priority', 'P0'))?.entry, undefined);
 });
 
-test('createSources builds one namespaced source per entry in order; given the live sources it keeps each instance whose entry, columns, epics and auth did not change; resolveSources names the source that fails (#180)', async () => {
+test('createSources builds one namespaced source per entry in order; given the live sources it keeps each instance whose entry (its epics keys included), columns and auth did not change; resolveSources names the source that fails (#180)', async () => {
   const notes = { name: 'notes', qualifyId: false, ...GITHUB_SOURCE, number: 8, taskProps: FIXED };
   const configOf = (work: Record<string, unknown>) =>
     parseConfig(combConfig({ sources: [work, notes], stages: [{ name: 'dev', from: { work: ['Ready'], notes: ['todo'] } }] }));
@@ -612,6 +621,9 @@ test('createSources builds one namespaced source per entry in order; given the l
   assert.deepEqual(built.slice(2), ['work'], 'only the changed entry is built again');
   assert.equal(rebuilt.get('notes'), live.get('notes'));
   assert.notEqual(rebuilt.get('work'), live.get('work'));
+  const hiding = configOf({ name: 'work', qualifyId: false, ...GITHUB_SOURCE, taskProps: FIXED, number: 7, epics: 'hide' });
+  createSources(hiding, build, { config: next, sources: rebuilt });
+  assert.deepEqual(built.slice(3), ['work'], 'a change of the epics keys builds the source again (#30)');
   await assert.rejects(resolveSources(live), { message: 'source notes: no project' });
 });
 

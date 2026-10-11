@@ -10,7 +10,7 @@ import { resetViewState } from '@/lib/view-state';
 import type { ProjectItem, ProjectView, SourceConfig, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
-export const SOURCE: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] } };
+export const SOURCE: SourceConfig = { name: 'roadmap', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };
 export const row = (n: number, extra: Partial<ProjectItem> = {}): ProjectItem => ({
   itemId: `roadmap:PVTI_${n}`, id: String(n), title: `Issue ${n}`, body: `body ${n}`, url: `https://github.com/acme/r/issues/${n}`,
   labels: [], assignees: [], fields: {}, pullRequests: [], ...extra,

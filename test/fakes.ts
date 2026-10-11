@@ -139,8 +139,11 @@ export const SOURCE = 'board';
 export const FIXED: SourceTaskProps = { defaults: { workspace: 'hive', auto: true }, rules: [] };
 /** A comb.sources entry named SOURCE around a source's fields, ids unqualified: today's single source, as a raw config value. */
 export const sourceEntry = (fields: Record<string, unknown>): Record<string, unknown> => ({ name: SOURCE, qualifyId: false, taskProps: FIXED, ...fields });
+/** The epics keys every GitHub source fixture carries (#30): a new source's mode and follows, switchAt on STAGES' one stage. combConfig gives
+ * them to every GitHub entry, switchAt on the fixture's own first stage; a key the entry sets wins, undefined included. */
+export const EPICS = { epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' } as const;
 /** The GitHub source every setup body fixture sends. */
-export const GITHUB_ENTRY: SourceConfig = { name: SOURCE, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED };
+export const GITHUB_ENTRY: SourceConfig = { name: SOURCE, qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
 
 /** A move to `column` (#286): what every onStart and most onFinish entries are. */
 export const move = (column: string): MoveAction => ({ type: 'move', column });
@@ -162,6 +165,23 @@ export const workspacesAt = (path: string): Workspace[] => [{ name: WORKSPACE, p
 const derivedFlow = (stages: unknown): Transition[] =>
   (Array.isArray(stages) && stages.every((s) => typeof s === 'object' && s !== null && typeof (s as { name?: unknown }).name === 'string') ? transitionsOf(stages as LegacyStage[]) : []);
 
+// #30: the name of a fixture's first stage, what a GitHub entry without switchAt switches at; STAGES' own when the list is not one
+const firstStage = (stages: unknown): string => {
+  const first: unknown = Array.isArray(stages) ? stages[0] : undefined;
+  return typeof first === 'object' && first !== null && typeof (first as { name?: unknown }).name === 'string' ? (first as { name: string }).name : EPICS.switchAt;
+};
+// #30: a GitHub entry gets the epics keys it lacks, so a fixture with its own flow still parses; anything else is left for the parser to name
+const withEpics = (stages: unknown) => (entry: unknown): unknown =>
+  (typeof entry === 'object' && entry !== null && (entry as { type?: unknown }).type === 'github' ? { ...EPICS, switchAt: firstStage(stages), ...entry } : entry);
+
+/** A setup body whose sources switch at one of its own stages (#30): a source whose switchAt names none takes the first. What a server test posts
+ * with its own flow, so the switchAt check config.test covers never trips an unrelated test. */
+export function onOwnStages<T extends { sources?: SourceConfig[]; stages?: readonly { name: string }[] }>(body: T): T {
+  const names = (body.stages ?? []).map((s) => s.name);
+  if (names.length === 0 || body.sources === undefined) return body;
+  return { ...body, sources: body.sources.map((s) => (names.includes(s.switchAt) ? s : { ...s, switchAt: names[0] })) };
+}
+
 /**
  * A raw hive.config.json around a Comb: `prefix` (HIVE), one workspace at `path` (/repo), `sources` ([] unless given; `board` is shorthand for
  * one entry named SOURCE), `stages` (STAGES). Every other key lands at the top level, `auth` included: AUTH unless the caller passes its
@@ -169,13 +189,14 @@ const derivedFlow = (stages: unknown): Transition[] =>
  * (`onClose: undefined` writes a file from before the key (#513); `deleteActivity: undefined` one from before #236;
  * `shutdownIdleMinutes: undefined` one from before #233; `theme: undefined` one from before #296; `terminalFont: undefined` one from before #376;
  * `trustedDomains: undefined` one from before #404; `consoleLines: undefined` one from before #353; `shortcuts: undefined` one from before #449; `closeSessionTab: undefined` one from before #614);
+ * Every GitHub entry gets EPICS' keys it lacks, switchAt on the first of `stages` (#30).
  * `commands` is comb.commands ([] unless given, #511). `transitions` is comb.transitions, the migration's over `stages` unless given (#134). A workspace without env is a file from before #348. `editor` is EDITOR_DEFAULTS (#780); `editor: undefined` writes a file without it. `sidebarsPerView: undefined` writes a file from before #821. `signals: undefined` writes a file from before #727. `notifications: undefined` writes a file from before #199.
  */
 export function combConfig({
   source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, prefix = 'HIVE', path = '/repo',
   workspaces = [{ name: WORKSPACE, path, env: {}, fork: null }], commands = [], hiveSource = true, createIn = 'hive', ...rest
 }: Record<string, unknown> = {}): Record<string, unknown> {
-  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
+  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
 }
 
 /** A pre-#134 stage list, onFinish and all, as the flow its migration makes (#134): what a reducer fixture spreads where it set `stages`. */

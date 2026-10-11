@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, EpicsMode, FilterOptions, Gql, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -188,8 +188,8 @@ export async function listFilterOptions(owner: string, number: number, gql: Gql 
   return { ...filterOptionsFrom(nodes, project?.fields?.nodes ?? []), linkedRepositories: (project?.repositories?.nodes ?? []).map((r) => r.nameWithOwner) };
 }
 
-export function createGithubSource(source: GithubSourceConfig, cited: Citation[], epics: EpicsMode, gql: Gql = cliGql()): Source {
-  const { owner, number } = source;
+export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql()): Source {
+  const { owner, number, epics } = source;
   const { blocked, other } = splitBlocked(source.filter); // #441: the blocked rules wait for the relations query
   let resolved: { projectId: string; statusFieldId: string; options: GhOption[]; optionIds: Record<string, string> } | undefined; // options: every Status option, in order (#756)
   let lastQuota: SourceQuota | undefined; // what the last poll read; undefined before the first one
@@ -218,7 +218,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
 
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
-  // under their epics, then the filter, the ignored epics, the relations and the blocked rules
+  // under their epics, then the filter, the hidden epics, the relations and the blocked rules
   async function listed(items: GhItemNode[]): Promise<SourceItem[]> {
     const names = new Set(cited.map((c) => c.column));
     const tasks = new Map(items.flatMap<[GhItemNode, SourceItem]>((item) => {
@@ -228,7 +228,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
     const kept = groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
       if (!matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
-      if (epics === 'ignore' && isEpicItem(item.content)) return []; // not a task for the Hive: its sub-issues take its place
+      if (epics === 'hide' && isEpicItem(item.content)) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
       return tasks.get(item) ?? [];
     });
     // Items carry no relations; a failed query rejects the poll, never "no blockers". The blocked rules (#441) are judged on what it read.
