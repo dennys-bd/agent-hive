@@ -31,7 +31,7 @@ export function pendingSessions(state: Pick<State, 'tasks' | 'workers' | 'activi
 }
 
 /** The tasks whose Claude sessions the Hive used last, newest first, `limit` at most. A session saved before its dates were kept ('') never counts. */
-export function recentActivities(state: Pick<State, 'tasks' | 'workers' | 'activities' | 'activityRecords'>, limit = RECENT_LIMIT): RecentRow[] {
+export function recentActivities(state: Pick<State, 'tasks' | 'workers' | 'activities' | 'activityRecords'> & Partial<Pick<State, 'stages'>>, limit = RECENT_LIMIT): RecentRow[] {
   const rows = state.tasks.flatMap((task): RecentRow[] => {
     const last = sessionsOf(state, task.item.itemId).map((s) => s.lastUsedAt).filter((at) => at !== '').sort().at(-1);
     return last === undefined ? [] : [{ task, status: taskState(task, state), lastUsedAt: last }];

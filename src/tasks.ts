@@ -288,6 +288,14 @@ export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: list
   return followSource(stamped, order, runs);
 }
 
+/** In the queue (#15): a free worker would take the task once it is due and has a workspace. Its stage runs (a prompt or commands), the task is
+ * idle, held by no worker at all and unblocked. What candidates picks from and what keeps an open PR from reading review. */
+export function isQueued(task: Task, stages: Stage[], state: WorkersState): boolean {
+  const stage = stageOf(stages, task.stage);
+  return stage !== undefined && (canRunIn(stage) || stage.action === 'commands') && isIdle(task, activityOf(state, taskId(task)))
+    && workersOf(state, task).length === 0 && !isBlocked(task.item);
+}
+
 /** Tasks a free worker may take, best first: stopped, present on the source, unblocked, without a failure, with auto on,
  * held by no worker at all (a free session may run on any task, #164, #283), in a stage with a prompt, or in a manual gate with queued feedback (HIVE-2), or a
  * commands stage, which holds a worker like a prompt stage (#727), and due (`after`
@@ -297,9 +305,7 @@ export function candidates(state: Pick<State, 'tasks' | 'stages'> & WorkersState
   const position = (task: Task): number => stages.findIndex((s) => s.name === task.stage); // the array order is the pipeline order
   const runnable = state.tasks.filter((c) => {
     const stage = stageOf(stages, c.stage);
-    const live = activityOf(state, taskId(c));
-    return stage !== undefined && (canRunIn(stage) || stage.action === 'commands') && isIdle(c, live) && workersOf(state, c).length === 0 && !isBlocked(c.item) && isDue(c, stage, now)
-      && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
+    return stage !== undefined && isQueued(c, stages, state) && isDue(c, stage, now) && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
   });
   return [...runnable].sort((a, b) => position(b) - position(a)); // sort is stable: tasks in the same stage keep the Hive's order
 }

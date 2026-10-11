@@ -330,7 +330,7 @@ export function MainDock(props: MainDockProps) {
   const isRunning = (taskId: string): boolean => activities.some((activity) => activity.kind === 'task' && activity.task.item.itemId === taskId && activity.runs.length > 0);
   const home = (
     <Home
-      tasks={tasks} workers={workers} liveActivities={liveActivities} activityRecords={activityRecords ?? NO_RECORDS} workspaces={workspaces} sourceWorkspaces={sourceWorkspaces}
+      tasks={tasks} stages={stages} workers={workers} liveActivities={liveActivities} activityRecords={activityRecords ?? NO_RECORDS} workspaces={workspaces} sourceWorkspaces={sourceWorkspaces}
       nav={{ openActivity: open, isLive: isRunning, newActivity: () => openNewActivity(), localTerminal: quick.localTerminal, addWorkspace: onAddWorkspace }}
     />
   );

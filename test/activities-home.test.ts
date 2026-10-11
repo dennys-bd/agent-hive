@@ -36,6 +36,12 @@ test('recentActivities orders the tasks by their sessions\' last use, newest fir
   assert.equal(recentActivities({ tasks, workers: [], activities: [], activityRecords }, 1).length, 1, 'at most the limit');
 });
 
+test('recentActivities reads the stages: a task queued in a stage that runs reads its open PR as new, not review (#15)', () => {
+  const inReview = { ...record('2', ['2026-09-28T09:00:00Z']), prs: [{ url: 'https://github.com/o/r/pull/2', state: 'open' as const }] };
+  const rows = recentActivities({ tasks: [task('2')], workers: [], activities: [], activityRecords: [inReview], stages: [{ name: 'dev', from: {}, prompt: 'p' }] });
+  assert.deepEqual(rows.map((row) => row.status), ['new']);
+});
+
 test('relativeTime reads now, minutes, hours of today, yesterday and days (redesign 08)', () => {
   setLanguage('pt');
   const now = new Date(2026, 8, 28, 15, 0).getTime();

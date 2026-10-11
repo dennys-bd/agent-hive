@@ -3,7 +3,7 @@ import { type MouseEvent, useState } from 'react';
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
-import { taskLabel, isBlocked, removalBlocker, resolveWorkspace, workersOf, stageOf } from '../../tasks';
+import { taskLabel, isBlocked, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
 import { taskAutoBadge } from '@/lib/auto-badge';
@@ -77,8 +77,9 @@ function taskStatus(task: Task, state: State): TaskStatus {
   const error = activityOf(state, task.item.itemId)?.error;
   if (error !== undefined && isExhausted(task, state)) return { tone: 'destructive', text: taskError(error) }; // #913: halted, worse than a question
   const current = taskState(task, state);
-  if (current !== 'empty' && current !== 'new') return { tone: current, text: current === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(current) }; // #805: with the time left
   const live = activityOf(state, task.item.itemId); // the run fields are the live activity's (#629)
+  const byAction = current === 'working' && workersOf(state, task).length === 0 && inAction(live); // #15: working is the stage action's, its progress below says which
+  if (current !== 'empty' && current !== 'new' && !byAction) return { tone: current, text: current === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(current) }; // #805: with the time left
   const setup = live?.setup;
   if (setup) return { text: setup.step === undefined ? t('event.starting') : t('task.setupStep', { detail: setup.step }) };
   const progress = commandsProgress(task, state); // #755: a commands stage's command, after the setup's own line

@@ -2,7 +2,7 @@ import { ChevronDownIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { recordWithSession } from '../../activities';
 import { taskLabel, resolveWorkspace, continuable, SESSION_ID_CHARS } from '../../tasks';
-import type { Activity as LiveActivity, ActivityRecord, Task, Session, OpenResult, OperationId, State, Worker } from '../../types';
+import type { Activity as LiveActivity, ActivityRecord, Task, Session, OpenResult, OperationId, Stage, State, Worker } from '../../types';
 import { displayBinding } from '../../shortcuts';
 import { act, attachRun } from '@/components/actions';
 import { useOpenRun } from '@/components/terminal-tabs';
@@ -25,7 +25,7 @@ export interface HomeNav {
 /** What the home's rows read of the State (#629): the workers, the activities they point at and the records. */
 type Work = Pick<State, 'workers' | 'activities' | 'activityRecords'>;
 
-interface HomeProps { tasks: Task[]; workers: Worker[]; liveActivities: LiveActivity[]; activityRecords: ActivityRecord[]; workspaces: string[]; sourceWorkspaces?: Record<string, string>; nav: HomeNav }
+interface HomeProps { tasks: Task[]; stages?: Stage[]; workers: Worker[]; liveActivities: LiveActivity[]; activityRecords: ActivityRecord[]; workspaces: string[]; sourceWorkspaces?: Record<string, string>; nav: HomeNav }
 
 const MUTED = 'text-muted-foreground text-xs';
 const AGENT = 'claude'; // every worker run is Claude's today (#489): each runner's issue (#101, #102, #103) names its own
@@ -139,11 +139,11 @@ function Actions({ nav }: { nav: HomeNav }) {
 
 /** The center under Atividades with no activity open (redesign 08, after #458): how to start, the sessions that need the user, the tasks
  * worked on last and the keys. With no workspace yet, only how to add one. */
-export function Home({ tasks, workers, liveActivities, activityRecords, ...rest }: HomeProps) {
+export function Home({ tasks, stages, workers, liveActivities, activityRecords, ...rest }: HomeProps) {
   const work: Work = { workers, activities: liveActivities, activityRecords };
   const { workspaces, nav } = rest;
   const pending = pendingSessions({ tasks, ...work });
-  const recent = recentActivities({ tasks, ...work });
+  const recent = recentActivities({ tasks, stages, ...work }); // #15: a queued task's open PR is not review
   const isFirstRun = workspaces.length === 0;
   return (
     <section className="flex min-h-0 min-w-0 flex-1 justify-center overflow-y-auto px-12 py-[72px]">
