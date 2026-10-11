@@ -4,7 +4,7 @@ import { getJson } from '../lib/api.js';
 import { onTreeChanged, rememberRoot } from '../lib/tree-place.js';
 
 // ponytail: a poll stands in for a watch; a push from the daemon (fs.watch on the worktree) when the lag or the git runs ever matter
-const POLL_MS = 3000;
+export const POLL_MS = 3000;
 
 export type TreeState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; tree: TaskTree };
 

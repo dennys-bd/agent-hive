@@ -163,7 +163,7 @@ test('a task\'s ↵ opens the Start dialog on it, and + criar tarefa opens it wi
 
 test('a local activity picked under Atividades shows the right side with its checkout\'s tree and no detail; the home still hides it, and the saved layout keeps it open (#633)', async () => {
   vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL) => {
-    const body = String(input) === '/activities/local%3Ahive/tree' ? { files: ['README.md'], marks: {} } : { ok: true };
+    const body = String(input) === '/activities/local%3Ahive/tree' ? { files: ['README.md'], marks: {}, ignored: { files: [], folders: [] } } : { ok: true };
     return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   });
   resetViewState({ dockLayout: DETAIL_RIGHT });

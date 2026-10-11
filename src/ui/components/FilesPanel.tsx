@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type FileIconsView, useFileIcons } from '@/hooks/use-file-icons';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
+import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
 import { type TreeState, useTaskTree } from '@/hooks/use-task-tree';
 import { t, tPlural } from '@/i18n';
 import { activityCounts, type Counts, foldersWithErrors } from '@/lib/diagnostics-store';
@@ -36,11 +37,13 @@ function worstOf(counts: Counts | undefined): Worst | undefined {
   return counts.warnings > 0 ? { n: counts.warnings, tone: 'text-waiting', family: 'editor.diag.warnings' } : undefined;
 }
 
-// The name's colour by priority (#780): an error, a warning, then the git mark; a folder only reds for an error under it
+// The name's colour by priority (#780): an error, a warning, then the git mark; what git ignores is dimmed (HIVE-22), never coloured. A
+// folder only reds for an error under it
 function nameTone(node: TreeNode, worst: Worst | undefined, hasError: boolean): string {
   if (node.children !== undefined && hasError) return 'text-destructive';
   if (worst !== undefined) return worst.tone;
-  return node.mark ? MARK_TEXT[node.mark] : 'text-foreground';
+  if (node.mark) return MARK_TEXT[node.mark];
+  return node.isIgnored ? 'text-muted-foreground' : 'text-foreground';
 }
 
 const INDENT_PX = 12;
@@ -100,9 +103,10 @@ function RowIcon({ icons, node, isOpen }: RowIconProps) {
   const isFolder = node.children !== undefined;
   const isShown = icons.resolve !== undefined && (isFolder || icons.scope === 'all');
   const src = isShown ? icons.resolve?.({ name: node.name, isFolder, isOpen, theme: icons.theme }) ?? '' : '';
+  const isMuted = icons.muted || node.isIgnored === true; // HIVE-22: an ignored row's icon dims with its name
   return (
     <span data-file-icon className="flex size-4 shrink-0">
-      {src !== '' && <img src={src} alt="" draggable={false} className={icons.muted ? 'size-4 file-icon-muted' : 'size-4'} />}
+      {src !== '' && <img src={src} alt="" draggable={false} className={isMuted ? 'size-4 file-icon-muted' : 'size-4'} />}
     </span>
   );
 }
@@ -237,8 +241,10 @@ interface FilesBodyProps { target: Activity; view: FilesView; isShown: boolean; 
 function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const { activity } = target;
   const tree = useTaskTree(activity.id, isShown);
-  const root = tree.status === 'ready' ? tree.tree.root : undefined;
-  const rows = tree.status === 'ready' ? visibleRows(buildTree(tree.tree.files, tree.tree.marks, view.showHidden, tree.tree.folders), view.expanded) : [];
+  const ready = tree.status === 'ready' ? tree.tree : undefined;
+  const loaded = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
+  const root = ready?.root;
+  const rows = ready ? visibleRows(buildTree(ready.files, ready.marks, view.showHidden, ready.folders, ready.ignored, loaded), view.expanded) : [];
   const [selection, setSelection] = useState<TreeSelection>(NO_SELECTION);
   useSelectionPlace(activity.id, rows, selection, setSelection, onView);
   const selectedOf = (path: string): string[] => actedOn(selection, path);

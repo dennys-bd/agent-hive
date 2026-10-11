@@ -191,7 +191,7 @@ test('a closed folder hovered while dragging is highlighted, and opens after 600
 
 test('a Finder drop on the empty or loading tree lands in the root (#594)', async () => {
   vi.stubGlobal('hive', { pathForFile: (file: File) => `/Volumes/elsewhere/${file.name}` });
-  fetchMock.mockImplementationOnce(async (url: string) => (url.endsWith('/tree') ? json({ files: [], marks: {} }) : new Response(null, { status: 204 })));
+  fetchMock.mockImplementationOnce(async (url: string) => (url.endsWith('/tree') ? json({ files: [], marks: {}, ignored: { files: [], folders: [] } }) : new Response(null, { status: 204 })));
   render(side('files'));
   finderDrop(await screen.findByText('sem arquivos'), [new File(['n'], 'notes.txt')]);
   expect(moves()).toEqual([moveLine(['/Volumes/elsewhere/notes.txt'], '', true)]);
