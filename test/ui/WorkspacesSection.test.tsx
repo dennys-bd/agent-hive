@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
-import { setLanguage, t } from '@/i18n';
+import { formatCount, setLanguage, t } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
 import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -19,7 +19,7 @@ const info: SettingsInfo = {
     auth: { github: 'cli' },
     comb: {
       prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], transitions: [], stages: [{ name: 'fila', from: {} }], commands: [DEV],
-      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null }],
+      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, memoryCap: 4000 }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, memoryCap: 4000 }],
     },
     logLevel: 'info', claudeArgs: [], budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS,
@@ -73,7 +73,7 @@ test('the workspace env is sent with the workspace, a blank row dropped and the 
   await user.type(env.getByLabelText('valor da variável 2'), ' /api ');
   await user.click(env.getByRole('button', { name: '+ variável' })); // left blank: dropped on save
   await save(user, onSaved);
-  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null });
+  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null, memoryCap: 4000 });
 });
 
 test('commands table (#755): the column headers, a line per workspace with its own select, where the command is missing, and the note', async () => {
@@ -258,4 +258,28 @@ test('a workspace\'s conventions card shows its saved conventions; a bad slice s
   await user.click(card.getByRole('button', { name: t('settings.conventions.add') })); // a docsRepo row left blank
   await save(user, onSaved);
   expect(posted().workspaces.map((w) => w.conventions)).toEqual([{ specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } }, undefined]);
+});
+
+test('each workspace card edits its memory total limit with what a full memory costs per run under it; out of range it marks itself and stops the save on workspaces; the value is posted as a number (#73)', async () => {
+  const user = userEvent.setup();
+  const onSaved = vi.fn();
+  render(<Settings info={info} onSaved={onSaved} />);
+  await open(user, 'workspaces');
+  const hive = within(screen.getByRole('region', { name: 'hive' }));
+  const cap = hive.getByRole('spinbutton', { name: `${t('settings.memory.cap')} 1` });
+  expect(cap).toHaveValue(4000);
+  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(1100) }))).toBeInTheDocument();
+  await user.clear(cap);
+  await user.type(cap, '20001');
+  expect(cap).toHaveAttribute('aria-invalid', 'true');
+  expect(hive.getByText(t('settings.memory.capRange'))).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+  expect(await screen.findByText(t('settings.error.memoryCap', { workspace: 'hive' }))).toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
+  await user.clear(cap);
+  await user.type(cap, '8000');
+  expect(cap).toHaveAttribute('aria-invalid', 'false');
+  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(2100) }))).toBeInTheDocument();
+  await save(user, onSaved);
+  expect(posted().workspaces.map((w) => w.memoryCap)).toEqual([8000, 4000]);
 });

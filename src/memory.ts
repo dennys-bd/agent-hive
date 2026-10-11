@@ -3,7 +3,7 @@ import type { Logger } from './log.js';
 import { writeWorkspaceProtocol } from './hooks-settings.js';
 import { createJsonStore } from './json-store.js';
 import {
-  isMemoryKind, MEMORY_CAP, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
+  isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
   type MemoryRefusalCode, type MemoryUse, type MemoryView,
 } from './types.js';
 
@@ -106,13 +106,14 @@ export const renderedOf = (entries: readonly MemoryEntry[]): RenderedMemory =>
   ({ ids: MEMORY_KINDS.flatMap((kind) => entries.filter((e) => e.kind === kind).map((e) => e.id)), chars: renderMemory(entries).length });
 /** memory.changed's sizes (#797). */
 export const memoryCounts = (file: MemoryFile): { entries: number; used: number } => ({ entries: file.entries.length, used: memoryUsed(file.entries) });
-/** What the memory routes answer (#797). */
-export const memoryView = (file: MemoryFile): MemoryView => ({ entries: file.entries, used: memoryUsed(file.entries), cap: MEMORY_CAP, textMax: MEMORY_TEXT_MAX });
+/** What the memory routes answer (#797); cap: the workspace's memoryCap (#73). */
+export const memoryView = (file: MemoryFile, cap: number): MemoryView => ({ entries: file.entries, used: memoryUsed(file.entries), cap, textMax: MEMORY_TEXT_MAX });
 
-// The edit's file, or memory_full when its texts sum past the cap and more than before: a lesson kept from a hand edit is never in the way
-function capped(before: MemoryFile, after: MemoryFile): MemoryResult {
+// The edit's file, or memory_full when its texts sum past the workspace's cap (#73) and more than before: a lesson kept from a hand edit, or
+// from before the cap was lowered, is never in the way
+function capped(before: MemoryFile, after: MemoryFile, cap: number): MemoryResult {
   const used = memoryUsed(after.entries);
-  return used > MEMORY_CAP && used > memoryUsed(before.entries) ? refusal('memory_full', MEMORY_FULL_MESSAGE) : after;
+  return used > cap && used > memoryUsed(before.entries) ? refusal('memory_full', MEMORY_FULL_MESSAGE) : after;
 }
 
 // The file with `id`'s entry passed through `change`, or unknown_memory
@@ -121,16 +122,16 @@ function withChanged(file: MemoryFile, id: string, change: (entry: MemoryEntry) 
   return { ...file, entries: file.entries.map((e) => (e.id === id ? change(e) : e)) };
 }
 
-/** A new lesson, m-<nextId>, unused (#797). The Hive fills origin and at; the counter only grows, so an id is never reused. */
-export function withEntry(file: MemoryFile, kind: MemoryKind, text: string, origin: MemoryOrigin, at: string): MemoryResult {
+/** A new lesson, m-<nextId>, unused (#797). The Hive fills origin and at; the counter only grows, so an id is never reused. cap: the workspace's memoryCap (#73). */
+export function withEntry(file: MemoryFile, kind: MemoryKind, text: string, origin: MemoryOrigin, at: string, cap: number): MemoryResult {
   const entry: MemoryEntry = { id: `m-${file.nextId}`, kind, text: text.trim(), origin, at, uses: 0 };
-  return capped(file, { nextId: file.nextId + 1, entries: [...file.entries, entry] });
+  return capped(file, { nextId: file.nextId + 1, entries: [...file.entries, entry] }, cap);
 }
 
 /** A lesson's kind and text rewritten by the user (#797): its origin and uses stay, `at` moves. */
-export function withEdit(file: MemoryFile, id: string, kind: MemoryKind, text: string, at: string): MemoryResult {
+export function withEdit(file: MemoryFile, id: string, kind: MemoryKind, text: string, at: string, cap: number): MemoryResult {
   const edited = withChanged(file, id, (e) => ({ ...e, kind, text: text.trim(), at }));
-  return isMemoryRefusal(edited) ? edited : capped(file, edited);
+  return isMemoryRefusal(edited) ? edited : capped(file, edited, cap);
 }
 
 /** A lesson removed (#797): only the user does it; nextId stays. */

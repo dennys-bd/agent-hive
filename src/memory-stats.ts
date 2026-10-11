@@ -3,7 +3,7 @@ import { MEMORY_STATS_DAYS, type MemoryEntry, type MemoryStats } from './types.j
 // The memory dialog's telemetry (#797), from the local events.jsonl only: nothing here is sent anywhere. Pure: the caller reads the files.
 
 const DAY_MS = 86_400_000;
-const CHARS_PER_TOKEN = 4; // ponytail: the usual English estimate, not a tokenizer; the block shows it as ~n
+export const CHARS_PER_TOKEN = 4; // ponytail: the usual English estimate, not a tokenizer; the block shows it as ~n, the memory total limit as ≈ n (#73)
 
 interface Fields { event?: unknown; ts?: unknown; workspace?: unknown; memory_ids?: unknown; memory_chars?: unknown; id?: unknown; session_id?: unknown; task?: unknown; stage?: unknown }
 

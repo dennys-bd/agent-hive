@@ -159,7 +159,7 @@ export const LOCAL_STAGES: Stage[] = [{ name: 'fila', from: {}, prompt: 'Task {i
 /** The name every single-workspace fixture gives its workspace (#179): what a task resolves to through the Comb's only workspace. */
 export const WORKSPACE = 'hive';
 /** The `workspaces` a setup body sends for a Comb with one workspace at `path`. */
-export const workspacesAt = (path: string): Workspace[] => [{ name: WORKSPACE, path, env: {}, fork: null }]; // no env (#348); run commands live in comb.commands (#511)
+export const workspacesAt = (path: string): Workspace[] => [{ name: WORKSPACE, path, env: {}, fork: null, memoryCap: 4000 }]; // no env (#348); run commands live in comb.commands (#511)
 
 // #134: the migration's transitions over a fixture's stages, when they are stages at all; a malformed list is the parser's to name
 const derivedFlow = (stages: unknown): Transition[] =>
@@ -194,7 +194,7 @@ export function onOwnStages<T extends { sources?: SourceConfig[]; stages?: reado
  */
 export function combConfig({
   source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, prefix = 'HIVE', path = '/repo',
-  workspaces = [{ name: WORKSPACE, path, env: {}, fork: null }], commands = [], hiveSource = true, createIn = 'hive', ...rest
+  workspaces = [{ name: WORKSPACE, path, env: {}, fork: null, memoryCap: 4000 }], commands = [], hiveSource = true, createIn = 'hive', ...rest
 }: Record<string, unknown> = {}): Record<string, unknown> {
   return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
 }

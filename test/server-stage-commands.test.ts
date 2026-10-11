@@ -25,7 +25,7 @@ const CWD = taskDir('/repo', ACTIVITY);
 const E2E: Command = { name: 'e2e', impls: [{ workspace: 'site', command: 'pnpm e2e' }], menu: true, env: {} };
 const DEPLOY: Command = { name: 'deploy', impls: [{ workspace: 'site', command: 'fly deploy' }], menu: false, env: {} };
 const runtimeWith = (commands: Command[], stage: Stage = STAGE): Runtime => ({
-  config: parseConfig(combConfig({ stages: [stage], commands, workspaces: [{ name: 'hive', path: '/repo', env: { FROM: 'workspace' }, fork: null }, { name: 'site', path: '/site', env: {}, fork: null }] })),
+  config: parseConfig(combConfig({ stages: [stage], commands, workspaces: [{ name: 'hive', path: '/repo', env: { FROM: 'workspace' }, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 }] })),
   sources: new Map(), hooksPath: '/hive/hooks.json', promptsDir: '/hive/prompts', pluginDir: '/hive/plugin', protocol: { stage: '/hive/stage.md', session: '/hive/session.md' }, port: 4321,
 });
 const effect = (at: number, stage: Stage = STAGE): Extract<Effect, { type: 'stageCommand' }> => ({ type: 'stageCommand', activity: ACTIVITY, task: TASK, stage, at, ptyId: `P${at}` });
@@ -179,7 +179,7 @@ async function start(t: TestContext): Promise<{ base: string; ptys: FakePty[]; s
     await server.close();
   });
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env: {}, fork: null }] })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: [{ name: WORKSPACE, path: repo, env: {}, fork: null, memoryCap: 4000 }] })).status, 200);
   await server.dispatch({ type: 'setMax', max: 1 }); // #727: a commands stage holds a worker
   await server.dispatch({ type: 'setSignal', signal: 'green' }); // and follows the rows: a new task needs green
   await server.poll();

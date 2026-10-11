@@ -570,7 +570,7 @@ test('a source with no rule sets no workspaceHint and gives every task autoOnEnt
 
 test('rules ride the very same query (#245): workspaceHint comes only from a rule; autoOnEntry from the first matching rule that sets auto, else the default; '
   + 'a workspace-only rule never shadows an auto one (#293, #688)', async () => {
-  const workspaces = ['api', 'site', 'web', 'ops'].map((name) => ({ name, path: `/${name}`, env: {}, fork: null }));
+  const workspaces = ['api', 'site', 'web', 'ops'].map((name) => ({ name, path: `/${name}`, env: {}, fork: null, memoryCap: 4000 }));
   const rules: TaskRule[] = [
     { field: 'labels', op: 'iequals', value: 'backend', set: { workspace: 'api' } },
     { field: 'Repo', op: 'equals', value: 'site', set: { workspace: 'site', auto: false } },

@@ -18,6 +18,7 @@ const FILE: MemoryFile = {
   entries: [entry(1, 'fact', 'pnpm test is the gate'), entry(2, 'avoid', 'never run git push --force'), entry(3, 'pref', 'specs are written in English')],
 };
 const UNKNOWN = { code: 'unknown_memory', message: "no lesson m-9 in this workspace's memory" };
+const CAP = 4000; // the cap #797's tests were written against
 const FULL = { code: 'memory_full', message: MEMORY_FULL_MESSAGE };
 
 // A result that must be a file: the refusal shows otherwise
@@ -89,23 +90,32 @@ test('memoryUsed sums the texts only; renderMemory gives nothing for no lessons,
 
 test('withEntry adds m-<nextId> unused and refuses when the sum of the texts passes the cap; withEdit keeps origin and uses and never refuses what does not grow the sum; withUse counts and replaces lastUsed; withoutEntry never reuses an id; none mutates (#797)', () => {
   const frozen = structuredClone(FILE);
-  const added = fileOf(withEntry(FILE, 'avoid', '  do not edit dist/  ', { task: '812', stage: 'build' }, AT));
+  const added = fileOf(withEntry(FILE, 'avoid', '  do not edit dist/  ', { task: '812', stage: 'build' }, AT, CAP));
   assert.deepEqual([added.nextId, added.entries.at(-1)], [5, { id: 'm-4', kind: 'avoid', text: 'do not edit dist/', origin: { task: '812', stage: 'build' }, at: AT, uses: 0 }]);
   const full: MemoryFile = { nextId: 41, entries: Array.from({ length: 40 }, (_, i) => entry(i + 1, 'fact', 'y'.repeat(100))) }; // exactly 4,000
-  assert.deepEqual(withEntry(full, 'fact', 'z', 'user', AT), FULL);
-  assert.deepEqual(withEdit(full, 'm-1', 'fact', 'y'.repeat(101), AT), FULL);
-  fileOf(withEdit(full, 'm-1', 'avoid', 'z'.repeat(100), AT)); // same sum: never refused
+  assert.deepEqual(withEntry(full, 'fact', 'z', 'user', AT, CAP), FULL);
+  assert.deepEqual(withEdit(full, 'm-1', 'fact', 'y'.repeat(101), AT, CAP), FULL);
+  fileOf(withEdit(full, 'm-1', 'avoid', 'z'.repeat(100), AT, CAP)); // same sum: never refused
   const over: MemoryFile = { ...full, entries: [...full.entries, entry(41, 'fact', 'z'.repeat(300))] }; // a hand edit left it past the cap
-  fileOf(withEdit(over, 'm-41', 'fact', 'short', AT)); // a shrink: never refused
+  fileOf(withEdit(over, 'm-41', 'fact', 'short', AT, CAP)); // a shrink: never refused
   const once = fileOf(withUse(FILE, 'm-1', { at: AT, task: '812', stage: 'build', why: 'ran the gate' }));
   const twice = fileOf(withUse(once, 'm-1', { at: '2026-10-06T10:00:00.000Z', task: '813', why: 'again' }));
   assert.deepEqual([twice.entries[0].uses, twice.entries[0].lastUsed], [2, { at: '2026-10-06T10:00:00.000Z', task: '813', why: 'again' }]);
   const learned = { ...twice, entries: [{ ...twice.entries[0], origin: { task: '700', stage: 'spec' } }, ...twice.entries.slice(1)] };
-  const edited = fileOf(withEdit(learned, 'm-1', 'pref', 'pnpm test is the only gate', '2026-10-07T10:00:00.000Z'));
+  const edited = fileOf(withEdit(learned, 'm-1', 'pref', 'pnpm test is the only gate', '2026-10-07T10:00:00.000Z', CAP));
   assert.deepEqual(edited.entries[0], { ...learned.entries[0], kind: 'pref', text: 'pnpm test is the only gate', at: '2026-10-07T10:00:00.000Z' }, 'origin and uses kept');
   assert.deepEqual(fileOf(withoutEntry(FILE, 'm-2')), { nextId: 4, entries: [FILE.entries[0], FILE.entries[2]] });
-  for (const result of [withEdit(FILE, 'm-9', 'fact', 'x', AT), withoutEntry(FILE, 'm-9'), withUse(FILE, 'm-9', { at: AT, task: '1', why: 'x' })]) assert.deepEqual(result, UNKNOWN);
+  for (const result of [withEdit(FILE, 'm-9', 'fact', 'x', AT, CAP), withoutEntry(FILE, 'm-9'), withUse(FILE, 'm-9', { at: AT, task: '1', why: 'x' })]) assert.deepEqual(result, UNKNOWN);
   assert.deepEqual(FILE, frozen, 'no input was mutated');
+});
+
+test('the cap is the caller\'s: withEntry refuses past a cap of 500 and accepts up to it; under a cap lowered below what is used an edit that shrinks the sum passes and one that grows it is refused (#73)', () => {
+  const four: MemoryFile = { nextId: 5, entries: Array.from({ length: 4 }, (_, i) => entry(i + 1, 'fact', 'y'.repeat(100))) }; // 400 used
+  assert.equal(memoryUsed(fileOf(withEntry(four, 'fact', 'z'.repeat(100), 'user', AT, 500)).entries), 500, 'exactly the cap');
+  assert.deepEqual(withEntry(four, 'fact', 'z'.repeat(101), 'user', AT, 500), FULL);
+  assert.equal(fileOf(withEntry(four, 'fact', 'z'.repeat(101), 'user', AT, CAP)).entries.length, 5, 'the same lesson under a larger cap');
+  assert.equal(memoryUsed(fileOf(withEdit(four, 'm-1', 'fact', 'short', AT, 300)).entries), 305, 'still past a lowered cap, but smaller: nothing is deleted or refused');
+  assert.deepEqual(withEdit(four, 'm-1', 'fact', 'y'.repeat(101), AT, 300), FULL);
 });
 
 test('the store keeps one file per workspace, rewrites its protocol files when the rendered memory changes and not on a use, and writes nothing for a workspace no longer live (#797)', async (t) => {
@@ -116,7 +126,7 @@ test('the store keeps one file per workspace, rewrites its protocol files when t
   await store.writeProtocol('site'); // the boot's
   assert.equal(await readFile(paths.stage, 'utf8'), STAGE_PROTOCOL);
   assert.deepEqual(store.rendered('site'), { ids: [], chars: 0 });
-  const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT)));
+  const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT, CAP)));
   assert.deepEqual(JSON.parse(await readFile(memoryPath(home, 'site'), 'utf8')), saved);
   assert.deepEqual([(await stat(memoryPath(home, 'site'))).mode & 0o777, (await stat(join(home, 'memory'))).mode & 0o777], [0o600, 0o700], 'private to the user');
   const section = renderMemory(saved.entries);
@@ -127,7 +137,7 @@ test('the store keeps one file per workspace, rewrites its protocol files when t
   assert.equal(await readFile(paths.stage, 'utf8'), 'by hand', 'a use renders nothing: the protocol files are left alone');
   assert.deepEqual(await store.update('site', (file) => withoutEntry(file, 'm-9')), UNKNOWN);
   live.delete('site');
-  await store.update('site', (file) => withEntry(file, 'fact', 'late', 'user', AT));
+  await store.update('site', (file) => withEntry(file, 'fact', 'late', 'user', AT, CAP));
   assert.equal((await store.read('site')).entries.length, 1, 'a workspace a save removed is never written');
 });
 
@@ -145,7 +155,7 @@ test('when writing the protocol files fails after the file was saved, the update
   await writeFile(join(home, 'protocol'), 'a file where the folder should be');
   const logged: string[] = [];
   const store = createMemoryStore(home, () => true, { error: (message) => logged.push(message) });
-  const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT)));
+  const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT, CAP)));
   assert.deepEqual(JSON.parse(await readFile(memoryPath(home, 'site'), 'utf8')), saved);
   assert.equal(logged.length, 1);
   assert.match(logged[0], /^memory site: .*\(Error\)$/);

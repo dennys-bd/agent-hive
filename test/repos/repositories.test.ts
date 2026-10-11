@@ -4,7 +4,7 @@ import { initialState } from '../../src/orchestrator.js';
 import { listRepositories, originRepository } from '../../src/repos/repositories.js';
 import type { CombConfig, Exec, State, Task, Workspace } from '../../src/types.js';
 
-const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null });
+const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, env: {}, fork: null, memoryCap: 4000 });
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: ['hive', 'site', 'docs', 'hive2'].map(workspace), sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 // hive2 shares hive's repository; docs lives off GitHub; a path with no checkout makes git fail
 const REMOTES: Record<string, string> = {

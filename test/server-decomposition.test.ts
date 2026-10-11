@@ -41,7 +41,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const work = { slug: SLUG, ...(setup.awaiting === false ? {} : { approval: { since: SINCE } }) };
   const state: State = withWork({ ...initialState(0), tasks: [task] }, task.item.itemId, work, { result: setup.result ?? PENDING });
   const comb: CombConfig = {
-    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
+    prefix: 'HIVE', workspaces: [{ name: 'hive', path: repo, env: {}, fork: null, memoryCap: 4000 }], sources: setup.sources ?? [GITHUB_ENTRY], commands: [],
     stages: [{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:new-spec {url}' }, { name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }],
     transitions: [], hiveSource: true, createIn: 'hive',
   };

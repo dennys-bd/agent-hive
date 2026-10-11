@@ -16,7 +16,7 @@ import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseSignals } from './signals-config.js';
-import { AGENT_IDS, END, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { AGENT_IDS, END, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -320,7 +320,11 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
   if (typeof raw.path !== 'string' || !isAbsolute(raw.path)) throw new Error(`${CONFIG_FILE}: "${field}.path" must be an absolute path`);
   if (raw.format !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.format" moved to "editor" (#780): one config for every workspace`);
   const baseBranch = raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, `${field}.baseBranch`) }; // #854: '' from the form drops it
-  return { name, path: raw.path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), ...workspaceConventions(raw.conventions, name) }; // env required (#348), fork required (#854); commands live in comb.commands (#511)
+  return {
+    name, path: raw.path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
+    ...workspaceConventions(raw.conventions, name),
+    memoryCap: requireIntFrom(raw.memoryCap, `${field}.memoryCap`, MEMORY_CAP_MIN, MEMORY_CAP_MAX), // #73: required, no migration; read last, so an older key's problem keeps its own message
+  };
 }
 
 // A workspace's worktree scripts, the setup (#299) and the teardown (#654): each text is kept as it is (POST /settings parses it, so a bad line
@@ -447,7 +451,7 @@ function parseDeleteActivity(raw: unknown): DeleteActivityScope {
 }
 
 // Required, no default: a whole number from `min` to `max`. The shutdown window (#233) and the approval window (#268) in minutes, the console's
-// lines per channel (#353); hive.ts prefills a file without them.
+// lines per channel (#353), hive.ts prefilling a file without them; a workspace's memoryCap (#73), never prefilled.
 function requireIntFrom(raw: unknown, field: string, min: number, max: number): number {
   if (Number.isInteger(raw) && (raw as number) >= min && (raw as number) <= max) return raw as number;
   throw new Error(`${CONFIG_FILE}: "${field}" must be an integer from ${min} to ${max}`);

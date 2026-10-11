@@ -16,7 +16,7 @@ const github = (extra: Record<string, unknown> = {}) => combConfig({ source: GIT
 const GITHUB = github();
 const FRONT = { name: 'Run Frontend', impls: [{ workspace: 'hive', command: 'pnpm run dev -- --port $PORT' }], menu: true, env: { PORT: '5173' } };
 const DYNAMIC: SourceTaskProps = { defaults: { auto: true }, rules: [{ field: 'title', op: 'icontains', value: '[site]', set: { workspace: 'site' } }] };
-const TWO = [{ name: 'hive', path: '/repo', env: {}, fork: null }, { name: 'site', path: '/site', env: {}, fork: null }];
+const TWO = [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 }];
 
 test('parseConfig applies defaults on top of a minimal config', () => {
   const config = parseConfig({ ...GITHUB });
@@ -612,9 +612,9 @@ test('a blocked rule (#441) parses with its operator alone; values (even []) or 
 });
 
 test('parseConfig reads a Comb with its prefix, its one workspace and its stages, with a source or without one', () => {
-  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], ...chained(STAGES), commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(parseConfig(GITHUB).comb, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }], sources: [sourceEntry({ ...GITHUB_SOURCE, ...EPICS })], ...chained(STAGES), commands: [], hiveSource: true, createIn: 'hive' });
   const bare = parseConfig(combConfig({ stages: LOCAL_STAGES, auth: undefined })).comb;
-  assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }], sources: [], stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES), commands: [], hiveSource: true, createIn: 'hive' });
+  assert.deepEqual(bare, { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }], sources: [], stages: LOCAL_STAGES, transitions: transitionsOf(LOCAL_STAGES), commands: [], hiveSource: true, createIn: 'hive' });
 });
 
 test('from, onStart and onFinish are maps keyed by source name: a key naming no source is refused, every source needs a from, and without sources no stage names one; auth.github is required when any source is GitHub (#180)', () => {
@@ -671,23 +671,23 @@ test('comb.prefix is a letter then up to 9 letters or digits, and comb.workspace
   for (const prefix of ['', '1HIVE', 'HI-VE', 'HIVE_1', 'Abcdefghijk', 7, null]) {
     assert.throws(() => parseConfig(github({ prefix })), { message: prefixMessage }, JSON.stringify(prefix));
   }
-  const two = [{ name: 'hive', path: '/repo', env: {}, fork: null }, { name: 'site.v2_x-1', path: '/site', env: {}, fork: null }];
+  const two = [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site.v2_x-1', path: '/site', env: {}, fork: null, memoryCap: 4000 }];
   assert.deepEqual(parseConfig(github({ workspaces: two })).comb.workspaces, two);
   for (const workspaces of [[], 'x']) {
     assert.throws(() => parseConfig(github({ workspaces })), { message: 'hive.config.json: "comb.workspaces" must be a non-empty array' }, JSON.stringify(workspaces));
   }
   const nameMessage = 'hive.config.json: "comb.workspaces[1].name" must be a letter or digit followed by up to 39 letters, digits, ".", "_" or "-"';
   for (const name of [undefined, '', '-x', '.x', 'a b', 'a/b', 'x'.repeat(41), 7]) {
-    assert.throws(() => parseConfig(github({ workspaces: [two[0], { name, path: '/b', env: {}, fork: null }] })), { message: nameMessage }, JSON.stringify(name));
+    assert.throws(() => parseConfig(github({ workspaces: [two[0], { name, path: '/b', env: {}, fork: null, memoryCap: 4000 }] })), { message: nameMessage }, JSON.stringify(name));
   }
-  assert.doesNotThrow(() => parseConfig(github({ workspaces: [{ name: 'x'.repeat(40), path: '/b', env: {}, fork: null }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'x'.repeat(40), auto: true }, rules: [] } } })), '40 characters is the cap');
+  assert.doesNotThrow(() => parseConfig(github({ workspaces: [{ name: 'x'.repeat(40), path: '/b', env: {}, fork: null, memoryCap: 4000 }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'x'.repeat(40), auto: true }, rules: [] } } })), '40 characters is the cap');
   const pathMessage = 'hive.config.json: "comb.workspaces[0].path" must be an absolute path';
   for (const path of ['relative/repo', '', undefined]) {
-    assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path, env: {}, fork: null }] })), { message: pathMessage }, JSON.stringify(path));
+    assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path, env: {}, fork: null, memoryCap: 4000 }] })), { message: pathMessage }, JSON.stringify(path));
   }
   assert.throws(() => parseConfig(github({ workspaces: ['x'] })), { message: 'hive.config.json: "comb.workspaces[0]" must be an object' });
-  assert.throws(() => parseConfig(github({ workspaces: [two[0], { name: 'hive', path: '/b', env: {}, fork: null }] })), { message: 'hive.config.json: "comb.workspaces[1].name" must be unique' });
-  assert.throws(() => parseConfig(github({ workspaces: [two[0], { name: 'b', path: '/repo', env: {}, fork: null }] })), { message: 'hive.config.json: "comb.workspaces[1].path" must be unique' });
+  assert.throws(() => parseConfig(github({ workspaces: [two[0], { name: 'hive', path: '/b', env: {}, fork: null, memoryCap: 4000 }] })), { message: 'hive.config.json: "comb.workspaces[1].name" must be unique' });
+  assert.throws(() => parseConfig(github({ workspaces: [two[0], { name: 'b', path: '/repo', env: {}, fork: null, memoryCap: 4000 }] })), { message: 'hive.config.json: "comb.workspaces[1].path" must be unique' });
 });
 
 test('comb.commands is required: named commands, names trimmed and unique in the Comb, each a line per workspace and an env of strings whose names a shell can export; [] and {} are fine (#300, #511, #755)', () => {
@@ -746,7 +746,7 @@ test('comb.commands[].command and env values refuse a control character other th
 });
 
 test('comb.workspaces[].env is required: an object of strings shared by the workspace\'s run commands, with a command env\'s rules — names a shell can export, no control character but tab in a value; {} is fine (#348)', () => {
-  const withEnv = (env: unknown) => github({ workspaces: [{ name: 'hive', path: '/repo', env, fork: null }] });
+  const withEnv = (env: unknown) => github({ workspaces: [{ name: 'hive', path: '/repo', env, fork: null, memoryCap: 4000 }] });
   assert.deepEqual(parseConfig(withEnv({ NODE_ENV: 'development', PAD: '  x\t' })).comb.workspaces[0].env, { NODE_ENV: 'development', PAD: '  x\t' });
   assert.deepEqual(parseConfig(withEnv({})).comb.workspaces[0].env, {});
   const refused = (env: unknown, rest: string) =>
@@ -758,7 +758,7 @@ test('comb.workspaces[].env is required: an object of strings shared by the work
 
 test('a workspace env or a command env that sets a name the Hive sets is refused with its field; PATH and HISTFILE are the user\'s to set (#738)', () => {
   const front = { name: 'Run Frontend', impls: [{ workspace: 'hive', command: 'pnpm run dev' }], menu: true, env: {} };
-  const withWorkspaceEnv = (env: Record<string, string>) => github({ workspaces: [{ name: 'hive', path: '/repo', env, fork: null }] });
+  const withWorkspaceEnv = (env: Record<string, string>) => github({ workspaces: [{ name: 'hive', path: '/repo', env, fork: null, memoryCap: 4000 }] });
   const withCommandEnv = (env: Record<string, string>) => github({ commands: [{ ...front, env }] });
   for (const name of RESERVED_ENV_NAMES) {
     assert.throws(() => parseConfig(withWorkspaceEnv({ [name]: 'x' })), { message: `hive.config.json: "comb.workspaces[0].env.${name}" is set by the Hive and cannot be overridden` }, name);
@@ -794,8 +794,8 @@ test('a top-level board or columns is a parse error naming where it went, and pr
 });
 
 test('workspaceByName finds a Comb workspace by its name', () => {
-  const config = parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }, { name: 'site', path: '/site', env: {}, fork: null }] }));
-  assert.deepEqual(workspaceByName(config, 'site'), { name: 'site', path: '/site', env: {}, fork: null });
+  const config = parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 }] }));
+  assert.deepEqual(workspaceByName(config, 'site'), { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 });
   assert.equal(workspaceByName(config, 'nope'), undefined);
   assert.equal(workspaceByName(config, undefined), undefined);
 });
@@ -803,7 +803,7 @@ test('workspaceByName finds a Comb workspace by its name', () => {
 test('taskWorkspace resolves a task against the config\'s workspaces and source default; workspaceScope takes each source\'s default workspace, none without one; requireWorkspace names why there is none (#179, #688)', () => {
   const config = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'site', auto: true }, rules: [] } } }));
   const task = { item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '', source: 'board' } };
-  assert.deepEqual(taskWorkspace(config, task), { name: 'site', path: '/site', env: {}, fork: null }, 'the source default');
+  assert.deepEqual(taskWorkspace(config, task), { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000 }, 'the source default');
   assert.deepEqual(workspaceScope(config), { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: [], site: [] } });
   const routed = parseConfig(github({ workspaces: TWO, source: { ...GITHUB_SOURCE, taskProps: DYNAMIC } }));
   assert.deepEqual(workspaceScope(routed).sourceWorkspaces, {}, 'no default workspace: its rules route through the hint (#293)');
@@ -822,25 +822,25 @@ test('workspaceScope lists, per workspace, only what the task menu offers there:
     cmd('y', [{ workspace: 'b', command: 'b' }, { workspace: null, command: 'true' }]),
     cmd('z', [{ workspace: null, command: 'true' }], false),
   ];
-  const config = parseConfig(github({ workspaces: [{ name: 'a', path: '/a', env: {}, fork: null }, { name: 'b', path: '/b', env: {}, fork: null }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'a', auto: true }, rules: [] } }, commands }));
+  const config = parseConfig(github({ workspaces: [{ name: 'a', path: '/a', env: {}, fork: null, memoryCap: 4000 }, { name: 'b', path: '/b', env: {}, fork: null, memoryCap: 4000 }], source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'a', auto: true }, rules: [] } }, commands }));
   assert.deepEqual(workspaceScope(config).commands, { a: ['x', 'y'], b: ['y'] });
 });
 
 test('a workspace keeps its worktree setup only when given; a setup that is not text is refused (#299)', () => {
-  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, setup: 'COPY .env\nRUN pnpm install' };
+  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup: 'COPY .env\nRUN pnpm install' };
   assert.deepEqual(parseConfig(github({ workspaces: [workspace] })).comb.workspaces, [workspace]);
-  assert.equal(parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, setup: 'FROM node' }] })).comb.workspaces[0].setup, 'FROM node', 'POST /settings parses the text, not the boot: a bad line never stops the Hive');
-  assert.deepEqual(Object.keys(parseConfig(GITHUB).comb.workspaces[0]), ['name', 'path', 'env', 'fork'], 'absent stays absent, never undefined');
-  assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, setup: ['RUN a'] }] })), { message: 'hive.config.json: "comb.workspaces[0].setup" must be a string' });
+  assert.equal(parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup: 'FROM node' }] })).comb.workspaces[0].setup, 'FROM node', 'POST /settings parses the text, not the boot: a bad line never stops the Hive');
+  assert.deepEqual(Object.keys(parseConfig(GITHUB).comb.workspaces[0]), ['name', 'path', 'env', 'fork', 'memoryCap'], 'absent stays absent, never undefined');
+  assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup: ['RUN a'] }] })), { message: 'hive.config.json: "comb.workspaces[0].setup" must be a string' });
 });
 
 test("a workspace's setupTimeout is a timeout text; absent stays absent; a bad one is refused by name (#511)", () => {
-  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, setup: 'RUN pnpm install', setupTimeout: '90s' };
+  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setup: 'RUN pnpm install', setupTimeout: '90s' };
   assert.deepEqual(parseConfig(github({ workspaces: [workspace] })).comb.workspaces, [workspace]);
   assert.equal('setupTimeout' in parseConfig(GITHUB).comb.workspaces[0], false);
   for (const timeout of ['5', '0m', '25h', ' 5m', 5]) {
     assert.throws(
-      () => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, setupTimeout: timeout }] })),
+      () => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, setupTimeout: timeout }] })),
       { message: 'hive.config.json: "comb.workspaces[0].setupTimeout" must be a timeout like "30s", "10m" or "1h", up to 24h' }, String(timeout),
     );
   }
@@ -853,19 +853,19 @@ test('parseConfig reads only comb.sources: a file that still has comb.boards fai
 });
 
 test("a workspace's teardown and teardownTimeout are parsed as setup and setupTimeout are: kept only when given, a teardown that is not text and a bad timeout refused by name (#654)", () => {
-  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
+  const workspace = { name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, teardown: 'RUN docker compose down\nDEL tmp/', teardownTimeout: '2m' };
   assert.deepEqual(parseConfig(github({ workspaces: [workspace] })).comb.workspaces, [workspace]);
-  assert.deepEqual(Object.keys(parseConfig(GITHUB).comb.workspaces[0]), ['name', 'path', 'env', 'fork'], 'absent stays absent');
-  assert.deepEqual(parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, teardownTimeout: '5m' }] })).comb.workspaces[0].teardownTimeout, '5m', 'a timeout without a teardown is accepted');
-  assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, teardown: 7 }] })), { message: 'hive.config.json: "comb.workspaces[0].teardown" must be a string' });
+  assert.deepEqual(Object.keys(parseConfig(GITHUB).comb.workspaces[0]), ['name', 'path', 'env', 'fork', 'memoryCap'], 'absent stays absent');
+  assert.deepEqual(parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, teardownTimeout: '5m' }] })).comb.workspaces[0].teardownTimeout, '5m', 'a timeout without a teardown is accepted');
+  assert.throws(() => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, teardown: 7 }] })), { message: 'hive.config.json: "comb.workspaces[0].teardown" must be a string' });
   assert.throws(
-    () => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, teardownTimeout: '25h' }] })),
+    () => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, teardownTimeout: '25h' }] })),
     { message: 'hive.config.json: "comb.workspaces[0].teardownTimeout" must be a timeout like "30s", "10m" or "1h", up to 24h' },
   );
 });
 
 test('parseConfig keeps a workspace\'s conventions, writes {} back as absent and names the workspace in a refusal (#692)', () => {
-  const at = (conventions: unknown) => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, conventions }] })).comb.workspaces[0];
+  const at = (conventions: unknown) => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, conventions }] })).comb.workspaces[0];
   assert.deepEqual(at({ specsDir: ' docs/specs ', delivery: 'single' }).conventions, { specsDir: 'docs/specs', delivery: 'single' });
   assert.equal('conventions' in at({}), false, '{} is no key: the file stays clean');
   assert.equal('conventions' in at(undefined), false);
@@ -964,7 +964,7 @@ test('editor is required and parsed against the Comb\'s workspaces; workspaces[]
   const at = (extra: Record<string, unknown>) => parseConfig(github(extra));
   assert.deepEqual(at({}).editor, EDITOR_DEFAULTS);
   assert.throws(() => at({ editor: undefined }), { message: /^hive\.config\.json: editor is required/ });
-  assert.throws(() => at({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, format: { onSave: true, formatters: {}, custom: [] } }] }),
+  assert.throws(() => at({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, format: { onSave: true, formatters: {}, custom: [] } }] }),
     { message: 'hive.config.json: "comb.workspaces[0].format" moved to "editor" (#780): one config for every workspace' });
   assert.throws(() => at({ editor: { formatOnSave: { enabled: true, workspaces: ['gone'] }, languages: {} } }),
     { message: /^hive\.config\.json: editor\.formatOnSave\.workspaces names workspace gone, which is not in comb\.workspaces$/ });
@@ -1009,7 +1009,7 @@ test('parseConfig reads a wait-for-CI stage: which checks, the list only with li
 });
 
 test('a workspace\'s fork is required: null, false or the object; sync only with pr fork or ask and required there; the remote is a remote name and never origin; baseBranch is a branch, and empty drops it (#854)', () => {
-  const at = (extra: Record<string, unknown>) => github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, ...extra }] });
+  const at = (extra: Record<string, unknown>) => github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, memoryCap: 4000, ...extra }] });
   const workspace = (extra: Record<string, unknown>) => parseConfig(at(extra)).comb.workspaces[0];
   const refused = (extra: Record<string, unknown>, message: string) =>
     assert.throws(() => parseConfig(at(extra)), { message: `hive.config.json: ${message}` }, JSON.stringify(extra));
@@ -1121,4 +1121,11 @@ test('parseConfig refuses each comb.createIn rule and a malformed repository, na
   for (const repository of ['acme', 'acme/app/x', 'a b/c', 7]) {
     assert.throws(() => parseConfig(github({ source: { ...GITHUB_SOURCE, repository } })), /"comb\.sources\[0\]\.repository" must be a repository as owner\/name/, String(repository));
   }
+});
+
+test('a workspace\'s memoryCap is a required integer from 300 to 20000, refused naming the key and the range (#73)', () => {
+  const at = (memoryCap: unknown) => github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap }] });
+  assert.deepEqual([300, 20000].map((cap) => parseConfig(at(cap)).comb.workspaces[0].memoryCap), [300, 20000]);
+  const message = 'hive.config.json: "comb.workspaces[0].memoryCap" must be an integer from 300 to 20000';
+  for (const bad of [299, 20001, 4000.5, '4000', undefined]) assert.throws(() => parseConfig(at(bad)), { message }, String(bad));
 });
