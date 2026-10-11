@@ -105,7 +105,7 @@ export type CiVerdict =
   | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; fellBack: boolean; checks: StageCiCheck[] }
   | { kind: 'passed'; fellBack: boolean }
   | { kind: 'failed'; failed: CiCheck[]; fellBack: boolean; checks: StageCiCheck[] }
-  | { kind: 'awaiting'; workflows: string[]; fellBack: boolean };
+  | { kind: 'awaiting'; workflows: string[]; fellBack: boolean; checks: StageCiCheck[] };
 
 export function ciVerdict(reads: readonly CiPrRead[], stage: Pick<Stage, 'ciChecks' | 'checks'>): CiVerdict {
   const each = reads.map((r) => considered(r, stage.ciChecks ?? 'required', stage.checks));
@@ -115,7 +115,7 @@ export function ciVerdict(reads: readonly CiPrRead[], stage: Pick<Stage, 'ciChec
   const failed = checks.filter((c) => c.state === 'failure');
   if (failed.length > 0) return { kind: 'failed', failed, fellBack, checks: listed };
   const workflows = [...new Set(reads.flatMap((r) => r.awaiting ?? []))]; // #854: GitHub ran nothing for them, so the counted checks cannot pass yet
-  if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack };
+  if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack, checks: listed };
   const pending = checks.filter((c) => c.state === 'pending').map((c) => c.name);
   if (reads.length > 0 && pending.length === 0 && each.every((c) => c.checks.length > 0)) return { kind: 'passed', fellBack };
   return { kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, fellBack, checks: listed };

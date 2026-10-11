@@ -274,6 +274,8 @@ test('a read whose workflows await a maintainer\'s approval keeps waiting with c
   assert.deepEqual([awaiting.effects, live(awaiting.state)?.ci?.awaiting, awaiting.state.tasks[0].stage], [[], 2, 'ci']);
   assert.equal(live(read(awaiting.state, [{ ...pr([]), awaiting: ['CI', 'Lint'] }]).state), live(awaiting.state), 'nothing new to save');
   assert.equal(live(read(awaiting.state, [pr([check('build', 'pending')])]).state)?.ci?.awaiting, undefined);
+  const moved = read(awaiting.state, [{ ...pr([check('build', 'pending')]), awaiting: ['CI', 'Lint'] }]);
+  assert.deepEqual(live(moved.state)?.ci?.checks?.map((c) => c.name), ['build'], '#914: a held wait still refreshes the block\'s checks');
   const late = new Date(Date.parse(since) + 11 * 60_000).toISOString();
   const timedOut = read(awaiting.state, [{ ...pr([]), awaiting: ['CI'] }], late);
   assert.equal(live(timedOut.state)?.stopped, true);

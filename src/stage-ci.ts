@@ -96,11 +96,11 @@ function counted(state: State, activity: Activity, ci: StageCi, verdict: Extract
 }
 
 // #854: workflows await a maintainer's approval: nothing ends, the card counts them; the same state while the count holds
-function awaited(state: State, activity: Activity, ci: StageCi, workflows: readonly string[]): Reduced {
+function awaited(state: State, activity: Activity, ci: StageCi, workflows: readonly string[], checks: StageCiCheck[]): Reduced {
   const { noRerun: _noRerun, ...rest } = ci;
   const was = activity.ci;
-  const same = was?.awaiting === workflows.length && was.noRerun === undefined && was.fellBack === ci.fellBack;
-  return none(same ? state : withActivity(state, { ...activity, ci: { ...rest, awaiting: workflows.length } }));
+  const same = was?.awaiting === workflows.length && was.noRerun === undefined && was.fellBack === ci.fellBack && sameChecks(was.checks, checks);
+  return none(same ? state : withActivity(state, { ...activity, ci: { ...rest, awaiting: workflows.length, checks } }));
 }
 
 // #854: rerunOnce asked for a re-run the login may not ask: the wait holds for a new push or a maintainer's re-run, until its timeout
@@ -145,7 +145,7 @@ export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent,
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
   if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
   if (verdict.kind === 'passed') return passCi(state, wait);
-  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows);
+  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   if (verdict.kind === 'failed') {
     const shown: StageCi = { ...ci, checks: verdict.checks }; // #914: the ✕ lines stay on the block while a re-run is awaited
     if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) return withoutRerun(state, wait.activity, shown);

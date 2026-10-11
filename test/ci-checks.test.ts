@@ -112,7 +112,7 @@ test('parseCi reads the workflows awaiting a maintainer\'s approval from the hea
   const [only] = parseCi([A], { p0: awaiting('READ') });
   assert.deepEqual([only.awaiting, only.canPush, only.checks], [['CI'], false, []]);
   assert.equal(parseCi([A], { p0: awaiting('WRITE') })[0].canPush, true);
-  assert.deepEqual(ciVerdict([only], { ciChecks: 'all' }), { kind: 'awaiting', workflows: ['CI'], fellBack: false });
+  assert.deepEqual(ciVerdict([only], { ciChecks: 'all' }), { kind: 'awaiting', workflows: ['CI'], fellBack: false, checks: [] });
   assert.equal(ciVerdict([{ ...only, checks: [check('build', 'failure')] }], { ciChecks: 'all' }).kind, 'failed');
   assert.deepEqual(parseCi([A], { p0: answer('h', [run('x', 'COMPLETED', 'ACTION_REQUIRED')]) })[0].checks.map((c) => c.state), ['failure']);
   const query = ciQuery([A]) ?? '';
