@@ -364,7 +364,7 @@ test('every node may grow to the canvas\'s bottom and the chart is exactly as ta
   vi.restoreAllMocks();
 });
 
-test('the flow view draws no pill on the default path; a labelled arrow, a verdict, a back edge with its tries and a loop keep theirs (#908)', () => {
+test('the flow view draws no pill on the default path, a passed verdict included; a labelled arrow, a back edge with its tries and a loop keep theirs (#908)', () => {
   const cols: Stage[] = [...stages, { name: 'pr', from: { board: ['PR'] } }];
   const transitions: Transition[] = [
     { from: 'dev', to: 'review', when: 'done' },
@@ -378,7 +378,8 @@ test('the flow view draws no pill on the default path; a labelled arrow, a verdi
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(within(canvas).queryByText('terminou')).not.toBeInTheDocument();
   expect(within(canvas).queryByText('aprovado')).not.toBeInTheDocument();
-  for (const pill of ['design', 'passou', 'falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
+  expect(within(canvas).queryByText('passou')).not.toBeInTheDocument();
+  for (const pill of ['design', 'falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
 });
 
 // A forward arrow, a back edge with its tries, a loop and an unlabelled skip forward (#909)
