@@ -1129,6 +1129,14 @@ const en = {
   'stageCi.waiting': 'waiting for CI · {n}/{total}', // #834: a wait for CI, on the task and in its status box: checks done of those counted
   'stageCi.waitingPr': 'waiting for PR', // #834: the task has no open PR yet
   'stageCi.failed': 'CI failed: {list}', // #834: the failed checks, or the timeout
+  'running.ci': 'waiting for CI', // #914: the running block's header on a wait for CI
+  'running.commands': 'running checks', // #914: the running block's header on a commands stage
+  'running.stage': 'stage {name}', // #914: the header's right side
+  'running.loop': 'loop {n}/{max}', // #914: the task came through a transition with maxTries
+  'running.silent': 'no output for {n} min · {name}', // #914: the current command wrote nothing for 2 min or more
+  'running.skipped': 'skipped', // #914: a command onMissing skip passed over
+  'running.output': 'see output', // #914: the execution's console, or the running check's page
+  'running.stop': 'stop', // #914: the stage's own stop
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
   'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
   'flow.trigger.done': 'done', // #134: the triggers and fixed verdicts as a pill and the card read them
@@ -2742,6 +2750,14 @@ const pt: Record<MessageKey, string> = {
   'stageCi.waiting': 'aguardando CI · {n}/{total}',
   'stageCi.waitingPr': 'aguardando PR',
   'stageCi.failed': 'CI falhou: {list}',
+  'running.ci': 'aguardando CI',
+  'running.commands': 'executando checks',
+  'running.stage': 'etapa {name}',
+  'running.loop': 'volta {n}/{max}',
+  'running.silent': 'sem saída há {n} min · {name}',
+  'running.skipped': 'pulado',
+  'running.output': 'ver saída',
+  'running.stop': 'parar',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
   'stage.error.triesOut': 'esgotou · {trigger} {n}x',
   'flow.trigger.done': 'terminou',
