@@ -26,6 +26,11 @@ const PR_LIMIT = 10; // ponytail: an issue closed by more PRs shows its first 10
 export const ISSUE_FIELDS = `number title url updatedAt labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } `
   + `closedByPullRequestsReferences(first: ${PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged isDraft statusCheckRollup { state } } }`;
 
+/** What a write asks back of the issue it changed (#765): every field the read model's GraphQL normalizer reads. */
+export const ISSUE_ROW_FIELDS = `id number title body state createdAt updatedAt closedAt author { login } labels(first: ${LABEL_LIMIT}) { nodes { name } } comments { totalCount }`;
+/** What addComment asks back of the comment it created (#765). */
+export const COMMENT_ROW_FIELDS = 'id body createdAt updatedAt author { login }';
+
 /** A repository's issues in one state (#757), most recently updated first, a page at a time. */
 export const REPO_ISSUES = `query($owner: String!, $name: String!, $states: [IssueState!], $after: String) {
   ${RATE}
@@ -73,7 +78,7 @@ export const ISSUE_STATE = `query($owner: String!, $name: String!, $number: Int!
 }`;
 
 /** A title or body edit (#757): a variable not sent leaves its field as it is. */
-export const UPDATE_ISSUE = 'mutation($id: ID!, $title: String, $body: String) { updateIssue(input: { id: $id, title: $title, body: $body }) { issue { id } } }';
+export const UPDATE_ISSUE = `mutation($id: ID!, $title: String, $body: String) { updateIssue(input: { id: $id, title: $title, body: $body }) { issue { ${ISSUE_ROW_FIELDS} } } }`;
 
 const REPO_LABEL_LIMIT = 100; // ponytail: the labels popover lists a repository's first 100 by name
 
@@ -82,6 +87,6 @@ export const REPO_LABELS = `query($owner: String!, $name: String!) {
   ${RATE}
   repository(owner: $owner, name: $name) { labels(first: ${REPO_LABEL_LIMIT}, orderBy: { field: NAME, direction: ASC }) { nodes { id name } } }
 }`;
-export const ADD_LABELS = 'mutation($id: ID!, $labels: [ID!]!) { addLabelsToLabelable(input: { labelableId: $id, labelIds: $labels }) { clientMutationId } }';
-export const REMOVE_LABELS = 'mutation($id: ID!, $labels: [ID!]!) { removeLabelsFromLabelable(input: { labelableId: $id, labelIds: $labels }) { clientMutationId } }';
-export const ADD_COMMENT = 'mutation($id: ID!, $body: String!) { addComment(input: { subjectId: $id, body: $body }) { clientMutationId } }';
+export const ADD_LABELS = `mutation($id: ID!, $labels: [ID!]!) { addLabelsToLabelable(input: { labelableId: $id, labelIds: $labels }) { labelable { ... on Issue { ${ISSUE_ROW_FIELDS} } } } }`;
+export const REMOVE_LABELS = `mutation($id: ID!, $labels: [ID!]!) { removeLabelsFromLabelable(input: { labelableId: $id, labelIds: $labels }) { labelable { ... on Issue { ${ISSUE_ROW_FIELDS} } } } }`;
+export const ADD_COMMENT = `mutation($id: ID!, $body: String!) { addComment(input: { subjectId: $id, body: $body }) { commentEdge { node { ${COMMENT_ROW_FIELDS} } } subject { ... on Issue { ${ISSUE_ROW_FIELDS} } } } }`;

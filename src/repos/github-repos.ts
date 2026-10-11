@@ -11,6 +11,9 @@ export const ownerName = (repository: string): { owner: string; name: string } =
   return { owner, name };
 };
 
+// A key of a mutation's answer (#765): what a write hands the read model; undefined when GitHub answered none
+const field = (value: unknown, key: string): unknown => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined);
+
 // The latest of the dates GitHub answered; ISO strings in GitHub's one format sort as the instants they name
 const latest = (dates: (string | null | undefined)[]): string | undefined =>
   dates.filter((d): d is string => typeof d === 'string' && d !== '').sort().at(-1);
@@ -114,11 +117,11 @@ export async function issueState(gql: GqlJson, repository: string, number: numbe
 export interface IssueEdit { title?: string; body?: string }
 
 /** The edit, unless GitHub's updatedAt is not the one the page read: IssueChanged then. ponytail: the check reads then writes, so an edit
- * landing between the two is overwritten; updateIssue takes no expected updatedAt. */
-export async function editIssue(gql: GqlJson, repository: string, number: number, edit: IssueEdit, updatedAt: string): Promise<void> {
+ * landing between the two is overwritten; updateIssue takes no expected updatedAt. Answers the updated issue (#765). */
+export async function editIssue(gql: GqlJson, repository: string, number: number, edit: IssueEdit, updatedAt: string): Promise<unknown> {
   const issue = await issueState(gql, repository, number);
   if (issue.updatedAt !== updatedAt) throw new IssueChanged();
-  await gql(UPDATE_ISSUE, { id: issue.id, ...edit });
+  return field(field(await gql(UPDATE_ISSUE, { id: issue.id, ...edit }), 'updateIssue'), 'issue');
 }
 
 // The repository's labels, name -> id, in GitHub's order by name
@@ -141,8 +144,9 @@ export class UnknownLabel extends Error {
   }
 }
 
-/** Adds and removes labels on the issue by name (#757), each list in one call; an empty list sends nothing. Labels check no updatedAt. */
-export async function setLabels(gql: GqlJson, repository: string, number: number, add: string[], remove: string[]): Promise<void> {
+/** Adds and removes labels on the issue by name (#757), each list in one call; an empty list sends nothing. Labels check no updatedAt.
+ * Answers the issue as the last mutation left it, undefined when none was sent (#765). */
+export async function setLabels(gql: GqlJson, repository: string, number: number, add: string[], remove: string[]): Promise<unknown> {
   const ids = await labelIds(gql, repository);
   const idOf = (name: string): string => {
     const id = ids.get(name);
@@ -152,12 +156,14 @@ export async function setLabels(gql: GqlJson, repository: string, number: number
   const adding = add.map(idOf);
   const removing = remove.map(idOf);
   const { id } = await issueState(gql, repository, number);
-  if (adding.length > 0) await gql(ADD_LABELS, { id, labels: adding });
-  if (removing.length > 0) await gql(REMOVE_LABELS, { id, labels: removing });
+  const added = adding.length > 0 ? field(field(await gql(ADD_LABELS, { id, labels: adding }), 'addLabelsToLabelable'), 'labelable') : undefined;
+  const removed = removing.length > 0 ? field(field(await gql(REMOVE_LABELS, { id, labels: removing }), 'removeLabelsFromLabelable'), 'labelable') : undefined;
+  return removed ?? added;
 }
 
-/** A comment on the issue (#757), posted with the Hive's login. */
-export async function comment(gql: GqlJson, repository: string, number: number, body: string): Promise<void> {
+/** A comment on the issue (#757), posted with the Hive's login. Answers the created comment and the issue it changed (#765). */
+export async function comment(gql: GqlJson, repository: string, number: number, body: string): Promise<{ comment: unknown; issue: unknown }> {
   const { id } = await issueState(gql, repository, number);
-  await gql(ADD_COMMENT, { id, body });
+  const payload = field(await gql(ADD_COMMENT, { id, body }), 'addComment');
+  return { comment: field(field(payload, 'commentEdge'), 'node'), issue: field(payload, 'subject') };
 }

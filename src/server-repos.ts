@@ -8,6 +8,7 @@ import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github.js';
 import type { GhRateLimit } from './sources/github-queries.js';
 import type { ReadModel } from './read-model/db.js';
+import { commentFromGql, issueFromGql } from './read-model/normalize.js';
 import { issuePageView, issuesView } from './read-model/views.js';
 import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
 
@@ -147,20 +148,47 @@ async function write(ctx: RepoContext, res: Response, target: Target, run: () =>
 }
 
 // The issue page's writes (#757), each straight to GitHub with the Hive's login, the body checked before GitHub is asked
+// A write's answer in the read model (#765 spike). GitHub took the write already, so an answer the normalizer refuses is logged, never a refusal;
+// what the answer does not cover (automations, close on merge) arrives through the read sync
+function stored(ctx: RepoContext, repository: string, store: (model: RepoReadModel) => void): void {
+  const model = ctx.deps.readModel;
+  if (model === undefined) return;
+  try {
+    store(model);
+  } catch (err) {
+    ctx.deps.log.error(`repositories: ${repository} not stored in the read model: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+const storeIssue = (ctx: RepoContext, repository: string, issue: unknown): void => {
+  if (issue !== undefined) stored(ctx, repository, (m) => { m.db.upsertIssue(issueFromGql(m.source, repository, issue)); }); // undefined: no mutation sent
+};
+
+const storeComment = (ctx: RepoContext, repository: string, written: { comment: unknown; issue: unknown }): void => {
+  stored(ctx, repository, (m) => {
+    const issue = issueFromGql(m.source, repository, written.issue);
+    const row = commentFromGql(m.source, repository, issue.nodeId, written.comment);
+    m.db.transaction(() => {
+      m.db.upsertIssue(issue);
+      m.db.upsertComment(row);
+    });
+  });
+};
+
 function registerWriteRoutes(app: Express, ctx: RepoContext): void {
   app.post('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const body = editOf(req.body);
     if (number === undefined || body === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: EDIT_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => editIssue(ctx.gql, found.repository, number, body.edit, body.updatedAt), true);
+    if (found) await write(ctx, res, { ...found, number }, async () => storeIssue(ctx, found.repository, await editIssue(ctx.gql, found.repository, number, body.edit, body.updatedAt)), true);
   });
   app.post('/repositories/:owner/:name/issues/:number/labels', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const { add, remove } = bodyOf(req);
     if (number === undefined || !isNames(add) || !isNames(remove)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LABELS_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => setLabels(ctx.gql, found.repository, number, add, remove), true);
+    if (found) await write(ctx, res, { ...found, number }, async () => storeIssue(ctx, found.repository, await setLabels(ctx.gql, found.repository, number, add, remove)), true);
   });
   // A comment changes nothing the flow shows: no poll
   app.post('/repositories/:owner/:name/issues/:number/comments', async (req: Request, res: Response) => {
@@ -168,7 +196,7 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
     const { body } = bodyOf(req);
     if (number === undefined || typeof body !== 'string' || body.trim() === '' || body.length > BODY_MAX) return refuse(res, { status: HTTP_BAD_REQUEST, message: COMMENT_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => comment(ctx.gql, found.repository, number, body), false);
+    if (found) await write(ctx, res, { ...found, number }, async () => storeComment(ctx, found.repository, await comment(ctx.gql, found.repository, number, body)), false);
   });
 }
 
@@ -176,7 +204,10 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
 function storedIssue(model: RepoReadModel, res: Response, repository: string, number: number): void {
   model.refetch(repository, number);
   const row = model.db.issue(model.source, repository, number);
-  if (row === undefined) return refuse(res, { status: HTTP_NOT_FOUND, message: ISSUE_NOT_STORED });
+  if (row === undefined) {
+    refuse(res, { status: HTTP_NOT_FOUND, message: ISSUE_NOT_STORED });
+    return;
+  }
   res.json(issuePageView(row, model.db.comments(model.source, row.nodeId)));
 }
 
