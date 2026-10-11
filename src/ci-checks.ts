@@ -45,9 +45,10 @@ function requiredOf(alias: Alias): { required?: string[] } {
 }
 
 // #11: a repository with no workflow file on its default branch runs no Actions, so a PR there with no checks holds nothing. Only a read answer
-// marks it: no repository or no workflows field keeps the wait. Known ceiling: a PR adding the repository's first workflow is not waited on
-function noCiOf(repository: unknown): { noCi?: true } {
-  if (!isObject(repository) || !('workflows' in repository)) return {};
+// marks it: no repository or no workflows field keeps the wait, and so does a base branch requiring checks, which an outside CI reports late.
+// Known ceiling: a PR adding the repository's first workflow is not waited on.
+function noCiOf(repository: unknown, required: readonly string[] = []): { noCi?: true } {
+  if (required.length > 0 || !isObject(repository) || !('workflows' in repository)) return {};
   const { workflows } = repository;
   if (workflows === null) return { noCi: true };
   const names = isObject(workflows) && Array.isArray(workflows.entries) ? workflows.entries.map((e) => (isObject(e) ? e.name : undefined)) : undefined;
@@ -65,7 +66,11 @@ export function parseCi(urls: string[], data: unknown): CiPrRead[] {
     const read = (node: unknown): CiCheck => ({ ...checkOf(node), pr: url, ...runIdOf(node) });
     const checks = readable(nodesOf(headRollup(alias.headCommit)?.contexts), read, () => { skipped = true; });
     const permission = isObject(alias.repository) ? alias.repository.viewerPermission : undefined;
-    const pr: CiPrRead = { url, head, ...requiredOf(alias), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission), ...noCiOf(alias.repository) };
+    const { required } = requiredOf(alias);
+    const pr: CiPrRead = {
+      url, head, ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
+      ...noCiOf(alias.repository, required),
+    };
     return skipped ? [] : [pr];
   });
 }

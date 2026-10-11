@@ -144,7 +144,7 @@ test('ciVerdict lists the considered checks: an unreported required name is a qu
   assert.deepEqual(listed.kind === 'pending' ? listed.checks.map((c) => c.name) : [], ['e2e-chrome']);
 });
 
-test('parseCi marks noCi only when the repository\'s default branch has no workflow file: no .github/workflows, or a tree with no .yml/.yaml; an unread repository holds the wait (#11)', () => {
+test('parseCi marks noCi only when the repository\'s default branch has no workflow file: no .github/workflows, or a tree with no .yml/.yaml; an unread repository or a base branch requiring checks holds the wait (#11)', () => {
   const withRepo = (workflows: unknown) => ({ ...answer('h', []), repository: { viewerPermission: 'WRITE', workflows } });
   const tree = (...names: string[]) => ({ entries: names.map((name) => ({ name })) });
   assert.equal(parseCi([A], { p0: withRepo(null) })[0].noCi, true, 'no .github/workflows');
@@ -152,6 +152,7 @@ test('parseCi marks noCi only when the repository\'s default branch has no workf
   assert.equal(parseCi([A], { p0: withRepo(tree('ci.yml')) })[0].noCi, undefined);
   assert.equal(parseCi([A], { p0: withRepo(tree('ci.YAML')) })[0].noCi, undefined);
   assert.equal(parseCi([A], { p0: answer('h', []) })[0].noCi, undefined, 'no repository read');
+  assert.equal(parseCi([A], { p0: { ...withRepo(null), ...answer('h', [], ['jenkins']) } })[0].noCi, undefined, 'a base branch requiring checks');
   assert.equal(parseCi([A], { p0: { ...answer('h', []), repository: { viewerPermission: 'WRITE' } } })[0].noCi, undefined, 'no workflows field read');
   assert.match(ciQuery([A]) ?? '', /workflows: object\(expression: "HEAD:\.github\/workflows"\) \{ \.\.\. on Tree \{ entries \{ name \} \} \}/);
 });
