@@ -645,3 +645,13 @@ test('validateSettings names each createIn rule on the flow section before the s
   assert.deepEqual(validateSettings({ ...draft, createIn: 'a-removed-row' }), problem('settings.error.createIn.unknown'));
   assert.deepEqual(validateSettings({ ...draft, sources: [], createIn: 'hive', hiveSource: false }), problem('settings.error.hiveSource.noSource'));
 });
+
+test('a memory total limit that is not a whole number from 300 to 20000 stops the save on workspaces, naming the workspace, after its name and folder (#73)', () => {
+  setLanguage('en');
+  const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
+  const [hive] = valid.workspaces;
+  const problem = { section: 'workspaces', message: t('settings.error.memoryCap', { workspace: 'hive' }) };
+  for (const memoryCap of ['', '299', '20001', '4000.5']) assert.deepEqual(validateSettings({ ...valid, workspaces: [{ ...hive, memoryCap }] }), problem, memoryCap);
+  assert.equal(validateSettings({ ...valid, workspaces: [{ ...hive, memoryCap: '300' }] }), undefined);
+  assert.equal(validateSettings({ ...valid, workspaces: [{ ...hive, path: '', memoryCap: 'x' }] })?.message, t('settings.error.workspaces', { n: 1 }), 'the name and the folder first');
+});

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
-import { setLanguage, t } from '@/i18n';
+import { formatCount, setLanguage, t } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
 import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -258,4 +258,28 @@ test('a workspace\'s conventions card shows its saved conventions; a bad slice s
   await user.click(card.getByRole('button', { name: t('settings.conventions.add') })); // a docsRepo row left blank
   await save(user, onSaved);
   expect(posted().workspaces.map((w) => w.conventions)).toEqual([{ specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } }, undefined]);
+});
+
+test('each workspace card edits its memory total limit with what a full memory costs per run under it; out of range it marks itself and stops the save on workspaces; the value is posted as a number (#73)', async () => {
+  const user = userEvent.setup();
+  const onSaved = vi.fn();
+  render(<Settings info={info} onSaved={onSaved} />);
+  await open(user, 'workspaces');
+  const hive = within(screen.getByRole('region', { name: 'hive' }));
+  const cap = hive.getByRole('spinbutton', { name: `${t('settings.memory.cap')} 1` });
+  expect(cap).toHaveValue(4000);
+  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(1100) }))).toBeInTheDocument();
+  await user.clear(cap);
+  await user.type(cap, '20001');
+  expect(cap).toHaveAttribute('aria-invalid', 'true');
+  expect(hive.getByText(t('settings.memory.capRange'))).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+  expect(await screen.findByText(t('settings.error.memoryCap', { workspace: 'hive' }))).toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
+  await user.clear(cap);
+  await user.type(cap, '8000');
+  expect(cap).toHaveAttribute('aria-invalid', 'false');
+  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(2100) }))).toBeInTheDocument();
+  await save(user, onSaved);
+  expect(posted().workspaces.map((w) => w.memoryCap)).toEqual([8000, 4000]);
 });

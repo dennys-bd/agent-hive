@@ -10,9 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { t } from '@/i18n';
+import { formatCount, t } from '@/i18n';
+import { isMemoryCap, memoryCapTokens } from '@/lib/memory-cap';
 import type { WorkspaceDraft } from '@/lib/settings-form';
-import type { State } from '../../../types';
+import { MEMORY_CAP_MAX, MEMORY_CAP_MIN, type State } from '../../../types';
 import { workspaceNameFor } from '../../../tasks';
 
 interface WorkspacesEditorProps { workspaces: WorkspaceDraft[]; savedNames: readonly string[]; state?: State; onChange(workspaces: WorkspaceDraft[]): void }
@@ -78,6 +79,26 @@ export function CardGroup({ title, hint, children }: { title: string; hint: stri
   );
 }
 
+// #73: the workspace's memory total limit, part of the Settings draft (the dialog only shows it); under it what a full memory costs per run,
+// or the range while the value is one the parser would refuse
+function MemoryCapField({ row, n, onChange }: FieldsProps) {
+  const id = useId();
+  const label = t('settings.memory.cap');
+  const valid = isMemoryCap(row.memoryCap);
+  return (
+    <div className="flex max-w-xs flex-col gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id} aria-label={`${label} ${n}`} aria-invalid={!valid} aria-describedby={`${id}-note`} type="number" min={MEMORY_CAP_MIN} max={MEMORY_CAP_MAX} step={1}
+        value={row.memoryCap} onChange={(e) => onChange({ memoryCap: e.target.value })}
+      />
+      <span id={`${id}-note`} className={valid ? 'text-muted-foreground text-xs' : 'text-destructive text-xs'}>
+        {valid ? t('settings.memory.capEstimate', { n: formatCount(memoryCapTokens(Number(row.memoryCap))) }) : t('settings.memory.capRange')}
+      </span>
+    </div>
+  );
+}
+
 // One workspace (#511): its own card, named after it, so each is a surface of the page like the commands card.
 function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRemove }: WorkspaceCardProps) {
   const id = useId();
@@ -117,8 +138,9 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
       <CardGroup title={t('settings.conventions.group')} hint={t('settings.conventions.hint')}>
         <ConventionsEditor label={t('settings.workspaceConventions', { workspace: row.name.trim() })} rows={row.conventions} onChange={(conventions) => onChange({ conventions })} />
       </CardGroup>
-      {/* #797: the memory's usage and its dialog, saved at once through its own routes, never the draft: workers write the same file */}
+      {/* #797: the memory's usage and its dialog, saved at once through its own routes, never the draft: workers write the same file. #73: its total limit is the draft's */}
       <CardGroup title={t('settings.memory.group')} hint={t('settings.memory.hint')}>
+        <MemoryCapField row={row} n={n} onChange={onChange} />
         <MemorySection workspace={row.name.trim()} saved={saved} />
       </CardGroup>
     </section>
@@ -126,7 +148,7 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
 }
 
 /** Settings › workspaces (#179, #510, #511): one card per workspace, at least one, each with a name, a folder, its worktree setup (#299), teardown (#654),
- * its env (#348), its conventions (#692) and its memory (#797); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
+ * its env (#348), its conventions (#692) and its memory (#797) and its memory total limit (#73); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
 export function WorkspacesEditor({ workspaces, savedNames, state, onChange }: WorkspacesEditorProps) {
   const update = (id: string, patch: Partial<WorkspaceDraft>): void => onChange(workspaces.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   // a picked folder also names a row whose name is still empty, after the folder
