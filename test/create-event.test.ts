@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialState } from '../src/orchestrator.js';
-import { createEvent, createTask, HIVE_OFF_MESSAGE, notInFlowNotice, noColumnMessage, noCreateMessage, UNKNOWN_SOURCE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
+import { initialState, isUuid, reduce } from '../src/orchestrator.js';
+import { createEvent, createTask, HIVE_OFF_MESSAGE, notInFlowNotice, noColumnMessage, noCreateMessage, PR_HIVE_ONLY_MESSAGE, PR_TAKEN_MESSAGE, PR_URL_MESSAGE, UNKNOWN_SOURCE_MESSAGE, WORKSPACE_ON_SOURCE_MESSAGE, type CreateDeps } from '../src/create-task.js';
+import { taskOfPr } from '../src/activities.js';
 import { GITHUB_ENTRY } from './fakes.js';
-import type { Source, State, Task } from '../src/types.js';
+import type { HiveEvent, Source, State, Task } from '../src/types.js';
 
 const STATE: State = { ...initialState(0), stages: [{ name: 'fila', from: {}, prompt: 'x' }], workspaces: ['hive'] };
 const SOURCES = ['roadmap'];
@@ -91,4 +92,49 @@ test('the not-in-flow notice names the item and does not blame the filter alone,
   assert.match(notice, /roadmap:PVTI_9/);
   assert.match(notice, /not in the flow yet/);
   assert.match(notice, /filter may leave it out, or the next poll will bring it in/);
+});
+
+const PR = 'https://github.com/acme/app/pull/7';
+
+// The hive path with the real reducer behind dispatch (#67): what taskOfPr reads after the create; the roadmap source is a spy that must stay untouched
+function reducingDeps(comb = COMB, state: State = STATE) {
+  const made: unknown[] = []; const events: HiveEvent[] = [];
+  let current = state;
+  const deps: CreateDeps = {
+    state, config: { comb },
+    sources: new Map<string, Pick<Source, 'create'>>([['roadmap', { create: async (f) => { made.push(f); return 'roadmap:PVTI_9'; } }]]),
+    dispatch: async (e) => { events.push(e); current = reduce(current, e).state; return []; },
+    poll: async () => undefined,
+    latest: () => current,
+  };
+  return { deps, made, events, latest: () => current };
+}
+
+test('createTask with pr creates a hive task whose record holds the PR, its url the PR link; taskOfPr then resolves it; no source is written, even with createIn on a source (#67)', async () => {
+  const run = reducingDeps({ ...COMB, createIn: 'roadmap' });
+  assert.deepEqual(await createTask(run.deps, { title: 'The PR', stage: 'fila', auto: false, pr: PR }), { id: 'HIVE-1', itemId: 'local:1' });
+  const [event] = run.events;
+  assert.ok(event.type === 'createTask' && event.pr !== undefined && isUuid(event.pr.recordId), 'the route draws the record id');
+  assert.equal(event.pr.url, PR);
+  const state = run.latest();
+  assert.equal(taskOfPr(state, PR)?.item.itemId, 'local:1');
+  assert.equal(state.tasks.find((c) => c.item.itemId === 'local:1')?.item.url, PR, 'url defaults to the PR link');
+  assert.deepEqual(state.activities, [], 'no activity');
+  assert.deepEqual(run.made, [], 'no Source.create');
+  assert.deepEqual(await createTask(reducingDeps().deps, { title: 'The PR', stage: 'fila', pr: PR, source: 'hive' }), { id: 'HIVE-1', itemId: 'local:1' }, 'hive by name');
+});
+
+test('createTask with pr refuses a source, a link that is no GitHub PR and a PR a task already holds, and follows hive off; none dispatches (#67)', async () => {
+  const first = reducingDeps();
+  await createTask(first.deps, { title: 'The PR', stage: 'fila', pr: PR });
+  const again = reducingDeps(COMB, first.latest());
+  assert.deepEqual(await createTask(again.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: PR_TAKEN_MESSAGE });
+  const sourced = reducingDeps();
+  assert.deepEqual(await createTask(sourced.deps, { title: 'x', stage: 'fila', pr: PR, source: 'roadmap' }), { status: 400, message: PR_HIVE_ONLY_MESSAGE });
+  for (const pr of ['https://github.com/acme/app/issues/7', 'http://github.com/acme/app/pull/7', 'https://github.com/acme/app/pull/7/files', 'https://x.dev/pull/7', '', 7, null]) {
+    assert.deepEqual(await createTask(reducingDeps().deps, { title: 'x', stage: 'fila', pr }), { status: 400, message: PR_URL_MESSAGE }, String(pr));
+  }
+  const off = reducingDeps({ ...COMB, hiveSource: false });
+  assert.deepEqual(await createTask(off.deps, { title: 'x', stage: 'fila', pr: PR }), { status: 409, message: HIVE_OFF_MESSAGE });
+  assert.deepEqual([again.events, sourced.events, off.events, sourced.made], [[], [], [], []]);
 });

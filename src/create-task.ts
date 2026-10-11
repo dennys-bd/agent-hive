@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { taskOfPr } from './activities.js';
+import { isPrUrl } from './orchestrator.js';
 import { HIVE_SOURCE, itemSource, onSource, stageOf } from './tasks.js';
 import type { Refusal } from './server-tasks.js'; // a type only: no runtime cycle
 import type { CombConfig, Effect, HiveEvent, Source, State } from './types.js';
@@ -20,6 +23,9 @@ export const UNKNOWN_WORKSPACE_MESSAGE = 'unknown workspace';
 export const HIVE_OFF_MESSAGE = 'hive is turned off: create the task in a source';
 export const UNKNOWN_SOURCE_MESSAGE = 'source must be "hive" or a configured source';
 export const WORKSPACE_ON_SOURCE_MESSAGE = "a source's task properties set its workspace: leave workspace out";
+export const PR_HIVE_ONLY_MESSAGE = 'pr creates in hive only: leave source out or set it to "hive"';
+export const PR_URL_MESSAGE = 'pr must be a GitHub pull request link';
+export const PR_TAKEN_MESSAGE = 'a task already holds this PR';
 export const noCreateMessage = (name: string): string => `source ${name} cannot create tasks: it has no repository for new issues`;
 export const noColumnMessage = (stage: string, name: string): string => `stage ${stage} reads no column of source ${name}`;
 // Neutral on why: a filtered item and a poll that failed or was rate limited both land here, and the next poll brings the second in
@@ -70,23 +76,37 @@ export function createEvent(state: State, prefix: string, body: unknown, sources
   return { type: 'createTask', title: trimmed, body: text, stage, prefix, ...(workspace === undefined ? {} : { workspace }), auto: auto !== false, ...link };
 }
 
+type CreatePr = Extract<HiveEvent, { type: 'createTask' }>['pr'];
+
 /** A new task where the body's source says, else where comb.createIn does (#846): hive runs createEvent as before #846; a source creates
- * its item through Source.create, then polls that source, the only way a source task enters the state. */
+ * its item through Source.create, then polls that source, the only way a source task enters the state. A body with pr is a hive task made
+ * from that PR (#67). */
 export async function createTask(deps: CreateDeps, body: unknown): Promise<Created | Refusal> {
   const { comb } = deps.config;
-  const destination = ((body ?? {}) as { source?: unknown }).source ?? comb.createIn;
+  const { source, pr } = (body ?? {}) as { source?: unknown; pr?: unknown };
+  if (pr !== undefined) return createFromPr(deps, body as Record<string, unknown>, source, pr);
+  const destination = source ?? comb.createIn;
   if (destination === HIVE_SOURCE) return createInHive(deps, body);
   if (typeof destination !== 'string' || !comb.sources.some((s) => s.name === destination)) return { status: HTTP_BAD_REQUEST, message: UNKNOWN_SOURCE_MESSAGE };
   return createInSource(deps, body, destination);
 }
 
-async function createInHive(deps: CreateDeps, body: unknown): Promise<Created | Refusal> {
+// A hive task made from a PR, often another person's (#67): hive only, since a source would write an issue to GitHub; a pull request link as
+// hive_pr accepts it; one task per PR, as origin is for an issue. The record id is drawn here so the reducer stays pure. Nothing reaches GitHub.
+async function createFromPr(deps: CreateDeps, body: Record<string, unknown>, source: unknown, pr: unknown): Promise<Created | Refusal> {
+  if (source !== undefined && source !== HIVE_SOURCE) return { status: HTTP_BAD_REQUEST, message: PR_HIVE_ONLY_MESSAGE };
+  if (typeof pr !== 'string' || !isPrUrl(pr)) return { status: HTTP_BAD_REQUEST, message: PR_URL_MESSAGE };
+  if (taskOfPr(deps.state, pr) !== undefined) return { status: HTTP_CONFLICT, message: PR_TAKEN_MESSAGE };
+  return createInHive(deps, { ...body, url: body.url ?? pr }, { url: pr, recordId: randomUUID() });
+}
+
+async function createInHive(deps: CreateDeps, body: unknown, pr?: CreatePr): Promise<Created | Refusal> {
   const { prefix, hiveSource, sources } = deps.config.comb;
   if (!hiveSource) return { status: HTTP_CONFLICT, message: HIVE_OFF_MESSAGE };
   const event = createEvent(deps.state, prefix, body, sources.map((s) => s.name)); // #756: an origin names one of them
   if ('status' in event) return event;
   const n = deps.state.localCount + 1; // dispatch reduces before its first await: the number createTask hands out
-  await deps.dispatch(event);
+  await deps.dispatch(pr === undefined ? event : { ...event, pr });
   return { id: `${prefix}-${n}`, itemId: `local:${n}` };
 }
 
