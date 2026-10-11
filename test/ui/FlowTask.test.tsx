@@ -346,3 +346,10 @@ test('a show epic reads aguarda filhas · done/total in muted, before any other 
   rerender(<Flow state={state(epic)} />);
   expect(within(tile()).getByText('waiting for children · 1/3')).toBeInTheDocument();
 });
+
+test('a show epic whose end action was refused shows its error in destructive instead of the wait (#31)', () => {
+  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  render(<Flow state={state(epic)} />);
+  expect(within(tile()).queryByText(/aguarda filhas/)).not.toBeInTheDocument();
+  expect(tile()).toHaveClass('border-destructive');
+});

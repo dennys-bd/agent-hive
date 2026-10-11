@@ -82,8 +82,10 @@ function waitingText(task: Task, state: State): string {
 // error or the blocker. Nothing otherwise
 function taskStatus(task: Task, state: State): TaskStatus {
   if (task.missing) return { tone: 'destructive', text: t('task.missing') };
-  if (task.item.epic !== undefined) return { text: waitingText(task, state) };
   const error = activityOf(state, task.item.itemId)?.error;
+  if (task.item.epic !== undefined) { // #31: a refused end action freezes the epic (followEpics skips it), so its error must show over the wait
+    return error === undefined ? { text: waitingText(task, state) } : { tone: 'destructive', text: taskError(error) };
+  }
   if (error !== undefined && isExhausted(task, state)) return { tone: 'destructive', text: taskError(error) }; // #913: halted, worse than a question
   if (isStartFailure(error) && workersOf(state, task).length === 0) return { tone: 'destructive', text: taskError(error) }; // #945: a failed start, red; a live worker's status wins
   const current = taskState(task, state);
