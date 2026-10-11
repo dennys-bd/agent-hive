@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checksOf, checkState, decisionOf, headRollup } from '../src/pr-checks.js';
+import { checksOf, checkState, decisionOf, headRollup, rollupFields } from '../src/pr-checks.js';
 
 const AT = '2026-10-07T10:00:00Z';
 const LATER = '2026-10-07T11:00:00Z';
@@ -34,4 +34,10 @@ test('headRollup reads the rollup off the head commit; decisionOf shortens revie
   assert.equal(headRollup({ nodes: [{ commit: { statusCheckRollup: null } }] }), undefined);
   assert.equal(headRollup({ nodes: [] }), undefined);
   assert.deepEqual(['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED', null, 'NEW'].map((raw) => decisionOf(raw)), ['approved', 'changes', 'pending', undefined, undefined]);
+});
+
+test('a check run\'s startedAt and a pending status context\'s createdAt reach startedAt; a finished status context has none; the query asks startedAt (#914)', () => {
+  const rollup = { state: 'PENDING', contexts: { nodes: [{ ...run('test', 'IN_PROGRESS', null, null), startedAt: AT }, context('deploy', 'PENDING'), context('docs', 'SUCCESS')] } };
+  assert.deepEqual(checksOf(rollup)?.items.map((c) => [c.name, c.startedAt, c.at]), [['test', AT, undefined], ['deploy', LATER, LATER], ['docs', undefined, LATER]]);
+  assert.match(rollupFields(), /detailsUrl startedAt completedAt/);
 });

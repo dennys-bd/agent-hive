@@ -6,6 +6,7 @@ import type { Task, TaskFile, State } from '../../types';
 import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
 import { CiNotice } from '@/components/CiProgress';
+import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
@@ -48,16 +49,18 @@ function Comments({ comments, locale }: { comments: CommentsState; locale: strin
   );
 }
 
-// The scrolling body (redesign 06): the title, the task's error in full, which the flow's chip truncates (#482), the status box, the
+// The scrolling body (redesign 06): the title, the task's error in full, which the flow's chip truncates (#482), the status box (or, while a wait for CI or a commands stage runs, the running block in its place, #914), the
 // metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
 function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProps) {
   const { item } = task;
-  const error = activityOf(state, item.itemId)?.error; // the activity's (#629)
+  const live = activityOf(state, item.itemId); // the activity's (#629)
+  const error = live?.error;
+  const isRunning = live?.ci !== undefined || live?.commands !== undefined; // #914: a stage in flight with no agent gets the running block
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-3.5 py-3.5">
       <h2 className="break-words font-semibold text-[15px] text-foreground leading-5">{taskLabel(task)}</h2>
       {error && <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>}
-      <StatusBox task={task} state={state} isActivity={isActivity} />
+      {isRunning ? <RunningBlock task={task} state={state} /> : <StatusBox task={task} state={state} isActivity={isActivity} />}
       <SyncBlock task={task} state={state} />
       <CiNotice task={task} state={state} />
       <MetaGrid task={task} state={state} isActivity={isActivity} />

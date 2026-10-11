@@ -16,7 +16,7 @@ const BASE: State = {
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
-const RUN: StageCommands = { stage: 'checks', at: 0, ptyId: 'P0', runId: 'R0', failed: [], workerId: 'w1' };
+const RUN: StageCommands = { stage: 'checks', at: 0, ptyId: 'P0', runId: 'R0', failed: [], workerId: 'w1', started: [] };
 const listWith = (work: Partial<LiveActivity>): Activity[] => activitiesOf(withWork(BASE, 'A', work));
 const keysOf = (layout?: CenterLayout): string[][] => (layout === undefined ? [] : groupsOf(layout.root).map((group) => group.tabs.map(refKey)));
 

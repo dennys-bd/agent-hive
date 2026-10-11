@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ciQuery, ciVerdict, considered, matches, parseCi } from '../src/ci-checks.js';
+import { ciQuery, ciVerdict, considered, matches, parseCi, stageChecks } from '../src/ci-checks.js';
 import { ROLLUP_FIELDS, rollupFields } from '../src/pr-checks.js';
 import type { CiCheck, CiPrRead } from '../src/types.js';
 
@@ -83,13 +83,19 @@ test('considered: required counts the base branch\'s names, one not reported as 
 
 test('ciVerdict: no PR waits for one; no checks yet waits; a running check waits with its count; one failure fails at once; two PRs add up (#834)', () => {
   const all = { ciChecks: 'all' as const };
-  assert.deepEqual(ciVerdict([], all), { kind: 'pending', done: 0, total: 0, waitingPr: true, pending: [], fellBack: false });
-  assert.deepEqual(ciVerdict([read([])], all), { kind: 'pending', done: 0, total: 0, waitingPr: false, pending: [], fellBack: false });
-  assert.deepEqual(ciVerdict([read([check('build', 'success'), check('test', 'pending')])], all), { kind: 'pending', done: 1, total: 2, waitingPr: false, pending: ['test'], fellBack: false });
+  assert.deepEqual(ciVerdict([], all), { kind: 'pending', done: 0, total: 0, waitingPr: true, pending: [], fellBack: false, checks: [] });
+  assert.deepEqual(ciVerdict([read([])], all), { kind: 'pending', done: 0, total: 0, waitingPr: false, pending: [], fellBack: false, checks: [] });
+  assert.deepEqual(ciVerdict([read([check('build', 'success'), check('test', 'pending')])], all), {
+    kind: 'pending', done: 1, total: 2, waitingPr: false, pending: ['test'], fellBack: false, checks: [{ name: 'build', state: 'success' }, { name: 'test', state: 'pending' }],
+  });
   assert.deepEqual(ciVerdict([read([check('build', 'success'), check('docs', 'success')])], all), { kind: 'passed', fellBack: false });
-  assert.deepEqual(ciVerdict([read([check('build', 'failure'), check('test', 'pending')])], all), { kind: 'failed', failed: [check('build', 'failure')], fellBack: false });
+  assert.deepEqual(ciVerdict([read([check('build', 'failure'), check('test', 'pending')])], all), {
+    kind: 'failed', failed: [check('build', 'failure')], fellBack: false, checks: [{ name: 'build', state: 'failure' }, { name: 'test', state: 'pending' }],
+  });
   const app = read([check('build', 'success')]);
-  assert.deepEqual(ciVerdict([app, read([check('build', 'pending', B)], { url: B, head: 'h2' })], all), { kind: 'pending', done: 1, total: 2, waitingPr: false, pending: ['build'], fellBack: false });
+  assert.deepEqual(ciVerdict([app, read([check('build', 'pending', B)], { url: B, head: 'h2' })], all), {
+    kind: 'pending', done: 1, total: 2, waitingPr: false, pending: ['build'], fellBack: false, checks: [{ name: 'build', state: 'success' }, { name: 'build', state: 'pending' }],
+  });
   assert.equal(ciVerdict([app, read([check('build', 'success', B)], { url: B, head: 'h2' })], all).kind, 'passed');
   assert.equal(ciVerdict([app, read([], { url: B, head: 'h2' })], all).kind, 'pending', 'a PR with no considered check waits');
   assert.equal(ciVerdict([read([check('build', 'success')], { required: [] })], { ciChecks: 'required' }).fellBack, true);
@@ -106,10 +112,34 @@ test('parseCi reads the workflows awaiting a maintainer\'s approval from the hea
   const [only] = parseCi([A], { p0: awaiting('READ') });
   assert.deepEqual([only.awaiting, only.canPush, only.checks], [['CI'], false, []]);
   assert.equal(parseCi([A], { p0: awaiting('WRITE') })[0].canPush, true);
-  assert.deepEqual(ciVerdict([only], { ciChecks: 'all' }), { kind: 'awaiting', workflows: ['CI'], fellBack: false });
+  assert.deepEqual(ciVerdict([only], { ciChecks: 'all' }), { kind: 'awaiting', workflows: ['CI'], fellBack: false, checks: [] });
   assert.equal(ciVerdict([{ ...only, checks: [check('build', 'failure')] }], { ciChecks: 'all' }).kind, 'failed');
   assert.deepEqual(parseCi([A], { p0: answer('h', [run('x', 'COMPLETED', 'ACTION_REQUIRED')]) })[0].checks.map((c) => c.state), ['failure']);
   const query = ciQuery([A]) ?? '';
   assert.match(query, /checkSuites\(first: 50\) \{ nodes \{ conclusion app \{ slug \} workflowRun \{ workflow \{ name \} \} \} \}/);
   assert.match(query, /repository \{ viewerPermission \}/);
+});
+
+test('stageChecks orders the considered checks for the running block: finished by end, running by start, queued by name; the times and only an https url kept (#914)', () => {
+  const at = (name: string, state: CiCheck['state'], extra: Partial<CiCheck> = {}): CiCheck => ({ name, pr: A, state, ...extra });
+  const job = 'https://github.com/acme/app/actions/runs/1/job/3';
+  const listed = stageChecks([
+    at('e2e', 'pending'),
+    at('test', 'pending', { startedAt: '2026-10-10T10:02:00Z', url: job }),
+    at('build', 'success', { startedAt: '2026-10-10T10:00:00Z', at: '2026-10-10T10:01:30Z' }),
+    at('lint', 'success', { startedAt: '2026-10-10T10:00:00Z', at: '2026-10-10T10:00:45Z', url: 'javascript:alert(1)' }),
+  ]);
+  assert.deepEqual(listed, [
+    { name: 'lint', state: 'success', startedAt: '2026-10-10T10:00:00Z', completedAt: '2026-10-10T10:00:45Z' },
+    { name: 'build', state: 'success', startedAt: '2026-10-10T10:00:00Z', completedAt: '2026-10-10T10:01:30Z' },
+    { name: 'test', state: 'pending', startedAt: '2026-10-10T10:02:00Z', url: job },
+    { name: 'e2e', state: 'pending' },
+  ]);
+});
+
+test('ciVerdict lists the considered checks: an unreported required name is a queued line; a check outside a list filter is not listed (#914)', () => {
+  const required = ciVerdict([read([check('build', 'success'), check('other', 'pending')], { required: ['build', 'deploy'] })], { ciChecks: 'required' });
+  assert.deepEqual(required.kind === 'pending' ? required.checks : [], [{ name: 'build', state: 'success' }, { name: 'deploy', state: 'pending' }]);
+  const listed = ciVerdict([read([check('e2e-chrome', 'pending'), check('docs', 'success')])], { ciChecks: 'list', checks: ['e2e-*'] });
+  assert.deepEqual(listed.kind === 'pending' ? listed.checks.map((c) => c.name) : [], ['e2e-chrome']);
 });

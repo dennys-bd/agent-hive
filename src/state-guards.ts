@@ -97,9 +97,10 @@ const savedFailure = (value: unknown): CommandFailure[] =>
   (isJsonObject(value) && typeof value.name === 'string' && Number.isInteger(value.code) && typeof value.output === 'string' ? [{ name: value.name, code: value.code as number, output: value.output }] : []);
 function savedCommands(value: unknown): { commands?: StageCommands } {
   if (!isJsonObject(value)) return {};
-  const { stage, at, ptyId, runId, failed, workerId } = value;
+  const { stage, at, ptyId, runId, failed, workerId, started } = value;
   if (typeof stage !== 'string' || !Number.isInteger(at) || typeof ptyId !== 'string' || typeof runId !== 'string' || !Array.isArray(failed) || typeof workerId !== 'string') return {};
-  return { commands: { stage, at: at as number, ptyId, runId, failed: failed.flatMap(savedFailure), workerId } };
+  // #914: the starts round-trip; the boot stops the run anyway, so outputAt and skipped are never read
+  return { commands: { stage, at: at as number, ptyId, runId, failed: failed.flatMap(savedFailure), workerId, started: isStringArray(started) ? started : [] } };
 }
 
 // #834: a wait for CI as the reducer wrote it, read so the wait goes on after a boot; anything else reads as none. collecting never survives a

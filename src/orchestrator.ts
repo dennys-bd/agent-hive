@@ -23,7 +23,7 @@ import { canContinue, continueIntoCommands, fill, gateOf } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
 import { captureSession, dropOrphanTerminals, forgetTerminal, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
-import { freedLostRuns, stageCommandEnded, stageCommandsRefused, startCommands } from './stage-commands.js';
+import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 
 export { isFree } from './reducer-kit.js';
@@ -133,6 +133,8 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'deleteActivityFailed': return deleteActivityFailed(state, event.activityId, event.message); // no fill: nothing freed, nothing loosened
     case 'stageCommandEnded': return afterCommands(state, stageCommandEnded(state, event)); // #755: a passed stage moves the task on, as activityDeleted does
     case 'stageCommandsRefused': return afterCommands(state, stageCommandsRefused(state, event)); // #755: failed, nothing more runs
+    case 'stageCommandStarted': return none(stageCommandStarted(state, event)); // #914: no fill: a time for the running block
+    case 'stageCommandOutput': return none(stageCommandOutput(state, event)); // #914: idem
     case 'ciRead': return afterCommands(state, ciRead(state, event)); // #834: a passed wait moves the task on, as a commands stage's end does
     case 'ciClock': return afterCommands(state, ciClock(state, event)); // #834: only a timeout; #134: a routed failure moves the task, as a pass does
     case 'ciFailed': return afterCommands(state, ciFailed(state, event)); // #834; #134: a routed failure moves the task, as a pass does

@@ -332,3 +332,9 @@ test('the decomposition\'s confirm reads in both languages: criar issues, the co
   assert.equal(`${tPlural('decomposition.issues', 1, { n: 1 })}, ${tPlural('decomposition.blockers', 1, { n: 1 })}`, '1 issue, 1 blocker');
   assert.equal(t('decomposition.title'), 'Create issues');
 });
+
+test('the running block\'s copy reads as the spec writes it, in both languages (#914)', () => {
+  const keys = ['running.ci', 'running.commands', 'running.stage', 'running.loop', 'running.silent', 'running.skipped', 'running.output', 'running.stop'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['aguardando CI', 'executando checks', 'etapa {name}', 'volta {n}/{max}', 'sem saída há {n} min · {name}', 'pulado', 'ver saída', 'parar']);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['waiting for CI', 'running checks', 'stage {name}', 'loop {n}/{max}', 'no output for {n} min · {name}', 'skipped', 'see output', 'stop']);
+});

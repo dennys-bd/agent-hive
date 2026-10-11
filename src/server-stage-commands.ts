@@ -33,6 +33,9 @@ export interface StageCommandRunner { run(runtime: Runtime, effect: StageCommand
 export const OUTPUT_MAX = 16_000; // ponytail: a fixed tail; a setting if a prompt ever needs more of it
 const RAW_MAX = OUTPUT_MAX * 4; // room for the escape codes the strip removes
 const NOT_STARTED_EXIT = 127; // the shell's own code for a command it could not start: a pty that never spawned
+/** How often a running command's output reaches the State (#914), per pty: the running block's silence line needs the last output's time, and
+ * every chunk would flood the SSE. 30 s is the CI read's period. */
+export const OUTPUT_THROTTLE_MS = 30_000;
 
 /** The last OUTPUT_MAX characters of a command's output with its ANSI codes gone (#755): what stageCommandEnded carries. */
 export const outputTail = (raw: string): string => stripVTControlCharacters(raw).slice(-OUTPUT_MAX);
@@ -82,6 +85,13 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
       onSpawnFailed: (message) => ended(NOT_STARTED_EXIT, message),
     });
     let raw = '';
+    let lastOutput = Number.NEGATIVE_INFINITY; // #914: this pty's last stageCommandOutput; each command has a pty of its own
+    const output = (): void => {
+      const now = Date.now();
+      if (now - lastOutput < OUTPUT_THROTTLE_MS) return;
+      lastOutput = now;
+      void dispatch({ type: 'stageCommandOutput', activityId: activity.id, ptyId, at: new Date(now).toISOString() });
+    };
     // A pty the host does not hold never reports an end: answered now, or the stage would wait forever and only a Stop would free the task
     const fed = feedConsole({ ptys, consoleStore }, stageChannel(stage.name), ptyId, {
       group: activity.commands?.runId,
@@ -91,10 +101,14 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
         raw += `\r\ntimed out after ${command.timeout ?? ''}`;
         void pool.kill(ptyId);
       },
-      onData: (data) => { raw = (raw + data).slice(-RAW_MAX); },
+      onData: (data) => {
+        raw = (raw + data).slice(-RAW_MAX);
+        output();
+      },
       onEnd: (code) => ended(code, outputTail(raw)),
     });
     if (!fed) ended(NOT_STARTED_EXIT, `pty ${ptyId} did not start`);
+    else void dispatch({ type: 'stageCommandStarted', activityId: activity.id, ptyId, at: new Date().toISOString() }); // #914: the block's clock
   }
 
   // A command with no line in the task's workspace, under onMissing skip (#755): one line in the execution's console output and nowhere else,
@@ -103,6 +117,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
     const name = stage.commands?.[at] ?? '';
     consoleStore.begin(stageChannel(stage.name), ptyId, runHeader(`#${task.item.id} · skipped · ${name} missing in ${workspace}`, new Date()), activity.commands?.runId);
     consoleStore.end(ptyId, 0);
+    await dispatch({ type: 'stageCommandStarted', activityId: activity.id, ptyId, at: new Date().toISOString(), skipped: true }); // #914: the block's pulado
     await dispatch({ type: 'stageCommandEnded', activityId: activity.id, ptyId, code: 0, output: '' });
   }
 

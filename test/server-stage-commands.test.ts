@@ -6,7 +6,7 @@ import type { ChannelInfo, ChannelView } from '../src/console.js';
 import { parseConfig } from '../src/config.js';
 import type { StartPty } from '../src/ptys.js';
 import { createServer, type HiveServer, type Runtime } from '../src/server.js';
-import { createStageCommandRunner, OUTPUT_MAX, outputTail } from '../src/server-stage-commands.js';
+import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } from '../src/server-stage-commands.js';
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
@@ -19,7 +19,7 @@ const BUILD: Command = { name: 'build', impls: [{ workspace: 'hive', command: 'p
 const LINT: Command = { name: 'lint', impls: [{ workspace: null, command: 'pnpm lint' }], menu: false, env: {}, timeout: '1s' };
 const STAGE: Stage = { name: 'checks', from: {}, action: 'commands', commands: ['build', 'lint'], stopOnFailure: true, onMissing: 'fail' };
 const TASK: Task = { item: { itemId: 'board:I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'checks', boardColumn: '', auto: true, workspace: 'hive' };
-const runAt = (at: number): StageCommands => ({ stage: 'checks', at, ptyId: `P${at}`, runId: 'P0', failed: [], workerId: 'w1' });
+const runAt = (at: number): StageCommands => ({ stage: 'checks', at, ptyId: `P${at}`, runId: 'P0', failed: [], workerId: 'w1', started: [] });
 const ACTIVITY: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', commands: runAt(0) };
 const CWD = taskDir('/repo', ACTIVITY);
 const E2E: Command = { name: 'e2e', impls: [{ workspace: 'site', command: 'pnpm e2e' }], menu: true, env: {} };
@@ -103,7 +103,7 @@ test('index 0 prepares the worktree and records it, then starts the command as a
 test('a later index runs in the worktree with no prepare; a Stop during the setup starts nothing; a failed worktree refuses the stage (#755)', async () => {
   const later = harness(() => runAt(1));
   await later.run(runtimeWith([BUILD, LINT]), effect(1));
-  assert.deepEqual([later.prepared, later.started[0]?.launch.cwd, later.events], [[], CWD, []]);
+  assert.deepEqual([later.prepared, later.started[0]?.launch.cwd, later.events.map((e) => e.type)], [[], CWD, ['stageCommandStarted']]);
   const stopped = harness(() => undefined);
   await stopped.run(runtimeWith([BUILD, LINT]), effect(0));
   assert.deepEqual([stopped.started, stopped.events], [[], []]);
@@ -221,4 +221,28 @@ test('POST /ptys/sleep and /ptys/:id/stop reach a running command: stopped, no v
   assert.ok(state);
   const activity = state.activities.find((a) => a.kind === 'task');
   assert.deepEqual([activity?.commands, activity?.stopped, state.tasks[0].stage, resultOf(state, TASK_ID)], [undefined, true, 'checks', undefined]);
+});
+
+test('a fed pty answers stageCommandStarted; its output answers stageCommandOutput at once, then at most once every 30 s; a skip answers stageCommandStarted, skipped, before its end (#914)', async (t: TestContext) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-10T10:00:00.000Z') });
+  const h = harness();
+  await h.run(runtimeWith([BUILD, LINT]), effect(0));
+  const times = (): HiveEvent[] => h.events.filter((e) => e.type === 'stageCommandStarted' || e.type === 'stageCommandOutput');
+  assert.deepEqual(times(), [{ type: 'stageCommandStarted', activityId: 'a1', ptyId: 'P0', at: '2026-10-10T10:00:00.000Z' }]);
+  const write = h.data.get('P0');
+  assert.ok(write);
+  write('a');
+  t.mock.timers.tick(OUTPUT_THROTTLE_MS - 1);
+  write('b');
+  t.mock.timers.tick(1);
+  write('c');
+  assert.deepEqual(times().slice(1), [
+    { type: 'stageCommandOutput', activityId: 'a1', ptyId: 'P0', at: '2026-10-10T10:00:00.000Z' },
+    { type: 'stageCommandOutput', activityId: 'a1', ptyId: 'P0', at: '2026-10-10T10:00:30.000Z' },
+  ]);
+  const stage: Stage = { ...STAGE, commands: ['e2e', 'build'], onMissing: 'skip' };
+  const skipping = harness();
+  await skipping.run(runtimeWith([BUILD, E2E], stage), effect(0, stage));
+  assert.deepEqual(skipping.events.slice(-2).map((e) => e.type), ['stageCommandStarted', 'stageCommandEnded']);
+  assert.deepEqual(skipping.events.at(-2), { type: 'stageCommandStarted', activityId: 'a1', ptyId: 'P0', at: '2026-10-10T10:00:30.000Z', skipped: true });
 });

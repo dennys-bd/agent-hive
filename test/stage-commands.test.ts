@@ -189,10 +189,11 @@ test('the boot drops a commands stage in flight and leaves its activity stopped,
 });
 
 test('a saved activity keeps its commands run so the boot can see it; a malformed one reads as none, a malformed failure is dropped (#755)', () => {
-  const run = { stage: 'checks', at: 1, ptyId: 'p1', runId: 'r1', failed: [{ name: 'build', code: 1, output: 'boom' }], workerId: 'w1' };
+  const run = { stage: 'checks', at: 1, ptyId: 'p1', runId: 'r1', failed: [{ name: 'build', code: 1, output: 'boom' }], workerId: 'w1', started: ['2026-10-10T10:00:00.000Z', ''] };
   assert.deepEqual(savedWork({ commands: run }).commands, run);
   for (const bad of [{ ...run, at: 'one' }, { ...run, ptyId: 1 }, { ...run, runId: undefined }, { ...run, failed: 'x' }, { ...run, workerId: 1 }, 'x']) assert.equal(savedWork({ commands: bad }).commands, undefined, JSON.stringify(bad));
   assert.deepEqual(savedWork({ commands: { ...run, failed: [{ name: 'build' }] } }).commands?.failed, []);
+  assert.deepEqual(savedWork({ commands: { ...run, started: 'x' } }).commands?.started, [], '#914: a malformed start list reads as none');
 });
 
 test('a stop, a delete and a boot never mutate the state they are given (#755)', () => {
@@ -215,4 +216,43 @@ test('a failure with a failed transition takes it: the output on the record, the
   const out = ended(retried.state, 1, 'again').state;
   assert.deepEqual([live(out)?.stopped, live(out)?.error], [true, 'tries out: verdict:failed · 1']);
   assert.equal((resultOf(out, ID)?.commands as { output?: string } | undefined)?.output, 'build (1)\nagain');
+});
+
+const T0 = '2026-10-10T10:00:00.000Z';
+const T1 = '2026-10-10T10:02:05.000Z';
+const startedOf = (s: State, at: string, skipped?: true): Extract<HiveEvent, { type: 'stageCommandStarted' }> =>
+  ({ type: 'stageCommandStarted', activityId: live(s)?.id ?? 'none', ptyId: live(s)?.commands?.ptyId ?? 'none', at, ...(skipped ? { skipped } : {}) });
+const outputOf = (s: State, at: string): Extract<HiveEvent, { type: 'stageCommandOutput' }> =>
+  ({ type: 'stageCommandOutput', activityId: live(s)?.id ?? 'none', ptyId: live(s)?.commands?.ptyId ?? 'none', at });
+
+test('stageCommandStarted records the current command\'s start by its index, a skipped one marked; another pty changes nothing (#914)', () => {
+  const s = polled().state;
+  assert.deepEqual(live(s)?.commands?.started, []);
+  const one = reduce(s, startedOf(s, T0)).state;
+  assert.deepEqual(live(one)?.commands?.started, [T0]);
+  const second = ended(one, 0).state;
+  const two = reduce(second, startedOf(second, T1, true)).state;
+  assert.deepEqual([live(two)?.commands?.started, live(two)?.commands?.skipped], [[T0, T1], [1]]);
+  const other = reduce(two, { ...startedOf(two, T0), ptyId: 'other' });
+  assert.equal(live(other.state), live(two));
+  assert.deepEqual(other.effects, []);
+});
+
+test('a start that never came reads as \'\' before the next one (#914)', () => {
+  const second = ended(polled().state, 0).state; // command 0 ended without a start: its pty never started
+  assert.deepEqual(live(reduce(second, startedOf(second, T1)).state)?.commands?.started, ['', T1]);
+});
+
+test('stageCommandOutput sets the current command\'s last output; another pty changes nothing; the next command drops it; the input is never mutated (#914)', () => {
+  const s = deepFreeze(polled().state);
+  const wrote = reduce(s, outputOf(s, T1)).state;
+  assert.equal(live(wrote)?.commands?.outputAt, T1);
+  assert.equal(live(reduce(s, { ...outputOf(s, T1), ptyId: 'other' }).state), live(s));
+  assert.equal(live(ended(wrote, 0).state)?.commands?.outputAt, undefined);
+  reduce(s, startedOf(s, T0)); // a write to the frozen input would throw here
+});
+
+test('the two events log their activity and pty, never an output (#914)', () => {
+  assert.equal(describeEvent({ type: 'stageCommandStarted', activityId: 'a', ptyId: 'p', at: T0, skipped: true }).endsWith(' skipped'), true);
+  assert.equal(describeEvent({ type: 'stageCommandOutput', activityId: 'a', ptyId: 'p', at: T0 }).startsWith('stageCommandOutput '), true);
 });

@@ -34,7 +34,7 @@ export function startCommands(given: State, task: Task, index: number, kind: Wor
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = born.activity;
   const ptyId = randomUUID();
   const worker: Worker = { id: slot.id, status: 'working', startedAt: new Date().toISOString(), lastEvent: { kind }, ...(slot.draining ? { draining: true } : {}) };
-  const run: StageCommands = { stage: stage.name, at: 0, ptyId, runId: ptyId, failed: [], workerId: worker.id };
+  const run: StageCommands = { stage: stage.name, at: 0, ptyId, runId: ptyId, failed: [], workerId: worker.id, started: [] };
   const running: Activity = { ...unstopped, commands: run };
   const held: State = { ...born.state, workers: born.state.workers.map((w, i) => (i === index ? worker : w)) };
   return { state: withActivity(withTask(held, started), running), effects: [...written.effects, commandEffect(running, started, stage, run)] };
@@ -106,9 +106,27 @@ export function stageCommandEnded(state: State, { activityId, ptyId, code, outpu
   const failed = code === 0 ? run.failed : [...run.failed, { name: names[run.at] ?? '', code, output }];
   const next = run.at + 1;
   if (stage === undefined || next >= names.length || (code !== 0 && stage.stopOnFailure === true)) return endCommands(state, activity, task, failed, run.runId);
-  const moved: StageCommands = { ...run, at: next, ptyId: randomUUID(), failed };
+  const { outputAt: _outputAt, ...kept } = run; // #914: the last output was the command that ended
+  const moved: StageCommands = { ...kept, at: next, ptyId: randomUUID(), failed };
   const running: Activity = { ...activity, commands: moved };
   return { state: withActivity(state, running), effects: [commandEffect(running, task, stage, moved)] };
+}
+
+/** The current command's pty started, or the command was skipped (#914): its start by index, for the running block's times; an index before it
+ * that never got a start (its pty never started) reads ''. Another pty's start changes nothing. */
+export function stageCommandStarted(state: State, { activityId, ptyId, at, skipped }: Extract<HiveEvent, { type: 'stageCommandStarted' }>): State {
+  const found = runOf(state, activityId, ptyId);
+  if (!found) return state;
+  const { activity, run } = found;
+  const started = Array.from({ length: run.at + 1 }, (_, i) => (i === run.at ? at : run.started[i] ?? ''));
+  const skips = skipped ? { skipped: [...(run.skipped ?? []), run.at] } : {};
+  return withActivity(state, { ...activity, commands: { ...run, started, ...skips } });
+}
+
+/** The current command wrote output (#914), throttled by the server: the running block's silence line counts from it. Another pty's changes nothing. */
+export function stageCommandOutput(state: State, { activityId, ptyId, at }: Extract<HiveEvent, { type: 'stageCommandOutput' }>): State {
+  const found = runOf(state, activityId, ptyId);
+  return found ? withActivity(state, { ...found.activity, commands: { ...found.run, outputAt: at } }) : state;
 }
 
 /** The stage could not run (#755): a name not enabled in the task's workspace, or its worktree failed. failed, with the message as its output. */

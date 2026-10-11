@@ -23,7 +23,7 @@ export function readable<T>(nodes: unknown[], read: (node: unknown) => T, skip: 
  * pagination past them. */
 export const rollupFields = (commit = '', checkRun = ''): string =>
   `headCommit: commits(last: 1) { nodes { commit { ${commit}statusCheckRollup { state contexts(first: 100) { nodes { __typename `
-  + `... on CheckRun { name status conclusion detailsUrl completedAt${checkRun} } ... on StatusContext { context state targetUrl createdAt } } } } } } }`;
+  + `... on CheckRun { name status conclusion detailsUrl startedAt completedAt${checkRun} } ... on StatusContext { context state targetUrl createdAt } } } } } } }`;
 export const ROLLUP_FIELDS = rollupFields();
 
 const SUCCESS = new Set(['SUCCESS', 'NEUTRAL', 'SKIPPED']);
@@ -38,20 +38,22 @@ export function checkState(raw: unknown): PrCheck['state'] {
 
 const filled = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
-// url and at only when GitHub gave them
-function withLinks(check: Pick<PrCheck, 'name' | 'state'>, url: unknown, at: unknown): PrCheck {
-  const [link, time] = [filled(url), filled(at)];
-  return { ...check, ...(link === undefined ? {} : { url: link }), ...(time === undefined ? {} : { at: time }) };
+// url, at and startedAt only when GitHub gave them
+function withLinks(check: Pick<PrCheck, 'name' | 'state'>, url: unknown, at: unknown, startedAt?: unknown): PrCheck {
+  const [link, time, start] = [filled(url), filled(at), filled(startedAt)];
+  return { ...check, ...(link === undefined ? {} : { url: link }), ...(time === undefined ? {} : { at: time }), ...(start === undefined ? {} : { startedAt: start }) };
 }
 
-// A check run not completed yet is pending whatever its conclusion says; ci-checks.ts reads the wait's checks with it (#834)
+// A check run not completed yet is pending whatever its conclusion says; ci-checks.ts reads the wait's checks with it (#834). A status context has
+// one time: its start while pending, its end once finished (#914)
 export function checkOf(node: unknown): PrCheck {
   if (!isObject(node)) throw new Error('check is not an object');
   if (node.__typename === 'CheckRun' && typeof node.name === 'string') {
-    return withLinks({ name: node.name, state: node.status === 'COMPLETED' ? checkState(node.conclusion) : 'pending' }, node.detailsUrl, node.completedAt);
+    return withLinks({ name: node.name, state: node.status === 'COMPLETED' ? checkState(node.conclusion) : 'pending' }, node.detailsUrl, node.completedAt, node.startedAt);
   }
   if (node.__typename === 'StatusContext' && typeof node.context === 'string') {
-    return withLinks({ name: node.context, state: checkState(node.state) }, node.targetUrl, node.createdAt);
+    const state = checkState(node.state);
+    return withLinks({ name: node.context, state }, node.targetUrl, node.createdAt, state === 'pending' ? node.createdAt : undefined);
   }
   throw new Error(`unreadable check (${String(node.__typename)})`);
 }

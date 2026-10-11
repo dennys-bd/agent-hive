@@ -6,9 +6,9 @@ import { FileOpenerContext, type OpenFile } from '@/components/terminal-tabs';
 import type { CommentsState } from '@/hooks/use-comments';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import type { ActivityRecord, TaskFile, TaskPr, Shortcuts, Worker, State } from '../../src/types';
+import type { ActivityRecord, Stage, StageCommands, TaskFile, TaskPr, Shortcuts, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
-import { activityIdOf, withPointedWork, type WithWork, withTasks, movedWork } from '../fixtures/work';
+import { activityIdOf, withPointedWork, type WithWork, withTasks, movedWork, withWork } from '../fixtures/work';
 
 const task: WithWork = {
   item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' },
@@ -503,4 +503,16 @@ test('a task\'s error shows in full at the top of the body, above the approval b
   const approval = failed.activities.find((a) => a.kind === 'task')?.approval; // #629: the activity's
   rerender(<Panel state={movedWork({ ...IDLE, tasks: [{ ...STOPPED, approval }] })} initial={TASK} />);
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('while a commands stage runs, the running block takes the status box\'s place; once it ends the status box is back (#914)', () => {
+  const checks: Stage = { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build'], stopOnFailure: true };
+  const run: StageCommands = { stage: 'checks', at: 0, ptyId: 'P0', runId: 'R0', failed: [], workerId: 'w1', started: [] };
+  const running = withWork({ ...IDLE, stages: [...IDLE.stages, checks] }, 'I1', { commands: run });
+  const { rerender } = render(<Panel state={running} initial={TASK} />);
+  expect(screen.getByRole('region', { name: 'executando checks' })).toBeInTheDocument();
+  expect(screen.queryByText(/^etapa dev/)).not.toBeInTheDocument();
+  rerender(<Panel state={IDLE} initial={TASK} />);
+  expect(screen.queryByRole('region', { name: 'executando checks' })).not.toBeInTheDocument();
+  expect(screen.getByText(/^etapa dev/)).toBeInTheDocument();
 });

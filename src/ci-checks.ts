@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import { awaitingOf, canPushOf, checkOf, headRollup, isObject, nodesOf, readable, rollupFields, SUITE_FIELDS } from './pr-checks.js';
 import { type Alias, aliasedQuery, aliasOf } from './pull-requests.js';
-import type { CiCheck, CiChecks, CiPrRead, Stage } from './types.js';
+import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.js';
 
 // A PR's CI for a wait-for-CI stage (#834), on top of #758's checks (pr-checks.ts): the same rollup and the same states, plus what the stage
 // needs (the head commit, the Actions run behind each check run, the base branch's required checks) and the verdict. Pure.
@@ -78,24 +78,45 @@ export function considered(read: CiPrRead, ciChecks: CiChecks, patterns: readonl
   return { checks: [...found, ...unmatched], fellBack: false };
 }
 
+// #914: the running block's order: finished first, then running, then queued
+const RANK = { finished: 0, running: 1, queued: 2 } as const;
+const rankOf = (c: StageCiCheck): number => (c.state !== 'pending' ? RANK.finished : c.startedAt === undefined ? RANK.queued : RANK.running);
+const orderKey = (c: StageCiCheck): string => (c.state !== 'pending' ? c.completedAt ?? '' : c.startedAt ?? c.name);
+const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0); // ISO strings in GitHub's one format sort as the instants
+// A status context's targetUrl is any integration's text and becomes a link the user clicks: only https reaches the page
+const isHttps = (url: string | undefined): url is string => url?.startsWith('https://') === true;
+
+function stageCheck({ name, state, url, startedAt, at }: CiCheck): StageCiCheck {
+  return {
+    name: cleanName(name), state, ...(isHttps(url) ? { url } : {}), ...(startedAt === undefined ? {} : { startedAt }),
+    ...(state === 'pending' || at === undefined ? {} : { completedAt: at }),
+  };
+}
+
+/** The considered checks as the running block lists them (#914): finished by end time, then running by start time, then queued by name. */
+export function stageChecks(checks: readonly CiCheck[]): StageCiCheck[] {
+  return checks.map(stageCheck).sort((a, b) => rankOf(a) - rankOf(b) || compare(orderKey(a), orderKey(b)) || compare(a.name, b.name));
+}
+
 /** What a read means for the stage: failed as soon as a counted check is a failure; passed when every PR has counted checks and all are
  * successes; else pending, with the count, whether no PR is open, and the pending names. fellBack: some PR's required fell back to all.
- * awaiting: nothing failed and a workflow waits for a maintainer's approval, which ends nothing (#854). */
+ * awaiting: nothing failed and a workflow waits for a maintainer's approval, which ends nothing (#854). checks: the considered ones, ordered for the running block (#914). */
 export type CiVerdict =
-  | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; fellBack: boolean }
+  | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; fellBack: boolean; checks: StageCiCheck[] }
   | { kind: 'passed'; fellBack: boolean }
-  | { kind: 'failed'; failed: CiCheck[]; fellBack: boolean }
-  | { kind: 'awaiting'; workflows: string[]; fellBack: boolean };
+  | { kind: 'failed'; failed: CiCheck[]; fellBack: boolean; checks: StageCiCheck[] }
+  | { kind: 'awaiting'; workflows: string[]; fellBack: boolean; checks: StageCiCheck[] };
 
 export function ciVerdict(reads: readonly CiPrRead[], stage: Pick<Stage, 'ciChecks' | 'checks'>): CiVerdict {
   const each = reads.map((r) => considered(r, stage.ciChecks ?? 'required', stage.checks));
   const fellBack = each.some((c) => c.fellBack);
   const checks = each.flatMap((c) => c.checks);
+  const listed = stageChecks(checks); // #914: the same checks the count adds up, so the block's lines explain the card's n/total
   const failed = checks.filter((c) => c.state === 'failure');
-  if (failed.length > 0) return { kind: 'failed', failed, fellBack };
+  if (failed.length > 0) return { kind: 'failed', failed, fellBack, checks: listed };
   const workflows = [...new Set(reads.flatMap((r) => r.awaiting ?? []))]; // #854: GitHub ran nothing for them, so the counted checks cannot pass yet
-  if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack };
+  if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack, checks: listed };
   const pending = checks.filter((c) => c.state === 'pending').map((c) => c.name);
   if (reads.length > 0 && pending.length === 0 && each.every((c) => c.checks.length > 0)) return { kind: 'passed', fellBack };
-  return { kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, fellBack };
+  return { kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, fellBack, checks: listed };
 }

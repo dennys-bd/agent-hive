@@ -7,7 +7,7 @@ import { onSource, stageOf } from './tasks.js';
 import { timeoutMs } from './timeout.js';
 import { advance } from './transit.js';
 import { exitOf } from './transitions.js';
-import { CI_FAILED, type Activity, type CiCheck, type CiPrRead, type CiRerun, type HiveEvent, type Stage, type StageCi, type State, type Task } from './types.js';
+import { CI_FAILED, type Activity, type CiCheck, type CiPrRead, type CiRerun, type HiveEvent, type Stage, type StageCi, type StageCiCheck, type State, type Task } from './types.js';
 
 // A stage that waits for the CI of the task's open PRs (#834), beside stage-commands.ts and out of orchestrator.ts, which is over 800 lines.
 // Pure: every function returns new objects. The server reads the checks (server-ci.ts) and answers ciRead; the failed logs come back with
@@ -81,29 +81,32 @@ const pendingOf = (verdict: CiVerdict): string[] => {
 };
 const timeoutNames = (stage: Stage): string[] => [`timed out after ${stage.timeout ?? ''}`];
 
-// pending: the card's count; the same state when the read changed nothing, so a quiet wait writes nothing every 30 s. A running read ends a
-// maintainer's wait and a held failure (#854)
+// #914: both lists come from stageChecks in one order, so equal JSON means no check changed state or time
+const sameChecks = (a: readonly StageCiCheck[] | undefined, b: readonly StageCiCheck[] | undefined): boolean => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+
+// pending: the card's count and the running block's checks (#914); the same state when the read changed nothing, so a quiet wait writes nothing
+// every 30 s. A running read ends a maintainer's wait and a held failure (#854)
 function counted(state: State, activity: Activity, ci: StageCi, verdict: Extract<CiVerdict, { kind: 'pending' }>): Reduced {
   const { waitingPr: _waitingPr, awaiting: _awaiting, noRerun: _noRerun, ...rest } = ci;
-  const next: StageCi = { ...rest, done: verdict.done, total: verdict.total, ...(verdict.waitingPr ? { waitingPr: true as const } : {}) };
+  const next: StageCi = { ...rest, done: verdict.done, total: verdict.total, checks: verdict.checks, ...(verdict.waitingPr ? { waitingPr: true as const } : {}) };
   const was = activity.ci;
   const same = next.done === was?.done && next.total === was?.total && next.waitingPr === was?.waitingPr && next.fellBack === was?.fellBack
-    && was?.awaiting === undefined && was?.noRerun === undefined;
+    && was?.awaiting === undefined && was?.noRerun === undefined && sameChecks(next.checks, was?.checks);
   return none(same ? state : withActivity(state, { ...activity, ci: next }));
 }
 
 // #854: workflows await a maintainer's approval: nothing ends, the card counts them; the same state while the count holds
-function awaited(state: State, activity: Activity, ci: StageCi, workflows: readonly string[]): Reduced {
+function awaited(state: State, activity: Activity, ci: StageCi, workflows: readonly string[], checks: StageCiCheck[]): Reduced {
   const { noRerun: _noRerun, ...rest } = ci;
   const was = activity.ci;
-  const same = was?.awaiting === workflows.length && was.noRerun === undefined && was.fellBack === ci.fellBack;
-  return none(same ? state : withActivity(state, { ...activity, ci: { ...rest, awaiting: workflows.length } }));
+  const same = was?.awaiting === workflows.length && was.noRerun === undefined && was.fellBack === ci.fellBack && sameChecks(was.checks, checks);
+  return none(same ? state : withActivity(state, { ...activity, ci: { ...rest, awaiting: workflows.length, checks } }));
 }
 
 // #854: rerunOnce asked for a re-run the login may not ask: the wait holds for a new push or a maintainer's re-run, until its timeout
 function withoutRerun(state: State, activity: Activity, ci: StageCi): Reduced {
   const was = activity.ci;
-  if (was?.noRerun === true && was.awaiting === undefined && was.fellBack === ci.fellBack) return none(state);
+  if (was?.noRerun === true && was.awaiting === undefined && was.fellBack === ci.fellBack && sameChecks(was.checks, ci.checks)) return none(state);
   const { awaiting: _awaiting, ...rest } = ci;
   return none(withActivity(state, { ...activity, ci: { ...rest, noRerun: true } }));
 }
@@ -142,10 +145,11 @@ export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent,
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
   if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
   if (verdict.kind === 'passed') return passCi(state, wait);
-  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows);
+  if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   if (verdict.kind === 'failed') {
-    if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) return withoutRerun(state, wait.activity, ci);
-    return failedRead(state, { activity: wait.activity, ci, at }, stage, verdict.failed, prs);
+    const shown: StageCi = { ...ci, checks: verdict.checks }; // #914: the ✕ lines stay on the block while a re-run is awaited
+    if (stage.rerunOnce === true && cannotRerun(verdict.failed, prs)) return withoutRerun(state, wait.activity, shown);
+    return failedRead(state, { activity: wait.activity, ci: shown, at }, stage, verdict.failed, prs);
   }
   return counted(state, wait.activity, ci, verdict);
 }
