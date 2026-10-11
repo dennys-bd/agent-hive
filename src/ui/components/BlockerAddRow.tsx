@@ -80,9 +80,12 @@ export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, onAdd,
   const listId = useId();
   const [kind, setKind] = useState<Kind>('blockedBy');
   const [text, setText] = useState('');
-  const [active, setActive] = useState(-1); // -1: nothing highlighted
+  // The highlighted option by its ref, not its index: a search answer that swaps the list never moves the highlight onto another issue
+  const [activeRef, setActiveRef] = useState<string>();
   const { candidates, loading } = useBlockerSearch(source, itemId, text);
   const options = optionsOf(typedRef(text), candidates, new Set([selfId, ...blockers[kind].map((r) => r.id)]));
+  const active = options.findIndex((o) => o.ref === activeRef); // -1: nothing highlighted
+  const setActive = (index: number): void => setActiveRef(options[index]?.ref);
   const pick = (ref: string | undefined): void => {
     if (ref !== undefined && !isBusy) onAdd(kind, ref);
   };
@@ -95,7 +98,7 @@ export function BlockerAddRow({ source, itemId, selfId, blockers, isBusy, onAdd,
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       const step = e.key === 'ArrowDown' ? 1 : -1;
-      setActive((i) => Math.max(-1, Math.min(options.length - 1, i + step)));
+      setActive(Math.max(-1, Math.min(options.length - 1, active + step)));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       pick(active >= 0 ? options[active]?.ref : options.find((o) => o.isTyped)?.ref);

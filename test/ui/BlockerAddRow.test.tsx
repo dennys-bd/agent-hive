@@ -77,3 +77,15 @@ test('Escape closes the row without an add, and is prevented so the details pane
   expect(onCancel).toHaveBeenCalledOnce();
   expect(onAdd).not.toHaveBeenCalled();
 });
+
+test('a search answer that lands after ↓ keeps the highlight on the same find, so ↵ adds what was highlighted (#57)', async () => {
+  const { user, onAdd, field } = setup();
+  await user.type(field, 'pag');
+  await screen.findByRole('option', { name: /#31/ });
+  find.mockResolvedValue([ref('other/lib#3', 'Pager lib'), ref('55', 'Pagination')]);
+  await user.type(field, 'e');
+  await user.keyboard('{ArrowDown}{ArrowDown}'); // still the old list: other/lib#3, the second
+  await screen.findByRole('option', { name: /#55/ }); // the new list puts it first
+  await user.keyboard('{Enter}');
+  expect(onAdd).toHaveBeenCalledWith('blockedBy', 'other/lib#3');
+});
