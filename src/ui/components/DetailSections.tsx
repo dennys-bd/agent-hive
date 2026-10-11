@@ -180,18 +180,19 @@ function ParentValue({ parent, onOpenTask }: { parent: Task; onOpenTask(itemId: 
   );
 }
 
-interface MetaGridProps { task: Task; state: Work & Pick<State, 'tasks'>; isActivity: boolean; onOpenTask?(itemId: string): void }
+// hasPrs (#65): false on an issue page, whose block lists the task's PRs under the this issue box
+interface MetaGridProps { task: Task; state: Work & Pick<State, 'tasks'>; isActivity: boolean; onOpenTask?(itemId: string): void; hasPrs?: boolean }
 
 /** The metadata grid (redesign 06): who starts the task, its PRs, the issue, the parent task (#36: only with one in the list and a way to open
- * it), the branch and the totals; narrower labels under Atividades. */
-export function MetaGrid({ task, state, isActivity, onOpenTask }: MetaGridProps) {
+ * it), the branch and the totals; narrower labels under Atividades. On an issue page the PRs are the page's block (#65). */
+export function MetaGrid({ task, state, isActivity, onOpenTask, hasPrs = true }: MetaGridProps) {
   const columns = isActivity ? 'grid-cols-[56px_minmax(0,1fr)]' : 'grid-cols-[72px_minmax(0,1fr)]';
   const sync = activityOf(state, task.item.itemId)?.sync;
   const parent = parentOf(state.tasks, task.item.itemId);
   return (
     <dl className={`grid ${columns} gap-x-2 gap-y-1.5 text-xs`}>
       <Row label={t('detail.start')}>{task.auto ? t('detail.start.auto') : t('detail.start.byYou')}</Row>
-      <Row label={t('detail.prs')}><PrValue task={task} state={state} /></Row>
+      {hasPrs && <Row label={t('detail.prs')}><PrValue task={task} state={state} /></Row>}
       {!task.created && <Row label={t('detail.issue')}><IssueValue task={task} /></Row>}
       {parent && onOpenTask && <Row label={t('detail.parent')}><ParentValue parent={parent} onOpenTask={onOpenTask} /></Row>}
       <Row label={t('detail.branch')}><span className="truncate font-mono">{activityOf(state, task.item.itemId)?.branch ?? '—'}</span></Row>
