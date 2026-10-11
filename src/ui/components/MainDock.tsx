@@ -27,7 +27,6 @@ import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
 import { shownRun } from '@/lib/center-layout';
-import { wakeLayout } from '@/lib/wake';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, shownBySide } from '@/lib/dock-layout';
 
 /** What MainDock hands the detail's body (#452): whether Detalhes is the shown tab of an open panel, how to close the panel holding it,
@@ -113,7 +112,6 @@ interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection;
 // that run in it (#492). While the center is Atividades', the session its focused group shows is marked; under Automação none is.
 function activitiesPanel({ activities, selection, layouts, nav, ...rest }: ActivitiesArgs): DockPanel {
   const { current, center, openRun } = selection;
-  const pick = (key: string): void => pickAndWake(key, activities, selection, layouts);
   const shown = center === 'activities' ? shownRun(layouts.layout) : undefined;
   const body = (
     <section aria-label={t('dock.activities')} className="flex min-h-0 flex-1 flex-col">
@@ -121,7 +119,7 @@ function activitiesPanel({ activities, selection, layouts, nav, ...rest }: Activ
         {t('header.activities')}
         <PlusMenu nav={nav} label={t('activities.new')} />
       </div>
-      <ActivitiesPanel activities={activities} selected={current && activityKey(current)} shown={shown} onSelect={pick} onOpenRun={openRun} nav={nav} {...rest} />
+      <ActivitiesPanel activities={activities} selected={current && activityKey(current)} shown={shown} onSelect={selection.pick} onOpenRun={openRun} nav={nav} {...rest} />
     </section>
   );
   // its own 36px header (redesign 03): the window header's view switcher moves between it and the flow sidebar (#533, #699)
@@ -219,13 +217,6 @@ function useSearchClose(current: Activity | undefined, layouts: CenterLayouts, o
     else layouts.closePane(ptyId);
   };
   return { close, dialog: loss.dialog };
-}
-
-// A sidebar pick (#457) that wakes a sleeping activity (#696): what its stored layout held when it went to sleep wakes with it
-function pickAndWake(key: string, activities: Activity[], selection: ActivitySelection, layouts: CenterLayouts): void {
-  selection.pick(key);
-  const picked = activities.find((activity) => activityKey(activity) === key);
-  if (picked !== undefined) wakeLayout(picked, layouts.stored(key), layouts);
 }
 
 // The activity sidebar's tab (redesign 07). A task picked outside the activities (the flow, a chip) opens the side holding Detalhes, and asks for

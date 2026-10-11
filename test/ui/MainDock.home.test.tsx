@@ -175,3 +175,22 @@ test('a local activity picked under Atividades shows the right side with its che
   expect(screen.queryByText('detalhes')).not.toBeInTheDocument(); // neither the detail body nor the arquivos | detalhes toggle
   expect((readView('dockLayout') as DockLayout | undefined)?.open.activities.right).toBe(true);
 });
+
+test('picking a sleeping activity wakes nothing, though its stored layout names its session: only a click in its pane or on its line does (#16)', () => {
+  const at = new Date(Date.now() - 60_000).toISOString();
+  const id = '5e6b7939-0000-4000-8000-000000000002';
+  const activityRecords = [{ id: 'a-A', taskIds: [taskA.item.itemId], sessions: [{ id, startedAt: at, stages: ['dev'], lastUsedAt: at }] }];
+  resetViewState({ centerLayouts: { A: { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1', sessionId: id }], active: 0 }, focused: 'g1' } } });
+  render(
+    <MainDock
+      fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[taskA]} workers={[]} terminals={[]} activityRecords={activityRecords}
+      liveActivities={withPointedWork({ tasks: [taskA], workers: [], terminals: [], activities: [], activityRecords }).activities}
+      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+    >
+      <main>fluxo</main>
+    </MainDock>,
+  );
+  toHome();
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByRole('button', { name: /#1 Task A/ }));
+  expect(posts().filter((url) => url.includes('/open') || url.includes('/wake'))).toEqual([]);
+});

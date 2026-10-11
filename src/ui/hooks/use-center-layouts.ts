@@ -28,7 +28,7 @@ export interface CenterOps {
   replaceRun(from: string, to: string): void; // #672: the new run takes over the sleeping run's tab, in place
   releaseRun(ptyId: string): void; // #672: a refused continue: the sleeping tab's hold ends, or it would outlive its record
 }
-export interface CenterLayouts extends CenterOps { layout?: CenterLayout; stored(key: string): CenterLayout | undefined } // stored: an activity's layout as kept, what a wake reads (#696)
+export interface CenterLayouts extends CenterOps { layout?: CenterLayout }
 
 // layouts: every activity's, as stored, by activityKey (#590). emptied: the picked task whose last tab just closed, showing the empty line until the pick changes; its
 // entry is absent, so a later pick opens its main run again. holding (#672): the runs a continue is moving a sleeping tab to and from. The
@@ -187,6 +187,5 @@ export function useCenterLayouts(activities: Activity[], current: Activity | und
     holdRun: (ptyId) => setStore((s) => ({ ...s, holding: [...s.holding, ptyId] })),
     releaseRun: (ptyId) => setStore((s) => ({ ...s, holding: s.holding.filter((held) => held !== ptyId) })),
     replaceRun: (from, to) => setStore((s) => handedOver(s, from, to)),
-    stored: (key) => store.layouts[key],
   };
 }
