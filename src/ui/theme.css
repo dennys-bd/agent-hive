@@ -27,6 +27,9 @@
   --review: #3b82f6;
   --approval: #0ea5e9; /* #268: sky, apart from review's blue */
   --backoff: #f08a3c; /* #805: orange, a run waiting out an API error */
+  --git-modified: #a8892a; /* #903: the files tree's git marks only, darker than the status colours they used to share */
+  --git-added: #2a7a4a;
+  --git-deleted: #a33b38;
   --diff-add: #1c3a28; /* #270: an added line's background, --foreground on it */
   --diff-del: #45211f; /* #270: a deleted line's background */
   --blink: #3a3110;
@@ -66,6 +69,9 @@
   --review: #2563eb;
   --approval: #0284c7; /* #268: a darker sky, apart from review's blue */
   --backoff: #c2410c; /* #805: a darker orange for white, as --waiting is */
+  --git-modified: #7a5200; /* #903: the light status colours are already dark, so git goes darker still */
+  --git-added: #145c33;
+  --git-deleted: #962420;
   --diff-add: #dafbe1; /* #270 */
   --diff-del: #ffebe9; /* #270 */
   --blink: #fbecc0;

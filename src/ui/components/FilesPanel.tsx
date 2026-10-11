@@ -28,7 +28,8 @@ import { readView, writeView } from '@/lib/view-state';
 /** Which of the activity sidebar's two views shows (redesign 07). */
 export type SideTab = 'files' | 'details';
 
-const MARK_TEXT: Record<GitMark, string> = { M: 'text-waiting', A: 'text-working' };
+// #903: the git marks have their own tokens, so a modified file never reads as a warning
+const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added' };
 
 // A file's diagnostic as the tree shows it (#780): the most severe count, errors before warnings; infos never show
 interface Worst { n: number; tone: string; family: 'editor.diag.errors' | 'editor.diag.warnings' }
