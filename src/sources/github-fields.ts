@@ -16,7 +16,7 @@ export interface FieldsContext { gql: Gql; projectId: string; read: ProjectRead;
 export interface FieldMutation { query: string; variables: Record<string, string | number> }
 
 // An item id is any node id the caller names: one of another project is refused here, before a mutation names its ids
-async function readItem(gql: Gql, itemId: string, projectId: string): Promise<GhItemFieldsNode> {
+export async function readItem(gql: Gql, itemId: string, projectId: string): Promise<GhItemFieldsNode> {
   const node = ((await gql(ITEM_FIELDS, { itemId })) as ItemFieldsData).node;
   if (node?.project?.id !== projectId) throw new ItemNotOnSourceError(itemId);
   return node;
@@ -128,7 +128,7 @@ export async function readItemFields(gql: Gql, itemId: string, projectId: string
 }
 
 // The item as it reads now: the fields, the native view row and the entry the next poll would list (none when it would not)
-async function reread(ctx: FieldsContext, itemId: string): Promise<FieldWrite> {
+export async function reread(ctx: FieldsContext, itemId: string): Promise<FieldWrite> {
   const node = await readItem(ctx.gql, itemId, ctx.projectId);
   const row = projectItem(node, projectFields(node.project?.fields?.nodes ?? []), ctx.read);
   if (row === undefined) throw new Error(`item ${itemId} is not an issue`);

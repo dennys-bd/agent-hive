@@ -262,6 +262,8 @@ export interface BlockerRef {
 }
 /** An item's blocker relations (#56), both directions. */
 export interface ItemBlockers { blockedBy: BlockerRef[]; blocking: BlockerRef[] }
+/** One edit of a relation (#56), as the route takes it: `ref` the other item's display id. */
+export interface BlockerChange { action: 'add' | 'remove'; kind: 'blockedBy' | 'blocking'; ref: string }
 
 /** What a source adapter reads for a task (glossary: item): the raw record; its id is itemId. */
 export interface Item {
@@ -1579,6 +1581,9 @@ export interface ItemField {
 /** What a field write answers (#686): the item re-read after it. `entry` is absent when the item is out of the source's listing. */
 export interface FieldWrite { fields: ItemField[]; row: ProjectItem; entry?: SourceItem }
 
+/** What a relation write answers (#56): the item's relations after it, and the re-read entry when the item is a listed task (as FieldWrite.entry). */
+export interface BlockerWrite { blockers: ItemBlockers; entry?: SourceItem }
+
 /** A repository the flow sidebar lists (#757): a workspace's origin or an open PR's repository. */
 export interface RepoSummary {
   repository: string; // owner/name
@@ -1631,6 +1636,7 @@ export interface Source {
   comments?(itemId: string): Promise<TaskComment[]>; // oldest first, read when the panel opens on a task; a source without comments leaves it out
   fieldsOf?(itemId: string): Promise<ItemField[]>; // #686: in the project's order, Status included
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
+  relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   create?(fields: { title: string; body?: string; column: string }): Promise<string>; // #846: a new item in column, resolving to its adapter id (namespaced: its itemId); a type that cannot create leaves it out
   project?(): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; read on demand by its route, never by the poll
 }

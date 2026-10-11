@@ -206,6 +206,10 @@ export const ADD_SUB_ISSUE = `mutation($issueId: ID!, $subIssueId: ID!) {
 export const ADD_BLOCKED_BY = `mutation($issueId: ID!, $blockingIssueId: ID!) {
   addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) { issue { id } }
 }`;
+// #56: a relation's removal, its sides as addBlockedBy's: the blocked issue, then the one blocking it
+export const REMOVE_BLOCKED_BY = `mutation($issueId: ID!, $blockingIssueId: ID!) {
+  removeBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) { issue { id } }
+}`;
 
 // One task's issue comments, asked by the project item id the Hive already holds: no owner, repo or number to rebuild.
 // A draft or a pull request matches no fragment and answers an empty content.
