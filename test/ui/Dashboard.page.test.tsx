@@ -106,7 +106,8 @@ test('an issue page shows its task in the panel ahead of the selection, with its
   expect(await panel().findByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   await user.click(await main().findByText('Fix the pager'));
   expect(await panel().findByRole('heading', { name: 'HIVE-2 Fix it' })).toBeInTheDocument();
-  expect(await panel().findByText('acme/site')).toBeInTheDocument(); // a hive task's PR: its repository and workspace
+  expect(await panel().findByRole('region', { name: 'este PR' })).toBeInTheDocument(); // a hive task's PR: the this PR block (#66)
+  expect(panel().queryByText('acme/site')).not.toBeInTheDocument(); // the repository block is a PR without a task's
   await user.click(automation().getByRole('button', { name: /^todas/ }));
   expect(panel().getByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   expect(calls).toEqual([]); // the selection never changed: leaving the pages restores it
