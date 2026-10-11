@@ -3,7 +3,6 @@ import { type MouseEvent, useState } from 'react';
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
-import { transitionByKey, transitionKey } from '../../transitions';
 import { taskLabel, isBlocked, removalBlocker, resolveWorkspace, workersOf, stageOf } from '../../tasks';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
@@ -20,7 +19,7 @@ import { runTab, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { useTaskNavKeys } from '@/hooks/use-task-keys';
 import { type MessageKey, statusText, t } from '@/i18n';
-import { triggerLabel } from '@/lib/flow-labels';
+import { viaTries } from '@/lib/tries';
 import { STATUS_BORDER, STATUS_TEXT } from '@/lib/status';
 import { answerableActivity, backoffUntil, isExhausted, taskState } from '@/lib/task-state';
 import { backoffLabel } from '@/lib/usage';
@@ -108,10 +107,8 @@ function TaskTitle({ task, state }: { task: Task; state: State }) {
 
 // The tries the transition the task came through took (#134), `falhou · 1/3`; nothing on an arrow with no limit
 function triesText(task: Task, state: State): string | undefined {
-  const live = activityOf(state, task.item.itemId);
-  const via = transitionByKey(state.transitions, live?.via);
-  if (via?.maxTries === undefined) return undefined;
-  return t('task.tries', { label: triggerLabel(via.when, via.verdict), n: live?.tries?.[transitionKey(via)] ?? 0, max: via.maxTries });
+  const tries = viaTries(state, activityOf(state, task.item.itemId));
+  return tries === undefined ? undefined : t('task.tries', tries);
 }
 
 // The task's PRs at a glance (#698): the own repository's stack and how much of it merged, then the PRs of other repositories. Only with a
