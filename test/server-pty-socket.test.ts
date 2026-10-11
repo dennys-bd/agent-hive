@@ -54,21 +54,23 @@ function fakeHost(): FakeHost {
 
 // A bare http.Server on a free port with the pty socket attached. `configured: false` plays setup mode; `bound: false` a port() that
 // listen() has not set yet.
-async function serve(t: TestContext, { configured = true, bound = true, host }: { configured?: boolean; bound?: boolean; host?: PtyHost } = {}): Promise<{ port: number; fake: FakeHost; attached: string[] }> {
+async function serve(t: TestContext, { configured = true, bound = true, host }: { configured?: boolean; bound?: boolean; host?: PtyHost } = {}): Promise<{ port: number; fake: FakeHost; attached: string[]; debug: string[] }> {
   const fake = fakeHost();
+  const debug: string[] = [];
+  const log = { debug: (message: string) => { debug.push(message); } };
   const attached: string[] = [];
   const lsp = { attach: async (ws: { close(code: number, reason: string): void }, activityId: string, server: string, binary: string) => { attached.push(`${activityId} ${server} ${binary}`); ws.close(1000, 'bye'); } };
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
-  const socket = attachPtySocket(server, { ptys: host ?? fake.host, port: () => (bound ? port : undefined), isConfigured: () => configured, secret: SECRET, lsp });
+  const socket = attachPtySocket(server, { ptys: host ?? fake.host, port: () => (bound ? port : undefined), isConfigured: () => configured, secret: SECRET, lsp, log });
   t.after(async () => {
     socket.close();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
-  return { port, fake, attached };
+  return { port, fake, attached, debug };
 }
 
 interface Dialed { status: number; ws: WebSocket; received: string[]; closed: Promise<number> }
@@ -262,4 +264,19 @@ test('an ended run with no tail gets no frame at all, only the close: nothing go
   assert.equal(status, 101);
   assert.equal(await closed, 1000);
   assert.deepEqual(received, []);
+});
+
+test('a keys frame writes one debug line with the pty\'s short id and nothing to the pty; an input sent after it still reaches the pty (#732)', async (t) => {
+  const { port, fake, debug } = await serve(t);
+  const { ws } = await dial(port, PTY_PATH, fromBoard(port));
+  ws.send(JSON.stringify({ type: 'keys', events: [
+    { kind: 'keydown', at: 0, key: 'Dead', code: 'Quote', isComposing: false },
+    { kind: 'compositionend', at: 2, data: 'é' },
+  ] }));
+  ws.send('{"type":"input","data":"x"}');
+  await until(() => fake.written.length === 1); // frames are handled in order: the keys line is written by now
+  assert.deepEqual(debug, ['pty 0b6f3c1e keys: keydown Dead Quote composing=false · +2 compositionend "é"']);
+  assert.deepEqual(fake.written, ['x']);
+  assert.deepEqual(fake.sizes, []);
+  ws.close();
 });

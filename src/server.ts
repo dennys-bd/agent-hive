@@ -1151,7 +1151,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const bound = typeof address === 'object' && address !== null ? address.port : 0;
     httpServer = server;
     // The terminals ride this port too (#407). The socket reads boundPort per upgrade, so nothing is admitted before the line below
-    ptySocket = attachPtySocket(server, { ptys, port: () => boundPort, isConfigured: () => live !== undefined, secret: deps.secret, lsp });
+    ptySocket = attachPtySocket(server, { ptys, port: () => boundPort, isConfigured: () => live !== undefined, secret: deps.secret, lsp, log });
     boundPort = bound;
     log.info(`listening port=${bound}`);
     // Hive mode (#466): the Runtime is built on the bound port, hooks.json included, before the first dispatch
