@@ -51,7 +51,7 @@ export const SELECT_FIELDS = `query($login: String!, $number: Int!) {
 // `rateLimit` costs nothing extra on a query already being paid for: the poll's own quota reading. The task filter reads assignees, labels,
 // milestone and repository here, and each item's set field values with their field's name, single-select or text (#245); together about two
 // rate-limit points per page. A dynamic source's rules read those same field values by name (#293): the query never grows for them.
-// Each issue also carries its node id and its sub-issues' node ids (epic order), so listItems can queue an epic's children right after it (#211).
+// Each issue also carries its node id and its sub-issues' node ids (epic order) and states, so listItems can queue an epic's children right after it (#211) and link every item to its parent and children (#28).
 export const ITEMS = `query($login: String!, $number: Int!, $after: String) {
   rateLimit { limit remaining resetAt }
   repositoryOwner(login: $login) {
@@ -68,7 +68,7 @@ export const ITEMS = `query($login: String!, $number: Int!, $after: String) {
                 ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2Field { name } } }
               }
             }
-            content { __typename ... on Issue { id number title body url createdAt subIssuesSummary { total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { title } repository { nameWithOwner } } }
+            content { __typename ... on Issue { id number title body url createdAt subIssuesSummary { total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { title } repository { nameWithOwner } } }
           }
         }
       }
@@ -162,7 +162,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
-      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
+      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
     }
   }
 }`;
@@ -232,7 +232,7 @@ export interface GhItemNode {
   content?: {
     __typename?: string; id?: string; number?: number; title?: string; body?: string | null; url?: string; createdAt?: string;
     subIssuesSummary?: { total: number; completed?: number } | null;
-    subIssues?: { nodes: { id: string }[] } | null; // node ids, the epic's own order: what groupUnderEpics matches children by (#211)
+    subIssues?: { nodes: { id: string; state: 'OPEN' | 'CLOSED' }[] } | null; // node ids and states, the issue's own order: what groupUnderEpics groups by (#211) and treeLinks links (#28)
     assignees?: { nodes: { id?: string; login: string }[] } | null; labels?: { nodes: { name: string }[] } | null; milestone?: { id?: string; title: string } | null;
     repository?: ({ nameWithOwner: string } & GhIssueChoices) | null; // owner/name: what a repository rule matches (#245); the choices: ITEM_FIELDS only (#686)
     closedByPullRequestsReferences?: { nodes: GhPullRequest[] } | null; // PROJECT_ITEMS only (#756)

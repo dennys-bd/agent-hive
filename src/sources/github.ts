@@ -110,6 +110,36 @@ export function groupUnderEpics(items: GhItemNode[]): GhItemNode[] {
   return [...roots, ...items].flatMap((item) => walk(item)); // a cycle leaves its items rootless: they come last, in source order
 }
 
+/** An item's place in its tree (#28): its parent's and its children's project item ids, and which of the children GitHub has closed. */
+export interface TreeLinks { parent?: string; children: string[]; closedChildren: string[] }
+
+/** Each node's tree links over a whole listing (#28). Unlike groupUnderEpics the Status column is ignored: a tree spans stages. A sub-issue
+ * with no item is left out; the node itself and repeats are skipped, so a cycle or a duplicate on the wire places nothing twice. */
+export function treeLinks(nodes: GhItemNode[]): Map<string, TreeLinks> {
+  const itemOf = new Map<string, string>(); // issue node id → project item id
+  for (const node of nodes) {
+    const issueId = node.content?.id;
+    if (issueId !== undefined && !itemOf.has(issueId)) itemOf.set(issueId, node.id);
+  }
+  const parents = new Map<string, string>(); // GitHub gives an issue one parent at most; "first in listing order" only makes this total
+  const own = nodes.map((node): [string, TreeLinks] => {
+    const children: string[] = [];
+    const closedChildren: string[] = [];
+    for (const sub of node.content?.subIssues?.nodes ?? []) {
+      const child = itemOf.get(sub.id);
+      if (child === undefined || child === node.id || children.includes(child)) continue;
+      children.push(child);
+      if (sub.state === 'CLOSED') closedChildren.push(child);
+      if (!parents.has(child)) parents.set(child, node.id);
+    }
+    return [node.id, { children, closedChildren }];
+  });
+  return new Map(own.map(([id, links]): [string, TreeLinks] => {
+    const parent = parents.get(id);
+    return [id, parent === undefined ? links : { parent, ...links }];
+  }));
+}
+
 // What a rule reads on one item (#293, #688): `title`, each label's name for `labels`, else the named Project field's set value, single-select or
 // text, riding the same fieldValues the task filter already fetches (#245); a field the item has no value for reads nothing.
 export function itemReader(item: GhItemNode): (field: string) => string[] {
