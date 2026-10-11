@@ -18,7 +18,6 @@ test('a bound file reads its server and state; problems show only while the clie
   store.setDiagnostics('k', 'src/b/c.py', problemsOf('src/b/c.py', { warnings: 1, infos: 3 }, 'pyright'));
   expect(store.fileCounts('a1', 'src/a.py')).toEqual({ errors: 1, warnings: 2, infos: 0 });
   expect([...store.activityCounts('a1').keys()]).toEqual(['src/a.py', 'src/b/c.py']);
-  expect([...store.foldersWithErrors(store.activityCounts('a1'))]).toEqual(['src']);
   expect(store.fileServer('a1', 'src/a.py')?.log).toEqual(LOG);
   store.setClient('k', 'a1', 'pyright', { phase: 'failed', reason: 'exit code 1' });
   expect(store.activityCounts('a1').size).toBe(0);

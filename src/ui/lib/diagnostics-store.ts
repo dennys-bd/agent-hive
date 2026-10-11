@@ -209,10 +209,6 @@ export const activityCounts = (activityId: string): ReadonlyMap<string, Counts> 
 export const activitySources = (activityId: string): string[] =>
   [...new Set([...readyOf(activityId).map((c) => c.checker ?? c.server), ...checksOf(activityId).filter((c) => [...c.targets.values()].some((t) => t.phase === 'done')).map((c) => c.checker)])];
 
-/** The folders holding a file with an error (#780): their names turn destructive; a warning does not climb. */
-export const foldersWithErrors = (counts: ReadonlyMap<string, Counts>): ReadonlySet<string> =>
-  new Set([...counts].filter(([, c]) => c.errors > 0).flatMap(([path]) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'))));
-
 export const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
