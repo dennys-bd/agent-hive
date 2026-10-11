@@ -55,6 +55,10 @@ const en = {
   'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
   'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
   'flow.loops.show': 'show the loops',
+  'flow.zoom.out': 'zoom out', // #910: the canvas's floating zoom controls
+  'flow.zoom.in': 'zoom in',
+  'flow.zoom.reset': 'back to 100%',
+  'flow.zoom.fit': 'fit',
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'footer.rules': 'rules',
@@ -1456,6 +1460,9 @@ const en = {
   'shortcuts.toggleSideTab': 'switch files and details',
   'shortcuts.sleepSession': 'sleep the focused session',
   'shortcuts.refreshFlow': 'refresh the flow',
+  'shortcuts.zoomOut': 'zoom the flow out', // #910
+  'shortcuts.zoomIn': 'zoom the flow in',
+  'shortcuts.zoomReset': 'the flow at 100%',
   'shortcuts.switchStartMode': 'switch between run stages and free session',
   'shortcuts.fixed.signal': 'signal green · yellow · red',
   'shortcuts.fixed.settings': 'settings',
@@ -1475,6 +1482,7 @@ const en = {
   'shortcuts.fixed.autoTask': 'auto on or off for the task',
   'shortcuts.fixed.taskMenu': "the task's menu",
   'shortcuts.fixed.pickSource': 'filter by source 1–9, 0 for all',
+  'shortcuts.fixed.zoomFit': 'fit the flow', // #910
   'shortcuts.fixed.cancel': 'cancel',
   'shortcuts.fixed.treeCut': 'cut',
   'shortcuts.fixed.treeCopy': 'copy',
@@ -1720,6 +1728,10 @@ const pt: Record<MessageKey, string> = {
   'flow.loops': '↺ voltas',
   'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
   'flow.loops.show': 'mostrar as voltas',
+  'flow.zoom.out': 'afastar',
+  'flow.zoom.in': 'aproximar',
+  'flow.zoom.reset': 'voltar a 100%',
+  'flow.zoom.fit': 'ajustar',
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
   'footer.rules': 'regras',
@@ -3117,6 +3129,9 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleSideTab': 'alternar arquivos e detalhes',
   'shortcuts.sleepSession': 'dormir a sessão em foco',
   'shortcuts.refreshFlow': 'atualizar o fluxo',
+  'shortcuts.zoomOut': 'afastar o fluxo',
+  'shortcuts.zoomIn': 'aproximar o fluxo',
+  'shortcuts.zoomReset': 'fluxo em 100%',
   'shortcuts.switchStartMode': 'alternar entre executar etapas e sessão livre',
   'shortcuts.fixed.signal': 'sinal green · yellow · red',
   'shortcuts.fixed.settings': 'configurações',
@@ -3136,6 +3151,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.fixed.autoTask': 'auto ligado ou desligado na tarefa',
   'shortcuts.fixed.taskMenu': 'o menu da tarefa',
   'shortcuts.fixed.pickSource': 'filtrar por source 1–9, 0 para todas',
+  'shortcuts.fixed.zoomFit': 'ajustar o fluxo',
   'shortcuts.fixed.cancel': 'cancelar',
   'shortcuts.fixed.treeCut': 'recortar',
   'shortcuts.fixed.treeCopy': 'copiar',

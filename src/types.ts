@@ -1042,7 +1042,7 @@ export type OperationId =
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'openDiff' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
-  | 'searchTasks' | 'refreshFlow'
+  | 'searchTasks' | 'refreshFlow' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' // #818
   | 'confirm' | 'feedbackQueue' | 'switchStartMode';
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
