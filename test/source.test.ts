@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceSpec, createSource, createSources, namespaced, resolveSources } from '../src/source.js';
 import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions, treeLinks } from '../src/sources/github.js';
+import { RelationRereadError } from '../src/sources/github-blockers.js';
 import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queries.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
@@ -677,6 +678,34 @@ test('namespaced wraps fieldsOf and setField only when the adapter has them: the
   assert.deepEqual(answer?.entry?.item, { itemId: 'work:PVTI_1', id: 'W-12', title: 'T', body: '', url: '', source: 'work' });
   const { entry: _entry, ...unlisted } = written;
   assert.equal((await namespaced(entry, { ...bare, setField: async () => unlisted }).setField?.('work:PVTI_1', 'Priority', 'P0'))?.entry, undefined);
+});
+
+test('namespaced shows a short blocker id like the item\'s own under qualifyId, keeps owner/repo#n, and hands relate the adapter\'s ids back (#56)', async () => {
+  const blockers = { blockedBy: [{ id: '7', title: 'T7', state: 'open' as const }, { id: 'other/lib#3', title: 'T3', state: 'closed' as const }], blocking: [{ id: '5', title: 'T5', state: 'open' as const }] };
+  const shown = { blockedBy: [{ ...blockers.blockedBy[0], id: 'W-7' }, blockers.blockedBy[1]], blocking: [{ ...blockers.blocking[0], id: 'W-5' }] };
+  const listedItem = { itemId: 'PVTI_1', id: '12', title: 'T', body: '', url: '', blockers };
+  const asked: string[] = [];
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    listItems: async () => [{ item: listedItem, column: 'Ready' }],
+  };
+  const adapter: Source = { ...bare, relate: async (itemId, change) => { asked.push(`${itemId} ${change.ref}`); return { blockers, entry: { item: listedItem, column: 'Ready' } }; } };
+  const entry = (qualifyId: boolean): SourceConfig => ({ name: 'work', qualifyId, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS });
+  const qualified = namespaced(entry(true), adapter);
+  assert.deepEqual((await qualified.listItems())[0].item.blockers, shown);
+  const answer = await qualified.relate?.('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: 'W-7' });
+  assert.deepEqual([answer?.blockers, answer?.entry?.item.blockers, answer?.entry?.item.itemId], [shown, shown, 'work:PVTI_1']);
+  await qualified.relate?.('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: 'other/lib#3' });
+  assert.deepEqual(asked, ['PVTI_1 7', 'PVTI_1 other/lib#3'], 'the adapter gets its own ids');
+  assert.deepEqual((await namespaced(entry(false), adapter).listItems())[0].item.blockers, blockers, 'unqualified: as the adapter reads them');
+  assert.equal(namespaced(entry(true), bare).relate, undefined);
+  const failing = namespaced(entry(true), { ...bare, relate: async () => { throw new RelationRereadError('timeout', blockers); } });
+  assert.ok(failing.relate);
+  await assert.rejects(failing.relate('work:PVTI_1', { action: 'add', kind: 'blockedBy', ref: '7' }), (err: unknown) => {
+    assert.ok(err instanceof RelationRereadError);
+    assert.deepEqual(err.blockers, shown, 'a failed re-read still answers shown ids');
+    return true;
+  });
 });
 
 test('createSources builds one namespaced source per entry in order; given the live sources it keeps each instance whose entry (its epics keys included), columns and auth did not change; resolveSources names the source that fails (#180)', async () => {

@@ -1,10 +1,11 @@
 import { isDeepStrictEqual } from 'node:util';
 import { gqlFor, loggedGql } from './sources/github-gql.js';
 import { createGithubSource } from './sources/github.js';
+import { RelationRereadError } from './sources/github-blockers.js';
 import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
 import type { Logger } from './log.js';
-import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ProjectView } from './types.js';
+import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView } from './types.js';
 
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
@@ -28,6 +29,32 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
   }
 }
 
+const SHORT_REF = /^\d+$/; // #56: a blocker in the item's own repository; `owner/repo#n` names another
+
+/** #56: a source's blocker ids as its tasks' own ids read. Under qualifyId a short ref takes the shown prefix on the way out (`12` -> `foo-12`)
+ * and drops it on the way in; `owner/repo#n` passes both ways as it is. */
+interface BlockerIds { shownBlockers(b: ItemBlockers): ItemBlockers; ownRef(ref: string): string }
+function blockerIds(qualifyId: boolean, shown: string): BlockerIds {
+  const shownRef = (r: BlockerRef): BlockerRef => (qualifyId && SHORT_REF.test(r.id) ? { ...r, id: `${shown}-${r.id}` } : r);
+  const ownRef = (ref: string): string => {
+    const rest = ref.slice(shown.length + 1);
+    return qualifyId && ref.startsWith(`${shown}-`) && SHORT_REF.test(rest) ? rest : ref;
+  };
+  return { shownBlockers: (b) => ({ blockedBy: b.blockedBy.map(shownRef), blocking: b.blocking.map(shownRef) }), ownRef };
+}
+
+// #56: relate under the listed ids, in and out; a write whose re-read failed still carries its relations under them
+function shownRelate(relate: NonNullable<Source['relate']>, own: (itemId: string) => string, ids: BlockerIds, item: (t: Item) => Item): NonNullable<Source['relate']> {
+  return async (itemId, change) => {
+    try {
+      const written = await relate(own(itemId), { ...change, ref: ids.ownRef(change.ref) });
+      return { blockers: ids.shownBlockers(written.blockers), ...(written.entry ? { entry: { ...written.entry, item: item(written.entry.item) } } : {}) };
+    } catch (err) {
+      throw err instanceof RelationRereadError ? new RelationRereadError(err.message, ids.shownBlockers(err.blockers)) : err;
+    }
+  };
+}
+
 /** One adapter behind its entry's name (#180): what it lists is namespaced (`<name>:<id>`, `source` set, the id qualified under qualifyId with
  * the prefix, else the name) and what it is handed is stripped back to its own id. The adapter never sees the prefix. */
 export function namespaced(entry: SourceConfig, adapter: Source): Source {
@@ -41,8 +68,12 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(children === undefined ? {} : { children: children.map(named) }),
     ...(closedChildren === undefined ? {} : { closedChildren: closedChildren.map(named) }),
   });
-  const item = (t: Item): Item => ({ ...t, ...tree(t), itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}) });
-  const { comments, project, fieldsOf, setField, create } = adapter;
+  const ids = blockerIds(entry.qualifyId, shown);
+  const item = (t: Item): Item => ({
+    ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
+    itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}),
+  });
+  const { comments, project, fieldsOf, setField, create, relate } = adapter;
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
   // #686: a write's answer under the ids the listed tasks carry: the row as the native view's, the entry as listItems' own
@@ -59,6 +90,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(project ? { project: async () => rows(await project()) } : {}),
     ...(fieldsOf ? { fieldsOf: (itemId: string) => fieldsOf(own(itemId)) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),
+    ...(relate ? { relate: shownRelate(relate, own, ids, item) } : {}),
   };
 }
 
