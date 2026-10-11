@@ -191,12 +191,14 @@ walkthrough:
 </details>
 ```
 
-When the body would pass GitHub's 65,536-character limit, put
+When the body, the block included, would pass GitHub's 65,536-character
+limit, put
 `Walkthrough: <link>` on its own line instead of the block.
 
 **With a template**: fill every section using the commit and file
 analysis. Leave sections that do not apply as `N/A` rather than deleting
-them.
+them, except the template's `Closes` line and walkthrough block, which
+follow the rules above.
 
 **Without a template**, after those lines, in this order:
 
