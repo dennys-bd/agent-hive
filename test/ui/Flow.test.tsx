@@ -939,3 +939,18 @@ test('Esc keeps the focus while the flow is hidden under Atividades and from ins
   expect(fireEvent.keyDown(dialog, { key: 'Escape' })).toBe(true);
   expect(trail()).toBeInTheDocument();
 });
+
+test('Esc keeps the focus while Settings, the console drawer or a node\'s list panel is open over the flow: the key is theirs (#35)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  render(<Flow state={handoff()} />);
+  await user.click(focusOn('872'));
+  for (const marker of ['data-settings-page', 'data-console-drawer', 'data-flow-list-panel']) {
+    const layer = document.body.appendChild(document.createElement('div'));
+    layer.setAttribute(marker, '');
+    expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+    expect(trail()).toBeInTheDocument();
+    layer.remove();
+  }
+});

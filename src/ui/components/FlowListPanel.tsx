@@ -30,7 +30,7 @@ export function FlowListPanel({ stage, state, tasks, order, drag, selectedId, on
   const { draggedId, dropBefore, taskDragProps } = useStageDrag(drag, stage, order, state);
   const filter = t('flow.list.filter', { stage: stage.name });
   return (
-    <section aria-label={stage.name} className="absolute inset-y-0 right-0 z-10 flex w-[340px] flex-col border-l bg-card shadow-lg">
+    <section data-flow-list-panel aria-label={stage.name} className="absolute inset-y-0 right-0 z-10 flex w-[340px] flex-col border-l bg-card shadow-lg">
       <header className="flex h-10 flex-none items-center gap-2 border-b px-3">
         <h3 className="truncate font-semibold text-[13px]">{stage.name}</h3>
         <span className="text-muted-foreground text-xs">{t('flow.list.count', { n: tasks.length })}</span>

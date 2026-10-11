@@ -5,6 +5,9 @@ import { focusSet } from '@/lib/tree-focus';
 
 // An open dialog, menu or listbox closes itself on Escape: the key is its own, never the focus's
 const OPEN_LAYER = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+// What sits over the flow with an Escape of its own, wherever the key lands: Settings (no [role=dialog], #510), the console drawer, a node's
+// list panel. One of them shown, the key closes it and the focus waits for the next
+const LAYER_ABOVE = '[data-settings-page], [data-console-drawer], [data-flow-list-panel]';
 
 const isLeaveKey = (event: KeyboardEvent): boolean =>
   event.key === 'Escape' && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
@@ -17,6 +20,7 @@ function useLeaveKey(isActive: boolean, leave: () => void): void {
     const listener = (event: KeyboardEvent): void => {
       if (!isLeaveKey(event)) return;
       if (event.target instanceof Element && event.target.closest(`${OWNS_ESCAPE}, ${OPEN_LAYER}`)) return;
+      if (document.querySelector(LAYER_ABOVE) !== null) return;
       event.preventDefault();
       leave();
     };
