@@ -12,6 +12,8 @@ const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 const UNKNOWN_CHECKPOINT_MESSAGE = 'ponto de restauração desconhecido';
+const NO_WORKTREE_MESSAGE = 'tarefa sem worktree próprio no disco: nada a restaurar';
+const CAPTURE_FAILED_MESSAGE = 'o estado atual não pôde ser guardado como ponto de restauração';
 const RESTORE_REFUSED_MESSAGE = 'restauração indisponível: uma execução ou outra operação está ativa na tarefa'; // the reducer refused restoring
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -28,17 +30,20 @@ export const nextCheckpoint = (checkpoints: readonly Checkpoint[] = []): number 
 const startOf = (activity: Activity, stage: string, head: string): string => (activity.stageStart?.stage === stage ? activity.stageStart.commit : head);
 
 /** Captures the task's worktree as a checkpoint and records it (#619): a stage end's effect, Restart's route and a restore's. A worktree not on disk
- * or the user's own checkout (#444) captures nothing. A git failure is logged and costs only this restore point, as recordStart's (#283). */
-export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, task, stage, ended }: CheckpointJob): Promise<void> {
+ * or the user's own checkout (#444) captures nothing. A git failure is logged and costs only this restore point, as recordStart's (#283). Answers
+ * whether a checkpoint was recorded: a restore stops without it, the other callers go on. */
+export async function recordCheckpoint(deps: CheckpointDeps, { repo, activity, task, stage, ended }: CheckpointJob): Promise<boolean> {
   const current = deps.latest()?.activities.find((a) => a.id === activity.id) ?? activity; // the number counts every capture so far
-  if (!capturable(current)) return;
+  if (!capturable(current)) return false;
   const n = nextCheckpoint(current.checkpoints);
   try {
     const point = await captureCheckpoint(repo, taskDir(repo, current), current.slug ?? slugFor(task.item), n, deps.exec);
     const checkpoint: Checkpoint = { n, stage, start: startOf(activity, stage, point.head), ...point, at: new Date().toISOString(), ended };
     await deps.dispatch({ type: 'checkpointCaptured', activityId: activity.id, checkpoint });
+    return true;
   } catch (err) {
     deps.log.error(`checkpoint #${task.item.id}: ${errorMessage(err)}`);
+    return false;
   }
 }
 
@@ -52,6 +57,7 @@ function restoreTarget(current: LiveView, activityId: string, n: string): Restor
   const { task, activity } = target;
   const checkpoint = activity.checkpoints?.find((a) => String(a.n) === n);
   if (!checkpoint) return { status: HTTP_NOT_FOUND, message: UNKNOWN_CHECKPOINT_MESSAGE };
+  if (!capturable(activity)) return { status: HTTP_CONFLICT, message: NO_WORKTREE_MESSAGE }; // a restore never runs on the workspace's own checkout (#444)
   const workspace = workspaceOf(current.runtime.config, task);
   if ('status' in workspace) return workspace;
   const template = branchFor(current.runtime.config, task.item);
@@ -83,8 +89,14 @@ async function restoreRun(req: Request, res: Response, deps: TaskRouteDeps): Pro
   const busy = { status: HTTP_CONFLICT, message: RESTORE_REFUSED_MESSAGE };
   if (target.activity.deleting) return refuse(res, busy);
   await dispatch({ type: 'restoring', itemId });
-  if (!requireLive(res)?.state.activities.find((a) => a.id === target.activity.id)?.deleting) return refuse(res, busy);
-  await recordCheckpoint(deps, { repo: target.repo, activity: target.activity, task: target.task, stage: target.task.stage, ended: 'restore' });
+  const marked = requireLive(res); // answers its own 409 when the daemon is not live
+  if (!marked) return;
+  if (!marked.state.activities.find((a) => a.id === target.activity.id)?.deleting) return refuse(res, busy);
+  const captured = await recordCheckpoint(deps, { repo: target.repo, activity: target.activity, task: target.task, stage: target.task.stage, ended: 'restore' });
+  if (!captured) { // the state this restore would overwrite is not kept: nothing destructive runs (the cause is in hive.log)
+    await dispatch({ type: 'restoreFailed', itemId });
+    return refuse(res, { status: HTTP_SERVER_ERROR, message: CAPTURE_FAILED_MESSAGE });
+  }
   try {
     const plan = await restartPlan(target.repo, target.branch, target.template, target.checkpoint.head, exec);
     await restoreWorktree(target.worktree, target.branch, target.checkpoint, plan, exec);

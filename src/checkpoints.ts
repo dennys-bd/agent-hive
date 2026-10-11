@@ -26,6 +26,16 @@ async function onIndex(worktree: string, args: string[], env: NodeJS.ProcessEnv,
   }
 }
 
+// The worker's worktree status (#619), as taskDiff reads it: fsmonitor off (its config could name a monitor command the Hive would run) and no
+// optional locks (a status would rewrite the user's index, racing the worker's own git)
+async function statusOf(worktree: string, exec: Exec): Promise<string> {
+  try {
+    return (await exec('git', ['--no-optional-locks', '-C', worktree, '-c', 'core.fsmonitor=false', 'status', '--porcelain'])).stdout;
+  } catch (err) {
+    throw new Error(wordsOf(err));
+  }
+}
+
 // The worktree as `add -A` stages it (ignored files left out), committed on top of HEAD through an index of its own: the user's index and the
 // worktree are never written, and no stash entry is made (the stash stack is shared across worktrees). The temp dir goes whatever happens.
 async function pointOf(worktree: string, head: string, n: number, exec: Exec): Promise<string> {
@@ -47,7 +57,7 @@ export async function captureCheckpoint(repo: string, worktree: string, slug: st
   const head = (await gitOrWords(worktree, ['rev-parse', 'HEAD'], exec)).trim();
   if (head === '') throw new Error('git printed no HEAD');
   const branch = (await gitOrWords(worktree, ['symbolic-ref', '--short', 'HEAD'], exec).catch(() => '')).trim();
-  const dirty = (await gitOrWords(worktree, ['status', '--porcelain'], exec)).trim() !== '';
+  const dirty = (await statusOf(worktree, exec)).trim() !== '';
   const commit = dirty ? await pointOf(worktree, head, n, exec) : head;
   await gitOrWords(repo, ['update-ref', checkpointRef(slug, n), commit], exec);
   return { head, commit, branch };

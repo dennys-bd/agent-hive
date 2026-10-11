@@ -26,7 +26,7 @@ const fixture = (repo: string): WithWork => ({
 });
 const BRANCH = branchFor({}, bareTask(fixture('/r')).item);
 
-interface Restores { base: string; server: HiveServer; calls: string[][]; git: { failing?: string; published?: string } }
+interface Restores { base: string; server: HiveServer; calls: string[][]; raw: string[][]; git: { failing?: string; published?: string } }
 
 const postJson = (url: string, body?: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
@@ -34,14 +34,17 @@ const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await 
 const route = (f: Restores, n: number | string): string => `${f.base}${workPath(f.server, 'local:1')}/checkpoints/${n}/restore`;
 const work = (f: Restores): Activity => activityOf(f.server.getState()!, 'local:1')!;
 
-async function startRestores(t: TestContext): Promise<Restores> {
+async function startRestores(t: TestContext, extra: Partial<WithWork> = {}): Promise<Restores> {
   const { home, repo } = await tempHive(t);
   await mkdir(worktreePath(repo, SLUG), { recursive: true }); // on disk, or the post-poll check marks it gone (#208)
-  await saveState(home, savedTasks({ ...initialState(0), localCount: 1 }, [fixture(repo)], () => SLUG));
+  await saveState(home, savedTasks({ ...initialState(0), localCount: 1 }, [{ ...fixture(repo), ...extra }], () => SLUG));
   const calls: string[][] = [];
+  const raw: string[][] = [];
   const git: Restores['git'] = {};
   const exec: Exec = async (_file, args) => {
-    const command = args.slice(2);
+    raw.push(args);
+    let command = args.slice(args.indexOf('-C') + 2); // after git's global options and the directory
+    while (command[0] === '-c') command = command.slice(2); // and the -c settings a read runs with
     calls.push(command);
     if (command[0] === git.failing) throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr: 'fatal: boom\n' });
     if (command[0] === 'rev-parse' && command[1] === '--show-toplevel') return { stdout: `${args[1]}\n` }; // its own checkout
@@ -57,7 +60,8 @@ async function startRestores(t: TestContext): Promise<Restores> {
   const body: SettingsBody = { prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], stages: LOCAL_STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [] };
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);
   calls.length = 0; // whatever the save ran is not a restore
-  return { base, server, calls, git };
+  raw.length = 0;
+  return { base, server, calls, raw, git };
 }
 
 test('GET …/checkpoints/:n/restore previews Restart\'s plan for the checkpoint\'s head; an unknown or malformed checkpoint is a 404 (#619)', async (t) => {
@@ -113,4 +117,30 @@ test('POST …/restore on an unknown checkpoint is a 404 and runs no git (#619)'
   const f = await startRestores(t);
   const res = await postJson(route(f, '9'));
   assert.deepEqual([res.status, f.calls], [404, []]);
+});
+
+test('POST …/restore reads the worker\'s worktree status with fsmonitor off and no optional locks, so a configured monitor never runs and the index is not rewritten (#619)', async (t) => {
+  const f = await startRestores(t);
+  assert.equal((await postJson(route(f, 1))).status, 200);
+  const status = f.raw.find((args) => args.includes('status'));
+  assert.ok(status?.includes('--no-optional-locks'), 'no optional locks');
+  assert.ok(status?.join(' ').includes('-c core.fsmonitor=false'), 'fsmonitor off');
+});
+
+test('POST …/restore refuses with 409 a task that has no worktree of its own (the user\'s checkout, none, or gone), before the mark and any git (#619)', async (t) => {
+  for (const extra of [{ local: true }, { worktree: undefined }, { worktreeGone: true }] as Partial<WithWork>[]) {
+    const f = await startRestores(t, extra);
+    const res = await postJson(route(f, 1));
+    assert.equal(res.status, 409, JSON.stringify(extra));
+    assert.deepEqual([f.calls, work(f).deleting], [[], undefined], JSON.stringify(extra));
+  }
+});
+
+test('POST …/restore stops when the safety capture records nothing: 500, the mark dropped, no reset or clean ran (#619)', async (t) => {
+  const f = await startRestores(t);
+  f.git.failing = 'status';
+  const res = await postJson(route(f, 1));
+  assert.equal(res.status, 500);
+  assert.deepEqual(f.calls.filter((c) => ['reset', 'clean', 'read-tree', 'switch'].includes(c[0])), []);
+  assert.deepEqual([work(f).deleting, work(f).checkpoints?.length], [undefined, 1]);
 });
