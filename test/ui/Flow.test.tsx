@@ -422,6 +422,86 @@ test('a stored flowView with loops off draws the flow without them on the first 
   expect(within(canvas).queryByText('falhou · 3x')).not.toBeInTheDocument();
 });
 
+// #910: the canvas's scrolling pane, the sizer of the scaled size inside it, and the element that scales
+const paneOf = (canvas: HTMLElement): HTMLElement => canvas.querySelector<HTMLElement>('[data-flow-stages]')!;
+const sizerOf = (canvas: HTMLElement): HTMLElement => canvas.querySelector<HTMLElement>('[data-flow-stages] > div')!;
+const scaledOf = (canvas: HTMLElement): HTMLElement => canvas.querySelector<HTMLElement>('[data-flow-stages] > div > div')!;
+// The pane's size as the canvas measures it: jsdom lays nothing out, and the ResizeObserver stub never calls back, so a mount reads it
+const viewport = (width: number, height: number): void => {
+  vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(width);
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(height);
+};
+// Two stages and the arrow between them: MARGIN + 2 × 190 + GAP + MARGIN = 500 wide, MARGIN + NODE_MIN + MARGIN = 208 tall at NODE_MIN
+const twoStages = (): State => ({ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] });
+
+test('− and + move the zoom by 10% and the number goes back to 100%; the chart scales inside a centred sizer, the list panel does not, and flowView keeps the zoom (#910)', async () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  const user = userEvent.setup();
+  vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400); // an overflowing node shows its lista › footer
+  vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(200);
+  render(<Flow state={twoStages()} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(paneOf(canvas)).toHaveClass('flex', 'overflow-auto');
+  expect(sizerOf(canvas)).toHaveClass('m-auto', 'shrink-0'); // a chart smaller than the canvas sits centred at every zoom
+  expect(scaledOf(canvas)).toHaveClass('origin-top-left');
+  expect(scaledOf(canvas).style.transform).toBe('scale(1)');
+  const zoomIn = screen.getByRole('button', { name: 'aproximar' });
+  expect(zoomIn).toHaveAttribute('title', 'aproximar · Ctrl+=');
+  expect(screen.getByRole('button', { name: 'ajustar' })).toHaveAttribute('title', 'ajustar · Shift+1'); // jsdom runs as off macOS
+  await user.click(zoomIn);
+  expect(screen.getByRole('button', { name: '110%' })).toHaveAttribute('title', 'voltar a 100% · Ctrl+0');
+  expect(scaledOf(canvas).style.transform).toBe('scale(1.1)');
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1.1, pan: { x: 0, y: 0 } });
+  await user.click(within(canvas).getAllByRole('button', { name: 'lista ›' })[0]);
+  const panel = screen.getByRole('region', { name: 'dev' });
+  expect(scaledOf(canvas).contains(panel)).toBe(false);
+  expect(panel.style.transform).toBe('');
+  await user.click(screen.getByRole('button', { name: 'afastar' }));
+  await user.click(screen.getByRole('button', { name: 'afastar' }));
+  expect(scaledOf(canvas).style.transform).toBe('scale(0.9)');
+  await user.click(screen.getByRole('button', { name: '90%' }));
+  expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 } });
+});
+
+test('ajustar on a chart wider than the canvas zooms out until it fits and scrolls to the start, the nodes still reaching the bottom; on a small chart it is 100% (#910)', async () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  const user = userEvent.setup();
+  viewport(400, 600);
+  const { unmount } = render(<Flow state={twoStages()} />);
+  let canvas = screen.getByRole('region', { name: 'fluxograma' });
+  paneOf(canvas).scrollLeft = 30;
+  await user.click(screen.getByRole('button', { name: 'ajustar' }));
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // 400 / 500
+  expect(scaledOf(canvas).style.transform).toBe('scale(0.8)');
+  expect(sizerOf(canvas).style.width).toBe('400px');
+  expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([0, 0]);
+  expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${600 / 0.8 - 2 * MARGIN}px`);
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 } });
+  unmount();
+  viewport(1000, 600);
+  render(<Flow state={twoStages()} />);
+  canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // flowView's zoom, back
+  await user.click(screen.getByRole('button', { name: 'ajustar' }));
+  expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument(); // never above 100%
+  expect(sizerOf(canvas).style.width).toBe('500px');
+});
+
+test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled to that pan, and a scroll keeps the new pan: the come-back case (#910)', () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  viewport(400, 600);
+  resetViewState({ flowView: { loops: true, zoom: 0.8, pan: { x: 120, y: 15 } } });
+  render(<Flow state={twoStages()} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument();
+  expect(scaledOf(canvas).style.transform).toBe('scale(0.8)');
+  expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([120, 15]);
+  paneOf(canvas).scrollLeft = 50;
+  fireEvent.scroll(paneOf(canvas));
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 50, y: 15 } });
+});
+
 // Radix opens a DropdownMenu on pointerdown, which jsdom does not deliver as a PointerEvent; the keyboard path opens the same menu.
 const openStageMenu = async (user: ReturnType<typeof userEvent.setup>, index: number) => {
   screen.getAllByRole('button', { name: 'ações da etapa' })[index].focus();

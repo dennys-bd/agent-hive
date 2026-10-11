@@ -17,7 +17,18 @@ export function ButtonKeyHint({ id }: { id: OperationId }) {
   return keys === null ? null : <span aria-hidden="true" className="text-xs tracking-widest opacity-60">{displayBinding(keys, isMac())}</span>;
 }
 
+/** A button's title with its shortcut's keys (#910): `label · ⌘=`, or the label alone while the shortcut is off. Read at render. */
+export function keyTitle(label: string, id: OperationId): string {
+  const keys = binding(id);
+  return keys === null ? label : `${label} · ${displayBinding(keys, isMac())}`;
+}
+
 /** A fixed row's keys at the end of a menu item (#818): the files tree's cut, copy and paste, which are no shortcut. */
 export function FixedKeyHint({ id }: { id: FixedShortcutId }) {
   return <span className="ml-auto text-muted-foreground text-xs tracking-widest">{displayKeys(fixedKeys(fixedShortcut(id), isMac()), isMac())}</span>;
+}
+
+/** keyTitle for a fixed row (#910): ajustar's ⇧1, which is never off. */
+export function fixedKeyTitle(label: string, id: FixedShortcutId): string {
+  return `${label} · ${displayKeys(fixedKeys(fixedShortcut(id), isMac()), isMac())}`;
 }

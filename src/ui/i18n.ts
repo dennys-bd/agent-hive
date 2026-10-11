@@ -55,6 +55,10 @@ const en = {
   'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
   'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
   'flow.loops.show': 'show the loops',
+  'flow.zoom.out': 'zoom out', // #910: the canvas's floating zoom controls
+  'flow.zoom.in': 'zoom in',
+  'flow.zoom.reset': 'back to 100%',
+  'flow.zoom.fit': 'fit',
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'footer.rules': 'rules',
@@ -1704,6 +1708,10 @@ const pt: Record<MessageKey, string> = {
   'flow.loops': '↺ voltas',
   'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
   'flow.loops.show': 'mostrar as voltas',
+  'flow.zoom.out': 'afastar',
+  'flow.zoom.in': 'aproximar',
+  'flow.zoom.reset': 'voltar a 100%',
+  'flow.zoom.fit': 'ajustar',
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
   'footer.rules': 'regras',
