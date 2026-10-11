@@ -84,6 +84,6 @@
   "fileIcons": { "set": "material", "scope": "all", "muted": false },
   "sidebarsPerView": { "left": true, "right": true, "rightTab": true },
   "notifications": { "waiting": true, "approval": true, "pr": true, "failed": true },
-  "signals": { "yellow": { "newTasks": false, "started": "resumeAndContinue", "workerless": true }, "red": { "newTasks": false, "started": "stay", "workerless": true }, "onOpen": "yellow" },
+  "signals": { "green": { "newTasks": "always" }, "yellow": { "newTasks": "tree", "started": "resumeAndContinue", "workerless": true }, "red": { "newTasks": "never", "started": "stay", "workerless": true }, "onOpen": "yellow" },
   "editor": { "formatOnSave": { "enabled": false, "workspaces": "all" }, "languages": {} }
 }

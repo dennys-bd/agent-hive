@@ -29,7 +29,7 @@ test('shouldPoll is false while nothing could start and the source\'s last read 
   assert.equal(shouldPoll({ ...busy, syncs: { board: {} } }, 'board', NOW), true, 'never read');
   assert.equal(shouldPoll({ ...busy, syncs: { board: { polledAt: 'garbage' } } }, 'board', NOW), true, 'an unparsable stamp reads as stale');
   assert.equal(shouldPoll({ ...free, signal: 'red' }, 'board', NOW), false, 'red with a free worker, read 30 s ago');
-  assert.equal(shouldPoll({ ...free, signal: 'yellow' }, 'board', NOW), false);
+  assert.equal(shouldPoll({ ...free, signal: 'yellow' }, 'board', NOW), true, 'the default yellow (tree) could start a child: the fill decides which (#32)');
   assert.equal(shouldPoll(readAt({ ...free, signal: 'red' }, NOW - IDLE_POLL_INTERVAL_MS), 'board', NOW), true, 'red, but the queue is 5 min old');
   const broke: State = { ...free, budget: { maxTokensPerHour: 100 }, usage: [{ at: iso(NOW - MINUTE_MS), tokens: 100 }] };
   assert.equal(shouldPoll(broke, 'board', NOW), false, 'no token budget left');

@@ -46,8 +46,8 @@ test('yellow with the defaults: a new task waits, a started one resumes (#224, #
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'build')], { max: 2 }), 2))), ['2']);
 });
 
-test('yellow with newTasks on starts a task that has not started (#727)', () => {
-  assert.deepEqual(spawned(filled(hive('yellow', [waiting(1, 'build')], { signals: row('yellow', { newTasks: true }) }))), ['1']);
+test('yellow with newTasks always starts a task that has not started (#727)', () => {
+  assert.deepEqual(spawned(filled(hive('yellow', [waiting(1, 'build')], { signals: row('yellow', { newTasks: 'always' }) }))), ['1']);
 });
 
 test('a task whose activity a first open made is started: yellow resumes it (#727)', () => {
@@ -63,8 +63,8 @@ test('continueOnly: a started task waiting for a worker is not resumed, yet a se
   assert.deepEqual(stageEnd(yellow, workerOf(yellow, 2)).effects.map((e) => e.type), ['setColumn', 'continue']);
 });
 
-test('yellow with newTasks and stay: a new task starts, a started one is not resumed, a session ending its stage does not get its worker back (#727)', () => {
-  const stay = row('yellow', { newTasks: true, started: 'stay' });
+test('yellow with newTasks always and stay: a new task starts, a started one is not resumed, a session ending its stage does not get its worker back (#727)', () => {
+  const stay = row('yellow', { newTasks: 'always', started: 'stay' });
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'build')], { signals: stay, max: 2 }), 1))), ['2']);
   const running = filled(hive('green', [waiting(3, 'spec')], { signals: stay })).state;
   const yellow = reduce(running, { type: 'setSignal', signal: 'yellow' }).state;
@@ -72,8 +72,8 @@ test('yellow with newTasks and stay: a new task starts, a started one is not res
   assert.deepEqual([spawned(ended), ended.state.workers[0].status], [[], 'empty']);
 });
 
-test('yellow with newTasks and continueOnly: a session ending its stage goes on in place, a started task without a worker is not resumed (#727)', () => {
-  const only = row('yellow', { newTasks: true, started: 'continueOnly' });
+test('yellow with newTasks always and continueOnly: a session ending its stage goes on in place, a started task without a worker is not resumed (#727)', () => {
+  const only = row('yellow', { newTasks: 'always', started: 'continueOnly' });
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build')], { signals: only }), 1))), [], 'no resume');
   const running = filled(hive('green', [waiting(2, 'spec')], { signals: only })).state;
   const yellow = reduce(running, { type: 'setSignal', signal: 'yellow' }).state;
@@ -108,8 +108,8 @@ test('shut down when done follows the flow\'s signal: armed under green, a free 
 });
 
 test('setSignals replaces the table and fills: a yellow that now starts new tasks hands the free worker one (#727)', () => {
-  const r = reduce(hive('yellow', [waiting(1, 'build')]), { type: 'setSignals', signals: row('yellow', { newTasks: true }) });
-  assert.deepEqual([spawned(r), r.state.signals.yellow.newTasks], [['1'], true]);
+  const r = reduce(hive('yellow', [waiting(1, 'build')]), { type: 'setSignals', signals: row('yellow', { newTasks: 'always' }) });
+  assert.deepEqual([spawned(r), r.state.signals.yellow.newTasks], [['1'], 'always']);
 });
 
 test('a start by hand bypasses the signal: under red, over a full cap, it opens a draining worker (#116, #727)', () => {
@@ -122,7 +122,7 @@ test('a start by hand bypasses the signal: under red, over a full cap, it opens 
 test('the rules never mutate the state they are given (#727)', () => {
   const frozen = deepFreeze(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'spec')], { max: 2 }), 1));
   filled(frozen);
-  reduce(frozen, { type: 'setSignals', signals: row('yellow', { newTasks: true }) });
+  reduce(frozen, { type: 'setSignals', signals: row('yellow', { newTasks: 'always' }) });
   reduce(frozen, { type: 'setSignal', signal: 'red' });
   reduce(frozen, { type: 'poll', items: [] });
 });

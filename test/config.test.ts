@@ -940,20 +940,23 @@ test('parseConfig requires notifications: waiting, approval, pr and failed, each
   }
 });
 
-test('parseConfig requires signals: each field named when wrong, red never looser than yellow, no default (#727)', () => {
+test('parseConfig requires signals: green, yellow, red and onOpen, each field named when wrong, a boolean newTasks refused, green ≥ yellow ≥ red, no default (#727, #32)', () => {
   assert.deepEqual(parseConfig(GITHUB).signals, SIGNALS_DEFAULTS, 'what combConfig writes: the form default');
   const with_ = (signals: unknown) => parseConfig({ ...GITHUB, signals });
   for (const bad of [undefined, null, true, []]) {
-    assert.throws(() => with_(bad), { message: 'hive.config.json: "signals" must be an object with yellow, red, onOpen' }, String(bad));
+    assert.throws(() => with_(bad), { message: 'hive.config.json: "signals" must be an object with green, yellow, red, onOpen' }, String(bad));
   }
+  assert.throws(() => with_({ ...SIGNALS_DEFAULTS, green: undefined }), { message: 'hive.config.json: "signals.green" must be an object with newTasks' }, 'a missing green');
+  assert.throws(() => with_({ ...SIGNALS_DEFAULTS, green: { newTasks: true } }), { message: 'hive.config.json: "signals.green.newTasks" must be one of: never, tree, always' });
   assert.throws(() => with_({ ...SIGNALS_DEFAULTS, yellow: 'x' }), { message: 'hive.config.json: "signals.yellow" must be an object with newTasks, started, workerless' });
   const red = (patch: Record<string, unknown>) => with_({ ...SIGNALS_DEFAULTS, red: { ...SIGNALS_DEFAULTS.red, ...patch } });
-  assert.throws(() => red({ newTasks: 'no' }), { message: 'hive.config.json: "signals.red.newTasks" must be true or false' });
+  assert.throws(() => red({ newTasks: false }), { message: 'hive.config.json: "signals.red.newTasks" must be one of: never, tree, always' }, 'a boolean is refused');
   assert.throws(() => red({ started: 'go' }), { message: 'hive.config.json: "signals.red.started" must be one of: stay, continueOnly, resumeAndContinue' });
   assert.throws(() => red({ workerless: 1 }), { message: 'hive.config.json: "signals.red.workerless" must be true or false' });
   assert.throws(() => with_({ ...SIGNALS_DEFAULTS, onOpen: 'blue' }), { message: 'hive.config.json: "signals.onOpen" must be one of: yellow, last, green' });
-  assert.throws(() => red({ newTasks: true }), { message: /^hive\.config\.json: "signals\.red" may not allow more than "signals\.yellow"/ });
-  const custom = { yellow: { newTasks: true, started: 'continueOnly', workerless: false }, red: { newTasks: false, started: 'stay', workerless: false }, onOpen: 'last' };
+  assert.throws(() => red({ newTasks: 'always' }), { message: /^hive\.config\.json: "signals\.red" may not allow more than "signals\.yellow"/ });
+  assert.throws(() => with_({ ...SIGNALS_DEFAULTS, green: { newTasks: 'never' } }), { message: /nor "signals\.yellow" more than "signals\.green": per behaviour, never < tree < always/ }, 'yellow over green');
+  const custom = { green: { newTasks: 'tree' }, yellow: { newTasks: 'tree', started: 'continueOnly', workerless: false }, red: { newTasks: 'never', started: 'stay', workerless: false }, onOpen: 'last' };
   assert.deepEqual(with_(custom).signals, custom);
 });
 

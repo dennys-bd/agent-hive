@@ -4,12 +4,14 @@ import { behaviourOf, effectOf, type SignalEffect } from '../../signals.js';
 import type { Signal, SignalSettings } from '../../types.js';
 
 const KEY: Record<SignalEffect, MessageKey> = {
-  noNewTasks: 'signal.effect.noNewTasks', noResume: 'signal.effect.noResume', noMoveOn: 'signal.effect.noMoveOn', noWorkerless: 'signal.effect.noWorkerless',
+  noNewTasks: 'signal.effect.noNewTasks', newTasksFromTree: 'signal.effect.newTasksFromTree', noResume: 'signal.effect.noResume',
+  noMoveOn: 'signal.effect.noMoveOn', noWorkerless: 'signal.effect.noWorkerless',
 };
 
-/** The effect text: undefined under green, which holds nothing back; "like green" for a row that holds nothing back either. */
-export function signalEffect(signal: Signal, signals: Pick<SignalSettings, 'yellow' | 'red'>): string | undefined {
-  if (signal === 'green') return undefined;
+/** The effect text: undefined under a green that holds nothing back; "like green" for yellow or red holding nothing back either. Green
+ * names its effects once its newTasks is not always (#32). */
+export function signalEffect(signal: Signal, signals: Pick<SignalSettings, 'green' | 'yellow' | 'red'>): string | undefined {
   const parts = effectOf(behaviourOf(signal, signals));
-  return parts.length === 0 ? t('signal.effect.likeGreen') : parts.map((part) => t(KEY[part])).join(' · ');
+  if (parts.length === 0) return signal === 'green' ? undefined : t('signal.effect.likeGreen');
+  return parts.map((part) => t(KEY[part])).join(' · ');
 }

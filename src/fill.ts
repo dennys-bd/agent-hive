@@ -41,8 +41,8 @@ export function gateOf(state: State, now: number): Gate {
   return { ...limits, behaviour: behaviourOf(limits.signal, state.signals) };
 }
 
-/** A new task may start under `behaviour` with room in `workers`. */
-export const canStart = (behaviour: SignalBehaviour, workers: Worker[], limit?: number): boolean => behaviour.newTasks && hasRoom(workers, limit);
+/** A new task may start under `behaviour` with room in `workers`. `tree` could (#32): which task qualifies is the candidate filter's question. */
+export const canStart = (behaviour: SignalBehaviour, workers: Worker[], limit?: number): boolean => behaviour.newTasks !== 'never' && hasRoom(workers, limit);
 
 /** Whether a new task could start right now (#727): budget, `newTasks` and room. What the stale poll asks. */
 export function canSchedule(state: State, now: number): boolean {
@@ -54,7 +54,7 @@ export function canSchedule(state: State, now: number): boolean {
 // starts new tasks never hands a started one a worker its `stay` / `continueOnly` withholds; `keep` (the task a continuation asks about)
 // passes whatever the resume says. Only a task whose stage has room under its cap (#475), counted on `state`.
 function startable(state: State, gate: Gate, now: number, keep?: string): Task[] {
-  const allowed = (c: Task): boolean => taskId(c) === keep || (isStarted(state, c) ? mayResume(gate.behaviour) : gate.behaviour.newTasks);
+  const allowed = (c: Task): boolean => taskId(c) === keep || (isStarted(state, c) ? mayResume(gate.behaviour) : gate.behaviour.newTasks === 'always');
   return candidates(state, now).filter((c) => allowed(c) && stageHasRoom(state, c.stage, gate.stageCaps));
 }
 
@@ -68,7 +68,7 @@ export function fill(reduced: Reduced): Reduced {
   const now = Date.now();
   const gate = gateOf(reduced.state, now);
   const open = (workers: Worker[]): boolean => hasRoom(workers, gate.maxWorkers);
-  if (!gate.behaviour.newTasks && !mayResume(gate.behaviour)) return reduced; // nothing could be picked up
+  if (gate.behaviour.newTasks === 'never' && !mayResume(gate.behaviour)) return reduced; // nothing could be picked up
   if (!hasBudget(reduced.state.usage, reduced.state.budget, now) || !open(reduced.state.workers)) return reduced;
   let { state } = reduced;
   const started: Effect[] = [];

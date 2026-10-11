@@ -39,7 +39,7 @@ test('the flow sidebar reads top to bottom: the signal with what its row holds b
   const cap = within(panel()).getByLabelText('máx.');
   const separator = within(panel()).getByRole('separator');
   const all = within(panel()).getByRole('button', { name: /^todas/ });
-  expect(within(panel()).getByText('sem tarefas novas')).toBeInTheDocument();
+  expect(within(panel()).getByText('tarefas novas só de árvore iniciada')).toBeInTheDocument();
   expect(within(panel()).getByText('workers 1/5')).toBeInTheDocument();
   expect(within(panel()).queryByRole('switch', { name: 'auto' })).not.toBeInTheDocument();
   expect([follows(signal, cap), follows(cap, separator), follows(separator, all)]).toEqual([true, true, true]);
