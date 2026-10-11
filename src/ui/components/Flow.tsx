@@ -12,6 +12,7 @@ import type { Dragging } from '@/components/task-drag';
 import { MenuBoundaryContext } from '@/components/TaskMenu';
 import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
+import { type FlowView, readFlowView, writeFlowView } from '@/lib/flow-view';
 import { visibleUnderFilter } from '@/lib/stage-filters';
 
 interface FlowProps { state: State; source?: string; selectedId?: string; onOpen?(taskId: string): void; tabs?: SourceTabs; stageCaps?: Record<string, number> } // source: the flow sidebar's pick (redesign 09); selectedId: the detail panel's task (#542); tabs: the source header's, with an external source picked (#756); stageCaps: the effective caps, which a node shows as n/cap (#727)
@@ -26,11 +27,19 @@ export function stageTasks(state: State, stage: string, source: string | undefin
   return { all, ofSource, filtered, tasks };
 }
 
+// The loops toggle flipped and kept in the view state (#909), so a reload shows the flow as it was left; zoom and pan ride along untouched
+function toggleLoops(view: FlowView): FlowView {
+  const next = { ...view, loops: !view.loops };
+  writeFlowView(next);
+  return next;
+}
+
 /** The flow (#134, 1b): a canvas that pans both ways, each stage a node holding its tasks, the transitions as arrows between them, and a node's
  * list panel over its right. Drag a task to reorder or, for a task canMoveToStage allows, onto another node (#366, #708); the ⋯ offers the
  * source's order back and the stage's view filter (#374). The canvas is the task menus' collision boundary. */
 export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: FlowProps) {
   const drag = useRef<Dragging | undefined>(undefined);
+  const [view, setView] = useState(readFlowView); // the flowchart's view (#909): the loops toggle today, zoom and pan with #910
   const filters = useStageFilters(state.stages.map((s) => s.name));
   const [editing, setEditing] = useState<string>(); // the stage whose filter dialog is open (#374)
   const [listed, setListed] = useState<string>(); // the node whose list panel is open (#134)
@@ -55,10 +64,10 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} />
+      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={view.loops} onLoops={() => setView(toggleLoops(view))} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
-          <FlowChart stages={state.stages} transitions={state.transitions} renderNode={node} />
+          <FlowChart stages={state.stages} transitions={state.transitions} loops={view.loops} renderNode={node} />
           {listedStage && listedTasks && (
             <FlowListPanel stage={listedStage} state={state} tasks={listedTasks.tasks} order={listedTasks.all} drag={drag} selectedId={selectedId} onOpen={onOpen} onClose={() => setListed(undefined)} />
           )}

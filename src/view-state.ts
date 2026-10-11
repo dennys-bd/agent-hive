@@ -1,8 +1,8 @@
 // The dashboard's view state (#484): its per-viewer UI state (layouts, sizes, stage filters, the last workspace, each workspace's view of the
 // Activities tab #779, each native view's grouping and columns #756, the base each file's changes compare against #668, the pinned
-// repositories #757, the files tree's show hidden files #947), kept in the Hive's home and read and written through GET /view-state and
+// repositories #757, the files tree's show hidden files #947, the flowchart's loops toggle, zoom and pan #909), kept in the Hive's home and read and written through GET /view-state and
 // POST /view-state/:key. Not a setting and not the orchestrator's State. Pure, no Node import: the UI imports it through a relative path, so nothing from node:fs reaches the bundle.
-export const VIEW_KEYS = ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories', 'filesShowHidden'] as const;
+export const VIEW_KEYS = ['dockLayout', 'stageFilters', 'centerLayouts', 'consoleHeight', 'splitEdge', 'lastWorkspace', 'activitiesView', 'projectViews', 'changesBase', 'repositories', 'filesShowHidden', 'flowView'] as const;
 export type ViewKey = (typeof VIEW_KEYS)[number];
 /** Values are opaque here: each UI module parses its own. */
 export type ViewState = Partial<Record<ViewKey, unknown>>;

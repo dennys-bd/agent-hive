@@ -17,8 +17,8 @@ export const NODE_MIN = 160; // the least a node is given, however little room t
 const CORNER = 8;
 
 export interface LayoutNode { id: string; height: number }
-export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean }
-export interface LayoutOptions { end?: boolean } // #908: the end circle, Settings only
+export interface LayoutEdge { id: string; from: string; to: string; automatic: boolean; labelled?: boolean } // labelled: carries a pill (#909)
+export interface LayoutOptions { end?: boolean; loops?: boolean } // end: the end circle, Settings only (#908); loops: false routes only arrows forward (#909)
 export interface Box { id: string; x: number; y: number; width: number; height: number }
 export type EdgeKind = 'forward' | 'above' | 'loop';
 export interface Routed { id: string; kind: EdgeKind; path: string; label: { x: number; y: number }; dashed: boolean }
@@ -31,6 +31,8 @@ const bottom = (b: Box): number => b.y + b.height;
 const centre = (b: Box): number => b.x + b.width / 2;
 const kindOf = (i: number, j: number): EdgeKind => (i === j ? 'loop' : j === i + 1 ? 'forward' : 'above');
 const range = (e: Span): [number, number] => [Math.min(e.i, e.j), Math.max(e.i, e.j)];
+// With the loops hidden (#909) only arrows forward stay: to the next node, or past it when they carry a pill, which says why the path skips
+const isForward = (e: Span): boolean => e.j === e.i + 1 || (e.j > e.i + 1 && e.labelled === true);
 
 // The end circle sits after the row, centred on the neighbour arrows' line
 function endBox(count: number, width: number, top: number): Box {
@@ -91,10 +93,12 @@ function over(e: Placed, xa: number, xb: number, level: number, dashed: boolean)
 }
 
 /** The chart (#134, #908): `nodes` in the stages' order, each `nodeWidth` wide and as tall as given; `edges` between their ids or to END, which
- * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. */
+ * only `{ end: true }` draws. An edge naming an unknown node is left out. Dashed: an automatic arrow that goes back. With `{ loops: false }`
+ * (#909) back edges, loops and unlabelled skips are left out before anything is placed, so `top` holds only what is still drawn. */
 export function layoutFlow(nodes: readonly LayoutNode[], edges: readonly LayoutEdge[], nodeWidth: number, options: LayoutOptions = {}): Layout {
   const hasEnd = options.end === true && edges.some((e) => e.to === END);
-  const spans = spansOf(nodes, edges, hasEnd);
+  const all = spansOf(nodes, edges, hasEnd);
+  const spans = options.loops === false ? all.filter(isForward) : all;
   const levels = levelsOf(spans.filter((e) => kindOf(e.i, e.j) === 'above'));
   const count = Math.max(0, ...levels.values());
   // The room above the row holds the levels, the outermost at MARGIN, and a loop's arc and pill (#887): with neither the row starts at the margin
