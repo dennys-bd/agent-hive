@@ -48,7 +48,7 @@ export function conventionsFrom(rows: ConventionRowDraft[]): Pick<Workspace, 'co
 // Each key's message, the parser's own words with the workspace in front (#692)
 const PROBLEMS: Record<ConventionKey, MessageKey> = {
   docsRepo: 'settings.error.conventions.docsRepo', specsDir: 'settings.error.conventions.dir', plansDir: 'settings.error.conventions.dir',
-  walkthroughsDir: 'settings.error.conventions.dir', docsLanguage: 'settings.error.conventions.language', chatLanguage: 'settings.error.conventions.language',
+  walkthroughsDir: 'settings.error.conventions.dir', designsDir: 'settings.error.conventions.dir', docsLanguage: 'settings.error.conventions.language', chatLanguage: 'settings.error.conventions.language',
   delivery: 'settings.error.conventions.delivery', sliceSize: 'settings.error.conventions.sliceSize', featureFlags: 'settings.error.conventions.featureFlags',
   uiCheck: 'settings.error.conventions.uiCheck', testCommand: 'settings.error.conventions.testCommand',
   decompositionLabel: 'settings.error.conventions.decompositionLabel',
