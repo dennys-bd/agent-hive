@@ -59,7 +59,7 @@ test('a task\'s PR fills the slot with este PR and the task\'s other PRs, never 
   expect(slot().queryByRole('button', { name: 'etapa' })).toBeNull(); // the issue's fields live on the issue page (#65)
   await user.click(slot().getByRole('button', { name: '#1' }));
   expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
-  await user.click(within(slot().getByRole('region', { name: 'outros PRs da tarefa' })).getByRole('button', { name: '#9 aberto' }));
+  await user.click(within(slot().getByRole('region', { name: 'outros PRs da tarefa' })).getByRole('button', { name: 'abrir' }));
   expect(props.onOpenPr).toHaveBeenCalledWith(PR2);
   await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
   expect(slot().getByRole('region', { name: 'este PR' })).toBeInTheDocument();

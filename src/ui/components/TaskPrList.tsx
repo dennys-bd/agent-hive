@@ -53,10 +53,11 @@ function PrMark({ mark }: { mark?: Mark }) {
 
 export interface TaskPrListProps { task: Task; state: State; except?: string; onOpenPr(url: string): void }
 
-// The list's heading: PRs on the issue page (#65); on a PR's page (#66) "other PRs of the task" and how many
+// The list's heading: PRs on the issue page (#65); on a PR's page (#66) "other PRs of the task" and how many, no heading element, since the
+// panel's title is the slot's only heading there
 function Heading({ count, isOthers }: { count: number; isOthers: boolean }) {
   if (!isOthers) return <h3 className={MUTED}>{t('detail.prs')}</h3>;
-  return <h3 className="flex items-baseline gap-1.5"><span className="font-medium text-foreground">{t('pr.others')}</span><span className={MUTED}>{count}</span></h3>;
+  return <p className="flex items-baseline gap-1.5"><span className="font-medium text-foreground">{t('pr.others')}</span><span className={MUTED}>{count}</span></p>;
 }
 
 /** The task's PRs under the page's block (#65, #66, handoff 7): grouped and ordered as the details grid and the flow card (#698), each with
