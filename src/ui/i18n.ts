@@ -1214,6 +1214,7 @@ const en = {
   'flow.list.footer': 'esc closes · the graph does not change',
   'flow.list.close': 'close the list',
   'task.tries': '{label} · {n}/{max}',
+  'task.waitingChildren': 'waiting for children · {done}/{total}', // #31: a show epic's card: its direct children done over all of them
   'task.sendFeedback': 'send feedback…',
   'session.claude': 'claude',
   'session.sleeping': 'sleeping', // #614: a session no run holds, on its sidebar line
@@ -2907,6 +2908,7 @@ const pt: Record<MessageKey, string> = {
   'flow.list.footer': 'esc fecha · o grafo não muda',
   'flow.list.close': 'fechar a lista',
   'task.tries': '{label} · {n}/{max}',
+  'task.waitingChildren': 'aguarda filhas · {done}/{total}', // #31
   'task.sendFeedback': 'enviar feedback…',
   'session.claude': 'claude',
   'session.sleeping': 'dormindo', // #614

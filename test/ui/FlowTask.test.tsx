@@ -334,3 +334,15 @@ test('a failed start reads destructive with its short message in the viewer\'s l
   rerender(<Flow state={state(task({ error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }))} />);
   expect(within(tile()).getByText('the terminal could not start')).toHaveClass('text-destructive');
 });
+
+test('a show epic reads aguarda filhas · done/total in muted, before any other state, with no button and no auto badge, in both languages (#31)', () => {
+  const epic = task({ item: { ...task().item, children: ['C1', 'C2', 'C3'], closedChildren: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const { rerender } = render(<Flow state={state(epic)} />);
+  expect(within(tile()).getByText('aguarda filhas · 1/3')).toHaveClass('text-muted-foreground');
+  expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar|excluir|aprovar)$/ })).not.toBeInTheDocument();
+  expect(within(tile()).queryByText('auto')).not.toBeInTheDocument();
+  expect(taskAction(epic, state(epic))).toBeUndefined();
+  setLanguage('en');
+  rerender(<Flow state={state(epic)} />);
+  expect(within(tile()).getByText('waiting for children · 1/3')).toBeInTheDocument();
+});
