@@ -101,10 +101,10 @@ async function sourcesOf(config: Pick<Config, 'comb'>, gql: GqlJson, own?: strin
 }
 
 function preview(goal: Goal, sources: DecompositionSource[]): DecompositionPreview {
-  const { decomposition: d, problems, suggestions } = goal.parsed;
+  const { decomposition: d, problems, suggestions, warnings } = goal.parsed;
   const nodes = d?.nodes ?? [];
   return {
-    ...(d ? { title: d.title } : {}), problems, suggestions, sources,
+    ...(d ? { title: d.title } : {}), problems, warnings, suggestions, sources,
     issues: d === undefined ? 0 : nodes.length + (goal.number === undefined ? 1 : 0), // a local goal's root issue too
     blockers: nodes.reduce((n, node) => n + node.blockedBy.length, 0),
     ...(goal.repository === undefined ? {} : { repository: goal.repository }),

@@ -1,6 +1,7 @@
 // A decomposition's file (#865, #936): decomposition.md read into its goal, its label, its root design and its nodes; the bodies its issues get; and what a
 // task's result says of its write. Pure, no Node import: the UI reads decompositionPending through task-state.ts.
 import { BODY_MAX, checkNodes, labelProblems, type NodeLines, type ParsedNode } from './decomposition-check.js';
+import { overlapWarnings } from './decomposition-overlap.js';
 import type { Decomposition, DecompositionNode, DecompositionProblem } from './types.js';
 
 /** The keys of result.decompositionIssues besides node ids (#865): a local goal's root issue, a GitHub goal's design comment (the goal's
@@ -9,8 +10,9 @@ export const ROOT_KEY = 'root';
 export const DESIGN_KEY = 'design';
 export const DONE_KEY = 'done';
 
-/** What parseDecomposition reads (#865): the tree only when it has no problem; the count of `## Suggestions` items, which never become issues. */
-export interface ParsedDecomposition { decomposition?: Decomposition; problems: DecompositionProblem[]; suggestions: number }
+/** What parseDecomposition reads (#865): the tree only when it has no problem; the count of `## Suggestions` items, which never become issues;
+ * the overlap warnings (#936), only when there is no problem. */
+export interface ParsedDecomposition { decomposition?: Decomposition; problems: DecompositionProblem[]; suggestions: number; warnings: DecompositionProblem[] }
 
 interface Line { n: number; text: string; fenced: boolean } // n: 1-based; fenced: inside a fenced block, its fences included
 interface Part { heading: string; n: number; lines: Line[] }
@@ -176,8 +178,8 @@ export function parseDecomposition(text: string): ParsedDecomposition {
   const goal = tidy(head.filter((line) => line !== titleLine));
   const decomposition: Decomposition = { title, goal, ...(label === undefined ? {} : { label }), ...(design ? { design } : {}), nodes: nodes.map((p) => p.node) };
   problems.push(...bodyProblems(decomposition, nodes, { title: titleLine?.n ?? 1, design: parts.find((p) => p.heading === 'Design')?.n ?? 1 }));
-  if (problems.length > 0) return { problems: problems.sort((a, b) => a.line - b.line), suggestions };
-  return { decomposition, problems: [], suggestions };
+  if (problems.length > 0) return { problems: problems.sort((a, b) => a.line - b.line), suggestions, warnings: [] };
+  return { decomposition, problems: [], suggestions, warnings: overlapWarnings(nodes) };
 }
 
 // A `## ` section of an issue body, or nothing when its text is empty

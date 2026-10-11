@@ -8,7 +8,7 @@ import type { DecompositionPreview } from '../../src/types';
 // The decomposition's confirm (#865): what will be written or why nothing can be, the source and column, and an error that keeps it open.
 const PATH = '/activities/a-I1/decomposition';
 const SOURCES = [{ name: 'board', statuses: ['Backlog', 'Goals'], column: 'Backlog' }];
-const PREVIEW: DecompositionPreview = { title: 'Site for XPTO', issues: 5, blockers: 3, suggestions: 1, problems: [], repository: 'acme/site', sources: SOURCES };
+const PREVIEW: DecompositionPreview = { title: 'Site for XPTO', issues: 5, blockers: 3, suggestions: 1, problems: [], warnings: [], repository: 'acme/site', sources: SOURCES };
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let preview: DecompositionPreview = PREVIEW;
 let answer: () => Response = () => json({ ok: true });
@@ -40,14 +40,14 @@ test('preselects the only source and the first stage\'s column, says what will b
 });
 
 test('shows each problem with its line and keeps criar issues disabled (#865)', async () => {
-  preview = { issues: 0, blockers: 0, suggestions: 0, problems: [{ line: 31, message: 'a leaf needs "### Acceptance criteria"' }], repository: 'acme/site', sources: SOURCES };
+  preview = { issues: 0, blockers: 0, suggestions: 0, problems: [{ line: 31, message: 'a leaf needs "### Acceptance criteria"' }], warnings: [], repository: 'acme/site', sources: SOURCES };
   render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
   expect(await screen.findByText('linha 31: a leaf needs "### Acceptance criteria"')).toBeInTheDocument();
   expect(create()).toBeDisabled();
 });
 
 test('a local goal whose workspace has no GitHub origin says so and keeps criar issues disabled (#865)', async () => {
-  preview = { title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 0, problems: [], sources: SOURCES };
+  preview = { title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 0, problems: [], warnings: [], sources: SOURCES };
   render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
   expect(await screen.findByText('O workspace não tem origin no GitHub: não há onde criar as issues.')).toBeInTheDocument();
   expect(create()).toBeDisabled();
@@ -72,4 +72,14 @@ test('a failed write shows GitHub\'s message inline and stays open; a second pre
   await user.click(create());
   await waitFor(() => expect(posts()).toHaveLength(2));
   expect(onClose).not.toHaveBeenCalled();
+});
+
+test('lists each overlap under the counts, muted, and keeps criar issues enabled (#936)', async () => {
+  const message = '"2.1" touches "src/contact.ts" and "2.2" touches "src", and no "Blocked by:" orders them';
+  preview = { ...PREVIEW, warnings: [{ line: 76, message }] };
+  render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
+  const item = await screen.findByText(`linha 76: ${message}`);
+  expect(screen.getByText('Nós que tocam os mesmos arquivos sem bloqueio entre eles (as issues são criadas mesmo assim):')).toBeInTheDocument();
+  expect(item.closest('div')).toHaveClass('text-muted-foreground');
+  expect(create()).toBeEnabled();
 });

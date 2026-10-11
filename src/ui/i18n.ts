@@ -150,6 +150,7 @@ const en = {
   'decomposition.suggestions.other': '{n} suggestions left out',
   'decomposition.problems': 'Fix decomposition.md before creating the issues:',
   'decomposition.problem': 'line {line}: {message}',
+  'decomposition.warnings': 'Nodes that touch the same files with no blocker between them (the issues are created anyway):', // #936
   'approval.startNow': 'start now',
   'approval.queue': 'in order',
   'approval.hint': 'start now resumes the task\'s session. in order, it waits for a free worker.',
@@ -1905,6 +1906,7 @@ const pt: Record<MessageKey, string> = {
   'decomposition.suggestions.other': '{n} sugestões ficam de fora',
   'decomposition.problems': 'Corrija o decomposition.md antes de criar as issues:',
   'decomposition.problem': 'linha {line}: {message}',
+  'decomposition.warnings': 'Nós que tocam os mesmos arquivos sem bloqueio entre eles (as issues são criadas mesmo assim):',
   'approval.startNow': 'começar agora',
   'approval.queue': 'na ordem',
   'approval.hint': 'começar agora retoma a sessão da tarefa. na ordem, a tarefa espera um worker livre.',

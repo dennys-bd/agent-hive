@@ -1244,9 +1244,10 @@ export interface DecompositionProblem { line: number; message: string }
 export interface DecompositionSource { name: string; statuses: string[]; column?: string }
 
 /** GET /activities/:id/decomposition (#865): what the confirm dialog shows. issues counts a local goal's root issue; title is absent with
- * problems; repository is absent for a local goal whose workspace has no GitHub origin. */
+ * problems; repository is absent for a local goal whose workspace has no GitHub origin; warnings are the overlaps (#936), which never block. */
 export interface DecompositionPreview {
-  title?: string; issues: number; blockers: number; suggestions: number; problems: DecompositionProblem[]; repository?: string; sources: DecompositionSource[];
+  title?: string; issues: number; blockers: number; suggestions: number; problems: DecompositionProblem[]; warnings: DecompositionProblem[]; repository?: string;
+  sources: DecompositionSource[];
 }
 
 export type HiveEvent =

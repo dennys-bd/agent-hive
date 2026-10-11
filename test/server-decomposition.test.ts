@@ -80,7 +80,7 @@ test('GET answers what the dialog shows: the counts, the suggestions, the goal\'
   const res = await fetch(url);
   assert.equal(res.status, 200);
   const expected: DecompositionPreview = {
-    title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 1, problems: [], repository: 'acme/site',
+    title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 1, problems: [], warnings: [], repository: 'acme/site',
     sources: [{ name: 'board', statuses: ['Backlog', 'Goals'], column: 'Backlog' }],
   };
   assert.deepEqual(await res.json(), expected);
@@ -106,6 +106,15 @@ test('GET lists the problems with their lines and no title (#865)', async (t) =>
   const { url } = await routes(t, { text: ['# G', '## 1 A', '### Scope', 'In: a.', '## 2 B', '### Scope', 'In: b.', '### Acceptance criteria', '- it works'].join('\n') });
   const read = (await (await fetch(url)).json()) as DecompositionPreview;
   assert.deepEqual([read.problems, read.issues, 'title' in read], [[{ line: 2, message: 'a leaf needs "### Acceptance criteria"' }], 0, false]);
+});
+
+test('GET lists the overlap warnings, and the file stays writable (#936)', async (t) => {
+  // 2.1 and 2.2 are not ordered: 2.1 waits for 1.2, 2.2 for nothing but 2's blocker, which holds neither
+  const text = EXAMPLE.replace('Blocked by: 1.2', 'Touches: src/contact.ts\nBlocked by: 1.2')
+    .replace('In: the landing page. Out: the contact form.', 'In: the landing page. Out: the contact form.\nTouches: src/');
+  const { url } = await routes(t, { text });
+  const read = (await (await fetch(url)).json()) as DecompositionPreview;
+  assert.deepEqual([read.problems, read.warnings], [[], [{ line: 76, message: '"2.1" touches "src/contact.ts" and "2.2" touches "src", and no "Blocked by:" orders them' }]]);
 });
 
 test('POST refuses 409 on a task not awaiting approval, and on a file with problems, before asking GitHub anything (#865)', async (t) => {

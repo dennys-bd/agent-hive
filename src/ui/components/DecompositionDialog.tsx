@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DecompositionPreview, DecompositionSource } from '../../types';
+import type { DecompositionPreview, DecompositionProblem, DecompositionSource } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -25,6 +25,19 @@ function Picker({ id, label, value, options, onChange }: { id: string; label: st
   );
 }
 
+// The overlaps (#936): nodes touching the same files with no blocker between them. Muted: they never stop the write
+function Warnings({ warnings }: { warnings: DecompositionProblem[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className={`flex flex-col gap-1 text-sm ${MUTED}`}>
+      <p>{t('decomposition.warnings')}</p>
+      <ul className="list-disc pl-5">
+        {warnings.map((w) => <li key={`${w.line}:${w.message}`}>{t('decomposition.problem', { line: w.line, message: w.message })}</li>)}
+      </ul>
+    </div>
+  );
+}
+
 // What will be written, or why nothing can be (#865): the problems with their lines, else the counts and the suggestions left out
 function Summary({ preview }: { preview: DecompositionPreview }) {
   if (preview.problems.length > 0) {
@@ -42,6 +55,7 @@ function Summary({ preview }: { preview: DecompositionPreview }) {
     <div className="flex flex-col gap-1 text-sm">
       <p>{counts}</p>
       {preview.suggestions > 0 && <p className={MUTED}>{tPlural('decomposition.suggestions', preview.suggestions, { n: preview.suggestions })}</p>}
+      <Warnings warnings={preview.warnings} />
     </div>
   );
 }
