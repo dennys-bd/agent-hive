@@ -119,6 +119,13 @@ test('an issue of a task with PRs: the slot lists them under the properties, and
   expect(onOpenPr).toHaveBeenCalledWith(pr);
 });
 
+test('a failed read of a task\'s issue still lists its PRs under the message: the details grid leaves them to the slot (#65)', async () => {
+  fetchMock.mockImplementationOnce(async () => jsonRes({ error: 'Could not resolve to an Issue' }, 502));
+  renderPage([TASK12], { activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [], prs: [{ url: 'https://github.com/acme/site/pull/31', state: 'open' }] }] }, true);
+  expect(await slot().findByText('Could not resolve to an Issue')).toBeInTheDocument();
+  expect(within(slot().getByRole('region', { name: 'PRs' })).getByText('#31 aberto')).toBeInTheDocument();
+});
+
 test('an issue out of the flow lists no PRs in the slot (#65)', async () => {
   renderPage([], {}, true);
   expect(await slot().findByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
