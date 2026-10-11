@@ -11,9 +11,10 @@ export interface TreeGroup { root?: Task; tasks: Array<{ task: Task; depth: numb
 const NO_TREE = 'none';
 const idOf = (task: Task): string => task.item.itemId;
 
-// A parent or a child that is a task in the list; one that is no task does not make a tree (#28). ponytail: each walk scans the list, O(n²)
-// per node; index the tasks by itemId if a flow ever holds thousands
-const inTree = (all: readonly Task[], task: Task): boolean =>
+/** Whether the task has a parent or a child that is a task in the list; one that is no task does not make a tree (#28). The flow's grouping
+ * (#34) and the details' tree section (#36) read this one rule. ponytail: each walk scans the list, O(n²) per node; index the tasks by itemId
+ * if a flow ever holds thousands */
+export const inTree = (all: readonly Task[], task: Task): boolean =>
   parentOf(all, idOf(task)) !== undefined || descendants(all, idOf(task)).length > 0;
 
 /** Whether any task of the list has a parent or a child in it: what the tree toggle reads while flowView holds no choice (#34). */
@@ -69,5 +70,40 @@ export function nodeRows(all: readonly Task[], shown: readonly Task[], stage: st
     const header: NodeRow = { kind: 'group', key, root: group.root, count: group.tasks.length, isCollapsed, itemIds: group.tasks.map(({ task }) => idOf(task)) };
     if (isCollapsed) return [header];
     return [header, ...group.tasks.map(({ task, depth }): NodeRow => ({ kind: 'task', task, indent: Math.max(depth - 1, 0) * INDENT_PX }))];
+  });
+}
+
+/** One segment of the details' tree bar (#36): a node below the root and its colour. */
+export interface TreeSegment { id: string; tone: TaskState | 'done' }
+
+/** The details' tree bar (#36): every node below the root, depth first in sub-issue order, each once, a child with no task included with nothing
+ * under it, coloured by segmentTone with its own parent. The same nodes treeProgress counts, so the bar and the header's N agree. */
+export function treeSegments(state: Pick<State, 'tasks'> & TaskStateInput, rootId: string, lastStage: string): TreeSegment[] {
+  const seen = new Set<string>([rootId]); // a repeat ends the walk: GitHub forbids cycles, but the wire is not trusted (#28)
+  const walk = (parent: Task): TreeSegment[] => (parent.item.children ?? []).flatMap((childId) => {
+    if (seen.has(childId)) return [];
+    seen.add(childId);
+    const own: TreeSegment = { id: childId, tone: segmentTone(state, parent, childId, lastStage) };
+    const child = state.tasks.find((task) => idOf(task) === childId);
+    return child === undefined ? [own] : [own, ...walk(child)];
+  });
+  const root = state.tasks.find((task) => idOf(task) === rootId);
+  return root === undefined ? [] : walk(root);
+}
+
+/** A row of the details' outline (#36). */
+export interface OutlineRow { task: Task; depth: number; hasChildren: boolean; isCollapsed: boolean }
+
+/** The details' outline (#36): the root and its descendant tasks in tree order, minus every task under a collapsed parent. A child with no task
+ * has no row: it has no details to open. A stale id in `collapsed` matches no task and hides nothing. */
+export function outlineRows(tasks: readonly Task[], rootId: string, collapsed: readonly string[]): OutlineRow[] {
+  const root = tasks.find((task) => idOf(task) === rootId);
+  if (root === undefined) return [];
+  const members = [root, ...descendants(tasks, rootId)];
+  const shut = members.filter((task) => collapsed.includes(idOf(task)));
+  const hidden = new Set(shut.flatMap((task) => descendants(tasks, idOf(task)).map(idOf)));
+  return members.filter((task) => !hidden.has(idOf(task))).map((task): OutlineRow => {
+    const hasChildren = descendants(tasks, idOf(task)).length > 0;
+    return { task, depth: depthOf(tasks, idOf(task)), hasChildren, isCollapsed: hasChildren && collapsed.includes(idOf(task)) };
   });
 }
