@@ -211,6 +211,10 @@ export const REPOSITORY_ID = `query($owner: String!, $name: String!) {
 export const CREATE_ISSUE = `mutation($repositoryId: ID!, $title: String!, $body: String!, $labelIds: [ID!]) {
   createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds }) { issue { id number url } }
 }`; // url: #846 names it when the Project write fails after the issue exists; labelIds: a decomposition's label (#936), none when not sent
+// A decomposition's write and delivery (#936): a repository's node id, and its default branch, which the Design: links and the PR's base name
+export const REPOSITORY_BRANCH = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id defaultBranchRef { name } }
+}`;
 // A decomposition's label (#936): found by name, else created in the repository
 export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: String!) {
   repository(owner: $owner, name: $name) { label(name: $label) { id } }
@@ -307,6 +311,7 @@ export interface CreateIssueData { createIssue?: { issue?: { id: string; number:
 export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: string } | null } | null } // #865
 export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
 export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
+export interface RepositoryBranchData { repository?: { id: string; defaultBranchRef?: { name: string } | null } | null } // #936
 
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */
 export interface GhIssueChoices {

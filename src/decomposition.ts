@@ -1,11 +1,12 @@
 // A decomposition's file (#865, #936): decomposition.md read into its goal, its label, its root design and its nodes; the bodies its issues get; and what a
 // task's result says of its write. Pure, no Node import: the UI reads decompositionPending through task-state.ts.
-import { BODY_MAX, checkNodes, labelProblems, type NodeLines, type ParsedNode } from './decomposition-check.js';
+import { BODY_MAX, checkNodes, labelProblems, type NodeLines, parentOf, type ParsedNode } from './decomposition-check.js';
 import { overlapWarnings } from './decomposition-overlap.js';
 import type { Decomposition, DecompositionNode, DecompositionProblem } from './types.js';
 
 /** The keys of result.decompositionIssues besides node ids (#865): a local goal's root issue, a GitHub goal's design comment (the goal's
- * number), and the write's end (the root epic's number), which tells a written tree from one halfway. */
+ * number), and the write's end (the root epic's number), recorded by the route once everything is done (#936), which tells a written tree
+ * from one halfway. */
 export const ROOT_KEY = 'root';
 export const DESIGN_KEY = 'design';
 export const DONE_KEY = 'done';
@@ -187,13 +188,43 @@ const sectionOf = (title: string, text: string | undefined): string[] => (text ?
 const listText = (items: string[]): string => items.map((item) => `- ${item}`).join('\n');
 const joined = (parts: string[]): string => parts.filter((p) => p !== '').join('\n\n');
 
-/** A node's issue body (#865): its free text, then Scope, Design (inner) or Open points (leaf), Acceptance criteria (leaf) and Contracts,
- * each only when the node has it. Blocked by is GitHub's relation, not text. */
-export function issueBody(node: DecompositionNode): string {
-  const contracts = [node.delivers.length > 0 ? `Delivers: ${node.delivers.join(', ')}` : '', node.consumes.length > 0 ? `Consumes: ${node.consumes.join(', ')}` : ''];
+/** What a node's `## Decomposition` block links (#936): its parent issue's number (the goal's, or a local goal's root, for a top-level node)
+ * and the address of the design of the layer above. */
+export interface IssueLinks { parent: number; design: string }
+
+// The parse knows neither the parent's number nor the file's address: a body is checked with room for both. ponytail: an address over
+// LINK_ROOM characters passes the check and is refused by GitHub on the write
+const LINK_ROOM = 1024;
+export const CHECK_LINKS: IssueLinks = { parent: Number.MAX_SAFE_INTEGER, design: 'x'.repeat(LINK_ROOM) };
+
+/** GitHub's anchor of a heading (#936): lowercased, every character but a letter, a digit, a space, `-` or `_` dropped, each space a `-`. */
+export const anchorOf = (heading: string): string => heading.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s/g, '-');
+
+/** The decomposition file on its repository's default branch (#936): valid once its PR merges, so it outlives the branch. */
+export const fileAddress = (repository: string, branch: string, path: string): string =>
+  `https://github.com/${repository}/blob/${[...branch.split('/'), ...path.split('/')].map(encodeURIComponent).join('/')}`;
+
+/** A node's `Design:` link (#936): its parent's heading in the file, or the goal's `## Design` for a top-level node. ponytail: GitHub suffixes
+ * a repeated anchor, so two nodes whose ids differ only by dots and share a title (1.2 A, 12 A) both link the first */
+export function designLink(d: Decomposition, node: DecompositionNode, address: string): string {
+  const parent = d.nodes.find((n) => n.id === parentOf(node.id));
+  return `${address}#${anchorOf(parent === undefined ? 'Design' : `${parent.id} ${parent.title}`)}`;
+}
+
+// The `## Decomposition` block (#936): what has no native GitHub relation, plus Parent: for the reader; a line only when it has a value
+function decompositionBlock(node: DecompositionNode, links: IssueLinks): string[] {
+  const list = (label: string, items: string[]): string[] => (items.length > 0 ? [`${label}: ${items.join(', ')}`] : []);
+  const openPoints = node.openPoints.length > 0 ? ['Open points:', listText(node.openPoints)] : [];
+  const lines = [`Parent: #${links.parent}`, `Design: ${links.design}`, ...list('Delivers', node.delivers), ...list('Consumes', node.consumes), ...list('Touches', node.touches), ...openPoints];
+  return sectionOf('Decomposition', lines.join('\n'));
+}
+
+/** A node's issue body (#865, #936): its free text, then Scope, Design (inner) or Acceptance criteria (leaf), then one `## Decomposition`
+ * block. Blocked by and the parent stay GitHub's relations. */
+export function issueBody(node: DecompositionNode, links: IssueLinks): string {
   return joined([
-    node.body, ...sectionOf('Scope', node.scope), ...sectionOf('Design', node.design), ...sectionOf('Open points', listText(node.openPoints)),
-    ...sectionOf('Acceptance criteria', listText(node.criteria)), ...sectionOf('Contracts', contracts.filter((l) => l !== '').join('\n')),
+    node.body, ...sectionOf('Scope', node.scope), ...sectionOf('Design', node.design), ...sectionOf('Acceptance criteria', listText(node.criteria)),
+    ...decompositionBlock(node, links),
   ]);
 }
 
@@ -225,5 +256,5 @@ function bodyProblems(d: Decomposition, nodes: ParsedNode[], at: { title: number
   const over = (line: number, what: string): DecompositionProblem[] => [{ line, message: `${what} is over ${BODY_MAX} characters` }];
   const tooBig = (text: string): boolean => text.length > BODY_MAX;
   const root = tooBig(designComment(d)) ? over(at.design, 'the design comment') : tooBig(rootBody(d)) ? over(at.title, 'the goal issue body') : [];
-  return [...root, ...nodes.filter((p) => tooBig(issueBody(p.node))).flatMap((p) => over(p.line, 'the issue body'))];
+  return [...root, ...nodes.filter((p) => tooBig(issueBody(p.node, CHECK_LINKS))).flatMap((p) => over(p.line, 'the issue body'))];
 }

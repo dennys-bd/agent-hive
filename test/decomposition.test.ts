@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decompositionPending, decompositionWritten, designComment, issueBody, parseDecomposition, recordedIssues, rootBody } from '../src/decomposition.js';
+import {
+  anchorOf, CHECK_LINKS, decompositionPending, decompositionWritten, designComment, designLink, fileAddress, issueBody, parseDecomposition, recordedIssues, rootBody,
+} from '../src/decomposition.js';
 import { initialState } from '../src/orchestrator.js';
 import type { DecompositionNode, DecompositionProblem, Task } from '../src/types.js';
 import { createsIssues } from '../src/ui/lib/task-state.js';
@@ -16,6 +18,7 @@ const LEAF = ['### Scope', 'In: a. Out: b.', '### Acceptance criteria', '- it wo
 const leaf = (id: string, title: string, extra: Partial<DecompositionNode>): DecompositionNode => ({
   id, title, body: '', scope: '', openPoints: [], criteria: [], delivers: [], consumes: [], blockedBy: [], touches: [], ...extra,
 });
+const ADDRESS = 'https://github.com/acme/docs/blob/main/agent/specs/2026-10-11-site-decomposition.md';
 
 test('the spec\'s example parses with no problem: the goal without its mermaid view, the root\'s design, the nodes in order with every part; the suggestions are only counted (#865)', () => {
   const { decomposition, problems, suggestions } = parseDecomposition(EXAMPLE);
@@ -128,22 +131,41 @@ test('a node or the goal split into a single child is a problem: one child is th
   assert.deepEqual(parseDecomposition(file(...lone)).problems, [{ line: 1, message: 'the goal has a single node: split it into two or more, or the goal is a leaf itself' }]);
 });
 
-test('issueBody, rootBody and designComment render only the sections a node or the root has (#865)', () => {
+test('issueBody: free text, Scope, Design (inner) or Acceptance criteria (leaf), then one ## Decomposition block with only the lines it has (#936)', () => {
   const { decomposition } = parseDecomposition(EXAMPLE);
   assert.ok(decomposition);
   const [backend, , api] = decomposition.nodes;
-  assert.equal(issueBody(backend), "## Scope\n\nIn: the form's endpoint and its storage. Out: any admin view.\n\n## Design\n\nSubmissions are stored in a single table; no queue.");
-  assert.equal(issueBody(api), [
-    '## Scope\n\nIn: POST /contact with validation. Out: spam filtering.',
-    '## Open points\n\n- rate limit per IP or per session',
-    '## Acceptance criteria\n\n- a valid POST /contact answers 201 and stores the row\n- an invalid one answers 400 with the RFC 7807 body',
-    '## Contracts\n\nDelivers: api.contact\nConsumes: db.submissions',
+  assert.equal(issueBody(backend, { parent: 7, design: `${ADDRESS}#design` }), [
+    "## Scope\n\nIn: the form's endpoint and its storage. Out: any admin view.",
+    '## Design\n\nSubmissions are stored in a single table; no queue.',
+    `## Decomposition\n\nParent: #7\nDesign: ${ADDRESS}#design`,
   ].join('\n\n'));
-  assert.equal(issueBody({ ...api, body: 'Why it exists.', openPoints: [], consumes: [] }).split('\n\n')[0], 'Why it exists.');
+  const feasibility = "feasibility: the CDN's edge function accepts a POST body over 10 KB";
+  const touched = { ...api, touches: ['functions/contact.ts', 'db/migrations'], openPoints: [...api.openPoints, feasibility] };
+  assert.equal(issueBody(touched, { parent: 101, design: `${ADDRESS}#1-backend` }), [
+    '## Scope\n\nIn: POST /contact with validation. Out: spam filtering.',
+    '## Acceptance criteria\n\n- a valid POST /contact answers 201 and stores the row\n- an invalid one answers 400 with the RFC 7807 body',
+    [
+      '## Decomposition', '', 'Parent: #101', `Design: ${ADDRESS}#1-backend`, 'Delivers: api.contact', 'Consumes: db.submissions',
+      'Touches: functions/contact.ts, db/migrations', 'Open points:', '- rate limit per IP or per session', `- ${feasibility}`,
+    ].join('\n'),
+  ].join('\n\n'));
+  assert.equal(issueBody({ ...api, body: 'Why it exists.' }, { parent: 1, design: ADDRESS }).split('\n\n')[0], 'Why it exists.');
   const design = '## Design\n\nStatic pages served by the CDN; one serverless function for the form. Errors as RFC 7807.';
   assert.equal(rootBody(decomposition), `A marketing site with a contact form.\n\n${design}`);
   assert.equal(designComment(decomposition), design);
   assert.equal(rootBody({ ...decomposition, design: undefined }), 'A marketing site with a contact form.');
+});
+
+test('anchorOf is GitHub\'s heading slug; designLink points at the parent\'s heading, or #design for a top-level node (#936)', () => {
+  assert.equal(anchorOf('1.2 Contact API'), '12-contact-api');
+  assert.equal(anchorOf('Design'), 'design');
+  assert.equal(anchorOf("2 Pages & the user's flow_x"), '2-pages--the-users-flow_x');
+  assert.equal(fileAddress('acme/docs', 'main', 'agent/specs/2026-10-11-site xpto-decomposition.md'), 'https://github.com/acme/docs/blob/main/agent/specs/2026-10-11-site%20xpto-decomposition.md');
+  const { decomposition } = parseDecomposition(EXAMPLE);
+  assert.ok(decomposition);
+  assert.equal(designLink(decomposition, decomposition.nodes[2], ADDRESS), `${ADDRESS}#1-backend`);
+  assert.equal(designLink(decomposition, decomposition.nodes[0], ADDRESS), `${ADDRESS}#design`);
 });
 
 test('the result says whether the write is pending: a decomposition path with no done recorded; recorded keys keep integer numbers only (#865)', () => {
@@ -182,6 +204,8 @@ test('an issue body, the root body or the design comment over 65,536 characters 
   assert.deepEqual(goal, [{ line: 1, message: 'the goal issue body is over 65536 characters' }]);
   const design = parseDecomposition(file('# G', '## Design', big, '## 1 A', ...LEAF, '## 2 B', ...LEAF)).problems;
   assert.deepEqual(design, [{ line: 2, message: 'the design comment is over 65536 characters' }]);
-  const exactly = parseDecomposition(file('# G', '## 1 A', '### Scope', 'x'.repeat(65_536 - ('## Scope\n\n\n\n## Acceptance criteria\n\n- ok'.length)), '### Acceptance criteria', '- ok', '## 2 B', ...LEAF));
+  // the parse renders each body with room for the parent's number and the link it cannot know yet
+  const room = 65_536 - (issueBody(leaf('1', 'A', { scope: 'x', criteria: ['ok'] }), CHECK_LINKS).length - 1);
+  const exactly = parseDecomposition(file('# G', '## 1 A', '### Scope', 'x'.repeat(room), '### Acceptance criteria', '- ok', '## 2 B', ...LEAF));
   assert.deepEqual(exactly.problems, []);
 });
