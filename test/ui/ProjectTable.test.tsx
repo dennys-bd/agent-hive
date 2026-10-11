@@ -132,9 +132,9 @@ test('with nothing saved every column shows but the iteration and number fields,
   resetViewState();
   renderTable();
   await screen.findByText('3 issues · 1 no fluxo');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
   const head = screen.getAllByRole('row')[0];
-  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 104px 76px'); // Priority 64, date 72, progress 56
+  expect(head.style.gridTemplateColumns).toBe('minmax(160px,1fr) 128px 64px 136px 56px 72px 56px 112px 104px 76px'); // Priority 64, date 72, progress 56, blocked by 112
   expect(head.closest('thead')).toHaveClass('sticky');
   const scroller = screen.getByRole('table').parentElement?.parentElement;
   expect(scroller).toHaveClass('[scrollbar-width:none]');
@@ -150,20 +150,20 @@ test('the columns menu lists every hideable column in project order with its ori
   const items = screen.getAllByRole('menuitemcheckbox');
   expect(items.map((i) => i.textContent)).toEqual([
     'statusproject', 'Priorityproject', 'labelsproject', 'resp.project', 'Estimateproject', 'Targetproject', 'Progressproject', 'Sprintproject',
-    'criadaproject', 'atualizadaproject', 'fechadaproject', 'PRhive',
+    'criadaproject', 'atualizadaproject', 'fechadaproject', 'bloqueada porproject', 'PRhive',
   ]);
-  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'true', 'false', 'true', 'true', 'false', 'false', 'false', 'false', 'true']);
+  expect(items.map((i) => i.getAttribute('aria-checked'))).toEqual(['true', 'true', 'true', 'true', 'false', 'true', 'true', 'false', 'false', 'false', 'false', 'true', 'true']);
   expect(screen.getByText('os campos vêm do project. a ordem segue a do project.')).toBeInTheDocument();
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Priority/ }));
   await user.click(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ }));
   expect(screen.getByRole('menuitemcheckbox', { name: /^Estimate/ })).toHaveAttribute('aria-checked', 'true'); // the menu stays open
   await user.keyboard('{Escape}');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'PR', '']);
-  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'pr'] }) });
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
+  expect(readView('projectViews')).toEqual({ roadmap: expect.objectContaining({ columns: ['status', 'labels', 'assignee', 'field:Estimate', 'field:Target', 'field:Progress', 'blockedBy', 'pr'] }) });
   unmount();
   renderTable();
   await screen.findByText('3 issues · 1 no fluxo');
-  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'labels', 'resp.', 'Estimate', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
 });
 
 // Blocked has no issue; #7 has no Status, two assignees and P0; #5 is a second Todo

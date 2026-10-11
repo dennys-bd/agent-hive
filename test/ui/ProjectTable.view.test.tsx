@@ -27,21 +27,21 @@ test('every new kind and the issue\'s dates are listed in the columns menu, hidd
   resetViewState();
   renderTable();
   await screen.findByText('2 issues · 1 no fluxo');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', 'bloqueada por', 'PR', '']);
   await openMenu(user, /^colunas/);
   const added = ['Milestone', 'Type', 'Reviewers', 'criada', 'atualizada', 'fechada'];
   const items = screen.getAllByRole('menuitemcheckbox').map((i) => [i.textContent, i.getAttribute('aria-checked')]);
-  expect(items.slice(-7)).toEqual([...added.map((name) => [`${name}project`, 'false']), ['PRhive', 'true']]);
+  expect(items.slice(-8)).toEqual([...added.map((name) => [`${name}project`, 'false']), ['bloqueada porproject', 'true'], ['PRhive', 'true']]);
   for (const name of added) await user.click(screen.getByRole('menuitemcheckbox', { name: new RegExp(`^${name}`) }));
   await user.keyboard('{Escape}');
-  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', ...added, 'PR', '']);
+  expect(heads()).toEqual(['issue', 'status', 'Priority', 'labels', 'resp.', 'Target', 'Progress', ...added, 'bloqueada por', 'PR', '']);
   const twelve = within(rowOf('#12'));
   expect(twelve.getByText('v1')).toBeInTheDocument();
   expect(twelve.getByText('Bug')).toBeInTheDocument();
   expect(twelve.getByText('01/10')).toBeInTheDocument();
   expect(twelve.getByText('05/10')).toBeInTheDocument();
   expect(within(rowOf('#3')).getByText('04/10')).toBeInTheDocument();
-  expect(within(rowOf('#3')).getAllByText('—')).toHaveLength(3); // no status, Reviewers (an issue has none) and PR; an empty milestone stays blank
+  expect(within(rowOf('#3')).getAllByText('—')).toHaveLength(4); // no status, Reviewers (an issue has none), no blocker and PR; an empty milestone stays blank
 });
 
 test('a header sort is saved for the source and restored on reopening; nothing saved keeps the project\'s order (#756)', async () => {
@@ -51,7 +51,7 @@ test('a header sort is saved for the source and restored on reopening; nothing s
   expect(numbers()).toEqual(['#12', '#3', '#40']);
   await user.click(screen.getByRole('button', { name: /^Estimate/ }));
   await user.click(screen.getByRole('button', { name: /^Estimate/ }));
-  expect(readView('projectViews')).toEqual({ roadmap: { groupBy: null, collapsed: [], columns: ALL, sort: { key: 'field:Estimate', desc: true }, widths: {} } });
+  expect(readView('projectViews')).toEqual({ roadmap: { groupBy: null, collapsed: [], columns: ALL, blockedByShown: true, sort: { key: 'field:Estimate', desc: true }, widths: {} } });
   unmount();
   renderTable();
   await screen.findByText('3 de 3');

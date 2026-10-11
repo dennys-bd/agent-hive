@@ -5,6 +5,7 @@ import { prNumber } from '../../pull-requests';
 import { resolveWorkspace } from '../../tasks';
 import type { ItemField, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, State, Task } from '../../types';
 import type { ReactNode } from 'react';
+import { BlockedByCell } from '@/components/BlockedByCell';
 import { FieldEditor } from '@/components/FieldEditor';
 import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { ProjectStatusSelect } from '@/components/ProjectStatusSelect';
@@ -105,7 +106,7 @@ export interface ProjectRowProps {
   onOpenIssue(item: ProjectItem, task?: Task): void; // #757: the issue's page
 }
 
-// A visible column's cell (#756): its class and what it shows; a field's, the labels' and the assignees' through their editor (#686, #60)
+// A visible column's cell (#756): its class and what it shows; a field's, the labels' and the assignees' through their editor (#686, #60), the blocked-by refs through theirs (#61)
 function cellOf(column: ProjectColumn, { item, task, state, source, statuses, onRow }: ProjectRowProps): { className?: string; cell: ReactNode } {
   const { field } = column;
   const written = (answer: FieldAnswer): void => onRow(answer.row);
@@ -129,6 +130,8 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
       const assignees: ItemField = { name: ASSIGNEES, type: 'assignees', value: item.assignees };
       return { cell: <FieldEditor itemId={item.itemId} field={assignees} display={<AssigneeCell logins={item.assignees} />} onWritten={written} /> };
     }
+    case 'blockedBy':
+      return { className: 'flex min-w-0', cell: <BlockedByCell source={source} item={item} onRow={onRow} /> };
     default: return { className: 'min-w-0', cell: <PrCell prs={taskPrs(item.pullRequests, task, state)} /> };
   }
 }

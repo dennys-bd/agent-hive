@@ -1571,6 +1571,7 @@ const en = {
   'project.loading': 'reading…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
   'project.col.created': 'created', 'project.col.updated': 'updated', 'project.col.closed': 'closed', // #756, addendum 2: the issue's own dates
+  'project.col.blockedBy': 'blocked by', // #61: the issue's blocked-by relations
   'project.col.resize': 'resize {column}', // #756, addendum 2: a header's drag handle
   'project.footer.count': '{x} of {n}',
   'project.footer.hint': 'cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue', // #60
@@ -3319,6 +3320,7 @@ const pt: Record<MessageKey, string> = {
   'project.loading': 'lendo…',
   'project.col.issue': 'issue', 'project.col.status': 'status', 'project.col.labels': 'labels', 'project.col.assignee': 'resp.', 'project.col.pr': 'PR',
   'project.col.created': 'criada', 'project.col.updated': 'atualizada', 'project.col.closed': 'fechada',
+  'project.col.blockedBy': 'bloqueada por',
   'project.col.resize': 'redimensionar {column}',
   'project.footer.count': '{x} de {n}',
   'project.footer.hint': 'células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue',

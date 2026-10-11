@@ -2,8 +2,8 @@ import { expect, test } from 'vitest';
 import { readProjectView, writeProjectView } from '@/lib/project-views';
 import { readView, resetViewState } from '@/lib/view-state';
 
-const ROADMAP = { groupBy: 'status', collapsed: ['Done'], columns: ['status', 'field:Priority'], sort: { key: 'field:Priority', desc: true }, widths: { status: 140 } };
-const BARE = { groupBy: null, collapsed: [], columns: [], sort: null, widths: {} };
+const ROADMAP = { groupBy: 'status', collapsed: ['Done'], columns: ['status', 'field:Priority'], sort: { key: 'field:Priority', desc: true }, widths: { status: 140 }, blockedByShown: true as const };
+const BARE = { groupBy: null, collapsed: [], columns: [], sort: null, widths: {}, blockedByShown: true as const };
 
 test('writeProjectView keeps each source\'s view under projectViews, and readProjectView reads it back (#756)', () => {
   resetViewState({ projectViews: { notes: BARE } });
@@ -32,5 +32,15 @@ test('readProjectView: nothing saved for the source, or a value it cannot read, 
 
 test('readProjectView: a view saved before sort and widths existed reads with no sort and no widths (#756)', () => {
   resetViewState({ projectViews: { roadmap: { groupBy: 'status', collapsed: [], columns: ['status'] } } });
-  expect(readProjectView('roadmap')).toEqual({ groupBy: 'status', collapsed: [], columns: ['status'], sort: null, widths: {} });
+  expect(readProjectView('roadmap')).toEqual({ groupBy: 'status', collapsed: [], columns: ['status', 'blockedBy'], sort: null, widths: {}, blockedByShown: true });
+});
+
+test('readProjectView: a view saved before the blocked-by column reads with it visible; one saved since keeps it as saved, hidden included (#61)', () => {
+  const before = { groupBy: null, collapsed: [], columns: ['status', 'pr'], sort: null, widths: {} };
+  resetViewState({ projectViews: { roadmap: before } });
+  expect(readProjectView('roadmap')).toEqual({ ...before, columns: ['status', 'pr', 'blockedBy'], blockedByShown: true });
+  resetViewState({ projectViews: { roadmap: { ...before, blockedByShown: true } } });
+  expect(readProjectView('roadmap')?.columns).toEqual(['status', 'pr']);
+  resetViewState({ projectViews: { roadmap: { ...before, columns: ['blockedBy'] } } });
+  expect(readProjectView('roadmap')?.columns).toEqual(['blockedBy']); // never doubled
 });

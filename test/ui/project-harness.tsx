@@ -42,7 +42,8 @@ export const fetchMock = vi.fn(answer);
 export function resetProjectTest(): void {
   setLanguage('pt');
   forgetProjects();
-  resetViewState({ projectViews: { roadmap: { groupBy: null, collapsed: [], columns: ALL } } });
+  // a view saved since the blocked-by column exists (#61), the column hidden: the tests that do not read it keep their columns
+  resetViewState({ projectViews: { roadmap: { groupBy: null, collapsed: [], columns: ALL, blockedByShown: true } } });
   fetchMock.mockReset();
   fetchMock.mockImplementation(answer);
   vi.mocked(toast.error).mockClear();
