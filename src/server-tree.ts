@@ -131,7 +131,8 @@ function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
   });
 }
 
-// A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it
+// A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it. ponytail: no cap on the
+// listing, and an expanded folder is re-read every poll; a truncated answer if a huge expanded folder (node_modules) ever slows the tree
 async function folderEntries(folder: string): Promise<FolderEntries> {
   const entries = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
   const namesOf = (isFolder: boolean): string[] => entries.filter((entry) => entry.isDirectory() === isFolder).map((entry) => entry.name).sort();

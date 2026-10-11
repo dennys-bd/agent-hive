@@ -34,7 +34,12 @@ export function useIgnoredFolders(activityId: string, isShown: boolean, expanded
       void Promise.allSettled(paths.map((path) => getJson<FolderEntries>(folderUrl(activityId, path)))).then((results) => {
         isReading = false;
         if (!live) return;
-        setLoaded(new Map(results.flatMap((result, i) => (result.status === 'fulfilled' ? [[paths[i], result.value] as const] : []))));
+        // A failed read keeps what the folder last showed: one transient error must not collapse an open subtree; a deleted folder leaves
+        // the tree anyway, with its parent's next read
+        setLoaded((prev) => new Map(results.flatMap((result, i) => {
+          const entries = result.status === 'fulfilled' ? result.value : prev.get(paths[i]);
+          return entries ? [[paths[i], entries] as const] : [];
+        })));
         if (isAgain) {
           isAgain = false;
           read();
