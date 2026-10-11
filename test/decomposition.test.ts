@@ -14,7 +14,7 @@ const F = '```';
 const file = (...lines: string[]): string => lines.join('\n');
 const LEAF = ['### Scope', 'In: a. Out: b.', '### Acceptance criteria', '- it works'];
 const leaf = (id: string, title: string, extra: Partial<DecompositionNode>): DecompositionNode => ({
-  id, title, body: '', scope: '', openPoints: [], criteria: [], delivers: [], consumes: [], blockedBy: [], ...extra,
+  id, title, body: '', scope: '', openPoints: [], criteria: [], delivers: [], consumes: [], blockedBy: [], touches: [], ...extra,
 });
 
 test('the spec\'s example parses with no problem: the goal without its mermaid view, the root\'s design, the nodes in order with every part; the suggestions are only counted (#865)', () => {
@@ -81,7 +81,25 @@ const CASES: [string, string[], DecompositionProblem[]][] = [
     { line: 12, message: 'text after the list in "### Acceptance criteria"' }, { line: 13, message: 'unknown subsection "### Notes"' },
     { line: 15, message: 'fenced block left open' },
   ]],
+  ['Touches: on a node with children, and paths that leave the repository', ['# G', '## 1 A', '### Scope', 'In: a.', 'Touches: src', '## 1.1 B', ...LEAF, 'Touches: ../x, /abs', '## 1.2 Z', ...LEAF, '## 2 Y', ...LEAF], [
+    { line: 5, message: 'a node with children has no "Touches:": only a leaf touches files' },
+    { line: 11, message: '"../x" in "Touches:" must be a relative path without ".."' },
+    { line: 11, message: '"/abs" in "Touches:" must be a relative path without ".."' },
+  ]],
+  ['a node before its parent', ['# G', '## 1.1 B', ...LEAF, '## 1 A', '### Scope', 'In: a.', '## 1.2 Z', ...LEAF, '## 2 Y', ...LEAF],
+    [{ line: 2, message: '"1.1" comes before its parent "1"' }]],
+  ['a label over 50 characters, and a second Label: line', ['# G', `Label: ${'x'.repeat(51)}`, 'Label: b', '## 1 A', ...LEAF, '## 2 B', ...LEAF], [
+    { line: 2, message: 'the label must be 1 to 50 characters' }, { line: 3, message: '"Label:" repeated' },
+  ]],
 ];
+
+test('Label: is a line of the goal\'s head, taken out of its text; Touches: lists a leaf\'s paths, a trailing / dropped (#936)', () => {
+  const { decomposition, problems } = parseDecomposition(file('# G', 'Label: decomposed', 'goal text', '## 1 A', ...LEAF, 'Touches: src/a.ts, db/migrations/', '## 2 B', ...LEAF));
+  assert.deepEqual(problems, []);
+  assert.deepEqual([decomposition?.label, decomposition?.goal], ['decomposed', 'goal text']);
+  assert.deepEqual(decomposition?.nodes.map((n) => n.touches), [['src/a.ts', 'db/migrations'], []]);
+  assert.equal(parseDecomposition(EXAMPLE).decomposition?.label, undefined, 'no Label: line, no label');
+});
 
 test('every problem is reported at its line, and a file with one returns no tree (#865)', () => {
   for (const [name, lines, expected] of CASES) {

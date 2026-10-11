@@ -1,6 +1,6 @@
-// A decomposition's file (#865): decomposition.md read into its goal, its root design and its nodes; the bodies its issues get; and what a
+// A decomposition's file (#865, #936): decomposition.md read into its goal, its label, its root design and its nodes; the bodies its issues get; and what a
 // task's result says of its write. Pure, no Node import: the UI reads decompositionPending through task-state.ts.
-import { BODY_MAX, checkNodes, type NodeLines, type ParsedNode } from './decomposition-check.js';
+import { BODY_MAX, checkNodes, labelProblems, type NodeLines, type ParsedNode } from './decomposition-check.js';
 import type { Decomposition, DecompositionNode, DecompositionProblem } from './types.js';
 
 /** The keys of result.decompositionIssues besides node ids (#865): a local goal's root issue, a GitHub goal's design comment (the goal's
@@ -15,11 +15,12 @@ export interface ParsedDecomposition { decomposition?: Decomposition; problems: 
 interface Line { n: number; text: string; fenced: boolean } // n: 1-based; fenced: inside a fenced block, its fences included
 interface Part { heading: string; n: number; lines: Line[] }
 type Subsection = 'scope' | 'design' | 'openPoints' | 'criteria';
-type Marker = 'delivers' | 'consumes' | 'blockedBy';
+type Marker = 'delivers' | 'consumes' | 'blockedBy' | 'touches';
 
 const FENCE = /^(`{3,}|~{3,})(.*)$/;
 const NODE_HEADING = /^(\d+(?:\.\d+)*)(?:\s+(.*))?$/;
-const MARKERS: readonly (readonly [string, Marker])[] = [['Delivers:', 'delivers'], ['Consumes:', 'consumes'], ['Blocked by:', 'blockedBy']];
+const MARKERS: readonly (readonly [string, Marker])[] = [['Delivers:', 'delivers'], ['Consumes:', 'consumes'], ['Blocked by:', 'blockedBy'], ['Touches:', 'touches']];
+const LABEL = 'Label:';
 const SUBSECTIONS: Readonly<Record<string, Subsection>> = { Scope: 'scope', Design: 'design', 'Open points': 'openPoints', 'Acceptance criteria': 'criteria' };
 
 // The file's lines with their numbers: a fenced block's lines are marked, so no heading or marker is read inside one; the first mermaid
@@ -69,7 +70,7 @@ function listOf(raw: string, label: string, n: number, problems: DecompositionPr
 
 // The node's marker lines, wherever they sit, taken out of the text they sit in so they never repeat in a section; a missing one is empty
 function takeMarkers(lines: Line[], problems: DecompositionProblem[]): { lists: Record<Marker, string[]>; at: NodeLines; rest: Line[] } {
-  const lists: Record<Marker, string[]> = { delivers: [], consumes: [], blockedBy: [] };
+  const lists: Record<Marker, string[]> = { delivers: [], consumes: [], blockedBy: [], touches: [] };
   const at: NodeLines = {};
   const rest: Line[] = [];
   for (const line of lines) {
@@ -128,6 +129,7 @@ function nodeOf(id: string, title: string, part: Part, problems: DecompositionPr
   const node: DecompositionNode = {
     id, title, body: tidy(body), scope: tidy(subs.get('scope')?.lines ?? []), ...(design === undefined ? {} : { design: tidy(design.lines) }),
     openPoints: itemsOf(subs.get('openPoints'), problems), criteria: itemsOf(subs.get('criteria'), problems), ...lists,
+    touches: lists.touches.map((path) => path.replace(/\/+$/, '')), // #936: `src/` and `src` are one folder
   };
   return { node, line: part.n, at: { ...at, design: design?.n, openPoints: subs.get('openPoints')?.n, criteria: subs.get('criteria')?.n } };
 }
@@ -149,19 +151,30 @@ function readParts(parts: Part[], problems: DecompositionProblem[]): { design?: 
   return { ...(design ? { design } : {}), suggestions, nodes };
 }
 
+// The goal's `Label:` line (#936): in its head, outside a fence, at most once; taken out of the goal's text. `line` is where a problem with
+// it is reported
+function takeLabel(head: Line[], problems: DecompositionProblem[]): { label?: string; line: number; rest: Line[] } {
+  const found = head.filter((line) => !line.fenced && line.text.trim().startsWith(LABEL));
+  for (const again of found.slice(1)) problems.push({ line: again.n, message: `"${LABEL}" repeated` });
+  const [first] = found;
+  const rest = head.filter((line) => !found.includes(line));
+  return first === undefined ? { line: 1, rest } : { label: first.text.trim().slice(LABEL.length).trim(), line: first.n, rest };
+}
+
 /** decomposition.md as the Hive reads it (#865): the goal (the `# ` title and its text, the first mermaid block dropped), `## Design`, the
  * nodes in file order and the count of `## Suggestions`, with every problem at its line. The tree comes back only when there is no problem. */
 export function parseDecomposition(text: string): ParsedDecomposition {
   const scanned = scan(text);
   const problems = [...scanned.problems];
-  const { head, parts } = partsOf(scanned.lines);
+  const { head: lines, parts } = partsOf(scanned.lines);
+  const { label, line: labelLine, rest: head } = takeLabel(lines, problems);
   const titleLine = head.find((line) => headingOf(line, '#') !== undefined);
   const title = titleLine === undefined ? '' : headingOf(titleLine, '#') ?? '';
   if (title === '') problems.push({ line: titleLine?.n ?? 1, message: 'the goal has no "# " title' }); // a local goal's root issue needs one
   const { design, suggestions, nodes } = readParts(parts, problems);
-  problems.push(...checkNodes(nodes));
+  problems.push(...checkNodes(nodes), ...labelProblems(label, labelLine));
   const goal = tidy(head.filter((line) => line !== titleLine));
-  const decomposition: Decomposition = { title, goal, ...(design ? { design } : {}), nodes: nodes.map((p) => p.node) };
+  const decomposition: Decomposition = { title, goal, ...(label === undefined ? {} : { label }), ...(design ? { design } : {}), nodes: nodes.map((p) => p.node) };
   problems.push(...bodyProblems(decomposition, nodes, { title: titleLine?.n ?? 1, design: parts.find((p) => p.heading === 'Design')?.n ?? 1 }));
   if (problems.length > 0) return { problems: problems.sort((a, b) => a.line - b.line), suggestions };
   return { decomposition, problems: [], suggestions };

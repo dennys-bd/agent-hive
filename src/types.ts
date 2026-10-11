@@ -1229,10 +1229,12 @@ export interface DecompositionNode {
   delivers: string[]; // contract ids
   consumes: string[]; // contract ids
   blockedBy: string[]; // node ids of the same file
+  touches: string[]; // #936: "Touches:" paths, leaves only, relative, a trailing / dropped; what the overlap warnings compare
 }
 
-/** The parsed file (#865): the goal's title (the `#` heading), its text, the root's design, the nodes in file order. `## Suggestions` is not kept. */
-export interface Decomposition { title: string; goal: string; design?: string; nodes: DecompositionNode[] }
+/** The parsed file (#865): the goal's title (the `#` heading), its text, its label (the head's `Label:` line, #936), the root's design, the
+ * nodes in file order. `## Suggestions` is not kept. */
+export interface Decomposition { title: string; goal: string; label?: string; design?: string; nodes: DecompositionNode[] }
 
 /** A parse or validation problem (#865), shown in the confirm dialog; the line is 1-based. */
 export interface DecompositionProblem { line: number; message: string }
