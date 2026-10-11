@@ -4,7 +4,6 @@ import { taskLabel } from '../../tasks';
 import type { State, Task } from '../../types';
 import { SEGMENT } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
-import { Badge } from '@/components/ui/badge';
 import { statusText, t } from '@/i18n';
 import { readFlowView, toggleOutline } from '@/lib/flow-view';
 import { STATUS_TEXT } from '@/lib/status';
@@ -47,7 +46,8 @@ function TreeBar({ root, state, lastStage }: TreePartProps) {
 interface OutlineItemProps { row: OutlineRow; state: State; isOpen: boolean; onOpenTask(itemId: string): void; onToggle(itemId: string): void }
 
 // One task of the outline: ⌄ / › on a parent, an empty slot of its width otherwise so the labels line up, then the button that opens the task
-// and, while the pointer is on it, lights its card in the flow. The slot's 14px and the 4px gap put line 2 at the handoff's 18px
+// and, while the pointer is on it, lights its card in the flow. The slot's 14px and the 4px gap put line 2 at the handoff's 18px; the 2px
+// around each row is the only space between rows, which keeps a row at the handoff's ~40px (#116)
 function OutlineItem({ row, state, isOpen, onOpenTask, onToggle }: OutlineItemProps) {
   const { setHoveredId } = useContext(TreeHoverContext);
   const { task, depth, hasChildren, isCollapsed } = row;
@@ -55,12 +55,12 @@ function OutlineItem({ row, state, isOpen, onOpenTask, onToggle }: OutlineItemPr
   const label = taskLabel(task);
   const status = taskState(task, state);
   return (
-    <li className={`flex items-start gap-1 rounded-md py-1 pr-2 ${isOpen ? 'bg-muted text-foreground' : 'text-foreground/85'}`} style={{ paddingLeft: ROW_BASE_PX + depth * ROW_STEP_PX }}>
+    <li className={`flex items-start gap-1 rounded-md py-0.5 pr-1.5 ${isOpen ? 'bg-muted text-foreground' : 'text-foreground/85'}`} style={{ paddingLeft: ROW_BASE_PX + depth * ROW_STEP_PX }}>
       {hasChildren
         ? (
           <button
             type="button" aria-expanded={!isCollapsed} aria-label={`${t(isCollapsed ? 'flow.tree.expand' : 'flow.tree.collapse')} ${label}`}
-            className="w-3.5 shrink-0 text-[10px] text-muted-foreground leading-5" onClick={() => onToggle(id)}
+            className="w-3.5 shrink-0 text-[10px] text-muted-foreground leading-4" onClick={() => onToggle(id)}
           >
             {isCollapsed ? '›' : '⌄'}
           </button>
@@ -70,9 +70,9 @@ function OutlineItem({ row, state, isOpen, onOpenTask, onToggle }: OutlineItemPr
         type="button" aria-current={isOpen ? 'true' : undefined} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
         onClick={() => onOpenTask(id)} onMouseEnter={() => setHoveredId(id)} onMouseLeave={() => setHoveredId(undefined)}
       >
-        <span className="truncate text-[13px] leading-5">{label}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-xs">
-          <Badge variant="outline" className="font-normal text-muted-foreground">{task.stage}</Badge>
+        <span className="truncate text-[13px] leading-4">{label}</span>
+        <span className="flex min-w-0 items-center gap-2 text-xs">
+          <span className="shrink-0 rounded border border-border px-1.5 text-muted-foreground leading-[18px]">{task.stage}</span>
           <span className={`min-w-0 truncate ${STATUS_TEXT[status]}`}>{statusText(status)}</span>
         </span>
       </button>
@@ -99,7 +99,7 @@ export function TreeSection({ task, state, onOpenTask }: TreeSectionProps) {
     <section aria-label={t('detail.tree')} className="flex flex-col gap-2">
       <TreeHeader root={root} state={state} lastStage={lastStage} />
       <TreeBar root={root} state={state} lastStage={lastStage} />
-      <ul className="flex flex-col gap-0.5">
+      <ul className="-mx-1.5 mt-0.5 flex flex-col">
         {outlineRows(state.tasks, root.item.itemId, collapsed).map((row) => (
           <OutlineItem key={row.task.item.itemId} row={row} state={state} isOpen={row.task.item.itemId === task.item.itemId} onOpenTask={onOpenTask} onToggle={onToggle} />
         ))}

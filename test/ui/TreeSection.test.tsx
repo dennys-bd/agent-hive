@@ -102,3 +102,15 @@ test('a click on a row opens that task and hovering it names the task to TreeHov
   render(view());
   expect(labels()).toEqual(['#1 Task 1', '#2 Task 2', '#3 Task 3']);
 });
+
+test('the outline keeps the handoff row: no gap between rows, the list run 6px past the sides, 2px 6px around each row and the stage as a plain bordered span (#116)', () => {
+  render(<Section open="I4" />);
+  const list = within(section()).getByRole('list');
+  expect(list).not.toHaveClass('gap-0.5');
+  expect(list).toHaveClass('mt-0.5', '-mx-1.5');
+  expect(rows()[0]).toHaveClass('py-0.5', 'pr-1.5');
+  const stage = within(rows()[2]).getByText('done');
+  expect(stage).not.toHaveAttribute('data-slot', 'badge');
+  expect(stage).toHaveClass('rounded', 'border', 'px-1.5', 'leading-[18px]');
+  expect(stage.parentElement).toHaveClass('gap-2');
+});
