@@ -5,7 +5,7 @@ import { createServer, type HiveServer, type ServerDeps } from '../src/server.js
 import { runArgs, ptyCommand } from '../src/spawn.js';
 import type { Activity, AgentAvailability, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
 import { activityOf } from '../src/activities.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -53,7 +53,7 @@ async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BO
 test('an agent boot did not find is refused before any worktree: the task keeps the reason, no worker starts and the worker frees (#516)', async (t) => {
   const { server, workers, calls } = await start(t, BODY, { agents: [{ agent: 'claude', available: false }] });
   await waitFor(() => work0(server)?.error !== undefined);
-  assert.equal(work0(server)?.error, REFUSAL);
+  assert.equal(work0(server)?.error, SPAWN_FAILED + REFUSAL);
   assert.equal(workers.length, 0, 'nothing was launched');
   assert.equal(worker0(server).status, 'empty', 'the worker is free again');
   assert.equal(calls.some((c) => c.includes('worktree')), false, 'no worktree step ran');

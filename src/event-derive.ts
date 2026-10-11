@@ -4,6 +4,7 @@ import { textRef, type Correlation, type FinishVia, type GoneReason, type MoveBy
 import type { StageRunEnd } from './human-signals.js';
 import { effectiveLimits } from './orchestrator.js';
 import { prNumber } from './pull-requests.js';
+import { spawnFailureCode } from './spawn-failure.js';
 import { workerCount } from './reducer-kit.js';
 import { onSource, runTime, stageOf, taskId } from './tasks.js';
 import { outgoing } from './transitions.js';
@@ -164,20 +165,6 @@ function terminalEnds(prev: State, next: State, event: HiveEvent, now: number): 
     return { event: 'terminal.ended', level: 'info', ...ids, duration_ms: since(terminal.startedAt, now), ...(terminal.command === undefined ? {} : { command: terminal.command }) };
   });
 }
-
-// The known spawn failures (#742), by the start of the message each site writes: agents.ts, config.ts, server-spawn.ts, worktree-steps.ts,
-// git and node-pty. The message itself can carry a path or a setup's output: only the code reaches a record
-const SPAWN_FAILURES: readonly [RegExp, string][] = [
-  [/^agent \S+ is not on PATH/, 'agent_missing'], [/^choose a workspace$/, 'no_workspace'], [/^workspace .+ (?:is gone|não existe mais)$/, 'workspace_gone'],
-  [/^comando ".*" não está habilitado/, 'command_disabled'], [/^(?:setup|teardown) failed at line /, 'setup_failed'], [/^(?:fatal|error): |^base: /, 'git_failed'],
-  [/posix_spawn|^pty /, 'pty_failed'],
-];
-
-/** run.spawn_failed's code (#742): one of a closed set read from the message's first line, `error` for any other. */
-export const spawnFailureCode = (message: string): string => {
-  const line = message.split('\n')[0] ?? '';
-  return SPAWN_FAILURES.find(([pattern]) => pattern.test(line))?.[1] ?? 'error';
-};
 
 // What the user cut by hand (Stop, Restart) and a spawn that never started. A free session's stop is its end, free_session.ended's; a stop
 // with no cause is hive_stop's or a command's timeout, not the user's. Restart runs only once no run is live: its duration is from the

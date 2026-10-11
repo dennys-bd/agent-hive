@@ -12,7 +12,7 @@ import { TaskMenu } from '@/components/TaskMenu';
 import { Confirm } from '@/components/Confirm';
 import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
-import { commandsProgress, StageOutputButton, taskError } from '@/components/CommandsProgress';
+import { commandsProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
 import { SetupLogsButton } from '@/components/SetupProgress';
 import { StartDialog } from '@/components/StartDialog';
 import { runTab, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
@@ -69,13 +69,14 @@ interface TaskStatus { tone?: Tone; text?: string }
 
 const blockedText = (task: Task): string => t('task.blockedBy', { ids: (task.item.blockedBy ?? []).join(', ') });
 
-// What the footer says (#542): in the status colour sumiu da source, then out of tries (#913), then the task's state (#663: its sessions' worst at work, else aguardando
+// What the footer says (#542): in the status colour sumiu da source, then out of tries (#913), then a failed start (#945), then the task's state (#663: its sessions' worst at work, else aguardando
 // review, else aguardando aprovação), the precedence the border always had (#229, #268, #279); in muted the worktree setup (#351), a spawn
 // error or the blocker. Nothing otherwise
 function taskStatus(task: Task, state: State): TaskStatus {
   if (task.missing) return { tone: 'destructive', text: t('task.missing') };
   const error = activityOf(state, task.item.itemId)?.error;
   if (error !== undefined && isExhausted(task, state)) return { tone: 'destructive', text: taskError(error) }; // #913: halted, worse than a question
+  if (isStartFailure(error) && workersOf(state, task).length === 0) return { tone: 'destructive', text: taskError(error) }; // #945: a failed start, red; a live worker's status wins
   const current = taskState(task, state);
   const live = activityOf(state, task.item.itemId); // the run fields are the live activity's (#629)
   const byAction = current === 'working' && workersOf(state, task).length === 0 && inAction(live); // #15: working is the stage action's, its progress below says which

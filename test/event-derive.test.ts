@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { correlationOf, deriveEvents, endedStageRuns, signalRecords, spawnFailureCode } from '../src/event-derive.js';
+import { correlationOf, deriveEvents, endedStageRuns, signalRecords } from '../src/event-derive.js';
 import { textRef, type RecordInput, type RunKind } from '../src/events.js';
 import { initialState } from '../src/orchestrator.js';
 import type { LegacyStage } from '../src/config-migrate.js';
@@ -107,17 +107,6 @@ test('run.spawned names the worker and the stage\'s model, run.started the spawn
   assert.deepEqual(only(deriveEvents(parked, idle, { type: 'restart', activityId: ACTIVITY }, NOW), 'run.restarted'), [{ event: 'run.restarted', level: 'info', ...IDS, duration_ms: 300_000 }]);
 });
 
-test('run.spawn_failed\'s code is one of a closed set read from the known failures; anything else is error, never the text (#742)', () => {
-  const cases: [string, string][] = [
-    ['agent codex is not on PATH: install it, then restart the Hive', 'agent_missing'], ['choose a workspace', 'no_workspace'],
-    ['workspace api is gone', 'workspace_gone'], ['workspace "api" não existe mais', 'workspace_gone'],
-    ['comando "dev" não está habilitado no workspace api', 'command_disabled'], ['setup failed at line 3 (RUN pnpm i): exit 1', 'setup_failed'],
-    ["fatal: '/Users/x/r' already exists", 'git_failed'], ['base: main unknown (bad)', 'git_failed'], ['posix_spawnp failed.', 'pty_failed'],
-    ['see https://github.com/acme/r/pull/9 and ~/saved', 'error'], ['', 'error'],
-  ];
-  for (const [message, code] of cases) assert.equal(spawnFailureCode(message), code, message);
-});
-
 test('workers.changed when the cap-counted runs or the cap move; signal.changed names the rule when the floor moved it (#742)', () => {
   const prev: State = { ...base(), workers: [{ id: 'w1', status: 'empty' }] };
   const next = withWork({ ...prev, workers: [runner()] }, 'board:I1', { workerId: 'w1' });
@@ -222,4 +211,11 @@ test('a StopFailure is run.api_error at warn: a backoff with its failure number 
   assert.deepEqual(failed('overloaded', runner({ done: true })), [], 'after hive_done it is the run\'s Stop, not an API error');
   const done = prevOf(runner({ done: true }));
   assert.deepEqual(endedStageRuns(done, { ...done, workers: [] }, FAILURE, NOW).map((end) => end.outcome), ['done'], 'and its stage ends done');
+});
+
+test('a start a dirty local checkout refused is run.spawn_failed code=checkout_dirty: no path, no porcelain line, no message field (#945)', () => {
+  const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
+  const busy = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
+  const refused: HiveEvent = { type: 'spawnFailed', ptyId: PTY, message: '/repo has changes that are not committed:\n M src/app.ts\n?? notes.md' };
+  assert.deepEqual(only(deriveEvents(busy, idle, refused, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'checkout_dirty' }]);
 });

@@ -355,3 +355,12 @@ test('the tries and exhausted blocks\' copy reads as the spec writes it, in both
     'tries', 'tries · {trigger} {n}/{max}', '{n}/{max} ✕ {cause}',
   ]);
 });
+
+test('a failed start\'s short messages, in both languages; the toggle says details (#945)', () => {
+  assert.deepEqual([MESSAGES.en['start.failed.checkout_dirty'], MESSAGES.pt['start.failed.checkout_dirty']], [
+    'the workspace has uncommitted changes: commit or stash them, then start again',
+    'o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo',
+  ]);
+  assert.deepEqual([MESSAGES.en['start.failed.error'], MESSAGES.pt['start.failed.error']], ['the task could not start', 'a tarefa não pôde iniciar']);
+  assert.deepEqual([MESSAGES.en['start.failed.details'], MESSAGES.pt['start.failed.details']], ['details', 'detalhes']);
+});

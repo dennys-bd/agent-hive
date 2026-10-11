@@ -11,7 +11,7 @@ import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
-import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS } from '../src/types.js';
+import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED } from '../src/types.js';
 import { GREEN_BEHAVIOUR } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
 import { move, chained } from './fakes.js';
@@ -1486,10 +1486,10 @@ test('red: a started task is never started and a finishing worker never continue
   assert.equal(occupied(finished.state).length, 1);
 });
 
-test('spawnFailed frees the worker, keeps the task in its stage with the error and sets the bar; fill skips it, another task may take the worker; start clears it and runs', () => {
+test('spawnFailed frees the worker, keeps the task in its stage with the error and sets the bar; fill skips it, another task may take the worker; start clears it and runs; the activity\'s error carries SPAWN_FAILED, the bar the raw message (#945)', () => {
   const two = filled(1, 2).state; // 1 runs, 2 waits
   const { state, effects } = reduce(two, { type: 'spawnFailed', ptyId: two.workers[0].runId!, message: 'pty: posix_spawnp failed.' });
-  assert.equal(work(state, 1)?.error, 'pty: posix_spawnp failed.');
+  assert.equal(work(state, 1)?.error, `${SPAWN_FAILED}pty: posix_spawnp failed.`);
   assert.deepEqual([task(state, 1)?.stage, work(state, 1)?.workerId], ['spec', undefined]);
   assert.equal(state.error, 'pty: posix_spawnp failed.');
   assert.equal(ownerAt(state, 0), 'board:item2', 'the freed worker goes to the next task, never back to the failed one');
@@ -1501,7 +1501,7 @@ test('spawnFailed frees the worker, keeps the task in its stage with the error a
   assert.deepEqual(failed.effects.map((e) => e.type), ['forgetScrollback'], 'no retry');
   assert.equal(failed.state.workers[0].status, 'empty');
   assert.equal(polled(failed.state, many(1)).effects.length, 0, 'a poll does not retry either');
-  assert.equal(work(polled(failed.state, many(1)).state, 1)?.error, 'pty: posix_spawnp failed.', 'the error survives the poll');
+  assert.equal(work(polled(failed.state, many(1)).state, 1)?.error, `${SPAWN_FAILED}pty: posix_spawnp failed.`, 'the error survives the poll');
   const retried = started(failed.state, 'board:item1');
   assert.equal(work(retried.state, 1)?.error, undefined, 'start clears it');
   assert.deepEqual(retried.effects.map((e) => e.type), ['spawn']);
@@ -1527,7 +1527,7 @@ test('setupStarted puts the setup on the task with its console id and drops its 
   assert.deepEqual([work(failed, 1)?.setup, work(failed, 1)?.error, failed.error], [undefined, message, undefined], 'the /open path\'s failure lands on the task, not the bar');
   const running = filled(1, 1).state;
   const spawnFailed = reduce(running, { type: 'spawnFailed', ptyId: running.workers[0].runId!, message }).state;
-  assert.deepEqual([spawnFailed.workers[0].status, work(spawnFailed, 1)?.error, spawnFailed.error], ['empty', message, message], 'the spawn path\'s failure, as #299 left it');
+  assert.deepEqual([spawnFailed.workers[0].status, work(spawnFailed, 1)?.error, spawnFailed.error], ['empty', SPAWN_FAILED + message, message], 'the spawn path\'s failure, marked as a start\'s (#945)');
 });
 
 test('a task whose setup runs is no candidate, takes no Start, Continue, Restart or session, and a boot drops the setup (#351)', () => {
@@ -2824,7 +2824,7 @@ test('boot after a crash: each task a stage worker held is stopped and listed in
 test('a spawn that fails drops the session its new run appended, so the stage reads as not run and the task offers Start again; a resumed session stays (#283)', () => {
   const first = filled(1, 2).state; // spec: a new session for task 1
   const failed = reduce(first, { type: 'spawnFailed', ptyId: first.workers[0].runId!, message: 'pty: boom' }).state;
-  assert.deepEqual([sessionsN(failed, 1), holds(failed, 1, 'sessionId'), work(failed, 1)?.error], [[], false, 'pty: boom']);
+  assert.deepEqual([sessionsN(failed, 1), holds(failed, 1, 'sessionId'), work(failed, 1)?.error], [[], false, `${SPAWN_FAILED}pty: boom`]);
   assert.equal(startMode(task(failed, 1)!, failed), 'start');
   const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], lastUsedAt: PAST }];
   const known: State = withMade(withLive({ ...base(1), tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }] }, 1, { sessionId: 'kept-session-id-0001' }), 1, { sessions });

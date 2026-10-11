@@ -7,11 +7,13 @@ import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
 import { CheckpointsList } from '@/components/CheckpointsList';
 import { CiNotice } from '@/components/CiProgress';
+import { isStartFailure } from '@/components/CommandsProgress';
 import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
+import { StartFailure } from '@/components/StartFailure';
 import { Button } from '@/components/ui/button';
 import { useTaskFiles } from '@/hooks/use-task-files';
 import { type CommentsState, useComments } from '@/hooks/use-comments';
@@ -61,7 +63,7 @@ function StatusBlock({ task, state, locale, isActivity }: { task: Task; state: S
   return <StatusBox task={task} state={state} isActivity={isActivity} />;
 }
 
-// The scrolling body (redesign 06): the title, the task's error in full, which the flow's chip truncates (#482), the status block (the status
+// The scrolling body (redesign 06): the title, the task's error in full (a failed start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), the status block (the status
 // box, the running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the
 // tries section under it, the metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
 function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProps) {
@@ -71,7 +73,9 @@ function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProp
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-3.5 py-3.5">
       <h2 className="break-words font-semibold text-[15px] text-foreground leading-5">{taskLabel(task)}</h2>
-      {error && !isExhausted(task, state) && <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>}
+      {error && !isExhausted(task, state) && (isStartFailure(error)
+        ? <StartFailure error={error} /> // #945: the short message, the raw text behind details
+        : <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>)}
       <StatusBlock task={task} state={state} locale={locale} isActivity={isActivity} />
       <TriesSection task={task} state={state} />
       <SyncBlock task={task} state={state} />

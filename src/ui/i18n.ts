@@ -1184,6 +1184,16 @@ const en = {
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
   'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
+  'start.failed.agent_missing': 'the agent is not installed', // #945: a failed start's short message, by run.spawn_failed's code; the raw text behind details
+  'start.failed.no_workspace': 'choose a workspace for the task',
+  'start.failed.workspace_gone': 'the task\'s workspace no longer exists',
+  'start.failed.command_disabled': 'the command is not enabled in this workspace',
+  'start.failed.setup_failed': 'the worktree setup failed',
+  'start.failed.git_failed': 'git could not prepare the task\'s branch',
+  'start.failed.pty_failed': 'the terminal could not start',
+  'start.failed.checkout_dirty': 'the workspace has uncommitted changes: commit or stash them, then start again',
+  'start.failed.error': 'the task could not start',
+  'start.failed.details': 'details', // #945: the toggle that reveals the raw message
   'flow.trigger.done': 'done', // #134: the triggers and fixed verdicts as a pill and the card read them
   'flow.trigger.approved': 'approved',
   'flow.trigger.feedback': 'feedback',
@@ -2867,6 +2877,16 @@ const pt: Record<MessageKey, string> = {
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
   'stage.error.triesOut': 'esgotou · {trigger} {n}x',
+  'start.failed.agent_missing': 'o agente não está instalado',
+  'start.failed.no_workspace': 'escolha um workspace para a tarefa',
+  'start.failed.workspace_gone': 'o workspace da tarefa não existe mais',
+  'start.failed.command_disabled': 'o comando não está habilitado neste workspace',
+  'start.failed.setup_failed': 'o setup da worktree falhou',
+  'start.failed.git_failed': 'o git não conseguiu preparar a branch da tarefa',
+  'start.failed.pty_failed': 'o terminal não pôde iniciar',
+  'start.failed.checkout_dirty': 'o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo',
+  'start.failed.error': 'a tarefa não pôde iniciar',
+  'start.failed.details': 'detalhes',
   'flow.trigger.done': 'terminou',
   'flow.trigger.approved': 'aprovado',
   'flow.trigger.feedback': 'feedback',

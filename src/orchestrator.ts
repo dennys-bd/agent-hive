@@ -8,7 +8,7 @@ import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
 import type { Activity, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item } from './types.js';
-import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from './types.js';
+import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
@@ -510,6 +510,7 @@ function ask(state: State, ptyId: string, question: string): Reduced {
 // The worker never started (a pty that would not spawn, a worktree git refused): as exit, and the task carries the message and leaves the
 // candidates until a manual start; the bar shows it too. No automatic retry: the same fill would fail the same way, in a tight loop.
 // Its exit stops the task too (#283), and the session its new run appended goes: the stage reads as not run, so the task offers Start again.
+// The activity's error is marked SPAWN_FAILED so the page can tell a start's failure from the others' (#945); the bar keeps the raw text.
 function spawnFailed(state: State, ptyId: string, message: string): Reduced {
   const terminal = state.terminals.find((s) => s.terminalId === ptyId);
   // A terminal is the bar only (#283). Its first open never ran: it goes, with whatever files its spawn made; a wake's failure sleeps it
@@ -529,7 +530,7 @@ function spawnFailed(state: State, ptyId: string, message: string): Reduced {
   const found = taskOfWorker(freed, worker); // the task as exit left it (worker already dropped): one source, never two
   const forgotten = found ? forgetFailedSession(freed, found, worker) : freed;
   const task = found && taskOfWorker(forgotten, worker);
-  return none({ ...(task ? withError(forgotten, task, message) : forgotten), error: message });
+  return none({ ...(task ? withError(forgotten, task, SPAWN_FAILED + message) : forgotten), error: message });
 }
 
 // The end of the command (a Stop after hive_done): the transition `end` fires is taken (#134), or the one a handoff waited on. The worker goes

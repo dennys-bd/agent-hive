@@ -1,6 +1,7 @@
 import { XIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Confirm } from '@/components/Confirm';
+import { taskError } from '@/components/CommandsProgress';
 import { activityDeletionUrl, type Removal, DeleteActivity } from '@/components/DeleteActivity';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Button } from '@/components/ui/button';
@@ -44,7 +45,7 @@ const removalMessage = (row: WorktreeRow): string => {
   const lines = [
     t('worktrees.branch', { branch: row.branch ?? t('worktrees.detached') }),
     t('worktrees.task', { title: task ? task.title : t('worktrees.noTask') }),
-    ...(task?.error ? [task.error] : []),
+    ...(task?.error ? [taskError(task.error)] : []), // #945: a failed start's short message, never its path
     '',
     t(task ? 'confirm.deleteActivity' : 'confirm.removeOrphanWorktree'),
   ];
@@ -65,7 +66,7 @@ function OrphanStatus({ label, title }: { label: string; title?: string }) {
 // An active row's stage, its most urgent run and an open session, read from the State the page already holds; nothing when it has none yet.
 function RowStatus({ row, state }: { row: WorktreeRow; state?: Slice }) {
   if (row.orphan === 'noTask') return <OrphanStatus label={t('worktrees.orphan')} />;
-  if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={t('worktrees.deleteActivityFailed')} title={row.task?.error} />;
+  if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={t('worktrees.deleteActivityFailed')} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
   const task = state?.tasks.find((c) => taskId(c) === row.task?.id);
   if (!state || !task) return <span />;
   const status = taskState(task, state); // the task's state, as every other surface shows it (#663)
