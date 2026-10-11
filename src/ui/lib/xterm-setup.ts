@@ -1,6 +1,7 @@
 // The xterm wiring the terminal window (src/ui/terminal.ts) and the main window's panel tabs (PtyTab.tsx) share (#251): the font, the colors
 // from the page's tokens (#296), the file links (#258), the task references (#588), the configured font's stack (#376), the shortcuts
-// that act in a terminal (#448) and the paste of files copied in Finder (#843).
+// that act in a terminal (#448), the paste of files copied in Finder (#843) and the find bar's search addon (#12).
+import { type ISearchOptions, SearchAddon } from '@xterm/addon-search';
 import type { IBufferRange, Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { FIXED_BINDINGS, matches } from '../../shortcuts.js';
@@ -39,12 +40,45 @@ export function paintTerminal(term: Terminal, palette: TerminalPalette = TERMINA
   };
 }
 
-/** Paints now and on every data-theme change of the page: the main window switches theme without a reload (#296). Returns the unsubscribe. */
-export function followTheme(term: Terminal, palette: TerminalPalette = TERMINAL_PALETTE): () => void {
-  paintTerminal(term, palette);
-  const observer = new MutationObserver(() => paintTerminal(term, palette));
+/** Runs `repaint` on every data-theme change of the page: the main window switches theme without a reload (#296). Returns the unsubscribe. */
+export function onThemeChange(repaint: () => void): () => void {
+  const observer = new MutationObserver(repaint);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   return () => observer.disconnect();
+}
+
+/** Paints now and on every data-theme change of the page (#296). Returns the unsubscribe. */
+export function followTheme(term: Terminal, palette: TerminalPalette = TERMINAL_PALETTE): () => void {
+  paintTerminal(term, palette);
+  return onThemeChange(() => paintTerminal(term, palette));
+}
+
+/** Past this many matches the find bar counts "1000+" and the addon stops highlighting, so a huge scrollback stays responsive (#12). The
+ * addon's own default, said out loud. */
+export const HIGHLIGHT_LIMIT = 1000;
+
+/** Loads the find bar's search addon on `term` (#12). Its highlights are xterm decorations, proposed API in xterm 6: the terminal needs
+ * allowProposedApi. */
+export function loadSearch(term: Terminal): SearchAddon {
+  const search = new SearchAddon({ highlightLimit: HIGHLIGHT_LIMIT });
+  term.loadAddon(search);
+  return search;
+}
+
+/** A find bar search (#12): case-insensitive, `incremental` while typing (from the current match, so it stays put), every match on
+ * --secondary bordered in --muted-foreground, the active one (the terminal's selection) bordered in --foreground. Neutral tokens: colour is
+ * for status. Read at each call, as paintTerminal reads them, so a theme change reaches the next search. The addon requires the overview
+ * ruler colours even though no terminal sets xterm's overviewRuler option. */
+export function findOptions(incremental: boolean): ISearchOptions {
+  const css = getComputedStyle(document.documentElement);
+  const token = (name: string): string => css.getPropertyValue(name).trim();
+  return {
+    incremental,
+    decorations: {
+      matchBackground: token('--secondary'), matchBorder: token('--muted-foreground'), matchOverviewRuler: token('--muted-foreground'),
+      activeMatchBorder: token('--foreground'), activeMatchColorOverviewRuler: token('--foreground'),
+    },
+  };
 }
 
 // The route a terminal's task references post to (#588, #629): its activity's, a task's or a workspace's local one (#400), the id encoded.
@@ -156,19 +190,23 @@ function runClipboardKey(term: Terminal, key: ClipboardKey): void {
  *   sending the prompt (#389). It goes out through onData like any key, so connectPty carries it regardless of tab or window.
  * - clear (Cmd+K by default, #448) drops this xterm's screen and scrollback, as Terminal.app does. The daemon's replay history stays, so a
  *   reopened tab replays it.
+ * - find (Cmd+F on macOS, Ctrl+Shift+F elsewhere, #12) calls `onFind`, which opens the terminal's find bar. Read here and not on the window,
+ *   so the editor pane's Monaco keeps its own Cmd+F. A terminal with no bar passes no `onFind`, and the key is left to xterm.
  * - Off macOS (#644), Ctrl+Shift+C or Ctrl+Insert copies the selection (nothing without one), Ctrl+Shift+V or Shift+Insert pastes the
  *   clipboard, and Ctrl+Shift+A selects the whole buffer. Ctrl+C stays the program's SIGINT, selection or not.
- * Every event of these keys is refused to xterm, or it would also send the key to the program (Ctrl+Shift+C as \x03). The clear binding is
- * read at each key, so a Settings save reaches the open terminals; any other key, or clear turned off, is left to xterm. */
-export function terminalKeys(term: Terminal): void {
+ * Every event of these keys is refused to xterm, or it would also send the key to the program (Ctrl+Shift+C as \x03). The clear and find
+ * bindings are read at each key, so a Settings save reaches the open terminals; any other key, or one turned off, is left to xterm. */
+export function terminalKeys(term: Terminal, onFind?: () => void): void {
   term.attachCustomKeyEventHandler((event) => {
     const isNewline = matches(event, FIXED_BINDINGS.newline, isMac());
     const clipboard = clipboardKey(event);
-    if (!isNewline && clipboard === undefined && !pressed(event, 'clear')) return true;
+    const isFind = onFind !== undefined && pressed(event, 'findInTerminal');
+    if (!isNewline && clipboard === undefined && !isFind && !pressed(event, 'clear')) return true;
     if (event.type === 'keydown') {
       event.preventDefault(); // xterm skips its own preventDefault on a refused key: the key would reach its hidden textarea
       if (isNewline) term.input('\x1b\r', true);
       else if (clipboard !== undefined) runClipboardKey(term, clipboard);
+      else if (isFind) onFind();
       else term.clear();
     }
     return false;
