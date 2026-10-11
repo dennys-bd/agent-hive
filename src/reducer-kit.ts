@@ -150,7 +150,7 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
     ...(born.state.workers[index].draining ? { draining: true } : {}),
   };
   const written = sourceWrites(task, onSource(stage.onStart, task.item.source)); // the task's own source only (#180)
-  const workspace = resolveWorkspace(task, born.state.workspaces, born.state.sourceWorkspaces); // frozen from the first spawn on (#179): a later hint no longer moves the task
+  const workspace = resolveWorkspace(task, born.state.workspaces, born.state.sourceWorkspaces, born.state.tasks); // frozen from the first spawn on (#179): a later hint no longer moves the task
   const started: Task = { ...written.task, ...(workspace === undefined ? {} : { workspace }) };
   // #812: a stage run starts: the stage's sessions are a stage run's again, so continue may be offered once it stops
   const { stopped: _stopped, stoppedAt: _stoppedAt, sessionId: _was, freeSessionStage: _free, ...unstopped } = work;
@@ -174,7 +174,7 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
 export function ensureActivity(state: State, task: Task): { state: State; activity: Activity } | undefined {
   const live = activityOf(state, taskId(task));
   if (live) return { state, activity: live };
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   if (workspace === undefined) return undefined;
   const id = randomUUID();
   const slug = slugFor(task.item);
@@ -215,7 +215,7 @@ export function keptMarks(state: State, task: Task, activity: Activity): State {
 // The task with the slug refusal (#180) when another task of its workspace owns its slug: the task and the bar carry the reason, and the task
 // leaves the fill until a manual start (which meets the same check). Undefined when the start may go on.
 export function slugTaken(state: State, task: Task): State | undefined {
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   const owner = workspace === undefined ? undefined : slugOwner(state, task, workspace);
   if (!owner) return undefined;
   const message = slugTakenMessage(activityOf(state, taskId(task))?.slug ?? slugFor(task.item), owner);

@@ -110,7 +110,7 @@ function taskStatus(task: Task, state: State): TaskStatus {
 // The title (#134, 1b): the workspace's colour square before the id, its name as the square's title, two lines at most. No square when no rule
 // resolves a workspace (#179)
 function TaskTitle({ task, state }: { task: Task; state: State }) {
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   return (
     <span className="line-clamp-2 font-medium text-xs leading-4">
       {workspace !== undefined && <span aria-hidden="true" title={workspace} className="mr-1.5 inline-block size-2 rounded-[2px] align-middle" style={{ background: workspaceColor(workspace) }} />}

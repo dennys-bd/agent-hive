@@ -12,10 +12,14 @@ import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED } from '../src/types.js';
-import { GREEN_BEHAVIOUR } from '../src/signals.js';
+import { behaviourOf } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
 import { move, chained } from './fakes.js';
 import { activityIdOf, movedWork, withLocal, withWork, type WithWork, workId } from './fixtures/work.js';
+
+const GREEN = behaviourOf('green', SIGNALS_DEFAULTS);
+// The defaults with a yellow that starts no new task: what "yellow could start nothing" read as before tree existed (#32)
+const NO_NEW = { ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, newTasks: 'never' as const } };
 
 const STAGES: LegacyStage[] = [
   { name: 'spec', from: { board: ['Backlog'] }, onFinish: { board: [move('Ready')] }, prompt: '/hive-spec {url}', session: 'new', model: 'opus' },
@@ -785,14 +789,14 @@ test('closeTask never removes the worktree: a running missing task leaves with t
 test('initialState starts green with no tasks, no stages, no usage; canStart is true only under green with a free, non-draining worker', () => {
   const idle = initialState(2);
   assert.deepEqual([idle.signal, idle.tasks, idle.stages, idle.usage, idle.budget], ['green', [], [], [], {}]);
-  assert.equal(canStart(GREEN_BEHAVIOUR, idle.workers), true);
-  assert.equal(canStart(GREEN_BEHAVIOUR, filled(2, 2).state.workers), false);
-  assert.equal(canStart(GREEN_BEHAVIOUR, [{ id: 'x', status: 'empty', draining: true }]), false);
-  assert.equal(canStart(GREEN_BEHAVIOUR, []), false);
-  assert.equal(canStart(SIGNALS_DEFAULTS.yellow, idle.workers), false);
-  assert.equal(canStart({ ...SIGNALS_DEFAULTS.yellow, newTasks: true }, idle.workers), true, 'a yellow that starts new tasks');
-  assert.equal(canStart(GREEN_BEHAVIOUR, filled(2, 1).state.workers, 1), false, 'occupied 1 = limit 1');
-  assert.equal(canStart(GREEN_BEHAVIOUR, filled(2, 1).state.workers, 2), true);
+  assert.equal(canStart(GREEN, idle.workers), true);
+  assert.equal(canStart(GREEN, filled(2, 2).state.workers), false);
+  assert.equal(canStart(GREEN, [{ id: 'x', status: 'empty', draining: true }]), false);
+  assert.equal(canStart(GREEN, []), false);
+  assert.equal(canStart(SIGNALS_DEFAULTS.red, idle.workers), false, 'never starts none');
+  assert.equal(canStart(SIGNALS_DEFAULTS.yellow, idle.workers), true, 'tree could start one: which task qualifies is the fill\'s question (#32)');
+  assert.equal(canStart(GREEN, filled(2, 1).state.workers, 1), false, 'occupied 1 = limit 1');
+  assert.equal(canStart(GREEN, filled(2, 1).state.workers, 2), true);
 });
 
 test('poll under yellow or red enters the tasks and spawns nothing; setSignal green fills', () => {
@@ -943,16 +947,17 @@ test('a plan rule stops firing when its window passes resetsAt or a fresh readin
   assert.equal(stillYellow.state.signal, 'yellow');
 });
 
-test('canSchedule asks whether a new task could start: newTasks with a free worker and budget; not under the default yellow, a reached cap or an exhausted budget (#727)', () => {
+test('canSchedule asks whether a new task could start: newTasks with a free worker and budget; not under a yellow that starts no new task, a reached cap or an exhausted budget (#727)', () => {
   const now = Date.now();
   assert.equal(canSchedule(base(1), now), true);
   assert.equal(canSchedule(filled(1, 1).state, now), false);
-  assert.equal(canSchedule(signaled(base(1), 'yellow').state, now), false);
+  assert.equal(canSchedule({ ...signaled(base(1), 'yellow').state, signals: NO_NEW }, now), false);
+  assert.equal(canSchedule(signaled(base(1), 'yellow').state, now), true, 'the default yellow is tree (#32)');
   assert.equal(canSchedule(spent(1000, 0, { maxTokensPerHour: 1000 }), now), false);
   assert.equal(canSchedule(spent(1000, 2 * HOUR_MS, { maxTokensPerHour: 1000 }), now), true);
   assert.equal(canSchedule(ruled(filled(2, 1).state, 550), now), false, '55%: cap 1 with one occupied');
-  assert.equal(canSchedule(ruled(base(1), 850), now), false, '85%: dynamic yellow');
-  assert.equal(canSchedule(planned(base(1), windows(85)), now), false, 'session 85 ≥ 80: dynamic yellow from the plan window, no samples at all');
+  assert.equal(canSchedule({ ...ruled(base(1), 850), signals: NO_NEW }, now), false, '85%: dynamic yellow');
+  assert.equal(canSchedule({ ...planned(base(1), windows(85)), signals: NO_NEW }, now), false, 'session 85 ≥ 80: dynamic yellow from the plan window, no samples at all');
   assert.equal(canSchedule(planned(base(1), windows(85, 0, PAST)), now), true, 'past its reset the window reads 0');
   assert.equal(canSchedule(ruled(base(1), 100), now), true);
 });

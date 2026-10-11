@@ -36,12 +36,18 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
+// A goal stage with no prompt is the source's first door (#32): a root parks there and runs nothing; a child in spec or later is past it
+const TREE_STAGES: LegacyStage[] = [{ name: 'goal', from: { board: ['Goals'] } }, ...STAGES];
+const linked = (n: number, stage: string, links: Pick<Item, 'parent' | 'children'>): Task => ({ ...waiting(n, stage), item: { ...item(n), ...links } });
+const kids = (...ns: number[]): string[] => ns.map((n) => `board:item${n}`);
+const ROOT = 'board:item1';
+
 test('yellow with the defaults: a new task waits, a started one resumes (#224, #727)', () => {
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'build')], { max: 2 }), 2))), ['2']);
 });
 
-test('yellow with newTasks on starts a task that has not started (#727)', () => {
-  assert.deepEqual(spawned(filled(hive('yellow', [waiting(1, 'build')], { signals: row('yellow', { newTasks: true }) }))), ['1']);
+test('yellow with newTasks always starts a task that has not started (#727)', () => {
+  assert.deepEqual(spawned(filled(hive('yellow', [waiting(1, 'build')], { signals: row('yellow', { newTasks: 'always' }) }))), ['1']);
 });
 
 test('a task whose activity a first open made is started: yellow resumes it (#727)', () => {
@@ -57,8 +63,8 @@ test('continueOnly: a started task waiting for a worker is not resumed, yet a se
   assert.deepEqual(stageEnd(yellow, workerOf(yellow, 2)).effects.map((e) => e.type), ['setColumn', 'continue']);
 });
 
-test('yellow with newTasks and stay: a new task starts, a started one is not resumed, a session ending its stage does not get its worker back (#727)', () => {
-  const stay = row('yellow', { newTasks: true, started: 'stay' });
+test('yellow with newTasks always and stay: a new task starts, a started one is not resumed, a session ending its stage does not get its worker back (#727)', () => {
+  const stay = row('yellow', { newTasks: 'always', started: 'stay' });
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'build')], { signals: stay, max: 2 }), 1))), ['2']);
   const running = filled(hive('green', [waiting(3, 'spec')], { signals: stay })).state;
   const yellow = reduce(running, { type: 'setSignal', signal: 'yellow' }).state;
@@ -66,8 +72,8 @@ test('yellow with newTasks and stay: a new task starts, a started one is not res
   assert.deepEqual([spawned(ended), ended.state.workers[0].status], [[], 'empty']);
 });
 
-test('yellow with newTasks and continueOnly: a session ending its stage goes on in place, a started task without a worker is not resumed (#727)', () => {
-  const only = row('yellow', { newTasks: true, started: 'continueOnly' });
+test('yellow with newTasks always and continueOnly: a session ending its stage goes on in place, a started task without a worker is not resumed (#727)', () => {
+  const only = row('yellow', { newTasks: 'always', started: 'continueOnly' });
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build')], { signals: only }), 1))), [], 'no resume');
   const running = filled(hive('green', [waiting(2, 'spec')], { signals: only })).state;
   const yellow = reduce(running, { type: 'setSignal', signal: 'yellow' }).state;
@@ -102,8 +108,8 @@ test('shut down when done follows the flow\'s signal: armed under green, a free 
 });
 
 test('setSignals replaces the table and fills: a yellow that now starts new tasks hands the free worker one (#727)', () => {
-  const r = reduce(hive('yellow', [waiting(1, 'build')]), { type: 'setSignals', signals: row('yellow', { newTasks: true }) });
-  assert.deepEqual([spawned(r), r.state.signals.yellow.newTasks], [['1'], true]);
+  const r = reduce(hive('yellow', [waiting(1, 'build')]), { type: 'setSignals', signals: row('yellow', { newTasks: 'always' }) });
+  assert.deepEqual([spawned(r), r.state.signals.yellow.newTasks], [['1'], 'always']);
 });
 
 test('a start by hand bypasses the signal: under red, over a full cap, it opens a draining worker (#116, #727)', () => {
@@ -116,7 +122,7 @@ test('a start by hand bypasses the signal: under red, over a full cap, it opens 
 test('the rules never mutate the state they are given (#727)', () => {
   const frozen = deepFreeze(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'spec')], { max: 2 }), 1));
   filled(frozen);
-  reduce(frozen, { type: 'setSignals', signals: row('yellow', { newTasks: true }) });
+  reduce(frozen, { type: 'setSignals', signals: row('yellow', { newTasks: 'always' }) });
   reduce(frozen, { type: 'setSignal', signal: 'red' });
   reduce(frozen, { type: 'poll', items: [] });
 });
@@ -203,4 +209,37 @@ test('a commands run\'s start, verdict and stop never mutate the state they are 
   ended(frozen, 1);
   reduce(frozen, { type: 'stop', ptyId: activityOf(frozen, 'board:item1')?.commands?.ptyId ?? '' });
   reduce(frozen, { type: 'boot' });
+});
+
+test('a child with no workspace of its own spawns in its parent\'s hand-picked one, frozen on the task (#32)', () => {
+  const root: Task = { ...linked(1, 'goal', { children: kids(2) }), workspace: 'site' };
+  const state: State = { ...hive('green', [root, linked(2, 'build', { parent: ROOT })], { stages: TREE_STAGES }), workspaces: ['hive', 'site'] };
+  assert.deepEqual(filled(state).effects.flatMap((e) => (e.type === 'spawn' ? [e.task.workspace] : [])), ['site']);
+});
+
+// R (1) parks in goal with children 2 and 3; 3 is the new task that waits in spec (#32)
+const tree = (two: Task, signals: SignalSettings = SIGNALS_DEFAULTS): State =>
+  hive('yellow', [linked(1, 'goal', { children: kids(2, 3) }), two, linked(3, 'spec', { parent: ROOT })], { signals, stages: TREE_STAGES });
+
+test('under tree the fill starts a child whose sibling has a live activity, and skips one of a tree with no started task (#32)', () => {
+  const sibling = linked(2, 'goal', { parent: ROOT });
+  assert.deepEqual(spawned(filled(begun(tree(sibling), 2))), ['3']);
+  assert.deepEqual(spawned(filled(tree(sibling))), [], 'nothing of the tree started: the child waits');
+});
+
+test('under tree a sibling past the first stage counts as started with no activity: the tree\'s first children may have finished (#32)', () => {
+  assert.deepEqual(spawned(filled(tree(linked(2, 'review', { parent: ROOT })))), ['3']);
+});
+
+test('under tree a standalone new task never starts, wherever it entered; a started one still follows started (#32)', () => {
+  const alone = (signals: SignalSettings = SIGNALS_DEFAULTS): State => hive('yellow', [waiting(4, 'build')], { signals, stages: TREE_STAGES });
+  assert.deepEqual(spawned(filled(alone())), [], 'past the first stage, but new');
+  assert.deepEqual(spawned(filled(begun(alone(), 4))), ['4'], 'resumeAndContinue resumes it');
+  assert.deepEqual(spawned(filled(begun(alone(row('yellow', { started: 'continueOnly' })), 4))), [], 'continueOnly does not');
+});
+
+test('always and never ignore the tree: always starts a standalone task, never not even a child of a started tree (#32)', () => {
+  const always = hive('yellow', [waiting(4, 'build')], { signals: row('yellow', { newTasks: 'always' }), stages: TREE_STAGES });
+  assert.deepEqual(spawned(filled(always)), ['4']);
+  assert.deepEqual(spawned(filled(begun(tree(linked(2, 'goal', { parent: ROOT }), row('yellow', { newTasks: 'never' })), 2))), []);
 });

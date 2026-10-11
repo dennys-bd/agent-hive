@@ -43,7 +43,7 @@ test('green with nothing fired: the pill, no effect, the workers (the own sessio
 test('fired rules: the signal named in English with its effect in Portuguese, the effective cap, and one chip per rule naming what it does', () => {
   render(<Footer state={STATE} effective={FIRED} locale="pt-BR" />);
   expect(within(footer()).getByRole('status')).toHaveTextContent('yellow');
-  expect(footer()).toHaveTextContent('sem tarefas novas');
+  expect(footer()).toHaveTextContent('tarefas novas só de árvore iniciada');
   expect(footer()).toHaveTextContent('workers 1/2');
   expect(footer()).toHaveTextContent('regras');
   const chips = within(footer()).getAllByRole('button').map((b) => b.textContent);
@@ -118,10 +118,10 @@ test('shut down when done asks first; armed, the footer says so in waiting and c
 
 test('the effect is read from the signal\'s row: what it holds back, joined; a row that holds nothing back reads like green; green says nothing (#727)', () => {
   const { rerender } = render(<Footer state={STATE} effective={FIRED} locale="pt-BR" />);
-  expect(footer()).toHaveTextContent('sem tarefas novas');
+  expect(footer()).toHaveTextContent('tarefas novas só de árvore iniciada');
   rerender(<Footer state={STATE} effective={{ ...FIRED, signal: 'red' }} locale="pt-BR" />);
   expect(footer()).toHaveTextContent('sem tarefas novas · nada segue');
-  const open = { ...SIGNALS_DEFAULTS, yellow: { newTasks: true, started: 'resumeAndContinue' as const, workerless: true } };
+  const open = { ...SIGNALS_DEFAULTS, yellow: { newTasks: 'always' as const, started: 'resumeAndContinue' as const, workerless: true } };
   rerender(<Footer state={{ ...STATE, signals: open }} effective={FIRED} locale="pt-BR" />);
   expect(footer()).toHaveTextContent('como green');
   rerender(<Footer state={STATE} effective={NONE} locale="pt-BR" />);

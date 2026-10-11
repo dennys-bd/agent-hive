@@ -26,8 +26,8 @@ export function lastPolled(syncs: Record<string, SourceSync>, source?: string): 
 
 // The workspaces the shown tasks resolve to, in the Comb's order: a legend of the colours the tasks carry, never a filter (the source is the
 // flow's only one)
-function shownWorkspaces(tasks: Task[], state: Pick<State, 'workspaces' | 'sourceWorkspaces'>): string[] {
-  const used = new Set(tasks.map((c) => resolveWorkspace(c, state.workspaces, state.sourceWorkspaces)));
+function shownWorkspaces(tasks: Task[], state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'tasks'>): string[] {
+  const used = new Set(tasks.map((c) => resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks)));
   return state.workspaces.filter((name) => used.has(name));
 }
 

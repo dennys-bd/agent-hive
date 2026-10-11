@@ -59,18 +59,24 @@ export const RULE_SIGNALS: readonly RuleSignal[] = ['yellow', 'red'];
  * compares red and yellow by. */
 export type StartedBehaviour = 'resumeAndContinue' | 'continueOnly' | 'stay';
 export const STARTED_BEHAVIOURS: readonly StartedBehaviour[] = ['stay', 'continueOnly', 'resumeAndContinue'];
+/** What a signal lets the fill do with a task not started yet (#32): any, only one of a tree that already started, none. NEW_TASKS is most
+ * restrictive first: the order isOrdered compares the signals by. */
+export type NewTasks = 'always' | 'tree' | 'never';
+export const NEW_TASKS: readonly NewTasks[] = ['never', 'tree', 'always'];
 /** One row of the signal table (#727): what that signal lets the Hive do on its own. */
-export interface SignalBehaviour { newTasks: boolean; started: StartedBehaviour; workerless: boolean }
+export interface SignalBehaviour { newTasks: NewTasks; started: StartedBehaviour; workerless: boolean }
 /** The signal a boot opens on (#727); a saved red always opens red. */
 export type SignalOnOpen = 'yellow' | 'last' | 'green';
 export const SIGNAL_ON_OPEN: readonly SignalOnOpen[] = ['yellow', 'last', 'green'];
-/** hive.config.json's `signals` (#727): the yellow and red rows and the opening signal; green is fixed (signals.ts). */
-export interface SignalSettings { yellow: SignalBehaviour; red: SignalBehaviour; onOpen: SignalOnOpen }
-/** Today's behaviour (#727): what a new form shows, what a file from before the key is prefilled with and what a State holds until the
- * config is copied in. The parser itself has no default. */
+/** hive.config.json's `signals` (#727): green's newTasks (#32; its started and workerless stay fixed, signals.ts), the yellow and red rows and
+ * the opening signal. */
+export interface SignalSettings { green: Pick<SignalBehaviour, 'newTasks'>; yellow: SignalBehaviour; red: SignalBehaviour; onOpen: SignalOnOpen }
+/** What a new form shows, what a file from before the key is prefilled with and what a State holds until the config is copied in (#727). Yellow
+ * keeps started trees moving without opening new work (#32). The parser itself has no default. */
 export const SIGNALS_DEFAULTS: SignalSettings = {
-  yellow: { newTasks: false, started: 'resumeAndContinue', workerless: true },
-  red: { newTasks: false, started: 'stay', workerless: true },
+  green: { newTasks: 'always' },
+  yellow: { newTasks: 'tree', started: 'resumeAndContinue', workerless: true },
+  red: { newTasks: 'never', started: 'stay', workerless: true },
   onOpen: 'yellow',
 };
 /** The worker cap of a fresh state (#727): the state is the cap's one source, the flow sidebar's field its only editor. */

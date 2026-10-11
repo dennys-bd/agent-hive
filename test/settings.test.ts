@@ -871,9 +871,9 @@ test('POST /settings saves signals: a first setup without it is a 400, an omitte
   const { signals: _omitted, ...withoutSignals } = BODY;
   const refused = await postSettings(base, withoutSignals);
   assert.equal(refused.status, 400);
-  assert.match((await json<{ error: string }>(refused)).error, /"signals" must be an object with yellow, red, onOpen/);
+  assert.match((await json<{ error: string }>(refused)).error, /"signals" must be an object with green, yellow, red, onOpen/);
   assert.equal((await postSettings(base, BODY)).status, 200);
-  const looser = { ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, newTasks: true } };
+  const looser = { ...SIGNALS_DEFAULTS, yellow: { ...SIGNALS_DEFAULTS.yellow, newTasks: 'always' } };
   assert.equal((await postSettings(base, { ...BODY, signals: looser })).status, 200);
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).signals, looser);
   assert.equal((await postSettings(base, withoutSignals)).status, 200);

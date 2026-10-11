@@ -118,7 +118,7 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if (!found) return { type: 'start', itemId };
   const task = placedTask(current.state, found, raw);
   if ('status' in task) return task;
-  const workspace = workspaceOf(current.runtime.config, task); // #179: a task with no workspace is refused here, never a silent no-op
+  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
   const placed = raw === undefined ? {} : { workspace: task.workspace };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };
@@ -159,7 +159,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
   const task = current.state.tasks.find((c) => c.item.itemId === taskId);
   const activity = activityOf(current.state, taskId);
   if (!task?.created || activity?.worktree === undefined || activity.local) return undefined;
-  const workspace = workspaceOf(current.runtime.config, task);
+  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks);
   if ('status' in workspace) return workspace;
   const scope = current.state.deleteActivity; // the worktree and its branch always go (#573)
   await deps.dispatch({ type: 'deletingTask', taskId });
@@ -178,8 +178,8 @@ export const refuse = (res: Response, refusal: Refusal): void => {
 };
 
 /** The task's workspace, or the route's answer when it has none (#179): 409 when the name it holds is gone, 400 when no rule answers one. */
-export function workspaceOf(config: Pick<Config, 'comb'>, task: Task): Workspace | Refusal {
-  return taskWorkspace(config, task) ?? { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task) };
+export function workspaceOf(config: Pick<Config, 'comb'>, task: Task, tasks: readonly Task[] = []): Workspace | Refusal {
+  return taskWorkspace(config, task, tasks) ?? { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task) };
 }
 
 /** A workspace the body names for a task (#179): a Comb workspace, on a task whose workspace may still change. */
@@ -408,7 +408,7 @@ function registerCommentsRoute(app: Express, { requireLive }: TaskRouteDeps): vo
 // Where the popup's lists come from (#179): the task's workspace; a task with none and no name yet needs one (needsWorkspace); `?workspace=`
 // names the popup's choice. A name the task holds but the Comb lost is its 409.
 function basesWorkspace(current: LiveView, task: Task, query: unknown): Workspace | Refusal | typeof NEEDS_WORKSPACE {
-  const own = workspaceOf(current.runtime.config, task);
+  const own = workspaceOf(current.runtime.config, task, current.state.tasks);
   if (!('status' in own) || task.workspace !== undefined) return own;
   if (typeof query !== 'string') return NEEDS_WORKSPACE;
   return workspaceByName(current.runtime.config, query) ?? { status: HTTP_BAD_REQUEST, message: UNKNOWN_WORKSPACE_MESSAGE };
@@ -492,7 +492,7 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
     if (live.local) return refuse(res, { status: HTTP_CONFLICT, message: LOCAL_MESSAGE }); // #444: no worktree to remove
     const scope = current.state.deleteActivity;
     // nothing to delete gets past removalRefusal only in a delete activity stage (#236): no git, no transcript, no workspace; the task just moves on
-    const workspace = nothingToDelete(current.state, task, scope) ? undefined : workspaceOf(current.runtime.config, task); // the worktree's repo (#179)
+    const workspace = nothingToDelete(current.state, task, scope) ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks); // the worktree's repo (#179)
     if (workspace && 'status' in workspace) return refuse(res, workspace);
     const force = (req.body as { force?: unknown } | undefined)?.force === true; // only a literal true forces
     const { config, promptsDir } = current.runtime;

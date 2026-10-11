@@ -58,7 +58,7 @@ function planWorktree(current: LiveView, task: Task, activity: Activity | undefi
   const { workspace: chosen } = (body ?? {}) as { workspace?: unknown };
   const placed = placedTask(current.state, task, chosen); // the popup's workspace (#179)
   if ('status' in placed) return placed;
-  const workspace = workspaceOf(current.runtime.config, placed);
+  const workspace = workspaceOf(current.runtime.config, placed, current.state.tasks); // #32: as the reducer resolves it, before any freeze
   if ('status' in workspace) return workspace;
   const owner = slugOwner(current.state, placed, workspace.name); // #180: never one worktree and branch for two tasks
   const slug = activity?.slug ?? slugFor(task.item);
@@ -110,7 +110,7 @@ const noActivity = (res: Response): void => (res.headersSent ? undefined : refus
 // The session on a task whose worktree is there (#164, #249): both kinds run in the task's workspace (#179), in its live activity, read again
 // after any git (#629); the answer is the run to attach.
 async function openNow(deps: TaskRouteDeps, current: LiveView, task: Task, open: OpenAsk, res: Response): Promise<void> {
-  const workspace = workspaceOf(current.runtime.config, task);
+  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks);
   if ('status' in workspace) return refuse(res, workspace);
   const live = deps.requireLive(res);
   const activityId = live && activityOf(live.state, open.taskId)?.id;

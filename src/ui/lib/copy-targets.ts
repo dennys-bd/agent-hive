@@ -31,7 +31,7 @@ export function workspaceOf(state: State, ref: SessionRef): string | undefined {
   const local = localWorkspaceOf(ref.activityId);
   if (local !== undefined) return local;
   const task = taskOfActivity(state, ref.activityId);
-  return task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  return task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
 }
 
 export interface CopyTargets { workspace?: string; local: boolean; activities: Task[] }
@@ -43,7 +43,7 @@ export function copyTargets(state: State, ref: SessionRef): CopyTargets {
   if (workspace === undefined) return { local: false, activities: [] };
   const own = taskOfActivity(state, ref.activityId)?.item.itemId;
   const activities = activitiesOf(state).filter(isTask).filter(({ task, activity }) =>
-    resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) === workspace && hasDirectory(activity) && canOpenSession(task, activity)
+    resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) === workspace && hasDirectory(activity) && canOpenSession(task, activity)
     && own !== task.item.itemId).map((a) => a.task);
   return { workspace, local: !isLocalActivityId(ref.activityId), activities };
 }
@@ -72,7 +72,7 @@ export function copyLabels(state: State, from: SessionRef, to: SessionTarget): C
 export function copyRefusal(state: State, from: SessionRef, taskId: string): MessageKey | undefined {
   if (taskOfActivity(state, from.activityId)?.item.itemId === taskId) return 'copy.sameActivity';
   const task = state.tasks.find((c) => c.item.itemId === taskId);
-  const workspace = task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  const workspace = task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   return workspace !== undefined && workspace === workspaceOf(state, from) ? undefined : 'copy.otherWorkspace';
 }
 

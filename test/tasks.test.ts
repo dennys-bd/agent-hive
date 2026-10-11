@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf } from '../src/tasks.js';
+import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -492,6 +492,40 @@ test('resolveWorkspace: task.workspace first, then the source field\'s hint, the
   assert.equal(resolveWorkspace(hinted(), []), undefined);
   assert.equal(resolveWorkspace({ item: { ...item(1), source: 'notes' } }, TWO, { board: 'hive' }), undefined, 'another board\'s default does not apply (#180)');
   assert.equal(resolveWorkspace({ item: { ...item(1), source: 'toString' } }, TWO, {}), undefined, 'own keys only');
+});
+
+test('isPastFirstStage: the task\'s stage comes after the first stage its source enters through; its own first stage, another source\'s door and a local task are not (#32)', () => {
+  const GOAL: LegacyStage = { name: 'goal', from: { board: ['Goals'] } };
+  const stages = [GOAL, DEV, DONE];
+  assert.equal(isPastFirstStage(stages, task(1, GOAL)), false);
+  assert.equal(isPastFirstStage(stages, task(1, DEV)), true);
+  assert.equal(isPastFirstStage([DEV, DONE], task(1, DEV)), false, 'its source\'s first door');
+  assert.equal(isPastFirstStage([{ name: 'notes', from: { notes: ['X'] } }, DEV], task(1, DEV)), false, 'another source\'s door does not count');
+  const { source: _source, ...local } = item(1);
+  assert.equal(isPastFirstStage(stages, { ...task(1, DONE), item: local }), false, 'no source, no first stage');
+});
+
+test('resolveWorkspace with the task list: the parent\'s resolved workspace after the child\'s own hint and before its source\'s default, up the whole lineage; a cycle ends at the default; no list, today\'s answer (#32)', () => {
+  const TWO = ['hive', 'site'];
+  const DEFAULT = { board: 'hive' };
+  const linked = (n: number, links: Pick<Item, 'parent' | 'children'>, extra: Partial<Task> = {}, hint?: string): Task =>
+    task(n, DEV, { item: { ...item(n), ...links, ...(hint === undefined ? {} : { workspaceHint: hint }) }, ...extra });
+  const root = linked(1, { children: ['item2'] }, { workspace: 'site' }); // hand-picked
+  const child = linked(2, { parent: 'item1', children: ['item3'] });
+  const grandchild = linked(3, { parent: 'item2' });
+  const tree = [root, child, grandchild];
+  assert.equal(resolveWorkspace(child, TWO, DEFAULT, tree), 'site', 'the parent beats the source default');
+  assert.equal(resolveWorkspace(grandchild, TWO, DEFAULT, tree), 'site', 'the root\'s, through the parent\'s');
+  const hinted = linked(2, { parent: 'item1' }, {}, 'hive');
+  assert.equal(resolveWorkspace(hinted, TWO, {}, [root, hinted]), 'hive', 'the child\'s own rule hint wins');
+  assert.equal(resolveWorkspace(child, TWO, DEFAULT), 'hive', 'without the list: today\'s answer');
+  const a = linked(4, { parent: 'item5' });
+  const b = linked(5, { parent: 'item4' });
+  assert.equal(resolveWorkspace(a, TWO, DEFAULT, [a, b]), 'hive', 'a cycle answers the source default without looping');
+  assert.equal(resolveWorkspace(linked(6, { parent: 'nope' }), TWO, DEFAULT, tree), 'hive', 'a parent that is no task: no inheritance');
+  const gone = linked(7, { children: ['item8'] }, { workspace: 'gone' });
+  const orphaned = linked(8, { parent: 'item7' });
+  assert.equal(resolveWorkspace(orphaned, TWO, DEFAULT, [gone, orphaned]), 'hive', 'a parent that resolves to none: the child falls through');
 });
 
 test('canSetWorkspace: only a stopped task with no worktree, no session, nothing deleting; hasWorktree reads the worktree or any session of any record (#179, #629)', () => {

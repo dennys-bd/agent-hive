@@ -264,7 +264,7 @@ test('a hive.config.json without signals opens setup mode with the parse error, 
   t.after(() => server.close());
   const info = await settingsInfo(home, port);
   assert.equal(info.configured, false);
-  assert.equal(info.error, 'hive.config.json: "signals" must be an object with yellow, red, onOpen');
+  assert.equal(info.error, 'hive.config.json: "signals" must be an object with green, yellow, red, onOpen');
   assert.deepEqual([info.config?.comb.prefix, info.config?.signals], ['OLD', SIGNALS_DEFAULTS], 'the rest of the file, the form default');
   const wrong = await hiveWithConfig(t, { signals: { ...SIGNALS_DEFAULTS, onOpen: 'blue' } });
   await assert.rejects(bootHive(wrong.home), { message: 'hive.config.json: "signals.onOpen" must be one of: yellow, last, green' }, 'a key that is there but wrong is no file from before the key');

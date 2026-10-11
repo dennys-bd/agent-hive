@@ -1,5 +1,6 @@
 import { activityOf, holdsSlug, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
+import { parentOf } from './task-tree.js';
 import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
@@ -135,6 +136,13 @@ export const stageOf = (stages: Stage[], name: string): Stage | undefined => sta
 export const entryStage = (stages: Stage[], source: string | undefined, boardColumn: string): Stage | undefined =>
   stages.find((c) => onSource(c.from, source)?.includes(boardColumn));
 
+/** Past the first door (#32): the task's stage comes later in `stages` than the first stage whose `from` names any column of the task's source.
+ * The Hive has one ordered stage list, and the source's earliest door is where new work lands. A task with no source has no first stage. */
+export function isPastFirstStage(stages: Stage[], task: Pick<Task, 'item' | 'stage'>): boolean {
+  const first = stages.findIndex((s) => (onSource(s.from, task.item.source)?.length ?? 0) > 0);
+  return first >= 0 && stages.findIndex((s) => s.name === task.stage) > first;
+}
+
 /** Whether the stage may act on the task now: no `after`, or `enteredAt` + `after` has passed. Without `enteredAt` (a task saved before the
  * field existed) never: the poll stamps it first, so nothing is cleaned the instant the Hive restarts on this version. */
 export function isDue(task: Task, stage: Stage, now: number): boolean {
@@ -172,18 +180,37 @@ export const isStarted = (state: WorkState, task: Task): boolean => activityOf(s
 /** What a task's workspace resolves against (#179): the Comb's names and each source's default (#180). */
 export type WorkspaceNames = Pick<State, 'workspaces' | 'sourceWorkspaces'>;
 
+// What a walk up the lineage resolves against (#32): the names, the defaults and the list the parent is read off
+interface WorkspaceScope { workspaces: string[]; sourceWorkspaces: Record<string, string>; tasks: readonly Task[] }
+
 /**
  * The workspace a task runs in (#179), first answer wins: task.workspace (by hand, or frozen with the worktree), the workspace the source's first
- * matching rule names (#293), the fixed workspace of the task's own source (#180), the Comb's only workspace. An unknown task.workspace answers undefined and never falls through: a
- * choice that no longer exists is not silently replaced. An unknown hint is skipped.
+ * matching rule names (#293), the parent's resolved workspace (#32: read off `tasks`; omitted, nothing is inherited), the fixed workspace of the
+ * task's own source (#180), the Comb's only workspace. An unknown task.workspace answers undefined and never falls through: a choice that no
+ * longer exists is not silently replaced. An unknown hint is skipped.
  */
-export function resolveWorkspace(task: Pick<Task, 'workspace' | 'item'>, workspaces: string[], sourceWorkspaces: Record<string, string> = {}): string | undefined {
+export function resolveWorkspace(task: Pick<Task, 'workspace' | 'item'>, workspaces: string[], sourceWorkspaces: Record<string, string> = {}, tasks: readonly Task[] = []): string | undefined {
+  return resolveIn(task, { workspaces, sourceWorkspaces, tasks }, new Set());
+}
+
+function resolveIn(task: Pick<Task, 'workspace' | 'item'>, scope: WorkspaceScope, walked: ReadonlySet<string>): string | undefined {
+  const { workspaces, sourceWorkspaces } = scope;
   if (task.workspace !== undefined) return workspaces.includes(task.workspace) ? task.workspace : undefined;
   const hint = task.item.workspaceHint;
   if (hint !== undefined && workspaces.includes(hint)) return hint;
+  const inherited = parentWorkspace(task, scope, walked);
+  if (inherited !== undefined) return inherited;
   const fallback = onSource(sourceWorkspaces, task.item.source); // the default of the source that listed the task (#180)
   if (fallback !== undefined && workspaces.includes(fallback)) return fallback;
   return workspaces.length === 1 ? workspaces[0] : undefined;
+}
+
+// The parent's own resolution, which already holds its parent's (#32). A repeat in the lineage ends the walk, as task-tree.ts's walks do:
+// GitHub forbids cycles, but the wire is not trusted
+function parentWorkspace(task: Pick<Task, 'item'>, scope: WorkspaceScope, walked: ReadonlySet<string>): string | undefined {
+  const lineage = new Set([...walked, task.item.itemId]);
+  const parent = parentOf(scope.tasks, task.item.itemId);
+  return parent === undefined || lineage.has(parent.item.itemId) ? undefined : resolveIn(parent, scope, lineage);
 }
 
 // A known task seen again: the task fields refresh, the mark of a task that had gone missing drops, and a human move on the
@@ -306,7 +333,7 @@ export function candidates(state: Pick<State, 'tasks' | 'stages'> & WorkersState
   const position = (task: Task): number => stages.findIndex((s) => s.name === task.stage); // the array order is the pipeline order
   const runnable = state.tasks.filter((c) => {
     const stage = stageOf(stages, c.stage);
-    return stage !== undefined && isQueued(c, stages, state) && isDue(c, stage, now) && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
+    return stage !== undefined && isQueued(c, stages, state) && isDue(c, stage, now) && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
   });
   return [...runnable].sort((a, b) => position(b) - position(a)); // sort is stable: tasks in the same stage keep the Hive's order
 }
@@ -486,7 +513,7 @@ export function dueActions(state: Pick<State, 'tasks' | 'stages' | 'deleteActivi
     const live = activityOf(state, taskId(c));
     const nonAuto = stage.action === 'deleteActivity' && state.deleteActivity.nonAutoTasks; // #755: the scope widens its own stage only
     const allowed = isIdle(c, live, nonAuto);
-    const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
+    const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
     return allowed && placed && !hasSessionRun(c, state) && isDue(c, stage, now);
   });
 }
@@ -608,7 +635,7 @@ export function slugOwner(state: Pick<State, 'tasks' | 'activities' | 'activityR
 function keptSlugOwner(state: Pick<State, 'tasks' | 'activityRecords' | 'workspaces' | 'sourceWorkspaces'>, task: Task, workspace: string, slug: string): Task | undefined {
   return state.activityRecords.flatMap((r) => {
     const other = r.slug === slug && r.sessions.length > 0 && !r.taskIds.includes(taskId(task)) ? taskOfActivity(state, r.id) : undefined;
-    return other && resolveWorkspace(other, state.workspaces, state.sourceWorkspaces) === workspace ? [other] : [];
+    return other && resolveWorkspace(other, state.workspaces, state.sourceWorkspaces, state.tasks) === workspace ? [other] : [];
   })[0];
 }
 

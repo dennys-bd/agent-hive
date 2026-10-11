@@ -41,7 +41,7 @@ export function useRunMenu(task: Task, state: State, kit: MenuKit = CONTEXT_KIT)
   const stop = useCommandStop();
   const runnable = canRunCommand(task, activityOf(state, task.item.itemId));
   const commands = commandsOf(task, state).map((name) => ({ name, live: liveCommand(task, state, name) }));
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) ?? ''; // commandsOf answers none without one
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) ?? ''; // commandsOf answers none without one
   const { Item, Separator, Sub, SubTrigger, SubContent } = kit;
   const items = commands.length > 0 && (
     <Sub>
@@ -157,7 +157,7 @@ function StageSub({ task, state }: { task: Task; state: State }) {
 // mover para workspace › (#179, redesign 10): the Comb's workspaces, the one the task resolves to checked. While canSetWorkspace says no it is
 // disabled with the reason on a second line: the worktree, its branch and its sessions live in the current repo
 function WorkspaceSub({ task, state, id }: { task: Task; state: State; id: string }) {
-  const current = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+  const current = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   const settable = canSetWorkspace(task, state);
   return (
     <ContextMenuSub>

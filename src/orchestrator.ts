@@ -228,7 +228,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   const stage = task && stageOf(state.stages, task.stage);
   const activity = activityOf(state, itemId);
   if (!placed || !task || !stage || task.item.epic !== undefined || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351; #31: a show epic never runs
-  if (resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) === undefined) return none(state); // the route asks for one first (#179)
+  if (resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) === undefined) return none(state); // the route asks for one first (#179)
   // a manual start clears the last failure (spawn, delete activity or a commands stage's) and tries again
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);
   if (stage.action === 'waitForCi') return startCi(placed.state, task); // #834: no worker, no worktree; startCi clears the last failure itself
@@ -284,7 +284,7 @@ function worktreeReady(state: State, { activityId, path, branch, base, local }: 
   const task = taskOfActivity(state, activityId);
   if (!activity || !task) return none(state);
   const { base: _saved, worktreeGone: _gone, ...rest } = activity; // the path is written again: the mark goes (#208)
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces); // frozen with the worktree (#179)
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks); // frozen with the worktree (#179)
   const frozen = workspace === undefined ? state : withTask(state, { ...task, workspace });
   return none(withActivity(frozen, withLocal({ ...rest, worktree: path, branch, ...(base ? { base } : {}) }, local)));
 }
