@@ -6,7 +6,7 @@ import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage, t } from '@/i18n';
 import { MARGIN } from '@/lib/flow-layout';
 import { readView, resetViewState } from '@/lib/view-state';
-import type { ActivityRecord, BaseOptions, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
+import type { ActivityRecord, BaseOptions, Item, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 
@@ -794,4 +794,51 @@ test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do,
   expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(true);
   expect(fireEvent.keyDown(window, ZOOM_FIT)).toBe(true);
   expect(scale()).toBe('scale(1)');
+});
+
+// #34: I1 in dev lists I2 (dev) and I3 (review); I4 in dev is in no tree
+const linked = (id: string, stage: string, links: Pick<Item, 'parent' | 'children'>): WithWork => {
+  const t = task(id, stage);
+  return { ...t, item: { ...t.item, ...links } };
+};
+const forest = (): State => state([linked('1', 'dev', { children: ['I2', 'I3'] }), linked('2', 'dev', { parent: 'I1' }), linked('3', 'review', { parent: 'I1' }), task('4', 'dev')], [worker('s1')]);
+const nodeOf = (stage: string): HTMLElement => screen.getByRole('region', { name: 'fluxograma' }).querySelector<HTMLElement>(`[data-stage="${stage}"]`)!;
+const treeToggle = (): HTMLElement => screen.getByRole('button', { name: '⑂ árvore' });
+
+test('⑂ árvore starts on with a tree in the list and off without one; a click keeps the choice in flowView and it survives a reload (#34)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState()); // drops the pending post
+  const user = userEvent.setup();
+  const { unmount } = render(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
+  expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
+  expect(treeToggle()).toHaveAttribute('title', 'agrupar por árvore');
+  unmount();
+  const { unmount: unmountTree } = render(<Flow state={forest()} />);
+  expect(treeToggle()).toHaveAttribute('aria-pressed', 'true');
+  expect(within(nodeOf('dev')).getByText('⑂ #1 Task 1')).toBeInTheDocument();
+  expect(within(nodeOf('review')).getByText('⑂ #1 Task 1')).toBeInTheDocument(); // the root sits in dev; review's group still names it
+  expect(within(nodeOf('dev')).getByText('sem árvore')).toBeInTheDocument();
+  await user.click(treeToggle());
+  expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, tree: false, collapsed: [] });
+  unmountTree();
+  render(<Flow state={forest()} />);
+  expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.queryByText('sem árvore')).not.toBeInTheDocument();
+});
+
+test('the chevron collapses a tree\'s group in its own node only, and the collapse survives a reload through flowView (#34)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  const { unmount } = render(<Flow state={forest()} />);
+  await user.click(within(nodeOf('dev')).getAllByRole('button', { name: 'recolher' })[0]);
+  expect(within(nodeOf('dev')).queryByText('#2 Task 2')).not.toBeInTheDocument();
+  expect(within(nodeOf('dev')).getByRole('button', { name: 'expandir' })).toHaveAttribute('aria-expanded', 'false');
+  expect(within(nodeOf('review')).getByText('#3 Task 3')).toBeInTheDocument();
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: ['dev\u0000I1'] });
+  unmount();
+  render(<Flow state={forest()} />);
+  expect(within(nodeOf('dev')).queryByText('#1 Task 1')).not.toBeInTheDocument();
+  expect(within(nodeOf('dev')).getByText('#4 Task 4')).toBeInTheDocument();
 });

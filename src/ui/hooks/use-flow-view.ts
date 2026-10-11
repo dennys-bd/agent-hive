@@ -30,15 +30,16 @@ function onFitKey(requestFit: () => void): () => void {
   return () => window.removeEventListener('keydown', listener, true);
 }
 
-/** The flowchart's view and what changes it (#909, #910): the loops toggle, the zoom, a fit request the canvas answers with onFit, and the
- * scroll's pan, with the three zoom keys and ⇧1 while `isShown` (#910). */
+/** The flowchart's view and what changes it (#909, #910, #34): the loops toggle, the zoom, a fit request the canvas answers with onFit, the
+ * scroll's pan, the tree toggle and the collapsed groups, with the three zoom keys and ⇧1 while `isShown` (#910). */
 export interface FlowViewControls {
   view: FlowView; fitRequest: number;
   toggleLoops(): void; zoomTo(zoom: number): void; fit(): void;
+  toggleTree(current: boolean): void; toggleGroup(key: string): void; // #34: `current` is the resolved value the header shows
   onPan(pan: FlowView['pan']): void; onFit(zoom: number): void;
 }
 
-/** `flowView` as Flow keeps it: every change writes the whole value, so the toggle, the zoom and the pan never overwrite one another. */
+/** `flowView` as Flow keeps it: every change writes the whole value, so the toggles, the zoom, the pan and the collapsed groups never overwrite one another. */
 export function useFlowView(isShown: boolean): FlowViewControls {
   const [view, setView] = useState(readFlowView);
   const [fitRequest, setFitRequest] = useState(0);
@@ -70,6 +71,9 @@ export function useFlowView(isShown: boolean): FlowViewControls {
   return {
     view, fitRequest, zoomTo, fit: requestFit,
     toggleLoops: () => save({ ...view, loops: !view.loops }),
+    // #34: the first click stores the opposite of what the header showed, the "a tree exists" default included
+    toggleTree: (current) => save({ ...view, tree: !current }),
+    toggleGroup: (key) => save({ ...view, collapsed: view.collapsed.includes(key) ? view.collapsed.filter((k) => k !== key) : [...view.collapsed, key] }),
     onPan: (next) => {
       pan.current = next;
       latest.current = { ...latest.current, pan: next };
