@@ -27,6 +27,7 @@ export interface BootedHive {
  * tests (a fake that opens nothing, a machine that is not this one, a source that needs no gh). */
 export interface BootOptions extends Pick<ServerDeps, 'readPlanLimits' | 'launchPty' | 'spawnPty' | 'onStop' | 'agents' | 'sourceFactory'> {
   locale?: string; // Electron's app.getLocale(); absent (run.js) → the Node process locale
+  openReadModel?: boolean; // #765 spike: run.ts opens <home>/read-model.sqlite; the tests leave it off, so none runs gh or node:sqlite for it
 }
 
 /** What both modes' createServer get: the options plus this boot's secret (#467). */
@@ -87,7 +88,9 @@ async function bootHiveMode(
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
   const saved = { ...(await loadState(home, workspaceScope(config))), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
-  const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps });
+  // #765 spike: imported here only, so node:sqlite and its ExperimentalWarning stay out of every process that does not open the read model
+  const readModel = deps.openReadModel ? await (await import('./read-model/open.js')).openDaemonReadModel(home, log) : undefined;
+  const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const port = await listenAndRecord(server, home, deps.secret);
   await server.boot(saved); // strays and the boot reducer: the same order as the first POST /settings
   await server.poll();

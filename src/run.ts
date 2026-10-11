@@ -50,7 +50,7 @@ const onSignal = (): void => (stopping ? process.exit(1) : shutdown('signal'));
 process.on('SIGTERM', onSignal);
 process.on('SIGINT', onSignal);
 // hiveHome() inside the promise: a relative HIVE_HOME (#310) throws, and the catch below turns it into one line instead of a stack trace
-const booted = Promise.resolve().then(() => bootHive(hiveHome(), { readPlanLimits, onStop: () => shutdown('stop'), spawnPty, ...(locale ? { locale } : {}) })); // none or '': the Node locale
+const booted = Promise.resolve().then(() => bootHive(hiveHome(), { readPlanLimits, onStop: () => shutdown('stop'), spawnPty, openReadModel: true, ...(locale ? { locale } : {}) })); // none or '': the Node locale
 booted.catch((err: Error) => {
   log.error(err.message);
   process.exit(1);
