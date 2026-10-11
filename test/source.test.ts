@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceSpec, createSource, createSources, namespaced, resolveSources } from '../src/source.js';
-import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions } from '../src/sources/github.js';
-import { ITEMS, type GhItemNode } from '../src/sources/github-queries.js';
+import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions, treeLinks } from '../src/sources/github.js';
+import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queries.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
 import type { FieldWrite, ProjectView, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
@@ -60,12 +60,14 @@ const issue = (
 });
 /** The GitHub spec with these filter rules. */
 const filtered = (filter: TaskFilter) => specOf({ source: { ...GITHUB_SOURCE, filter } });
-/** An issue item carrying its node id (`N<n>`) and its sub-issues' node ids in the epic's own order, as the items query asks (#211). */
-const linked = (n: number, subIssues: number[] = [], status = 'Ready') => ({
+/** An issue item carrying its node id (`N<n>`) and its sub-issues' node ids in the epic's own order, as the items query asks (#211), each
+ * with its state: those in `closed` are CLOSED (#28). */
+const linked = (n: number, subIssues: number[] = [], status = 'Ready', closed: number[] = []) => ({
   ...item(n, status),
   content: {
     ...item(n).content, id: `N${n}`,
-    subIssuesSummary: { total: subIssues.length }, subIssues: { nodes: subIssues.map((s) => ({ id: `N${s}` })) },
+    subIssuesSummary: { total: subIssues.length },
+    subIssues: { nodes: subIssues.map((s): { id: string; state: 'OPEN' | 'CLOSED' } => ({ id: `N${s}`, state: closed.includes(s) ? 'CLOSED' : 'OPEN' })) },
   },
 });
 
@@ -279,6 +281,43 @@ test('groupUnderEpics goes depth first through epics inside epics, gives a sub-i
   assert.deepEqual(ids(groupUnderEpics([linked(1, [1]), linked(2)])), ['I1', 'I2'], 'an item is never its own sub-issue');
 });
 
+test('treeLinks gives a sub-issue its parent\'s item id and the parent its children in sub-issue order, across Status columns; closed ones also land in closedChildren; a sub-issue with no item is skipped (#28)', () => {
+  const links = treeLinks([linked(1, [3, 9, 2], 'Ready', [2]), linked(2, [], 'In progress'), linked(3, [], 'Done'), linked(4)]);
+  assert.deepEqual(links.get('I1'), { children: ['I3', 'I2'], closedChildren: ['I2'] }, '9 has no item; 2 is closed');
+  assert.deepEqual(links.get('I2'), { parent: 'I1', children: [], closedChildren: [] }, 'another column keeps its parent');
+  assert.deepEqual(links.get('I3'), { parent: 'I1', children: [], closedChildren: [] });
+  assert.deepEqual(links.get('I4'), { children: [], closedChildren: [] }, 'a leaf with no parent');
+  assert.deepEqual(treeLinks([item(1), item(2)]).get('I1'), { children: [], closedChildren: [] }, 'no node ids: no links');
+});
+
+test('treeLinks on a cycle, a duplicate sub-issue and a self-reference terminates and lists each child once; the first parent in listing order wins (#28)', () => {
+  const links = treeLinks([linked(1, [2, 2, 1]), linked(2, [1]), linked(3, [2])]);
+  assert.deepEqual(links.get('I1'), { parent: 'I2', children: ['I2'], closedChildren: [] }, 'the repeat and the self-reference are dropped');
+  assert.deepEqual(links.get('I2'), { parent: 'I1', children: ['I1'], closedChildren: [] });
+  assert.deepEqual(links.get('I3'), { children: ['I2'], closedChildren: [] }, '3 lists 2 too, but 1 came first');
+});
+
+test('the listing and the one-item re-read ask each sub-issue\'s state (#28)', () => {
+  assert.match(ITEMS, /subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
+  assert.match(ITEM_FIELDS, /subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
+});
+
+test('a poll\'s listed item carries parent, children and closedChildren, linked before the column and filter steps drop anything; a leaf carries none of them (#28)', async () => {
+  const hive = (n: number, subIssues: number[] = [], status = 'Ready', closed: number[] = []) => {
+    const node = linked(n, subIssues, status, closed);
+    return { ...node, content: { ...node.content, labels: { nodes: [{ name: 'hive' }] } } };
+  };
+  const labelled = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', filter: [{ field: 'label', op: 'any', values: ['hive'] }] } });
+  // 1 lists 2 (listed), 3 (filtered out: no label), 9 (no item) and 4 (closed, in the uncited Done); 5 is a leaf
+  const nodes = [hive(1, [2, 3, 9, 4], 'Ready', [4]), hive(2), linked(3), hive(4, [], 'Done'), hive(5)];
+  const listed = await createSource(labelled, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
+  assert.deepEqual(listed.map((c) => c.item.id), ['1', '2', '5']);
+  const [parent, child, leaf] = listed.map((c) => c.item);
+  assert.deepEqual([parent.parent, parent.children, parent.closedChildren], [undefined, ['I2', 'I3', 'I4'], ['I4']]);
+  assert.deepEqual([child.parent, 'children' in child, 'closedChildren' in child], ['I1', false, false]);
+  assert.deepEqual(['parent' in leaf, 'children' in leaf, 'closedChildren' in leaf], [false, false, false]);
+});
+
 test('listItems groups before it drops: with epics: hide the epic\'s sub-issues take its place, with epics: ignore they follow it; the items query asks each issue for its node id and its sub-issue ids, at no extra call (#211)', async () => {
   // A B C D F G, where B (2) is an epic with sub-issues F (6) then G (7)
   const nodes = [linked(1), linked(2, [6, 7]), linked(3), linked(4), linked(6), linked(7)];
@@ -286,7 +325,7 @@ test('listItems groups before it drops: with epics: hide the epic\'s sub-issues 
   assert.deepEqual((await createSource(hidden, { gql }).listItems()).map((c) => c.item.id), ['1', '6', '7', '3', '4'], 'A F G C D');
   const kept = await createSource(ignored, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
   assert.deepEqual(kept.map((c) => c.item.id), ['1', '2', '6', '7', '3', '4'], 'A B F G C D');
-  assert.match(calls[0].query, /\.\.\. on Issue \{ id number .* subIssues\(first: 50\) \{ nodes \{ id \} \}/);
+  assert.match(calls[0].query, /\.\.\. on Issue \{ id number .* subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
   assert.deepEqual(calls.map((c) => c.name), ['items', 'relations'], 'the grouping costs no call of its own');
 });
 
@@ -566,6 +605,16 @@ test('namespaced lists <name>:<id> with the source set, qualifies the id with th
   const { comments: _comments, ...bare } = adapter;
   assert.equal(namespaced(entry(), bare).comments, undefined, 'a source without comments stays without');
   assert.deepEqual([itemSource('work:PVTI_1'), itemSource('local:3'), itemSource('PVTI_1')], ['work', 'local', undefined]);
+});
+
+test('namespaced prefixes parent, every children id and every closedChildren id with the source\'s name, as it does itemId (#28)', async () => {
+  const adapter: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
+    listItems: async () => [{ item: { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url: '', parent: 'PVTI_1', children: ['PVTI_3', 'PVTI_4'], closedChildren: ['PVTI_4'] }, column: 'Ready' }],
+  };
+  const entry: SourceConfig = { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
+  const [{ item }] = await namespaced(entry, adapter).listItems();
+  assert.deepEqual([item.parent, item.children, item.closedChildren], ['work:PVTI_1', ['work:PVTI_3', 'work:PVTI_4'], ['work:PVTI_4']]);
 });
 
 test('namespaced wraps project only when the adapter has one: its rows under <name>:<id>, the id still the issue number even under qualifyId (#756)', async () => {

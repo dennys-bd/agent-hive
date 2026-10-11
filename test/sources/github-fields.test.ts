@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { itemFields, readItemFields, writeItemField, writesFor, type FieldsContext } from '../../src/sources/github-fields.js';
 import {
-  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, PROJECT_FIELDS, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
+  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, ITEMS, PROJECT_FIELDS, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
   SET_OPTION, SET_TEXT, type GhItemFieldsNode, type GhItemNode, type GhProjectField,
 } from '../../src/sources/github-queries.js';
 import { PartialWriteError } from '../../src/field-values.js';
@@ -52,13 +52,14 @@ const fieldsNode = (extra: Partial<GhItemFieldsNode> = {}, content: Partial<Cont
 
 const STATUS_OPTIONS = ['Ready', 'In progress', 'In review', 'Done'].map((name) => ({ id: `O_${name}`, name }));
 interface ItemCall { query: string; variables?: Record<string, string | number | boolean> }
-// A Gql over the item's reads, in order; every other call (a mutation, the relations query) answers {}, as the writes read nothing back
-function itemGql(reads: GhItemFieldsNode[]): { gql: Gql; calls: ItemCall[] } {
+// A Gql over the item's reads, in order, and a listing's nodes when given; every other call (a mutation, the relations query) answers {}, as the writes read nothing back
+function itemGql(reads: GhItemFieldsNode[], listing?: GhItemNode[]): { gql: Gql; calls: ItemCall[] } {
   const queue = [...reads];
   const calls: ItemCall[] = [];
   const gql: Gql = async (query, variables) => {
     calls.push({ query, variables });
     if (query === PROJECT_FIELDS) return { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options: STATUS_OPTIONS } } } };
+    if (query === ITEMS && listing !== undefined) return { repositoryOwner: { projectV2: { items: { pageInfo: { hasNextPage: false }, nodes: listing } } } };
     return query === ITEM_FIELDS ? { node: queue.shift() } : {};
   };
   return { gql, calls };
@@ -175,6 +176,21 @@ test('the GitHub source\'s setField re-reads the item through the poll\'s own st
   assert.deepEqual([filtered?.entry, filtered?.row.out], [undefined, 'filter']);
   const moved = await (await resolved(specOf(), itemGql([fieldsNode(), fieldsNode({ fieldValueByName: { name: 'Done' } })]).gql)).setField?.('PVTI_1', 'Status', 'Done');
   assert.deepEqual([moved?.entry, moved?.row.status], [undefined, 'Done']);
+});
+
+test('the GitHub source\'s setField entry keeps the item\'s tree links, read over the last listing with the re-read item in its place (#28)', async () => {
+  const issue = (id: string, number: number, status: string, content: Partial<Content> = {}): GhItemNode => ({
+    id, fieldValueByName: { name: status },
+    content: { __typename: 'Issue', id: `I_${number}`, number, title: `T${number}`, body: '', url: `https://github.com/acme/site/issues/${number}`, ...content },
+  });
+  const epic = issue('PVTI_0', 0, 'Ready', { subIssues: { nodes: [{ id: 'I_1', state: 'OPEN' }] } });
+  const sub = issue('PVTI_2', 2, 'Done');
+  // the listing saw #12 with no sub-issues; the re-read finds #2 under it, closed
+  const reread = fieldsNode({}, { subIssues: { nodes: [{ id: 'I_2', state: 'CLOSED' }] } });
+  const source = await resolved(specOf(), itemGql([fieldsNode(), reread], [epic, fieldsNode(), sub]).gql);
+  await source.listItems();
+  const item = (await source.setField?.('PVTI_1', 'Priority', 'P0'))?.entry?.item;
+  assert.deepEqual([item?.parent, item?.children, item?.closedChildren], ['PVTI_0', ['PVTI_2'], ['PVTI_2']]);
 });
 
 test('an item of another project is refused before any mutation, by the fields read and by the write (#686)', async () => {
