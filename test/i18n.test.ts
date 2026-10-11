@@ -370,3 +370,16 @@ test('the blockers add row\'s copy (#57): both languages, the handoff\'s Portugu
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['tipo', 'bloqueada por', 'bloqueia', '#número ou título…', 'adicionar {id}', 'sugestões']);
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['type', 'blocked by', 'blocks', '#number or title…', 'add {id}', 'suggestions']);
 });
+
+test('the blockers section\'s copy (#57): both languages, the handoff\'s Portuguese, one line per route code', () => {
+  const keys = ['blockers.title', 'blockers.add', 'blockers.closed', 'blockers.open', 'blockers.remove', 'blockers.note'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'bloqueios', '+ adicionar', 'fechada', 'aberta', 'remover {id}', 'são as dependências da issue no GitHub. a tarefa bloqueada não inicia até o bloqueio fechar.',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'blockers', '+ add', 'closed', 'open', 'remove {id}', 'these are the issue\'s dependencies on GitHub. a blocked task does not start until the blocker closes.',
+  ]);
+  const codes = ['unknownItem', 'unknownRef', 'crossSource', 'self', 'cycle', 'refused', 'badRequest', 'unexpected'] as const;
+  for (const code of codes) assert.ok(MESSAGES.en[`blockers.${code}`].length > 0 && MESSAGES.pt[`blockers.${code}`].length > 0, code);
+  assert.deepEqual([MESSAGES.en['blockers.unexpected'], MESSAGES.pt['blockers.unexpected']], ['Unexpected error', 'Erro inesperado']);
+});
