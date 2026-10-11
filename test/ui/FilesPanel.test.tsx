@@ -68,7 +68,8 @@ test('the ⋯ shows hidden files, collapses everything and shows the worktree in
   expect(screen.queryByRole('button', { name: /^a\.ts/ })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'mais ações' }));
   await user.click(screen.getByRole('menuitem', { name: 'mostrar na pasta' }));
-  expect(posted()).toEqual(['/activities/a-I1/reveal ']);
+  // mostrar arquivos ocultos also saves the view state (#947), a debounced post a slow run sees land before this line
+  expect(posted().filter((post) => post.startsWith('/activities/'))).toEqual(['/activities/a-I1/reveal ']);
 });
 
 test('detalhes shows the task\'s detail in place of the tree, with no ⋯ and no git read; the toggle asks for the other view', async () => {
