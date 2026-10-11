@@ -175,7 +175,7 @@ test('an issue opened from the Atividades view goes back to that view, the stack
   expect(await main().findByRole('button', { name: 'PRs · site' })).toBeInTheDocument(); // an entry the Atividades view replaces below
   showActivities();
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#12 Pager breaks').closest('button') as HTMLElement);
-  sideKey();
+  // no sideKey(): the PR page opened above already switched the side to Detalhes (#64)
   await user.click(within(right()).getByRole('link', { name: 'site#12' }));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   await user.click(main().getByRole('button', { name: 'atividade #12' }));

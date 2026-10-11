@@ -1,8 +1,9 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { ProjectItem, RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State, Task } from '../../types';
-import { issueOfLink } from '../../repos/issue-task';
-import { prNumber, prRepo, repoName } from '../../pull-requests';
+import { taskOfPr } from '../../activities';
+import { issueOfLink, issueUrl, taskOfIssue } from '../../repos/issue-task';
+import { prLink, prNumber, prRepo, repoName } from '../../pull-requests';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { ActivityBar } from '@/components/ActivityBar';
@@ -12,7 +13,8 @@ import { MainDock } from '@/components/MainDock';
 import { CopySessionHost } from '@/components/CopySession';
 import { ConsoleChip } from '@/components/ConsoleDrawer';
 import { CrashDialog } from '@/components/CrashDialog';
-import { DetailPanel, type Selection } from '@/components/DetailPanel';
+import { type DetailPage, DetailPanel, type Selection } from '@/components/DetailPanel';
+import { DetailSlotProvider } from '@/components/DetailSlot';
 import type { SourcesNav } from '@/components/FlowSources';
 import { type BackLink, FlowHeader, type RepoHeader, type RepoTab, type SourceTab, type SourceTabs } from '@/components/FlowHeader';
 import { Footer } from '@/components/Footer';
@@ -135,6 +137,20 @@ function prOpener(picks: SourcePick, repositories: RepoSummary[]): (url: string)
   };
 }
 
+// The page the center shows under Automação (#64), read with Center's own guards, so the details panel never hosts a page that is not on
+// screen: under a listed repository its PR, else its issue; under a source's native tab its issue. The task comes from the ref, so the
+// panel's top shows before the page's read answers; the page matches on the read issue's url, the same link
+function shownPage(state: State, picks: SourcePick): DetailPage | undefined {
+  const { repo, external, tabs, issue, pr } = picks;
+  if (repo && pr) {
+    const url = prLink(pr.repository, pr.number);
+    return { kind: 'pr', url, task: taskOfPr(state, url) };
+  }
+  if (issue === undefined || !(repo || (external && tabs?.active === 'native'))) return undefined;
+  const url = issueUrl(issue.repository, issue.number);
+  return { kind: 'issue', url, task: taskOfIssue(state.tasks, url, issue.itemId) };
+}
+
 // A screen's name on the back button (#911), as the handoff lists them: a page by its number, a repository's list by its tab and name, the
 // native tab by its own label, else the flow with the pick as the sidebar names it. Read as Center reads the screen
 function screenLabel({ screen, picked, external, repo }: { screen: PickScreen; picked?: string; external?: SourceConfig; repo?: RepoSummary }): string {
@@ -167,6 +183,7 @@ interface CenterNav {
   picks: SourcePick; nav: SourcePick; goTo(taskId: string): void; back?: BackLink; pending: RefObject<number | undefined>;
   sidebar: { pick(name?: string): void; pickRepository(name: string): void };
   openPr(url: string, from?: BackEntry): void; openIssue(url: string, from?: BackEntry): void;
+  page?: DetailPage; // #64: what the details panel hosts while the center is under Automação
 }
 
 function useCenterNav(state: State | undefined, sources: SourcesNav | undefined, repositories: RepoSummary[], selected: Selection | undefined, onSelect: (selection?: Selection) => void): CenterNav {
@@ -190,7 +207,7 @@ function useCenterNav(state: State | undefined, sources: SourcesNav | undefined,
   const nav: SourcePick = { ...withBefore(picks, push), tabs: picks.tabs && { ...picks.tabs, onPick: preceded(reset, picks.tabs.onPick) } };
   const dockNav = (from?: BackEntry): SourcePick => (from === undefined ? nav : withBefore(picks, () => stack.reset(from)));
   return {
-    picks, nav, pending: stack.pending, goTo: preceded(push, goTo),
+    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), page: state && shownPage(state, picks),
     back: stack.top && { label: stack.top.label, onBack: stack.back },
     sidebar: { pick: preceded(reset, picks.pick), pickRepository: preceded(reset, picks.pickRepository) },
     openPr: (url, from) => prOpener(dockNav(from), repositories)(url),
@@ -252,14 +269,15 @@ function TreeHoverHost({ children }: { children: ReactNode }) {
   return <TreeHoverContext.Provider value={{ hoveredId, setHoveredId }}>{children}</TreeHoverContext.Provider>;
 }
 
-/** The dashboard, with the create destinations (#846) its dialogs and popovers read from the context, and the tree row the details hover (#36). */
+/** The dashboard, with the create destinations (#846) its dialogs and popovers read from the context, the tree row the details hover (#36), and
+ * the details panel's slot (#64) around the dock, which a page's block lands in. */
 export function Dashboard(props: DashboardProps) {
-  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><TreeHoverHost><DashboardView {...props} /></TreeHoverHost></CreateTargetsContext.Provider>;
+  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><TreeHoverHost><DetailSlotProvider><DashboardView {...props} /></DetailSlotProvider></TreeHoverHost></CreateTargetsContext.Provider>;
 }
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
   const repositories = useRepositories();
-  const { picks, nav, goTo, back, pending, sidebar, openPr, openIssue } = useCenterNav(state, sources, repositories, selected, onSelect); // #911
+  const { picks, nav, goTo, back, pending, sidebar, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #911
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
   // the console's channels again. Before the early return: a hook runs on every render.
   const consoleChannels = useConsoleChannels([
@@ -278,7 +296,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
       <MainDock
         sidebarsPerView={sidebarsPerView}
         fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
-        tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels}
+        tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
         header={(center, go) => <Header state={state} signal={limits.signal} center={center} onView={go} />}
         automation={() => (
           <AutomationPanel
@@ -292,7 +310,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
         paneContext={(activity) => activityPane(activity, state)}
         copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
-        detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} />}
+        detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(nav, repositories)} />}
       >
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {hasSource && <SyncErrors syncs={state.syncs} />}
