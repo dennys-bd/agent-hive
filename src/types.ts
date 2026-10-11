@@ -466,6 +466,18 @@ export const TRIES_OUT = 'tries out: ';
 /** What a transition tells its destination's next run (#134): the composed, rendered prompt and the session it resumes; none = a new one. */
 export interface Handover { prompt: string; sessionId?: string }
 
+/** One automatic try through a transition with maxTries (#915): what the try history reads. */
+export interface TryRecord {
+  transition: string; // transitionKey
+  n: number; // this try's number, 1-based
+  max: number; // the transition's maxTries at the time
+  cause: string; // the failed command or check names, or the exit name
+  error: string; // first non-blank line of the output or the evidence; '' when none
+  at: string; // ISO
+  stage: string; // the destination stage, or END
+  sessionId?: string; // the destination's resumed session, when the handover names one
+}
+
 /** A column the Hive wrote to the source and the source has not shown yet (#889): what a stale poll must not undo. */
 export interface ColumnWrite {
   column: string; // the column written
@@ -512,6 +524,7 @@ export interface Activity {
   handoffFeedback?: string; // #134: the user's feedback that transition fires with, so its {feedback} survives the handoff turn; goes with handoffPending
   tries?: Record<string, number>; // #134: transitionKey → the automatic tries the task took through it; dropped by a user's transition and a move by hand
   via?: string; // #134: the key of the transition the task entered its stage through: what the card's tries read; replaced on every transition
+  tryLog?: TryRecord[]; // #915: the tries behind tries, oldest first; dropped wherever tries is
   freeSessionStage?: string; // #812: the stage a free run last started in; continue is not offered there until a stage run starts or the task enters a stage again
 }
 
