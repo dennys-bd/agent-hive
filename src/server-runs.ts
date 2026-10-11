@@ -7,7 +7,7 @@ import { taskWorkspace, workspaceByName } from './config.js';
 import { continuableLocal } from './local-sessions.js';
 import { discarded, type RestartPlan, restartPlan, restartWorktree } from './restart.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
-import { recordCheckpoint } from './server-checkpoints.js';
+import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints.js';
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
 import type { Activity, ActivityRecord, Task, State, Worker } from './types.js';
@@ -58,6 +58,7 @@ export function registerRunRoutes(app: Express, deps: TaskRouteDeps): void {
   registerSleepRoutes(app, deps);
   registerContinueRoute(app, deps);
   registerRestartRoutes(app, deps);
+  registerCheckpointRoutes(app, deps); // #619
   registerClearRoute(app, deps);
 }
 
