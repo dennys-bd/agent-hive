@@ -62,8 +62,9 @@ export function probeKeys(term: Terminal, send: (events: KeyProbeEvent[]) => voi
   let isArmed = false;
   const onKeydown = (event: KeyboardEvent): void => {
     if (!isProbedKey(event.key)) {
-      // a key outside the composition ends it: a Dead key cancelled with Escape must not arm the password typed next
-      if (!event.isComposing) isDead = isArmed = false;
+      // a key outside the composition ends it, and Escape always does: inside a composition it comes with isComposing, and a Dead key it
+      // cancels must not arm the password typed next
+      if (!event.isComposing || event.key === 'Escape') isDead = isArmed = false;
       return;
     }
     isDead = isArmed = event.key === 'Dead';
@@ -71,8 +72,8 @@ export function probeKeys(term: Terminal, send: (events: KeyProbeEvent[]) => voi
   };
   const compositions = COMPOSITION_KINDS.map((kind) => [kind, (event: CompositionEvent): void => {
     if (!isDead) return;
-    isArmed = true;
     if (kind === 'compositionend') isDead = false;
+    isArmed = kind !== 'compositionend' || event.data !== ''; // a cancelled composition ends empty: nothing typed after it is its data
     const { data, length } = dataEvent(event.data);
     batch.record(data === undefined ? { kind, length } : { kind, data });
   }] as const);

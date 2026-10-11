@@ -120,12 +120,25 @@ test('an IME composition no Dead key opened is never recorded, nor the data afte
 });
 
 test('a key outside the composition disarms a Dead key: after Escape, the next key typed is never recorded (#732)', () => {
-  const { term, send, key, compose } = probe();
+  const { term, send, key } = probe();
   key('Dead', 'Quote');
-  key('Escape', 'Escape');
+  key('Escape', 'Escape', true); // inside the composition, as Chromium sends it
   key('p', 'KeyP');
   term.type('p');
-  compose('compositionend', 'x');
   vi.advanceTimersByTime(BATCH_MS);
   expect(send).toHaveBeenCalledWith([{ kind: 'keydown', key: 'Dead', code: 'Quote', isComposing: false, at: 0 }]);
+});
+
+test('a cancelled composition, which ends empty, does not arm the probe: the key typed after it is never recorded (#732)', () => {
+  const { term, send, key, compose } = probe();
+  key('Dead', 'Quote');
+  compose('compositionstart', '');
+  compose('compositionend', '');
+  term.type('p');
+  vi.advanceTimersByTime(BATCH_MS);
+  expect(send).toHaveBeenCalledWith([
+    { kind: 'keydown', key: 'Dead', code: 'Quote', isComposing: false, at: 0 },
+    { kind: 'compositionstart', data: '', at: 0 },
+    { kind: 'compositionend', data: '', at: 0 },
+  ]);
 });
