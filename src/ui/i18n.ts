@@ -1130,7 +1130,7 @@ const en = {
   'stageCi.waitingPr': 'waiting for PR', // #834: the task has no open PR yet
   'stageCi.failed': 'CI failed: {list}', // #834: the failed checks, or the timeout
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
-  'stage.error.triesOut': '{trigger} · {n} of {n} tries', // #134: an automatic transition out of its maxTries
+  'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
   'flow.trigger.done': 'done', // #134: the triggers and fixed verdicts as a pill and the card read them
   'flow.trigger.approved': 'approved',
   'flow.trigger.feedback': 'feedback',
@@ -1139,6 +1139,7 @@ const en = {
   'flow.end': 'end',
   'flow.tries': '{label} · {n}x',
   'flow.node.waiting': '{n} awaiting you',
+  'flow.node.exhausted': '{n} out of tries', // #913
   'flow.node.overflow': 'scroll to see {n}',
   'flow.node.list': 'list ›',
   'flow.stageCap.byHand': '{k} started by hand', // #727
@@ -2742,7 +2743,7 @@ const pt: Record<MessageKey, string> = {
   'stageCi.waitingPr': 'aguardando PR',
   'stageCi.failed': 'CI falhou: {list}',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
-  'stage.error.triesOut': '{trigger} · {n} de {n} tentativas',
+  'stage.error.triesOut': 'esgotou · {trigger} {n}x',
   'flow.trigger.done': 'terminou',
   'flow.trigger.approved': 'aprovado',
   'flow.trigger.feedback': 'feedback',
@@ -2751,6 +2752,7 @@ const pt: Record<MessageKey, string> = {
   'flow.end': 'fim',
   'flow.tries': '{label} · {n}x',
   'flow.node.waiting': '{n} aguardando você',
+  'flow.node.exhausted': '{n} com tentativas esgotadas',
   'flow.node.overflow': 'rola para ver {n}',
   'flow.node.list': 'lista ›',
   'flow.stageCap.byHand': '{k} iniciados à mão',

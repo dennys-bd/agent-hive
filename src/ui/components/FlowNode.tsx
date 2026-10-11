@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { executorLine } from '@/lib/flow-labels';
 import { hiddenBelow } from '@/lib/flow-layout';
-import { taskState } from '@/lib/task-state';
+import { isExhausted, taskState } from '@/lib/task-state';
 
 // A task that waits for the user (#134): a session asking, or an approval
 const awaitsYou = (task: Task, state: State): boolean => ['waiting', 'approval'].includes(taskState(task, state));
@@ -84,7 +84,7 @@ interface FlowNodeProps {
   isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void; onHeight(stage: string, height: number): void;
 }
 
-/** A stage as a node of the flowchart (#134, 1b): 190px, its header (name, count, ● N awaiting you, ⋯), who runs it, the view filter's indicator
+/** A stage as a node of the flowchart (#134, 1b): 190px, its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
  * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
@@ -92,6 +92,7 @@ export function FlowNode(props: FlowNodeProps) {
   const root = useHeight(stage.name, onHeight);
   const fold = useFold(tasks.length);
   const waiting = order.filter((c) => awaitsYou(c, state)).length;
+  const exhausted = order.filter((c) => isExhausted(c, state)).length;
   const { draggedId, dropBefore, taskDragProps, dropAtEnd, dragOverEnd, onListDragLeave } = useStageDrag(drag, stage, order, state);
   const tailDrop = dropBefore !== undefined && (dropBefore === 'end' || !tasks.some((c) => c.item.itemId === dropBefore));
   return (
@@ -101,6 +102,7 @@ export function FlowNode(props: FlowNodeProps) {
         <span>{shown}</span>
         <StageLoad stage={stage.name} cap={cap} state={state} />
         <span className="ml-auto flex items-center gap-1">
+          {exhausted > 0 && <span className="text-destructive" title={t('flow.node.exhausted', { n: exhausted })}>{`● ${exhausted}`}</span>}
           {waiting > 0 && <span className="text-waiting" title={t('flow.node.waiting', { n: waiting })}>{`● ${waiting}`}</span>}
           <StageMenu stage={stage.name} state={state} filtered={rules.length > 0} onFilter={onFilter} onClearFilter={onClearFilter} />
         </span>

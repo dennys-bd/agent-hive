@@ -22,7 +22,7 @@ import { useTaskNavKeys } from '@/hooks/use-task-keys';
 import { type MessageKey, statusText, t } from '@/i18n';
 import { triggerLabel } from '@/lib/flow-labels';
 import { STATUS_BORDER, STATUS_TEXT } from '@/lib/status';
-import { answerableActivity, backoffUntil, taskState } from '@/lib/task-state';
+import { answerableActivity, backoffUntil, isExhausted, taskState } from '@/lib/task-state';
 import { backoffLabel } from '@/lib/usage';
 import { workspaceColor } from '@/lib/workspace-color';
 import { shownSize } from '@/lib/xterm-setup';
@@ -35,14 +35,15 @@ export function useOpenActivity(task: Task, state: State): (() => void) | undefi
 }
 
 /** The task's one button (#542). */
-export type TaskAction = 'approve' | 'open' | 'continue' | 'delete' | 'start';
+export type TaskAction = 'details' | 'approve' | 'open' | 'continue' | 'delete' | 'start';
 
-/** Which button the task shows (#542), by priority: an approval no live session holds back → aprovar (#829); a live session (aguardando você
+/** Which button the task shows (#542), by priority: out of tries → abrir, to its details (#913); an approval no live session holds back → aprovar (#829); a live session (aguardando você
  * among them, an approval pending or not) → abrir; the stage already ran and stopped → continuar; a delete-activity stage → excluir, while
  * removalBlocker lets it run (#228); it can start → iniciar. None for a missing task (its fechar / manter), a blocked one and one with
  * nothing to run. */
 export function taskAction(task: Task, state: Pick<State, 'stages' | 'workers' | 'terminals' | 'deleteActivity' | 'activities' | 'activityRecords'>): TaskAction | undefined {
   if (task.missing) return undefined;
+  if (isExhausted(task, state)) return 'details';
   if (answerableActivity(task, state) !== undefined) return 'approve';
   if (workersOf(state, task).length > 0) return 'open';
   const mode = startMode(task, state);
@@ -52,8 +53,9 @@ export function taskAction(task: Task, state: Pick<State, 'stages' | 'workers' |
   return removalBlocker(task, state) === undefined ? 'delete' : undefined;
 }
 
+// details and open both read abrir on purpose (#913): the first opens the details panel, where continuar stays, the second the session
 const ACTION_LABEL: Record<TaskAction, MessageKey> = {
-  approve: 'approval.approve', open: 'task.open', continue: 'task.continue', delete: 'activity.delete.button', start: 'task.start',
+  details: 'task.open', approve: 'approval.approve', open: 'task.open', continue: 'task.continue', delete: 'activity.delete.button', start: 'task.start',
 };
 
 type Tone = Status | 'destructive';
@@ -68,11 +70,13 @@ interface TaskStatus { tone?: Tone; text?: string }
 
 const blockedText = (task: Task): string => t('task.blockedBy', { ids: (task.item.blockedBy ?? []).join(', ') });
 
-// What the footer says (#542): in the status colour sumiu da source, then the task's state (#663: its sessions' worst at work, else aguardando
+// What the footer says (#542): in the status colour sumiu da source, then out of tries (#913), then the task's state (#663: its sessions' worst at work, else aguardando
 // review, else aguardando aprovação), the precedence the border always had (#229, #268, #279); in muted the worktree setup (#351), a spawn
 // error or the blocker. Nothing otherwise
 function taskStatus(task: Task, state: State): TaskStatus {
   if (task.missing) return { tone: 'destructive', text: t('task.missing') };
+  const error = activityOf(state, task.item.itemId)?.error;
+  if (error !== undefined && isExhausted(task, state)) return { tone: 'destructive', text: taskError(error) }; // #913: halted, worse than a question
   const current = taskState(task, state);
   if (current !== 'empty' && current !== 'new') return { tone: current, text: current === 'backoff' ? backoffLabel(backoffUntil(task, state), Date.now()) : statusText(current) }; // #805: with the time left
   const live = activityOf(state, task.item.itemId); // the run fields are the live activity's (#629)
@@ -143,7 +147,7 @@ function MissingActions({ task }: { task: Task }) {
 
 // The one button (#542) and the Start dialog iniciar opens on executar etapas (#543). The dialog outlives the button: its start takes a worker
 // at once, so iniciar turns into abrir while the dialog still shows the worktree's setup (#351)
-function TaskButton({ task, state }: { task: Task; state: State }) {
+function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?(taskId: string): void }) {
   const [isStarting, setIsStarting] = useState(false);
   const opener = useOpenStarted();
   const openActivity = useOpenActivity(task, state);
@@ -152,6 +156,7 @@ function TaskButton({ task, state }: { task: Task; state: State }) {
   const work = `/activities/${encodeURIComponent(workIdOf(state, task.item.itemId) ?? '')}`; // the live activity, else a deleted one's record a continue resumes from (#629)
   const started = (): void => opener?.(task.item.itemId); // a run is coming: its task goes to the center once it shows (#457)
   const press: Record<TaskAction, () => void> = {
+    details: () => onOpen?.(task.item.itemId),
     approve: () => void act(`${work}/approve`),
     open: () => openActivity?.(),
     continue: () => void actThen(`${work}/continue`, started, { size: shownSize() }),
@@ -217,7 +222,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         {setup && <SetupLogsButton consoleId={setup.consoleId} />}
         <StageOutputButton task={task} state={state} />
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">{task.missing ? <MissingActions task={task} /> : <TaskButton task={task} state={state} />}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">{task.missing ? <MissingActions task={task} /> : <TaskButton task={task} state={state} onOpen={onOpen} />}</span>
       </div>
     </li>
   );

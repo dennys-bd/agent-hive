@@ -53,3 +53,18 @@ test('the footer appears only when the list overflows: rola para ver N and lista
   await user.click(screen.getByRole('button', { name: 'lista ›' }));
   expect(onList).toHaveBeenCalledOnce();
 });
+
+test('the header counts the tasks out of tries in a destructive ● N beside the waiting one; none without them (#913)', () => {
+  const since = '2026-10-09T10:00:00.000Z';
+  const tasks = [task('1', { stopped: true, error: 'tries out: verdict:failed · 3' }), task('2', { approval: { since } }), task('3', { approval: { since } })];
+  const s = state(tasks);
+  const { unmount } = render(<Node s={s} tasks={s.tasks} />);
+  const header = screen.getByRole('heading', { level: 3, name: 'Build' }).parentElement as HTMLElement;
+  expect(within(header).getByText('● 1')).toHaveClass('text-destructive');
+  expect(within(header).getByText('● 1')).toHaveAttribute('title', '1 com tentativas esgotadas');
+  expect(within(header).getByText('● 2')).toHaveClass('text-waiting');
+  unmount();
+  const calm = state([task('2', { approval: { since } })]);
+  render(<Node s={calm} tasks={calm.tasks} />);
+  expect(document.querySelector('.text-destructive')).toBeNull();
+});

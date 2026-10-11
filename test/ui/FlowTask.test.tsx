@@ -291,7 +291,7 @@ test('a task stopped with no transition or out of tries reads it in the viewer\'
   expect(within(tile()).getByText('nenhuma transição para "falhou"')).toBeInTheDocument();
   cleanup();
   render(<Flow state={state(task({ stopped: true, error: 'tries out: verdict:redo · 3' }))} />);
-  expect(within(tile()).getByText('redo · 3 de 3 tentativas')).toBeInTheDocument();
+  expect(within(tile()).getByText('esgotou · redo 3x')).toBeInTheDocument();
   setLanguage('en');
   cleanup();
   render(<Flow state={state(task({ stopped: true, error: 'no transition: approved' }))} />);
@@ -303,4 +303,19 @@ test('a new task\'s face says so in muted text, no status colour; a blocked one 
   expect(within(tile()).getByText('nova')).toHaveClass('text-muted-foreground');
   rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['9'] } }))} />);
   expect(within(tile()).queryByText('nova')).not.toBeInTheDocument();
+});
+
+test('a task out of tries reads destructive: border, ring, the status and abrir, which opens its details instead of continuar (#913)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn();
+  const out = task({ stopped: true, error: 'tries out: verdict:failed · 3' });
+  render(<Flow state={state(out, [], { activityRecords: records })} selectedId="I1" onOpen={onOpen} />);
+  expect(tile()).toHaveClass('border-destructive', 'ring-destructive/35');
+  const status = within(tile()).getByText('esgotou · falhou 3x');
+  expect(status).toHaveClass('text-destructive', 'truncate');
+  expect(status).toHaveAttribute('title', 'esgotou · falhou 3x');
+  expect(within(tile()).queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
+  await user.click(within(tile()).getByRole('button', { name: 'abrir' }));
+  expect(onOpen).toHaveBeenCalledWith('I1');
+  expect(taskAction(out, state(out, [], { activityRecords: records }))).toBe('details');
 });
