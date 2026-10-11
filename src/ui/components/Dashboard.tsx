@@ -20,6 +20,7 @@ import { Header } from '@/components/Header';
 import { IssuePage, type IssueRef } from '@/components/IssuePage';
 import { activityPane } from '@/components/PaneHeader';
 import { StartDialog } from '@/components/StartDialog';
+import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
 import { PrPage, type PrRef } from '@/components/PrPage';
 import { ProjectTable } from '@/components/ProjectTable';
@@ -243,9 +244,16 @@ function Center({ state, locale, selected, picks, repositories, onSelect, goTo, 
   return <Flow state={state} source={picked} selectedId={selected?.taskId} onOpen={(taskId) => onSelect({ taskId })} tabs={tabs} stageCaps={stageCaps} />;
 }
 
-/** The dashboard, with the create destinations (#846) its dialogs and popovers read from the context. */
+// #36: the details' tree row under the pointer, shared by the details (which set it) and the flow's cards (which light up). A component of its
+// own around DashboardView: a hover re-renders only the context's readers, never the whole dashboard
+function TreeHoverHost({ children }: { children: ReactNode }) {
+  const [hoveredId, setHoveredId] = useState<string>();
+  return <TreeHoverContext.Provider value={{ hoveredId, setHoveredId }}>{children}</TreeHoverContext.Provider>;
+}
+
+/** The dashboard, with the create destinations (#846) its dialogs and popovers read from the context, and the tree row the details hover (#36). */
 export function Dashboard(props: DashboardProps) {
-  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><DashboardView {...props} /></CreateTargetsContext.Provider>;
+  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><TreeHoverHost><DashboardView {...props} /></TreeHoverHost></CreateTargetsContext.Provider>;
 }
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
@@ -283,7 +291,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
         paneContext={(activity) => activityPane(activity, state)}
         copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
-        detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} />}
+        detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} />}
       >
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {hasSource && <SyncErrors syncs={state.syncs} />}
