@@ -8,8 +8,8 @@ const NONE: TreeCount = { done: 0, total: 0 };
 const taskOf = (tasks: readonly Task[], itemId: string): Task | undefined => tasks.find((t) => t.item.itemId === itemId);
 
 // A node is done by one rule, parent or leaf: its task sits in the last stage, or it has no task (it left the Hive, or was never on it) and
-// the parent that lists it says GitHub closed it
-function isDone(tasks: readonly Task[], parent: Task, childId: string, lastStage: string): boolean {
+// the parent that lists it says GitHub closed it. Exported for the tree card's segments (#34)
+export function isDone(tasks: readonly Task[], parent: Task, childId: string, lastStage: string): boolean {
   const child = taskOf(tasks, childId);
   return child === undefined ? (parent.item.closedChildren ?? []).includes(childId) : child.stage === lastStage;
 }
