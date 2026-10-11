@@ -9,7 +9,7 @@ import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { createServer } from '../src/server.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
 import type { MemoryView, SettingsBody } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_CAP, MEMORY_TEXT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_TEXT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
@@ -18,7 +18,7 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
 };
-const EMPTY_VIEW = { entries: [], used: 0, cap: MEMORY_CAP, textMax: MEMORY_TEXT_MAX };
+const EMPTY_VIEW = { entries: [], used: 0, cap: 4000, textMax: MEMORY_TEXT_MAX }; // workspacesAt's memoryCap
 type MemoryChanged = Extract<RecordInput, { event: 'memory.changed' }>;
 
 const send = (method: 'POST' | 'PUT' | 'DELETE', url: string, body?: unknown): Promise<Response> =>
@@ -29,14 +29,14 @@ const refused = async (res: Promise<Response>, status: number, body: Record<stri
   assert.deepEqual([answer.status, await answer.json()], [status, body], why);
 };
 
-async function start(t: TestContext): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
+async function start(t: TestContext, memoryCap = 4000): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
   const { home, repo } = await tempHive(t);
   const { events, records } = fakeEvents(); // no events.jsonl of the server's own: the stats test writes it
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, events, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await send('POST', `${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
+  assert.equal((await send('POST', `${base}/settings`, { ...BODY, workspaces: workspacesAt(repo).map((w) => ({ ...w, memoryCap })) })).status, 200);
   return { base, url: `${base}/workspaces/${WORKSPACE}/memory`, home, records };
 }
 
@@ -83,4 +83,15 @@ test('GET …/memory/stats reads events.jsonl.1 then events.jsonl for the worksp
   await writeFile(join(home, 'events.jsonl'), `${line({ event: 'memory.applied', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
   assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 1, cited: 1, tokensPerRun: 100, last: { at, task: '1', stage: 'fila', cited: 1 } });
   await refused(hiveFetch(`${base}/workspaces/ghost/memory/stats`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'unknown workspace');
+});
+
+test('the routes answer and enforce the workspace\'s own memoryCap: the view carries it, a POST or a PUT that grows the sum past it is 409, a shrink passes (#73)', async (t) => {
+  const { url } = await start(t, 500);
+  assert.deepEqual(await (await hiveFetch(url)).json(), { ...EMPTY_VIEW, cap: 500 });
+  for (const c of ['a', 'b']) assert.equal((await send('POST', url, { kind: 'fact', text: c.repeat(250) })).status, 200); // exactly 500
+  const full = { error: MEMORY_FULL_MESSAGE, code: 'memory_full' };
+  await refused(send('POST', url, { kind: 'fact', text: 'c' }), 409, full, 'one more character than the cap');
+  await refused(send('PUT', `${url}/m-1`, { kind: 'fact', text: 'd'.repeat(251) }), 409, full, 'an edit that grows the sum past the cap');
+  const shrunk = (await (await send('PUT', `${url}/m-1`, { kind: 'fact', text: 'short' })).json()) as MemoryView;
+  assert.deepEqual([shrunk.used, shrunk.cap], [255, 500]);
 });

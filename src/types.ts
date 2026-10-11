@@ -1706,9 +1706,8 @@ export interface MemoryEntry {
   lastUsed?: MemoryUse;
 }
 export interface MemoryFile { nextId: number; entries: MemoryEntry[] } // empty: { nextId: 1, entries: [] }
-/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the entries' text lengths */
+/** GET /workspaces/:name/memory (#797), and every write's answer. used: the sum of the entries' text lengths, cap: the workspace's memoryCap (#73) */
 export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number; textMax: number }
-export const MEMORY_CAP = 4000; // characters: the sum of a workspace's lesson texts; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least one full lesson (MEMORY_TEXT_MAX)
 export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
 export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default

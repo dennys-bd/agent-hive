@@ -14,7 +14,7 @@ import {
 import { memoryRecord, memoryStats, type MemoryRecord } from './memory-stats.js';
 import type { RunFields } from './server-events.js';
 import type { Runtime } from './server.js';
-import { type Config, isMemoryKind, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryRefusalCode } from './types.js';
+import { type Config, isMemoryKind, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryRefusalCode, type Workspace } from './types.js';
 
 // A workspace's memory on the server's side (#797): the protocol files on boot and on every Settings save, run.spawned's fields (Task 5) and
 // the memory dialog's routes (Task 7). Nothing of a lesson's text reaches a log line or a record.
@@ -68,12 +68,12 @@ const unreadable = (deps: MemoryRouteDeps, res: Response, workspace: string, err
   res.status(HTTP_SERVER_ERROR).json({ error: UNREADABLE_MEMORY_MESSAGE });
 };
 
-// The live workspace :name names, or its 404 written (requireLive's 409 before any config)
-function workspaceParam(deps: MemoryRouteDeps, req: Request, res: Response): string | undefined {
+// The live workspace :name names, its memoryCap included (#73), or its 404 written (requireLive's 409 before any config)
+function workspaceParam(deps: MemoryRouteDeps, req: Request, res: Response): Workspace | undefined {
   const current = deps.requireLive(res);
   if (!current) return undefined;
-  const name = String(req.params.name);
-  if (workspaceByName(current.runtime.config, name)) return name;
+  const workspace = workspaceByName(current.runtime.config, String(req.params.name));
+  if (workspace) return workspace;
   res.status(HTTP_NOT_FOUND).json({ error: UNKNOWN_WORKSPACE_MESSAGE });
   return undefined;
 }
@@ -81,20 +81,20 @@ function workspaceParam(deps: MemoryRouteDeps, req: Request, res: Response): str
 type Action = 'added' | 'edited' | 'removed';
 
 // One write of the user's: the edit through the store, memory.changed with the lesson it touched (as it stood before a removal), the new view
-async function write(deps: MemoryRouteDeps, res: Response, workspace: string, action: Action, idOf: (file: MemoryFile) => string, edit: (file: MemoryFile) => MemoryResult): Promise<void> {
+async function write(deps: MemoryRouteDeps, res: Response, workspace: Workspace, action: Action, idOf: (file: MemoryFile) => string, edit: (file: MemoryFile) => MemoryResult): Promise<void> {
   let touched = undefined as MemoryEntry | undefined;
   try {
-    const saved = await deps.memory.update(workspace, (file) => {
+    const saved = await deps.memory.update(workspace.name, (file) => {
       const result = edit(file);
       const id = idOf(file);
       touched = (isMemoryRefusal(result) || action === 'removed' ? file : result).entries.find((e) => e.id === id);
       return result;
     });
     if (isMemoryRefusal(saved)) return refused(res, saved);
-    if (touched) deps.events.write({ event: 'memory.changed', level: 'info', action, kind: touched.kind, by: 'user', id: touched.id, workspace, ...memoryCounts(saved) });
-    res.json(memoryView(saved));
+    if (touched) deps.events.write({ event: 'memory.changed', level: 'info', action, kind: touched.kind, by: 'user', id: touched.id, workspace: workspace.name, ...memoryCounts(saved) });
+    res.json(memoryView(saved, workspace.memoryCap));
   } catch (err) {
-    unreadable(deps, res, workspace, err);
+    unreadable(deps, res, workspace.name, err);
   }
 }
 
@@ -119,19 +119,19 @@ function registerReads(app: Express, deps: MemoryRouteDeps): void {
     const workspace = workspaceParam(deps, req, res);
     if (workspace === undefined) return;
     try {
-      res.json(memoryView(await deps.memory.read(workspace)));
+      res.json(memoryView(await deps.memory.read(workspace.name), workspace.memoryCap));
     } catch (err) {
-      unreadable(deps, res, workspace, err);
+      unreadable(deps, res, workspace.name, err);
     }
   });
   app.get('/workspaces/:name/memory/stats', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);
     if (workspace === undefined) return;
     try {
-      const [file, records] = await Promise.all([deps.memory.read(workspace), eventRecords(deps.home, workspace)]);
+      const [file, records] = await Promise.all([deps.memory.read(workspace.name), eventRecords(deps.home, workspace.name)]);
       res.json(memoryStats(records, file.entries, Date.now()));
     } catch (err) {
-      unreadable(deps, res, workspace, err);
+      unreadable(deps, res, workspace.name, err);
     }
   });
 }
@@ -143,7 +143,7 @@ function registerWrites(app: Express, deps: MemoryRouteDeps): void {
     if (workspace === undefined) return;
     const lesson = lessonOf(req.body);
     if ('code' in lesson) return refused(res, lesson);
-    await write(deps, res, workspace, 'added', (file) => `m-${file.nextId}`, (file) => withEntry(file, lesson.kind, lesson.text, 'user', new Date().toISOString()));
+    await write(deps, res, workspace, 'added', (file) => `m-${file.nextId}`, (file) => withEntry(file, lesson.kind, lesson.text, 'user', new Date().toISOString(), workspace.memoryCap));
   });
   app.put('/workspaces/:name/memory/:id', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);
@@ -151,7 +151,7 @@ function registerWrites(app: Express, deps: MemoryRouteDeps): void {
     const lesson = lessonOf(req.body);
     if ('code' in lesson) return refused(res, lesson);
     const id = String(req.params.id);
-    await write(deps, res, workspace, 'edited', () => id, (file) => withEdit(file, id, lesson.kind, lesson.text, new Date().toISOString()));
+    await write(deps, res, workspace, 'edited', () => id, (file) => withEdit(file, id, lesson.kind, lesson.text, new Date().toISOString(), workspace.memoryCap));
   });
   app.delete('/workspaces/:name/memory/:id', async (req: Request, res: Response) => {
     const workspace = workspaceParam(deps, req, res);

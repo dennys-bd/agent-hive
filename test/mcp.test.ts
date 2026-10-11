@@ -19,7 +19,7 @@ import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Activity, Config, Conventions, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
-import { FEEDBACK_MAX, MEMORY_CAP, type MemoryFile } from '../src/types.js';
+import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, STAGES, fakeEvents, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import type { RecordInput } from '../src/events.js';
@@ -44,7 +44,7 @@ const work0 = (server: HiveServer): Activity | undefined => activityOf(server.ge
 // dispatch logs every event it reduces at debug; the fake log keeps every level
 const dispatched = (lines: string[]): string[] => lines.filter((line) => EVENT_TYPES.some((type) => line.startsWith(`DEBUG ${type} `)));
 
-async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], conventions?: Conventions, stages: unknown[] = BODY.stages ?? []): Promise<Hive> {
+async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], workspace: Partial<Workspace> = {}, stages: unknown[] = BODY.stages ?? []): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1);
   const { log, lines } = fakeLog();
   const { factory, actions } = fakeSourceFactory();
@@ -53,7 +53,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], c
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  const workspaces = workspacesAt(repo).map((w) => (conventions ? { ...w, conventions } : w)); // #692: what the conventions card saves
+  const workspaces = workspacesAt(repo).map((w) => ({ ...w, ...workspace })); // what the workspace card saves: conventions (#692), memoryCap (#73)
   const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, sources, workspaces, stages }) });
   assert.equal(saved.status, 200);
   await server.poll();
@@ -251,7 +251,7 @@ test('hive_pr takes a slice: a valid one reaches the record; a k of 0, a fractio
 
 test('hive_conventions answers what Settings saved on the task\'s workspace, as hive.config.json holds it, the Hive\'s language and the stage\'s approval (#692)', async (t) => {
   const conventions: Conventions = { specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } };
-  const { base, ptyId, home } = await start(t, [GITHUB_ENTRY], conventions);
+  const { base, ptyId, home } = await start(t, [GITHUB_ENTRY], { conventions });
   const file = JSON.parse(await readFile(join(home, 'hive.config.json'), 'utf8')) as { comb: { workspaces: { conventions?: unknown }[] } };
   assert.deepEqual(file.comb.workspaces[0].conventions, conventions);
   const answer = await call(await connect(t, base, ptyId), 'hive_conventions');
@@ -375,18 +375,18 @@ test('hive_remember saves a lesson with its task and stage from a stage run and 
   assert.ok(!JSON.stringify(records).includes('gate here') && !JSON.stringify(records).includes('Portuguese'), 'no lesson text in any record');
 });
 
-test('hive_remember refuses an unknown worker, a text that is not one line of 1 to 300 characters, a secret and a lesson that would pass the cap, and writes nothing for them (#797)', async (t) => {
-  const { base, home, records, ptyId } = await start(t);
+test('hive_remember refuses an unknown worker, a text that is not one line of 1 to 300 characters, a secret and a lesson that would pass the workspace\'s memoryCap, and writes nothing for them (#797, #73)', async (t) => {
+  const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500 });
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(await connect(t, base, 'ghost'), 'hive_remember', { kind: 'fact', text: 'x' }), { text: UNKNOWN_WORKER_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', text: 'two\nlines' }), { text: MEMORY_TEXT_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_remember', { kind: 'avoid', text: `never paste ${'Zx9'.repeat(11)}` }), { text: MEMORY_SECRET_MESSAGE, isError: true });
   const answers: { text: string; isError: boolean }[] = [];
-  for (let n = 1; n <= 20; n += 1) answers.push(await call(client, 'hive_remember', { kind: 'fact', text: `lesson ${n} ${'y'.repeat(280)}` }));
+  for (let n = 1; n <= 3; n += 1) answers.push(await call(client, 'hive_remember', { kind: 'fact', text: `lesson ${n} ${'y'.repeat(240)}` })); // 249 characters: two fit in 500
+  assert.deepEqual(answers.map((a) => a.isError), [false, false, true]);
   assert.deepEqual(answers.at(-1), { text: MEMORY_FULL_MESSAGE, isError: true });
   const { entries } = await memoryFile(home);
-  assert.equal(entries.length, answers.filter((a) => !a.isError).length);
-  assert.ok(memoryUsed(entries) <= MEMORY_CAP);
+  assert.deepEqual([entries.length, memoryUsed(entries)], [2, 498]);
   const reasons = mcpCalls(records).filter((c) => c.tool === 'hive_remember' && c.outcome === 'refused').map((c) => c.reason);
   assert.deepEqual([...reasons.slice(0, 3), reasons.at(-1)], ['unknown_worker', 'bad_memory', 'memory_secret', 'memory_full']);
 });

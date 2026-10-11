@@ -297,7 +297,7 @@ function registerConventionsTool(server: McpServer, deps: McpDeps, header: strin
 
 /** Who saves or cites a lesson (#797): the workspace the worker's task resolves to, the lesson's origin (the stage only for a stage run) and
  * the ids its records join by. */
-interface MemoryCaller { workspace: string; origin: { task: string; stage?: string }; correlation: Correlation }
+interface MemoryCaller { workspace: string; cap: number; origin: { task: string; stage?: string }; correlation: Correlation }
 
 // None for an unknown worker, a local session (no task) or a task whose workspace no longer resolves: the tools answer unknown_worker
 function memoryCaller(deps: McpDeps, header: string | undefined): MemoryCaller | undefined {
@@ -308,7 +308,7 @@ function memoryCaller(deps: McpDeps, header: string | undefined): MemoryCaller |
   const workspace = current && task ? taskWorkspace(current.config, task) : undefined;
   if (!current || !worker || !task || !workspace) return undefined;
   const stage = worker.freeSession ? {} : { stage: task.stage };
-  return { workspace: workspace.name, origin: { task: task.item.id, ...stage }, correlation: correlationOf(current.state, worker) };
+  return { workspace: workspace.name, cap: workspace.memoryCap, origin: { task: task.item.id, ...stage }, correlation: correlationOf(current.state, worker) };
 }
 
 const REMEMBER_DESCRIPTION = 'Save a lesson to this workspace\'s memory, which the Hive gives every later run on its tasks. kind: "pref" (how the user wants things done, often learned from a correction), "fact" (a fact about this repository a later task needs) or "avoid" (something that fails or must not be done here). text: one line, at most 300 characters. Never save details of this task only, what the repository already records (its agent instructions, the code, git history), or anything a token or a secret could be in.';
@@ -324,7 +324,7 @@ function registerRememberTool(server: McpServer, deps: McpDeps, header: string |
     if (!caller) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     const refused = lessonRefusal(text);
     if (refused) return refuse(refused.code, refused.message);
-    const saved = await deps.memory.update(caller.workspace, (file) => withEntry(file, kind, text, caller.origin, new Date().toISOString()));
+    const saved = await deps.memory.update(caller.workspace, (file) => withEntry(file, kind, text, caller.origin, new Date().toISOString(), caller.cap));
     if (isMemoryRefusal(saved)) return refuse(saved.code, saved.message);
     const id = `m-${saved.nextId - 1}`; // withEntry's: the counter it just moved on
     deps.events.write({ event: 'memory.changed', level: 'info', ...caller.correlation, action: 'added', kind, by: 'worker', id, workspace: caller.workspace, ...memoryCounts(saved) });
