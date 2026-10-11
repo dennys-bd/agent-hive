@@ -59,8 +59,8 @@ const activityUrl = (activityId: string, route: string): string => `/activities/
 
 interface FilesView { expanded: ReadonlySet<string>; showHidden: boolean }
 
-// What the tree remembers (#947): show hidden files is the user's, in the view state across activities and restarts; the open folders are the
-// activity's, for the page only. Anything stored but true reads as off.
+// Show hidden files is a habit of the user's, not of a worktree (#947), so it lives in the view state; the open folders belong to one
+// activity and only for the page, since a stale set after a restart would point at folders that may be gone.
 function useFilesView(activityId: string): [FilesView, Dispatch<SetStateAction<FilesView>>] {
   const [view, setView] = useState<FilesView>(() => ({ expanded: expandedOf(activityId), showHidden: readView('filesShowHidden') === true }));
   useEffect(() => { // only a change posts: the sidebar remounts on every switch of activity
@@ -293,8 +293,8 @@ export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: bo
 
 /** The right sidebar under Atividades with an activity open (redesign 07): arquivos, the activity's worktree (the workspace checkout for a
  *  local run, or for a workspace's local activity, #633) as a tree that follows git status, or detalhes, the task's detail. A local activity
- *  has no task to detail, so it shows arquivos alone, whatever tab a task left. MainDock keys it by activity, so another activity starts
- *  collapsed. */
+ *  has no task to detail, so it shows arquivos alone, whatever tab a task left. MainDock keys it by activity, so each switch remounts it
+ *  and useFilesView starts from that activity's open folders (#947). */
 export function ActivitySide({ target, tab, isShown, details, onTab }: ActivitySideProps) {
   const [view, setView] = useFilesView(target.activity.id);
   const task = isTask(target) ? target.task : undefined;

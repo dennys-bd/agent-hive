@@ -69,3 +69,16 @@ test('a folder opened stays open when the activity is left and shown again; anot
   rerender(side('I1'));
   expect(await screen.findByRole('button', { name: 'a.ts' })).toBeInTheDocument();
 });
+
+test('recolher tudo is remembered too: the activity shown again starts collapsed (#947)', async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(side('I1'));
+  await user.dblClick(await screen.findByRole('button', { name: 'src' }));
+  await user.click(screen.getByRole('button', { name: 'mais ações' }));
+  await user.click(screen.getByRole('menuitem', { name: 'recolher tudo' }));
+  rerender(side('I2'));
+  await screen.findByRole('button', { name: 'src' });
+  rerender(side('I1'));
+  await screen.findByRole('button', { name: 'src' });
+  expect(screen.queryByRole('button', { name: 'a.ts' })).not.toBeInTheDocument();
+});
