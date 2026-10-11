@@ -1,6 +1,6 @@
 // The this PR block's review rows (#66): one per person, from what PrData already holds. Pure. ponytail: the reviews are the timeline's last
 // 100, so on a very long PR an old reviewer may be missing; read more of the timeline if that ever shows
-import type { PrData, PrReviewEvent } from '../../types.js';
+import type { PrData, PrReviewEvent, PrReviewRequest } from '../../types.js';
 
 export type ReviewerState = 'approved' | 'changes' | 'resolved' | 'commented' | 'requested';
 export interface Reviewer { login: string; team: boolean; state: ReviewerState }
@@ -33,3 +33,6 @@ export function reviewersOf(pr: PrData): Reviewer[] {
     .map((review): Reviewer => ({ login: review.author, team: false, state: review.kind === 'changes' ? changesOf(pr, review.author) : review.kind }));
   return [...requests, ...reviewed];
 }
+
+/** The pending request that names the viewer (#68), if any: the PR without activity's request line and its neutral merge box say it. */
+export const viewerRequestOf = (pr: PrData): PrReviewRequest | undefined => pr.reviewRequests.find((request) => request.viewer);

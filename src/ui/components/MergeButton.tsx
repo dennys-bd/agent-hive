@@ -2,7 +2,7 @@ import { ChevronDownIcon } from 'lucide-react';
 import { useState } from 'react';
 import { type MergeBlocker, mergeBlocker } from '../../pr-github';
 import { prNumber, prRepo } from '../../pull-requests';
-import type { MergeMethod, PrData } from '../../types';
+import type { MergeMethod, PrData, Task } from '../../types';
 import { prMerge } from '@/components/pr-actions';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -24,17 +24,25 @@ export function mergeOffReason(pr: PrData, orderBlocker: string | undefined): st
   return blocker === undefined ? undefined : t(BLOCKER_KEY[blocker]);
 }
 
-interface MergeButtonProps { pr: PrData; orderBlocker?: string; variant?: 'default' | 'outline'; onSettled(): void; onMerged?(): void }
+/** A PR no task holds that GitHub holds for a review (#68): open, no conflicts, reviewDecision REVIEW_REQUIRED. The merge box, the this PR
+ * block and the merge button say "awaits review" rather than offer a merge GitHub would refuse; a task's PR keeps #592's rule. */
+export const awaitsReview = (pr: PrData, task: Task | undefined): boolean =>
+  task === undefined && pr.state === 'open' && pr.mergeState !== 'conflicts' && pr.decision === 'pending';
+
+interface MergeButtonProps {
+  pr: PrData; orderBlocker?: string; variant?: 'default' | 'outline'; onSettled(): void; onMerged?(): void;
+  offReason?: string; // #68: a reason of the caller's (awaits review) that turns the button off with it as the tooltip
+}
 
 /** {method} and merge ⌄ (#592, #758): a split button over the methods the repository allows, the last pick remembered per repository. Off
  * with mergeOffReason as the tooltip, on the wrapper since a disabled button shows none; outline at .6 in the conflict box. No confirmation:
  * the click is the user's gesture. Pending while the call runs; GitHub's message beside it on a refusal. The PR is read again (onSettled)
  * either way, except when a success leaves the page (onMerged, #69): the back unmounts it, so a re-read would race the unmount. */
-export function MergeButton({ pr, orderBlocker, variant = 'default', onSettled, onMerged }: MergeButtonProps) {
+export function MergeButton({ pr, orderBlocker, variant = 'default', offReason, onSettled, onMerged }: MergeButtonProps) {
   const [method, setMethod] = useState(() => pickMethod(pr.url, pr.methods));
   const [isPending, setPending] = useState(false);
   const [error, setError] = useState<string>();
-  const reason = mergeOffReason(pr, orderBlocker);
+  const reason = offReason ?? mergeOffReason(pr, orderBlocker);
   const merge = (): void => {
     if (method === undefined) return;
     setPending(true);

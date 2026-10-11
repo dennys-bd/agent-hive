@@ -1712,6 +1712,7 @@ const en = {
   'pr.merge.noPermission': 'no merge permission', 'pr.merge.noPermissionTitle': 'no write permission on {repo}', // #854
   'pr.merge.noPermissionNote': 'you have no write permission on {repo}. the merge is up to a maintainer; when it happens, the task moves on to its next stage.',
   'pr.merge.facts.awaiting': 'checks await approval', 'pr.merge.facts.failed': '{n} checks failed',
+  'pr.merge.awaitsReview': 'awaits review', 'pr.merge.facts.requested': 'review requested from you', // #68: a PR no task holds, held for a review
   'pr.checks.rerun': 're-run failures', 'pr.checks.rerunNoPermission': 'no permission on {repo}',
   'pr.checks.rerunBand': 'no permission to re-run on {repo}. a new push to the PR runs the CI again, or a maintainer re-runs it.',
   'pr.checks.awaiting': 'checks · awaiting approval',
@@ -3481,6 +3482,7 @@ const pt: Record<MessageKey, string> = {
   'pr.merge.noPermission': 'sem permissão de merge', 'pr.merge.noPermissionTitle': 'sem permissão de escrita em {repo}',
   'pr.merge.noPermissionNote': 'você não tem permissão de escrita em {repo}. o merge fica com um mantenedor; quando acontecer, a tarefa segue para a próxima etapa.',
   'pr.merge.facts.awaiting': 'checks aguardam aprovação', 'pr.merge.facts.failed': '{n} checks falharam',
+  'pr.merge.awaitsReview': 'aguarda review', 'pr.merge.facts.requested': 'review pedido a você',
   'pr.checks.rerun': 're-executar falhas', 'pr.checks.rerunNoPermission': 'sem permissão em {repo}',
   'pr.checks.rerunBand': 'sem permissão para re-executar em {repo}. um push novo no PR executa o CI de novo, ou um mantenedor re-executa.',
   'pr.checks.awaiting': 'checks · aguardam aprovação',

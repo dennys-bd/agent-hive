@@ -4,10 +4,11 @@ import { mergeOrderBlocker, prRepo } from '../../pull-requests';
 import { liveRuns } from '../../task-runs';
 import type { OpenResult, PrData, State, Task } from '../../types';
 import { act, attachRun, focusRun } from '@/components/actions';
-import { MergeButton, mergeOffReason } from '@/components/MergeButton';
+import { awaitsReview, MergeButton, mergeOffReason } from '@/components/MergeButton';
 import { runTab, useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { t, tPlural } from '@/i18n';
+import { viewerRequestOf } from '@/lib/pr-reviewers';
 import { shownSize } from '@/lib/xterm-setup';
 
 const MUTED = 'text-muted-foreground';
@@ -120,9 +121,33 @@ function NoPermissionBox({ pr, orderBlocker, onSettled, onMerged }: BoxProps) {
   );
 }
 
+// awaits review (#68, handoff 7): a PR no task holds that GitHub holds for a review; in muted, as the review is someone else's to give. The
+// facts that hold and the merge off with the same words as its tooltip; no note, since no task moves
+function NeutralBox({ pr, onSettled, onMerged }: BoxProps) {
+  const title = t('pr.merge.awaitsReview');
+  const facts = [
+    ...(viewerRequestOf(pr) === undefined ? [] : [t('pr.merge.facts.requested')]),
+    ...(pr.checks?.state === 'success' ? [t('pr.merge.facts.checks')] : []),
+    t('pr.merge.facts.clean'),
+  ];
+  return (
+    <>
+      <Head tone={MUTED} title={title} facts={facts.join(' · ')} />
+      <div className="flex"><MergeButton pr={pr} variant="outline" offReason={title} onSettled={onSettled} onMerged={onMerged} /></div>
+    </>
+  );
+}
+
+// Which box (#758, #854, #68): conflicts first; then a PR no task holds awaiting a review, before the push rights it does not depend on
+function Box(props: BoxProps) {
+  if (props.pr.mergeState === 'conflicts') return <ConflictBox {...props} />;
+  if (awaitsReview(props.pr, props.task)) return <NeutralBox {...props} />;
+  return props.pr.canPush ? <ReadyBox {...props} /> : <NoPermissionBox {...props} />;
+}
+
 export interface PrMergeBoxProps { pr: PrData; task?: Task; state: State; onSettled(): void; onMerged?(): void }
 
-/** The merge box (#758, handoff 03): ready, in conflict, or held by another blocker. The merge keeps #592's rule, which the server applies; a
+/** The merge box (#758, handoff 03): ready, in conflict, awaiting a review on a PR no task holds (#68), or held by another blocker. The merge keeps #592's rule, which the server applies; a
  * merged or closed PR has no box. */
 export function PrMergeBox({ pr, task, state, onSettled, onMerged }: PrMergeBoxProps) {
   if (pr.state !== 'open') return null;
@@ -130,7 +155,7 @@ export function PrMergeBox({ pr, task, state, onSettled, onMerged }: PrMergeBoxP
   const props: BoxProps = { pr, task, state, orderBlocker, onSettled, onMerged };
   return (
     <section aria-label={t('pr.merge')} className="flex max-w-[680px] flex-col gap-2.5 rounded-lg border p-3">
-      {pr.mergeState === 'conflicts' ? <ConflictBox {...props} /> : pr.canPush ? <ReadyBox {...props} /> : <NoPermissionBox {...props} />}
+      <Box {...props} />
     </section>
   );
 }

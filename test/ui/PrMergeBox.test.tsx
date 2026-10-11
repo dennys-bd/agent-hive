@@ -140,3 +140,37 @@ test('without push rights: sem permissão de merge in muted with the facts, abri
   renderBox(prData({ canPush: false, checks: { state: 'pending', items: [], awaiting: ['CI'] } }));
   expect(box().getByText('checks aguardam aprovação · sem conflitos')).toBeInTheDocument();
 });
+
+test('a PR no task holds that awaits review: ● aguarda review in muted, the facts that hold, the merge off in outline with the same words as its tooltip, no note; it comes before the no-permission box (#68)', () => {
+  const asked = prData({
+    decision: 'pending', approvals: 1, reviewRequests: [{ reviewer: 'ana', team: false, viewer: true }],
+    checks: { state: 'success', items: [{ name: 'test', state: 'success' }] },
+  });
+  const { unmount } = renderBox(asked, STATE);
+  expect(box().getByText('aguarda review')).toBeInTheDocument();
+  expect(box().getByText('●')).toHaveClass('text-muted-foreground');
+  expect(box().getByText('review pedido a você · checks ok · sem conflitos')).toBeInTheDocument();
+  const merge = box().getByRole('button', { name: 'squash e merge' });
+  expect(merge).toBeDisabled();
+  expect(merge).toHaveAttribute('data-variant', 'outline');
+  expect(merge.parentElement).toHaveAttribute('title', 'aguarda review');
+  expect(box().queryByText('passa a tarefa para a próxima etapa')).toBeNull();
+  unmount();
+  renderBox(prData({ decision: 'pending', canPush: false }), STATE);
+  expect(box().getByText('aguarda review')).toBeInTheDocument();
+  expect(box().getByText('sem conflitos')).toBeInTheDocument(); // no request of the viewer's, no passing checks
+  expect(box().queryByText('sem permissão de merge')).toBeNull();
+});
+
+test('without a task an approved mergeable PR keeps the ready box with no note, conflicts keep the conflict box, and a task\'s PR awaiting review keeps the ready box (#68)', () => {
+  const ready = renderBox(prData({ decision: 'approved', approvals: 1 }), STATE);
+  expect(box().getByText('pronto para merge')).toBeInTheDocument();
+  expect(box().getByRole('button', { name: 'squash e merge' })).toBeEnabled();
+  expect(box().queryByText('passa a tarefa para a próxima etapa')).toBeNull();
+  ready.unmount();
+  const conflict = renderBox(prData({ decision: 'pending', mergeState: 'conflicts' }), STATE);
+  expect(box().getByText('conflitos')).toBeInTheDocument();
+  conflict.unmount();
+  renderBox(prData({ decision: 'pending' }), WITH_TASK);
+  expect(box().getByText('pronto para merge')).toBeInTheDocument();
+});
