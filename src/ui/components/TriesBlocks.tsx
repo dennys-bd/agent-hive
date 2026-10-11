@@ -17,7 +17,7 @@ import { clock, duration } from '@/lib/usage';
 const MUTED = 'text-muted-foreground';
 type OpenSession = (sessionId: string) => void;
 const line = (r: TryRecord): string => t('tries.line', { n: r.n, max: r.max, cause: r.cause });
-const keyOf = (r: TryRecord): string => `${r.transition}${r.n}${r.at}`;
+const keyOf = (r: TryRecord): string => `${r.transition}:${r.n}:${r.at}`;
 
 // A try's session through its open route, under the record that keeps it, else the live activity's (#629): as SessionsList opens one
 function useOpenTrySession(task: Task, state: State): OpenSession {
