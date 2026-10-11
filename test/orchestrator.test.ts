@@ -2022,6 +2022,9 @@ test('setAuto on clears the activity\'s stopped mark so the fill may pick the ta
   assert.deepEqual(queued.effects, [], 'under red nothing fills: the task waits for a worker');
   const green = signaled(stopped, 'green').state;
   assert.deepEqual(reduce(green, { type: 'setAuto', taskId: 'board:item1', auto: true }).effects.map((e) => e.type), ['spawn'], 'a free worker takes it at once');
+  const failed = withLive(green, 1, { error: 'commands failed' });
+  const kept = reduce(failed, { type: 'setAuto', taskId: 'board:item1', auto: true });
+  assert.deepEqual([work(kept.state, 1)?.stopped, work(kept.state, 1)?.stoppedAt, kept.effects], [true, STOPPED_AT, []], 'a failure\'s stop keeps its mark: the error still bars the fill');
 });
 
 test('the fill skips a task with auto false and takes one with auto true (#573)', () => {

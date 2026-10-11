@@ -1,4 +1,4 @@
-// The auto badge's look (#735, #727): the task's own auto is on, but the Hive stopped it; only a start, a continue or a stage change brings it back.
+// The auto badge's look (#735, #727): the task's own auto is on, but the Hive stopped it; only a start, a continue, a stage change or turning the auto back on (#892) brings it back.
 import { activityOf } from '../../activities.js';
 import type { State, Task } from '../../types.js';
 
