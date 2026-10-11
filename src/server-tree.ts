@@ -1,5 +1,5 @@
 import { access, lstat, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -25,6 +25,8 @@ const TREE_MAX_BYTES = 16 * 1024 * 1024; // a monorepo's path list passes execFi
 const RENAME_OR_COPY = /^[RC]/;
 const MIN_ENTRY = 4; // `XY p`: two status letters, a space, at least one character of path
 const IGNORED_XY = '!!'; // #1: what a status run with --ignored says of an ignored path
+// #1: a nested repository's marks and what it ignores in one run; `matching` names an ignored folder `dir/` instead of every file under it
+const NESTED_STATUS_ARGS = ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching'];
 // HIVE-22: what git ignores, outermost: `dir/` for a folder it never walked into, a path for a file
 const IGNORED_ARGS = ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'];
 
@@ -160,15 +162,29 @@ function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRoute
 
 // A directory is a folder; anything else, a symlink too, is a file: the tree opens it and never walks through it. ponytail: no cap on the
 // listing, and an expanded folder is re-read every poll; a truncated answer if a huge expanded folder (node_modules) ever slows the tree
-async function folderEntries(folder: string): Promise<FolderEntries> {
+async function diskEntries(folder: string): Promise<FolderEntries> {
   const entries = (await readdir(folder, { withFileTypes: true })).filter((entry) => entry.name.toLowerCase() !== '.git');
   const namesOf = (isFolder: boolean): string[] => entries.filter((entry) => entry.isDirectory() === isFolder).map((entry) => entry.name).sort();
   return { files: namesOf(false), folders: namesOf(true) };
 }
 
+// HIVE-22's listing, and inside a nested repository (#1) that repository's view of it. The walk up runs on the query's path as written,
+// normalized: `folder` is real, and on macOS a real path need not start with the root as written. ponytail: one pathspec-limited git status
+// per expanded folder inside a nested repository per poll (POLL_MS); one status per nested repository, shared by its expanded folders, if a
+// big one ever slows the tree
+async function folderEntries(root: string, path: string, folder: string, exec: Exec): Promise<FolderEntries> {
+  const children = await diskEntries(folder);
+  const inTree = relative(root, resolve(root, path)); // '' is the root
+  const repo = await nestedRepoOf(root, inTree, holdsGit);
+  if (repo === undefined) return children;
+  const inRepo = inTree === repo ? '' : inTree.slice(repo.length + 1);
+  const status = await git(join(root, repo), [...NESTED_STATUS_ARGS, '--', inRepo === '' ? '.' : inRepo], exec);
+  return { ...children, repo: repoViewOf(status, inRepo, children) };
+}
+
 // GET /activities/:id/tree/folder (HIVE-22): a folder's children from disk, what an expanded ignored folder shows. Any folder of the tree is
-// taken: the route reads names only, and telling an ignored one apart would cost a git run
-function registerFolderRoute(app: Express, { requireLive }: Pick<TaskRouteDeps, 'requireLive'>): void {
+// taken: the route reads names, and only a folder inside a nested repository costs a git run (#1)
+function registerFolderRoute(app: Express, { exec, requireLive }: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
   app.get('/activities/:id/tree/folder', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -179,7 +195,7 @@ function registerFolderRoute(app: Express, { requireLive }: Pick<TaskRouteDeps, 
     try {
       const folder = await treeFolder(root, path);
       if (typeof folder !== 'string') return refuse(res, folder);
-      res.json(await folderEntries(folder));
+      res.json(await folderEntries(root, path, folder, exec));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: wordsOf(err) });
     }

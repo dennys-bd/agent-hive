@@ -26,6 +26,8 @@ const DIRS = ['empty/', 'src/', 'vendor/lib/', ''].join('\0');
 const IGNORED = ['debug.log', 'node_modules/', 'docs/', '.git/', ''].join('\0');
 // the vendor/lib nested repository the --directory listing names (it holds .git) joins the ignored folders
 const IGNORED_ENTRIES = { files: ['debug.log'], folders: ['docs', 'node_modules', 'vendor/lib'] };
+// a nested repository's git status (#1), its paths relative to that repository
+const NESTED_STATUS = [' M agent/foo.md', '!! agent/x.log', ''].join('\0');
 const STATUS = [' M src/b.ts', ' D gone.txt', '?? new.txt', 'R  moved.ts', 'old.ts', ''].join('\0');
 const task = (n: number, extra: Partial<WithWork> = {}): WithWork => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive', ...extra,
@@ -44,6 +46,7 @@ async function startTree(t: TestContext, tasks: (repo: string) => WithWork[]): P
   const calls: [string, string[]][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, args]);
+    if (args.includes('--ignored=matching')) return { stdout: NESTED_STATUS };
     if (args.includes('--ignored')) return { stdout: IGNORED };
     if (args.includes('--directory')) return { stdout: DIRS };
     if (args.includes('ls-files')) return { stdout: LISTED };
@@ -160,7 +163,7 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
 });
 
-test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused (HIVE-22)', async (t) => {
+test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused, running no git (HIVE-22, #1)', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const wt = worktreePath(f.repo, 'hive-1-task');
   await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
@@ -169,12 +172,32 @@ test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sort
   await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
   const folder = (query: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder${query}`);
   const res = await folder('?path=docs');
-  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'] }]);
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'], repo: { marks: {}, ignored: [] } }]);
+  // docs holds .git: one status in it, its own root as the pathspec `.`
+  assert.deepEqual(f.calls.map(([, args]) => [args[2], args.at(-1)]), [[join(wt, 'docs'), '.']]);
+  f.calls.length = 0;
   const refusals = [['?path=..%2Fx', OUTSIDE_MESSAGE], ['?path=vendor%2Flib%2F.git', GIT_MESSAGE], ['?path=nope', FOLDER_MISSING_MESSAGE], ['', FOLDER_QUERY_MESSAGE], ['?path=a&path=b', FOLDER_QUERY_MESSAGE]] as const;
   for (const [query, message] of refusals) {
     const refused = await folder(query);
     assert.deepEqual([refused.status, await refused.json()], [400, { error: message }], query);
   }
+  assert.deepEqual(f.calls, []);
+});
+
+test('GET /activities/:id/tree/folder answers a nested repository\'s marks and ignored names from one status in that repository, limited to the folder; a folder with no repository above runs no git (#1)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const wt = worktreePath(f.repo, 'hive-1-task');
+  await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
+  await mkdir(join(wt, 'src'), { recursive: true });
+  await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
+  await Promise.all(['foo.md', 'bar.md', 'x.log'].map((name) => writeFile(join(wt, 'docs', 'agent', name), name)));
+  await writeFile(join(wt, 'src', 'b.ts'), 'b');
+  const folder = (path: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder?path=${encodeURIComponent(path)}`);
+  const res = await folder('docs/agent');
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['bar.md', 'foo.md', 'x.log'], folders: [], repo: { marks: { 'foo.md': 'M' }, ignored: ['x.log'] } }]);
+  assert.deepEqual(f.calls, [['git', ['--no-optional-locks', '-C', join(wt, 'docs'), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--', 'agent']]]);
+  f.calls.length = 0;
+  assert.deepEqual(await (await folder('src')).json(), { files: ['b.ts'], folders: [] });
   assert.deepEqual(f.calls, []);
 });
 
