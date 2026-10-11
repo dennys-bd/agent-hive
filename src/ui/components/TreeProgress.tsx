@@ -4,8 +4,8 @@ import { t } from '@/i18n';
 import { STATUS_DOT, type TaskState } from '@/lib/status';
 import { segmentTone } from '@/lib/tree-groups';
 
-// The handoff's bar: done in muted-foreground, the rest in its status's solid colour, new and empty in the border's. Literals, for Tailwind's scanner
-const SEGMENT: Record<TaskState | 'done', string> = { ...STATUS_DOT, done: 'bg-muted-foreground' };
+// The handoff's bar: done in muted-foreground, the rest in its status's solid colour, new and empty in the border's. Literals, for Tailwind's scanner. Exported for the details' tree bar (#36), which draws the same colours
+export const SEGMENT: Record<TaskState | 'done', string> = { ...STATUS_DOT, done: 'bg-muted-foreground' };
 
 interface TreeProgressProps { task: Task; state: State; onFocusTree?(itemId: string): void }
 

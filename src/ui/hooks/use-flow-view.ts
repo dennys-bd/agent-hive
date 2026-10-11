@@ -47,7 +47,8 @@ export function useFlowView(isShown: boolean): FlowViewControls {
   const pan = useRef(view.pan);
   const latest = useRef(view); // what was last written: a scroll's handler may be a render older than a zoom or a toggle
   const save = (next: FlowView): void => {
-    const saved = { ...next, pan: pan.current };
+    // #36: `outline` is the details' field; the stored one wins over this hook's copy, or a zoom or a toggle would undo a collapse made there
+    const saved = { ...next, pan: pan.current, outline: readFlowView().outline };
     latest.current = saved;
     writeFlowView(saved);
     setView(saved);
@@ -80,7 +81,7 @@ export function useFlowView(isShown: boolean): FlowViewControls {
     },
     onPan: (next) => {
       pan.current = next;
-      latest.current = { ...latest.current, pan: next };
+      latest.current = { ...latest.current, pan: next, outline: readFlowView().outline }; // #36: as in save, a scroll keeps the details' collapses
       writeFlowView(latest.current);
     },
     onFit: (zoom) => {

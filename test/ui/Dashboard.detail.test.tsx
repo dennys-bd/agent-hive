@@ -37,10 +37,10 @@ const boardTask = (label: string): Element => screen.getAllByText(label).find((e
 const rightKey = (): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, altKey: true, shiftKey: true }); };
 
 // The selection as App holds it (src/ui/App.tsx): one piece of state, threaded through Dashboard down to Flow/DetailPanel.
-function Home({ initial, calls }: { initial?: Selection; calls: (Selection | undefined)[] }) {
+function Home({ initial, calls, s = state }: { initial?: Selection; calls: (Selection | undefined)[]; s?: State }) {
   const [selected, setSelected] = useState<Selection | undefined>(initial);
-  const onSelect = (s?: Selection): void => { calls.push(s); setSelected(s); };
-  return <Dashboard state={state} locale="pt-BR" tick={0} selected={selected} onSelect={onSelect} />;
+  const onSelect = (next?: Selection): void => { calls.push(next); setSelected(next); };
+  return <Dashboard state={s} locale="pt-BR" tick={0} selected={selected} onSelect={onSelect} />;
 }
 
 const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -140,4 +140,28 @@ test('Escape closes the detail\'s panel and keeps the selection; with Detalhes b
   fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true }); // toggleLeft opens the left panel again (#452)
   expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('heading', { name: '#1 Task A' })).toBeVisible();
+});
+
+// #36: A lists B, so the details of either hold the tree section
+const TREE: State = withPointedWork({
+  ...state, tasks: [{ ...taskA, item: { ...taskA.item, children: ['B'] } }, { ...taskB, item: { ...taskB.item, parent: 'A' } }, taskC],
+});
+// The flow's own card, by its task id: the outline's rows carry the same label
+const card = (itemId: string): HTMLElement => document.querySelector<HTMLElement>(`li[data-task-id="${itemId}"]`)!;
+
+test('hovering a row of the details\' tree lights its card in the flow until the pointer leaves, and a click opens that task as the flow\'s click does (#36)', async () => {
+  resetViewState();
+  const user = userEvent.setup();
+  const calls: (Selection | undefined)[] = [];
+  render(<Home initial={{ taskId: 'A' }} calls={calls} s={TREE} />);
+  showFlow();
+  const section = screen.getByRole('region', { name: 'árvore' });
+  await user.hover(within(section).getByText('#2 Task B'));
+  expect(card('B')).toHaveClass('border-foreground', 'ring-foreground/25');
+  expect(card('A')).not.toHaveClass('border-foreground');
+  await user.unhover(within(section).getByText('#2 Task B'));
+  expect(card('B')).not.toHaveClass('border-foreground');
+  await user.click(within(section).getByText('#2 Task B'));
+  expect(calls).toEqual([{ taskId: 'B' }]);
+  expect(screen.getByRole('heading', { name: '#2 Task B' })).toBeInTheDocument();
 });

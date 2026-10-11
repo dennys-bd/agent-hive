@@ -3,7 +3,8 @@ import { type MouseEvent, type ReactNode, useState } from 'react';
 import { liveRuns, openFeedbackSession, startMode } from '../../task-runs';
 import { activityOf, prsOf, recordWithSession, workIdOf } from '../../activities';
 import { taskTotals } from '../../record-kit';
-import { continuable, SESSION_ID_CHARS, sessionsOf, workersOf } from '../../tasks';
+import { parentOf } from '../../task-tree';
+import { continuable, SESSION_ID_CHARS, sessionsOf, taskLabel, workersOf } from '../../tasks';
 import { prGroups, prNumber, repoName, type PrGroup, type PrLine } from '../../pull-requests';
 import type { Task, TaskFile, Session, OpenResult, State } from '../../types';
 import type { TaskState } from '@/lib/status';
@@ -170,15 +171,29 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The metadata grid (redesign 06): who starts the task, its PRs, the issue, the branch and the totals; narrower labels under Atividades. */
-export function MetaGrid({ task, state, isActivity }: { task: Task; state: Work; isActivity: boolean }) {
+// The parent row's value (#36): the parent's "#id title", opening its details as a click on its card does. Link-styled, in the links' colour
+function ParentValue({ parent, onOpenTask }: { parent: Task; onOpenTask(itemId: string): void }) {
+  return (
+    <Button type="button" variant="link" size="xs" className="h-auto min-w-0 justify-start p-0 font-normal text-review" onClick={() => onOpenTask(parent.item.itemId)}>
+      <span className="truncate">{taskLabel(parent)}</span>
+    </Button>
+  );
+}
+
+interface MetaGridProps { task: Task; state: Work & Pick<State, 'tasks'>; isActivity: boolean; onOpenTask?(itemId: string): void }
+
+/** The metadata grid (redesign 06): who starts the task, its PRs, the issue, the parent task (#36: only with one in the list and a way to open
+ * it), the branch and the totals; narrower labels under Atividades. */
+export function MetaGrid({ task, state, isActivity, onOpenTask }: MetaGridProps) {
   const columns = isActivity ? 'grid-cols-[56px_minmax(0,1fr)]' : 'grid-cols-[72px_minmax(0,1fr)]';
   const sync = activityOf(state, task.item.itemId)?.sync;
+  const parent = parentOf(state.tasks, task.item.itemId);
   return (
     <dl className={`grid ${columns} gap-x-2 gap-y-1.5 text-xs`}>
       <Row label={t('detail.start')}>{task.auto ? t('detail.start.auto') : t('detail.start.byYou')}</Row>
       <Row label={t('detail.prs')}><PrValue task={task} state={state} /></Row>
       {!task.created && <Row label={t('detail.issue')}><IssueValue task={task} /></Row>}
+      {parent && onOpenTask && <Row label={t('detail.parent')}><ParentValue parent={parent} onOpenTask={onOpenTask} /></Row>}
       <Row label={t('detail.branch')}><span className="truncate font-mono">{activityOf(state, task.item.itemId)?.branch ?? '—'}</span></Row>
       {sync && <Row label={t('detail.base')}><span className="truncate font-mono">{baseText(sync)}</span></Row>}
       <Row label={t('detail.totalLabel')}>{totalText(task, state)}</Row>
