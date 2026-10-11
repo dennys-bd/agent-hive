@@ -13,6 +13,7 @@ export class FakeTerminal {
   rows = 30;
   lines: string[] = []; // the screen's rows as text, read by a link provider through the buffer (#400)
   providers: FakeLinkProvider[] = [];
+  textarea: HTMLTextAreaElement | undefined = document.createElement('textarea'); // xterm's hidden input, there once open() ran: the key probe listens on it (#732)
   buffer = { active: { getLine: (y: number) => (this.lines[y] === undefined ? undefined : { translateToString: () => this.lines[y] }) } };
   private typed: ((data: string) => void)[] = [];
   private sized: ((size: { cols: number; rows: number }) => void)[] = [];

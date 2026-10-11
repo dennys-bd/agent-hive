@@ -1,6 +1,7 @@
 // .tsx without JSX: vitest.config.ts only picks test/ui/**/*.test.tsx.
 import type { Terminal } from '@xterm/xterm';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { BATCH_MS } from '@/lib/key-probe';
 import { connectPty, RESIZE_SETTLE_MS } from '@/lib/pty-stream';
 import { FakeTerminal, FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -163,4 +164,38 @@ test('an empty first frame, a ring with nothing in it, opens and closes the wind
   term.type('\x1b[O');
   term.type('1');
   expect(sentOf(socket)).toEqual([{ type: 'input', data: '1' }]);
+});
+
+test('the key probe\'s batch goes out as a keys message, and like input never while xterm parses the replay (#732, #831)', () => {
+  const { term, socket } = connect();
+  socket.open();
+  const textarea = term.textarea as HTMLTextAreaElement;
+  socket.receive('\x1b[c'); // the replay, still parsing
+  textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Dead', code: 'Quote' }));
+  vi.advanceTimersByTime(BATCH_MS); // its batch ends inside the window: dropped
+  term.parse();
+  textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Dead', code: 'Quote' }));
+  textarea.dispatchEvent(new CompositionEvent('compositionend', { data: 'é' }));
+  term.type('é');
+  vi.advanceTimersByTime(BATCH_MS);
+  expect(sentOf(socket)).toEqual([
+    { type: 'input', data: 'é' },
+    { type: 'keys', events: [
+      { kind: 'keydown', key: 'Dead', code: 'Quote', isComposing: false, at: 0 },
+      { kind: 'compositionend', data: 'é', at: 0 },
+      { kind: 'data', data: 'é', at: 0 },
+    ] },
+  ]);
+});
+
+test('the teardown stops the probe: a batch pending at disconnect is never sent (#732)', () => {
+  const { term, socket, stop } = connect();
+  socket.open();
+  socket.receive('');
+  term.parse();
+  (term.textarea as HTMLTextAreaElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Dead', code: 'Quote' }));
+  const sent = socket.sent.length;
+  stop();
+  vi.advanceTimersByTime(BATCH_MS);
+  expect(socket.sent.length).toBe(sent);
 });
