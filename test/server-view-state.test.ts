@@ -48,6 +48,13 @@ test('POST /view-state/activitiesView is accepted, and GET then holds every work
   assert.deepEqual(await answer(hiveFetch(`${base}/view-state`)), [200, { activitiesView: views }]);
 });
 
+test('POST /view-state/repoLists is accepted, and GET then holds each repository\'s list widths under it (#59)', async (t) => {
+  const { base } = await start(t);
+  const lists = { 'acme/site': { issues: { labels: 102 }, prs: { review: 160 } } };
+  assert.deepEqual(await answer(post(`${base}/view-state/repoLists`, { value: lists })), [200, { ok: true }]);
+  assert.deepEqual(await answer(hiveFetch(`${base}/view-state`)), [200, { repoLists: lists }]);
+});
+
 test('POST /view-state/:key answers 400 for a key not in the list, a body without value, or a value over 256 KiB, and writes nothing (#484)', async (t) => {
   const { base, home } = await start(t);
   for (const key of ['columnFilters', 'theme', '__proto__']) {
