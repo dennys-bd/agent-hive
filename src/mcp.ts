@@ -283,7 +283,7 @@ export async function forkConventions(exec: Exec, workspace: Workspace | undefin
 // hive_conventions (#692): what the plugin's new-* skills read first. Any skill may call it; it only reads.
 function registerConventionsTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_conventions', {
-    description: 'Read the conventions set for your workspace in the Hive (docs folders, languages, delivery, slice size, feature flags, UI check, test command; an absent key is the repository\'s to decide), the Hive\'s language, and whether your stage waits for the user\'s approval in the Hive, and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch. Answers a JSON object.',
+    description: 'Read the conventions set for your workspace in the Hive (docs folders, languages, delivery, slice size, feature flags, UI check, test command, decomposition label; an absent key is the repository\'s to decide), the Hive\'s language, and whether your stage waits for the user\'s approval in the Hive, and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch. Answers a JSON object.',
     inputSchema: {},
   }, async () => recorded(deps, header, 'hive_conventions', async () => {
     const ptyId = livePtyId(deps, header);

@@ -77,3 +77,15 @@ test('the card renders in English and in Portuguese (#692)', () => {
     unmount();
   }
 });
+
+test('decompositionLabel is a plain text field whose hint says none writes no label, in English and in Portuguese (#936)', () => {
+  for (const language of ['en', 'pt'] as const) {
+    setLanguage(language);
+    const { unmount } = render(<ConventionsEditor label="x" rows={[{ ...rowFor('decompositionLabel'), value: 'decomposed' }]} onChange={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: t('settings.conventions.key', { n: 1 }) })).toHaveTextContent(t('settings.conventions.label.decompositionLabel'));
+    const field = screen.getByLabelText(t('settings.conventions.value', { n: 1 }));
+    expect([field.tagName, (field as HTMLInputElement).value]).toEqual(['INPUT', 'decomposed']);
+    expect(screen.getByText(t('settings.conventions.about.decompositionLabel'))).toHaveTextContent('none');
+    unmount();
+  }
+});

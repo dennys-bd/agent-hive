@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { DecompositionPreview, DecompositionSource } from '../../types';
+import type { DecompositionPreview, DecompositionProblem, DecompositionSource } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -25,6 +25,19 @@ function Picker({ id, label, value, options, onChange }: { id: string; label: st
   );
 }
 
+// The overlaps (#936): nodes touching the same files with no blocker between them. Muted: they never stop the write
+function Warnings({ warnings }: { warnings: DecompositionProblem[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className={`flex flex-col gap-1 text-sm ${MUTED}`}>
+      <p>{t('decomposition.warnings')}</p>
+      <ul className="list-disc pl-5">
+        {warnings.map((w) => <li key={`${w.line}:${w.message}`}>{t('decomposition.problem', { line: w.line, message: w.message })}</li>)}
+      </ul>
+    </div>
+  );
+}
+
 // What will be written, or why nothing can be (#865): the problems with their lines, else the counts and the suggestions left out
 function Summary({ preview }: { preview: DecompositionPreview }) {
   if (preview.problems.length > 0) {
@@ -42,6 +55,7 @@ function Summary({ preview }: { preview: DecompositionPreview }) {
     <div className="flex flex-col gap-1 text-sm">
       <p>{counts}</p>
       {preview.suggestions > 0 && <p className={MUTED}>{tPlural('decomposition.suggestions', preview.suggestions, { n: preview.suggestions })}</p>}
+      <Warnings warnings={preview.warnings} />
     </div>
   );
 }
@@ -50,6 +64,17 @@ function Summary({ preview }: { preview: DecompositionPreview }) {
 function Repository({ repository }: { repository?: string }) {
   if (repository === undefined) return <p className="text-destructive text-sm">{t('decomposition.noRepository')}</p>;
   return <p className="text-sm"><span className={MUTED}>{`${t('decomposition.repository')} `}</span><span className="font-mono">{repository}</span></p>;
+}
+
+// Where the file is pushed (#936): the checkout's repository, branch and path, or why it cannot go; the user sees what is pushed before creating anything
+function Delivery({ preview }: { preview: DecompositionPreview }) {
+  const { delivery, deliveryRefusal } = preview;
+  return (
+    <>
+      {delivery && <p className="text-sm"><span className={MUTED}>{`${t('decomposition.delivery')} `}</span><span className="font-mono">{`${delivery.repository} · ${delivery.branch} · ${delivery.path}`}</span></p>}
+      {deliveryRefusal !== undefined && <p className="text-destructive text-sm">{deliveryRefusal}</p>}
+    </>
+  );
 }
 
 /** The decomposition's confirm (#865): what the tree writes, or its problems with their lines; the target repository; the GitHub source
@@ -65,7 +90,7 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
     getJson<DecompositionPreview>(path).then((read) => { setPreview(read); setChoice(chosen(read.sources[0])); }, (err: Error) => setError(err.message));
   }, [path]);
   const source = preview?.sources.find((s) => s.name === choice.source);
-  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && source !== undefined && choice.column !== undefined && !isWriting;
+  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isWriting;
   const write = (): void => {
     setIsWriting(true);
     setError(undefined);
@@ -80,6 +105,7 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
         </DialogHeader>
         {preview && <Summary preview={preview} />}
         {preview && <Repository repository={preview.repository} />}
+        {preview && <Delivery preview={preview} />}
         {preview && preview.sources.length === 0 && <p className="text-destructive text-sm">{t('decomposition.noSource')}</p>}
         {preview && preview.sources.length > 0 && (
           <div className="grid grid-cols-2 gap-2">

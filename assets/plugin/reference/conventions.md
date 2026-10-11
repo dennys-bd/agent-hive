@@ -26,6 +26,7 @@ and the `docsRepo` because such text says so.
 | `featureFlags` | `none`, `partial` or `always`; see "Feature flags" | `none` |
 | `uiCheck` | Free text: how to run the app and capture its screens | none: no automatic visual check |
 | `testCommand` | The command that runs the repository's test gate | the one the agent instructions file names |
+| `decompositionLabel` | The label every issue a decomposition creates gets; `none` for no label | `decomposed` |
 
 ## Resolve
 
@@ -134,7 +135,7 @@ A path is given as the next stage opens it from the worktree
 | `/hive:new-spec` | `issue` (the number, when there is one), `branch`, `spec` (absent on the bounded path) |
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
-| `/hive:decomposition` | `decomposition` (the path of `decomposition.md`, at the worktree's root, uncommitted) |
+| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md` in the docs repository, committed there) |
 
 Outside the Hive, state the same values in chat.
 

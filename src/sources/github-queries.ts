@@ -211,9 +211,29 @@ export const SEARCH_ISSUES = `query($q: String!) {
 export const REPOSITORY_ID = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) { id }
 }`;
-export const CREATE_ISSUE = `mutation($repositoryId: ID!, $title: String!, $body: String!) {
-  createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body }) { issue { id number url } }
-}`; // url: #846 names it when the Project write fails after the issue exists
+export const CREATE_ISSUE = `mutation($repositoryId: ID!, $title: String!, $body: String!, $labelIds: [ID!]) {
+  createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds }) { issue { id number url } }
+}`; // url: #846 names it when the Project write fails after the issue exists; labelIds: a decomposition's label (#936), none when not sent
+// A decomposition's write and delivery (#936): a repository's node id, and its default branch, which the Design: links and the PR's base name
+export const REPOSITORY_BRANCH = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) { id defaultBranchRef { name } }
+}`;
+// A decomposition's label (#936): found by name, else created in the repository
+export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: String!) {
+  repository(owner: $owner, name: $name) { label(name: $label) { id } }
+}`;
+export const CREATE_LABEL = `mutation($repositoryId: ID!, $name: String!, $color: String!) {
+  createLabel(input: { repositoryId: $repositoryId, name: $name, color: $color }) { label { id } }
+}`;
+// A decomposition's PR (#936): the file's branch to its repository's default branch, with the Hive's own login
+export const CREATE_PULL_REQUEST = `mutation($repositoryId: ID!, $baseRefName: String!, $headRefName: String!, $title: String!, $body: String!) {
+  createPullRequest(input: { repositoryId: $repositoryId, baseRefName: $baseRefName, headRefName: $headRefName, title: $title, body: $body }) { pullRequest { number url } }
+}`;
+// The open PRs of a head and base (#936): when GitHub refuses a second one, the one from the repository itself is the one to record; a fork's
+// PR of the same branch name matches headRefName too, so its head repository comes with it
+export const OPEN_PULL_REQUEST = `query($owner: String!, $name: String!, $head: String!, $base: String!) {
+  repository(owner: $owner, name: $name) { pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 10) { nodes { number headRepository { nameWithOwner } } } }
+}`;
 // An issue already in the project answers its existing item: a replay is harmless
 export const ADD_PROJECT_ITEM = `mutation($projectId: ID!, $contentId: ID!) {
   addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) { item { id } }
@@ -302,6 +322,11 @@ export interface IssueIdData { repository?: { issue?: { id: string } | null } | 
 export interface SearchIssuesData { search?: { nodes: Partial<GhBlockerRef>[] } | null } // #57: a node that is no issue answers {}
 export interface CreateIssueData { createIssue?: { issue?: { id: string; number: number; url: string } | null } | null } // #865
 export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: string } | null } | null } // #865
+export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
+export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
+export interface RepositoryBranchData { repository?: { id: string; defaultBranchRef?: { name: string } | null } | null } // #936
+export interface OpenPullRequestData { repository?: { pullRequests?: { nodes?: { number: number; headRepository?: { nameWithOwner?: string } | null }[] } | null } | null } // #936
+export interface CreatePullRequestData { createPullRequest?: { pullRequest?: { number: number; url: string } | null } | null } // #936
 
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */
 export interface GhIssueChoices {

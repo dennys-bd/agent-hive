@@ -8,7 +8,7 @@ import { initialState } from '../src/orchestrator.js';
 import { registerApprovalRoutes } from '../src/server-approval.js';
 import { registerDecompositionRoutes } from '../src/server-decomposition.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
-import { ADD_PROJECT_ITEM, CREATE_ISSUE, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_ID } from '../src/sources/github-queries.js';
+import { ADD_PROJECT_ITEM, CREATE_ISSUE, CREATE_PULL_REQUEST, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
 import { fakeGqlJson, GITHUB_ENTRY } from './fakes.js';
@@ -28,8 +28,13 @@ const GOAL: Task = {
 const LOCAL: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Site for XPTO', body: '', url: '' }, stage: 'goal', boardColumn: '', auto: true, created: true, workspace: 'hive' };
 const FIELDS = { repositoryOwner: { projectV2: { id: 'PV1', field: { id: 'F1', options: [{ id: 'o1', name: 'Backlog' }, { id: 'o2', name: 'Goals' }] } } } };
 const PENDING = { decomposition: 'decomposition.md' };
+// #936: the worktree's checkout answers a separate docs repository, so the links and the PR go there while the issues go to acme/site
+const DOCS_ORIGIN = 'git@github.com:acme/docs.git';
 
-interface Setup { task?: Task; result?: Record<string, unknown>; awaiting?: boolean; text?: string; origin?: string; fail?: string; sources?: SourceConfig[] }
+interface Setup {
+  task?: Task; result?: Record<string, unknown>; awaiting?: boolean; text?: string; origin?: string; fail?: string; sources?: SourceConfig[];
+  dirty?: boolean; pushFails?: string; noCheckout?: boolean; ignored?: boolean; branch?: string; // #936: the file's checkout as git answers it
+}
 
 async function routes(t: TestContext, setup: Setup = {}) {
   const repo = await realpath(await tempDir(t, 'hive-865-'));
@@ -46,18 +51,35 @@ async function routes(t: TestContext, setup: Setup = {}) {
     transitions: [], hiveSource: true, createIn: 'hive',
   };
   const events: HiveEvent[] = [];
-  const exec: Exec = async () => ({ stdout: `${setup.origin ?? ''}\n` });
+  const git: string[][] = [];
+  const exec: Exec = async (_file, args) => {
+    git.push(args);
+    if (setup.pushFails !== undefined && args.includes('push')) throw Object.assign(new Error('Command failed: git push'), { stderr: `${setup.pushFails}\n` });
+    if (args.includes('--show-toplevel')) {
+      if (setup.noCheckout === true) throw Object.assign(new Error('Command failed: git rev-parse'), { stderr: 'fatal: not a git repository\n' });
+      return { stdout: `${worktree}\n` };
+    }
+    if (args.includes('check-ignore')) {
+      if (setup.ignored === true) return { stdout: '' };
+      throw Object.assign(new Error('Command failed: git check-ignore'), { code: 1, stderr: '' });
+    }
+    if (args.includes('--show-current')) return { stdout: `${setup.branch ?? 'hive/7-site'}\n` };
+    if (args.includes('--porcelain')) return { stdout: setup.dirty === true ? ' M decomposition.md\n' : '' };
+    if (args.includes('get-url')) return { stdout: `${args[1] === worktree ? DOCS_ORIGIN : setup.origin ?? ''}\n` };
+    return { stdout: '' };
+  };
   let number = 100;
   const { calls, gql } = fakeGqlJson((query, variables) => {
     if (setup.fail !== undefined && query === CREATE_ISSUE && number === 101) throw new Error(setup.fail);
     if (query === PROJECT_FIELDS) return FIELDS;
-    if (query === REPOSITORY_ID) return { repository: { id: 'R1' } };
+    if (query === REPOSITORY_BRANCH) return variables.name === 'docs' ? { repository: { id: 'RD', defaultBranchRef: { name: 'trunk' } } } : { repository: { id: 'R1', defaultBranchRef: { name: 'main' } } };
     if (query === ISSUE_ID) return { repository: { issue: { id: `I${String(variables.number)}` } } };
     if (query === CREATE_ISSUE) {
       number += 1;
       return { createIssue: { issue: { id: `I${number}`, number } } };
     }
     if (query === ADD_PROJECT_ITEM) return { addProjectV2ItemById: { item: { id: 'PI' } } };
+    if (query === CREATE_PULL_REQUEST) return { createPullRequest: { pullRequest: { number: 300, url: 'https://github.com/acme/docs/pull/300' } } };
     return {};
   });
   const app = express();
@@ -68,7 +90,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
   const server = app.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/activities/${encodeURIComponent(activityIdOf(task.item.itemId))}`;
-  return { url: `${base}/decomposition`, base, events, calls, app, worktree };
+  return { url: `${base}/decomposition`, base, events, calls, app, worktree, git };
 }
 
 const post = (url: string, body: unknown): Promise<Response> => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -80,16 +102,17 @@ test('GET answers what the dialog shows: the counts, the suggestions, the goal\'
   const res = await fetch(url);
   assert.equal(res.status, 200);
   const expected: DecompositionPreview = {
-    title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 1, problems: [], repository: 'acme/site',
+    title: 'Site for XPTO', issues: 6, blockers: 3, suggestions: 1, problems: [], warnings: [], repository: 'acme/site',
+    delivery: { repository: 'acme/docs', branch: 'hive/7-site', path: 'decomposition.md' },
     sources: [{ name: 'board', statuses: ['Backlog', 'Goals'], column: 'Backlog' }],
   };
   assert.deepEqual(await res.json(), expected);
 });
 
-test('GET refuses a path that resolves outside the worktree, and a file that is not there (#865)', async (t) => {
+test('GET reads the file wherever the result points, outside the worktree too (a docsRepo elsewhere), and answers 404 for a file that is not there (#865, #936)', async (t) => {
   const outside = await routes(t, { result: { decomposition: '../../../outside.md' } });
-  const refused = await fetch(outside.url);
-  assert.deepEqual([refused.status, await refused.json()], [409, { error: 'a decomposição precisa estar na worktree da tarefa' }]);
+  const read = await fetch(outside.url);
+  assert.deepEqual([read.status, ((await read.json()) as DecompositionPreview).title], [200, 'Site for XPTO']);
   const missing = await routes(t, { result: { decomposition: 'nope.md' } });
   assert.deepEqual((await fetch(missing.url)).status, 404);
 });
@@ -106,6 +129,15 @@ test('GET lists the problems with their lines and no title (#865)', async (t) =>
   const { url } = await routes(t, { text: ['# G', '## 1 A', '### Scope', 'In: a.', '## 2 B', '### Scope', 'In: b.', '### Acceptance criteria', '- it works'].join('\n') });
   const read = (await (await fetch(url)).json()) as DecompositionPreview;
   assert.deepEqual([read.problems, read.issues, 'title' in read], [[{ line: 2, message: 'a leaf needs "### Acceptance criteria"' }], 0, false]);
+});
+
+test('GET lists the overlap warnings, and the file stays writable (#936)', async (t) => {
+  // 2.1 and 2.2 are not ordered: 2.1 waits for 1.2, 2.2 for nothing but 2's blocker, which holds neither
+  const text = EXAMPLE.replace('Blocked by: 1.2', 'Touches: src/contact.ts\nBlocked by: 1.2')
+    .replace('In: the landing page. Out: the contact form.', 'In: the landing page. Out: the contact form.\nTouches: src/');
+  const { url } = await routes(t, { text });
+  const read = (await (await fetch(url)).json()) as DecompositionPreview;
+  assert.deepEqual([read.problems, read.warnings], [[], [{ line: 76, message: '"2.1" touches "src/contact.ts" and "2.2" touches "src", and no "Blocked by:" orders them' }]]);
 });
 
 test('POST refuses 409 on a task not awaiting approval, and on a file with problems, before asking GitHub anything (#865)', async (t) => {
@@ -128,20 +160,99 @@ test('POST refuses 400 a source that is no GitHub source and a column that is no
 });
 
 test('POST on a GitHub goal records each step as it is done, then approves the stage straight through the reducer (#865)', async (t) => {
-  const { url, events } = await routes(t);
+  const { url, events, calls } = await routes(t);
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
-  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'done=7', 'approve']);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'pr=300', 'done=7', 'approve']);
   assert.deepEqual(events.at(-1), { type: 'approve', activityId: activityIdOf('board:I7') });
+  const bodies = calls.filter((c) => c.query === CREATE_ISSUE).map((c) => String(c.variables.body));
+  assert.match(bodies[0], /^Parent: #7$/m);
+  assert.match(bodies[2], /^Design: https:\/\/github\.com\/acme\/docs\/blob\/trunk\/decomposition\.md#1-backend$/m, 'the file\'s repository, its default branch, the path in its checkout');
+  assert.deepEqual(calls.filter((c) => c.query === CREATE_ISSUE).map((c) => c.variables.repositoryId), Array<string>(6).fill('R1'), 'the issues stay in the goal\'s repository');
 });
 
 test('POST on a local goal writes its root issue first and ends with closeTask (#865)', async (t) => {
   const { url, events } = await routes(t, { task: LOCAL, origin: 'git@github.com:acme/hive.git' });
   assert.equal((await post(url, CHOICE)).status, 200);
-  assert.deepEqual(stepsOf(events), ['root=101', '1=102', '1.1=103', '1.2=104', '2=105', '2.1=106', '2.2=107', 'done=101', 'closeTask']);
+  assert.deepEqual(stepsOf(events), ['root=101', '1=102', '1.1=103', '1.2=104', '2=105', '2.1=106', '2.2=107', 'pr=300', 'done=101', 'closeTask']);
   const local = await routes(t, { task: LOCAL });
   const refused = await post(local.url, CHOICE);
   assert.deepEqual([refused.status, await refused.json()], [409, { error: 'o workspace não tem origin no GitHub' }]);
+});
+
+test('POST refuses a file in no git checkout before any issue is written (#936)', async (t) => {
+  const { url, events, calls } = await routes(t, { noCheckout: true });
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [502, { error: 'the decomposition file is in no git checkout' }]);
+  assert.deepEqual([events, calls.some((c) => c.query === CREATE_ISSUE)], [[], false]);
+});
+
+test('POST on the docs repository\'s default branch refuses 409 before any issue is written; with pr recorded nothing is pushed, so it goes on (#936)', async (t) => {
+  const { url, events, calls, git } = await routes(t, { branch: 'trunk' });
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, ((await res.json()) as { error: string }).error], [409, 'the decomposition file\'s checkout is on acme/docs\'s default branch (trunk): the Hive never pushes it']);
+  assert.deepEqual([events, calls.some((c) => c.query === CREATE_ISSUE), git.some((a) => a.includes('push'))], [[], false, false]);
+  const issues = { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106 };
+  const recorded = await routes(t, { branch: 'trunk', result: { ...PENDING, decompositionIssues: { ...issues, pr: 300 } } });
+  assert.equal((await post(recorded.url, CHOICE)).status, 200);
+});
+
+test('a result whose decomposition is not a .md file is refused 409, on GET and POST (#936)', async (t) => {
+  const { url, calls } = await routes(t, { result: { decomposition: 'decomposition.txt' } });
+  for (const res of [await fetch(url), await post(url, CHOICE)]) {
+    assert.deepEqual([res.status, await res.json()], [409, { error: 'a decomposição precisa ser um arquivo .md' }]);
+  }
+  assert.equal(calls.some((c) => c.query === CREATE_ISSUE), false);
+});
+
+test('GET says where the delivery will push, or why it cannot: the default branch and no checkout (#936)', async (t) => {
+  const read = async (setup: Setup) => (await (await fetch((await routes(t, setup)).url)).json()) as DecompositionPreview;
+  const ok = await read({});
+  assert.deepEqual([ok.delivery, ok.deliveryRefusal], [{ repository: 'acme/docs', branch: 'hive/7-site', path: 'decomposition.md' }, undefined]);
+  const onDefault = await read({ branch: 'trunk' });
+  assert.deepEqual([onDefault.delivery?.branch, onDefault.deliveryRefusal], ['trunk', 'the decomposition file\'s checkout is on acme/docs\'s default branch (trunk): the Hive never pushes it']);
+  const none = await read({ noCheckout: true });
+  assert.deepEqual([none.delivery, none.deliveryRefusal], [undefined, 'the decomposition file is in no git checkout']);
+});
+
+test('POST commits a hand edit in the file\'s checkout, pushes its branch and opens the PR in the file\'s repository before done; a retry with pr recorded opens none (#936)', async (t) => {
+  const dirty = await routes(t, { dirty: true });
+  assert.equal((await post(dirty.url, CHOICE)).status, 200);
+  const literal = (args: string[]): boolean => args[0] === '--literal-pathspecs';
+  assert.deepEqual(dirty.git.filter((args) => args.includes('--')).map(literal), [true, true, true, true], 'check-ignore, status, add and commit read the path literally');
+  const plain = dirty.git.map((args) => (literal(args) ? args.slice(1) : args));
+  assert.deepEqual(plain.map((args) => args.slice(2)), [
+    ['rev-parse', '--show-toplevel'], ['remote', 'get-url', 'origin'], ['branch', '--show-current'], ['check-ignore', '-q', '--', 'decomposition.md'],
+    ['status', '--porcelain', '--', 'decomposition.md'], ['add', '--', 'decomposition.md'], ['commit', '-m', 'docs: decomposition for #7', '--', 'decomposition.md'],
+    ['push', '-u', 'origin', 'hive/7-site'],
+  ]);
+  assert.ok(plain.every((args) => args[0] === '-C' && args[1] === dirty.worktree), 'every git call runs in the file\'s checkout');
+  const [pr] = dirty.calls.filter((c) => c.query === CREATE_PULL_REQUEST).map((c) => c.variables);
+  assert.deepEqual([pr?.repositoryId, pr?.baseRefName, pr?.headRefName], ['RD', 'trunk', 'hive/7-site']);
+  const issues = { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106 };
+  const retried = await routes(t, { result: { ...PENDING, decompositionIssues: { ...issues, pr: 300 } } });
+  assert.equal((await post(retried.url, CHOICE)).status, 200);
+  assert.deepEqual(
+    [stepsOf(retried.events), retried.git.map((args) => args[2]), retried.calls.some((c) => c.query === CREATE_PULL_REQUEST)],
+    [['done=7', 'approve'], [], false],
+  );
+});
+
+test('an ignored file is refused 409 before any issue, and a recorded pr never reads the checkout, so a moved one cannot block done (#936)', async (t) => {
+  const ignored = await routes(t, { ignored: true });
+  const res = await post(ignored.url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'the decomposition file is ignored by git: it cannot be committed' }]);
+  assert.equal(ignored.calls.some((c) => c.query === CREATE_ISSUE), false);
+  const moved = await routes(t, { noCheckout: true, result: { ...PENDING, decompositionIssues: { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106, pr: 300 } } });
+  assert.equal((await post(moved.url, CHOICE)).status, 200);
+  assert.deepEqual([stepsOf(moved.events), moved.git], [['done=7', 'approve'], []]);
+});
+
+test('a failed push answers 502 with git\'s words; the issues stay recorded and neither pr nor done is (#936)', async (t) => {
+  const { url, events } = await routes(t, { pushFails: 'rejected: non-fast-forward' });
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [502, { error: 'rejected: non-fast-forward' }]);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106']);
 });
 
 test('a GitHub error answers 502 with its message; the steps done stay recorded and the stage does not end (#865)', async (t) => {

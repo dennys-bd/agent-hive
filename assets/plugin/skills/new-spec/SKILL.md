@@ -84,15 +84,32 @@ Skip this section for a free-text idea.
    comment. These are given decisions, never asked again: record each one
    in `## Closed decisions` with the source `issue #<n>`.
 5. From the issue itself, when its body has them (an issue a
-   decomposition created always has `## Scope`, and a leaf has
-   `## Acceptance criteria`):
-   - every `## Open points` item is a question for the rounds below;
+   decomposition created always has `## Scope` and a `## Decomposition`
+   block, and a leaf has `## Acceptance criteria`):
+   - every `Open points:` item of the `## Decomposition` block is a
+     question for the rounds below, except the ones starting
+     `feasibility:` (see "Feasibility first");
+   - `Touches:` in that block names the files the change most likely
+     starts from: read them first;
    - `## Acceptance criteria` seeds `## Done`;
    - the "Out:" part of `## Scope` seeds `## Out of scope`.
 6. Restate the scope in two or three sentences in chat.
 7. Derive the branch name now: the current branch when already on a task
    branch, otherwise a short slug built from the issue title or the idea
    (kebab-case, five words or fewer).
+
+## Feasibility first
+
+Before the first round, check every `feasibility:` point of the issue's
+`## Decomposition` block, one at a time: read the code, an API's docs or
+the data, or try it, until the point is confirmed or refuted. A confirmed
+point is a closed decision, with the source `issue` and what you checked
+as its reason.
+
+When one fails, stop before any round (stop 4): say which point, what
+you checked and what you found, so the acceptance criteria are revisited
+before anything is specified. A point you can neither confirm nor refute
+is asked in the first round.
 
 ## Classify: bounded or architectural
 
@@ -123,7 +140,8 @@ fits — and a new round opens only for what the answers opened. Before a
 round, drop every question the issue, its comments, an
 ancestor's design (step 4 of "Read the issue") or a design handoff the
 task references already answers; that answer goes into the decisions with
-its source. The issue's `## Open points` are asked in the first round.
+its source. The `Open points:` of the issue's `## Decomposition` block are asked in
+the first round.
 
 - **Bounded path** — ask the rounds that matter, then present a short
   design in chat: approach, files touched, testing. A few sentences to a
@@ -239,7 +257,9 @@ prompt that invoked this skill, replaces `hive:architect` or
 1. a dirty working tree, or a branch that is neither the base branch nor
    a fresh task branch;
 2. no input given, or the issue cannot be read;
-3. the user does not approve the design in chat.
+3. the user does not approve the design in chat;
+4. a `feasibility:` point of the issue fails its check (see
+   "Feasibility first").
 
 On a stop, say exactly which step stopped, why, and what would unblock
 it.

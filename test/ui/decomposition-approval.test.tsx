@@ -18,7 +18,7 @@ const base: State = {
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const pending = (): State => withWork(base, 'I1', { approval: { since } }, { result: { decomposition: 'decomposition.md' } });
-const PREVIEW: DecompositionPreview = { title: 'Task 1', issues: 2, blockers: 0, suggestions: 0, problems: [], repository: 'acme/site', sources: [{ name: 'board', statuses: ['Goals'], column: 'Goals' }] };
+const PREVIEW: DecompositionPreview = { title: 'Task 1', issues: 2, blockers: 0, suggestions: 0, problems: [], warnings: [], repository: 'acme/site', sources: [{ name: 'board', statuses: ['Goals'], column: 'Goals' }] };
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
   new Response(JSON.stringify(init?.method === 'POST' ? { ok: true } : PREVIEW), { status: 200, headers: { 'content-type': 'application/json' } }));
 const posts = (): string[] => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => String(url));

@@ -915,6 +915,7 @@ export interface Conventions {
   featureFlags?: FeatureFlags;
   uiCheck?: string;
   testCommand?: string;
+  decompositionLabel?: string; // #936: the label every issue a decomposition creates gets; 'none' is the skill's, which then writes no Label: line
 }
 
 /** The formatters the Hive supports (#749), in the order a save tries them; src/formatters.ts holds each one's table row. */
@@ -1229,10 +1230,12 @@ export interface DecompositionNode {
   delivers: string[]; // contract ids
   consumes: string[]; // contract ids
   blockedBy: string[]; // node ids of the same file
+  touches: string[]; // #936: "Touches:" paths, leaves only, relative, a trailing / dropped; what the overlap warnings compare
 }
 
-/** The parsed file (#865): the goal's title (the `#` heading), its text, the root's design, the nodes in file order. `## Suggestions` is not kept. */
-export interface Decomposition { title: string; goal: string; design?: string; nodes: DecompositionNode[] }
+/** The parsed file (#865): the goal's title (the `#` heading), its text, its label (the head's `Label:` line, #936), the root's design, the
+ * nodes in file order. `## Suggestions` is not kept. */
+export interface Decomposition { title: string; goal: string; label?: string; design?: string; nodes: DecompositionNode[] }
 
 /** A parse or validation problem (#865), shown in the confirm dialog; the line is 1-based. */
 export interface DecompositionProblem { line: number; message: string }
@@ -1242,9 +1245,12 @@ export interface DecompositionProblem { line: number; message: string }
 export interface DecompositionSource { name: string; statuses: string[]; column?: string }
 
 /** GET /activities/:id/decomposition (#865): what the confirm dialog shows. issues counts a local goal's root issue; title is absent with
- * problems; repository is absent for a local goal whose workspace has no GitHub origin. */
+ * problems; repository is absent for a local goal whose workspace has no GitHub origin; warnings are the overlaps (#936), which never block. */
 export interface DecompositionPreview {
-  title?: string; issues: number; blockers: number; suggestions: number; problems: DecompositionProblem[]; repository?: string; sources: DecompositionSource[];
+  title?: string; issues: number; blockers: number; suggestions: number; problems: DecompositionProblem[]; warnings: DecompositionProblem[]; repository?: string;
+  delivery?: { repository: string; branch: string; path: string }; // #936: where the file is pushed: its checkout's repository, branch and path in it
+  deliveryRefusal?: string; // #936: why it cannot be (default branch, not .md, no checkout): the dialog disables create issues
+  sources: DecompositionSource[];
 }
 
 export type HiveEvent =

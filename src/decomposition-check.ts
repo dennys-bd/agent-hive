@@ -1,5 +1,6 @@
 // The problems a decomposition's nodes can have (#865), past the file's own syntax: the ids and their tree, what a leaf and an inner node
 // may hold, the contracts' shape and the Blocked by edges. GitHub's limits are checked here, so a write never fails halfway on one. Pure.
+import { DECOMPOSITION_LABEL_MAX } from './conventions.js';
 import type { DecompositionNode, DecompositionProblem } from './types.js';
 
 export const CONTRACT_ID = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$/;
@@ -10,13 +11,14 @@ export const NODES_MAX = 300; // one write stays far below GitHub's secondary ra
 export const BODY_MAX = 65_536; // GitHub's limit on an issue body or a comment
 
 /** Where a node's parts sit in the file: the problems' lines. */
-export type NodeLines = Partial<Record<'delivers' | 'consumes' | 'blockedBy' | 'design' | 'openPoints' | 'criteria', number>>;
+export type NodeLines = Partial<Record<'delivers' | 'consumes' | 'blockedBy' | 'touches' | 'design' | 'openPoints' | 'criteria', number>>;
 /** A node as the parser read it: the node, its heading's line and its parts' lines. */
 export interface ParsedNode { node: DecompositionNode; line: number; at: NodeLines }
 
 /** A node's parent id; '' for a top-level node, whose parent is the goal (#865). */
 export const parentOf = (id: string): string => id.split('.').slice(0, -1).join('.');
-const isAncestor = (ancestor: string, id: string): boolean => id.startsWith(`${ancestor}.`);
+/** Whether `ancestor` holds `id` somewhere below it (#865, #936). */
+export const isAncestor = (ancestor: string, id: string): boolean => id.startsWith(`${ancestor}.`);
 
 type Found = [message: string | false, line: number | undefined];
 const kept = (found: Found[], fallback: number): DecompositionProblem[] =>
@@ -36,6 +38,7 @@ function shapeProblems(parsed: ParsedNode[]): DecompositionProblem[] {
     return kept([
       [ids.indexOf(node.id) !== i && `duplicate id "${node.id}"`, line],
       [parent !== '' && !ids.includes(parent) && `parent "${parent}" is absent`, line],
+      [parent !== '' && ids.indexOf(parent) > i && `"${node.id}" comes before its parent "${parent}"`, line], // #936: the write needs the parent's number first
       [node.id.split('.').length > DEPTH_MAX && `more than ${DEPTH_MAX} levels below the goal`, line],
       [count === CHILDREN_MAX + 1 && `more than ${CHILDREN_MAX} children under ${parent === '' ? 'the goal' : `"${parent}"`}`, line],
       [(node.title === '' || node.title.length > TITLE_MAX) && `the title must be 1 to ${TITLE_MAX} characters`, line],
@@ -44,6 +47,7 @@ function shapeProblems(parsed: ParsedNode[]): DecompositionProblem[] {
       [!isInner && at.design !== undefined && 'a leaf has no "### Design": its decisions are open points', at.design],
       [isInner && node.openPoints.length > 0 && 'a node with children has no "### Open points": a crossing decision belongs in its design', at.openPoints],
       [isInner && node.criteria.length > 0 && 'a node with children has no "### Acceptance criteria"', at.criteria],
+      [isInner && at.touches !== undefined && 'a node with children has no "Touches:": only a leaf touches files', at.touches],
     ], line);
   });
 }
@@ -71,6 +75,20 @@ function contractProblems(parsed: ParsedNode[]): DecompositionProblem[] {
     });
     return kept([...malformed(node.delivers, at.delivers), ...malformed(node.consumes, at.consumes), ...twice], line);
   });
+}
+
+// A Touches: entry names a file or a folder of the repository (#936): never empty, absolute or climbing out of it
+const isRepositoryPath = (path: string): boolean => path !== '' && !path.startsWith('/') && !path.split('/').includes('..');
+
+function touchProblems(parsed: ParsedNode[]): DecompositionProblem[] {
+  return parsed.flatMap(({ node, line, at }) =>
+    kept(node.touches.filter((path) => !isRepositoryPath(path)).map((path): Found => [`"${path}" in "Touches:" must be a relative path without ".."`, at.touches]), line));
+}
+
+/** The file's `Label:` (#936): GitHub's limit on a label's name. Absent is no label, never a problem. */
+export function labelProblems(label: string | undefined, line: number): DecompositionProblem[] {
+  if (label === undefined || (label.length >= 1 && label.length <= DECOMPOSITION_LABEL_MAX)) return [];
+  return [{ line, message: `the label must be 1 to ${DECOMPOSITION_LABEL_MAX} characters` }];
 }
 
 // Why a Blocked by edge cannot be, or undefined when it can: GitHub would hold an ancestor or a descendant as a blocker, yet the tree
@@ -109,5 +127,5 @@ function blockerProblems(parsed: ParsedNode[]): DecompositionProblem[] {
 export function checkNodes(parsed: ParsedNode[]): DecompositionProblem[] {
   if (parsed.length === 0) return [{ line: 1, message: 'no nodes: the file has no "## <id> <title>" heading' }];
   const over = parsed.length > NODES_MAX ? [{ line: parsed[NODES_MAX].line, message: `more than ${NODES_MAX} nodes` }] : [];
-  return [...over, ...shapeProblems(parsed), ...singleChildProblems(parsed), ...contractProblems(parsed), ...blockerProblems(parsed)];
+  return [...over, ...shapeProblems(parsed), ...singleChildProblems(parsed), ...contractProblems(parsed), ...blockerProblems(parsed), ...touchProblems(parsed)];
 }

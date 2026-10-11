@@ -3,13 +3,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CONVENTION_KEYS, conventionValue, parseConventions } from '../src/conventions.js';
 
-const KNOWN = 'docsRepo, specsDir, plansDir, walkthroughsDir, docsLanguage, chatLanguage, delivery, sliceSize, featureFlags, uiCheck, testCommand';
+const KNOWN = 'docsRepo, specsDir, plansDir, walkthroughsDir, docsLanguage, chatLanguage, delivery, sliceSize, featureFlags, uiCheck, testCommand, decompositionLabel';
 
 test('parseConventions keeps every key at its bounds, trimmed; absent and {} read as none (#692)', () => {
   assert.equal(CONVENTION_KEYS.join(', '), KNOWN);
   const all = {
     docsRepo: ' ../docs ', specsDir: 'docs/specs', plansDir: 'docs/plans', walkthroughsDir: 'docs/walkthroughs', docsLanguage: 'x'.repeat(40),
     chatLanguage: 'Português', delivery: 'stacked', sliceSize: { min: 50, max: 5000 }, featureFlags: 'partial', uiCheck: 'x'.repeat(2000), testCommand: 'x'.repeat(500),
+    decompositionLabel: 'x'.repeat(50),
   };
   assert.deepEqual(parseConventions(all), { ...all, docsRepo: '../docs' }, 'docsRepo may be relative to the worktree, .. included');
   assert.deepEqual(parseConventions({ sliceSize: { min: 300, max: 300 }, docsLanguage: ' E ' }), { sliceSize: { min: 300, max: 300 }, docsLanguage: 'E' });
@@ -17,6 +18,7 @@ test('parseConventions keeps every key at its bounds, trimmed; absent and {} rea
   assert.deepEqual(parseConventions({}), {});
   for (const delivery of ['single', 'stacked', 'integration']) assert.equal(conventionValue('delivery', delivery), delivery);
   for (const flags of ['none', 'partial', 'always']) assert.equal(conventionValue('featureFlags', flags), flags);
+  assert.equal(conventionValue('decompositionLabel', ' none '), 'none', 'none is a value like any other: the skill reads it as no label (#936)');
 });
 
 test('parseConventions answers the first problem as the tail of the parser\'s message, naming the key (#692)', () => {
@@ -34,4 +36,5 @@ test('parseConventions answers the first problem as the tail of the parser\'s me
   refused({ featureFlags: 'some' }, 'conventions.featureFlags must be one of none, partial, always');
   refused({ uiCheck: 'x'.repeat(2001) }, 'conventions.uiCheck must be 1 to 2000 characters');
   refused({ testCommand: '' }, 'conventions.testCommand must be 1 to 500 characters');
+  for (const decompositionLabel of ['', '  ', 'x'.repeat(51)]) refused({ decompositionLabel }, 'conventions.decompositionLabel must be 1 to 50 characters');
 });

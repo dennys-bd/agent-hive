@@ -39,4 +39,5 @@ test('conventionsProblem names the first row the parser would refuse as its mess
   assert.equal(problem([{ ...rowFor('plansDir'), value: '../plans' }])?.message, 'workspace hive: conventions.plansDir must be a relative path inside the docs repository');
   assert.equal(problem([{ ...rowFor('chatLanguage'), value: 'x'.repeat(41) }])?.message, 'workspace hive: conventions.chatLanguage must be a language name of 1 to 40 characters');
   assert.equal(problem([{ ...rowFor('testCommand'), value: 'x'.repeat(501) }])?.message, 'workspace hive: conventions.testCommand must be 1 to 500 characters');
+  assert.equal(problem([{ ...rowFor('decompositionLabel'), value: 'x'.repeat(51) }])?.message, 'workspace hive: conventions.decompositionLabel must be 1 to 50 characters');
 });
