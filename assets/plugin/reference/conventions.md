@@ -207,14 +207,15 @@ does not match `^[A-Za-z0-9._/-]+$` (`<docs repo>`:
   The code PRs then give the docs' paths as text, and the report says
   why. Never a stop.
 - **First.** It is pushed and opened before the code PRs, so their
-  bodies can link it.
+  walkthrough fallback link resolves.
 - **Title and body.** Its title is the title of the code PR that targets
   the base. Its body lists the files it adds, one per line, and names the
   issue as `<owner>/<repo>#<n>` (the code repository), never with
   `Closes`: merging it must not close the code repository's issue.
-- **Links.** Every code PR's body carries `Docs: <docs PR URL>` on its
-  own line, and its `Walkthrough:` line is the blob URL on the docs head.
-  Once the code PR that targets the base exists,
+- **Links.** A code PR's body carries the walkthrough whole, never a
+  `Docs:` line, so a reader who cannot open the docs repository still
+  reads it; its fallback `Walkthrough:` link is the blob URL on the docs
+  head. Once the code PR that targets the base exists,
   `gh pr edit <docs PR> -R <docs repo> --body-file <temp file>` adds a
   `Code PR: <url>` line to the docs PR's body.
 - **Recorded.** `hive_pr` gets it too, without `slice`, after the code
