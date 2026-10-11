@@ -2,7 +2,7 @@ import { render } from '@testing-library/react';
 import { vi } from 'vitest';
 import { PrPage, type PrPageProps } from '@/components/PrPage';
 import { WithSlot } from './detail-slot-harness';
-import type { TaskPr, FileDiff, PrData, PrReviewFile, PrThread, RepoSummary, State } from '../../src/types';
+import type { TaskPr, FileDiff, PrData, PrReviewFile, PrThread, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import type { Call } from './diff-harness';
@@ -49,8 +49,6 @@ export function fakePrHive(): FakePrHive {
 
 export const prCalls = (hive: FakePrHive, method: string, url: string): Call[] => hive.calls.filter((c) => c.method === method && c.url === url);
 
-/** acme/app's summary (#758): what a PR without a task shows as its properties. */
-export const APP: RepoSummary = { repository: 'acme/app', url: 'https://github.com/acme/app', workspace: 'hive', openPrs: 1, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true };
 /** A State with no task (#758): the PR is no task's. */
 export const STATE: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: {}, prompt: 'x' }], tasks: [], sourceOrder: [], localCount: 0,
@@ -69,7 +67,7 @@ export const WITH_TASK: State = {
  * slot (#64), where its properties render. */
 export function renderPage(state: State = STATE, extra: Partial<PrPageProps> = {}, options: { slotted?: boolean } = {}) {
   const props: PrPageProps = {
-    state, pr: { repository: 'acme/app', number: 7 }, summary: APP, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
+    state, pr: { repository: 'acme/app', number: 7 }, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
   };
   return { ...render(<PrPage {...props} />, options.slotted ? { wrapper: WithSlot } : {}), props };
 }

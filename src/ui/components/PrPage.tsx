@@ -1,10 +1,11 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useState } from 'react';
 import { taskOfPr } from '../../activities';
 import { prLink, prRepo, repoName } from '../../pull-requests';
 import { issueOfLink } from '../../repos/issue-task';
-import type { PrData, RepoSummary, State, Task } from '../../types';
-import { DetailSlot, SlotTitle } from '@/components/DetailSlot';
+import type { PrData, State, Task } from '../../types';
+import { DetailSlot } from '@/components/DetailSlot';
 import { useIsFlowShown } from '@/components/MainDock';
+import { closingLabel } from '@/components/PrBlock';
 import { PrConversation } from '@/components/PrConversation';
 import { PrTitle } from '@/components/PrDescription';
 import { PrFiles, PrStatus } from '@/components/PrFiles';
@@ -23,7 +24,6 @@ type PageTab = 'conversation' | 'files';
 
 export interface PrPageProps {
   state: State; pr: PrRef;
-  summary: RepoSummary; // the PR's repository: what a PR without a task shows as its properties
   header(reload: () => Promise<void>): ReactNode; // the repository header; its atualizar reads the PR again
   onGoTo(taskId: string): void; // a task with no GitHub issue: its detail in the flow
   onOpenIssue(url: string): void; // task #N: its issue's page
@@ -61,6 +61,25 @@ function TaskLink({ task, pr, onGoTo, onOpenIssue }: { task: Task; pr: PrData; o
   );
 }
 
+// closes #458, #460 (handoff 7 "Na conversa"): a PR no task holds names the issues it closes where a task's PR names its task; each opens its
+// page. The list sits inside the message where {list} is, as the description splits its {id}
+function ClosesLink({ pr, onOpenIssue }: { pr: PrData; onOpenIssue(url: string): void }) {
+  if (pr.closes.length === 0) return null;
+  const [before, after] = t('pr.closes').split('{list}');
+  return (
+    <span className="text-muted-foreground text-xs">
+      {before}
+      {pr.closes.map((issue, i) => (
+        <Fragment key={issue.url}>
+          {i > 0 && ', '}
+          <button type="button" className="hover:text-foreground" onClick={() => onOpenIssue(issue.url)}>{closingLabel(issue, pr.url)}</button>
+        </Fragment>
+      ))}
+      {after}
+    </span>
+  );
+}
+
 // files (handoff 03 "Aba arquivos"): 12px 16px 16px, no properties; the bar's counts, layout and hide reviewed over the diff
 function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onRefresh(): void }) {
   return (
@@ -76,8 +95,9 @@ function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onR
 
 /** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation or files. Read on opening,
  * on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. Its properties are its block in
- * the details panel's slot on both tabs (#64), the this PR box on a task's PR (#66), headed by the PR's title when the PR is no task's; before the PR is read, the read line. */
-export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
+ * the details panel's slot on both tabs (#64), the this PR box on a task's PR (#66), the PR without activity on a PR no task holds, whose tab bar
+ * names the issues it closes (#68); before the PR is read, the read line. */
+export function PrPage({ state, pr: ref, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
   const url = prLink(ref.repository, ref.number);
   const isShown = useIsFlowShown();
   const { load, refresh, review, reread } = usePr(url, isShown);
@@ -103,13 +123,14 @@ export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, o
     return <div className="flex min-h-0 flex-1 flex-col">{header(reload)}<PrStatus load={load} /><DetailSlot><PrStatus load={load} /></DetailSlot></div>;
   }
   const task = taskOfPr(state, url);
+  const drafts = review?.drafts.length ?? 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {header(reload)}
       <div className="px-6 pt-4 pb-2"><PrTitle pr={pr} onChanged={reload} /></div>
       <PageTabs tab={tab} pr={pr} onTab={setTab}>
-        {pr.state === 'open' && <ReviewPopover pr={pr} drafts={review?.drafts.length ?? 0} onSent={() => void reload()} />}
-        {task && <TaskLink task={task} pr={pr} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />}
+        {pr.state === 'open' && <ReviewPopover pr={pr} drafts={drafts} onSent={() => void reload()} />}
+        {task ? <TaskLink task={task} pr={pr} onGoTo={onGoTo} onOpenIssue={onOpenIssue} /> : <ClosesLink pr={pr} onOpenIssue={onOpenIssue} />}
       </PageTabs>
       <ReviewSurfaceContext.Provider value={view.surface}>
         {tab === 'conversation'
@@ -117,8 +138,7 @@ export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, o
           : <FilesTab pr={pr} view={view} onRefresh={() => void refresh()} />}
       </ReviewSurfaceContext.Provider>
       <DetailSlot>
-        {task === undefined && <SlotTitle>{pr.title}</SlotTitle>}
-        <PrProperties pr={pr} task={task} summary={summary} state={state} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} />
+        <PrProperties pr={pr} task={task} state={state} drafts={drafts} onGoTo={onGoTo} onReloaded={() => void reload()} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} />
       </DetailSlot>
     </div>
   );

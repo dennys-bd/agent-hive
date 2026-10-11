@@ -1,9 +1,11 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { PrPage } from '@/components/PrPage';
 import { setLanguage } from '@/i18n';
+import type { State } from '../../src/types';
 import { slot } from './detail-slot-harness';
-import { AT, fakePrHive, type FakePrHive, PR, PR2, PRS, prData, renderPage, STATE, thread, WITH_TASK } from './pr-harness';
+import { AT, fakePrHive, type FakePrHive, PR, PR2, PRS, prCalls, prData, renderPage, STATE, thread, WITH_TASK } from './pr-harness';
 
 let hive: FakePrHive;
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); hive = fakePrHive(); });
@@ -39,13 +41,18 @@ test('task #N shows on a task\'s PR and opens its issue\'s page (#758)', async (
   expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
 });
 
-test('a PR without a task has no task #N and no column of its own; its title, repository and workspace go to the panel\'s slot (#758, #64)', async () => {
+test('a PR without a task fills the slot with the PR without activity: PR de {author}, the neutral block, este PR and no fluxo; no title, repository grid or task\'s other PRs; no task #N (#68)', async () => {
   renderPage(STATE, {}, { slotted: true });
-  expect(await slot().findByRole('heading', { name: 'The PR' })).toBeInTheDocument();
+  expect(await slot().findByText('PR de bia')).toBeInTheDocument();
+  expect(slot().getByRole('button', { name: 'criar tarefa…' })).toBeInTheDocument();
+  expect(within(slot().getByRole('region', { name: 'este PR' })).getByText('branch', { selector: 'dt' })).toBeInTheDocument();
+  expect(slot().getByRole('region', { name: 'no fluxo' })).toBeInTheDocument();
+  expect(slot().queryByRole('heading', { name: 'The PR' })).toBeNull(); // the author's top replaces the title
+  expect(slot().queryByText('acme/app')).toBeNull(); // no repository grid
+  expect(slot().queryByText('hive')).toBeNull(); // no workspace row
+  expect(slot().queryByRole('region', { name: 'outros PRs da tarefa' })).toBeNull();
   expect(screen.queryByRole('button', { name: /^tarefa/ })).toBeNull();
   expect(screen.queryByRole('complementary')).toBeNull();
-  expect(slot().getByText('acme/app')).toBeInTheDocument();
-  expect(slot().getByText('hive')).toBeInTheDocument();
 });
 
 test('a task\'s PR fills the slot with este PR and the task\'s other PRs, never the issue\'s fields, on both tabs; a closing issue and another PR open through the page (#64, #66)', async () => {
@@ -55,7 +62,7 @@ test('a task\'s PR fills the slot with este PR and the task\'s other PRs, never 
   const { props } = renderPage(state, {}, { slotted: true });
   expect(await slot().findByRole('region', { name: 'este PR' })).toBeInTheDocument();
   expect(slot().queryByRole('heading')).toBeNull(); // the title is the panel's
-  expect(slot().queryByText('acme/app')).toBeNull(); // the repository block is a PR without a task's
+  expect(slot().queryByText('acme/app')).toBeNull(); // no repository block: #68 removed it
   expect(slot().queryByRole('button', { name: 'etapa' })).toBeNull(); // the issue's fields live on the issue page (#65)
   await user.click(slot().getByRole('button', { name: '#1' }));
   expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
@@ -106,4 +113,39 @@ test('a task\'s PR reads the session that opened it from the task\'s records, no
   });
   expect(await screen.findByText('f9f0456a')).toHaveClass('font-mono');
   expect(screen.queryByText('0badc0de')).toBeNull();
+});
+
+test('criar tarefa… in the slot creates the hive task linked to the PR; once the state holds it, the page shows the task PR with its stack and no PR without activity (#68)', async () => {
+  const user = userEvent.setup();
+  const { props, rerender } = renderPage(STATE, {}, { slotted: true });
+  await user.click(await slot().findByRole('button', { name: 'criar tarefa…' }));
+  await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
+  await waitFor(() => expect(prCalls(hive, 'POST', '/tasks')[0]?.body).toEqual({ title: 'The PR', stage: 'dev', auto: false, pr: PR, source: 'hive' }));
+  const held: State = { ...WITH_TASK, activityRecords: [{ ...WITH_TASK.activityRecords[0], prs: [
+    { url: 'https://github.com/acme/app/pull/6', state: 'merged', slice: { k: 1, type: 'stacked' } }, { url: PR, state: 'open', slice: { k: 2, type: 'stacked' } },
+  ] }] };
+  rerender(<PrPage {...props} state={held} />);
+  expect(await screen.findByRole('button', { name: 'tarefa #1 · app' })).toBeInTheDocument();
+  expect(within(slot().getByRole('region', { name: 'este PR' })).getByText('#7 · 2/2 da pilha')).toBeInTheDocument();
+  expect(slot().queryByText('PR de bia')).toBeNull();
+});
+
+test('with no task the tab bar names the issues the PR closes, each opening its page, in task #N\'s place; with none, nothing; no via sessão on a PR no task holds (#68, #62)', async () => {
+  const user = userEvent.setup();
+  hive.pr = prData({ closes: [
+    { repository: 'acme/app', number: 458, url: 'https://github.com/acme/app/issues/458' }, { repository: 'acme/docs', number: 3, url: 'https://github.com/acme/docs/issues/3' },
+  ] });
+  const first = renderPage();
+  const closes = await screen.findByText(/^fecha /);
+  expect(closes).toHaveTextContent('fecha #458, acme/docs#3');
+  expect(closes).toHaveClass('text-muted-foreground');
+  await user.click(within(closes).getByRole('button', { name: 'acme/docs#3' }));
+  expect(first.props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/docs/issues/3');
+  expect(screen.queryByRole('button', { name: /^tarefa/ })).toBeNull();
+  expect(screen.queryByText(/via sessão/)).toBeNull();
+  first.unmount();
+  hive.pr = prData();
+  renderPage();
+  await screen.findByRole('heading', { name: 'The PR' });
+  expect(screen.queryByText(/^fecha /)).toBeNull();
 });

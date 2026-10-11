@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { prsOf } from '../../activities';
 import { mergeOrderBlocker, type PrLine, prGroups, prNumber, prRepo } from '../../pull-requests';
-import type { PrCheck, PrChecks as Checks, PrData, State, Task, TaskPr } from '../../types';
+import type { PrCheck, PrChecks as Checks, PrClosingIssue, PrData, State, Task, TaskPr } from '../../types';
 import { awaitsReview, mergeOffReason } from '@/components/MergeButton';
 import { MARK, worstOf } from '@/components/PrChecks';
 import { AssigneeCell } from '@/components/ProjectRow';
@@ -114,14 +114,17 @@ function BranchValue({ pr }: { pr: PrData }) {
   );
 }
 
+/** A closing issue as #N in the PR's own repository, owner/repo#N in another (#66): this PR's closes row and the PR page's tab bar (#68). */
+export const closingLabel = (issue: PrClosingIssue, prUrl: string): string =>
+  (issue.repository.toLowerCase() === prRepo(prUrl).toLowerCase() ? `#${issue.number}` : `${issue.repository}#${issue.number}`);
+
 // Each issue the PR closes: #N in the PR's own repository, owner/repo#N in another; "on merge" while it can still merge
 function ClosesValue({ pr, onOpenIssue }: { pr: PrData; onOpenIssue(url: string): void }) {
-  const repo = prRepo(pr.url);
   return (
     <span className="flex flex-wrap items-baseline gap-x-1.5">
       {pr.closes.map((issue) => (
         <button key={issue.url} type="button" className="text-review hover:underline" onClick={() => onOpenIssue(issue.url)}>
-          {issue.repository.toLowerCase() === repo.toLowerCase() ? `#${issue.number}` : `${issue.repository}#${issue.number}`}
+          {closingLabel(issue, pr.url)}
         </button>
       ))}
       {pr.state === 'open' && <span className={MUTED}>{t('pr.block.closes.onMerge')}</span>}
