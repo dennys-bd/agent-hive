@@ -1655,7 +1655,6 @@ const en = {
   'pr.task': 'task #{n} · {repo}',
   'pr.commits.one': '{n} commit', 'pr.commits.other': '{n} commits',
   'pr.readOnly': '{state}: read only',
-  'pr.props.repository': 'repository',
   'pr.description': 'description', 'pr.changed': 'the PR changed on GitHub; reloaded, your text is kept', // #758: the PR page's edits
   'pr.description.opened': 'opened', 'pr.description.viaSession': 'via session {id}', // #62: the description panel
   'pr.description.showAll': 'show all', 'pr.description.moreLines.one': '+{n} line', 'pr.description.moreLines.other': '+{n} lines',
@@ -1712,11 +1711,11 @@ const en = {
   'pr.merge.noPermission': 'no merge permission', 'pr.merge.noPermissionTitle': 'no write permission on {repo}', // #854
   'pr.merge.noPermissionNote': 'you have no write permission on {repo}. the merge is up to a maintainer; when it happens, the task moves on to its next stage.',
   'pr.merge.facts.awaiting': 'checks await approval', 'pr.merge.facts.failed': '{n} checks failed',
+  'pr.merge.awaitsReview': 'awaits review', 'pr.merge.facts.requested': 'review requested from you', // #68: a PR no task holds, held for a review
   'pr.checks.rerun': 're-run failures', 'pr.checks.rerunNoPermission': 'no permission on {repo}',
   'pr.checks.rerunBand': 'no permission to re-run on {repo}. a new push to the PR runs the CI again, or a maintainer re-runs it.',
   'pr.checks.awaiting': 'checks · awaiting approval',
   'pr.checks.awaitingText': '{n} workflows did not run: they await the approval of a maintainer of {repo}. GitHub asks for it on PRs from forks, usually on a first contribution.',
-  'pr.props.from': 'from',
   'pr.block.title': 'this PR', 'pr.block.position': '#{n} · {k}/{total} of the stack', // #66: the details panel's this PR block
   'pr.block.review': 'review', 'pr.block.checks': 'checks', 'pr.block.merge': 'merge', 'pr.block.base': 'base', 'pr.block.closes': 'closes',
   'pr.block.reviewer.approved': 'approved', 'pr.block.reviewer.changes': 'requested changes', 'pr.block.reviewer.resolved': 'changes resolved',
@@ -1725,7 +1724,14 @@ const en = {
   'pr.block.merge.ready': 'ready · {method}', 'pr.block.merge.conflicts': 'conflicts', 'pr.block.merge.noPermission': 'no permission',
   'pr.block.base.merged.one': '{list} merged', 'pr.block.base.merged.other': '{list} merged', 'pr.block.base.waits': 'waits for #{n}', 'pr.block.and': 'and',
   'pr.block.closes.onMerge': 'on merge',
+  'pr.block.branch': 'branch', 'pr.block.you': 'you', // #68: this PR on a PR no task holds
   'pr.others': 'other PRs of the task', // #66: below the this PR block
+  'pr.other.create': 'create task…', // #68: the PR without activity
+  'pr.other.createBody': '#{n} is linked to a new task in the hive source, without sync: changes on GitHub do not reach the task.',
+  'pr.other.by': 'PR by {author}', 'pr.other.opened': 'opened {time} · no activity in the Hive', 'pr.other.requested': 'review requested from you',
+  'pr.other.note': 'create task links this PR to a new task in the hive source, without sync with GitHub.',
+  'pr.other.inFlow': 'in the flow', 'pr.other.noTask': 'no task in the flow', 'pr.other.taskLink': 'task ›',
+  'pr.closes': 'closes {list}', // #68: the PR page's tab bar on a PR no task holds
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
   'pr.error.unexpected': 'Unexpected error.',
@@ -3424,7 +3430,6 @@ const pt: Record<MessageKey, string> = {
   'pr.task': 'tarefa #{n} · {repo}',
   'pr.commits.one': '{n} commit', 'pr.commits.other': '{n} commits',
   'pr.readOnly': '{state}: só leitura',
-  'pr.props.repository': 'repositório',
   'pr.description': 'descrição', 'pr.changed': 'o PR mudou no GitHub; recarregado, seu texto foi mantido',
   'pr.description.opened': 'abriu', 'pr.description.viaSession': 'via sessão {id}',
   'pr.description.showAll': 'mostrar tudo', 'pr.description.moreLines.one': '+{n} linha', 'pr.description.moreLines.other': '+{n} linhas',
@@ -3481,11 +3486,11 @@ const pt: Record<MessageKey, string> = {
   'pr.merge.noPermission': 'sem permissão de merge', 'pr.merge.noPermissionTitle': 'sem permissão de escrita em {repo}',
   'pr.merge.noPermissionNote': 'você não tem permissão de escrita em {repo}. o merge fica com um mantenedor; quando acontecer, a tarefa segue para a próxima etapa.',
   'pr.merge.facts.awaiting': 'checks aguardam aprovação', 'pr.merge.facts.failed': '{n} checks falharam',
+  'pr.merge.awaitsReview': 'aguarda review', 'pr.merge.facts.requested': 'review pedido a você',
   'pr.checks.rerun': 're-executar falhas', 'pr.checks.rerunNoPermission': 'sem permissão em {repo}',
   'pr.checks.rerunBand': 'sem permissão para re-executar em {repo}. um push novo no PR executa o CI de novo, ou um mantenedor re-executa.',
   'pr.checks.awaiting': 'checks · aguardam aprovação',
   'pr.checks.awaitingText': '{n} workflows não executaram: aguardam a aprovação de um mantenedor de {repo}. o GitHub pede isso em PRs de forks, em geral na primeira contribuição.',
-  'pr.props.from': 'de',
   'pr.block.title': 'este PR', 'pr.block.position': '#{n} · {k}/{total} da pilha',
   'pr.block.review': 'review', 'pr.block.checks': 'checks', 'pr.block.merge': 'merge', 'pr.block.base': 'base', 'pr.block.closes': 'fecha',
   'pr.block.reviewer.approved': 'aprovou', 'pr.block.reviewer.changes': 'pediu mudanças', 'pr.block.reviewer.resolved': 'mudanças resolvidas',
@@ -3494,7 +3499,14 @@ const pt: Record<MessageKey, string> = {
   'pr.block.merge.ready': 'pronto · {method}', 'pr.block.merge.conflicts': 'conflitos', 'pr.block.merge.noPermission': 'sem permissão',
   'pr.block.base.merged.one': '{list} mergeado', 'pr.block.base.merged.other': '{list} mergeados', 'pr.block.base.waits': 'aguarda #{n}', 'pr.block.and': 'e',
   'pr.block.closes.onMerge': 'ao fazer merge',
+  'pr.block.branch': 'branch', 'pr.block.you': 'você',
   'pr.others': 'outros PRs da tarefa',
+  'pr.other.create': 'criar tarefa…',
+  'pr.other.createBody': '#{n} fica ligado a uma tarefa nova na source hive, sem sync: mudanças no GitHub não chegam à tarefa.',
+  'pr.other.by': 'PR de {author}', 'pr.other.opened': 'abriu {time} · sem atividade no Hive', 'pr.other.requested': 'review pedido a você',
+  'pr.other.note': 'criar tarefa liga este PR a uma tarefa nova na source hive, sem sync com o GitHub.',
+  'pr.other.inFlow': 'no fluxo', 'pr.other.noTask': 'sem tarefa no fluxo', 'pr.other.taskLink': 'tarefa ›',
+  'pr.closes': 'fecha {list}',
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
   'pr.error.unexpected': 'Erro inesperado.',

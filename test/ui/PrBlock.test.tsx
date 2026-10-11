@@ -5,7 +5,7 @@ import { PrBlock } from '@/components/PrBlock';
 import { setLanguage } from '@/i18n';
 import { rememberMethod } from '@/lib/merge-method';
 import type { PrData, PrReviewEvent, State, TaskPr } from '../../src/types';
-import { AT, PR, prData, thread, WITH_TASK } from './pr-harness';
+import { AT, PR, prData, STATE, thread, WITH_TASK } from './pr-harness';
 
 const APP = 'https://github.com/acme/app/pull/';
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); });
@@ -123,4 +123,35 @@ test('fecha lists each closing issue, #N in this repository and owner/repo#N in 
   unmount();
   renderBlock(prData({ closes: CLOSES, state: 'merged' }));
   expect(within(cell('fecha')).queryByText('ao fazer merge')).toBeNull();
+});
+
+test('a PR no task holds: #N alone, branch in base\'s place with head → base (owner:ref on a fork), the viewer\'s row reads você, ● aguarda review while GitHub holds it for one (#68)', () => {
+  const pr = prData({ decision: 'pending', reviewRequests: [{ reviewer: 'ana', team: false, viewer: true }], reviews: [review('caio', 'commented')] });
+  const first = renderBlock(pr, STATE);
+  expect(within(box()).getByText('#7')).toHaveClass('text-muted-foreground');
+  expect(labels()).toEqual(['review', 'merge', 'branch']);
+  expect(cell('branch')).toHaveTextContent('feature → main');
+  expect(within(cell('branch')).getByText('→ main', { exact: false })).toHaveClass('text-muted-foreground');
+  const rows = within(cell('review')).getAllByRole('listitem');
+  expect(rows.map((li) => li.querySelector('.truncate')?.textContent)).toEqual(['você', 'caio']);
+  expect(within(rows[0]).getByText('pedido')).toHaveClass('text-waiting');
+  expect(within(cell('merge')).getByText('● aguarda review')).toHaveClass('text-muted-foreground');
+  first.unmount();
+  renderBlock(prData({ headOwner: 'rafa' }), STATE);
+  expect(cell('branch')).toHaveTextContent('rafa:feature → acme:main');
+  expect(within(cell('merge')).getByText('● pronto · squash')).toHaveClass('text-working');
+});
+
+test('a PR whose head repository is gone names no empty owner on the branch row (#68)', () => {
+  renderBlock(prData({ headOwner: '' }), STATE);
+  expect(cell('branch')).toHaveTextContent('feature → main');
+  expect(cell('branch')).not.toHaveTextContent(':');
+});
+
+test('a task\'s PR keeps its stack position, base and the viewer\'s login even while GitHub awaits a review (#68)', () => {
+  renderBlock(prData({ decision: 'pending', reviewRequests: [{ reviewer: 'ana', team: false, viewer: true }] }), stack('merged'));
+  expect(within(box()).getByText('#7 · 3/3 da pilha')).toBeInTheDocument();
+  expect(labels()).toEqual(['review', 'merge', 'base']);
+  expect(within(cell('review')).getByText('ana')).toBeInTheDocument();
+  expect(within(cell('merge')).getByText('● pronto · squash')).toHaveClass('text-working');
 });
