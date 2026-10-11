@@ -1,13 +1,15 @@
-import { render } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PtyTab } from '@/components/PtyTab';
 import { toast } from 'sonner';
 import { FileOpenerContext, localRunTab, type OpenFile, type RunTab } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
-import { FakeWebSocket, FakeFitAddon, FakeTerminal, resetFakes } from './xterm-fakes';
+import { FakeWebSocket, FakeFitAddon, FakeSearchAddon, FakeTerminal, resetFakes } from './xterm-fakes';
 
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./xterm-fakes')).FakeTerminal }));
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fakes')).FakeFitAddon }));
+vi.mock('@xterm/addon-search', async () => ({ SearchAddon: (await import('./xterm-fakes')).FakeSearchAddon }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
 // A task's stage run, what each test attaches
@@ -129,4 +131,30 @@ test('the first fit that finds the tab shown posts its grid even when the fit le
   resized(800, 600);
   resized(800, 600);
   expect(sentSizes(socket)).toEqual([{ type: 'resize', cols: 80, rows: 24 }]);
+});
+
+test('the find binding opens the bar over its own tab only, on an xterm with the proposed API on; a tab turned away and back keeps its bar and its query (#12)', async () => {
+  const user = userEvent.setup();
+  const onExit = vi.fn(); // one function across renders: only `active` changes
+  const view = (isFirstShown: boolean) => (
+    <>
+      <PtyTab tab={STAGE} label="primeira" active={isFirstShown} fileLinks={false} fontFamily="ui-monospace, monospace" onExit={onExit} />
+      <PtyTab tab={{ ...STAGE, ptyId: 'W2' }} label="segunda" active={!isFirstShown} fileLinks={false} fontFamily="ui-monospace, monospace" onExit={onExit} />
+    </>
+  );
+  const { rerender } = render(view(true));
+  expect(FakeTerminal.all.map((term) => term.options.allowProposedApi)).toEqual([true, true]);
+  expect(FakeSearchAddon.all.map((search) => search.options)).toEqual([{ highlightLimit: 1000 }, { highlightLimit: 1000 }]);
+  expect(screen.queryByRole('textbox', { name: 'buscar' })).not.toBeInTheDocument();
+  let isPassed = true;
+  act(() => { isPassed = FakeTerminal.all[0].press({ key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }); }); // jsdom runs as off macOS
+  expect(isPassed).toBe(false);
+  const first = within(screen.getByRole('region', { name: 'primeira' }));
+  await user.type(first.getByRole('textbox', { name: 'buscar' }), 'erro');
+  expect(screen.getAllByRole('textbox', { name: 'buscar' })).toHaveLength(1);
+  expect(FakeSearchAddon.all[0].calls.at(-1)).toEqual(['next', 'erro', true]);
+  expect(FakeSearchAddon.all[1].calls).toEqual([]);
+  rerender(view(false));
+  rerender(view(true));
+  expect(first.getByRole('textbox', { name: 'buscar' })).toHaveValue('erro');
 });

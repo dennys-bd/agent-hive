@@ -3,13 +3,14 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { LinkConfirm } from '@/components/LinkConfirm';
+import { TerminalFind, useFindBar } from '@/components/TerminalFind';
 import { type OpenFile, type RunTab, useOpenFile } from '@/components/terminal-tabs';
 import { t } from '@/i18n';
 import { localKey } from '@/lib/activities';
 import type { FileAt } from '@/lib/editor-models';
 import { connectPty } from '@/lib/pty-stream';
 import { linkHandler, openLink } from '@/lib/trusted-links';
-import { followTheme, linkFiles, linkTaskRefs, openRefUrl, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { followTheme, linkFiles, linkTaskRefs, loadSearch, openRefUrl, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 
 // activityId: the activity the run is in (#629), what its task references post open-ref for. active: its tab is shown. focused: of a split tab's
 // panes (#641), the one that takes the keyboard; a tab alone always does. isAsleep (#672): the run ended with its session kept; its tail shows
@@ -77,7 +78,8 @@ const atOf = (line?: number, col?: number): FileAt | undefined => (line === unde
 
 /** One tab's xterm over its run's pty (#251), through connectPty (the stream, the keys, the sizes). It stays
  * mounted and hidden while another tab shows, so its stream and screen survive a switch. The stream's exit, or a route that no longer knows
- * the run, closes the tab. A link to an untrusted host waits in LinkConfirm (#404). */
+ * the run, closes the tab. A link to an untrusted host waits in LinkConfirm (#404).
+ * The find binding opens the tab's own find bar (#12), which keeps its query while the tab is hidden. */
 export function PtyTab({ tab, activityId, label, active, focused = true, fileLinks, fontFamily, onExit, isAsleep = false, onWake }: PtyTabProps) {
   const host = useRef<HTMLDivElement>(null);
   const open = useRef<OpenTerminal | undefined>(undefined);
@@ -89,18 +91,23 @@ export function PtyTab({ tab, activityId, label, active, focused = true, fileLin
   const files = useFileOpenerRef();
   const refLinks = openRefUrl(activityId); // #588: its task references, always
   const taskRefs = useTaskRefs();
+  const find = useFindBar(); // #12: this tab's find bar
+  const { onFind, setTarget: setFindTarget } = find;
   useEffect(() => {
     const element = host.current;
     if (!element) return;
     // claude turns mouse tracking on, which hands every drag to it; Option+drag is the macOS way back to a selection
     const xterm = new Terminal({
       fontFamily: font.current, cursorBlink: true, macOptionClickForcesSelection: true, linkHandler: linkHandler(setPendingUrl),
+      allowProposedApi: true, // #12: the find bar's highlights are xterm decorations, still proposed API
       disableStdin: asleep.current, cursorInactiveStyle: asleep.current ? 'none' : 'outline', // #672: no key reaches a run that ended
     });
-    terminalKeys(xterm);
+    terminalKeys(xterm, onFind);
     const fit = new FitAddon();
     xterm.loadAddon(fit);
+    const search = loadSearch(xterm);
     xterm.open(element);
+    setFindTarget({ term: xterm, search });
     terminalPaste(xterm, () => window.hive?.clipboardFiles() ?? Promise.resolve([])); // #843: after open, which gives it its element; outside the viewer, the text
     const { disconnect, postSize } = connectPty(xterm, ptyId, () => onExit(ptyId)); // before the first fit, so its grid reaches the pty
     const terminal = { xterm, fit, host: element, postSize };
@@ -117,10 +124,11 @@ export function PtyTab({ tab, activityId, label, active, focused = true, fileLin
       sized.disconnect();
       disconnect();
       stopTheme();
+      setFindTarget(undefined);
       xterm.dispose();
       open.current = undefined;
     };
-  }, [ptyId, fileKey, refLinks, fileLinks, onExit, taskRefs, files]);
+  }, [ptyId, fileKey, refLinks, fileLinks, onExit, taskRefs, files, onFind, setFindTarget]);
   // The tab the user turns to (#808): fitted and its grid posted at once, past the resize debounce, so its pty follows the view in front;
   // the host drops a grid the pty already has. A mount already active and focused posts here too.
   useEffect(() => {
@@ -157,6 +165,7 @@ export function PtyTab({ tab, activityId, label, active, focused = true, fileLin
       className="relative min-h-0 min-w-0 overflow-hidden p-1"
     >
       <div ref={host} className="h-full w-full" />
+      {find.target && <TerminalFind {...find.target} isOpen={find.isOpen} request={find.request} onClose={find.close} />}
       {/* #672: a click anywhere in a sleeping pane continues its session, a terminal's wakes it (#696); a button, so the keyboard reaches it too */}
       {isAsleep && <button type="button" aria-label={t(tab.kind === 'terminal' ? 'terminal.wake' : 'session.continue')} className="absolute inset-0 cursor-pointer" onClick={onWake} />}
       <LinkConfirm url={pendingUrl} onClose={() => setPendingUrl(undefined)} />
