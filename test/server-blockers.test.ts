@@ -102,6 +102,13 @@ test('the source path refuses with a code and never answers GitHub\'s words, whi
   assert.deepEqual(h.dispatched, []);
 });
 
+test('a source write whose relations could not be re-read answers 502 refused, so the UI never shows it as gone (#56)', async (t) => {
+  const h = routes(t, { work: { relate: async () => { throw new RelationRereadError('timeout'); } } });
+  const [status, body] = await post(h.base, 'work', 'work:PVTI_1', add('7'));
+  assert.deepEqual([status, (body as { code?: unknown }).code], [502, 'blockers.refused']);
+  assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('timeout')));
+});
+
 test('a source write whose re-read failed answers 200 with the relations read, logs the failure and dispatches nothing (#56)', async (t) => {
   const h = routes(t, { work: { relate: async () => { throw new RelationRereadError('timeout', SEVEN); } } });
   assert.deepEqual(await post(h.base, 'work', 'work:PVTI_1', add('7')), [200, { blockers: SEVEN }]);

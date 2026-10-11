@@ -79,7 +79,8 @@ async function relateHive(deps: BlockerRouteDeps, res: Response, state: State, i
 function failed(deps: BlockerRouteDeps, res: Response, itemId: string, err: unknown): void {
   if (err instanceof RelationRereadError) {
     deps.log?.error(`blockers of ${itemId} written, but their re-read failed: ${err.message}`);
-    return void res.json({ blockers: err.blockers });
+    // Nothing read: refused, so the UI does not show the written relation as gone; a retry is a no-op, relate reads before it writes
+    return void (err.blockers === undefined ? refuse(res, 'refused') : res.json({ blockers: err.blockers }));
   }
   const known = KNOWN.find(([type]) => err instanceof type);
   if (known !== undefined) return void refuse(res, known[1]);

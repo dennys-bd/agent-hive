@@ -86,6 +86,26 @@ test('relateItem refuses a bad ref, an issue that does not exist and the item it
   assert.deepEqual(mutations(calls), []);
 });
 
+test('relateItem maps GitHub\'s "Could not resolve" errors array to BlockerRefNotFoundError, and lets any other failure through (#56)', async () => {
+  const failing = (message: string): Gql => async (query, variables) => {
+    if (query === ISSUE_ID) throw new Error(message);
+    return blockerGql([]).gql(query, variables);
+  };
+  await assert.rejects(relateItem(ctxOf(failing("Could not resolve to an Issue with the number of 99.")), 'PVTI_1', change('add', 'blockedBy', '99')), BlockerRefNotFoundError);
+  await assert.rejects(relateItem(ctxOf(failing("Could not resolve to a Repository with the name 'nope/x'.")), 'PVTI_1', change('add', 'blockedBy', 'nope/x#1')), BlockerRefNotFoundError);
+  await assert.rejects(relateItem(ctxOf(failing('API rate limit exceeded')), 'PVTI_1', change('add', 'blockedBy', '7')), (err: unknown) => !(err instanceof BlockerRefNotFoundError));
+});
+
+test('relateItem whose relations re-read fails after the write carries no relations, not empty ones (#56)', async () => {
+  const { gql } = blockerGql([rels()]); // the relations queue answers once, before the write; after it, the query throws
+  const broken: Gql = async (query, variables) => {
+    const answer = await gql(query, variables);
+    if (answer === undefined) throw new Error('timeout');
+    return answer;
+  };
+  await assert.rejects(relateItem(ctxOf(broken), 'PVTI_1', change('add', 'blockedBy', '7')), (err: unknown) => err instanceof RelationRereadError && err.blockers === undefined);
+});
+
 test('relateItem whose re-read fails after the write rejects with a RelationRereadError carrying the relations it read (#56)', async () => {
   const { gql, calls } = blockerGql([rels(), rels([ref(7, 'OPEN')])]);
   const broken = ctxOf(gql, async () => { throw new Error('timeout'); });

@@ -30,9 +30,10 @@ export class BlockerRefNotFoundError extends Error {
 export class SelfBlockerError extends Error {
   constructor() { super('an issue cannot block itself'); }
 }
-/** The relation was written but its re-read failed (#56): the relations read so far ride along, so the caller can still answer. */
+/** The relation was written but its re-read failed (#56): the relations ride along when they were read, so the caller can still answer;
+ * undefined when even they failed, since empty lists would show the relation just written as gone. */
 export class RelationRereadError extends Error {
-  constructor(message: string, readonly blockers: ItemBlockers) { super(message); }
+  constructor(message: string, readonly blockers?: ItemBlockers) { super(message); }
 }
 
 const NO_BLOCKERS: ItemBlockers = { blockedBy: [], blocking: [] };
@@ -58,9 +59,24 @@ async function readBlockers(gql: Gql, url: string, repo: string): Promise<ItemBl
   return issue ? blockersOf(issue, repo) : NO_BLOCKERS;
 }
 
+// GitHub answers a repository or issue that does not exist with an errors array ("Could not resolve to …"), which the gql call throws;
+// that, like a null issue, is a ref to nothing
+const NOT_FOUND = /Could not resolve to/;
+async function issueIdOf(gql: Gql, target: IssueKey, ref: string): Promise<string> {
+  let id: string | undefined;
+  try {
+    id = ((await gql(ISSUE_ID, target)) as IssueIdData).repository?.issue?.id;
+  } catch (err) {
+    if (err instanceof Error && NOT_FOUND.test(err.message)) throw new BlockerRefNotFoundError(ref);
+    throw err;
+  }
+  if (id === undefined) throw new BlockerRefNotFoundError(ref);
+  return id;
+}
+
 // After the mutation: the relations and the entry as they read now. The write has landed, so a failure carries what was read so far
 async function afterWrite(ctx: FieldsContext, itemId: string, url: string, repo: string): Promise<BlockerWrite> {
-  let blockers = NO_BLOCKERS;
+  let blockers: ItemBlockers | undefined;
   try {
     blockers = await readBlockers(ctx.gql, url, repo);
     const { entry } = await reread(ctx, itemId);
@@ -79,8 +95,7 @@ export async function relateItem(ctx: FieldsContext, itemId: string, change: Blo
   if (c?.__typename !== 'Issue' || c.id === undefined || c.url === undefined || own === undefined) throw new Error(`item ${itemId} is not an issue`);
   const repo = `${own.owner}/${own.name}`;
   const target = parseRef(change.ref, own);
-  const otherId = ((await ctx.gql(ISSUE_ID, target)) as IssueIdData).repository?.issue?.id;
-  if (otherId === undefined) throw new BlockerRefNotFoundError(change.ref);
+  const otherId = await issueIdOf(ctx.gql, target, change.ref);
   if (otherId === c.id) throw new SelfBlockerError();
   const before = await readBlockers(ctx.gql, c.url, repo);
   const exists = before[change.kind].some((r) => r.id === refId(`${target.owner}/${target.name}`, target.number, repo));

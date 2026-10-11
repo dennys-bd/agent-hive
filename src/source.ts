@@ -50,7 +50,7 @@ function shownRelate(relate: NonNullable<Source['relate']>, own: (itemId: string
       const written = await relate(own(itemId), { ...change, ref: ids.ownRef(change.ref) });
       return { blockers: ids.shownBlockers(written.blockers), ...(written.entry ? { entry: { ...written.entry, item: item(written.entry.item) } } : {}) };
     } catch (err) {
-      throw err instanceof RelationRereadError ? new RelationRereadError(err.message, ids.shownBlockers(err.blockers)) : err;
+      throw err instanceof RelationRereadError ? new RelationRereadError(err.message, err.blockers && ids.shownBlockers(err.blockers)) : err;
     }
   };
 }
