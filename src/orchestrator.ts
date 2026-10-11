@@ -495,12 +495,13 @@ function done(state: State, ptyId: string, result?: Record<string, unknown>, ver
 
 // The PR the worker opened, told through hive_pr or seen as a `gh pr create` on PostToolUse: the task appends it as open, once (both
 // channels can report the same PR, #207) in its activity's record (#629). The status stays the run's: review is the task's state, read from
-// the records once no session works (#663). A link already there keeps its state.
+// the records once no session works (#663). A link already there keeps its state. The reporting worker's session goes with it (#62), so the
+// PR page can say which session opened it.
 function markPr(state: State, ptyId: string, url: string, slice?: PrSlice): Reduced {
   const worker = liveWorker(state, ptyId);
   const task = worker && taskOfWorker(state, worker);
   if (!task) return none(state);
-  return none(withPr(patch(state, ptyId, { question: undefined, lastEvent: { kind: 'pr' } }).state, task, url, slice));
+  return none(withPr(patch(state, ptyId, { question: undefined, lastEvent: { kind: 'pr' } }).state, task, url, slice, worker.sessionId));
 }
 
 // The PR query's answer (#207): each task's PRs take the states read. No worker changes: the task state reads the records (#663)
