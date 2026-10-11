@@ -38,10 +38,6 @@ test('the verdicts and triggers a stage offers, a pill\'s words, and the form\'s
   const draft = transitionDraft(back, STAGES, ROWS);
   assert.equal(draftLabel({ ...draft, label: '' }), 'falhou · 3x');
   assert.equal(transitionsProblem([draft], STAGES), undefined);
-  assert.equal(transitionsProblem([draft, { ...draft, id: 'twin' }], STAGES), 1, 'the same (from, when, verdict)');
-  assert.equal(transitionsProblem([{ ...draft, verdict: '' }], STAGES), 0);
-  assert.equal(transitionsProblem([{ ...draft, maxTries: '0' }], STAGES), 0);
-  assert.equal(transitionsProblem([{ ...draft, to: 'gone' }], STAGES), 0);
 });
 
 test('withApproval swaps a stage\'s done exits to approved and back, keeps its verdict and feedback exits and every other stage\'s, and returns a new list (#918)', () => {
@@ -57,4 +53,31 @@ test('withApproval swaps a stage\'s done exits to approved and back, keeps its v
   assert.deepEqual(list.map((d) => d.when), ['done', 'verdict', 'done'], 'the input is not mutated');
   const off = withApproval([...on, exit(plan, 'feedback', { to: plan.id })], plan.id, false);
   assert.deepEqual(off.map((d) => d.when), ['done', 'verdict', 'done', 'feedback'], 'feedback stays for the save check to point at');
+});
+
+test('transitionsProblem names the first transition the parser would refuse by its id and reason, in list order (#134, #918)', () => {
+  const plan = stage('Plan', { prompt: '/p', approval: true });
+  const stages = [...STAGES, plan];
+  const [build, checks, pr] = STAGES;
+  const draft = (from: StageDraft, extra: Partial<TransitionDraft> = {}): TransitionDraft => ({ ...emptyTransition(from, stages), ...extra });
+  const problem = (...list: TransitionDraft[]) => transitionsProblem(list, stages);
+  const ok = draft(build);
+  assert.equal(problem(ok, draft(checks), draft(pr), draft(plan)), undefined, 'done, passed, and approved twice: each its origin\'s first trigger');
+  const cases: [TransitionDraft, string][] = [
+    [draft(build, { to: 'gone' }), 'ends'],
+    [draft(checks, { verdict: '' }), 'verdict'],
+    [draft(build, { maxTries: '0' }), 'tries'],
+    [draft(build, { when: 'approved' }), 'needsApproval'],
+    [draft(build, { when: 'feedback' }), 'needsApproval'],
+    [draft(plan, { when: 'done' }), 'useApproved'],
+    [draft(pr, { when: 'done' }), 'useApproved'],
+    [draft(checks, { when: 'done', verdict: '' }), 'useVerdict'],
+    [draft(pr, { when: 'feedback', to: pr.id }), 'gateFeedback'],
+  ];
+  for (const [d, reason] of cases) assert.deepEqual(problem(d), { id: d.id, reason }, reason);
+  assert.equal(problem(draft(plan, { maxTries: 'x' })), undefined, 'tries on approved never reach the file');
+  const twin = { ...ok, id: 'twin' };
+  assert.deepEqual(problem(ok, twin), { id: 'twin', reason: 'twin' });
+  const [first, second] = [draft(plan, { when: 'done' }), draft(build, { to: 'gone' })];
+  assert.deepEqual(problem(ok, first, second), { id: first.id, reason: 'useApproved' }, 'the first in list order wins');
 });

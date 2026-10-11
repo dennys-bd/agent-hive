@@ -584,12 +584,15 @@ test('a workspace row keeps its fork and its own base branch through the draft; 
   assert.deepEqual([emptyWorkspace().fork, emptyWorkspace().baseBranch], [null, '']);
 });
 
-test('the form loads the saved transitions by stage id and sends them back; a broken one is refused on the flow section (#134)', () => {
+test('the form loads the saved transitions by stage id and sends them back; a broken one is refused on the flow section, named as the chart names it, with its id (#134, #918)', () => {
   const saved: Config = { ...CONFIG, comb: { ...CONFIG.comb, stages: [{ name: 'Build', from: {}, prompt: '/b' }], transitions: [{ from: 'Build', to: 'end', when: 'done' }] } };
   const draft = draftFrom(info(saved));
   assert.equal(draft.transitions[0].from, draft.stages[0].id);
   assert.deepEqual(toSettingsBody(draft).transitions, [{ from: 'Build', to: 'end', when: 'done' }]);
-  assert.deepEqual(validateSettings({ ...draft, transitions: [{ ...draft.transitions[0], to: 'gone' }] })?.section, 'flow');
+  const ends = { ...draft.transitions[0], to: 'gone' };
+  const name = (to: string): string => `Build → ${to} · ${t('flow.trigger.done')}`;
+  assert.deepEqual(validateSettings({ ...draft, transitions: [ends] }), { section: 'flow', message: t('settings.transitions.error.ends', { name: name(t('settings.stages.unnamed')), stage: 'Build' }), transition: ends.id });
+  assert.deepEqual(validateSettings({ ...draft, stages: [{ ...draft.stages[0], approval: true }] }), { section: 'flow', message: t('settings.transitions.error.useApproved', { name: name(t('flow.end')), stage: 'Build' }), transition: draft.transitions[0].id });
 });
 
 const REPO_CONFIG: Config = { ...CONFIG, comb: { ...CONFIG.comb, createIn: 'work', sources: [{ ...CONFIG.comb.sources[0], repository: 'acme/app' }] } };

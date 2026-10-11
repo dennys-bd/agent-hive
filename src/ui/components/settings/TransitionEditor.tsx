@@ -11,9 +11,9 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
-import { triggerLabel, verdictLabel } from '@/lib/flow-labels';
+import { verdictLabel } from '@/lib/flow-labels';
 import { isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
-import { draftVerdicts, type TransitionDraft, triggersOf } from '@/lib/settings-transitions';
+import { draftTitle, draftVerdicts, type TransitionDraft, triggersOf } from '@/lib/settings-transitions';
 
 interface TransitionEditorProps { transition: TransitionDraft; stages: StageDraft[]; sources: StageSource[]; backTo?: string; onUpdate(patch: Partial<TransitionDraft>): void; onRemove(): void; onBack?(): void }
 
@@ -104,7 +104,7 @@ function Handover({ id, transition, stages, onUpdate }: Omit<TransitionEditorPro
  * and what each source does as the task passes. Opened from a stage's saídas (#887), it leads with a way back to that stage. Inputs are uncontrolled where they type; the editor is keyed by the transition. */
 export function TransitionEditor({ transition, stages, sources, backTo, onUpdate, onRemove, onBack }: TransitionEditorProps) {
   const id = useId();
-  const title = `${nameOf(stages, transition.from)} → ${nameOf(stages, transition.to)} · ${triggerLabel(transition.when, transition.verdict)}`;
+  const title = draftTitle(transition, stages);
   return (
     <section aria-label={title} className="flex flex-col gap-4 rounded-xl border bg-card p-5">
       {backTo !== undefined && onBack !== undefined && (
