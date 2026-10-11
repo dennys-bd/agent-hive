@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useFlowView } from '@/hooks/use-flow-view';
-import { FLOW_VIEW_DEFAULTS, readFlowView, writeFlowView } from '@/lib/flow-view';
+import { FLOW_VIEW_DEFAULTS, readFlowView, toggleOutline, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
 // The flow view's own state (#909), as the view state holds it under flowView, read back through readFlowView
@@ -9,12 +9,12 @@ const readStored = (value: unknown) => {
   resetViewState({ flowView: value });
   return readFlowView();
 };
-const GOOD = { loops: false, zoom: 1.2, pan: { x: 30, y: 5 }, collapsed: [] };
+const GOOD = { loops: false, zoom: 1.2, pan: { x: 30, y: 5 }, collapsed: [], outline: [] };
 afterEach(() => resetViewState()); // also drops writeFlowView's pending post
 
 test('writeFlowView puts the whole value under flowView and readFlowView round-trips it (#909)', () => {
   resetViewState();
-  const view = { loops: false, zoom: 1.25, pan: { x: -40, y: 12 }, tree: true, collapsed: ['dev\u0000I1'] };
+  const view = { loops: false, zoom: 1.25, pan: { x: -40, y: 12 }, tree: true, collapsed: ['dev\u0000I1'], outline: ['I1'] };
   writeFlowView(view);
   expect(readView('flowView')).toEqual(view);
   expect(readFlowView()).toEqual(view);
@@ -22,7 +22,7 @@ test('writeFlowView puts the whole value under flowView and readFlowView round-t
 
 test('nothing stored, or a value that is no plain object, reads as the defaults: loops on, zoom 1, pan 0, 0 (#909)', () => {
   resetViewState();
-  expect(readFlowView()).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readFlowView()).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
   for (const value of [null, 3, 'loops', [GOOD]]) expect(readStored(value)).toEqual(FLOW_VIEW_DEFAULTS);
 });
 
@@ -57,4 +57,28 @@ test('two collapses before a re-render both stay: toggleGroup reads what was las
   });
   expect(result.current.view.collapsed).toEqual(['dev\u0000I1', 'review\u0000I1']);
   expect(readFlowView().collapsed).toEqual(['dev\u0000I1', 'review\u0000I1']);
+});
+
+test('a stored outline is read back, a non-array reads as [] and non-string entries are dropped; toggleOutline adds then removes an id and leaves the other fields as stored (#36)', () => {
+  expect(readStored({ ...GOOD, outline: ['I1'] }).outline).toEqual(['I1']);
+  expect(readStored({ ...GOOD, outline: 'I1' }).outline).toEqual([]);
+  expect(readStored({ ...GOOD, outline: ['I1', 2, null] }).outline).toEqual(['I1']);
+  const stored = { ...GOOD, tree: true, collapsed: ['dev\u0000I1'] };
+  resetViewState({ flowView: stored });
+  expect(toggleOutline('I2')).toEqual(['I2']);
+  expect(readView('flowView')).toEqual({ ...stored, outline: ['I2'] });
+  expect(toggleOutline('I3')).toEqual(['I2', 'I3']);
+  expect(toggleOutline('I2')).toEqual(['I3']);
+  expect(readFlowView()).toEqual({ ...stored, outline: ['I3'] });
+});
+
+test('the flow\'s own writes keep an outline the details wrote after the hook mounted: a toggle through save and a scroll through onPan (#36)', () => {
+  resetViewState();
+  const { result } = renderHook(() => useFlowView(false));
+  toggleOutline('I1');
+  act(() => result.current.toggleLoops());
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: false, outline: ['I1'] });
+  toggleOutline('I2');
+  act(() => result.current.onPan({ x: 5, y: 6 }));
+  expect(readFlowView()).toEqual({ ...FLOW_VIEW_DEFAULTS, loops: false, pan: { x: 5, y: 6 }, outline: ['I1', 'I2'] });
 });

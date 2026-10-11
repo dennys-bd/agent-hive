@@ -408,10 +408,10 @@ test('↺ voltas hides every back edge, loop and unlabelled skip with their pill
   expect(kinds(canvas)).toEqual(['forward']);
   for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
   expect(row()).toBe(`${MARGIN}px`);
-  expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
   await user.click(loops);
   expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
 });
 
 test('a stored flowView with loops off draws the flow without them on the first render, the button not pressed: the reload case (#909)', () => {
@@ -453,7 +453,7 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
   await user.click(zoomIn);
   expect(screen.getByRole('button', { name: '110%' })).toHaveAttribute('title', 'voltar a 100% · Ctrl+0');
   expect(scaledOf(canvas).style.transform).toBe('scale(1.1)');
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1.1, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1.1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
   await user.click(within(canvas).getAllByRole('button', { name: 'lista ›' })[0]);
   const panel = screen.getByRole('region', { name: 'dev' });
   expect(scaledOf(canvas).contains(panel)).toBe(false);
@@ -463,7 +463,7 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
   expect(scaledOf(canvas).style.transform).toBe('scale(0.9)');
   await user.click(screen.getByRole('button', { name: '90%' }));
   expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
 });
 
 test('ajustar on a chart wider than the canvas zooms out until it fits and scrolls to the start, the nodes still reaching the bottom; on a small chart it is 100% (#910)', async () => {
@@ -479,7 +479,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   expect(sizerOf(canvas).style.width).toBe('448px');
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([0, 0]);
   expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${600 / 0.8 - 2 * MARGIN}px`);
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
   unmount();
   viewport(1000, 600);
   render(<Flow state={twoStages()} />);
@@ -501,7 +501,7 @@ test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled 
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([120, 15]);
   paneOf(canvas).scrollLeft = 50;
   fireEvent.scroll(paneOf(canvas));
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 50, y: 15 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 50, y: 15 }, collapsed: [], outline: [] });
 });
 
 test('a zoom keeps the centre of the last scroll, not of the offsets the browser already clamped to the smaller chart (#910)', async () => {
@@ -788,7 +788,7 @@ test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do,
   expect(scale()).toBe('scale(1)');
   expect(fireEvent.keyDown(window, ZOOM_FIT)).toBe(false); // prevented: matched by hand, since Shift+1 is no binding
   expect(scale()).toBe('scale(0.8)');
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 }, collapsed: [], outline: [] });
   fireEvent.keyDown(window, ZOOM_RESET); // back to 100%, so a fit while hidden would show
   rerender(flow(false)); // under Atividades the flow stays mounted (#596), its keys unbound
   expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(true);
@@ -820,7 +820,7 @@ test('⑂ árvore starts on with a tree in the list and off without one; a click
   expect(within(nodeOf('dev')).getByText('sem árvore')).toBeInTheDocument();
   await user.click(treeToggle());
   expect(within(nodeOf('dev')).queryByText('⑂ #1 Task 1')).not.toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, tree: false, collapsed: [] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, tree: false, collapsed: [], outline: [] });
   unmountTree();
   render(<Flow state={forest()} />);
   expect(treeToggle()).toHaveAttribute('aria-pressed', 'false');
@@ -836,7 +836,7 @@ test('the chevron collapses a tree\'s group in its own node only, and the collap
   expect(within(nodeOf('dev')).queryByText('#2 Task 2')).not.toBeInTheDocument();
   expect(within(nodeOf('dev')).getByRole('button', { name: /^expandir/ })).toHaveAttribute('aria-expanded', 'false');
   expect(within(nodeOf('review')).getByText('#3 Task 3')).toBeInTheDocument();
-  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: ['dev\u0000I1'] });
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: ['dev\u0000I1'], outline: [] });
   unmount();
   render(<Flow state={forest()} />);
   expect(within(nodeOf('dev')).queryByText('#1 Task 1')).not.toBeInTheDocument();
