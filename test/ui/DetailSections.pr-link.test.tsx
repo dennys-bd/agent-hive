@@ -8,7 +8,7 @@ import type { Task } from '../../src/types';
 const PR = 'https://github.com/acme/app/pull/7';
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 // The task's PR, in its record (#629)
-const state = { workers: [], activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions: [], prs: [{ url: PR, state: 'open' as const }] }] };
+const state = { workers: [], activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions: [], prs: [{ url: PR, state: 'open' as const }] }], tasks: [] };
 beforeEach(() => setLanguage('pt'));
 
 test('a PR link opens the PR\'s page through the dock\'s opener, and GitHub outside a Dashboard (#592, #758)', () => {

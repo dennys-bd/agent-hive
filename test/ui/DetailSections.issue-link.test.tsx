@@ -7,7 +7,7 @@ import type { Task } from '../../src/types';
 
 const ISSUE = 'https://github.com/acme/app/issues/12';
 const task: Task = { item: { itemId: 'I1', id: '12', title: 'Task 1', body: '', url: ISSUE }, stage: 'dev', boardColumn: 'Ready', auto: true };
-const state = { workers: [], activities: [], activityRecords: [] };
+const state = { workers: [], activities: [], activityRecords: [], tasks: [] };
 beforeEach(() => setLanguage('pt'));
 
 test('the issue row opens the issue through the dock\'s opener, and its URL outside a Dashboard (#895)', () => {

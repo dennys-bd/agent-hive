@@ -549,3 +549,31 @@ test('a failed start shows its short message in the viewer\'s language; the raw 
   await user.click(toggle);
   expect(alert).not.toHaveTextContent('/repo');
 });
+
+// #36: the file's stopped task I1 is the child of I0, which lists it
+const EPIC: WithWork = { item: { itemId: 'I0', id: '0', title: 'Epic', body: '', url: 'https://github.com/acme/r/issues/0', children: ['I1'] }, stage: 'dev', boardColumn: 'Ready', auto: true };
+const FAMILY: State = withTasks(IDLE, [EPIC, { ...STOPPED, item: { ...STOPPED.item, parent: 'I0' } }]);
+
+test('with onOpenTask the tree section sits between the status block and the properties grid; without it there is none (#36)', () => {
+  const { unmount } = render(<DetailPanel state={FAMILY} selected={TASK} locale="pt-BR" isShown onClose={() => {}} onOpenTask={() => {}} />);
+  const tree = screen.getByRole('region', { name: 'árvore' });
+  expect(before(screen.getByRole('region', { name: 'parada' }), tree)).toBe(true);
+  expect(before(tree, screen.getByText('início', { selector: 'dt' }))).toBe(true);
+  unmount();
+  render(<Panel state={FAMILY} initial={TASK} />);
+  expect(screen.queryByRole('region', { name: 'árvore' })).not.toBeInTheDocument();
+});
+
+test('the parent row follows the issue row, reads the parent\'s #id title and opens it; a root has no parent row (#36)', async () => {
+  const user = userEvent.setup();
+  const onOpenTask = vi.fn();
+  const { unmount } = render(<DetailPanel state={FAMILY} selected={TASK} locale="pt-BR" isShown onClose={() => {}} onOpenTask={onOpenTask} />);
+  const label = screen.getByText('pai', { selector: 'dt' });
+  expect(label.previousElementSibling?.previousElementSibling).toBe(screen.getByText('issue', { selector: 'dt' }));
+  await user.click(within(label.nextElementSibling as HTMLElement).getByRole('button', { name: '#0 Epic' }));
+  expect(onOpenTask).toHaveBeenCalledWith('I0');
+  unmount();
+  render(<DetailPanel state={FAMILY} selected={{ taskId: 'I0' }} locale="pt-BR" isShown onClose={() => {}} onOpenTask={onOpenTask} />);
+  expect(screen.queryByText('pai', { selector: 'dt' })).not.toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'árvore' })).toBeInTheDocument();
+});

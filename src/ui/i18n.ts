@@ -199,6 +199,7 @@ const en = {
   'detail.prs': 'PRs', 'prs.type.stacked': 'stack', 'prs.type.integration': 'integration', 'prs.merged': '{x} of {y} merged', 'prs.base': 'base #{n}',
   'prs.mergedShort': '{x}/{y} merged', 'prs.moreRepo': '+{n} {repo}', 'prs.moreRepos': '+{n} repos',
   'detail.issue': 'issue',
+  'detail.parent': 'parent', // #36: the properties grid's row of the parent task
   'detail.branch': 'branch',
   'detail.totalLabel': 'total',
   'detail.tree': 'tree', // #36: the details' tree section
@@ -1950,6 +1951,7 @@ const pt: Record<MessageKey, string> = {
   'detail.prs': 'PRs', 'prs.type.stacked': 'pilha', 'prs.type.integration': 'integração', 'prs.merged': '{x} de {y} mergeados', 'prs.base': 'base #{n}',
   'prs.mergedShort': '{x}/{y} mergeados', 'prs.moreRepo': '+{n} {repo}', 'prs.moreRepos': '+{n} repos',
   'detail.issue': 'issue',
+  'detail.parent': 'pai',
   'detail.branch': 'branch',
   'detail.totalLabel': 'total',
   'detail.tree': 'árvore',

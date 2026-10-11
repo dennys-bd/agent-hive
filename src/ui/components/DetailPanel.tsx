@@ -13,6 +13,7 @@ import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
+import { TreeSection } from '@/components/TreeSection';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
 import { StartFailure } from '@/components/StartFailure';
 import { Button } from '@/components/ui/button';
@@ -29,12 +30,13 @@ export interface Selection { taskId: string; fromActivity?: true }
  * task's activity (only while it runs) or goes back to the flow. */
 export interface DetailNav { center: CenterMode; canOpenActivity(taskId: string): boolean; openActivity(taskId: string): void; showFlow(): void }
 
-// isShown: Detalhes is the shown tab of an open panel; onClose closes the panel holding it (#452). MainDock hands both, and `nav`.
-interface DetailPanelProps { state: State; selected?: Selection; locale: string; isShown: boolean; onClose(): void; nav?: DetailNav }
+// isShown: Detalhes is the shown tab of an open panel; onClose closes the panel holding it (#452). MainDock hands both, and `nav`. onOpenTask
+// (#36): opens another task's details, as the flow's click does; with it the tree section and the parent row show
+interface DetailPanelProps { state: State; selected?: Selection; locale: string; isShown: boolean; onClose(): void; nav?: DetailNav; onOpenTask?(itemId: string): void }
 
 const MUTED = 'text-muted-foreground text-xs';
 
-interface BodyProps { task: Task; state: State; comments: CommentsState; files: TaskFile[]; locale: string; isActivity: boolean }
+interface BodyProps { task: Task; state: State; comments: CommentsState; files: TaskFile[]; locale: string; isActivity: boolean; onOpenTask?(itemId: string): void }
 
 // Hidden on a source without comments; a failure stays here and never blanks the task data above it.
 function Comments({ comments, locale }: { comments: CommentsState; locale: string }) {
@@ -67,8 +69,9 @@ function StatusBlock({ task, state, locale, isActivity }: { task: Task; state: S
 // The scrolling body (redesign 06), with no visible bar and 14px under its last line (#57): the title, the task's error in full (a failed
 // start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), the status block (the status box, the
 // running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
-// section under it, the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
-function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProps) {
+// section under it, the tree (#36), the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the
+// issue and its comments.
+function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask }: BodyProps) {
   const { item } = task;
   const live = activityOf(state, item.itemId); // the activity's (#629)
   const error = live?.error; // #916: not shown while the exhausted block says it in words
@@ -82,8 +85,9 @@ function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProp
       <TriesSection task={task} state={state} />
       <SyncBlock task={task} state={state} />
       <CiNotice task={task} state={state} />
+      {onOpenTask && <TreeSection task={task} state={state} onOpenTask={onOpenTask} />} {/* #36: after the status and its notices, before the properties */}
       <BlockersSection key={item.itemId} task={task} state={state} />
-      <MetaGrid task={task} state={state} isActivity={isActivity} />
+      <MetaGrid task={task} state={state} isActivity={isActivity} onOpenTask={onOpenTask} />
       <SessionsList task={task} state={state} locale={locale} />
       <CheckpointsList task={task} state={state} />
       <ResultsList task={task} files={files} />
@@ -138,7 +142,7 @@ function useClosePanelKey(isShown: boolean, onClose: () => void): void {
 /** The task's expanded view (#283, #304), the body of the dock's Detalhes tab (#342), which is always there (#452): with no task selected,
  * or one App has not dropped yet after it left the Hive, it shows an empty state. The dock draws its tab, its panel's X, its divider and its
  * size. A docked panel is no dismissable layer, so a click elsewhere never closes it (the #184 guard is gone). */
-export function DetailPanel({ state, selected, locale, isShown, onClose, nav }: DetailPanelProps) {
+export function DetailPanel({ state, selected, locale, isShown, onClose, nav, onOpenTask }: DetailPanelProps) {
   const task = state.tasks.find((c) => c.item.itemId === selected?.taskId);
   const comments = useComments(task?.item.itemId); // once per task
   // once per task too (#258): its live activity's id, else its newest record's, after a delete (#629); again when a stage adds a result (#662)
@@ -149,7 +153,7 @@ export function DetailPanel({ state, selected, locale, isShown, onClose, nav }: 
   const isActivity = nav?.center === 'activities';
   return (
     <aside aria-label={t('detail.title')} className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <TaskBody task={task} state={state} comments={comments} files={files} locale={locale} isActivity={isActivity} />
+      <TaskBody task={task} state={state} comments={comments} files={files} locale={locale} isActivity={isActivity} onOpenTask={onOpenTask} />
       <TaskFooter task={task} state={state} nav={nav} />
     </aside>
   );
