@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import { PROJECT_ITEM_LIMIT } from '../../src/sources/github-project.js';
+import { PROJECT_ITEMS } from '../../src/sources/github-queries.js';
 import { combConfig, fakeGql, FILTER } from '../fakes.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
@@ -170,4 +171,21 @@ test('project lists every other field as a column, by its kind or as other: mile
   assert.deepEqual(one.fields, { Milestone: 'v1', Repository: 'acme/r', 'Parent issue': '#2 Epic', Type: 'Bug', Mystery: 'odd' });
   assert.deepEqual([one.createdAt, one.updatedAt, one.closedAt], ['2026-10-01T10:00:00Z', '2026-10-05T10:00:00Z', undefined]);
   assert.equal(two.closedAt, '2026-10-04T10:00:00Z');
+});
+
+test('project reads each issue\'s blocked-by relations, open and closed: a short id in its own repository, whatever GitHub\'s casing, owner/repo#n in another; a node without them leaves blockedBy absent (#61)', async () => {
+  const ref = (number: number, title: string, state: string, nameWithOwner: string) => ({ number, title, state, repository: { nameWithOwner } });
+  const blockedBy = { nodes: [ref(274, 'Dock layout', 'OPEN', 'acme/r'), ref(521, 'Old pager', 'CLOSED', 'Acme/R'), ref(3, 'Lib', 'OPEN', 'other/lib')] };
+  const own = { repository: { nameWithOwner: 'acme/r' } };
+  const nodes = [issue(1, { ...own, blockedBy }), issue(2, { ...own, blockedBy: { nodes: [] } }), issue(3, own)];
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: page(nodes) }).gql });
+  await source.resolveFields();
+  const { items } = await source.project!();
+  assert.deepEqual(items.map((i) => i.blockedBy), [
+    [{ id: '274', title: 'Dock layout', state: 'open' }, { id: '521', title: 'Old pager', state: 'closed' }, { id: 'other/lib#3', title: 'Lib', state: 'open' }],
+    [],
+    undefined,
+  ]);
+  assert.equal('blockedBy' in items[2], false);
+  assert.match(PROJECT_ITEMS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
 });

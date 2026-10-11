@@ -239,3 +239,11 @@ test('a write that fails midway re-reads the item and carries what it found on t
   };
   await assert.rejects(writeItemField({ gql: dead, projectId: PROJECT, read: READ, entry: async () => undefined }, 'PVTI_1', 'Priority', 'P0'), { message: 'mutation failed' });
 });
+
+test('a field write\'s re-read row keeps the issue\'s blocked-by refs, so a Status change never blanks the blocked-by cell (#61)', async () => {
+  const blockedBy = { nodes: [{ number: 274, title: 'Dock layout', state: 'OPEN', repository: { nameWithOwner: 'acme/site' } }] };
+  const { gql } = itemGql([fieldsNode({}, { blockedBy }), fieldsNode({ fieldValueByName: { name: 'Done' } }, { blockedBy })]);
+  const written = await writeItemField({ gql, projectId: PROJECT, read: READ, entry: async () => undefined }, 'PVTI_1', 'Status', 'Done');
+  assert.deepEqual(written.row.blockedBy, [{ id: '274', title: 'Dock layout', state: 'open' }]);
+  assert.match(ITEM_FIELDS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
+});

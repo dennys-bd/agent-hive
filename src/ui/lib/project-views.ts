@@ -9,8 +9,11 @@ import { readView, writeView } from './view-state.js';
 export interface ProjectSort { key: string; desc: boolean }
 
 /** `groupBy`: null, `status`, `assignee` or `field:<name>`; `collapsed`: the group names folded; `columns`: the visible column keys;
- * `sort`: null for the project's own order; `widths`: px by column key, a column absent at its kind's width. */
-export interface ProjectViewPrefs { groupBy: string | null; collapsed: string[]; columns: string[]; sort: ProjectSort | null; widths: Record<string, number> }
+ * `sort`: null for the project's own order; `widths`: px by column key, a column absent at its kind's width; `blockedByShown`: the view
+ * knows the blocked-by column (#61), always set on read, so every save writes it. */
+export interface ProjectViewPrefs {
+  groupBy: string | null; collapsed: string[]; columns: string[]; sort: ProjectSort | null; widths: Record<string, number>; blockedByShown?: true;
+}
 
 const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === 'string');
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -18,13 +21,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const isSort = (value: unknown): value is ProjectSort | null =>
   value === null || (isRecord(value) && typeof value.key === 'string' && typeof value.desc === 'boolean');
 
-// What a saved view holds, sort and widths filled in when it predates them
+const BLOCKED_BY = 'blockedBy';
+// #61: a view saved before the blocked-by column existed has no blockedByShown, so it gets the column, on by default as the handoff says.
+// One saved since carries the flag and keeps the user's choice. The order comes from projectColumns, not from this list
+const withBlockedBy = (columns: string[], isKnown: unknown): string[] =>
+  (isKnown === true || columns.includes(BLOCKED_BY) ? columns : [...columns, BLOCKED_BY]);
+
+// What a saved view holds, sort and widths filled in when it predates them, the blocked-by column added when it predates that (#61)
 function prefsOf(value: unknown): ProjectViewPrefs | undefined {
   if (!isRecord(value)) return undefined;
-  const { groupBy, collapsed, columns, sort = null, widths = {} } = value;
+  const { groupBy, collapsed, columns, sort = null, widths = {}, blockedByShown } = value;
   const parsed = parseWidths(widths);
   const isRead = (groupBy === null || typeof groupBy === 'string') && isStringList(collapsed) && isStringList(columns) && isSort(sort) && parsed !== undefined;
-  return isRead ? { groupBy, collapsed, columns, sort, widths: parsed } : undefined;
+  return isRead ? { groupBy, collapsed, columns: withBlockedBy(columns, blockedByShown), sort, widths: parsed, blockedByShown: true } : undefined;
 }
 
 const stored = (): Record<string, unknown> => {

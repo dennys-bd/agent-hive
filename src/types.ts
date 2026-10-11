@@ -1563,6 +1563,7 @@ export interface ProjectItem {
   createdAt?: string; // ISO, the issue's own dates (#756, addendum 2); closedAt only on a closed issue
   updatedAt?: string;
   closedAt?: string;
+  blockedBy?: BlockerRef[]; // #61: the issue's blocked-by relations, open and closed; absent = not read
 }
 
 /** A source's native view (#756): its Status options in order, each with the stage that cites it, its fields, where its built-in fields

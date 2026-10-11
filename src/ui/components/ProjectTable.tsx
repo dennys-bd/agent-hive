@@ -9,13 +9,13 @@ import { ProjectRow } from '@/components/ProjectRow';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
 import { gridTemplate, withWidths } from '@/lib/column-widths';
-import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, type ProjectColumn, projectColumns } from '@/lib/project-columns';
+import { ACTION_WIDTH, columnLabel, DATES, defaultColumns, FIELD_KEY, openFirst, type ProjectColumn, projectColumns } from '@/lib/project-columns';
 import { defaultCollapsed, groupItems, groupOptions, type ProjectGroup } from '@/lib/project-groups';
 import { type ProjectSort, type ProjectViewPrefs, readProjectView, writeProjectView } from '@/lib/project-views';
 
 const SUBBAR = 'flex h-10 shrink-0 items-center gap-2 px-3.5 text-muted-foreground text-xs';
 
-// What a column sorts by: the number, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value
+// What a column sorts by: the number, the Status option's place, the first label or assignee, the first PR's number, an ISO date, a field's value, the first blocker's number (#61)
 function sortValue(item: ProjectItem, key: string, view: ProjectView): string | number | undefined {
   switch (key) {
     case 'issue': return Number(item.id);
@@ -27,6 +27,11 @@ function sortValue(item: ProjectItem, key: string, view: ProjectView): string | 
     case 'assignee': return item.assignees[0];
     case 'pr': return item.pullRequests[0]?.number;
     case 'created': case 'updated': case 'closed': return item[DATES[key]];
+    case 'blockedBy': {
+      // #61: the first ref the cell shows; one of another repository (owner/repo#n) or none sorts last, on purpose
+      const first = openFirst(item.blockedBy ?? [])[0]?.id;
+      return first !== undefined && /^\d+$/.test(first) ? Number(first) : undefined;
+    }
     default: {
       const name = key.slice(FIELD_KEY.length);
       return Object.hasOwn(item.fields, name) ? item.fields[name] : undefined;
@@ -147,7 +152,7 @@ function ProjectGrid(props: ProjectGridProps) {
 interface Prefs { prefs: ProjectViewPrefs; update(patch: Partial<ProjectViewPrefs>): void }
 function usePrefs(source: string, view: ProjectView | undefined, columns: ProjectColumn[]): Prefs {
   const [saved, setSaved] = useState(() => readProjectView(source));
-  const prefs = saved ?? { groupBy: 'status', collapsed: defaultCollapsed(view), columns: defaultColumns(columns), sort: null, widths: {} };
+  const prefs = saved ?? { groupBy: 'status', collapsed: defaultCollapsed(view), columns: defaultColumns(columns), sort: null, widths: {}, blockedByShown: true as const };
   const update = (patch: Partial<ProjectViewPrefs>): void => {
     const next = { ...prefs, ...patch };
     setSaved(next);

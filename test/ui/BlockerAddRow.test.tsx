@@ -89,3 +89,11 @@ test('a search answer that lands after ↓ keeps the highlight on the same find,
   await user.keyboard('{Enter}');
   expect(onAdd).toHaveBeenCalledWith('blockedBy', 'other/lib#3');
 });
+
+test('a fixed kind renders no kind select and adds as that kind (#61)', async () => {
+  find.mockResolvedValue([]);
+  const { user, onAdd } = setup({ kind: 'blocking' });
+  expect(screen.queryByRole('combobox', { name: 'tipo' })).not.toBeInTheDocument();
+  await user.keyboard('#12{Enter}');
+  expect(onAdd).toHaveBeenCalledWith('blocking', '12');
+});

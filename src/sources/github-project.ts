@@ -1,9 +1,11 @@
 import { STATUS } from '../field-values.js';
 import { matchTaskProps } from '../task-props.js';
-import type { EpicsMode, FilterRule, Gql, ProjectBuiltins, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, SourceTaskProps } from '../types.js';
+import type { BlockerRef, EpicsMode, FilterRule, Gql, ProjectBuiltins, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, SourceTaskProps } from '../types.js';
 import { matchesFilter } from './github-filter.js';
 // A cycle with github.js, which calls readProject: only functions cross it, and they run after both modules loaded
 import { isEpicItem, itemReader, pageItems } from './github.js';
+// A cycle (github-blockers → github-fields → this module): only functions cross it, and they run after every module loaded
+import { refsOf } from './github-blockers.js';
 import { PROJECT_ITEMS, type GhItemNode, type GhProjectField, type GhPullRequest } from './github-queries.js';
 
 /** Ten pages (#756): the poll's 200 is too few for an unfiltered view, and 1000 keeps one load bounded; past it the view says truncated. */
@@ -56,6 +58,10 @@ export function projectBuiltins(raw: GhProjectField[]): ProjectBuiltins {
 }
 
 type GhIssue = NonNullable<GhItemNode['content']>;
+// #61: the issue's blocked-by refs, short ids in its own repository. Absent when the read asked none: a row never claims no blockers it did not read
+const blockedByOf = (c: GhIssue): BlockerRef[] | undefined =>
+  (c.blockedBy ? refsOf(c.blockedBy.nodes, c.repository?.nameWithOwner ?? '') : undefined);
+
 // The kinds read off the issue rather than a field value: one read whatever the project lists. The progress only on an issue with sub-issues
 const FROM_ISSUE: Partial<Record<ProjectField['type'], (c: GhIssue) => string | undefined>> = {
   progress: ({ subIssuesSummary: s }) => (s && s.total > 0 ? `${s.completed ?? 0}/${s.total}` : undefined),
@@ -103,6 +109,7 @@ export function projectItem(node: GhItemNode, fields: ProjectField[], read: Proj
   const status = node.fieldValueByName?.name;
   const { workspace } = matchTaskProps(read.taskProps.rules, itemReader(node));
   const out = outOf(node, read);
+  const blockedBy = blockedByOf(c);
   return {
     itemId: node.id, id: String(c.number), title: c.title ?? `#${c.number}`, body: c.body ?? '', url: c.url,
     ...(status === undefined ? {} : { status }),
@@ -112,6 +119,7 @@ export function projectItem(node: GhItemNode, fields: ProjectField[], read: Proj
     ...(workspace === undefined ? {} : { workspaceHint: workspace }),
     fields: valuesOf(node, fields),
     pullRequests: (c.closedByPullRequestsReferences?.nodes ?? []).map(pullRequest),
+    ...(blockedBy === undefined ? {} : { blockedBy }),
     ...(out === undefined ? {} : { out }),
     ...(c.createdAt ? { createdAt: c.createdAt } : {}), ...(c.updatedAt ? { updatedAt: c.updatedAt } : {}), ...(c.closedAt ? { closedAt: c.closedAt } : {}),
   };
