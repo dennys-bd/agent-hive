@@ -60,6 +60,7 @@ import { allowedHosts, attachPtySocket, type PtySocket } from './server-pty-sock
 import { SECRET_FILE } from './daemon-files.js';
 import { matchesSecret, pagePolicy, presentedSecret } from './secret.js';
 import { registerConsoleRoutes } from './server-console.js';
+import { createDesignFrameTokens, registerDesignFrameMint, registerDesignFrameRoute } from './server-design-frame.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
 import { registerOpenRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
@@ -755,6 +756,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const app = express();
+  const designFrames = createDesignFrameTokens(); // #108: one store per boot, written by the mint and read by the frame route
 
   // Rejects DNS-rebinding / cross-origin requests that don't target this exact bound
   // address: hooks and the UI always call http://127.0.0.1:<port> or localhost:<port>.
@@ -764,6 +766,13 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_HOST_MESSAGE });
       return;
     }
+    next();
+  });
+  // #108: between the Host check and the secret. The sandboxed frame presents no credential: its URL's token is the capability, and the
+  // route never reads the port's cookie
+  registerDesignFrameRoute(app, { tokens: designFrames, log });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const port = boundPort ?? 0; // the Host check above refused every request before listen bound the port
     // The Host check stops a web page, not a process: anything that reaches 127.0.0.1 knows the header names, another account's process
     // included. Only this boot's secret opens the daemon (#467): hive.secret (0600), a worker's env, the viewer's cookie. The log line
     // names the request, never the value presented.
@@ -1033,6 +1042,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, events: wiring.events });
   registerTaskRoutes(app, taskDeps);
+  registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
   // throws (EBADF, as the input effect meets it): that delivery failed, the others go on.
   const write = (ptyId: string, data: string): boolean => {
