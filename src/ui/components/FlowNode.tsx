@@ -10,11 +10,13 @@ import { FlowTask } from '@/components/FlowTask';
 import { FilterIndicator } from '@/components/StageFilter';
 import { StageMenu } from '@/components/StageMenu';
 import { type DragRef, useStageDrag } from '@/components/task-drag';
+import { TreeGroupHeader } from '@/components/TreeGroupHeader';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { executorLine } from '@/lib/flow-labels';
 import { hiddenBelow } from '@/lib/flow-layout';
 import { isExhausted, taskState } from '@/lib/task-state';
+import { flatRows, nodeRows } from '@/lib/tree-groups';
 
 // A task that waits for the user (#134): a session asking, or an approval
 const awaitsYou = (task: Task, state: State): boolean => ['waiting', 'approval'].includes(taskState(task, state));
@@ -68,14 +70,17 @@ function StageLoad({ stage, cap, state }: { stage: string; cap?: number; state: 
 interface FlowNodeProps {
   stage: Stage; state: State; tasks: Task[]; order: Task[]; shown: number; filteredOut: number; rules: FilterRule[]; drag: DragRef; selectedId?: string;
   isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void;
+  isTree?: boolean; collapsed?: readonly string[]; onToggleGroup?(key: string): void; // #34: the tree toggle Flow resolved, and the collapsed groups
 }
 
 /** A stage as a node of the flowchart (#134, 1b): NODE_WIDTH wide (#54), its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
  * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
-  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList } = props;
-  const fold = useFold(tasks.length);
+  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList, isTree = false, collapsed = [], onToggleGroup } = props;
+  // #34: grouped by tree over the whole task list, or as today; a drop still reads `order`, the stage's whole order (#366)
+  const rows = isTree ? nodeRows(state.tasks, tasks, stage.name, collapsed) : flatRows(tasks);
+  const fold = useFold(rows.filter((row) => row.kind === 'task').length);
   const waiting = order.filter((c) => awaitsYou(c, state)).length;
   const exhausted = order.filter((c) => isExhausted(c, state)).length;
   const { draggedId, dropBefore, taskDragProps, dropAtEnd, dragOverEnd, onListDragLeave } = useStageDrag(drag, stage, order, state);
@@ -100,12 +105,14 @@ export function FlowNode(props: FlowNodeProps) {
         className="relative flex min-h-0 flex-[0_1_auto] flex-col gap-1.5 overflow-y-auto pr-2 [scrollbar-width:none] after:absolute after:inset-x-0 after:-bottom-1 after:hidden after:h-0.5 after:bg-primary after:content-[''] data-[drop=end]:after:block"
       >
         {tasks.length === 0 && <li className="text-muted-foreground text-xs">{t(order.length === 0 ? 'stage.empty' : 'stage.filterNone')}</li>}
-        {tasks.map((task) => (
-          <FlowTask
-            key={task.item.itemId} task={task} state={state} dragHandlers={{ draggable: true, ...taskDragProps(task) }} isDimmed={draggedId === task.item.itemId}
-            isDropBefore={dropBefore === task.item.itemId} isSelected={selectedId === task.item.itemId} onOpen={onOpen}
-          />
-        ))}
+        {rows.map((row) => (row.kind === 'group'
+          ? <TreeGroupHeader key={row.key} root={row.root} count={row.count} isCollapsed={row.isCollapsed} onToggle={() => onToggleGroup?.(row.key)} />
+          : (
+            <FlowTask
+              key={row.task.item.itemId} task={row.task} state={state} indent={row.indent} dragHandlers={{ draggable: true, ...taskDragProps(row.task) }}
+              isDimmed={draggedId === row.task.item.itemId} isDropBefore={dropBefore === row.task.item.itemId} isSelected={selectedId === row.task.item.itemId} onOpen={onOpen}
+            />
+          )))}
       </ul>
       {fold.overflows && (
         <div className="flex flex-none items-center justify-between pr-2 text-xs">

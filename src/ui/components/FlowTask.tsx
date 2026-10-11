@@ -5,6 +5,7 @@ import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
 import { progress } from '../../task-tree';
 import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
+import { parentOf } from '../../task-tree';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
 import { taskAutoBadge } from '@/lib/auto-badge';
@@ -15,6 +16,7 @@ import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
 import { commandsProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
 import { SetupLogsButton } from '@/components/SetupProgress';
+import { TreeProgress } from '@/components/TreeProgress';
 import { StartDialog } from '@/components/StartDialog';
 import { runTab, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -123,12 +125,14 @@ function taskStatus(task: Task, state: State): TaskStatus {
 }
 
 // The title (#134, 1b): the workspace's colour square before the id, its name as the square's title, two lines at most. No square when no rule
-// resolves a workspace (#179)
+// resolves a workspace (#179). A child's ↳ after the square, whether the tree toggle is on or off; a root has none (#34)
 function TaskTitle({ task, state }: { task: Task; state: State }) {
   const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
+  const isChild = parentOf(state.tasks, task.item.itemId) !== undefined;
   return (
     <span className="line-clamp-2 font-medium text-xs leading-4">
       {workspace !== undefined && <span aria-hidden="true" title={workspace} className="mr-1.5 inline-block size-2 rounded-[2px] align-middle" style={{ background: workspaceColor(workspace) }} />}
+      {isChild && <span aria-hidden="true" className="mr-1 font-mono font-normal text-muted-foreground">↳</span>}
       {taskLabel(task)}
     </span>
   );
@@ -211,17 +215,23 @@ interface FlowTaskProps {
   task: Task; state: State; dragHandlers: TaskDragHandlers; isDimmed: boolean; isDropBefore: boolean;
   isSelected: boolean; // the task the detail panel shows (redesign 10)
   onOpen?(taskId: string): void;
+  indent?: number; // #34: the tree grouping's left margin, in px
+  onFocusTree?(itemId: string): void; // #34: focus › on a parent's card; #35 passes it
+  isHighlighted?: boolean; // #34: the tree card #36 lights up; nothing passes it yet
 }
 
 /** A task of the flow (redesign 10, #542): the title with the workspace square, and a footer with the auto badge, the status and one button. The
- * border and the selected ring take the status colour. Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
-export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen }: FlowTaskProps) {
+ * border and the selected ring take the status colour. A child shows ↳ and a parent its children's progress, with no auto badge (#34). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
+export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isHighlighted = false }: FlowTaskProps) {
   const status = taskStatus(task, state);
   const tries = triesText(task, state);
   const { tone } = status;
   const live = activityOf(state, task.item.itemId);
   const setup = live?.setup;
   const ring = isSelected ? `ring-2 ${TONE_RING[tone ?? 'empty']}` : '';
+  // #34: a parent never runs while it waits, so it carries no auto badge; the highlight wins over the status border and the selected ring
+  const isParent = (task.item.children ?? []).length > 0;
+  const frame = isHighlighted ? 'border-foreground ring-2 ring-foreground/25' : `${tone ? TONE_BORDER[tone] : ''} ${ring}`;
   const openActivity = useOpenActivity(task, state);
   const onKeyDown = useTaskNavKeys(task, state, onOpen, openActivity); // #585
   const item = (
@@ -232,17 +242,19 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       data-task-id={task.item.itemId}
       data-drop={isDropBefore ? 'before' : undefined}
       aria-current={isSelected ? 'true' : undefined}
+      style={indent > 0 ? { marginLeft: indent } : undefined}
       onClick={openOnClick(task.item.itemId, onOpen)}
       onKeyDown={onKeyDown}
       title={t(dragHint(task, state))} // what a drag may do with it (#366)
-      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${tone ? TONE_BORDER[tone] : ''} ${ring} ${isDimmed ? 'opacity-50' : task.orphan ? 'opacity-70' : ''}`}
+      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : task.orphan ? 'opacity-70' : ''}`}
     >
       <TaskTitle task={task} state={state} />
+      {isParent && <TreeProgress task={task} state={state} onFocusTree={onFocusTree} />}
       <PrLine task={task} state={state} />
       <SyncLine task={task} state={state} /> {/* #854 */}
       <BlockedLine task={task} state={state} />
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
-        {task.auto && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
+        {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         {setup && <SetupLogsButton consoleId={setup.consoleId} />}

@@ -56,6 +56,14 @@ const en = {
   'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
   'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
   'flow.loops.show': 'show the loops',
+  'flow.tree': '⑂ tree', // #34: the flow header's toggle of the tree grouping in the stage nodes
+  'flow.tree.ungroup': 'grouped by tree · click to ungroup',
+  'flow.tree.group': 'group by tree',
+  'flow.tree.children': '{n} children · {done}/{n}', // #34: a parent's card, over its direct children
+  'flow.tree.focus': 'focus ›', // #34: shown once #35 wires the focus
+  'flow.tree.none': 'no tree', // #34: a node's group of the tasks in no tree
+  'flow.tree.collapse': 'collapse', // #34: the group header's chevron
+  'flow.tree.expand': 'expand',
   'flow.zoom.out': 'zoom out', // #910: the canvas's floating zoom controls
   'flow.zoom.in': 'zoom in',
   'flow.zoom.reset': 'back to 100%',
@@ -1769,6 +1777,14 @@ const pt: Record<MessageKey, string> = {
   'flow.loops': '↺ voltas',
   'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
   'flow.loops.show': 'mostrar as voltas',
+  'flow.tree': '⑂ árvore',
+  'flow.tree.ungroup': 'agrupado por árvore · clique para desagrupar',
+  'flow.tree.group': 'agrupar por árvore',
+  'flow.tree.children': '{n} filhas · {done}/{n}',
+  'flow.tree.focus': 'focar ›',
+  'flow.tree.none': 'sem árvore',
+  'flow.tree.collapse': 'recolher',
+  'flow.tree.expand': 'expandir',
   'flow.zoom.out': 'afastar',
   'flow.zoom.in': 'aproximar',
   'flow.zoom.reset': 'voltar a 100%',

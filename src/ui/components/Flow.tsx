@@ -15,6 +15,7 @@ import { useFlowView } from '@/hooks/use-flow-view';
 import { t } from '@/i18n';
 import { matchesSearch } from '@/lib/flow-search';
 import { visibleUnderFilter } from '@/lib/stage-filters';
+import { hasTree } from '@/lib/tree-groups';
 
 interface FlowProps { state: State; source?: string; selectedId?: string; onOpen?(taskId: string): void; tabs?: SourceTabs; stageCaps?: Record<string, number> } // source: the flow sidebar's pick (redesign 09); selectedId: the detail panel's task (#542); tabs: the source header's, with an external source picked (#756); stageCaps: the effective caps, which a node shows as n/cap (#727)
 
@@ -41,6 +42,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const [search, setSearch] = useState('');
   const isShown = useIsFlowShown();
   const flow = useFlowView(isShown); // the flowchart's view (#909, #910): loops, zoom and pan, kept in flowView
+  const isTree = flow.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
   const shown = source === undefined ? state.tasks : state.tasks.filter((c) => sourceOf(c) === source);
   const of = (stage: string) => stageTasks(state, stage, source, filters.rulesOf(stage), search);
   const node = (stage: Stage, maxHeight: number) => {
@@ -48,7 +50,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
     return (
       <FlowNode
         stage={stage} state={state} tasks={tasks} order={all} shown={ofSource.length} filteredOut={ofSource.length - filtered.length} rules={filters.rulesOf(stage.name)} drag={drag}
-        selectedId={selectedId} isListed={listed === stage.name} maxHeight={maxHeight}
+        selectedId={selectedId} isListed={listed === stage.name} maxHeight={maxHeight} isTree={isTree} collapsed={flow.view.collapsed} onToggleGroup={flow.toggleGroup}
         cap={stageCaps !== undefined && Object.hasOwn(stageCaps, stage.name) ? stageCaps[stage.name] : undefined} onOpen={onOpen}
         onFilter={() => setEditing(stage.name)} onClearFilter={() => filters.set(stage.name, [])} onList={() => setListed(stage.name)}
       />
@@ -58,7 +60,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={flow.view.loops} onLoops={flow.toggleLoops} />
+      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={flow.view.loops} onLoops={flow.toggleLoops} tree={isTree} onTree={() => flow.toggleTree(isTree)} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
