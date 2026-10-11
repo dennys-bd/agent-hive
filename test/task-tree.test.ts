@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { depthOf, descendants, parentOf, progress, rootOf, treeProgress, treeStarted } from '../src/task-tree.js';
-import type { Item, Task } from '../src/types.js';
+import { allDone, depthOf, descendants, epicStage, parentOf, progress, rootOf, treeProgress, treeStarted } from '../src/task-tree.js';
+import type { EpicFollows, Item, Task } from '../src/types.js';
 
 const LAST = 'Done';
-type Links = Pick<Item, 'parent' | 'children' | 'closedChildren'>;
+type Links = Pick<Item, 'parent' | 'children' | 'closedChildren' | 'epic'>;
 const task = (itemId: string, stage: string, links: Links = {}): Task => ({
   item: { itemId, id: itemId, title: itemId, body: '', url: '', ...links }, stage, boardColumn: '', auto: true,
 });
@@ -68,4 +68,40 @@ test('treeStarted is true when any task of the item\'s whole tree meets the pred
   const orphan = [...TREE, task('C', 'Build', { parent: 'Q' })];
   assert.equal(treeStarted(orphan, 'C', isA2), false, 'Q is no task: C is its own root');
   assert.equal(treeStarted(CYCLE, 'X', (t) => t.stage === LAST), true);
+});
+
+// #31: the flow in pipeline order, switching at Build; E lists c1 and c2
+const FLOW = ['Backlog', 'Spec', 'Build', 'Review', LAST].map((name) => ({ name }));
+const epicOf = (follows: EpicFollows, children = ['c1', 'c2']): Task => task('E', 'Backlog', { children, epic: { follows, switchAt: 'Build' } });
+const stageFor = (follows: EpicFollows, [first, second]: [string, string]): string | undefined => {
+  const tasks = [epicOf(follows), task('c1', first, { parent: 'E' }), task('c2', second, { parent: 'E' })];
+  return epicStage(tasks, FLOW, tasks[0]);
+};
+
+test('epicStage puts a behind epic at its furthest-behind child and an ahead one at its furthest-ahead, in pipeline order (#31)', () => {
+  assert.equal(stageFor('behind', ['Review', 'Spec']), 'Spec');
+  assert.equal(stageFor('ahead', ['Review', 'Spec']), 'Review');
+});
+
+test('epicStage under aheadThenBehind follows the furthest ahead up to switchAt, waits there, then follows the furthest behind (#31)', () => {
+  assert.equal(stageFor('aheadThenBehind', ['Backlog', 'Spec']), 'Spec', 'before switchAt: the furthest ahead');
+  assert.equal(stageFor('aheadThenBehind', ['Spec', 'Build']), 'Build', 'at switchAt');
+  assert.equal(stageFor('aheadThenBehind', ['Spec', 'Review']), 'Build', 'one child is past switchAt: the epic waits there for the other');
+  assert.equal(stageFor('aheadThenBehind', ['Review', LAST]), 'Review', 'both past switchAt: the furthest behind');
+});
+
+test('epicStage is undefined when no child is a task in a stage of the flow, and for a task with no epic stamp (#31)', () => {
+  assert.equal(epicStage([epicOf('behind', ['gone'])], FLOW, epicOf('behind', ['gone'])), undefined, 'the child is no task');
+  assert.equal(stageFor('behind', ['Nowhere', 'Nowhere']), undefined, 'a stage the flow lost');
+  const plain = task('P', 'Backlog', { children: ['c1'] });
+  assert.equal(epicStage([plain, task('c1', 'Build', { parent: 'P' })], FLOW, plain), undefined);
+});
+
+test('allDone holds when every direct child sits in the last stage or is closed with no task; never for a leaf (#31)', () => {
+  const both = [epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', LAST, { parent: 'E' })];
+  assert.equal(allDone(both, 'E', LAST), true);
+  const closed = [task('E', 'Build', { children: ['c1', 'c2'], closedChildren: ['c2'] }), task('c1', LAST, { parent: 'E' })];
+  assert.equal(allDone(closed, 'E', LAST), true, 'c2 left the Hive closed');
+  assert.equal(allDone([epicOf('behind'), task('c1', LAST, { parent: 'E' }), task('c2', 'Build', { parent: 'E' })], 'E', LAST), false);
+  assert.equal(allDone([task('L', LAST)], 'L', LAST), false, 'no child: nothing to be done');
 });
