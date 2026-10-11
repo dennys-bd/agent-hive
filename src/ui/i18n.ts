@@ -1728,6 +1728,8 @@ const en = {
   'pr.block.closes.onMerge': 'on merge',
   'pr.block.branch': 'branch', 'pr.block.you': 'you', // #68: this PR on a PR no task holds
   'pr.others': 'other PRs of the task', // #66: below the this PR block
+  'pr.other.create': 'create task…', // #68: the PR without activity
+  'pr.other.createBody': '#{n} is linked to a new task in the hive source, without sync: changes on GitHub do not reach the task.',
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
   'pr.error.unexpected': 'Unexpected error.',
@@ -3499,6 +3501,8 @@ const pt: Record<MessageKey, string> = {
   'pr.block.closes.onMerge': 'ao fazer merge',
   'pr.block.branch': 'branch', 'pr.block.you': 'você',
   'pr.others': 'outros PRs da tarefa',
+  'pr.other.create': 'criar tarefa…',
+  'pr.other.createBody': '#{n} fica ligado a uma tarefa nova na source hive, sem sync: mudanças no GitHub não chegam à tarefa.',
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
   'pr.error.unexpected': 'Erro inesperado.',
