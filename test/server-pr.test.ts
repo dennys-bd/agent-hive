@@ -17,7 +17,7 @@ const H1 = 'b'.repeat(64);
 // task 1 holds #7 (PR), task 2 #9 (PR2), no task #8 (OTHER_PR)
 const route = (n = 7, repository = 'acme/app'): string => `/repositories/${repository}/pulls/${n}`;
 const prOf = (base: string, n = 7, repository = 'acme/app'): Promise<Response> => hiveFetch(`${base}${route(n, repository)}`);
-const PAGE = { body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main', commits: 1, additions: 1, deletions: 1, approvals: 0, canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviews: [], comments: [], reviewRequests: [] };
+const PAGE = { body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main', commits: 1, additions: 1, deletions: 1, approvals: 0, canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviews: [], comments: [], reviewRequests: [], closes: [] };
 
 test('GET /repositories/:owner/:name/pulls/:number answers the PR, its diff with hashes, its conversations and its page\'s fields; an unlisted repository is 404, a malformed number 400 (#592, #758)', async (t) => {
   const gh = fakeGh();

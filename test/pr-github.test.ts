@@ -30,7 +30,7 @@ const PAGE = {
 const PAGE_VIEW = {
   body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main', commits: 2, additions: 10, deletions: 3,
   decision: 'approved', approvals: 1, canEdit: true, headOwner: 'bia', baseOwner: 'acme', canPush: true, behindBy: 4, checks: { state: 'success', at: AT, items: [{ name: 'test', state: 'success', at: AT }] },
-  reviews: [{ id: 'R1', author: 'caio', at: AT, kind: 'approved', text: 'ship it' }], comments: [{ id: 'IC1', author: 'ghost', at: AT, text: 'thanks' }], reviewRequests: [],
+  reviews: [{ id: 'R1', author: 'caio', at: AT, kind: 'approved', text: 'ship it' }], comments: [{ id: 'IC1', author: 'ghost', at: AT, text: 'thanks' }], reviewRequests: [], closes: [],
 };
 const answer = (pr: Record<string, unknown> = {}) => ({
   viewer: { login: 'ana' },
@@ -216,4 +216,22 @@ test('parsePrData reads both owners and the push rights on the base repository; 
   for (const permission of ['ADMIN', 'MAINTAIN', 'WRITE']) assert.equal(parsePrData(answer({ baseRepository: { owner: { login: 'acme' }, viewerPermission: permission } })).canPush, true, permission);
   assert.equal(parsePrData(answer({ baseRepository: { owner: { login: 'acme' }, viewerPermission: 'READ' } })).canPush, false);
   assert.deepEqual([parsePrData(answer({ headRepositoryOwner: null, baseRepository: null })).canPush, parsePrData(answer({ headRepositoryOwner: null })).headOwner], [false, '']);
+});
+
+test('PR_QUERY asks the issues the PR closes; parsePrData maps them to closes in GitHub\'s order, drops a malformed node, and reads [] without the connection (#66)', () => {
+  assert.match(PR_QUERY, /closingIssuesReferences\(first: 10\) \{ nodes \{ number url repository \{ nameWithOwner \} \} \}/);
+  const view = parsePrData(answer({ closingIssuesReferences: { nodes: [
+    { number: 458, url: 'https://github.com/acme/app/issues/458', repository: { nameWithOwner: 'acme/app' } },
+    { number: 3, url: 'https://github.com/acme/docs/issues/3', repository: { nameWithOwner: 'acme/docs' } },
+    { number: '9', url: 'https://github.com/acme/app/issues/9', repository: { nameWithOwner: 'acme/app' } },
+    { number: 10, url: null, repository: { nameWithOwner: 'acme/app' } },
+    { number: 11, url: 'https://github.com/acme/app/issues/11', repository: null },
+    null,
+  ] } }));
+  assert.deepEqual(view.closes, [
+    { repository: 'acme/app', number: 458, url: 'https://github.com/acme/app/issues/458' },
+    { repository: 'acme/docs', number: 3, url: 'https://github.com/acme/docs/issues/3' },
+  ]);
+  assert.deepEqual(parsePrData(answer()).closes, [], 'no connection: []');
+  assert.deepEqual(parsePrData(answer({ closingIssuesReferences: null })).closes, [], 'a null connection: []');
 });
