@@ -25,7 +25,7 @@ export const thread = (extra: Partial<PrThread> = {}): PrThread => ({
 export const prData = (extra: Partial<PrData> = {}): PrData => ({
   url: PR, id: 'PR_1', number: 7, title: 'The PR', state: 'open', isDraft: false, mergeState: 'clean', head: HEAD, methods: ['merge', 'squash'], viewer: 'ana',
   files: [FILE], threads: [thread()], truncated: false, body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main',
-  commits: 2, additions: 1, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', ...extra,
+  commits: 2, additions: 1, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [], ...extra,
 });
 
 /** The page's fetch for a PR (#592, #758): GET …/pulls/:number answers `pr`, GET …/review `review`, `answers[method url]` override, the rest ok. */

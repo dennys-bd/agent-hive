@@ -838,17 +838,20 @@ export interface PrReviewEvent { id: string; author: string; at: string; kind: '
 export interface PrIssueComment { id: string; author: string; at: string; text: string }
 /** GitHub's reviewDecision, shortened (#758); a repository that requires no review has none. */
 export type PrReviewDecision = 'approved' | 'changes' | 'pending';
+/** A pending review request on a PR (#67): a user by login or a team by slug; viewer: the request names the viewer's own login; at: when
+ * the latest request for that reviewer was made, as the timeline reads it. */
+export interface PrReviewRequest { reviewer: string; team: boolean; viewer: boolean; at?: string }
 
 /** A PR as its page reads it (#592, #758): the PR as GitHub holds it, its diff and its conversations, and the page's fields. truncated:
  * GitHub holds more than 100 threads; behindBy: how far the base moved past the head, absent when GitHub cannot compare them; conflicts: the
  * files a merge of the base would conflict in, only when computed; canEdit: GitHub lets the login edit the title and description; canPush: the
- * login may merge and re-run there (#854); headOwner / baseOwner: the two repositories' owners, which differ on a fork's PR. */
+ * login may merge and re-run there (#854); headOwner / baseOwner: the two repositories' owners, which differ on a fork's PR. reviewRequests: who is asked to review, pending only (#67). */
 export interface PrData {
   url: string; id: string; number: number; title: string; state: PrState; isDraft: boolean; mergeState: PrMergeState; head: string;
   methods: MergeMethod[]; viewer: string; files: FileDiff[]; threads: PrThread[]; truncated: boolean;
   body: string; author: string; createdAt: string; updatedAt: string; headRef: string; baseRef: string; commits: number; additions: number; deletions: number;
   decision?: PrReviewDecision; approvals: number; checks?: PrChecks; reviews: PrReviewEvent[]; comments: PrIssueComment[]; behindBy?: number;
-  conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string;
+  conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string; reviewRequests: PrReviewRequest[];
 }
 /** GET …/pulls/:number/checks (#758): what the checks' poll reads, nothing else of the PR. */
 export type PrChecksRead = Pick<PrData, 'checks' | 'mergeState' | 'updatedAt'>;
