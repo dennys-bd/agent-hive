@@ -168,6 +168,10 @@ export function describeEvent(event: HiveEvent): string {
     case 'restarting': return `restarting ${act(event.activityId)}`;
     case 'restart': return `restart ${act(event.activityId)}${event.branch === undefined ? '' : ` branch=${event.branch}`}`;
     case 'stageStarted': return `stageStarted activity=${shortId(event.activityId)} stage=${event.stage} commit=${shortId(event.commit)}`;
+    case 'checkpointCaptured': return `checkpointCaptured activity=${shortId(event.activityId)} n=${event.checkpoint.n} stage=${event.checkpoint.stage} ended=${event.checkpoint.ended}`; // #619: never a sha
+    case 'restoring': return `restoring #${event.itemId}`;
+    case 'restored': return `restored #${event.itemId}${event.branch === undefined ? '' : ` branch=${event.branch}`}`;
+    case 'restoreFailed': return `restoreFailed #${event.itemId}`;
     case 'clearSessions': return `clearSessions ${act(event.activityId)} ${shortId(event.sessionId)}`;
     case 'closeTask': return `close task=#${event.taskId}`;
     case 'keepTask': return `keepTask #${event.taskId}`;
@@ -244,6 +248,7 @@ export function describeEffect(effect: Effect): string {
     case 'setColumn': return `setColumn #${effect.itemId} → ${effect.column}`;
     case 'sourceAction': return `sourceAction #${effect.itemId} ${effect.action.type}`;
     case 'kill': return `kill slug=${effect.slug} pty=${shortId(effect.ptyId)}`;
+    case 'captureCheckpoint': return `captureCheckpoint #${effect.task.item.id} slug=${effect.activity.slug ?? '-'} stage=${effect.stage}`;
     case 'continue': return `continue stage=${effect.stage.name} pty=${shortId(effect.ptyId)}${effect.prompt === undefined ? '' : ' handover'}`; // never the text (#268, #134)
     case 'hold': return `hold pty=${shortId(effect.ptyId)} until=${effect.until}`;
     case 'release': return `release pty=${shortId(effect.ptyId)}`;

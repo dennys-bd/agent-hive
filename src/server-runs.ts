@@ -7,9 +7,10 @@ import { taskWorkspace, workspaceByName } from './config.js';
 import { continuableLocal } from './local-sessions.js';
 import { discarded, type RestartPlan, restartPlan, restartWorktree } from './restart.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
+import { recordCheckpoint, registerCheckpointRoutes } from './server-checkpoints.js';
 import { type TaskRouteDeps, type LiveView, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { removeTranscripts } from './transcript.js';
-import type { ActivityRecord, Task, State, Worker } from './types.js';
+import type { Activity, ActivityRecord, Task, State, Worker } from './types.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn } from './terminal-wire.js';
 import { workDir } from './worktree.js';
@@ -57,6 +58,7 @@ export function registerRunRoutes(app: Express, deps: TaskRouteDeps): void {
   registerSleepRoutes(app, deps);
   registerContinueRoute(app, deps);
   registerRestartRoutes(app, deps);
+  registerCheckpointRoutes(app, deps); // #619
   registerClearRoute(app, deps);
 }
 
@@ -125,7 +127,7 @@ function registerContinueRoute(app: Express, { requireLive, dispatch }: TaskRout
 }
 
 // The task a Restart acts on, its repo and worktree, the branch it is on and the stage's starting commit (#283), or why not.
-interface RestartTarget { repo: string; worktree: string; branch: string; template: string; commit: string }
+interface RestartTarget { task: Task; activity: Activity; repo: string; worktree: string; branch: string; template: string; commit: string }
 
 function restartTarget(current: LiveView, activityId: string): RestartTarget | Refusal {
   const target = taskTarget(current.state, activityId);
@@ -139,12 +141,13 @@ function restartTarget(current: LiveView, activityId: string): RestartTarget | R
   const workspace = workspaceOf(current.runtime.config, task);
   if ('status' in workspace) return workspace;
   const template = branchFor(current.runtime.config, task.item);
-  return { repo: workspace.path, worktree: workDir(workspace.path, task, activity), branch: taskBranch(activity, template), template, commit: activity.stageStart.commit };
+  return { task, activity, repo: workspace.path, worktree: workDir(workspace.path, task, activity), branch: taskBranch(activity, template), template, commit: activity.stageStart.commit };
 }
 
 // Restart (#283): GET is the confirmation's preview; POST marks the task, runs the git, then dispatches. The server runs the git, never the
 // worker; a failure is git's words as a 409, the mark goes and the task is left as it was. A restart the reducer ignores is a 409 too.
-function registerRestartRoutes(app: Express, { requireLive, dispatch, exec }: TaskRouteDeps): void {
+function registerRestartRoutes(app: Express, deps: TaskRouteDeps): void {
+  const { requireLive, dispatch, exec } = deps;
   app.get('/activities/:id/restart', async (req: Request, res: Response) => {
     const current = requireLive(res);
     if (!current) return;
@@ -166,6 +169,8 @@ function registerRestartRoutes(app: Express, { requireLive, dispatch, exec }: Ta
     await dispatch({ type: 'restarting', activityId }); // marked before any git: nothing else may start on the worktree meanwhile
     const marked = requireLive(res)?.state;
     if (!marked?.activities.find((a) => a.id === activityId)?.deleting) return refuse(res, { status: HTTP_CONFLICT, message: NO_RESTART_MESSAGE });
+    // #619: the checkpoint this Restart throws away, kept before any of its git; a failed capture only costs that restore point
+    await recordCheckpoint(deps, { repo: target.repo, activity: target.activity, task: target.task, stage: target.task.stage, ended: 'restart' });
     let plan: RestartPlan;
     try {
       plan = await restartPlan(target.repo, target.branch, target.template, target.commit, exec);

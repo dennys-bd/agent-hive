@@ -243,6 +243,13 @@ test('diffBase: the commit scope is HEAD^ as a sha named with HEAD^; commitDiff 
   ]);
 });
 
+test('diffBase for a checkpoint answers its restore point, labelled with its number (#619)', async () => {
+  const exec: Exec = async () => { throw new Error('no git for a checkpoint base'); };
+  const checkpoint = { n: 3, commit: 'c3d4e5f6a7b8c3d4e5f6a7b8c3d4e5f6a7b8c3d4' };
+  assert.deepEqual(await diffBase(TASK, undefined, { remote: 'origin' }, '/wt', 'checkpoint', exec, checkpoint), { commit: checkpoint.commit, label: 'c3d4e5f (checkpoint 3)' });
+  await assert.rejects(diffBase(TASK, undefined, { remote: 'origin' }, '/wt', 'checkpoint', exec));
+});
+
 test('commitDiff on a real repo shows the last commit alone, never the uncommitted work; a root commit has no parent (#591)', async (t) => {
   const { repo } = await tempHive(t);
   const git = (...args: string[]) => run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args]);

@@ -278,7 +278,7 @@ export function MainDock(props: MainDockProps) {
   useDockedRuns(openUserRun);
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
-  const openTaskDiff: OpenDiff = (task, scope) => openDiff(task.item.itemId, scope);
+  const openTaskDiff: OpenDiff = (task, scope, checkpoint) => openDiff(task.item.itemId, scope, checkpoint);
   // Every way into a PR (#758) and the task details' issue (#895): the flow under Automação, showing the page under its repository
   const toAutomation = (open?: OpenPr): OpenPr | undefined => open && ((url) => {
     activateTab('automation');

@@ -417,3 +417,13 @@ test('a changes tab is keyed apart from its file\'s editor tab, opens once, surv
   }
   expect([sharesBuffer(opened, changes), sharesBuffer(opened, file), sharesBuffer(ONE, changes), sharesBuffer(opened, run('W1')), sharesBuffer(undefined, file)]).toEqual([true, true, false, false, false]);
 });
+
+test('a diff tab on the checkpoint scope is keyed by its checkpoint, retargets between checkpoints, and a stored one keeps only a whole positive checkpoint (#619)', () => {
+  expect(refKey({ kind: 'diff', scope: 'checkpoint', checkpoint: 2 })).toBe('diff:checkpoint:2');
+  const layout = initialLayout({ kind: 'diff', scope: 'checkpoint', checkpoint: 2 });
+  expect(tabsOf(retargetRef(layout, 'diff:checkpoint:2', { kind: 'diff', scope: 'checkpoint', checkpoint: 1 }))).toEqual([['diff:checkpoint:1']]);
+  writeCenterLayouts({ a: layout, b: initialLayout({ kind: 'diff', scope: 'checkpoint', checkpoint: 0 }) });
+  const read = readCenterLayouts();
+  expect(groupsOf(read.a.root)[0].tabs).toEqual([{ kind: 'diff', scope: 'checkpoint', checkpoint: 2 }]);
+  expect(groupsOf(read.b.root)[0].tabs).toEqual([{ kind: 'diff', scope: 'checkpoint' }]);
+});

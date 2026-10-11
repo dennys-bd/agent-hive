@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 import { taskLabel } from '../../tasks';
 import type { DiffScope, FileDiff } from '../../types';
-import { DiffBar } from '@/components/DiffBar';
+import { DiffBar, latestCheckpoint } from '@/components/DiffBar';
 import { markFile } from '@/components/review-actions';
 import { ReviewBody } from '@/components/ReviewBody';
 import { ReviewContext, type ReviewPane } from '@/components/review-context';
@@ -18,7 +18,7 @@ import { defaultSessionOf, EMPTY_REVIEW, isReviewedIn, reviewSessions, selection
 
 /** How a diff tab's scope reads (#270, #591): after the task in the tab's label, and in its strip. */
 export const DIFF_SCOPE_KEY: Record<DiffScope, MessageKey> = {
-  stage: 'terminal.panel.kind.diffStage', worktree: 'terminal.panel.kind.diffWorktree', commit: 'terminal.panel.kind.diffCommit',
+  stage: 'terminal.panel.kind.diffStage', worktree: 'terminal.panel.kind.diffWorktree', commit: 'terminal.panel.kind.diffCommit', checkpoint: 'terminal.panel.kind.diffCheckpoint',
 };
 const NO_FILES: FileDiff[] = [];
 
@@ -41,12 +41,13 @@ function DiffStatus({ state }: { state: DiffState }) {
   return <p className="p-2 text-muted-foreground">{t('diff.empty')}</p>;
 }
 
-interface DiffViewProps { tab: DiffTab; label: string; active: boolean; activity: TaskActivity; onScope(scope: DiffScope): void }
+interface DiffViewProps { tab: DiffTab; label: string; active: boolean; activity: TaskActivity; onScope(scope: DiffScope, checkpoint?: number): void }
 
 /** A task's diff pane in the activity space (#270, #591): the bar, then the file list and the files, through the sessions surface (#592). Section
  * ids come from useId, so two panes never share one. Collapsed like PtyTab while another tab shows. */
 export function DiffView({ tab, label, active, activity, onScope }: DiffViewProps) {
-  const { state, refresh } = useTaskDiff(activity.activity.id, tab.scope, active); // the live activity's worktree (#629)
+  const checkpoint = tab.scope === 'checkpoint' ? tab.checkpoint ?? latestCheckpoint(activity.activity) : undefined; // #619
+  const { state, refresh } = useTaskDiff(activity.activity.id, tab.scope, active, checkpoint); // the live activity's worktree (#629)
   const openFile = useOpenFile(); // abrir arquivo: the file in this activity's editor pane (#717)
   const files = state.status === 'ready' ? state.diff.files : NO_FILES;
   const [layout, setLayout] = useDiffLayout();
@@ -77,7 +78,7 @@ export function DiffView({ tab, label, active, activity, onScope }: DiffViewProp
       style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }}
       className="flex min-h-0 min-w-0 flex-col text-xs"
     >
-      <DiffBar scope={tab.scope} task={activity.task} activity={activity.activity} diff={state.status === 'ready' ? state.diff : undefined} layout={layout} reviewed={files.filter(isReviewed).length} hideReviewed={nav.hideReviewed} onScope={onScope} onLayout={setLayout} onRefresh={refresh} onHideReviewed={nav.setHideReviewed} />
+      <DiffBar scope={tab.scope} checkpoint={checkpoint} task={activity.task} activity={activity.activity} diff={state.status === 'ready' ? state.diff : undefined} layout={layout} reviewed={files.filter(isReviewed).length} hideReviewed={nav.hideReviewed} onScope={onScope} onLayout={setLayout} onRefresh={refresh} onHideReviewed={nav.setHideReviewed} />
       {files.length > 0 ? (
         <ReviewContext.Provider value={pane}>
           <ReviewSurfaceContext.Provider value={sessionsSurface(pane, { openFile: (path) => { openFile?.(activity.task.item.itemId, path); }, reviewed: isReviewed, mark, submit })}>

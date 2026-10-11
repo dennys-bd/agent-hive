@@ -5,6 +5,7 @@ import { FIXED_BINDINGS } from '../../shortcuts';
 import type { Task, TaskFile, State } from '../../types';
 import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
+import { CheckpointsList } from '@/components/CheckpointsList';
 import { CiNotice } from '@/components/CiProgress';
 import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
@@ -65,6 +66,7 @@ function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProp
       <CiNotice task={task} state={state} />
       <MetaGrid task={task} state={state} isActivity={isActivity} />
       <SessionsList task={task} state={state} locale={locale} />
+      <CheckpointsList task={task} state={state} />
       <ResultsList task={task} files={files} />
       <div className="flex flex-col gap-3.5 border-t pt-3.5 text-[13px] leading-5">
         {item.body.trim() === '' ? <p className="text-muted-foreground">{t('detail.noBody')}</p> : <IssueMarkdown text={item.body} />}

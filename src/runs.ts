@@ -3,9 +3,9 @@ import { withoutHold } from './approval.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
 import { sessionBaseline, touchFreeSession, withoutSession, withResult } from './record-kit.js';
-import { canOpenSession, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
+import { canOpenSession, inAction, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
 import { forgetTerminals, slept, terminalSlug } from './terminal-runs.js';
-import { liveRuns, stageSession, startMode } from './task-runs.js';
+import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
 import { clearedError, dropWorker, ensureActivity, releaseWorker, liveWorker, none, occupy, type Reduced, releaseRun, slugTaken, stoppedWork, takeWorker, withError } from './reducer-kit.js';
 import { haltCommands } from './stage-commands.js';
 import { advance, type EndOf, take } from './transit.js';
@@ -169,6 +169,46 @@ export function restarting(state: State, itemId: string): Reduced {
   return none(withActivity(state, { ...activity, deleting: true }));
 }
 
+/** #619: a stage's end captures the checkpoint that ended before anything the end emits: the server runs a batch's effects in order, so the capture
+ * reads the worktree before a continue answers the Stop. The activity as it stood before the end, its stageStart still the checkpoint's. An
+ * activity capturable refuses leaves the reduction as it was. */
+export function capturedFirst(before: State, task: Task, reduced: Reduced): Reduced {
+  const activity = activityOf(before, taskId(task));
+  if (!capturable(activity)) return reduced;
+  return { state: reduced.state, effects: [{ type: 'captureCheckpoint', activity, task, stage: task.stage, ended: 'done' }, ...reduced.effects] };
+}
+
+/** The server captured a restore point (#619): appended in capture order; an n the activity already lists, or an activity gone, changes nothing. */
+export function checkpointCaptured(state: State, { activityId, checkpoint }: Extract<HiveEvent, { type: 'checkpointCaptured' }>): Reduced {
+  const activity = state.activities.find((a) => a.id === activityId);
+  if (!activity || activity.checkpoints?.some((a) => a.n === checkpoint.n)) return none(state);
+  return none(withActivity(state, { ...activity, checkpoints: [...(activity.checkpoints ?? []), checkpoint] }));
+}
+
+/** A restore's git is about to run (#619): the task is marked deleting, as restarting marks it, so nothing starts on the worktree meanwhile. In
+ * any stage, with or without a recorded start; only while no run of any kind (stage run, session, terminal, command) holds the task and no other
+ * git job, setup or stage action does. restored or restoreFailed drops the mark. */
+export function restoring(state: State, itemId: string): Reduced {
+  const task = state.tasks.find((c) => taskId(c) === itemId);
+  const activity = activityOf(state, itemId);
+  if (!task || !activity || activity.deleting || activity.setup || inAction(activity) || liveRuns(task, state).length > 0) return none(state);
+  return none(withActivity(state, { ...activity, deleting: true }));
+}
+
+/** The restore's git ended well (#619): the mark goes and a new -r<n> is recorded as Restart records it; the stage, the column, stageStart and the
+ * stopped mark stay as they are, and nothing starts. */
+export function restored(state: State, { itemId, branch }: Extract<HiveEvent, { type: 'restored' }>): Reduced {
+  const found = activityOf(state, itemId);
+  if (!found?.deleting) return none(state);
+  return none(withActivity(state, { ...unmarked(found), ...(branch === undefined ? {} : { branch }) }));
+}
+
+/** The restore's git failed (#619): only the mark goes. */
+export function restoreFailed(state: State, itemId: string): Reduced {
+  const found = activityOf(state, itemId);
+  return found?.deleting ? none(withActivity(state, unmarked(found))) : none(state);
+}
+
 // The stage that ended where `stage` starts (#580): the latest-used session's last stage other than `stage`, walking back by last use while a
 // session ran only `stage`. A tie keeps the later-listed session first. Undefined when the task ran no other stage. Read at every stage run's
 // start, a restart's too, so a restart keeps the label and clearing a session later never changes it. Every record of the task counts (#629).
@@ -269,7 +309,11 @@ export function openSession(state: State, { activityId, continueId, prompt }: Ex
  * task.stage), as today. In an approval stage the task awaits the user instead (#268), with the session still open. */
 export function freeSessionDone(state: State, worker: Worker, result?: Record<string, unknown>, verdict?: string): Reduced {
   const task = taskOfWorker(state, worker);
-  if (!task) return none(state);
+  return task ? capturedFirst(state, task, freeSessionEnd(state, worker, task, result, verdict)) : none(state); // #619
+}
+
+// The body freeSessionDone had from `const merged` on (#283, #268, #134, #692, #812), unchanged
+function freeSessionEnd(state: State, worker: Worker, task: Task, result?: Record<string, unknown>, verdict?: string): Reduced {
   const merged = result ? withResult(state, task, result) : state;
   const live = activityOf(merged, taskId(task));
   const pending = transitionByKey(state.transitions, live?.handoffPending); // #692, #134: the transition the handoff waited on

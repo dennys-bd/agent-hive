@@ -526,6 +526,22 @@ export interface Activity {
   via?: string; // #134: the key of the transition the task entered its stage through: what the card's tries read; replaced on every transition
   tryLog?: TryRecord[]; // #915: the tries behind tries, oldest first; dropped wherever tries is
   freeSessionStage?: string; // #812: the stage a free run last started in; continue is not offered there until a stage run starts or the task enters a stage again
+  checkpoints?: Checkpoint[]; // #619: in capture order; absent when none. Goes with the activity's delete
+}
+
+/** How a checkpoint ended (#619): its stage's hive_done, a Restart, or a restore that replaced it. */
+export type CheckpointEnd = 'done' | 'restart' | 'restore';
+
+/** One checkpoint of a stage (#619): the worktree as it was when the checkpoint ended, kept by refs/hive/<slug>/checkpoint/<n>. */
+export interface Checkpoint {
+  n: number; // 1-based, per task; also the ref's last segment
+  stage: string; // the stage the checkpoint ran in
+  start: string; // the stageStart commit the checkpoint started from
+  head: string; // HEAD when captured
+  commit: string; // the restore point: `head` itself when the worktree was clean
+  branch: string; // the branch HEAD was on
+  at: string; // ISO, when captured
+  ended: CheckpointEnd;
 }
 
 /** What an activity produced (glossary: activity record): born with it under the same id, outlives its deletion. */
@@ -711,8 +727,8 @@ export interface FolderEntries {
   repo?: { marks: Record<string, GitMark>; ignored: string[] };
 }
 
-/** The diffs a task offers (#270, #591): what its current stage changed, everything its worktree changed, or its last commit. */
-export type DiffScope = 'stage' | 'worktree' | 'commit';
+/** The diffs a task offers (#270, #591): what its current stage changed, everything its worktree changed, its last commit, or a checkpoint's restore point (#619). */
+export type DiffScope = 'stage' | 'worktree' | 'commit' | 'checkpoint';
 
 /** One line of a hunk (#270), numbered on each side it exists on. */
 export interface DiffLine {
@@ -1227,6 +1243,10 @@ export type HiveEvent =
   | { type: 'restarting'; activityId: string } // Restart's git is about to run (#283): the task is marked deleting, so nothing else starts on it meanwhile
   | { type: 'restart'; activityId: string; branch?: string } // Restart (#283): the stage's prompt in a new session once the server reset the worktree; branch = the one it created
   | { type: 'stageStarted'; activityId: string; stage: string; commit: string } // the server read HEAD as a stage run started in that activity (#283, #629)
+  | { type: 'checkpointCaptured'; activityId: string; checkpoint: Checkpoint } // #619: the server captured a restore point
+  | { type: 'restoring'; itemId: string } // #619: a restore's git is about to run: the task is marked, as `restarting` marks it
+  | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
+  | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
   | { type: 'createTask'; title: string; body: string; stage: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756)
   | { type: 'closeTask'; taskId: string } // close on a missing task, remove on a stopped local one (#132): the task and its session go; a missing task's worktree stays (#182), a local task's goes first, in the route (#542)
@@ -1318,6 +1338,7 @@ export type Effect =
   | { type: 'sourceAction'; itemId: string; taskId: string; action: ItemAction } // what a stage's onStart / a transition's sources ask of the source beyond a move (#286, #515); a leaving one is answered with closeTask or sourceActionFailed
   | { type: 'kill'; slug: string; ptyId: string }
   | { type: 'continue'; ptyId: string; activity: Activity; task: Task; stage: Stage; prompt?: string; result?: Record<string, unknown> /* #629: resultOf at the reduction: what {result.<path>} renders */ } // answers the worker's Stop with `stage`'s prompt: same process, no spawn; prompt: a handover's or a handoff request (#134, #692), the reason instead of the stage's prompt
+  | { type: 'captureCheckpoint'; activity: Activity; task: Task; stage: string; ended: 'done' } // #619: first in its batch, so the capture runs before a continue
   | { type: 'deleteActivity'; activity: Activity; task: Task; scope: DeleteActivityScope } // delete the activity per the scope (#236, #573); the server answers with activityDeleted / deleteActivityFailed
   | { type: 'stageCommand'; activity: Activity; task: Task; stage: Stage; at: number; ptyId: string } // #755: run command `at` of the commands stage in a pty of its own; the server answers stageCommandEnded or stageCommandsRefused
   | { type: 'ciRead'; activityId: string } // #834: read the activity's CI now, at the stage's start; the timer reads it after

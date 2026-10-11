@@ -50,7 +50,7 @@ test('lado a lado draws six cells a row, is remembered in hive.diffLayout, and a
   expect(await within(bar()).findByRole('radio', { name: 'lado a lado' })).toHaveAttribute('data-state', 'on');
 });
 
-test('the scope picker lists worktree, etapa and último commit, disables one the task cannot diff with its reason, and hands a pick to onScope (#591)', async () => {
+test('the scope picker lists worktree, etapa, último commit and ponto de restauração, disables one the task cannot diff with its reason, and hands a pick to onScope (#591)', async () => {
   const user = userEvent.setup();
   const { onScope } = renderPane();
   await within(pane()).findByRole('region', { name: 'src/a.ts' });
@@ -59,11 +59,13 @@ test('the scope picker lists worktree, etapa and último commit, disables one th
   trigger.focus();
   await user.keyboard('{Enter}');
   const items = await screen.findAllByRole('menuitem');
-  expect(items.map((i) => i.textContent)).toEqual(['worktree', 'etapa', 'último commit']);
+  expect(items.map((i) => i.textContent)).toEqual(['worktree', 'etapa', 'último commit', 'ponto de restauração']);
+  expect(items[3]).toHaveAttribute('data-disabled');
+  expect(items[3]).toHaveAttribute('title', 'a tarefa ainda não tem pontos de restauração');
   expect(items[1]).toHaveAttribute('data-disabled');
   expect(items[1]).toHaveAttribute('title', 'a etapa atual não tem início registrado');
   await user.click(items[2]);
-  expect(onScope).toHaveBeenCalledWith('commit');
+  expect(onScope).toHaveBeenCalledWith('commit', undefined);
 });
 
 test('the pane says nenhuma mudança for an empty diff and shows the route\'s error otherwise (#270)', async () => {

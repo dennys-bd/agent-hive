@@ -93,9 +93,14 @@ export const canRunCommand = (task: Task, activity: Activity | undefined): boole
   canOpenSession(task, activity) && activity?.worktree !== undefined && !activity.worktreeGone;
 
 /** Whether the task has a diff of `scope` to show (#270): a worktree on disk (#208), and for the stage a start recorded in its current stage
- * (#283). The worktree and commit scopes (#591) need only the worktree. The menu, the pane and the route read this one rule. */
+ * (#283). The worktree and commit scopes (#591) need only the worktree; the checkpoint scope needs a checkpoint (#619). The menu, the pane and the route read this one rule. */
 export const canDiff = (task: Task, activity: Activity | undefined, scope: DiffScope): boolean =>
-  activity?.worktree !== undefined && !activity.worktreeGone && (scope !== 'stage' || activity.stageStart?.stage === task.stage);
+  activity?.worktree !== undefined && !activity.worktreeGone && (scope !== 'stage' || activity.stageStart?.stage === task.stage)
+  && (scope !== 'checkpoint' || (activity.checkpoints?.length ?? 0) > 0); // #619
+
+/** Whether a checkpoint can be captured on the activity (#619): its worktree on disk, as canDiff reads it, never the user's own checkout (#444). */
+export const capturable = (activity: Activity | undefined): activity is Activity =>
+  activity !== undefined && activity.worktree !== undefined && !activity.worktreeGone && !activity.local;
 
 /** The run commands the task offers (#300): its workspace's command names as the config last set them; [] when it resolves to none. */
 export const commandsOf = (task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'commands'>): string[] =>

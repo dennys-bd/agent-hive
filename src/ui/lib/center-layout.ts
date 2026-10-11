@@ -12,7 +12,7 @@ export type { PaneNode, Panes } from './pane-split.js';
 /** What a layout stores of a tab: enough to rebuild it from the activity's live runs and its task. A run's tab split into panes (#641) keeps
  * one of its runs, the anchor, as its ptyId and its key; the anchor is always one of its panes. A run tab whose anchor holds a session names
  * it (#696): after a restart the tab still knows the session to continue. */
-export type CenterTabRef = { kind: 'run'; ptyId: string; panes?: Panes; sessionId?: string } | { kind: 'diff'; scope: DiffScope } | { kind: 'console'; channel?: string; locked?: true; run?: string } | { kind: 'file'; path: string } | { kind: 'preview'; path: string } | { kind: 'changes'; path: string } | { kind: 'untitled'; n: number };
+export type CenterTabRef = { kind: 'run'; ptyId: string; panes?: Panes; sessionId?: string } | { kind: 'diff'; scope: DiffScope; checkpoint?: number } | { kind: 'console'; channel?: string; locked?: true; run?: string } | { kind: 'file'; path: string } | { kind: 'preview'; path: string } | { kind: 'changes'; path: string } | { kind: 'untitled'; n: number };
 export type RunRef = Extract<CenterTabRef, { kind: 'run' }>;
 /** A console tab (#755): the channel it shows, its own and saved with the layout; locked on a commands stage's channel, with no channel select.
  * No channel: the newest one, as a tab stored before #755 reads. */
@@ -38,7 +38,7 @@ export function refKey(ref: CenterTabRef): string {
   if (ref.kind === 'changes') return `changes:${ref.path}`;
   if (ref.kind === 'untitled') return `untitled:${ref.n}`; // #818
   if (ref.kind === 'console') return ref.channel === undefined ? 'console' : `console:${ref.channel}${ref.run === undefined ? '' : `#${ref.run}`}`; // a channel is encoded, never holding a #
-  return `diff:${ref.scope}`;
+  return `diff:${ref.scope}${ref.checkpoint === undefined ? '' : `:${ref.checkpoint}`}`;
 }
 
 // A posix path with its `.` and empty segments gone and each `..` taken back (#697): a relative path's leading `..` stays, for isFilePath to
@@ -322,10 +322,15 @@ function parseRun({ ptyId, panes, sessionId }: Record<string, unknown>): RunRef 
 const parseConsole = ({ channel, locked, run }: Record<string, unknown>): ConsoleRef =>
   (typeof channel === 'string' && channel !== '' ? consoleRef(channel, locked === true, typeof run === 'string' && run !== '' ? run : undefined) : consoleRef());
 
+const DIFF_SCOPE_NAMES: readonly DiffScope[] = ['stage', 'worktree', 'commit', 'checkpoint'];
+
 function parseRef(value: unknown): CenterTabRef | undefined {
   if (!isObject(value)) return undefined;
   if (value.kind === 'run') return parseRun(value);
-  if (value.kind === 'diff' && (value.scope === 'stage' || value.scope === 'worktree' || value.scope === 'commit')) return { kind: 'diff', scope: value.scope };
+  if (value.kind === 'diff' && DIFF_SCOPE_NAMES.includes(value.scope as DiffScope)) { // #619: a checkpoint only as a whole positive number
+    const checkpoint = value.scope === 'checkpoint' && Number.isInteger(value.checkpoint) && (value.checkpoint as number) >= 1 ? { checkpoint: value.checkpoint as number } : {};
+    return { kind: 'diff', scope: value.scope as DiffScope, ...checkpoint };
+  }
   if (value.kind === 'file' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'file', path: value.path }; // #717
   if (value.kind === 'preview' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'preview', path: value.path }; // #697
   if (value.kind === 'changes' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'changes', path: value.path }; // #668

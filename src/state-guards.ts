@@ -2,7 +2,7 @@ import { isPrUrl, isSessionId, isUuid } from './orchestrator.js';
 import { PR_STATES } from './pull-requests.js';
 import { cleanTitle } from './usage.js';
 import { localActivityId } from './activities.js';
-import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord } from './types.js';
+import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -33,6 +33,20 @@ export const isStageStart = (value: unknown): value is StageStart =>
 // #580: the stage that ended there, only as text
 const savedStageStart = (value: StageStart): StageStart =>
   ({ stage: value.stage, commit: value.commit, ...(typeof value.after === 'string' ? { after: value.after } : {}) });
+
+// #619: a checkpoint as the reducer wrote it, copied field by field; its shas reach git's argv (a diff base, a reset, a read-tree), so only hex
+// shas are kept, as a stage start's. A malformed entry is dropped alone
+const CHECKPOINT_ENDS: readonly CheckpointEnd[] = ['done', 'restart', 'restore'];
+const isSha = (value: unknown): value is string => typeof value === 'string' && COMMIT.test(value);
+const isCheckpoint = (value: unknown): value is Checkpoint =>
+  isJsonObject(value) && isRunCount(value.n) && typeof value.stage === 'string' && isSha(value.start) && isSha(value.head) && isSha(value.commit)
+  && typeof value.branch === 'string' && isDate(value.at) && CHECKPOINT_ENDS.includes(value.ended as CheckpointEnd);
+function savedCheckpoints(value: unknown): Pick<Activity, 'checkpoints'> {
+  const kept = Array.isArray(value)
+    ? value.filter(isCheckpoint).map(({ n, stage, start, head, commit, branch, at, ended }): Checkpoint => ({ n, stage, start, head, commit, branch, at, ended }))
+    : [];
+  return kept.length > 0 ? { checkpoints: kept } : {};
+}
 
 // A task's PRs (#207): an entry is kept only as a GitHub pull request link (it reaches an href and the PR query) in one of the three
 // states, copied field by field. A file from before #207 has one prUrl: read as that PR, open, and the next poll corrects its state.
@@ -174,6 +188,7 @@ export function savedWork(value: Record<string, unknown>): Partial<Activity> {
     ...savedCommands(value.commands), // #755: the boot stops it
     ...savedCi(value.ci), // #834: the boot keeps it
     ...savedSync(value.sync), // #854: shown while the activity lives
+    ...savedCheckpoints(value.checkpoints), // #619: listed until the activity's delete
   };
 }
 

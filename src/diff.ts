@@ -3,7 +3,7 @@ import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { WorkspaceBase } from './fork.js';
-import type { Activity, Task, DiffHunk, DiffLine, DiffScope, Exec, FileDiff } from './types.js';
+import type { Activity, Checkpoint, Task, DiffHunk, DiffLine, DiffScope, Exec, FileDiff } from './types.js';
 import { SHORT_SHA } from './tasks.js';
 import { gitOrWords, wordsOf } from './worktree.js';
 
@@ -23,7 +23,7 @@ const REMOTE_DEFAULT = 'HEAD'; // <remote>/HEAD: the remote's default branch, wh
 const PARENT = 'HEAD^'; // the commit scope's base (#591): the last commit's first parent, a merge's too
 
 /** Every scope a diff tab shows (#270, #591), what the routes accept. */
-export const DIFF_SCOPES: readonly DiffScope[] = ['stage', 'worktree', 'commit'];
+export const DIFF_SCOPES: readonly DiffScope[] = ['stage', 'worktree', 'commit', 'checkpoint'];
 export const isScope = (value: unknown): value is DiffScope => DIFF_SCOPES.includes(value as DiffScope);
 
 /** The commit scope on a root commit (#591): nothing to diff from, the route's 409. */
@@ -172,7 +172,11 @@ export interface DiffBase { commit: string; label: string }
  * #131), so the diff reads as the PR would: the task's chosen base, else <base remote>/<base>, else <base remote>/HEAD. A failed merge-base rejects
  * with git's words. Commit (#591): HEAD^. --end-of-options: the ref is one the Hive stored, but one starting with `-` must never be an option.
  */
-export async function diffBase(_task: Task, activity: Pick<Activity, 'base' | 'stageStart'> | undefined, base: Pick<WorkspaceBase, 'remote' | 'branch'>, worktree: string, scope: DiffScope, exec: Exec): Promise<DiffBase> {
+export async function diffBase(_task: Task, activity: Pick<Activity, 'base' | 'stageStart'> | undefined, base: Pick<WorkspaceBase, 'remote' | 'branch'>, worktree: string, scope: DiffScope, exec: Exec, checkpoint?: Pick<Checkpoint, 'n' | 'commit'>): Promise<DiffBase> {
+  if (scope === 'checkpoint') { // #619: the checkpoint's restore point; the route answers 400 before an unknown one gets here
+    if (checkpoint === undefined) throw new Error('no checkpoint chosen');
+    return { commit: checkpoint.commit, label: `${checkpoint.commit.slice(0, SHORT_SHA)} (checkpoint ${checkpoint.n})` };
+  }
   if (scope === 'commit') return parentBase(worktree, exec);
   if (scope === 'stage') {
     const start = activity?.stageStart;

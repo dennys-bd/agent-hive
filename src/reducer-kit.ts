@@ -206,7 +206,7 @@ export function dropActivity(state: State, task: Task): State {
  * Nothing kept, no activity. */
 export function keptMarks(state: State, task: Task, activity: Activity): State {
   const { id: _id, kind: _kind, workspace: _workspace, slug: _slug, worktree: _worktree, branch: _branch, worktreeGone: _gone, sessionId: _sessionId,
-    deleting: _deleting, setup: _setup, workerId: _workerId, freeSessionStage: _free, ...kept } = activity; // #812: a free run's mark is its worktree's visit
+    deleting: _deleting, setup: _setup, workerId: _workerId, freeSessionStage: _free, checkpoints: _checkpoints, ...kept } = activity; // #812: a free run's mark is its worktree's visit; #619: the checkpoints go with the delete, as their refs do
   if (Object.keys(kept).length === 0) return state;
   const born = ensureActivity(state, task);
   return born ? withActivity(born.state, { ...born.activity, ...kept }) : state;

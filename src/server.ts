@@ -50,6 +50,7 @@ import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { registerPrRoutes } from './server-pr.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
+import { recordCheckpoint } from './server-checkpoints.js';
 import { registerRunRoutes } from './server-runs.js';
 import { registerTerminalRoutes } from './server-terminals.js';
 import { shellCwd } from './shell-procs.js';
@@ -433,6 +434,12 @@ export function createServer(deps: ServerDeps): HiveServer {
         await killStray(mcpConfigPattern(effect.ptyId), exec).catch((err) => fail('kill', err));
         await dispatch({ type: 'exit', ptyId: effect.ptyId });
         return;
+      case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged
+        log.info(describeEffect(effect));
+        const workspace = taskWorkspace(runtime.config, effect.task);
+        if (workspace) await recordCheckpoint({ exec, log, dispatch, latest: () => live?.state }, { repo: workspace.path, activity: effect.activity, task: effect.task, stage: effect.stage, ended: effect.ended });
+        return;
+      }
       case 'continue': {
         log.info(describeEffect(effect));
         // a new stage starts here (#283); recordStart keeps a stage's first start (#812), so feedback and a handoff keep theirs (#134)

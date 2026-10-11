@@ -1,13 +1,14 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
-import type { Task, Exec, SettingsBody } from '../src/types.js';
+import type { Checkpoint, Task, Exec, SettingsBody } from '../src/types.js';
 import { fileHash } from '../src/diff.js';
+import { reviewPath } from '../src/review-store.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -27,7 +28,7 @@ const task = (n: number, extra: Partial<WithWork> = {}): WithWork => ({
 // The slug a saved activity carries (#629): the one the worktree paths below name
 const SLUG_OF = (c: Task): string => `hive-${c.item.id.replace('HIVE-', '')}-task`;
 
-interface Diffs { base: string; repo: string; calls: string[][]; fail(err: unknown): void; orphan(): void; server: HiveServer }
+interface Diffs { base: string; repo: string; home: string; calls: string[][]; fail(err: unknown): void; orphan(): void; server: HiveServer }
 
 const postJson = (url: string, body?: unknown): Promise<Response> =>
   hiveFetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body ?? {}) });
@@ -64,7 +65,7 @@ async function startDiffs(t: TestContext, tasks: (repo: string) => WithWork[]): 
   const body: SettingsBody = { prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], stages: LOCAL_STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [] };
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);
   calls.length = 0; // whatever the save ran is not the diff
-  return { base, repo, calls, fail: (err) => { failure = err; }, orphan: () => { noParent = true; }, server };
+  return { base, repo, home, calls, fail: (err) => { failure = err; }, orphan: () => { noParent = true; }, server };
 }
 
 test('GET /activities/:id/diff answers the worktree on disk against the stage start, or against the merge-base with origin/HEAD, parsed, running git in the worktree the slug names (#270)', async (t) => {
@@ -91,8 +92,8 @@ test('GET /activities/:id/diff refuses an unknown task (404), a scope that is no
   ]);
   const refusals: [string, string | undefined, number, string][] = [
     ['local:9', 'stage', 404, 'atividade desconhecida'], // #629: no activity under that id, checked first
-    ['local:1', undefined, 400, 'scope deve ser stage, worktree ou commit'],
-    ['local:1', 'all', 400, 'scope deve ser stage, worktree ou commit'],
+    ['local:1', undefined, 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
+    ['local:1', 'all', 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
     ['local:1', 'stage', 409, 'a etapa atual não tem início registrado'],
     ['local:4', 'stage', 409, 'a etapa atual não tem início registrado'],
     ['local:2', 'worktree', 404, 'atividade desconhecida'], // #629: never opened, so no activity to diff
@@ -126,4 +127,36 @@ test('GET /activities/:id/diff?scope=commit answers HEAD^ against HEAD in the wo
   f.orphan();
   const root = await get(f, 'local:1', 'commit');
   assert.deepEqual([root.status, await root.json()], [409, { error: 'o último commit não tem pai' }]);
+});
+
+test('GET /activities/:id/diff?scope=checkpoint&checkpoint=<n> diffs the worktree against that checkpoint\'s point; a missing or unknown n is a 400, a task with no checkpoint a 409 (#619)', async (t) => {
+  const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: PARENT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), checkpoints: [A1] }), task(2, { worktree: worktreePath(repo, 'hive-2-task') })]);
+  const res = await get(f, 'local:1', 'checkpoint&checkpoint=1');
+  assert.deepEqual([res.status, await res.json()], [200, { scope: 'checkpoint', base: '0f1e2d3 (checkpoint 1)', files: FILES }]);
+  assert.equal(f.calls.at(-1)?.at(-1), PARENT, 'the diff runs against the point');
+  f.calls.length = 0;
+  const refusals: [string, string, number, string][] = [
+    ['local:1', 'checkpoint', 400, 'informe checkpoint: o número de um ponto de restauração da tarefa'],
+    ['local:1', 'checkpoint&checkpoint=9', 400, 'informe checkpoint: o número de um ponto de restauração da tarefa'],
+    ['local:2', 'checkpoint&checkpoint=1', 409, 'a tarefa não tem pontos de restauração'],
+  ];
+  for (const [id, scope, status, error] of refusals) {
+    const refused = await get(f, id, scope);
+    assert.deepEqual([refused.status, await refused.json()], [status, { error }], `${id} ${scope}`);
+  }
+  assert.deepEqual(f.calls, [], 'no refusal runs git');
+});
+
+test('GET /activities/:id/diff?scope=checkpoint leaves the scope\'s marks alone: they are shared by every checkpoint number, so one diff cannot tell which are stale (#619)', async (t) => {
+  const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: PARENT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), checkpoints: [A1] })]);
+  const review = { reviewed: [{ scope: 'checkpoint', path: 'other-checkpoint-file.txt', hash: 'abc' }, { scope: 'worktree', path: 'gone.txt', hash: 'abc' }], drafts: [], threads: [] };
+  await mkdir(join(f.home, 'reviews'), { recursive: true });
+  await writeFile(reviewPath(f.home, 'local:1'), JSON.stringify(review));
+  assert.equal((await get(f, 'local:1', 'checkpoint&checkpoint=1')).status, 200);
+  assert.equal((await get(f, 'local:1', 'worktree')).status, 200);
+  await new Promise((r) => setTimeout(r, 50)); // the drop runs after the answer
+  const after = JSON.parse(await readFile(reviewPath(f.home, 'local:1'), 'utf8')) as typeof review;
+  assert.deepEqual(after.reviewed, [review.reviewed[0]], 'the worktree scope\'s stale mark went, the checkpoint scope\'s stayed');
 });
