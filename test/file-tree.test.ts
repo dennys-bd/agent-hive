@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ancestorsOf, buildTree, ignoredToRead, parentOf, renamedPath, visibleRows } from '../src/ui/lib/file-tree.js';
+import type { FolderEntries } from '../src/types.js';
 
 const FILES = ['b.ts', 'src/z.ts', 'src/lib/a.ts', '.env', '.github/ci.yml', 'a.md'];
 
@@ -67,4 +68,20 @@ test('ignoredToRead reads the expanded ignored folders and the expanded ones und
   const ignored = ['node_modules', 'docs'];
   assert.deepEqual(ignoredToRead(new Set(['src', 'docs/agent', 'docs', 'node_modules/x']), ignored), ['docs', 'docs/agent']);
   assert.deepEqual(ignoredToRead(new Set(['docs/agent', 'docsx']), ignored), []);
+});
+
+test('buildTree shows a nested repository\'s children as it sees them: a changed file marked, a tracked one plain, an ignored one dimmed, a folder unloaded until read, and the repository\'s own folder still ignored (#1)', () => {
+  const loaded = new Map<string, FolderEntries>([
+    ['docs', { files: ['README.md'], folders: ['agent', 'build', 'specs'], repo: { marks: {}, ignored: ['build'] } }],
+    ['docs/agent', { files: ['bar.md', 'foo.md', 'x.log'], folders: [], repo: { marks: { 'foo.md': 'M' }, ignored: ['x.log'] } }],
+  ]);
+  const [docs] = buildTree([], {}, false, [], { files: [], folders: ['docs'] }, loaded);
+  assert.deepEqual([docs.path, docs.isIgnored, docs.isUnloaded], ['docs', true, undefined]);
+  assert.deepEqual(docs.children?.map((n) => [n.path, n.isIgnored, n.isUnloaded, n.mark]), [
+    ['docs/agent', undefined, undefined, undefined], ['docs/build', true, true, undefined], ['docs/specs', undefined, true, undefined],
+    ['docs/README.md', undefined, undefined, undefined],
+  ]);
+  assert.deepEqual(docs.children?.[0].children?.map((n) => [n.path, n.isIgnored, n.mark]), [
+    ['docs/agent/bar.md', undefined, undefined], ['docs/agent/foo.md', undefined, 'M'], ['docs/agent/x.log', true, undefined],
+  ]);
 });
