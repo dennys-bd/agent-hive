@@ -2,11 +2,12 @@ import { isReadOnly, ItemNotOnSourceError, PartialWriteError, STATUS } from '../
 import type { FieldValue, FieldWrite, Gql, ItemField, ProjectField, SourceItem } from '../types.js';
 import { projectFields, projectItem, valuesOf, type ProjectRead } from './github-project.js';
 import {
-  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
+  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, labelsMutation, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
   SET_OPTION, SET_TEXT, type GhItemFieldsNode, type GhProjectField, type ItemFieldsData,
 } from './github-queries.js';
 
 const ASSIGNEES = 'ASSIGNEES'; // GitHub's dataType of the built-in Assignees field
+const LABELS = 'LABELS'; // GitHub's dataType of the built-in Labels field
 const WRITABLE = new Set(['SINGLE_SELECT', 'ITERATION', 'TEXT', 'NUMBER', 'DATE']); // the kinds updateProjectV2ItemFieldValue takes
 
 /** What a field write needs of the adapter (#686): its transport, what projectItem reads, and the poll's own steps on one item. */
@@ -37,18 +38,21 @@ function shownField(field: ProjectField, values: Record<string, string | number>
   return { name: field.name, type: field.type, value, ...(options === undefined ? {} : { options }) };
 }
 
-/** An item's fields for its editors (#686), in the project's order: Status, the assignees and every field the native view shows; the title,
- * labels and linked PRs are #757's or the view's own. */
+/** An item's fields for its editors (#686), in the project's order: Status, the assignees, the labels and every field the native view shows;
+ * the title and linked PRs are #757's or the view's own. */
 export function itemFields(node: GhItemFieldsNode): ItemField[] {
   const raw = node.project?.fields?.nodes ?? [];
   const shown = new Map(projectFields(raw).map((f) => [f.name, f]));
   const values = valuesOf(node, [...shown.values()]);
   const logins = (node.content?.assignees?.nodes ?? []).map((a) => a.login);
   const assignable = (node.content?.repository?.assignableUsers?.nodes ?? []).map((u) => u.login);
+  const labels = (node.content?.labels?.nodes ?? []).map((l) => l.name);
+  const repoLabels = (node.content?.repository?.labels?.nodes ?? []).map((l) => l.name);
   return raw.flatMap((f): ItemField[] => {
     if (f.name === undefined) return [];
     if (f.name === STATUS) return [{ name: f.name, type: 'singleSelect', value: node.fieldValueByName?.name ?? null, options: (f.options ?? []).map((o) => o.name) }];
     if (f.dataType === ASSIGNEES) return [{ name: f.name, type: 'assignees', value: logins, options: assignable }];
+    if (f.dataType === LABELS) return [{ name: f.name, type: 'labels', value: labels, options: repoLabels }];
     const field = shown.get(f.name);
     return field ? [shownField(field, values, node)] : [];
   });
@@ -84,6 +88,19 @@ function assigneeWrites(node: GhItemFieldsNode, issueId: string, value: FieldVal
   return [...write('addAssigneesToAssignable', added), ...write('removeAssigneesFromAssignable', removed)];
 }
 
+// The labels' difference from the current set, as the assignees': a label being added resolves against the issue's repository
+function labelWrites(node: GhItemFieldsNode, issueId: string, value: FieldValue): FieldMutation[] {
+  if (!Array.isArray(value)) throw new Error('the labels take a list of names');
+  const wanted = [...new Set(value)];
+  const current = node.content?.labels?.nodes ?? [];
+  const known = node.content?.repository?.labels?.nodes;
+  const added = wanted.filter((name) => !current.some((l) => l.name === name)).map((name) => idOf(known, (l) => l.name, name, 'a label of the repository'));
+  const removed = current.filter((l) => !wanted.includes(l.name)).map((l) => idOf([l], (x) => x.name, l.name, 'a label'));
+  const write = (op: 'addLabelsToLabelable' | 'removeLabelsFromLabelable', ids: string[]): FieldMutation[] =>
+    (ids.length === 0 ? [] : [{ query: labelsMutation(op, ids.length), variables: { labelableId: issueId, ...Object.fromEntries(ids.map((id, i) => [`l${i}`, id])) } }]);
+  return [...write('addLabelsToLabelable', added), ...write('removeLabelsFromLabelable', removed)];
+}
+
 // The milestone and the issue type are the issue's, written on the issue, resolved against its repository
 function issueWrite(node: GhItemFieldsNode, issueId: string, kind: 'MILESTONE' | 'ISSUE_TYPE', value: FieldValue): FieldMutation {
   const repo = node.content?.repository;
@@ -110,7 +127,7 @@ function projectWrite(f: GhProjectField, ids: Record<string, string>, value: Fie
   }
 }
 
-/** The mutations one write sends (#686), every name resolved to its id first: a field, option, iteration, milestone, issue type or login with no
+/** The mutations one write sends (#686), every name resolved to its id first: a field, option, iteration, milestone, issue type, login or label with no
  * match throws before anything is sent. */
 export function writesFor(node: GhItemFieldsNode, field: string, value: FieldValue): FieldMutation[] {
   const f = (node.project?.fields?.nodes ?? []).find((n) => n.name === field);
@@ -118,6 +135,7 @@ export function writesFor(node: GhItemFieldsNode, field: string, value: FieldVal
   const issueId = node.content?.__typename === 'Issue' ? node.content.id : undefined;
   if (issueId === undefined) throw new Error('the item is not an issue');
   if (f.dataType === ASSIGNEES) return assigneeWrites(node, issueId, value);
+  if (f.dataType === LABELS) return labelWrites(node, issueId, value);
   if (f.dataType === 'MILESTONE' || f.dataType === 'ISSUE_TYPE') return [issueWrite(node, issueId, f.dataType, value)];
   return [projectWrite(f, { projectId: node.project.id, itemId: node.id, fieldId: f.id }, value)];
 }

@@ -6,6 +6,7 @@ const RELATION_LIMIT = 50; // ponytail: no pagination, GitHub's own cap per type
 const COMMENT_LIMIT = 100; // ponytail: one page, oldest first; a longer thread shows its first 100 (paging is a later issue)
 const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-reported
 const LABEL_LIMIT = 50; // ponytail: no pagination, an issue with more labels than this is under-reported by the task filter
+const REPO_LABEL_LIMIT = 100; // GitHub's page size: a repository's labels are the picker's options (#60); ponytail: one page, a label past it is refused as unknown
 const SUB_ISSUE_LIMIT = 50; // ponytail: no pagination, an epic's children past this keep their own source position instead of following it, and are missing from its children and progress (#28)
 const FIELD_VALUE_LIMIT = 20; // ponytail: no pagination, an item with more set field values than this is under-read by a filter or project rule (#245, #293)
 const FIELD_LIMIT = 50; // ponytail: one page of a project's fields; a project with more lists its first 50 as filter criteria (#245)
@@ -149,11 +150,19 @@ export function assigneesMutation(op: 'addAssigneesToAssignable' | 'removeAssign
 }`;
 }
 
+/** The labels a write adds or removes (#60): one `ID!` variable per label (`l0`, `l1`…), as assigneesMutation. */
+export function labelsMutation(op: 'addLabelsToLabelable' | 'removeLabelsFromLabelable', count: number): string {
+  const vars = Array.from({ length: count }, (_, i) => `$l${i}`);
+  return `mutation($labelableId: ID!, ${vars.map((v) => `${v}: ID!`).join(', ')}) {
+  ${op}(input: { labelableId: $labelableId, labelIds: [${vars.join(', ')}] }) { clientMutationId }
+}`;
+}
+
 // One item's fields for its editors (#686), by its project item id. It reads:
 // - the project's fields with their ids, options and iterations: what a name resolves against;
 // - the item's values, as PROJECT_ITEMS reads them;
 // - the issue, as both the poll (ITEMS) and the native view read it, so the re-read is a row and an entry;
-// - what the issue's own fields can be: the repository's assignable users, open milestones and issue types.
+// - what the issue's own fields can be: the repository's assignable users, labels, open milestones and issue types.
 // Read before a write and again after it.
 export const ITEM_FIELDS = `query($itemId: ID!) {
   node(id: $itemId) {
@@ -162,7 +171,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
-      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
+      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
     }
   }
 }`;
@@ -239,7 +248,7 @@ export interface GhItemNode {
     __typename?: string; id?: string; number?: number; title?: string; body?: string | null; url?: string; createdAt?: string;
     subIssuesSummary?: { total: number; completed?: number } | null;
     subIssues?: { nodes: { id: string; state: 'OPEN' | 'CLOSED' }[] } | null; // node ids and states, the issue's own order: what groupUnderEpics groups by (#211) and treeLinks links (#28)
-    assignees?: { nodes: { id?: string; login: string }[] } | null; labels?: { nodes: { name: string }[] } | null; milestone?: { id?: string; title: string } | null;
+    assignees?: { nodes: { id?: string; login: string }[] } | null; labels?: { nodes: { id?: string; name: string }[] } | null; milestone?: { id?: string; title: string } | null;
     repository?: ({ nameWithOwner: string } & GhIssueChoices) | null; // owner/name: what a repository rule matches (#245); the choices: ITEM_FIELDS only (#686)
     closedByPullRequestsReferences?: { nodes: GhPullRequest[] } | null; // PROJECT_ITEMS only (#756)
     updatedAt?: string; closedAt?: string | null; parent?: { number: number; title: string } | null; issueType?: { id?: string; name: string } | null; // PROJECT_ITEMS only
@@ -286,6 +295,7 @@ export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: stri
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */
 export interface GhIssueChoices {
   assignableUsers?: { nodes: { id: string; login: string }[] } | null;
+  labels?: { nodes: { id: string; name: string }[] } | null;
   milestones?: { nodes: { id: string; title: string }[] } | null;
   issueTypes?: { nodes: { id: string; name: string }[] } | null;
 }

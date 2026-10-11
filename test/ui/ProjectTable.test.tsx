@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { setLanguage } from '@/i18n';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { ProjectItem, ProjectView, Task } from '../../src/types';
 import { ALL, fetchMock, heads, jsonRes, numbers, openMenu, renderTable, resetProjectTest, row, rowOf, TASK, VIEW } from './project-harness';
@@ -27,7 +28,7 @@ test('the table reads the source\'s view on opening: issue first, status, labels
   expect(within(rowOf('#40')).getByText('✓')).toHaveClass('text-working');
   expect(twelve.getByText('—')).toBeInTheDocument(); // a task row shows the task's own PRs: none here
   expect(screen.getByText('3 de 3')).toBeInTheDocument();
-  expect(screen.getByText('⇧↵ abre a issue')).toBeInTheDocument();
+  expect(screen.getByText('células com ⌄ são editáveis · arraste as divisões para redimensionar · ⇧↵ abre a issue')).toBeInTheDocument();
 });
 
 test('a header sorts by its column and again reverses; the project\'s own order is the default (#756)', async () => {
@@ -183,7 +184,7 @@ test('with nothing saved the rows group by status in Status order with counts an
   renderTable();
   await screen.findByText('5 issues · 1 no fluxo');
   expect(groups()).toEqual(['Todo2sem etapa', 'Ready1→ dev', 'Done1sem etapa', 'sem status1']);
-  expect(groupRows()[0]).toHaveClass('relative', 'z-[1]', 'bg-background'); // opaque and above the overlay: a divider stops at it
+  expect(groupRows()[0]).toHaveClass('sticky', 'z-[5]', 'bg-card'); // opaque and above the overlay: a divider stops at it
   expect(group(/^Done/)).toHaveAttribute('aria-expanded', 'false');
   expect(numbers()).toEqual(['#3', '#5', '#12', '#7']);
   await user.click(group(/^Done/));
@@ -254,4 +255,10 @@ test('a field cell writes through its editor and the answer\'s row replaces its 
   await waitFor(() => expect(within(rowOf('#12')).getByText('P0')).toBeInTheDocument());
   expect(fetchMock).toHaveBeenCalledWith('/sources/roadmap/items/roadmap%3APVTI_12/fields', expect.objectContaining({ method: 'POST', body: JSON.stringify({ field: 'Priority', value: 'P0' }) }));
   expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/sources/roadmap/project')).toHaveLength(1);
+});
+
+test('the footer explains the table in English too: ⌄ cells edit, the dividers resize, ⇧↵ opens the issue (#60)', async () => {
+  setLanguage('en');
+  renderTable();
+  expect(await screen.findByText('cells with ⌄ are editable · drag the dividers to resize · ⇧↵ opens the issue')).toBeInTheDocument();
 });

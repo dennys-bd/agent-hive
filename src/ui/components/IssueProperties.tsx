@@ -65,9 +65,11 @@ function ActivityBlock({ task, state, locale }: { task: Task; state: State; loca
   );
 }
 
-// #686: the source's fields, the assignees first in the assignee row, then every other one in the project's order, labelled with its name
+// #686: the source's fields, the assignees first in the assignee row, then every other one in the project's order, labelled with its name.
+// The labels keep their own row above (#757): the source's Labels field is not listed twice (#60)
 function FieldRows({ itemId, fields, onWritten }: { itemId: string; fields: ItemField[]; onWritten(answer: FieldAnswer): void }) {
-  const ordered = [...fields.filter((f) => f.type === 'assignees'), ...fields.filter((f) => f.type !== 'assignees')];
+  const listed = fields.filter((f) => f.type !== 'labels');
+  const ordered = [...listed.filter((f) => f.type === 'assignees'), ...listed.filter((f) => f.type !== 'assignees')];
   return (
     <>
       {ordered.map((f) => (

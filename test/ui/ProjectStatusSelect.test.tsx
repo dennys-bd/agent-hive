@@ -15,6 +15,7 @@ test('the status select lists each option with its stage or —, notes where the
   const user = userEvent.setup();
   const onRow = vi.fn();
   render(<ProjectStatusSelect source="roadmap" itemId="roadmap:PVTI_3" status="Todo" statuses={[{ name: 'Todo' }, { name: 'Ready', stage: 'dev' }, { name: 'Done' }]} onRow={onRow} />);
+  expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('data-slot', 'field-cell');
   screen.getByRole('button', { name: 'Todo' }).focus();
   await user.keyboard('{Enter}');
   expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Todo—', 'Readydev', 'Done—']);

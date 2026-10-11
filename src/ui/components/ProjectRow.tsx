@@ -23,6 +23,7 @@ const CHECK: Record<Signal, { mark: string; tone: string }> = {
 const CHIP = 'max-w-full shrink-0 truncate rounded-[4px] border px-1.5 text-muted-foreground text-xs';
 
 const ASSIGNEES = 'Assignees'; // GitHub's built-in field: the view shows it as a fixed column, never by name (#686)
+const LABELS = 'Labels'; // GitHub's built-in field, a fixed column as the assignees (#60)
 
 // A field column's value as its editor takes it (#686): the options the view knows; a milestone's, an issue type's or the assignees' are read
 // when the menu opens
@@ -90,7 +91,7 @@ function dayMonth(iso: string): string {
 
 // A project field's value by its kind (#756): single-select and issue type as a chip, number right-aligned, date dd/mm, the rest as text
 // with an ellipsis. A kind the Hive does not know with no value reads —; any other empty cell stays blank, as before addendum 2
-function FieldCell({ field, value }: { field: ProjectField; value?: string | number }) {
+function FieldDisplay({ field, value }: { field: ProjectField; value?: string | number }) {
   if (value === undefined) return field.type === 'other' ? <span className="text-muted-foreground">—</span> : null;
   if (field.type === 'singleSelect' || field.type === 'issueType') return <span className={CHIP}>{value}</span>;
   if (field.type === 'number') return <span className="w-full text-right tabular-nums">{value}</span>;
@@ -104,12 +105,12 @@ export interface ProjectRowProps {
   onOpenIssue(item: ProjectItem, task?: Task): void; // #757: the issue's page
 }
 
-// A visible column's cell (#756): its class and what it shows; a field's and the assignees' through their editor (#686)
+// A visible column's cell (#756): its class and what it shows; a field's, the labels' and the assignees' through their editor (#686, #60)
 function cellOf(column: ProjectColumn, { item, task, state, source, statuses, onRow }: ProjectRowProps): { className?: string; cell: ReactNode } {
   const { field } = column;
   const written = (answer: FieldAnswer): void => onRow(answer.row);
   if (field !== undefined) {
-    const shown = <FieldCell field={field} value={Object.hasOwn(item.fields, field.name) ? item.fields[field.name] : undefined} />;
+    const shown = <FieldDisplay field={field} value={Object.hasOwn(item.fields, field.name) ? item.fields[field.name] : undefined} />;
     return { className: 'flex min-w-0', cell: <FieldEditor itemId={item.itemId} field={itemField(field, item)} display={shown} onWritten={written} /> };
   }
   if (Object.hasOwn(DATES, column.key)) {
@@ -119,7 +120,11 @@ function cellOf(column: ProjectColumn, { item, task, state, source, statuses, on
   switch (column.key) {
     case 'status':
       return { className: 'min-w-0', cell: <ProjectStatusSelect source={source} itemId={item.itemId} status={item.status} statuses={statuses} onRow={onRow} /> };
-    case 'labels': return { className: 'flex min-w-0 gap-1 overflow-hidden', cell: item.labels.map((label) => <span key={label} className={CHIP}>{label}</span>) };
+    case 'labels': {
+      const labels: ItemField = { name: LABELS, type: 'labels', value: item.labels };
+      const chips = item.labels.map((label) => <span key={label} className={CHIP}>{label}</span>);
+      return { className: 'flex min-w-0', cell: <FieldEditor itemId={item.itemId} field={labels} display={chips} onWritten={written} /> };
+    }
     case 'assignee': {
       const assignees: ItemField = { name: ASSIGNEES, type: 'assignees', value: item.assignees };
       return { cell: <FieldEditor itemId={item.itemId} field={assignees} display={<AssigneeCell logins={item.assignees} />} onWritten={written} /> };

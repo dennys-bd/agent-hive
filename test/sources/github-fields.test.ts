@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { itemFields, readItemFields, writeItemField, writesFor, type FieldsContext } from '../../src/sources/github-fields.js';
 import {
-  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, ITEMS, PROJECT_FIELDS, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
+  assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, ITEMS, labelsMutation, PROJECT_FIELDS, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
   SET_OPTION, SET_TEXT, type GhItemFieldsNode, type GhItemNode, type GhProjectField,
 } from '../../src/sources/github-queries.js';
 import { PartialWriteError } from '../../src/field-values.js';
@@ -38,10 +38,11 @@ const fieldsNode = (extra: Partial<GhItemFieldsNode> = {}, content: Partial<Cont
   fieldValues: { nodes: [{ name: 'Ready', field: { name: 'Status' } }, { name: 'P1', field: { name: 'Priority' } }, { number: 3, field: { name: 'Estimate' } }, { title: 'Sprint 1', field: { name: 'Sprint' } }] },
   content: {
     __typename: 'Issue', id: 'I_1', number: 12, title: 'Pager breaks', body: 'b', url: 'https://github.com/acme/site/issues/12',
-    assignees: { nodes: [{ id: 'U_ana', login: 'ana' }] }, labels: { nodes: [] }, milestone: { id: 'M_1', title: 'v1' }, issueType: null,
+    assignees: { nodes: [{ id: 'U_ana', login: 'ana' }] }, labels: { nodes: [{ id: 'L_bug', name: 'bug' }] }, milestone: { id: 'M_1', title: 'v1' }, issueType: null,
     repository: {
       nameWithOwner: 'acme/site',
       assignableUsers: { nodes: [{ id: 'U_ana', login: 'ana' }, { id: 'U_bia', login: 'bia' }] },
+      labels: { nodes: [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'docs' }] },
       milestones: { nodes: [{ id: 'M_1', title: 'v1' }, { id: 'M_2', title: 'v2' }] },
       issueTypes: { nodes: [{ id: 'T_bug', name: 'Bug' }] },
     },
@@ -68,10 +69,11 @@ const PROJECT = 'PVT_1';
 const READ = { login: 'acme', number: 6, notFound: 'source not found', filter: [], me: undefined, epics: 'ignore' as const, taskProps: FIXED };
 const IDS = { projectId: 'PVT_1', itemId: 'PVTI_1' };
 
-test('itemFields lists Status, the assignees and every shown field in the project\'s order, each with its value and choices; the read-only kinds flagged (#686)', () => {
+test('itemFields lists Status, the assignees, the labels and every shown field in the project\'s order, each with its value and choices; the read-only kinds flagged (#686, #60)', () => {
   assert.deepEqual(itemFields(fieldsNode()), [
     { name: 'Status', type: 'singleSelect', value: 'Ready', options: ['Ready', 'In review', 'Done'] },
     { name: 'Assignees', type: 'assignees', value: ['ana'], options: ['ana', 'bia'] },
+    { name: 'Labels', type: 'labels', value: ['bug'], options: ['bug', 'docs'] },
     { name: 'Priority', type: 'singleSelect', value: 'P1', options: ['P0', 'P1'] },
     { name: 'Notes', type: 'text', value: null },
     { name: 'Estimate', type: 'number', value: 3 },
@@ -111,6 +113,18 @@ test('writesFor sends the assignees\' difference only: who is added, who is remo
   assert.deepEqual(writesFor(fieldsNode(), 'Assignees', ['ana']), []);
   assert.deepEqual(writesFor(fieldsNode(), 'Assignees', []), [{ query: assigneesMutation('removeAssigneesFromAssignable', 1), variables: { assignableId: 'I_1', u0: 'U_ana' } }]);
   assert.match(assigneesMutation('addAssigneesToAssignable', 2), /\$u0: ID!, \$u1: ID!/);
+});
+
+test('writesFor sends the labels\' difference only, one mutation each way, and refuses a label the repository lacks before anything is sent (#60)', () => {
+  assert.deepEqual(writesFor(fieldsNode(), 'Labels', ['docs']), [
+    { query: labelsMutation('addLabelsToLabelable', 1), variables: { labelableId: 'I_1', l0: 'L_docs' } },
+    { query: labelsMutation('removeLabelsFromLabelable', 1), variables: { labelableId: 'I_1', l0: 'L_bug' } },
+  ]);
+  assert.deepEqual(writesFor(fieldsNode(), 'Labels', ['bug']), []);
+  assert.deepEqual(writesFor(fieldsNode(), 'Labels', []), [{ query: labelsMutation('removeLabelsFromLabelable', 1), variables: { labelableId: 'I_1', l0: 'L_bug' } }]);
+  assert.throws(() => writesFor(fieldsNode(), 'Labels', ['bug', 'wontfix']), { message: '"wontfix" is not a label of the repository' });
+  assert.match(labelsMutation('addLabelsToLabelable', 2), /\$l0: ID!, \$l1: ID!/);
+  assert.equal(ITEM_FIELDS.match(/labels\(first: \d+\) \{ nodes \{ id name \} \}/g)?.length, 2); // the issue's and its repository's
 });
 
 test('writesFor throws before anything is sent on a name with no match, a read-only kind or a value of another type (#686)', () => {
