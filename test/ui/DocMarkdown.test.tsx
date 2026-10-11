@@ -93,3 +93,22 @@ test('a ```mermaid block mounts its diagram instead of a code block (#697)', asy
   expect(await screen.findByTestId('diagram')).toBeInTheDocument();
   expect(container.querySelector('pre > code.language-mermaid')).toBeNull();
 });
+
+test('a render with a new onLink keeps the drawn diagram instead of mounting it again over its code (#906)', async () => {
+  const text = '```mermaid\ngraph TD; Keep-->Drawn\n```';
+  const { container, rerender } = render(<DocMarkdown text={text} onLink={vi.fn()} />);
+  const diagram = await screen.findByTestId('diagram');
+  rerender(<DocMarkdown text={text} onLink={vi.fn()} />);
+  expect(container.querySelector('pre > code.language-mermaid')).toBeNull();
+  expect(screen.getByTestId('diagram')).toBe(diagram);
+});
+
+test('a local link calls the latest onLink after a render that changed it (#906)', async () => {
+  const first = vi.fn();
+  const latest = vi.fn();
+  const { rerender } = render(<DocMarkdown text="[file](notes.md)" onLink={first} />);
+  rerender(<DocMarkdown text="[file](notes.md)" onLink={latest} />);
+  await userEvent.click(screen.getByText('file'));
+  expect(latest).toHaveBeenCalledWith('notes.md');
+  expect(first).not.toHaveBeenCalled();
+});
