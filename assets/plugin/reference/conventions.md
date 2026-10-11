@@ -135,7 +135,7 @@ A path is given as the next stage opens it from the worktree
 | `/hive:new-spec` | `issue` (the number, when there is one), `branch`, `spec` (absent on the bounded path) |
 | `/hive:new-plan` | `plan` (absent on the bounded path) |
 | `/hive:new-build` | `walkthrough`, `pr` (the URL of the PR that targets the base; absent when the PR was skipped) |
-| `/hive:decomposition` | `decomposition` (the path of `decomposition.md`, at the worktree's root, uncommitted) |
+| `/hive:decomposition` | `decomposition` (the path of `<specsDir>/<YYYY-MM-DD>-<slug>-decomposition.md` in the docs repository, committed there) |
 
 Outside the Hive, state the same values in chat.
 
