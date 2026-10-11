@@ -1,5 +1,6 @@
 import { createContext, type RefCallback, type RefObject, useCallback, useContext, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { onShortcutKey } from '@/lib/dock-layout';
+import { isTextField } from '@/lib/shortcut-bindings';
 
 /** A screen to go back to (#911): its name on the back button, how to show it again, and its center's scroll when it was left. */
 export interface BackEntry { label: string; restore(): void; scroll?: number }
@@ -17,21 +18,27 @@ export interface BackStack {
  * reset drops one not applied yet, since it belonged to the screen being left. */
 export function useBackStack(): BackStack {
   const [entries, setEntries] = useState<readonly BackEntry[]>([]);
+  // The stack as last set, not as last rendered: two backs before a render (a double ⌘[) pop two entries, not the same one twice
+  const latest = useRef<readonly BackEntry[]>(entries);
   const pending = useRef<number | undefined>(undefined);
-  const top = entries.at(-1);
+  const set = (next: readonly BackEntry[]): void => {
+    latest.current = next;
+    setEntries(next);
+  };
   return {
-    top, pending,
+    top: entries.at(-1), pending,
     push: (entry) => {
       pending.current = undefined;
-      setEntries((all) => [...all, entry]);
+      set([...latest.current, entry]);
     },
     reset: (entry) => {
       pending.current = undefined;
-      setEntries(entry === undefined ? [] : [entry]);
+      set(entry === undefined ? [] : [entry]);
     },
     back: () => {
+      const top = latest.current.at(-1);
       if (top === undefined) return;
-      setEntries(entries.slice(0, -1));
+      set(latest.current.slice(0, -1));
       pending.current = top.scroll;
       top.restore();
     },
@@ -47,7 +54,8 @@ export function useBackKeys(onBack: (() => void) | undefined): void {
   const act = useEffectEvent((): void => onBack?.());
   useEffect(() => {
     if (!isOn) return undefined;
-    const offKey = onShortcutKey([[true, 'goBack']], () => act());
+    // Not in a text field: Alt+Left, its default off macOS, moves by word there, and a back would drop a draft
+    const offKey = onShortcutKey([[true, 'goBack']], () => act(), (event) => !isTextField(event.target));
     const onMouse = (event: MouseEvent): void => {
       if (event.button !== MOUSE_BACK) return;
       event.preventDefault();

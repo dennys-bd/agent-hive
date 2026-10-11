@@ -1,6 +1,8 @@
-import { act, render, renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook } from '@testing-library/react';
 import { expect, onTestFinished, test, vi } from 'vitest';
-import { type BackEntry, NavScrollContext, useBackStack, useNavScroll } from '@/hooks/use-back-stack';
+import { type BackEntry, NavScrollContext, useBackKeys, useBackStack, useNavScroll } from '@/hooks/use-back-stack';
+
+const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
 
 const entry = (label: string, scroll?: number): BackEntry => ({ label, restore: vi.fn(), scroll });
 
@@ -75,4 +77,29 @@ test('useNavScroll marks its container and applies a pending scroll once the con
   page.scrollTop = 0;
   act(() => observers.at(-1)?.([], {} as ResizeObserver));
   expect(page.scrollTop).toBe(0); // at most once
+});
+
+test('two backs before a render pop two entries, not the same one twice (#911)', () => {
+  const { result } = renderHook(() => useBackStack());
+  const [flow, project] = [entry('fluxo · todas'), entry('GitHub Project')];
+  act(() => result.current.push(flow));
+  act(() => result.current.push(project));
+  act(() => {
+    result.current.back(); // a double ⌘[: both from the same render
+    result.current.back();
+  });
+  expect(project.restore).toHaveBeenCalledOnce();
+  expect(flow.restore).toHaveBeenCalledOnce();
+  expect(result.current.top).toBeUndefined();
+});
+
+test('goBack does not act with the focus in a text field: Alt+Left moves by word there (#911)', () => {
+  const onBack = vi.fn();
+  renderHook(() => useBackKeys(onBack));
+  const field = document.body.appendChild(document.createElement('textarea'));
+  onTestFinished(() => field.remove());
+  fireEvent.keyDown(field, BACK_KEY);
+  expect(onBack).not.toHaveBeenCalled();
+  fireEvent.keyDown(window, BACK_KEY);
+  expect(onBack).toHaveBeenCalledOnce();
 });
