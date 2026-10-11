@@ -250,12 +250,14 @@ test('epics: ignore keeps an epic (unlike hide) and its open sub-issues block it
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['5']]]);
 });
 
-test('epics: show, the default, lists an epic exactly as ignore does until #31: its open sub-issues block it (#30)', async () => {
+test('epics: show stamps an issue with sub-issues as an epic carrying the source\'s rule, and a leaf not; ignore and hide never stamp it (#31)', async () => {
   const epic = { ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } };
-  const read = async (spec: SourceSpec) =>
-    createSource(spec, { gql: fakeGql({ items: page([epic]), relations: { i0: relations([], [[5, 'OPEN'], [6, 'CLOSED']]) } }).gql }).listItems();
-  assert.deepEqual((await read(config)).map((c) => [c.item.id, c.item.blockedBy]), [['1', ['5']]], 'show is what combConfig gives a source');
-  assert.deepEqual(await read(config), await read(ignored));
+  const read = async (spec: SourceSpec) => createSource(spec, { gql: fakeGql({ items: page([epic, item(2)]), relations: {} }).gql }).listItems();
+  const [shown, leaf] = (await read(config)).map((c) => c.item);
+  assert.deepEqual(shown.epic, { follows: EPICS.epicFollows, switchAt: EPICS.switchAt }, 'show is what combConfig gives a source');
+  assert.ok(!('epic' in leaf), 'a leaf is no epic');
+  assert.ok((await read(ignored)).every((c) => !('epic' in c.item)), 'ignore: a regular task');
+  assert.deepEqual((await read(hidden)).map((c) => [c.item.id, 'epic' in c.item]), [['2', false]], 'hide: the epic is gone');
 });
 
 test('groupUnderEpics puts an epic\'s sub-issues right after it in the epic\'s own order; one in another column or past the listed ones keeps its source position; the input is untouched (#211)', () => {
