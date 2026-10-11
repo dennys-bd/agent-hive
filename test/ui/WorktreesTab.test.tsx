@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { WorktreesTab } from '@/components/settings/WorktreesTab';
 import { setLanguage, t } from '@/i18n';
 import type { Task, Worker, State, WorktreeRow } from '../../src/types';
+import { SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
 
 const REFUSAL = "the branch 'hive/3-done' is not fully merged into HEAD";
@@ -144,4 +145,17 @@ test('rows are grouped under their workspace, and an orphan\'s removal names its
   await user.click(within(site).getByRole('button', { name: t('worktrees.remove') }));
   await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: t('detail.deleteActivity') }));
   await waitFor(() => expect(posts()).toEqual([['/worktrees/site/hive-9-gone/remove', undefined]]));
+});
+
+test('a failed start reads as its short message in the confirm and on hover, never the raw text (#945)', async () => {
+  const user = userEvent.setup();
+  const row: WorktreeRow = { ...FAILED, task: { ...FAILED.task!, error: `${SPAWN_FAILED}/repo has changes that are not committed:\n M src/app.ts` } };
+  rows = [row];
+  render(<WorktreesTab />);
+  await screen.findByText('#3 Done');
+  const short = t('start.failed.checkout_dirty');
+  expect(within(findRow(row)).getByText(t('worktrees.deleteActivityFailed')).closest('[title]')).toHaveAttribute('title', short);
+  await user.click(trashOf(row));
+  expect(dialog()).toHaveTextContent(short);
+  expect(dialog()).not.toHaveTextContent('not committed');
 });

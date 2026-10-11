@@ -8,7 +8,7 @@ import { CiNotice } from '@/components/CiProgress';
 import { StageOutputContext } from '@/hooks/use-console';
 import { setLanguage } from '@/i18n';
 import type { Activity, BaseOptions, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 
 // The task face (redesign 10, #542), rendered in its board: the task menu, the drag and the Start dialog need what Flow hands them.
@@ -318,4 +318,19 @@ test('a task out of tries reads destructive: border, ring, the status and abrir,
   await user.click(within(tile()).getByRole('button', { name: 'abrir' }));
   expect(onOpen).toHaveBeenCalledWith('I1');
   expect(taskAction(out, state(out, [], { activityRecords: records }))).toBe('details');
+});
+
+test('a failed start reads destructive with its short message in the viewer\'s language, never the raw text; iniciar stays; a live worker\'s status wins (#945)', () => {
+  const error = `${SPAWN_FAILED}/repo has changes that are not committed:\n M src/app.ts`;
+  const { rerender } = render(<Flow state={state(task({ error }))} />);
+  expect(tile()).toHaveClass('border-destructive');
+  const status = within(tile()).getByText('o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo');
+  expect(status).toHaveClass('text-destructive');
+  expect(tile()).not.toHaveTextContent('/repo');
+  expect(within(tile()).getByRole('button', { name: 'iniciar' })).toBeInTheDocument();
+  rerender(<Flow state={state(task({ error, workerId: 's1' }), [working()])} />);
+  expect(within(tile()).getByText('trabalhando')).toHaveClass('text-working');
+  setLanguage('en');
+  rerender(<Flow state={state(task({ error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }))} />);
+  expect(within(tile()).getByText('the terminal could not start')).toHaveClass('text-destructive');
 });
