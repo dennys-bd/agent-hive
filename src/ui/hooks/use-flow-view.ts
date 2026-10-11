@@ -73,7 +73,11 @@ export function useFlowView(isShown: boolean): FlowViewControls {
     toggleLoops: () => save({ ...view, loops: !view.loops }),
     // #34: the first click stores the opposite of what the header showed, the "a tree exists" default included
     toggleTree: (current) => save({ ...view, tree: !current }),
-    toggleGroup: (key) => save({ ...view, collapsed: view.collapsed.includes(key) ? view.collapsed.filter((k) => k !== key) : [...view.collapsed, key] }),
+    // From what was last written, not this render's view: two collapses before a re-render must both stay
+    toggleGroup: (key) => {
+      const { collapsed } = latest.current;
+      save({ ...latest.current, collapsed: collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key] });
+    },
     onPan: (next) => {
       pan.current = next;
       latest.current = { ...latest.current, pan: next };

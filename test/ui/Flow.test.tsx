@@ -832,9 +832,9 @@ test('the chevron collapses a tree\'s group in its own node only, and the collap
   onTestFinished(() => resetViewState());
   const user = userEvent.setup();
   const { unmount } = render(<Flow state={forest()} />);
-  await user.click(within(nodeOf('dev')).getAllByRole('button', { name: 'recolher' })[0]);
+  await user.click(within(nodeOf('dev')).getAllByRole('button', { name: /^recolher/ })[0]);
   expect(within(nodeOf('dev')).queryByText('#2 Task 2')).not.toBeInTheDocument();
-  expect(within(nodeOf('dev')).getByRole('button', { name: 'expandir' })).toHaveAttribute('aria-expanded', 'false');
+  expect(within(nodeOf('dev')).getByRole('button', { name: /^expandir/ })).toHaveAttribute('aria-expanded', 'false');
   expect(within(nodeOf('review')).getByText('#3 Task 3')).toBeInTheDocument();
   expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 }, collapsed: ['dev\u0000I1'] });
   unmount();

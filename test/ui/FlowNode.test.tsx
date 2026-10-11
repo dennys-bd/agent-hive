@@ -96,7 +96,7 @@ test('with the tree on, the root\'s group header counts its cards, its cards fol
   expect(within(groupRow('⑂ #1 Task 1')).getByText('4')).toHaveClass('text-muted-foreground');
   expect(within(groupRow('sem árvore')).getByText('2')).toBeInTheDocument();
   expect(['#1 Task 1', '#2 Task 2', '#3 Task 3', '#4 Task 4', '#5 Task 5'].map(indent)).toEqual(['', '', '', '10px', '']);
-  expect(within(groupRow('⑂ #1 Task 1')).getByRole('button', { name: 'recolher' })).toHaveAttribute('aria-expanded', 'true');
+  expect(within(groupRow('⑂ #1 Task 1')).getByRole('button', { name: 'recolher ⑂ #1 Task 1' })).toHaveAttribute('aria-expanded', 'true');
 });
 
 test('with the tree off the node lists its tasks as today, no header and no indent, a child keeping its ↳; with the tree on and no tree task there is no header either (#34)', () => {
@@ -112,7 +112,7 @@ test('with the tree off the node lists its tasks as today, no header and no inde
   render(<Node s={loose} tasks={loose.tasks} isTree />);
   expect(cards()).toEqual(['#5 Task 5', '#6 Task 6']);
   expect(screen.queryByText('sem árvore')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'recolher' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^recolher/ })).not.toBeInTheDocument();
 });
 
 test('a collapsed group keeps its header, its › and its count and hides its cards; the chevron asks to toggle the group by this stage and its root, or none for sem árvore (#34)', async () => {
@@ -124,8 +124,8 @@ test('a collapsed group keeps its header, its › and its count and hides its ca
   const header = groupRow('⑂ #1 Task 1');
   expect(within(header).getByText('4')).toBeInTheDocument();
   expect(within(header).getByText('›')).toBeInTheDocument();
-  await user.click(within(header).getByRole('button', { name: 'expandir' }));
+  await user.click(within(header).getByRole('button', { name: 'expandir ⑂ #1 Task 1' }));
   expect(onToggleGroup).toHaveBeenLastCalledWith('Build\u0000I1');
-  await user.click(within(groupRow('sem árvore')).getByRole('button', { name: 'recolher' }));
+  await user.click(within(groupRow('sem árvore')).getByRole('button', { name: 'recolher sem árvore' }));
   expect(onToggleGroup).toHaveBeenLastCalledWith('Build\u0000none');
 });

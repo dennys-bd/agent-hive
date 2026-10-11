@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { useFlowView } from '@/hooks/use-flow-view';
 import { FLOW_VIEW_DEFAULTS, readFlowView, writeFlowView } from '@/lib/flow-view';
 import { readView, resetViewState } from '@/lib/view-state';
 
@@ -44,4 +46,15 @@ test('a stored tree and collapsed are read back; a non-boolean tree reads as uns
   expect(readStored({ ...GOOD, tree: 'yes' })).not.toHaveProperty('tree');
   expect(readStored({ ...GOOD, collapsed: 'dev' }).collapsed).toEqual([]);
   expect(readStored({ ...GOOD, collapsed: [key, 3, null, 'review\u0000none'] }).collapsed).toEqual([key, 'review\u0000none']);
+});
+
+test('two collapses before a re-render both stay: toggleGroup reads what was last written, not the render\'s view (#34)', () => {
+  const { result } = renderHook(() => useFlowView(false));
+  const controls = result.current; // one render's controls, as two clicks in the same tick hold
+  act(() => {
+    controls.toggleGroup('dev\u0000I1');
+    controls.toggleGroup('review\u0000I1');
+  });
+  expect(result.current.view.collapsed).toEqual(['dev\u0000I1', 'review\u0000I1']);
+  expect(readFlowView().collapsed).toEqual(['dev\u0000I1', 'review\u0000I1']);
 });
