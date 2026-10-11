@@ -163,16 +163,16 @@ export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; o
   return (
     <>
       <span role="alert" title={failure.error} className="shrink-0 text-destructive">{t('editor.formatFailed')}</span>
-      {onViewLog && <Button type="button" variant="link" size="xs" className="h-3 p-0 text-review" onClick={() => onViewLog(failure.log)}>{t('editor.viewLog')}</Button>}
+      {onViewLog && <Button type="button" variant="link" size="xs" className="h-5 p-0 text-review" onClick={() => onViewLog(failure.log)}>{t('editor.viewLog')}</Button>}
     </>
   );
 }
 
 // The bar (#717, #780, #782): the path left; a save's refusal or a failed format (#749) in the middle; the language server and each checker
-// right, then a divider and the problems button. One row 12px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
+// right, then a divider and the problems button. One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
 function EditorBar({ file, error, formatFailure, isProblemsOpen, onProblems, onViewLog }: BarProps) {
   return (
-    <div className="flex h-3 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
+    <div className="flex h-6 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
       <span title={file.path} className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
       {error !== undefined && <span role="alert" className="min-w-0 truncate text-destructive">{error}</span>}
       {formatFailure !== undefined && <FormatFailed failure={formatFailure} onViewLog={onViewLog} />}

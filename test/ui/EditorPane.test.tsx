@@ -233,6 +233,8 @@ test('the bar shows one entry per checker: ready and running with their dots, fa
   await user.click(button);
   expect(button).toHaveAttribute('aria-pressed', 'true');
   expect(button).toHaveClass('bg-accent');
+  expect(button).toHaveClass('h-5'); // a 20px control in the 24px bar (#946)
+  expect(button.parentElement).toHaveClass('h-6');
 });
 
 test('a Settings save that leaves this file\'s server as it was does not reconnect it; one that turns it off detaches (#780)', async () => {
