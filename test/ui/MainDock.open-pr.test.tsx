@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { MainDock } from '@/components/MainDock';
 import { useOpenPr } from '@/components/terminal-tabs';
+import type { BackEntry } from '@/hooks/use-back-stack';
 import { setLanguage } from '@/i18n';
 import { FakeWebSocket, resetFakes } from './xterm-fakes';
 
@@ -15,7 +16,7 @@ function PrOpener() {
   const openPr = useOpenPr();
   return <button type="button" onClick={() => openPr?.(PR)}>pr</button>;
 }
-function Home({ openPr }: { openPr(url: string): void }) {
+function Home({ openPr }: { openPr(url: string, from?: BackEntry): void }) {
   return (
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[]} workers={[]} terminals={[]} onSelect={() => {}}
@@ -34,11 +35,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('a PR opens through the Dashboard\'s opener with the flow shown under Automação (#758)', () => {
-  const openPr = vi.fn();
+const isFlowHidden = (): boolean => screen.getByText('fluxo', { selector: 'main' }).closest('[hidden]') !== null;
+
+test('a PR opens through the Dashboard\'s opener with the flow shown under Automação; from Atividades it hands the entry that shows that view again (#758, #911)', () => {
+  const openPr = vi.fn<(url: string, from?: BackEntry) => void>();
   render(<Home openPr={openPr} />);
-  expect(screen.getByText('fluxo', { selector: 'main' }).closest('[hidden]')).not.toBeNull(); // the window opens on Atividades (#746)
+  expect(isFlowHidden()).toBe(true); // the window opens on Atividades (#746), on Home: no activity picked
   fireEvent.click(screen.getByRole('button', { name: 'pr', hidden: true }));
-  expect(openPr).toHaveBeenCalledWith(PR);
-  expect(screen.getByText('fluxo', { selector: 'main' }).closest('[hidden]')).toBeNull();
+  expect(openPr).toHaveBeenLastCalledWith(PR, expect.objectContaining({ label: 'atividades' }));
+  expect(isFlowHidden()).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'pr', hidden: true }));
+  expect(openPr).toHaveBeenLastCalledWith(PR, undefined); // under Automação the Dashboard pushes the screen it leaves
+  act(() => openPr.mock.calls[0][1]?.restore());
+  expect(isFlowHidden()).toBe(true);
 });

@@ -62,6 +62,14 @@ const en = {
   'flow.zoom.fit': 'fit',
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
+  'back.title': 'back · {key}', // #911: the page header's back button
+  'back.flow': 'flow · {pick}', // #911: the screens a page goes back to
+  'back.issue': 'issue #{n}',
+  'back.pr': 'PR #{n}',
+  'back.repoPrs': 'PRs · {repo}',
+  'back.repoIssues': 'issues · {repo}',
+  'back.activity': 'activity #{n}',
+  'back.activityTitled': 'activity · {title}', // a workspace's local activity, which has no number
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -1486,6 +1494,7 @@ const en = {
   'shortcuts.toggleSideTab': 'switch files and details',
   'shortcuts.sleepSession': 'sleep the focused session',
   'shortcuts.refreshFlow': 'refresh the flow',
+  'shortcuts.goBack': 'go back', // #911
   'shortcuts.zoomOut': 'zoom the flow out', // #910
   'shortcuts.zoomIn': 'zoom the flow in',
   'shortcuts.zoomReset': 'the flow at 100%',
@@ -1766,6 +1775,14 @@ const pt: Record<MessageKey, string> = {
   'flow.zoom.fit': 'ajustar',
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
+  'back.title': 'voltar · {key}',
+  'back.flow': 'fluxo · {pick}',
+  'back.issue': 'issue #{n}',
+  'back.pr': 'PR #{n}',
+  'back.repoPrs': 'PRs · {repo}',
+  'back.repoIssues': 'issues · {repo}',
+  'back.activity': 'atividade #{n}',
+  'back.activityTitled': 'atividade · {title}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
@@ -3186,6 +3203,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleSideTab': 'alternar arquivos e detalhes',
   'shortcuts.sleepSession': 'dormir a sessão em foco',
   'shortcuts.refreshFlow': 'atualizar o fluxo',
+  'shortcuts.goBack': 'voltar',
   'shortcuts.zoomOut': 'afastar o fluxo',
   'shortcuts.zoomIn': 'aproximar o fluxo',
   'shortcuts.zoomReset': 'fluxo em 100%',

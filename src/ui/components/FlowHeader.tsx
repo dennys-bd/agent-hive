@@ -1,13 +1,17 @@
 import { SearchIcon } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
+import { displayBinding } from '../../shortcuts';
 import { resolveWorkspace } from '../../tasks';
 import type { RepoSummary, SourceSync, Task, State } from '../../types';
 import { act } from '@/components/actions';
 import { ButtonKeyHint, KeyHint } from '@/components/KeyHint';
+import { useIsFlowShown } from '@/components/MainDock';
 import { Button } from '@/components/ui/button';
+import { useBackKeys } from '@/hooks/use-back-stack';
 import { t } from '@/i18n';
 import { onShortcutKey } from '@/lib/dock-layout';
+import { binding, isMac } from '@/lib/shortcut-bindings';
 import { workspaceColor } from '@/lib/workspace-color';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -22,6 +26,34 @@ export function lastPolled(syncs: Record<string, SourceSync>, source?: string): 
   if (latest === undefined) return undefined;
   const time = new Date(latest);
   return `${pad(time.getHours())}:${pad(time.getMinutes())}`;
+}
+
+/** A page's way back (#911): the previous screen's label and what goes there. */
+export interface BackLink { label: string; onBack(): void }
+
+// voltar · ⌘[ (#911): the key as bound now, so a rebound one shows; the words alone while it is off
+function backTitle(): string {
+  const keys = binding('goBack');
+  return keys === null ? t('shortcuts.goBack') : t('back.title', { key: displayBinding(keys, isMac()) });
+}
+
+// The back button (#911, handoff §7): ‹ and the previous screen's label, then a divider before the name. ⌘[ and the mouse's back button do the
+// same, but only while the flow shows: the header stays mounted under Atividades (#596), where the button is out of sight
+function BackButton({ back }: { back: BackLink }) {
+  const isShown = useIsFlowShown();
+  useBackKeys(isShown ? back.onBack : undefined);
+  return (
+    <>
+      <button
+        type="button" title={backTitle()} onClick={back.onBack}
+        className="flex max-w-[220px] shrink-0 items-center gap-1 rounded-[6px] border bg-background py-[3px] pr-2 pl-1.5 font-medium text-foreground text-xs hover:bg-muted"
+      >
+        <span aria-hidden="true" className="text-muted-foreground">‹</span>
+        <span className="truncate">{back.label}</span>
+      </button>
+      <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
+    </>
+  );
 }
 
 // The workspaces the shown tasks resolve to, in the Comb's order: a legend of the colours the tasks carry, never a filter (the source is the
@@ -143,14 +175,15 @@ interface FlowHeaderProps {
   tabs?: SourceTabs; // #756: an external source is picked: the source header
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   repository?: RepoHeader; // #757: a repository is picked: the repository header
+  back?: BackLink; // #911: the previous screen; only the issue and PR pages pass it, while the back stack is not empty
   loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
 }
 
 /** The flow's header (redesign 10, #542): fluxo, the picked source or todas as sources, the chips of the workspaces the shown tasks resolve
  * to, ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
  * With `tabs` it is the source header instead (#756, handoff 01), on both tabs, with no chips and no last poll; with
- * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. */
-export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, loops = true, onLoops }: FlowHeaderProps) {
+ * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. */
+export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, loops = true, onLoops }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isOwn = tabs !== undefined || repository !== undefined;
   const polled = isOwn ? undefined : lastPolled(state.syncs, source);
@@ -170,6 +203,7 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
     : tabs ? <SourceTitle name={source ?? ''} tabs={tabs} /> : <FlowTitle state={state} source={source} tasks={tasks} />;
   return (
     <section aria-label={t('header.flow')} className="flex h-10 shrink-0 items-center gap-2.5 border-b px-3.5 text-muted-foreground text-xs">
+      {back && <BackButton back={back} />}
       {title}
       <span className="flex-1" />
       {onLoops && (

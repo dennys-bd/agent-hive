@@ -4,6 +4,7 @@ import { ForkEmpty } from '@/components/ForkEmpty';
 import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoPrRow } from '@/components/RepoPrRow';
+import { useNavScroll } from '@/hooks/use-back-stack';
 import { useRepoRead } from '@/hooks/use-repo-issues';
 import { reloadRepositories, repoPath } from '@/hooks/use-repositories';
 import { type MessageKey, t } from '@/i18n';
@@ -34,10 +35,11 @@ function Subbar({ value, open, isLoading, onChange }: { value: PrState; open: nu
 
 // The table (handoff 03): a 34px header on card, 40px rows, then the open count, the cap when hit, and the ↵ hint
 function PrGrid({ prs, state, onOpen, isOriginal }: { prs?: RepoPrs; state: State; onOpen?(row: PrRow): void; isOriginal: boolean }) {
+  const scroller = useNavScroll(); // #911
   const footer = t(isOriginal ? 'prs.footer.original' : 'prs.footer', { n: prs?.counts.open ?? 0 });
   return (
     <div className="mx-3.5 mb-3.5 flex min-h-0 flex-col overflow-hidden rounded-[10px] border">
-      <div className="min-h-0 overflow-auto">
+      <div ref={scroller} className="min-h-0 overflow-auto">
         <table className="block w-full">
           <thead className="block">
             <tr className="grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: COLUMNS }}>

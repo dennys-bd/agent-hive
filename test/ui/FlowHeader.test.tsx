@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
-import { FlowHeader, lastPolled } from '@/components/FlowHeader';
+import { type BackLink, FlowHeader, lastPolled } from '@/components/FlowHeader';
 import { Flow } from '@/components/Flow';
+import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { Task, Stage, State } from '../../src/types';
@@ -178,4 +179,48 @@ test('↺ voltas shows only with onLoops, after the spacer and before the search
   expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'show the loops');
   rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
   expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'hide the loops · only the arrows between stages stay');
+});
+
+const BACK_KEY = { key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }; // goBack off macOS: jsdom is not macOS
+
+test('a back entry starts the header with ‹ and its label, then a 1×14px divider, before the source\'s name; its title names the key as bound, and a click goes back (#911)', async () => {
+  const user = userEvent.setup();
+  const onBack = vi.fn();
+  const tabs = { label: 'GitHub Project', active: 'native' as const, onPick: vi.fn() };
+  const page = (back?: BackLink) => <FlowHeader state={state(tasks)} source="roadmap" tasks={[]} tabs={tabs} back={back} />;
+  const { rerender } = render(page());
+  expect(within(header()).queryByRole('button', { name: 'issue #458' })).not.toBeInTheDocument();
+  rerender(page({ label: 'issue #458', onBack }));
+  const back = within(header()).getByRole('button', { name: 'issue #458' }); // ‹ is aria-hidden: the name is the label
+  expect(header().firstElementChild).toBe(back);
+  expect(back).toHaveTextContent('‹issue #458');
+  expect(back).toHaveClass('max-w-[220px]', 'rounded-[6px]', 'text-xs', 'font-medium');
+  expect(back).toHaveAttribute('title', 'voltar · Alt+←');
+  expect(back.nextElementSibling).toHaveClass('h-3.5', 'w-px', 'bg-border');
+  expect(back.nextElementSibling?.nextElementSibling).toHaveTextContent('roadmap');
+  await user.click(back);
+  expect(onBack).toHaveBeenCalledOnce();
+  setShortcuts({ goBack: 'Alt+[' });
+  onTestFinished(() => setShortcuts({}));
+  rerender(page({ label: 'issue #458', onBack }));
+  expect(back).toHaveAttribute('title', 'voltar · Alt+['); // a rebound key shows
+});
+
+test('Alt+Left and the mouse\'s back button go back only while a back button shows on a shown flow; another mouse button does nothing (#911)', () => {
+  const onBack = vi.fn();
+  const page = (isShown: boolean, back?: BackLink) => (
+    <FlowShownContext.Provider value={isShown}><FlowHeader state={state(tasks)} tasks={[]} back={back} /></FlowShownContext.Provider>
+  );
+  const { rerender } = render(page(true));
+  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(true); // no button: not bound
+  expect(fireEvent.mouseUp(window, { button: 3 })).toBe(true);
+  rerender(page(true, { label: 'issue #458', onBack }));
+  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(false);
+  expect(fireEvent.mouseUp(window, { button: 3 })).toBe(false);
+  expect(fireEvent.mouseUp(window, { button: 0 })).toBe(true);
+  expect(onBack).toHaveBeenCalledTimes(2);
+  rerender(page(false, { label: 'issue #458', onBack })); // hidden under Atividades (#596)
+  expect(fireEvent.keyDown(window, BACK_KEY)).toBe(true);
+  expect(fireEvent.mouseUp(window, { button: 3 })).toBe(true);
+  expect(onBack).toHaveBeenCalledTimes(2);
 });

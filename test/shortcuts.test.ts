@@ -126,7 +126,7 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
-  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
+  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
   assert.deepEqual(FIXED_SHORTCUTS.filter((f) => f.soon).map((f) => f.id), ['goToTab']);
@@ -260,5 +260,14 @@ test('the flow\'s zoom keys (#910): ⌘- ⌘= ⌘0 on both tables, flow rows nev
   assert.deepEqual([displayKeys(['Shift+1'], MAC), displayKeys(['Shift+1'], OTHER)], ['⇧1', 'Shift+1']);
   assert.equal(bindingFromEvent(key({ key: '=', code: 'Equal', metaKey: true }), MAC), 'CmdOrCtrl+=');
   assert.equal(bindingFromEvent(key({ key: '-', code: 'Minus', ctrlKey: true }), OTHER), 'CmdOrCtrl+-');
+  assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
+});
+
+test('goBack (#911): ⌘[ on macOS and Alt+Left elsewhere, a flow key never in a terminal, colliding with nothing: prevPane\'s reserved ⌘[ acts only with an activity shown', () => {
+  assert.deepEqual(pair('goBack'), ['CmdOrCtrl+[', 'Alt+Left']);
+  assert.deepEqual([shortcutDef('goBack').scope, shortcutDef('goBack').inTerminal], ['flow', false]);
+  assert.equal(bindingFromEvent(key({ key: '[', code: 'BracketLeft', metaKey: true }), MAC), 'CmdOrCtrl+[');
+  assert.equal(bindingFromEvent(key({ key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }), OTHER), 'Alt+Left');
+  assert.deepEqual([displayBinding('CmdOrCtrl+[', MAC), displayBinding('Alt+Left', OTHER)], ['⌘[', 'Alt+←']);
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
 });
