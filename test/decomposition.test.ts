@@ -104,6 +104,25 @@ test('Label: is a line of the goal\'s head, taken out of its text; Touches: list
   assert.equal(parseDecomposition(EXAMPLE).decomposition?.label, undefined, 'no Label: line, no label');
 });
 
+test('Label: none, in any case, is no label; and it is never a length problem (#936)', () => {
+  for (const value of ['none', 'None', 'NONE']) {
+    const { decomposition, problems } = parseDecomposition(file('# G', `Label: ${value}`, '## 1 A', ...LEAF, '## 2 B', ...LEAF));
+    assert.deepEqual([problems, decomposition?.label], [[], undefined], value);
+  }
+});
+
+test('Touches: drops a leading ./, and an entry that is . or empty once normalised (#936)', () => {
+  const { decomposition, problems } = parseDecomposition(file('# G', '## 1 A', ...LEAF, 'Touches: ./src/a.ts, ., ./, ././db/, src/', '## 2 B', ...LEAF));
+  assert.deepEqual(problems, []);
+  assert.deepEqual(decomposition?.nodes[0].touches, ['src/a.ts', 'db', 'src']);
+});
+
+test('a top-level node\'s Design: link has no anchor when the goal has no "## Design" (#936)', () => {
+  const { decomposition } = parseDecomposition(file('# G', '## 1 A', ...LEAF, '## 2 B', ...LEAF));
+  assert.ok(decomposition);
+  assert.equal(designLink(decomposition, decomposition.nodes[0], ADDRESS), ADDRESS);
+});
+
 test('every problem is reported at its line, and a file with one returns no tree (#865)', () => {
   for (const [name, lines, expected] of CASES) {
     const parsed = parseDecomposition(file(...lines));

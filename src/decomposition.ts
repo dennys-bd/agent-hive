@@ -25,6 +25,7 @@ const FENCE = /^(`{3,}|~{3,})(.*)$/;
 const NODE_HEADING = /^(\d+(?:\.\d+)*)(?:\s+(.*))?$/;
 const MARKERS: readonly (readonly [string, Marker])[] = [['Delivers:', 'delivers'], ['Consumes:', 'consumes'], ['Blocked by:', 'blockedBy'], ['Touches:', 'touches']];
 const LABEL = 'Label:';
+const NO_LABEL = 'none';
 const SUBSECTIONS: Readonly<Record<string, Subsection>> = { Scope: 'scope', Design: 'design', 'Open points': 'openPoints', 'Acceptance criteria': 'criteria' };
 
 // The file's lines with their numbers: a fenced block's lines are marked, so no heading or marker is read inside one; the first mermaid
@@ -126,6 +127,8 @@ function itemsOf(part: Part | undefined, problems: DecompositionProblem[]): stri
   return items;
 }
 
+const normalisedPath = (path: string): string => path.replace(/^(?:\.\/)+/, '').replace(/\/+$/, '');
+
 function nodeOf(id: string, title: string, part: Part, problems: DecompositionProblem[]): ParsedNode {
   const { lists, at, rest } = takeMarkers(part.lines, problems);
   const { body, subs } = subsectionsOf(rest, problems);
@@ -133,7 +136,7 @@ function nodeOf(id: string, title: string, part: Part, problems: DecompositionPr
   const node: DecompositionNode = {
     id, title, body: tidy(body), scope: tidy(subs.get('scope')?.lines ?? []), ...(design === undefined ? {} : { design: tidy(design.lines) }),
     openPoints: itemsOf(subs.get('openPoints'), problems), criteria: itemsOf(subs.get('criteria'), problems), ...lists,
-    touches: lists.touches.map((path) => path.replace(/\/+$/, '')), // #936: `src/` and `src` are one folder
+    touches: lists.touches.map(normalisedPath).filter((path) => path !== '' && path !== '.'), // #936: `src/`, `./src` and `src` are one folder; `.` is none
   };
   return { node, line: part.n, at: { ...at, design: design?.n, openPoints: subs.get('openPoints')?.n, criteria: subs.get('criteria')?.n } };
 }
@@ -162,7 +165,10 @@ function takeLabel(head: Line[], problems: DecompositionProblem[]): { label?: st
   for (const again of found.slice(1)) problems.push({ line: again.n, message: `"${LABEL}" repeated` });
   const [first] = found;
   const rest = head.filter((line) => !found.includes(line));
-  return first === undefined ? { line: 1, rest } : { label: first.text.trim().slice(LABEL.length).trim(), line: first.n, rest };
+  if (first === undefined) return { line: 1, rest };
+  const label = first.text.trim().slice(LABEL.length).trim();
+  // `none` is the word the setting uses for no label (case-insensitive): it must not become a label named "none"
+  return label.toLowerCase() === NO_LABEL ? { line: first.n, rest } : { label, line: first.n, rest };
 }
 
 /** decomposition.md as the Hive reads it (#865): the goal (the `# ` title and its text, the first mermaid block dropped), `## Design`, the
@@ -209,7 +215,8 @@ export const fileAddress = (repository: string, branch: string, path: string): s
  * a repeated anchor, so two nodes whose ids differ only by dots and share a title (1.2 A, 12 A) both link the first */
 export function designLink(d: Decomposition, node: DecompositionNode, address: string): string {
   const parent = d.nodes.find((n) => n.id === parentOf(node.id));
-  return `${address}#${anchorOf(parent === undefined ? 'Design' : `${parent.id} ${parent.title}`)}`;
+  if (parent === undefined) return d.design === undefined ? address : `${address}#${anchorOf('Design')}`; // no `## Design`, no anchor to land on
+  return `${address}#${anchorOf(`${parent.id} ${parent.title}`)}`;
 }
 
 // The `## Decomposition` block (#936): what has no native GitHub relation, plus Parent: for the reader; a line only when it has a value
