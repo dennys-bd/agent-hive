@@ -842,3 +842,59 @@ test('the chevron collapses a tree\'s group in its own node only, and the collap
   expect(within(nodeOf('dev')).queryByText('#1 Task 1')).not.toBeInTheDocument();
   expect(within(nodeOf('dev')).getByText('#4 Task 4')).toBeInTheDocument();
 });
+
+// #35: the handoff's tree over both stages: #870 lists #871…#874, #872 lists #875 and #876; #9 in dev is in no tree
+const handoff = (): State => state([
+  linked('870', 'dev', { children: ['I871', 'I872', 'I873', 'I874'] }), linked('871', 'dev', { parent: 'I870' }),
+  linked('872', 'dev', { parent: 'I870', children: ['I875', 'I876'] }), linked('873', 'review', { parent: 'I870' }), linked('874', 'review', { parent: 'I870' }),
+  linked('875', 'dev', { parent: 'I872' }), linked('876', 'review', { parent: 'I872' }), task('9', 'dev'),
+], [worker('s1')]);
+const HANDOFF_IDS = ['870', '871', '872', '873', '874', '875', '876', '9'];
+const cardOf = (id: string): HTMLElement => screen.getByText(`#${id} Task ${id}`).closest('li')!;
+const faded = (): string[] => HANDOFF_IDS.filter((id) => cardOf(id).classList.contains('opacity-30'));
+const trail = (): HTMLElement | null => screen.queryByRole('navigation', { name: 'árvore em foco' });
+const focusOn = (id: string): HTMLElement => within(cardOf(id)).getByRole('button', { name: 'focar ›' });
+
+test('focar › on #872 fades every card but #872, #875 and #876, keeps the node counts, and shows the trail #870 › #872 with 3 tarefas · o resto esmaecido (#35)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  render(<Flow state={handoff()} />);
+  expect(faded()).toEqual([]);
+  expect(trail()).not.toBeInTheDocument();
+  await user.click(focusOn('872'));
+  expect(faded()).toEqual(['870', '871', '873', '874', '9']);
+  expect(within(header('dev')).getByText('5')).toBeInTheDocument();
+  expect(within(header('review')).getByText('3')).toBeInTheDocument();
+  const nav = trail()!;
+  expect(within(nav).getByText('⑂ árvore')).toHaveClass('text-muted-foreground');
+  expect(within(nav).getByRole('button', { name: 'focar #870' })).toHaveTextContent('#870');
+  expect(within(nav).getByText('#872').tagName).toBe('SPAN');
+  expect(within(nav).queryByRole('button', { name: 'focar #872' })).not.toBeInTheDocument();
+  expect(screen.getByText('3 tarefas · o resto esmaecido')).toHaveClass('text-muted-foreground');
+});
+
+test('#870 in the trail widens the focus to the whole tree; × leaves it; a new source drops it for good; a focused task that leaves the list takes the trail with it (#35)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  const s = handoff();
+  const { rerender } = render(<Flow state={s} />);
+  await user.click(focusOn('872'));
+  await user.click(within(trail()!).getByRole('button', { name: 'focar #870' }));
+  expect(faded()).toEqual(['9']);
+  expect(screen.getByText('7 tarefas · o resto esmaecido')).toBeInTheDocument();
+  await user.click(within(trail()!).getByRole('button', { name: 'sair do foco' }));
+  expect(trail()).not.toBeInTheDocument();
+  expect(faded()).toEqual([]);
+  await user.click(focusOn('872'));
+  rerender(<Flow state={s} source="hive" />);
+  expect(trail()).not.toBeInTheDocument();
+  rerender(<Flow state={s} />);
+  expect(trail()).not.toBeInTheDocument(); // back on the first source the focus stays dropped
+  expect(faded()).toEqual([]);
+  await user.click(focusOn('872'));
+  rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} />);
+  expect(trail()).not.toBeInTheDocument();
+  expect(document.querySelector('.opacity-30')).toBeNull();
+});

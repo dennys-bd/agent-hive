@@ -392,7 +392,7 @@ test('a child shows ↳ before its id and a root does not; a parent shows N filh
   expect(segments.map((s) => s.className.match(/bg-[a-z-]+/)?.[0])).toEqual(['bg-muted-foreground', 'bg-working', 'bg-empty', 'bg-muted-foreground', 'bg-empty']);
   expect(within(parent).queryByText('auto')).not.toBeInTheDocument();
   expect(within(tileOf('#3 Task 3')).getByText('auto')).toBeInTheDocument();
-  expect(within(parent).queryByRole('button', { name: 'focar ›' })).not.toBeInTheDocument(); // Flow passes no onFocusTree until #35
+  expect(within(parent).getByRole('button', { name: 'focar ›' })).toBeInTheDocument(); // #35: Flow wires the focus
 });
 
 test('focar › shows with onFocusTree and calls it with the parent\'s itemId; isHighlighted draws the foreground border and its ring (#34)', async () => {
