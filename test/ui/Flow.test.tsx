@@ -334,7 +334,7 @@ test('a task its stage run holds gets no drop line in another stage but still re
   rect.mockRestore();
 });
 
-test('the flow is a canvas (#134): one node per stage with its executor line, the arrows\' pills and the end circle; lista › opens the node\'s list panel and selects the node', async () => {
+test('the flow is a canvas (#134, #908): one node per stage with its executor line, the arrows\' pills and no end circle; lista › opens the node\'s list panel and selects the node', async () => {
   const user = userEvent.setup();
   const transitions = [{ from: 'dev', to: 'review', when: 'done' as const }, { from: 'review', to: 'end', when: 'done' as const }];
   vi.spyOn(Element.prototype, 'scrollHeight', 'get').mockReturnValue(400);
@@ -343,8 +343,8 @@ test('the flow is a canvas (#134): one node per stage with its executor line, th
   const canvas = screen.getByRole('region', { name: 'fluxograma' });
   expect(canvas).toHaveClass('rounded-[10px]', 'border', 'bg-background');
   expect(within(canvas).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual(['dev', 'review']);
-  expect(within(canvas).getAllByText('terminou')).toHaveLength(2);
-  expect(within(canvas).getByText('fim')).toBeInTheDocument();
+  expect(within(canvas).getAllByText('terminou')).toHaveLength(1); // the arrow to end is drawn only in Settings (#908)
+  expect(within(canvas).queryByText('fim')).not.toBeInTheDocument();
   await user.click(within(canvas).getAllByRole('button', { name: 'lista ›' })[0]);
   expect(screen.getByRole('region', { name: 'dev' })).toBeInTheDocument();
   expect(canvas.querySelector('[data-stage="dev"]')).toHaveClass('border-foreground');

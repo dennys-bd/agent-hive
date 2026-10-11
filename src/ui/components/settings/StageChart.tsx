@@ -25,7 +25,7 @@ interface StageChartProps { stages: StageDraft[]; transitions: TransitionDraft[]
  * a node or a pill selects what the editor below shows. The wrapper is the canvas (#887): it bleeds to the card body's edges and scrolls
  * sideways when the chart is wider; the chart is centred. */
 export function StageChart({ stages, transitions, selection, defaultAgent, onSelect }: StageChartProps) {
-  const layout = layoutFlow(stages.map((s) => ({ id: s.id, height: NODE_HEIGHT })), transitions.map((d) => ({ id: d.id, from: d.from, to: d.to, automatic: isAutomatic(d.when) })), NODE_WIDTH);
+  const layout = layoutFlow(stages.map((s) => ({ id: s.id, height: NODE_HEIGHT })), transitions.map((d) => ({ id: d.id, from: d.from, to: d.to, automatic: isAutomatic(d.when) })), NODE_WIDTH, { end: true });
   const labels = Object.fromEntries(transitions.map((d) => [d.id, draftLabel(d)]));
   // -mx-5 undoes SettingsGroup's body p-5, so the canvas reaches the card's edges as in 6b
   return (
