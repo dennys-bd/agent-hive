@@ -26,7 +26,7 @@ import { renderPrompt } from '../src/spawn.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
@@ -330,13 +330,13 @@ test('git refusing to create the worktree is a spawnFailed: the worker frees, th
   await waitFor(() => work0(server)?.error !== undefined);
   assert.equal(workers.length, 0, 'nothing was launched');
   assert.equal(worker0(server).status, 'empty', 'the worker is free again');
-  assert.equal(work0(server)?.error, stderr.trim(), 'git\'s words, not execFile\'s command line');
+  assert.equal(work0(server)?.error, SPAWN_FAILED + stderr.trim(), 'git\'s words, not execFile\'s command line');
   // A git that answers nothing at all (no repository, no git on PATH) fails at the very first command: the base step tolerates
   // its own failures, but without a listing there is no worktree to hand the worker, so the task stops here too.
   const broken = await start(t, BODY, undefined, {}, { exec: async () => { throw new Error('fatal: not a git repository'); } });
   await waitFor(() => work0(broken.server)?.error !== undefined);
   assert.equal(broken.workers.length, 0);
-  assert.equal(work0(broken.server)?.error, 'fatal: not a git repository');
+  assert.equal(work0(broken.server)?.error, `${SPAWN_FAILED}fatal: not a git repository`);
 });
 
 test('POST /hooks/exit frees its worker and stops the task (#283)', async (t) => {
@@ -1040,16 +1040,16 @@ test('a spawn failure frees the worker and marks the task with the message: the 
   const { base, server, workers } = await start(t, BODY, undefined, { startError: 'pty: posix_spawnp failed.' });
   await waitFor(() => worker0(server).status === 'empty');
   assert.equal(workers.length, 1, 'no retry');
-  assert.equal(work0(server)?.error, 'pty: posix_spawnp failed.');
+  assert.equal(work0(server)?.error, `${SPAWN_FAILED}pty: posix_spawnp failed.`);
   assert.equal(task0(server).stage, 'fila');
   assert.equal(server.getState()?.error, 'pty: posix_spawnp failed.');
   assert.deepEqual(await json(postJson(`${base}/sources/refresh`)), { ok: true });
   assert.equal(workers.length, 1, 'a poll does not retry either');
-  assert.equal(work0(server)?.error, 'pty: posix_spawnp failed.', 'the error survives the poll');
+  assert.equal(work0(server)?.error, `${SPAWN_FAILED}pty: posix_spawnp failed.`, 'the error survives the poll');
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   assert.equal(workers.length, 2, 'the manual start runs it again');
   await waitFor(() => worker0(server).status === 'empty'); // the fake fails every time: the task shows the error again
-  assert.equal(work0(server)?.error, 'pty: posix_spawnp failed.');
+  assert.equal(work0(server)?.error, `${SPAWN_FAILED}pty: posix_spawnp failed.`);
 });
 
 test('the kill effect waits for the pool before the next effect: a new stage of the same task only spawns after the old session is gone', async (t) => {

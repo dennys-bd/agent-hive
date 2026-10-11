@@ -415,6 +415,9 @@ export interface StageCommands {
 }
 /** How a commands stage's failure starts on its activity's error (#755), the failed commands after it: the card shows it in the viewer's language. */
 export const CHECKS_FAILED = 'checks failed: ';
+/** How a failed start begins on its activity's error (#945), the spawn's raw message after it: the page shows its spawnFailureCode's short
+ * message in the viewer's language, the raw text only behind details. State.error keeps the raw message. */
+export const SPAWN_FAILED = 'start failed: ';
 /** One CI check on a PR's last commit as a wait for CI reads it (#834): #758's PrCheck (success, failure or pending; url: its page), with the
  * PR it was read on and, for a check run, the Actions run behind it: what a re-run and the log fetch name. */
 export interface CiCheck extends PrCheck { pr: string; runId?: number }

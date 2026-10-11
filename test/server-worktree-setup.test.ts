@@ -8,7 +8,7 @@ import { shortId } from '../src/log.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { ChannelView } from '../src/console.js';
 import type { Activity, Task, Exec, OpenResult, SettingsBody, Worker } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
@@ -121,7 +121,7 @@ test('a setup that fails in a spawn is a spawnFailed: no worker starts, the work
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   const reason = 'setup failed at line 2 (COPY .env): not found in hive';
   assert.equal(workers.length, 0);
-  assert.deepEqual([work0(server)?.error, work0(server)?.setup], [reason, undefined]);
+  assert.deepEqual([work0(server)?.error, work0(server)?.setup], [SPAWN_FAILED + reason, undefined]);
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at line 2 \(COPY \.env\): not found in hive`)}$`));
   assert.equal(runOf(server), undefined, 'the worker is free again');
   assert.equal(await marked(gitDir), false);
