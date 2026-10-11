@@ -35,9 +35,14 @@ const refuse = (res: Response, refusal: Refusal): void => {
   res.status(refusal.status).json({ error: refusal.message });
 };
 
-const markOf = (xy: string): GitMark => (xy === '??' || RENAME_OR_COPY.test(xy) || xy.startsWith('A') ? 'A' : 'M');
+// D first (#903): an entry deleted in the index or the worktree is gone from the disk, whatever its other letter says
+const markOf = (xy: string): GitMark => {
+  if (xy.includes('D')) return 'D';
+  return xy === '??' || RENAME_OR_COPY.test(xy) || xy.startsWith('A') ? 'A' : 'M';
+};
 
-/** `git status --porcelain=v1 -z` as marks and removed paths (redesign 07). A rename or copy carries its old path as the next entry, which is
+/** `git status --porcelain=v1 -z` as marks and removed paths (redesign 07). A removed path is marked D as well (#903): the tree leaves it out
+ *  of its files, and its folders take the mark. A rename or copy carries its old path as the next entry, which is
  *  skipped: the new path reads as new; with --ignored, the `!!` entries as ignored paths (#1). Pure: no git. */
 export function parseStatus(text: string): { marks: Record<string, GitMark>; deleted: Set<string>; ignored: string[] } {
   const entries = text.split('\0');
@@ -51,8 +56,10 @@ export function parseStatus(text: string): { marks: Record<string, GitMark>; del
     const path = entry.slice(3);
     if (RENAME_OR_COPY.test(xy)) i++;
     if (xy === IGNORED_XY) ignored.push(path);
-    else if (xy.includes('D')) deleted.add(path);
-    else marks[path] = markOf(xy);
+    else {
+      marks[path] = markOf(xy);
+      if (marks[path] === 'D') deleted.add(path);
+    }
   }
   return { marks, deleted, ignored };
 }
@@ -62,14 +69,16 @@ export function parseStatus(text: string): { marks: Record<string, GitMark>; del
  *  `inRepo` is the folder relative to the repository, '' at its root. Only names on disk; sorted. Pure: no git. */
 export function repoViewOf(status: string, inRepo: string, children: FolderEntries): NonNullable<FolderEntries['repo']> {
   const prefix = inRepo === '' ? '' : `${inRepo}/`;
-  const { marks, ignored } = parseStatus(status);
+  const { marks, deleted, ignored } = parseStatus(status);
   const isIgnored = (name: string): boolean => {
     const path = `${prefix}${name}`;
     return ignored.some((entry) => entry === path || entry === `${path}/` || (entry.endsWith('/') && path.startsWith(entry)));
   };
   // hasOwn: a file named `constructor` must not pick up Object's
   const childMarks = children.files.flatMap((name) => (Object.hasOwn(marks, `${prefix}${name}`) ? [[name, marks[`${prefix}${name}`]] as const] : []));
-  return { marks: Object.fromEntries(childMarks), ignored: [...children.folders, ...children.files].filter(isIgnored).sort() };
+  // #903: a deleted direct child is not on disk, so no row; its mark is there for the folders above it
+  const goneMarks = [...deleted].filter((path) => path.startsWith(prefix) && !path.includes('/', prefix.length)).map((path) => [path.slice(prefix.length), 'D'] as const);
+  return { marks: Object.fromEntries([...childMarks, ...goneMarks]), ignored: [...children.folders, ...children.files].filter(isIgnored).sort() };
 }
 
 // --no-optional-locks: a status refreshes the index, and its lock would race the worker's own git; core.fsmonitor=false as in diff.ts.
@@ -108,7 +117,7 @@ function ignoredOf(listing: string, nested: readonly string[]): IgnoredEntries {
   return { files: entries.filter((entry) => !entry.endsWith('/')).sort(), folders: [...folders, ...nested].sort() };
 }
 
-/** Every path of the worktree git does not ignore (tracked, and untracked not excluded), minus the deleted ones, with their marks; its empty
+/** Every path of the worktree git does not ignore (tracked, and untracked not excluded), minus the deleted ones, with their marks (a deleted path's `D` in the marks only, #903); its empty
  *  folders (#818); what git ignores and its nested repositories (HIVE-22); and its root, absolute. */
 export async function taskTree(worktree: string, exec: Exec, hasGit: (folder: string) => Promise<boolean> = holdsGit): Promise<TaskTree> {
   const [listed, status, directories, ignored] = await Promise.all([

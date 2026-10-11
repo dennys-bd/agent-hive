@@ -29,7 +29,7 @@ import { readView, writeView } from '@/lib/view-state';
 export type SideTab = 'files' | 'details';
 
 // #903: the git marks have their own tokens, so a modified file never reads as a warning
-const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added' };
+const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added', D: 'text-git-deleted' };
 
 // A file's diagnostic as the tree shows it (#780): the most severe count, errors before warnings; infos never show
 interface Worst { n: number; tone: string; family: 'editor.diag.errors' | 'editor.diag.warnings' }
