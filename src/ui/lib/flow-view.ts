@@ -1,13 +1,12 @@
 // The flowchart's view (#909): the loops toggle, and the zoom and pan #910 applies. Per-viewer UI state kept in the view state (#484), never a
 // setting. One flat value: there is one flowchart today, and a key per flowchart can wrap it when tabs per flowchart arrive. Each field is read
 // on its own, so an unreadable zoom never resets the toggle.
+import { ZOOM_MAX, ZOOM_MIN } from './flow-zoom.js';
 import { readView, writeView } from './view-state.js';
 
 export interface FlowView { loops: boolean; zoom: number; pan: { x: number; y: number } }
 
 export const FLOW_VIEW_DEFAULTS: FlowView = { loops: true, zoom: 1, pan: { x: 0, y: 0 } };
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 1.5;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const finiteOr = (value: unknown, fallback: number): number => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
