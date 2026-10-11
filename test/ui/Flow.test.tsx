@@ -898,3 +898,44 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   expect(trail()).not.toBeInTheDocument();
   expect(document.querySelector('.opacity-30')).toBeNull();
 });
+
+test('Esc leaves the focus, prevented so the details panel\'s Escape never sees it, and the next Esc is the panel\'s; Esc in buscar tarefas only clears the search (#35)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const panel = vi.fn();
+  // useClosePanelKey's rule (#426): on the document, bubbling, and it skips a prevented key
+  const panelKey = (event: KeyboardEvent): void => { if (event.key === 'Escape' && !event.defaultPrevented) panel(); };
+  document.addEventListener('keydown', panelKey);
+  onTestFinished(() => document.removeEventListener('keydown', panelKey));
+  const user = userEvent.setup();
+  render(<Flow state={handoff()} />);
+  await user.click(focusOn('872'));
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'buscar tarefas' }), { key: 'Escape' });
+  expect(trail()).toBeInTheDocument();
+  expect(panel).not.toHaveBeenCalled();
+  expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(false);
+  expect(trail()).not.toBeInTheDocument();
+  expect(faded()).toEqual([]);
+  expect(panel).not.toHaveBeenCalled();
+  expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+  expect(panel).toHaveBeenCalledOnce();
+});
+
+test('Esc keeps the focus while the flow is hidden under Atividades and from inside an open dialog (#35)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState());
+  const user = userEvent.setup();
+  const s = handoff();
+  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={s} /></FlowShownContext.Provider>;
+  const { rerender } = render(flow(true));
+  await user.click(focusOn('872'));
+  rerender(flow(false));
+  expect(fireEvent.keyDown(document.body, { key: 'Escape' })).toBe(true);
+  rerender(flow(true));
+  expect(trail()).toBeInTheDocument();
+  const dialog = document.body.appendChild(document.createElement('div'));
+  dialog.setAttribute('role', 'dialog');
+  onTestFinished(() => dialog.remove());
+  expect(fireEvent.keyDown(dialog, { key: 'Escape' })).toBe(true);
+  expect(trail()).toBeInTheDocument();
+});

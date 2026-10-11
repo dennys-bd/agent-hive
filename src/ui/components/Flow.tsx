@@ -46,7 +46,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const isShown = useIsFlowShown();
   const flow = useFlowView(isShown); // the flowchart's view (#909, #910): loops, zoom and pan, kept in flowView
   const isTree = flow.view.tree ?? hasTree(state.tasks); // #34: until the first click, on when a tree exists in the whole task list
-  const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, source); // #35: the focus on a subtree, never in flowView
+  const { itemId: focused, focus, focusOn, leave } = useTreeFocus(state.tasks, source, isShown); // #35: the focus on a subtree, never in flowView
   const shown = source === undefined ? state.tasks : state.tasks.filter((c) => sourceOf(c) === source);
   const of = (stage: string) => stageTasks(state, stage, source, filters.rulesOf(stage), search);
   const node = (stage: Stage, maxHeight: number) => {
