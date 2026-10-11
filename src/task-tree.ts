@@ -20,8 +20,9 @@ export function parentOf(tasks: readonly Task[], itemId: string): Task | undefin
   return parent === undefined ? undefined : taskOf(tasks, parent);
 }
 
-// The task and its ancestors, nearest first. A repeat ends the walk: GitHub forbids cycles, but the wire is not trusted
-function lineage(tasks: readonly Task[], itemId: string): Task[] {
+/** The task and its ancestors, nearest first. A repeat ends the walk: GitHub forbids cycles, but the wire is not trusted. Exported for the
+ * flow's focus trail (#35). */
+export function lineage(tasks: readonly Task[], itemId: string): Task[] {
   const chain: Task[] = [];
   for (let t = taskOf(tasks, itemId); t !== undefined && !chain.includes(t); t = parentOf(tasks, t.item.itemId)) chain.push(t);
   return chain;
