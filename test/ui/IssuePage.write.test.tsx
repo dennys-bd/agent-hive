@@ -33,7 +33,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 // Beside the details panel's slot (#64): the labels are the properties' and render there
 const renderPage = () => render(
-  <IssuePage state={STATE} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onGoTo={vi.fn()} />,
+  <IssuePage state={STATE} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onGoTo={vi.fn()} onOpenPr={vi.fn()} />,
   { wrapper: WithSlot },
 );
 const posted = (path: string): unknown[] => fetchMock.mock.calls.filter(([input, init]) => String(input) === path && init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));

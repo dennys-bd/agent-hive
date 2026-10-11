@@ -5,6 +5,7 @@ import type { State } from '../../types';
 import { DetailSlot, SlotTitle } from '@/components/DetailSlot';
 import { IssueBody } from '@/components/IssueBody';
 import { IssueProperties } from '@/components/IssueProperties';
+import { TaskPrList } from '@/components/TaskPrList';
 import { useIssue } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 
@@ -17,13 +18,15 @@ export interface IssuePageProps {
   workspace?: string; // the repository's workspace: the issue's when it is no task
   header(reload: () => Promise<void>): ReactNode; // the header it was opened from; its atualizar reads the issue again
   onGoTo(taskId: string): void;
+  onOpenPr(url: string): void; // #65: the task's PRs' "open", the dashboard's PR opener: its page when its repository is listed, else GitHub
 }
 
 /** An issue's own page (#757, handoff 01 "Página da issue"): one page for both lists, under the header it was opened from. Read when it opens
  * and after every write, never polled. Its properties are its block in the details panel's slot (#64), headed by the issue's title when the
- * issue is no task; while it reads, or after its read fails, the slot shows the same line as the center, so the panel is never empty. */
+ * issue is no task; while it reads, or after its read fails, the slot shows the same line as the center, so the panel is never empty. Under the properties, the task's PRs (#65): here and not in IssueProperties, which the PR page shares, where
+ * the stack lists them. */
 export function IssuePage(props: IssuePageProps) {
-  const { state, issue: ref, meta, workspace, header, onGoTo } = props;
+  const { state, issue: ref, meta, workspace, header, onGoTo, onOpenPr } = props;
   const { load, reload } = useIssue(ref.repository, ref.number);
   if (load.kind !== 'issue') {
     const line = load.kind === 'loading' ? t('project.loading') : load.message;
@@ -47,6 +50,7 @@ export function IssuePage(props: IssuePageProps) {
       <DetailSlot>
         {task === undefined && <SlotTitle>{issue.title}</SlotTitle>}
         <IssueProperties issue={issue} task={task} state={state} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload} />
+        {task && <TaskPrList task={task} state={state} onOpenPr={onOpenPr} />}
       </DetailSlot>
     </div>
   );
