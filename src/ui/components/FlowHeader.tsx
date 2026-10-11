@@ -15,9 +15,10 @@ import { binding, isMac } from '@/lib/shortcut-bindings';
 import { workspaceColor } from '@/lib/workspace-color';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
-// The loops toggle's two looks (#909): the dark twins beat the outline variant's dark:bg-input/30, which would otherwise paint both alike
-const LOOPS_ON = 'bg-muted text-foreground dark:bg-muted';
-const LOOPS_OFF = 'bg-transparent text-muted-foreground dark:bg-transparent';
+// The header toggles' two looks, ↺ loops (#909) and ⑂ tree (#34): the dark twins beat the outline variant's dark:bg-input/30, which would
+// otherwise paint both alike
+const TOGGLE_ON = 'bg-muted text-foreground dark:bg-muted';
+const TOGGLE_OFF = 'bg-transparent text-muted-foreground dark:bg-transparent';
 
 /** The latest poll among the shown sources (#542): the picked one, or every one; local 24h HH:MM, undefined while none has polled. */
 export function lastPolled(syncs: Record<string, SourceSync>, source?: string): string | undefined {
@@ -177,13 +178,14 @@ interface FlowHeaderProps {
   repository?: RepoHeader; // #757: a repository is picked: the repository header
   back?: BackLink; // #911: the previous screen; only the issue and PR pages pass it, while the back stack is not empty
   loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
+  tree?: boolean; onTree?(): void; // #34: the ⑂ tree toggle, the value Flow resolved; only Flow passes them, as with ↺ loops
 }
 
 /** The flow's header (redesign 10, #542): fluxo, the picked source or todas as sources, the chips of the workspaces the shown tasks resolve
- * to, ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
+ * to, ⑂ tree with `onTree` (#34), ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
  * With `tabs` it is the source header instead (#756, handoff 01), on both tabs, with no chips and no last poll; with
  * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. */
-export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, loops = true, onLoops }: FlowHeaderProps) {
+export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isOwn = tabs !== undefined || repository !== undefined;
   const polled = isOwn ? undefined : lastPolled(state.syncs, source);
@@ -206,8 +208,13 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
       {back && <BackButton back={back} />}
       {title}
       <span className="flex-1" />
+      {onTree && (
+        <Button type="button" variant="outline" size="xs" aria-pressed={tree} title={t(tree ? 'flow.tree.ungroup' : 'flow.tree.group')} className={tree ? TOGGLE_ON : TOGGLE_OFF} onClick={onTree}>
+          {t('flow.tree')}
+        </Button>
+      )}
       {onLoops && (
-        <Button type="button" variant="outline" size="xs" aria-pressed={loops} title={t(loops ? 'flow.loops.hide' : 'flow.loops.show')} className={loops ? LOOPS_ON : LOOPS_OFF} onClick={onLoops}>
+        <Button type="button" variant="outline" size="xs" aria-pressed={loops} title={t(loops ? 'flow.loops.hide' : 'flow.loops.show')} className={loops ? TOGGLE_ON : TOGGLE_OFF} onClick={onLoops}>
           {t('flow.loops')}
         </Button>
       )}

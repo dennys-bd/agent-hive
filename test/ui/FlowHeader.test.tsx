@@ -224,3 +224,22 @@ test('Alt+Left and the mouse\'s back button go back only while a back button sho
   expect(fireEvent.mouseUp(window, { button: 3 })).toBe(true);
   expect(onBack).toHaveBeenCalledTimes(2);
 });
+
+test('⑂ árvore shows only with onTree, right before ↺ voltas, pressed with its ungroup title when on and its group title when off; a click calls onTree (#34)', async () => {
+  const user = userEvent.setup();
+  const onTree = vi.fn();
+  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} onLoops={() => {}} />);
+  expect(screen.queryByRole('button', { name: '⑂ árvore' })).not.toBeInTheDocument();
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} tree onTree={onTree} onLoops={() => {}} />);
+  const tree = screen.getByRole('button', { name: '⑂ árvore' });
+  expect(tree).toHaveAttribute('aria-pressed', 'true');
+  expect(tree).toHaveAttribute('title', 'agrupado por árvore · clique para desagrupar');
+  expect(tree).toHaveClass('bg-muted', 'text-foreground');
+  expect(tree.nextElementSibling).toBe(screen.getByRole('button', { name: '↺ voltas' }));
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} tree={false} onTree={onTree} onLoops={() => {}} />);
+  expect(tree).toHaveAttribute('aria-pressed', 'false');
+  expect(tree).toHaveAttribute('title', 'agrupar por árvore');
+  expect(tree).toHaveClass('bg-transparent', 'text-muted-foreground');
+  await user.click(tree);
+  expect(onTree).toHaveBeenCalledOnce();
+});
