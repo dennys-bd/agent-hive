@@ -612,7 +612,7 @@ test('namespaced prefixes parent, every children id and every closedChildren id 
     resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {},
     listItems: async () => [{ item: { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url: '', parent: 'PVTI_1', children: ['PVTI_3', 'PVTI_4'], closedChildren: ['PVTI_4'] }, column: 'Ready' }],
   };
-  const entry: SourceConfig = { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED };
+  const entry: SourceConfig = { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
   const [{ item }] = await namespaced(entry, adapter).listItems();
   assert.deepEqual([item.parent, item.children, item.closedChildren], ['work:PVTI_1', ['work:PVTI_3', 'work:PVTI_4'], ['work:PVTI_4']]);
 });
