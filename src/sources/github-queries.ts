@@ -208,9 +208,16 @@ export const SEARCH_ISSUES = `query($q: String!) {
 export const REPOSITORY_ID = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) { id }
 }`;
-export const CREATE_ISSUE = `mutation($repositoryId: ID!, $title: String!, $body: String!) {
-  createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body }) { issue { id number url } }
-}`; // url: #846 names it when the Project write fails after the issue exists
+export const CREATE_ISSUE = `mutation($repositoryId: ID!, $title: String!, $body: String!, $labelIds: [ID!]) {
+  createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds }) { issue { id number url } }
+}`; // url: #846 names it when the Project write fails after the issue exists; labelIds: a decomposition's label (#936), none when not sent
+// A decomposition's label (#936): found by name, else created in the repository
+export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: String!) {
+  repository(owner: $owner, name: $name) { label(name: $label) { id } }
+}`;
+export const CREATE_LABEL = `mutation($repositoryId: ID!, $name: String!, $color: String!) {
+  createLabel(input: { repositoryId: $repositoryId, name: $name, color: $color }) { label { id } }
+}`;
 // An issue already in the project answers its existing item: a replay is harmless
 export const ADD_PROJECT_ITEM = `mutation($projectId: ID!, $contentId: ID!) {
   addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) { item { id } }
@@ -298,6 +305,8 @@ export interface IssueIdData { repository?: { issue?: { id: string } | null } | 
 export interface SearchIssuesData { search?: { nodes: Partial<GhBlockerRef>[] } | null } // #57: a node that is no issue answers {}
 export interface CreateIssueData { createIssue?: { issue?: { id: string; number: number; url: string } | null } | null } // #865
 export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: string } | null } | null } // #865
+export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
+export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
 
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */
 export interface GhIssueChoices {

@@ -8,7 +8,8 @@ import { ownerName, repositoryOf } from './repos/github-repos.js';
 import { ADD_COMMENT } from './repos/github-repo-queries.js';
 import type { GqlJson } from './sources/github-gql.js';
 import {
-  ADD_BLOCKED_BY, ADD_PROJECT_ITEM, ADD_SUB_ISSUE, type AddProjectItemData, CREATE_ISSUE, type CreateIssueData, ISSUE_ID, type IssueIdData, REPOSITORY_ID, SET_OPTION,
+  ADD_BLOCKED_BY, ADD_PROJECT_ITEM, ADD_SUB_ISSUE, type AddProjectItemData, CREATE_ISSUE, CREATE_LABEL, type CreateIssueData, type CreateLabelData, ISSUE_ID,
+  type IssueIdData, REPOSITORY_ID, REPOSITORY_LABEL, type RepositoryLabelData, SET_OPTION,
 } from './sources/github-queries.js';
 import type { Decomposition, DecompositionNode } from './types.js';
 
@@ -25,7 +26,7 @@ export interface WriteDeps {
 }
 
 interface Issue { id: string; number: number }
-interface Ctx extends WriteDeps { target: WriteTarget; recorded: Readonly<Record<string, number>>; repositoryId(): Promise<string> }
+interface Ctx extends WriteDeps { target: WriteTarget; recorded: Readonly<Record<string, number>>; repositoryId(): Promise<string>; labelIds(): Promise<string[]> }
 
 // ponytail: GitHub's words for a sub-issue or a blocker already linked; a stricter match if it ever swallows a real refusal
 const EXISTING_LINK = /already|duplicate/i;
@@ -35,6 +36,19 @@ const once = <T>(make: () => Promise<T>): (() => Promise<T>) => {
   let made: Promise<T> | undefined;
   return () => (made ??= make());
 };
+
+const LABEL_COLOR = 'ededed'; // GitHub's own grey for a new label (#936): the user recolours it on GitHub
+
+// The file's label by name, created in the repository when it lacks it (#936)
+async function labelId(ctx: Pick<Ctx, 'gql' | 'target' | 'repositoryId'>, name: string): Promise<string> {
+  const found = (await ctx.gql(REPOSITORY_LABEL, { ...ownerName(ctx.target.repository), label: name })) as RepositoryLabelData;
+  const id = found.repository?.label?.id;
+  if (id !== undefined) return id;
+  const made = (await ctx.gql(CREATE_LABEL, { repositoryId: await ctx.repositoryId(), name, color: LABEL_COLOR })) as CreateLabelData;
+  const created = made.createLabel?.label?.id;
+  if (created === undefined) throw new Error(`createLabel answered no label for "${name}"`);
+  return created;
+}
 
 async function issueAt(ctx: Ctx, number: number): Promise<Issue> {
   const data = (await ctx.gql(ISSUE_ID, { ...ownerName(ctx.target.repository), number })) as IssueIdData;
@@ -48,7 +62,7 @@ async function issueAt(ctx: Ctx, number: number): Promise<Issue> {
 async function ensure(ctx: Ctx, key: string, title: string, body: string): Promise<Issue> {
   const number = ctx.recorded[key];
   if (number !== undefined) return issueAt(ctx, number);
-  const data = (await ctx.gql(CREATE_ISSUE, { repositoryId: await ctx.repositoryId(), title, body })) as CreateIssueData;
+  const data = (await ctx.gql(CREATE_ISSUE, { repositoryId: await ctx.repositoryId(), title, body, labelIds: await ctx.labelIds() })) as CreateIssueData;
   const issue = data.createIssue?.issue;
   if (!issue) throw new Error(`createIssue answered no issue for "${title}"`);
   await ctx.record(key, issue.number);
@@ -106,7 +120,9 @@ async function linkAll(ctx: Ctx, nodes: DecompositionNode[], issues: ReadonlyMap
  * the first GitHub error's message: what was done stays recorded, and a second press resumes. A secondary rate limit is such an error. */
 export async function writeDecomposition(deps: WriteDeps, d: Decomposition, target: WriteTarget, recorded: Readonly<Record<string, number>>): Promise<string | undefined> {
   const repositoryId = once(async () => repositoryOf<{ id: string }>(await deps.gql(REPOSITORY_ID, ownerName(target.repository)), target.repository).id);
-  const ctx: Ctx = { ...deps, target, recorded, repositoryId };
+  // asked only when an issue is created, so a retry with every issue recorded asks nothing (#936)
+  const labelIds = once(async (): Promise<string[]> => (d.label === undefined ? [] : [await labelId({ gql: deps.gql, target, repositoryId }, d.label)]));
+  const ctx: Ctx = { ...deps, target, recorded, repositoryId, labelIds };
   try {
     const root = await rootOf(ctx, d);
     const issues = new Map<string, Issue>();

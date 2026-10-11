@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADD_BLOCKED_BY, ADD_PROJECT_ITEM, ADD_SUB_ISSUE, CREATE_ISSUE, ISSUE_ID, REPOSITORY_ID, SET_OPTION } from '../src/sources/github-queries.js';
+import { ADD_BLOCKED_BY, ADD_PROJECT_ITEM, ADD_SUB_ISSUE, CREATE_ISSUE, CREATE_LABEL, ISSUE_ID, REPOSITORY_ID, REPOSITORY_LABEL, SET_OPTION } from '../src/sources/github-queries.js';
 import { writeDecomposition, type WriteTarget } from '../src/decomposition-write.js';
 import { designComment, issueBody, parseDecomposition, rootBody } from '../src/decomposition.js';
 import { ADD_COMMENT } from '../src/repos/github-repo-queries.js';
@@ -13,7 +13,9 @@ import { EXAMPLE } from './fixtures/decomposition.js';
 
 test('the write\'s GraphQL takes every value as a variable: no text, id or number is built into a query (#865)', () => {
   assert.match(REPOSITORY_ID, /repository\(owner: \$owner, name: \$name\) \{ id \}/);
-  assert.match(CREATE_ISSUE, /createIssue\(input: \{ repositoryId: \$repositoryId, title: \$title, body: \$body \}\) \{ issue \{ id number url \} \}/);
+  assert.match(CREATE_ISSUE, /createIssue\(input: \{ repositoryId: \$repositoryId, title: \$title, body: \$body, labelIds: \$labelIds \}\) \{ issue \{ id number url \} \}/);
+  assert.match(REPOSITORY_LABEL, /repository\(owner: \$owner, name: \$name\) \{ label\(name: \$label\) \{ id \} \}/);
+  assert.match(CREATE_LABEL, /createLabel\(input: \{ repositoryId: \$repositoryId, name: \$name, color: \$color \}\) \{ label \{ id \} \}/);
   assert.match(ADD_PROJECT_ITEM, /addProjectV2ItemById\(input: \{ projectId: \$projectId, contentId: \$contentId \}\) \{ item \{ id \} \}/);
   assert.match(ADD_SUB_ISSUE, /addSubIssue\(input: \{ issueId: \$issueId, subIssueId: \$subIssueId \}\)/);
   assert.match(ADD_BLOCKED_BY, /addBlockedBy\(input: \{ issueId: \$issueId, blockingIssueId: \$blockingIssueId \}\)/);
@@ -21,26 +23,30 @@ test('the write\'s GraphQL takes every value as a variable: no text, id or numbe
 
 const NAMES = new Map<string, string>([
   [REPOSITORY_ID, 'repo'], [ISSUE_ID, 'issueId'], [ADD_COMMENT, 'comment'], [CREATE_ISSUE, 'create'], [ADD_PROJECT_ITEM, 'project'],
-  [SET_OPTION, 'status'], [ADD_SUB_ISSUE, 'sub'], [ADD_BLOCKED_BY, 'blocked'],
+  [REPOSITORY_LABEL, 'label'], [CREATE_LABEL, 'createLabel'], [SET_OPTION, 'status'], [ADD_SUB_ISSUE, 'sub'], [ADD_BLOCKED_BY, 'blocked'],
 ]);
 const PROJECT = { projectId: 'PV1', fieldId: 'F1', optionId: 'o2' };
 const GITHUB_GOAL: WriteTarget = { repository: 'acme/site', goal: 7, project: PROJECT };
 const LOCAL_GOAL: WriteTarget = { repository: 'acme/site', project: PROJECT };
 
-function example(): Decomposition {
-  const { decomposition } = parseDecomposition(EXAMPLE);
+const LABELLED = EXAMPLE.replace('# Site for XPTO\n', '# Site for XPTO\nLabel: decomposed\n');
+
+function example(text = EXAMPLE): Decomposition {
+  const { decomposition } = parseDecomposition(text);
   assert.ok(decomposition);
   return decomposition;
 }
 
 // GitHub as the writer meets it: each new issue numbered from `first`, node ids I<number>, project items PI<node id>; `fail` names the
 // error one call answers
-function github(first = 101, fail?: (query: string, variables: Record<string, unknown>) => string | undefined) {
+function github(first = 101, fail?: (query: string, variables: Record<string, unknown>) => string | undefined, hasLabel = true) {
   let number = first - 1;
   return fakeGqlJson((query, variables) => {
     const message = fail?.(query, variables);
     if (message !== undefined) throw new Error(message);
     if (query === REPOSITORY_ID) return { repository: { id: 'R1' } };
+    if (query === REPOSITORY_LABEL) return { repository: { label: hasLabel ? { id: 'L1' } : null } };
+    if (query === CREATE_LABEL) return { createLabel: { label: { id: 'L2' } } };
     if (query === ISSUE_ID) return { repository: { issue: { id: `I${String(variables.number)}` } } };
     if (query === CREATE_ISSUE) {
       number += 1;
@@ -70,7 +76,7 @@ test('a GitHub goal: its design as a comment, then every issue, its project item
   assert.deepEqual(recorded, [['design', 7], ['1', 101], ['1.1', 102], ['1.2', 103], ['2', 104], ['2.1', 105], ['2.2', 106], ['done', 7]]);
   assert.deepEqual(varsOf(calls, 'issueId'), [{ owner: 'acme', name: 'site', number: 7 }]);
   assert.deepEqual(varsOf(calls, 'comment'), [{ id: 'I7', body: designComment(d) }]);
-  assert.deepEqual(varsOf(calls, 'create')[2], { repositoryId: 'R1', title: 'Contact API', body: issueBody(d.nodes[2]) });
+  assert.deepEqual(varsOf(calls, 'create')[2], { repositoryId: 'R1', title: 'Contact API', body: issueBody(d.nodes[2]), labelIds: [] });
   assert.deepEqual(varsOf(calls, 'project')[0], { projectId: 'PV1', contentId: 'I101' });
   assert.deepEqual(varsOf(calls, 'status')[0], { projectId: 'PV1', itemId: 'PI101', fieldId: 'F1', singleSelectOptionId: 'o2' });
   assert.deepEqual(varsOf(calls, 'sub'), [['I7', 'I101'], ['I101', 'I102'], ['I101', 'I103'], ['I7', 'I104'], ['I104', 'I105'], ['I104', 'I106']].map(([issueId, subIssueId]) => ({ issueId, subIssueId })));
@@ -83,7 +89,7 @@ test('a local goal: a root issue with the goal\'s text and design holds the top-
   const d = example();
   assert.equal(await writeDecomposition({ gql, record }, d, LOCAL_GOAL, {}), undefined);
   assert.deepEqual([recorded[0], recorded.at(-1)], [['root', 100], ['done', 100]]);
-  assert.deepEqual(varsOf(calls, 'create')[0], { repositoryId: 'R1', title: 'Site for XPTO', body: rootBody(d) });
+  assert.deepEqual(varsOf(calls, 'create')[0], { repositoryId: 'R1', title: 'Site for XPTO', body: rootBody(d), labelIds: [] });
   assert.equal(varsOf(calls, 'project').length, 7);
   assert.deepEqual(varsOf(calls, 'sub').filter((v) => v.issueId === 'I100').map((v) => v.subIssueId), ['I101', 'I104']);
   assert.equal(steps(calls).includes('comment'), false);
@@ -115,4 +121,24 @@ test('the first other error stops the write with GitHub\'s message; what was don
   assert.equal(await writeDecomposition({ gql, record }, example(), GITHUB_GOAL, {}), 'was submitted too quickly');
   assert.deepEqual(recorded, [['design', 7], ['1', 101]]);
   assert.equal(steps(calls).includes('sub'), false);
+});
+
+test('the file\'s label, found in the repository, goes on every issue created, a local goal\'s root included; asked once (#936)', async () => {
+  const { calls, gql } = github(100);
+  const { record } = recorder();
+  assert.equal(await writeDecomposition({ gql, record }, example(LABELLED), LOCAL_GOAL, {}), undefined);
+  assert.deepEqual(varsOf(calls, 'label'), [{ owner: 'acme', name: 'site', label: 'decomposed' }]);
+  assert.equal(steps(calls).includes('createLabel'), false);
+  assert.deepEqual(varsOf(calls, 'create').map((v) => v.labelIds), Array<string[]>(7).fill(['L1']));
+});
+
+test('a label the repository lacks is created once, grey; no Label: line sends no label (#936)', async () => {
+  const missing = github(101, undefined, false);
+  assert.equal(await writeDecomposition({ gql: missing.gql, record: recorder().record }, example(LABELLED), GITHUB_GOAL, {}), undefined);
+  assert.deepEqual(varsOf(missing.calls, 'createLabel'), [{ repositoryId: 'R1', name: 'decomposed', color: 'ededed' }]);
+  assert.deepEqual(varsOf(missing.calls, 'create').map((v) => v.labelIds), Array<string[]>(6).fill(['L2']));
+  const none = github();
+  assert.equal(await writeDecomposition({ gql: none.gql, record: recorder().record }, example(), GITHUB_GOAL, {}), undefined);
+  assert.equal(steps(none.calls).includes('label'), false);
+  assert.deepEqual(varsOf(none.calls, 'create').map((v) => v.labelIds), Array<string[]>(6).fill([]));
 });
