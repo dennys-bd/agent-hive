@@ -53,3 +53,11 @@ test('checkValue refuses a day the calendar lacks, a text past the cap, and a cl
   assert.deepEqual(checkValue(status, null), { error: '"Status" cannot be cleared' });
   assert.deepEqual(checkValue(status, 'Ready'), { value: 'Ready' });
 });
+
+test('checkValue on the labels takes a known label or one already on the issue, deduplicated, and [] clears; an unknown added label and null are refused (#60)', () => {
+  const labels = field('labels', { value: ['old'], options: ['bug', 'docs'] });
+  assert.deepEqual(checkValue(labels, ['old', 'bug', 'bug']), { value: ['old', 'bug'] });
+  assert.deepEqual(checkValue(labels, []), { value: [] });
+  assert.deepEqual(checkValue(labels, ['wontfix']), { error: '"wontfix" is not a label of the repository' });
+  assert.deepEqual(checkValue(labels, null), { error: '"F" takes a list of label names' });
+});

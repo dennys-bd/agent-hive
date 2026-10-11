@@ -1574,9 +1574,9 @@ export type FieldValue = string | number | string[] | null;
 /** One field of an item as its editors read it (#686): its kind, its current value and, for a choice, what it can be. */
 export interface ItemField {
   name: string;
-  type: ProjectField['type'] | 'assignees'; // milestone and issueType are already ProjectField kinds; assignees is the issue's own
-  value: FieldValue; // unset on the source = null; assignees = [] when none
-  options?: string[]; // single-select options, iterations, open milestones, issue types, assignable logins
+  type: ProjectField['type'] | 'assignees' | 'labels'; // milestone and issueType are already ProjectField kinds; assignees and labels are the issue's own
+  value: FieldValue; // unset on the source = null; assignees and labels = [] when none
+  options?: string[]; // single-select options, iterations, open milestones, issue types, assignable logins, the repository's labels
   readOnly?: true; // repository, progress, parentIssue, other
 }
 

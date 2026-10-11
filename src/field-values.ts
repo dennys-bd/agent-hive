@@ -12,14 +12,22 @@ export const isReadOnly = (type: ItemField['type']): boolean => READ_ONLY.has(ty
 // The round trip refuses a day the calendar lacks: Date.parse takes 2026-02-31 and moves it to March
 const isDay = (value: unknown): value is string =>
   typeof value === 'string' && ISO_DAY.test(value) && !Number.isNaN(Date.parse(value)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
-const isLogins = (value: unknown): value is string[] => Array.isArray(value) && value.every((login) => typeof login === 'string');
+const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every((name) => typeof name === 'string');
 
 // Only the logins being added must be assignable: one already assigned stays, whatever the one page of assignable users lists
 function checkAssignees(field: ItemField, value: unknown): { value: FieldValue } | { error: string } {
-  if (!isLogins(value)) return { error: `"${field.name}" takes a list of logins` };
+  if (!isNames(value)) return { error: `"${field.name}" takes a list of logins` };
   const current = Array.isArray(field.value) ? field.value : [];
   const unknown = value.find((login) => !current.includes(login) && !(field.options ?? []).includes(login));
   return unknown === undefined ? { value: [...new Set(value)] } : { error: `"${unknown}" cannot be assigned` };
+}
+
+// The assignees' rule for the labels (#60): only a label being added must be the repository's, one already on the issue stays
+function checkLabels(field: ItemField, value: unknown): { value: FieldValue } | { error: string } {
+  if (!isNames(value)) return { error: `"${field.name}" takes a list of label names` };
+  const current = Array.isArray(field.value) ? field.value : [];
+  const unknown = value.find((name) => !current.includes(name) && !(field.options ?? []).includes(name));
+  return unknown === undefined ? { value: [...new Set(value)] } : { error: `"${unknown}" is not a label of the repository` };
 }
 
 function checkText(field: ItemField, value: unknown): { value: FieldValue } | { error: string } {
@@ -28,10 +36,11 @@ function checkText(field: ItemField, value: unknown): { value: FieldValue } | { 
 }
 
 /** A field write's value checked against its field (#686): the value, or why it is refused: a read-only field, a value of another kind, or a
- * choice its options lack. null clears any kind but the assignees, which clear with []. Pure: the route's 400 before any write. */
+ * choice its options lack. null clears any kind but the assignees and the labels, which clear with []. Pure: the route's 400 before any write. */
 export function checkValue(field: ItemField, value: unknown): { value: FieldValue } | { error: string } {
   if (field.readOnly || isReadOnly(field.type)) return { error: `"${field.name}" is read only` };
   if (field.type === 'assignees') return checkAssignees(field, value);
+  if (field.type === 'labels') return checkLabels(field, value);
   if (value === null) return field.name === STATUS ? { error: `"${STATUS}" cannot be cleared` } : { value: null };
   switch (field.type) {
     case 'text': return checkText(field, value);
