@@ -58,7 +58,7 @@ import { shellCwd } from './shell-procs.js';
 import { removeTerminalFiles, restoreScrollbacks } from './terminal-files.js';
 import { allowedHosts, attachPtySocket, type PtySocket } from './server-pty-socket.js';
 import { SECRET_FILE } from './daemon-files.js';
-import { matchesSecret, PAGE_POLICY, presentedSecret } from './secret.js';
+import { matchesSecret, pagePolicy, presentedSecret } from './secret.js';
 import { registerConsoleRoutes } from './server-console.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
 import { registerOpenRoute } from './server-open.js';
@@ -1125,7 +1125,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // under a dot-directory (e.g. a .claude worktree) would otherwise 404 every request, the leading segment
   // of the absolute path always failing containsDotFile.
   app.use((_req: Request, res: Response, next: NextFunction) => {
-    res.set('content-security-policy', PAGE_POLICY); // every page and asset below: the port's cookie never reaches another port (#467)
+    res.set('content-security-policy', pagePolicy(boundPort ?? 0)); // every page and asset below: the port's cookie never reaches another port (#467); frames only from the design frame route (#108). The Host check refused every request before listen bound the port
     next();
   });
   app.get('/', (_req: Request, res: Response) => res.sendFile('index.html', { root: UI_DIR }));

@@ -8,11 +8,19 @@ export const SECRET_HEADER = 'x-hive-secret';
 const SECRET_BYTES = 32; // 64 hex characters: safe in a header, a cookie and a shell variable without escaping
 export const COOKIE_PREFIX = 'hive_secret_'; // the viewer finds its cookies by it (#467)
 
+/** The design frame route's mount (#108): the only source the pages may frame. */
+export const DESIGN_FRAME_PREFIX = '/design-frame/';
+
 /** The pages' Content-Security-Policy (#467). A cookie ignores the port and SameSite counts every port of 127.0.0.1 as the same site, so
  *  an http:// image in an issue's markdown pointing at another local port would carry this port's cookie there: images and media only
  *  load from this origin or over https (GitHub's attachments), connections stay on this origin ('self' covers its ws:// in Chromium).
- *  Scripts and styles are left alone: Vite's build output and xterm's inline styles need nothing restricted there. */
-export const PAGE_POLICY = "img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
+ *  Scripts and styles are left alone: Vite's build output and xterm's inline styles need nothing restricted there. Frames (#108): only the
+ *  design frame route, on both hosts the Host check allows; a path-restricted source is the only way to name one route of this origin, and
+ *  it needs the port. */
+export const pagePolicy = (port: number): string => {
+  const frames = [`http://127.0.0.1:${port}${DESIGN_FRAME_PREFIX}`, `http://localhost:${port}${DESIGN_FRAME_PREFIX}`].join(' ');
+  return `img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; frame-src ${frames}; base-uri 'none'`;
+};
 
 /** A new secret for one boot: the next boot voids every copy of this one. */
 export const newSecret = (): string => randomBytes(SECRET_BYTES).toString('hex');

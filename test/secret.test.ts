@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchesSecret, newSecret, presentedSecret, SECRET_HEADER, secretCookie } from '../src/secret.js';
+import { matchesSecret, newSecret, pagePolicy, presentedSecret, SECRET_HEADER, secretCookie } from '../src/secret.js';
+import { directive } from './secret-client.js';
 
 test('newSecret: 64 lowercase hex characters, a new one each call (#467)', () => {
   const a = newSecret();
@@ -23,4 +24,11 @@ test('presentedSecret reads the x-hive-secret header, else the cookie of this po
   assert.equal(presentedSecret({ headers: { cookie: `theme=dark; hive_secret_4242=${secret}; x=1` } }, 4242), secret);
   assert.equal(presentedSecret({ headers: { cookie: `hive_secret_5151=${secret}` } }, 4242), undefined, 'a test Hive beside this one keeps its own cookie');
   assert.equal(presentedSecret({ headers: {} }, 4242), undefined);
+});
+
+test('pagePolicy lets the pages frame the design frame route of this port, on both hosts, and nothing else; every other directive is #467\'s (#108)', () => {
+  const policy = pagePolicy(4242);
+  assert.deepEqual(directive(policy, 'frame-src'), ['http://127.0.0.1:4242/design-frame/', 'http://localhost:4242/design-frame/']);
+  const before = "img-src 'self' https: data: blob:; media-src 'self' https: data: blob:; connect-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'";
+  assert.equal(policy.replace(/frame-src [^;]+/, "frame-src 'none'"), before);
 });
