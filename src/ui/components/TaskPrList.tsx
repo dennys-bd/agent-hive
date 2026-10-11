@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { prsOf } from '../../activities';
-import { type PrLine, prGroups, prNumber, repoName } from '../../pull-requests';
+import { type PrLine, prGroups, prNumber, prRepo, repoName } from '../../pull-requests';
 import type { PrChecks, State, Task } from '../../types';
 import { Button } from '@/components/ui/button';
 import { isChecksRead, prPath } from '@/hooks/use-pr';
@@ -51,18 +51,25 @@ function PrMark({ mark }: { mark?: Mark }) {
   );
 }
 
-export interface TaskPrListProps { task: Task; state: State; onOpenPr(url: string): void }
+export interface TaskPrListProps { task: Task; state: State; except?: string; onOpenPr(url: string): void }
 
-/** The task's PRs under the issue page's block (#65, handoff 7): grouped and ordered as the details grid and the flow card (#698), each with
- * its state, its checks mark and, while open, "open" through the dashboard's PR opener. Nothing for a task with no PR. */
-export function TaskPrList({ task, state, onOpenPr }: TaskPrListProps) {
-  const groups = prGroups(prsOf(state, task.item.itemId), task.item.facets?.repository);
-  const lines = groups.flatMap((group) => group.lines.map((line) => ({ line, repo: group.own ? undefined : group.repo })));
+// The list's heading: PRs on the issue page (#65); on a PR's page (#66) "other PRs of the task" and how many
+function Heading({ count, isOthers }: { count: number; isOthers: boolean }) {
+  if (!isOthers) return <h3 className={MUTED}>{t('detail.prs')}</h3>;
+  return <h3 className="flex items-baseline gap-1.5"><span className="font-medium text-foreground">{t('pr.others')}</span><span className={MUTED}>{count}</span></h3>;
+}
+
+/** The task's PRs under the page's block (#65, #66, handoff 7): grouped and ordered as the details grid and the flow card (#698), each with
+ * its state, its checks mark and, while open, "open" through the dashboard's PR opener. On a PR's page `except` is that PR: it is left out
+ * and its repository is the own one. Nothing with no PR to list. */
+export function TaskPrList({ task, state, except, onOpenPr }: TaskPrListProps) {
+  const groups = prGroups(prsOf(state, task.item.itemId), except === undefined ? task.item.facets?.repository : prRepo(except));
+  const lines = groups.flatMap((group) => group.lines.filter((line) => line.pr.url !== except).map((line) => ({ line, repo: group.own ? undefined : group.repo })));
   const marks = usePrMarks(lines.filter(({ line }) => line.pr.state === 'open').map(({ line }) => line.pr.url));
   if (lines.length === 0) return null;
   return (
-    <section aria-label={t('detail.prs')} className="flex flex-col gap-1.5 text-xs">
-      <h3 className={MUTED}>{t('detail.prs')}</h3>
+    <section aria-label={t(except === undefined ? 'detail.prs' : 'pr.others')} className="flex flex-col gap-1.5 text-xs">
+      <Heading count={lines.length} isOthers={except !== undefined} />
       <ul className="flex flex-col gap-1">
         {lines.map(({ line, repo }) => (
           <li key={line.pr.url} className="flex items-center gap-1.5">

@@ -399,4 +399,5 @@ test('the this PR block\'s copy reads as the spec writes it, in both languages, 
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['este PR', '#{n} · {k}/{total} da pilha', 'fecha', 'mudanças resolvidas', 'pronto · {method}', 'aguarda #{n}', 'ao fazer merge']);
   assert.deepEqual([MESSAGES.pt['pr.block.base.merged.one'], MESSAGES.pt['pr.block.base.merged.other']], ['{list} mergeado', '{list} mergeados']);
   assert.deepEqual([MESSAGES.en['pr.block.base.merged.one'], MESSAGES.en['pr.block.base.merged.other']], ['{list} merged', '{list} merged']);
+  assert.deepEqual([MESSAGES.en['pr.others'], MESSAGES.pt['pr.others']], ['other PRs of the task', 'outros PRs da tarefa']);
 });
