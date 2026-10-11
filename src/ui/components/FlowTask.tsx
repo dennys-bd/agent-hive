@@ -53,6 +53,7 @@ export function taskAction(task: Task, state: Pick<State, 'stages' | 'workers' |
   return removalBlocker(task, state) === undefined ? 'delete' : undefined;
 }
 
+// details and open both read abrir on purpose (#913): the first opens the details panel, where continuar stays, the second the session
 const ACTION_LABEL: Record<TaskAction, MessageKey> = {
   details: 'task.open', approve: 'approval.approve', open: 'task.open', continue: 'task.continue', delete: 'activity.delete.button', start: 'task.start',
 };
