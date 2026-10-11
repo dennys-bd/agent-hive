@@ -20,6 +20,10 @@ test('conventionRows / conventionsFrom round-trip saved conventions in key order
   assert.deepEqual(conventionsFrom([{ ...rowFor('specsDir'), value: ' docs/s ' }]), { conventions: { specsDir: 'docs/s' } });
   assert.deepEqual(conventionsFrom([]), {});
   assert.deepEqual(conventionRows(undefined), []);
+  const designs: Conventions = { specsDir: 'docs/specs', designsDir: 'docs/designs' };
+  assert.deepEqual(conventionRows(designs).map((r) => r.key), ['specsDir', 'designsDir'], 'designsDir sits after the other folders');
+  assert.deepEqual(conventionsFrom(conventionRows(designs)), { conventions: designs });
+  assert.deepEqual(conventionsFrom([{ ...rowFor('designsDir'), value: ' agent/hive/designs ' }]), { conventions: { designsDir: 'agent/hive/designs' } });
 });
 
 test('rowFor starts an enumeration on its first option and anything else empty; unusedKeys keeps the row\'s own key (#692)', () => {
@@ -37,6 +41,8 @@ test('conventionsProblem names the first row the parser would refuse as its mess
   assert.deepEqual(problem([{ ...rowFor('sliceSize'), min: '600', max: '550' }]), { section: 'workspaces', message: 'workspace hive: conventions.sliceSize must be { min, max } with 50 ≤ min ≤ max ≤ 5000' });
   assert.equal(problem([{ ...rowFor('sliceSize'), min: '300' }])?.message, t('settings.error.conventions.sliceSize', { workspace: 'hive' }));
   assert.equal(problem([{ ...rowFor('plansDir'), value: '../plans' }])?.message, 'workspace hive: conventions.plansDir must be a relative path inside the docs repository');
+  assert.equal(problem([{ ...rowFor('designsDir'), value: '/abs' }])?.message, 'workspace hive: conventions.designsDir must be a relative path inside the docs repository');
+  assert.equal(problem([{ ...rowFor('designsDir'), value: 'a/../..' }])?.message, t('settings.error.conventions.dir', { workspace: 'hive', key: 'designsDir' }));
   assert.equal(problem([{ ...rowFor('chatLanguage'), value: 'x'.repeat(41) }])?.message, 'workspace hive: conventions.chatLanguage must be a language name of 1 to 40 characters');
   assert.equal(problem([{ ...rowFor('testCommand'), value: 'x'.repeat(501) }])?.message, 'workspace hive: conventions.testCommand must be 1 to 500 characters');
   assert.equal(problem([{ ...rowFor('decompositionLabel'), value: 'x'.repeat(51) }])?.message, 'workspace hive: conventions.decompositionLabel must be 1 to 50 characters');

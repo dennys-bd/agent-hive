@@ -911,6 +911,7 @@ export interface Conventions {
   specsDir?: string;
   plansDir?: string;
   walkthroughsDir?: string;
+  designsDir?: string; // #105: the designs' folder, one subfolder per task, inside the docs repository like the other three
   docsLanguage?: string;
   chatLanguage?: string;
   delivery?: Delivery;

@@ -28,6 +28,7 @@ What the plugin's `new-*` skills resolve here when the Hive's Settings set nothi
 - `specsDir`: `agent/hive/specs`
 - `plansDir`: `agent/hive/plans`
 - `walkthroughsDir`: `agent/hive/walkthroughs`
+- `designsDir`: `agent/hive/designs`
 - `docsLanguage`: English
 - `chatLanguage`: Portuguese
 - `delivery`: `single`

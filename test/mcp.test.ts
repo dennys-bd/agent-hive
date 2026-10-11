@@ -259,7 +259,7 @@ test('hive_conventions answers what Settings saved on the task\'s workspace, as 
 });
 
 test('conventionsAnswer: a stage run reads its task\'s workspace and its stage\'s approval; a free session has no stage; a local session reads its own workspace (#692)', () => {
-  const conventions: Conventions = { specsDir: 'docs/specs', delivery: 'stacked' };
+  const conventions: Conventions = { specsDir: 'docs/specs', designsDir: 'docs/designs', delivery: 'stacked' };
   const config = {
     language: 'pt' as const,
     comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, conventions }] },

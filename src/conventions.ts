@@ -4,7 +4,7 @@ import { DELIVERIES, FEATURE_FLAGS, type Conventions } from './types.js';
 // No node import: the form bundles it.
 
 export const CONVENTION_KEYS = [
-  'docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceSize', 'featureFlags', 'uiCheck', 'testCommand',
+  'docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceSize', 'featureFlags', 'uiCheck', 'testCommand',
   'decompositionLabel',
 ] as const satisfies readonly (keyof Conventions)[];
 export type ConventionKey = (typeof CONVENTION_KEYS)[number];
@@ -21,7 +21,7 @@ const LANGUAGE = `must be a language name of 1 to ${LANGUAGE_MAX} characters`;
 
 /** What follows `conventions.<key>` in the parser's message (#692). */
 export const CONVENTION_RULES: Record<ConventionKey, string> = {
-  docsRepo: 'must be a non-empty path', specsDir: DOCS_DIR, plansDir: DOCS_DIR, walkthroughsDir: DOCS_DIR, docsLanguage: LANGUAGE, chatLanguage: LANGUAGE,
+  docsRepo: 'must be a non-empty path', specsDir: DOCS_DIR, plansDir: DOCS_DIR, walkthroughsDir: DOCS_DIR, designsDir: DOCS_DIR, docsLanguage: LANGUAGE, chatLanguage: LANGUAGE,
   delivery: `must be one of ${DELIVERIES.join(', ')}`,
   sliceSize: `must be { min, max } with ${SLICE_SIZE_MIN} ≤ min ≤ max ≤ ${SLICE_SIZE_MAX}`,
   featureFlags: `must be one of ${FEATURE_FLAGS.join(', ')}`,
@@ -59,7 +59,7 @@ function sliceSize(value: unknown): Conventions['sliceSize'] {
 export function conventionValue(key: ConventionKey, value: unknown): Conventions[ConventionKey] {
   switch (key) {
     case 'docsRepo': return text(value);
-    case 'specsDir': case 'plansDir': case 'walkthroughsDir': return insideDocs(value);
+    case 'specsDir': case 'plansDir': case 'walkthroughsDir': case 'designsDir': return insideDocs(value);
     case 'docsLanguage': case 'chatLanguage': return text(value, LANGUAGE_MAX);
     case 'delivery': return oneOf(value, DELIVERIES);
     case 'featureFlags': return oneOf(value, FEATURE_FLAGS);
