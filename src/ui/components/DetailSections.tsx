@@ -12,7 +12,7 @@ import { act, actThen, attachRun } from '@/components/actions';
 import { ApprovalActions } from '@/components/ApprovalActions';
 import { CommandsLine } from '@/components/CommandsProgress';
 import { RestartDialog } from '@/components/RestartDialog';
-import { useOpenFile, useOpenPr, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
+import { type OpenPr, useOpenFile, useOpenIssue, useOpenPr, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { statusText, t } from '@/i18n';
 import { sessionPath } from '@/lib/copy-targets';
@@ -102,18 +102,21 @@ function issueName(task: Task): string {
   return match ? `${match[1]}#${match[2]}` : task.item.id;
 }
 
-// The issue row's value: a link to the source's item. A local task has no row at all
+// The issue row's value (#895): its page through the dock's opener, else the source's item as any link opens. A local task has no row at all
 function IssueValue({ task }: { task: Task }) {
-  return <a href={task.item.url} target="_blank" rel="noreferrer" className="truncate">{issueName(task)}</a>;
+  return <OpenerLink url={task.item.url} opener={useOpenIssue()} className="truncate">{issueName(task)}</OpenerLink>;
 }
 
 // A PR's link (#207, #758): its page through the dock's opener, else GitHub, as any link opens
 function PrLink({ url, className, children }: { url: string; className?: string; children: ReactNode }) {
-  const openPr = useOpenPr();
+  return <OpenerLink url={url} opener={useOpenPr()} className={className}>{children}</OpenerLink>;
+}
+
+function OpenerLink({ url, opener, className, children }: { url: string; opener?: OpenPr; className?: string; children: ReactNode }) {
   const open = (event: MouseEvent<HTMLAnchorElement>): void => {
-    if (openPr === undefined) return;
+    if (opener === undefined) return;
     event.preventDefault();
-    openPr(url);
+    opener(url);
   };
   return <a href={url} target="_blank" rel="noreferrer" className={className} onClick={open}>{children}</a>;
 }

@@ -16,7 +16,7 @@ import { LocalMenu } from '@/components/LocalMenu';
 import { type SearchHost, useQuickActions } from '@/components/quick-actions';
 import { useSleptNotices } from '@/components/sleep-notice';
 import {
-  DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
+  DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
 } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext } from '@/hooks/use-console';
 import { type ActivitySelection, type CenterMode, useActivity } from '@/hooks/use-activity';
@@ -67,6 +67,8 @@ export interface MainDockProps {
   search?: SearchSource;
   // Every way into a PR (#758), from the Dashboard: its page under its repository; absent (the terminal's harness): a PR link opens GitHub
   openPr?(url: string): void;
+  // The task details' issue (#895), from the Dashboard: its page under its repository; absent (the terminal's harness): the issue's URL
+  openIssue?(url: string): void;
 }
 
 /** What the search reads beyond the dock (#584). */
@@ -183,20 +185,22 @@ function detailPanel({ current, isShown, sideTab, setSideTab, detail, onClose, n
   return { id: 'detail', title, ownHeader: true, body };
 }
 
-interface OpenersProps { openRun: OpenRun; openStarted: OpenStarted; openDiff: OpenDiff; openPr?: OpenPr; openFile: OpenFile; openConsole: OpenConsole; openStageOutput: OpenStageOutput; children: ReactNode }
+interface OpenersProps { openRun: OpenRun; openStarted: OpenStarted; openDiff: OpenDiff; openPr?: OpenPr; openIssue?: OpenPr; openFile: OpenFile; openConsole: OpenConsole; openStageOutput: OpenStageOutput; children: ReactNode }
 
 // Every opener the dock hands the page below it (#251, #353, #457, #458, #717, #755): the flow's tasks, Detalhes and the chips reach the dock through these
-function Openers({ openRun, openStarted, openDiff, openPr, openFile, openConsole, openStageOutput, children }: OpenersProps) {
+function Openers({ openRun, openStarted, openDiff, openPr, openIssue, openFile, openConsole, openStageOutput, children }: OpenersProps) {
   return (
     <RunOpenerContext.Provider value={openRun}>
         <StartedTaskContext.Provider value={openStarted}>
           <DiffOpenerContext.Provider value={openDiff}>
             <PrOpenerContext.Provider value={openPr}>
-              <FileOpenerContext.Provider value={openFile}>
-                <ConsoleContext.Provider value={openConsole}>
-                  <StageOutputContext.Provider value={openStageOutput}>{children}</StageOutputContext.Provider>
-                </ConsoleContext.Provider>
-              </FileOpenerContext.Provider>
+              <IssueOpenerContext.Provider value={openIssue}>
+                <FileOpenerContext.Provider value={openFile}>
+                  <ConsoleContext.Provider value={openConsole}>
+                    <StageOutputContext.Provider value={openStageOutput}>{children}</StageOutputContext.Provider>
+                  </ConsoleContext.Provider>
+                </FileOpenerContext.Provider>
+              </IssueOpenerContext.Provider>
             </PrOpenerContext.Provider>
           </DiffOpenerContext.Provider>
         </StartedTaskContext.Provider>
@@ -254,7 +258,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
   const { selected, onSelect, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children } = props;
-  const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage } = props;
+  const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
   const { layout, activate, close, toggle } = dock;
@@ -275,11 +279,13 @@ export function MainDock(props: MainDockProps) {
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
   const openTaskDiff: OpenDiff = (task, scope) => openDiff(task.item.itemId, scope);
-  // Every way into a PR (#758): the flow under Automação, showing the PR's page under its repository
-  const openPr: OpenPr | undefined = openPrPage && ((url) => {
+  // Every way into a PR (#758) and the task details' issue (#895): the flow under Automação, showing the page under its repository
+  const toAutomation = (open?: OpenPr): OpenPr | undefined => open && ((url) => {
     activateTab('automation');
-    openPrPage(url);
+    open(url);
   });
+  const openPr = toAutomation(openPrPage);
+  const openIssue = toAutomation(openIssuePage);
   // Every new selection opens the panel holding Detalhes with it as the shown tab, the same task picked again included: App sets a new
   // object on each pick. An activity's pick does not (#457): Detalhes shows it only when its panel is already open. The sidebar switches to
   // detalhes with it (useSideTab)
@@ -368,7 +374,7 @@ export function MainDock(props: MainDockProps) {
   );
   const shownActivity = selection.center === 'activities' && current ? activityKey(current) : undefined; // where a copy opens as a tab (#587, #590)
   return (
-    <Openers openRun={openUserRun} openStarted={openStarted} openDiff={openTaskDiff} openPr={openPr} openFile={openActivityFile} openConsole={openConsole} openStageOutput={openStageOutput}>
+    <Openers openRun={openUserRun} openStarted={openStarted} openDiff={openTaskDiff} openPr={openPr} openIssue={openIssue} openFile={openActivityFile} openConsole={openConsole} openStageOutput={openStageOutput}>
       {copySession ? copySession(shownActivity, content) : content}
     </Openers>
   );

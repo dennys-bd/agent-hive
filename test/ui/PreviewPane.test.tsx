@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PreviewPane } from '@/components/PreviewPane';
@@ -160,7 +160,7 @@ test('a relative markdown link opens its preview and any other file a file tab, 
   disk = fileOf('## Closed\n');
   render(pane('docs/specs/s.md'));
   expect(await screen.findByRole('heading', { level: 2, name: 'Closed' })).toBeInTheDocument();
-  expect(scrolled).toEqual(['user-content-closed']);
+  await waitFor(() => expect(scrolled).toEqual(['user-content-closed'])); // the scroll runs in an effect after the heading renders
 });
 
 test('a read the server refuses shows the editor pane\'s words (#697)', async () => {
