@@ -14,12 +14,12 @@ afterEach(() => vi.unstubAllGlobals());
 const box = () => within(screen.getByRole('region', { name: 'mergear' }));
 const AWAITING: State = { ...WITH_TASK, activities: [{ ...WITH_TASK.activities[0], approval: { since: '2026-09-30T09:00:00.000Z' } }] };
 const CONFLICT = prData({ mergeState: 'conflicts' });
-// The box over `pr`, task I1's when `state` holds it; the run opener a spy
-function renderBox(pr: PrData, state: State = WITH_TASK) {
-  const onMerged = vi.fn();
+// The box over `pr`, task I1's when `state` holds it; the run opener and onSettled spies; onMerged only when given (#69)
+function renderBox(pr: PrData, state: State = WITH_TASK, onMerged?: () => void) {
+  const onSettled = vi.fn();
   const openRun = vi.fn();
-  const view = render(<RunOpenerContext.Provider value={openRun}><PrMergeBox pr={pr} task={state.tasks[0]} state={state} onMerged={onMerged} /></RunOpenerContext.Provider>);
-  return { ...view, onMerged, openRun };
+  const view = render(<RunOpenerContext.Provider value={openRun}><PrMergeBox pr={pr} task={state.tasks[0]} state={state} onSettled={onSettled} onMerged={onMerged} /></RunOpenerContext.Provider>);
+  return { ...view, onSettled, openRun };
 }
 
 test('ready: ● in working, ready to merge, the facts that hold, the note only on a task awaiting approval, {method} and merge (#758)', () => {
@@ -35,14 +35,30 @@ test('ready: ● in working, ready to merge, the facts that hold, the note only 
   expect(box().queryByText('passa a tarefa para a próxima etapa')).toBeNull();
 });
 
-test('the merge posts the method and the head the page showed, shows GitHub\'s refusal beside it, and reads the PR again (#592, #758)', async () => {
+test('the merge posts the method and the head the page showed, shows GitHub\'s refusal beside it, and reads the PR again, never leaving the page (#592, #758, #69)', async () => {
   const user = userEvent.setup();
   hive.answers[`POST ${ROUTE}/merge`] = { status: 502, body: { error: 'gh api graphql: Pull request is in a merge queue' } };
-  const { onMerged } = renderBox(prData());
+  const onMerged = vi.fn();
+  const { onSettled } = renderBox(prData(), WITH_TASK, onMerged);
   await user.click(box().getByRole('button', { name: 'squash e merge' }));
   expect(prCalls(hive, 'POST', `${ROUTE}/merge`)[0].body).toEqual({ method: 'squash', head: HEAD });
   expect(await box().findByRole('alert')).toHaveTextContent('Pull request is in a merge queue');
-  await waitFor(() => expect(onMerged).toHaveBeenCalled());
+  await waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+  expect(onMerged).not.toHaveBeenCalled();
+});
+
+test('a merge GitHub accepts calls onMerged and skips the re-read; with no onMerged given it reads the PR again (#69)', async () => {
+  const user = userEvent.setup();
+  const onMerged = vi.fn();
+  const first = renderBox(prData(), WITH_TASK, onMerged);
+  await user.click(box().getByRole('button', { name: 'squash e merge' }));
+  await waitFor(() => expect(onMerged).toHaveBeenCalledOnce());
+  expect(first.onSettled).not.toHaveBeenCalled();
+  expect(box().queryByRole('alert')).toBeNull();
+  first.unmount();
+  const second = renderBox(prData());
+  await user.click(box().getByRole('button', { name: 'squash e merge' }));
+  await waitFor(() => expect(second.onSettled).toHaveBeenCalledOnce());
 });
 
 test('conflict: conflicts in N files, the base moved N commits, the merge off with its reason, the files with their directory muted, the note (#758)', () => {

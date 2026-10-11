@@ -33,7 +33,9 @@ function PrLine({ pr }: { pr: PrData }) {
   );
 }
 
-export interface PrConversationProps { pr: PrData; task?: Task; state: State; onChanged(): Promise<void>; onOpenPr(url: string): void; onOpenInDiff(path: string): void }
+export interface PrConversationProps { pr: PrData; task?: Task; state: State; onChanged(): Promise<void>; onOpenPr(url: string): void; onOpenInDiff(path: string): void;
+  onMerged?(): void; // #69: a merge GitHub accepted leaves the page; absent, the PR is read again
+}
 
 // The Claude session that opened this PR (#62), as the task's records hold it: none for a PR with no task, or one recorded before #62
 const openerOf = (pr: PrData, state: State, task?: Task): string | undefined =>
@@ -42,7 +44,7 @@ const openerOf = (pr: PrData, state: State, task?: Task): string | undefined =>
 /** conversation (#758, #62, handoff 6): 16px 24px, gap 16, beside the properties, with no visible scrollbar. A merged or closed PR says first
  * that it is read only. Then the PR line, the stack, the description, the timeline and, on an open PR, the comment box; then the checks and the
  * merge box, last, so what decides the merge sits together at the foot. */
-export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInDiff }: PrConversationProps) {
+export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInDiff, onMerged }: PrConversationProps) {
   const scroller = useNavScroll(); // #911: the PR page's conversation; files keeps its own (out of scope)
   return (
     <div ref={scroller} className="scrollbar-none flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
@@ -57,7 +59,7 @@ export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInD
         </div>
       )}
       <PrChecks checks={pr.checks} pr={pr} onChanged={() => void onChanged()} />
-      <PrMergeBox pr={pr} task={task} state={state} onMerged={() => void onChanged()} />
+      <PrMergeBox pr={pr} task={task} state={state} onSettled={() => void onChanged()} onMerged={onMerged} />
     </div>
   );
 }

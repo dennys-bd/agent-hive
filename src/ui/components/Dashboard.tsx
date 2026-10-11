@@ -208,7 +208,8 @@ function repoCenter({ state, locale, picks, repo, goTo, onOpenIssue, onOpenPr, b
   // #911: a page's header carries the way back, never a list's
   const header = (reload: () => Promise<void>) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} />;
   const { issue, pr } = picks;
-  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} locale={locale} pr={pr} summary={repo} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} />;
+  // #69: the merge goes back as the header's button does; an empty stack has no back, so the page stays and shows the PR merged
+  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} locale={locale} pr={pr} summary={repo} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
   if (issue) {
     return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} locale={locale} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} />;
   }
