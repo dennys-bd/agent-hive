@@ -56,16 +56,25 @@ export function probeKeys(term: Terminal, send: (events: KeyProbeEvent[]) => voi
   const { textarea } = term;
   if (!textarea) return () => undefined;
   const batch = batcher(send);
-  // The next data is recorded only after a Dead keydown or a composition event. After an accent character it is the user's next key
+  // A composition is recorded only when a Dead keydown opened it: an IME's (Japanese, Chinese, Korean) carries the typed text itself.
+  // The next data is recorded only after that Dead key or its composition; after an accent character it is the user's next key
+  let isDead = false;
   let isArmed = false;
   const onKeydown = (event: KeyboardEvent): void => {
-    if (!isProbedKey(event.key)) return;
-    isArmed = event.key === 'Dead';
+    if (!isProbedKey(event.key)) {
+      // a key outside the composition ends it: a Dead key cancelled with Escape must not arm the password typed next
+      if (!event.isComposing) isDead = isArmed = false;
+      return;
+    }
+    isDead = isArmed = event.key === 'Dead';
     batch.record({ kind: 'keydown', key: event.key, code: event.code, isComposing: event.isComposing });
   };
   const compositions = COMPOSITION_KINDS.map((kind) => [kind, (event: CompositionEvent): void => {
+    if (!isDead) return;
     isArmed = true;
-    batch.record({ kind, data: event.data });
+    if (kind === 'compositionend') isDead = false;
+    const { data, length } = dataEvent(event.data);
+    batch.record(data === undefined ? { kind, length } : { kind, data });
   }] as const);
   textarea.addEventListener('keydown', onKeydown);
   for (const [kind, listener] of compositions) textarea.addEventListener(kind, listener);
@@ -75,7 +84,7 @@ export function probeKeys(term: Terminal, send: (events: KeyProbeEvent[]) => voi
     batch.record(dataEvent(data));
   });
   return () => {
-    isArmed = false; // a terminal whose onData cannot be unsubscribed must still record nothing after the teardown
+    isDead = isArmed = false; // a terminal whose onData cannot be unsubscribed must still record nothing after the teardown
     batch.drop();
     textarea.removeEventListener('keydown', onKeydown);
     for (const [kind, listener] of compositions) textarea.removeEventListener(kind, listener);

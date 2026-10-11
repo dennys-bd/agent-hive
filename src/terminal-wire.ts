@@ -70,6 +70,8 @@ export const PROBE_BATCH_MAX = 64;
 const KEY_PROBE_KINDS: readonly KeyProbeKind[] = ['keydown', 'compositionstart', 'compositionupdate', 'compositionend', 'data'];
 const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const cap = (text: string): string => text.slice(0, PROBE_STRING_MAX);
+// A KeyboardEvent.code is letters and digits only (Quote, KeyE, Digit1); it is written unquoted, so anything else could forge a log line
+const KEY_CODE = /^[A-Za-z0-9]{1,16}$/;
 
 // One probe event rebuilt from its known keys; undefined for an unknown kind or a timestamp that is not a count
 function keyProbeEvent(raw: unknown): KeyProbeEvent | undefined {
@@ -80,7 +82,7 @@ function keyProbeEvent(raw: unknown): KeyProbeEvent | undefined {
     kind: kind as KeyProbeKind,
     at,
     ...(typeof key === 'string' && { key: cap(key) }),
-    ...(typeof code === 'string' && { code: cap(code) }),
+    ...(typeof code === 'string' && KEY_CODE.test(code) && { code }),
     ...(typeof isComposing === 'boolean' && { isComposing }),
     ...(typeof data === 'string' && { data: cap(data) }),
     ...(isCount(length) && { length }),
@@ -111,7 +113,7 @@ const keyText = (key: string): string => (key === 'Dead' ? key : JSON.stringify(
 function describeKey(event: KeyProbeEvent): string {
   if (event.kind === 'keydown') return `keydown ${keyText(event.key ?? '')} ${event.code ?? ''} composing=${event.isComposing === true}`;
   if (event.kind === 'data') return event.data === undefined ? `data len=${event.length ?? 0}` : `data ${JSON.stringify(event.data)}`;
-  return `${event.kind} ${JSON.stringify(event.data ?? '')}`;
+  return event.data === undefined && event.length !== undefined ? `${event.kind} len=${event.length}` : `${event.kind} ${JSON.stringify(event.data ?? '')}`;
 }
 
 /** A probe batch as its hive.log line reads (#732, pinned by the spec): events joined by ` · `, each after the first led by `+<ms>`. */

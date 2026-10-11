@@ -80,12 +80,17 @@ test('parsePtyMessage reads the key probe\'s keys frame, each event rebuilt from
   });
 });
 
-test('parsePtyMessage cuts every probe string to 16 characters and a batch to its first 64 events (#732)', () => {
+test('parsePtyMessage cuts every probe string to 16 characters, keeps only a letters-and-digits code and a batch to its first 64 events (#732)', () => {
   const long = 'x'.repeat(40);
   const cut = 'x'.repeat(16);
   assert.deepEqual(parsePtyMessage(JSON.stringify({ type: 'keys', events: [{ kind: 'data', at: 0, key: long, code: long, data: long }] })), {
     type: 'keys',
-    events: [{ kind: 'data', at: 0, key: cut, code: cut, data: cut }],
+    events: [{ kind: 'data', at: 0, key: cut, data: cut }],
+  });
+  // a code is written unquoted, so only letters and digits pass: a forged one with a newline or a space is dropped, the event kept
+  assert.deepEqual(parsePtyMessage(JSON.stringify({ type: 'keys', events: [{ kind: 'keydown', at: 0, key: 'Dead', code: 'x\nINFO forged' }] })), {
+    type: 'keys',
+    events: [{ kind: 'keydown', at: 0, key: 'Dead' }],
   });
   const many = parsePtyMessage(JSON.stringify({ type: 'keys', events: Array.from({ length: 100 }, (_, at) => ({ kind: 'data', at, data: 'é' })) }));
   assert.equal(many?.type === 'keys' ? many.events.length : -1, 64);

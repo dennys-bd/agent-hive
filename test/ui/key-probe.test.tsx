@@ -18,7 +18,8 @@ function probe() {
   const send = vi.fn();
   const stop = probeKeys(term as unknown as Terminal, send);
   const textarea = term.textarea as HTMLTextAreaElement;
-  const key = (key: string, code: string): void => void textarea.dispatchEvent(new KeyboardEvent('keydown', { key, code }));
+  const key = (key: string, code: string, isComposing = false): void =>
+    void textarea.dispatchEvent(new KeyboardEvent('keydown', { key, code, isComposing }));
   const compose = (type: string, data: string): void => void textarea.dispatchEvent(new CompositionEvent(type, { data }));
   return { term, send, stop, key, compose };
 }
@@ -41,7 +42,7 @@ test('a healthy dead-key composition reaches send in one batch: the Dead keydown
   vi.advanceTimersByTime(2);
   compose('compositionstart', '');
   compose('compositionupdate', '´');
-  key('e', 'KeyE'); // the letter's own keydown is never recorded
+  key('e', 'KeyE', true); // the letter's own keydown, inside the composition, is never recorded
   vi.advanceTimersByTime(40);
   compose('compositionend', 'é');
   vi.advanceTimersByTime(1);
@@ -106,4 +107,25 @@ test('a terminal with no textarea records nothing and its teardown is safe (#732
   stop();
   vi.advanceTimersByTime(BATCH_MS);
   expect(send).not.toHaveBeenCalled();
+});
+
+test('an IME composition no Dead key opened is never recorded, nor the data after it: it carries the typed text itself (#732)', () => {
+  const { term, send, compose } = probe();
+  compose('compositionstart', '');
+  compose('compositionupdate', 'ひみつ');
+  compose('compositionend', '秘密');
+  term.type('秘密');
+  vi.advanceTimersByTime(BATCH_MS);
+  expect(send).not.toHaveBeenCalled();
+});
+
+test('a key outside the composition disarms a Dead key: after Escape, the next key typed is never recorded (#732)', () => {
+  const { term, send, key, compose } = probe();
+  key('Dead', 'Quote');
+  key('Escape', 'Escape');
+  key('p', 'KeyP');
+  term.type('p');
+  compose('compositionend', 'x');
+  vi.advanceTimersByTime(BATCH_MS);
+  expect(send).toHaveBeenCalledWith([{ kind: 'keydown', key: 'Dead', code: 'Quote', isComposing: false, at: 0 }]);
 });
