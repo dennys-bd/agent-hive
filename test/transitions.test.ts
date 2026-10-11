@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
+  exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
 } from '../src/transitions.js';
 import type { ActivityRecord, Stage, Task, Transition } from '../src/types.js';
 
@@ -104,4 +104,15 @@ test('verdictText: a commands or wait-for-CI verdict\'s output, an agent verdict
   assert.equal(verdictText(STAGES[3], result), 'src/a.ts:3');
   assert.equal(verdictText(STAGES[3], {}), '');
   assert.equal(verdictText(undefined, undefined), '');
+});
+
+test('retryTransition names the transition leaving the task\'s stage whose exit the TRIES_OUT error names, only the limit after it; undefined for any other error or once the transition is gone (#915, #916)', () => {
+  const stuck: Task = { ...task, stage: 'Checks' };
+  const failed = FLOW.find((t) => t.from === 'Checks' && t.verdict === 'failed');
+  assert.ok(failed);
+  assert.equal(retryTransition({ transitions: FLOW }, stuck, 'tries out: verdict:failed · 3'), failed);
+  assert.equal(retryTransition({ transitions: FLOW }, stuck, 'tries out: verdict:failed · 3x'), undefined);
+  assert.equal(retryTransition({ transitions: FLOW }, stuck, 'no transition: verdict:failed'), undefined);
+  assert.equal(retryTransition({ transitions: FLOW }, stuck, undefined), undefined);
+  assert.equal(retryTransition({ transitions: FLOW.filter((t) => t !== failed) }, stuck, 'tries out: verdict:failed · 3'), undefined);
 });

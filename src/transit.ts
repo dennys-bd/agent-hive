@@ -4,7 +4,7 @@ import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork,
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
 import { canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
-import { exitName, exitOf, isAutomatic, outgoing, needsHandover, resolveSession, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
+import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
   END, FEEDBACK_MAX, NO_TRANSITION, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
 } from './types.js';
@@ -176,16 +176,6 @@ export function advance(state: State, task: Task, end: EndOf): Advanced {
   if (stageOf(state.stages, task.stage) === undefined) return left(state, task, []);
   const transition = exitOf(state, task.stage, end.trigger, end.verdict);
   return transition ? take(state, task, transition, end) : halted(state, task, `${NO_TRANSITION}${exitName(end.trigger, end.verdict)}`);
-}
-
-/** The transition whose tries ran out on the task (#915): the one leaving its stage whose exit the TRIES_OUT error names, only the limit after
- * it; undefined for any other error, or once a save removed or renamed that transition. (from, when, verdict) is unique, so the exit names one. */
-export function retryTransition(state: Pick<State, 'transitions'>, task: Task, error: string | undefined): Transition | undefined {
-  if (error === undefined || !error.startsWith(TRIES_OUT)) return undefined;
-  return outgoing(state.transitions, task.stage).find((t) => {
-    const prefix = `${TRIES_OUT}${exitName(t.when, t.verdict)} · `;
-    return error.startsWith(prefix) && /^\d+$/.test(error.slice(prefix.length));
-  });
 }
 
 /** Retry (#915): a task stopped with TRIES_OUT takes the spent transition again, as its automatic try would have: that transition's counter

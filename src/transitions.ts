@@ -1,5 +1,5 @@
 import { stageSession } from './task-runs.js';
-import { FIXED_VERDICTS, type Activity, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
+import { FIXED_VERDICTS, TRIES_OUT, type Activity, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
 // automatic one counts. Pure and free of node modules, since the page reads it too; no state is written here, transit.ts applies the answers.
@@ -35,6 +35,16 @@ export function exitOf(graph: Graph, stage: string, trigger: Trigger, verdict?: 
 
 /** A stage end as NO_TRANSITION and TRIES_OUT write it (#134): the trigger, or verdict:<name>. */
 export const exitName = (trigger: Trigger, verdict?: string): string => (trigger === 'verdict' ? `verdict:${verdict ?? ''}` : trigger);
+
+/** The transition whose tries ran out on the task (#915): the one leaving its stage whose exit the TRIES_OUT error names, only the limit after
+ * it; undefined for any other error, or once a save removed or renamed that transition. (from, when, verdict) is unique, so the exit names one. */
+export function retryTransition(state: Pick<State, 'transitions'>, task: Task, error: string | undefined): Transition | undefined {
+  if (error === undefined || !error.startsWith(TRIES_OUT)) return undefined;
+  return outgoing(state.transitions, task.stage).find((t) => {
+    const prefix = `${TRIES_OUT}${exitName(t.when, t.verdict)} · `;
+    return error.startsWith(prefix) && /^\d+$/.test(error.slice(prefix.length));
+  });
+}
 
 /** The verdicts a stage may give (#134): its own on a prompt stage, the fixed ones on commands and wait for CI, none on any other. */
 export function verdictsOf(stage: Pick<Stage, 'action' | 'prompt' | 'verdicts'>): readonly string[] {

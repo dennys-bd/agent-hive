@@ -1,12 +1,12 @@
 // .tsx without JSX: vitest.config.ts only picks test/ui/**/*.test.tsx. sonner is mocked so the toast text is observable without a Toaster.
 import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { act, actThen, attachRun, continueTaskSession, focusRun } from '@/components/actions';
+import { act, actThen, attachRun, continueTaskSession, focusRun, stageMoves } from '@/components/actions';
 import type { RunTab } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
 import { shownSize, trackTerminal } from '@/lib/xterm-setup';
 import type { Terminal } from '@xterm/xterm';
-import type { Task } from '../../src/types';
+import type { Stage, Task } from '../../src/types';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
@@ -84,4 +84,14 @@ test('a continued session posts the grid of the terminal shown with its open, an
     ['/activities/a-I1/sessions/S1/open', { size: { cols: 132, rows: 41 } }],
     ['/activities/a-I1/continue', { size: { cols: 132, rows: 41 } }],
   ]);
+});
+
+test('stageMoves lists every stage but the task\'s own, in order, each posting move-to with its name (#916)', async () => {
+  const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const stage = (name: string): Stage => ({ name, from: {}, prompt: '/x' });
+  const moves = stageMoves(TASK, { stages: [stage('spec'), stage('dev'), stage('review')] });
+  expect(moves.map((m) => m.stage)).toEqual(['spec', 'review']);
+  moves[1].move();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/board%3AI1/move-to', expect.objectContaining({ method: 'POST', body: JSON.stringify({ stage: 'review' }) })));
 });

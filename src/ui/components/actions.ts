@@ -64,3 +64,12 @@ export function runCommand(task: Task, state: Pick<State, 'workspaces' | 'source
     if (result?.ptyId !== undefined && workspace !== undefined) openConsole?.(commandChannel(workspace, command).id, result.ptyId);
   });
 }
+
+/** A stage a task may move to and its move (#164, #916). */
+export interface StageMove { stage: string; move(): void }
+
+/** The stages but the task's own, each posting move-to: what the task menu's mover para etapa › and the exhausted block's mover para… list. */
+export function stageMoves(task: Task, state: Pick<State, 'stages'>): StageMove[] {
+  const path = `/tasks/${encodeURIComponent(task.item.itemId)}/move-to`;
+  return state.stages.filter((s) => s.name !== task.stage).map((s) => ({ stage: s.name, move: () => void act(path, { stage: s.name }) }));
+}
