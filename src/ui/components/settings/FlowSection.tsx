@@ -1,11 +1,13 @@
 import { SourceDetail } from '@/components/settings/SourceDetail';
 import { CombTab } from '@/components/settings/CombTab';
+import type { TransitionFocus } from '@/components/settings/StageEditor';
 import { CONNECTIONS_ANCHOR } from '@/components/settings/ConnectionsGroup';
 import { needsGithubToken, type NewSource } from '@/lib/flow-sources';
 import type { SourceDraft, SettingsDraft } from '@/lib/settings-form';
 import type { AgentAvailability, FilterOptions, GithubAuthStatus, ProjectSummary } from '../../../types';
 
 export interface FlowProps {
+  focus?: TransitionFocus;
   options: Record<string, string[]>; githubProjects: Record<string, ProjectSummary[]>; github?: GithubAuthStatus; filterOptions: Record<string, FilterOptions>;
   onConnectGithub(): void; onLoadProjects(source: SourceDraft): void; onLoadColumns(source: SourceDraft): void;
   onOpenSource(id?: string): void; onAddSource(added: NewSource): void; onOpenRules(): void;
@@ -17,7 +19,7 @@ export function FlowSection({ draft, source, flow, agents, onChange }: FlowSecti
   if (!source) {
     return (
       <CombTab
-        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} onChange={onChange}
+        draft={draft} options={flow.options} githubProjects={flow.githubProjects} github={flow.github} agents={agents} focus={flow.focus} onChange={onChange}
         onConnectGithub={flow.onConnectGithub} onEditSource={flow.onOpenSource} onAddSource={flow.onAddSource} onOpenRules={flow.onOpenRules}
       />
     );

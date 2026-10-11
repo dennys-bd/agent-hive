@@ -17,6 +17,13 @@ export interface TransitionDraft {
 const idOf = (stages: readonly StageDraft[], name: string): string => stages.find((s) => s.name.trim() === name)?.id ?? '';
 const nameOf = (stages: readonly StageDraft[], id: string): string => stages.find((s) => s.id === id)?.name.trim() ?? '';
 
+// A stage as the chart and the editor's title name it: fim for the end, sem nome for a blank one or one gone
+const shownName = (stages: readonly StageDraft[], id: string): string => (id === END ? t('flow.end') : nameOf(stages, id) || t('settings.stages.unnamed'));
+
+/** A transition as the chart names it (#134): `Plan → Review · terminou`, the editor's title and the form's messages (#918). */
+export const draftTitle = (d: TransitionDraft, stages: readonly StageDraft[]): string =>
+  `${shownName(stages, d.from)} → ${shownName(stages, d.to)} · ${triggerLabel(d.when, d.verdict)}`;
+
 export function transitionDraft(t: Transition, stages: readonly StageDraft[], rows: readonly StageRow[]): TransitionDraft {
   const session = t.session === undefined ? '' : typeof t.session === 'string' ? t.session : { continueOf: idOf(stages, t.session.continueOf) };
   return {
@@ -70,18 +77,40 @@ export function transitionsKept(transitions: readonly TransitionDraft[], stages:
   return gone.reduce((list, id) => withoutStage(list, id), [...transitions]);
 }
 
+/** The transitions once a stage's approval switch moved (#918): a stage with approval is only left by approved, so its done exits become approved,
+ * and turning it off undoes that. Its verdict and feedback exits and every other stage's stay as they are. */
+export function withApproval(transitions: readonly TransitionDraft[], stageId: string, approval: boolean): TransitionDraft[] {
+  const [from, to]: [Trigger, Trigger] = approval ? ['done', 'approved'] : ['approved', 'done'];
+  return transitions.map((d) => (d.from === stageId && d.when === from ? { ...d, when: to } : d));
+}
+
 /** A transition's pill (#134): its own label, else its trigger's, with its tries on an automatic one. */
 export function draftLabel(d: TransitionDraft): string {
   const label = d.label.trim() || triggerLabel(d.when, d.verdict);
   return isAutomatic(d.when) && /^[1-9]\d*$/.test(d.maxTries.trim()) ? t('flow.tries', { label, n: d.maxTries.trim() }) : label;
 }
 
-/** The first transition the parser would refuse for its shape (#134), by index: an origin or a destination that is no stage, a verdict trigger
- * with no verdict, tries that are no integer ≥ 1, a repeated (from, when, verdict). The server checks the rest. */
-export function transitionsProblem(transitions: readonly TransitionDraft[], stages: readonly StageDraft[]): number | undefined {
-  const isStage = (id: string): boolean => stages.some((s) => s.id === id);
+/** Why the parser would refuse a transition (#134, #918): `settings.transitions.error.<reason>` says it. */
+export type TransitionReason = 'ends' | 'verdict' | 'tries' | 'twin' | 'needsApproval' | 'useApproved' | 'useVerdict' | 'gateFeedback';
+
+// One transition against the parser's rules, in parseTransition's order (config-transitions.ts). The trigger rules read triggersOf, so the
+// form and the parser keep one rule; tries count only on an automatic trigger, as transitionFrom sends them only there.
+function reasonOf(d: TransitionDraft, stages: readonly StageDraft[], isTwin: boolean): TransitionReason | undefined {
+  const origin = stages.find((s) => s.id === d.from);
+  if (origin === undefined || (d.to !== END && !stages.some((s) => s.id === d.to))) return 'ends';
+  if (d.when === 'verdict' && !draftVerdicts(origin).includes(d.verdict)) return 'verdict';
+  if (!triggersOf(origin).includes(d.when)) return d.when !== 'done' ? 'needsApproval' : origin.approval || isGateDraft(origin) ? 'useApproved' : 'useVerdict';
+  if (d.when === 'feedback' && d.to === origin.id && isGateDraft(origin)) return 'gateFeedback';
+  if (isAutomatic(d.when) && d.maxTries.trim() !== '' && !/^[1-9]\d*$/.test(d.maxTries.trim())) return 'tries';
+  return isTwin ? 'twin' : undefined;
+}
+
+/** The first transition the parser would refuse (#134), in list order, by its draft id and why (#918). The server checks the rest. */
+export function transitionsProblem(transitions: readonly TransitionDraft[], stages: readonly StageDraft[]): { id: string; reason: TransitionReason } | undefined {
   const keys = transitions.map((d) => transitionKey({ from: d.from, when: d.when, verdict: d.when === 'verdict' ? d.verdict : undefined }));
-  const bad = transitions.findIndex((d, i) => !isStage(d.from) || (d.to !== END && !isStage(d.to)) || (d.when === 'verdict' && d.verdict === '')
-    || (d.maxTries.trim() !== '' && !/^[1-9]\d*$/.test(d.maxTries.trim())) || keys.indexOf(keys[i]) !== i);
-  return bad === -1 ? undefined : bad;
+  for (const [i, d] of transitions.entries()) {
+    const reason = reasonOf(d, stages, keys.indexOf(keys[i]) !== i);
+    if (reason !== undefined) return { id: d.id, reason };
+  }
+  return undefined;
 }

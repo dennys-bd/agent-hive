@@ -312,3 +312,29 @@ test('a save error leaves the footer once the draft it was about changes or is r
   await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: t('settings.discard.confirm') }));
   expect(screen.queryByRole('alert')).toBeNull();
 });
+
+test('a save whose stage has approval and a terminou exit is refused on the client: fluxo opens, the footer names the transition and its editor opens, again after a click elsewhere (#918)', async () => {
+  const user = userEvent.setup();
+  const comb = { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] }, prompt: '/x', approval: true as const }], transitions: [{ from: 'fila', to: 'end', when: 'done' as const }] };
+  render(<Settings info={{ ...info, config: { ...info.config!, comb } }} onSaved={vi.fn()} onCancel={vi.fn()} />);
+  await settled();
+  await open(user, 'execution');
+  const field = screen.getByLabelText(t('settings.shutdownIdle'));
+  await user.clear(field);
+  await user.type(field, '45'); // a save is disabled with no change (#510)
+  fetchMock.mockClear();
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+
+  const name = 'fila → fim · terminou';
+  expect(h1()).toHaveTextContent(t('settings.section.flow'));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(t('settings.transitions.error.useApproved', { name, stage: 'fila' }));
+  expect(alert.closest('footer')).not.toBeNull();
+  expect(screen.getByRole('region', { name })).toBeInTheDocument();
+  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
+
+  await user.click(screen.getByRole('button', { name: /^fila/ })); // the stage's node: a selection, not an edit
+  expect(screen.queryByRole('region', { name })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+  expect(screen.getByRole('region', { name })).toBeInTheDocument();
+});

@@ -18,7 +18,7 @@ import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, task
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
 import { type RuleDraft, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
 import { limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom } from './settings-stages.js';
-import { type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
+import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
 export type { TransitionDraft } from './settings-transitions.js';
@@ -62,7 +62,7 @@ export interface SettingsDraft {
   consoleLines: string; // the Limits tab's field as typed (#353)
   shortcuts: Shortcuts; // only the user's changes, as the config holds them (#449): the atalhos tab edits the map itself
 }
-export interface SettingsProblem { section: SettingsSection; message: string }
+export interface SettingsProblem { section: SettingsSection; message: string; transition?: string } // transition (#918): the draft id Settings selects on the chart
 
 const DEFAULT_OWNER = '@me';
 export const emptyWorkspace = (): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '' });
@@ -191,10 +191,14 @@ function sourcesProblem(sources: SourceDraft[]): SettingsProblem | undefined {
   return filterProblem(sources);
 }
 
-// #134: an arrow whose ends, verdict or tries the parser refuses, named on the flow section before the round trip
+// #134, #918: the first arrow the parser would refuse, named as the chart names it, with its id so Settings selects it
 function transitionsDraftProblem(draft: SettingsDraft): SettingsProblem | undefined {
   const bad = transitionsProblem(draft.transitions, draft.stages);
-  return bad === undefined ? undefined : { section: 'flow', message: t('settings.transitions.error', { n: bad + 1 }) };
+  const transition = draft.transitions.find((d) => d.id === bad?.id);
+  if (bad === undefined || transition === undefined) return undefined;
+  const stage = draft.stages.find((s) => s.id === transition.from)?.name.trim() || t('settings.stages.unnamed');
+  const message = t(`settings.transitions.error.${bad.reason}`, { name: draftTitle(transition, draft.stages), stage });
+  return { section: 'flow', message, transition: bad.id };
 }
 
 // #834: a wait for CI needs a check under só estes, and its wait in the TIMEOUT grammar; an empty wait is no limit

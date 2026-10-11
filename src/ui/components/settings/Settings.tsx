@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/Confirm';
 import { SectionContent } from '@/components/settings/SectionContent';
+import type { TransitionFocus } from '@/components/settings/StageEditor';
 import { SettingsFooter } from '@/components/settings/SettingsFooter';
 import { SettingsNav } from '@/components/settings/SettingsNav';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     return { section: opening?.section ?? 'workspaces', source, ...(opening?.language ? { language: opening.language } : {}) };
   });
   const [saveError, setSaveError] = useState<string | undefined>(); // #739: shown in the footer, which stays in view; `error` is for the section's own actions
+  const [focus, setFocus] = useState<TransitionFocus | undefined>(); // #918: the transition a refused save selects on the chart
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState<string | undefined>(info.configured ? undefined : info.error);
   const [githubProjects, setGithubProjects] = useState<Record<string, ProjectSummary[]>>(() => (newSource ? { [newSource.source.id]: newSource.projects } : {})); // per source row (#180)
@@ -46,6 +48,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   function applyEdit(patch: Partial<SettingsDraft>): void {
     setDraft((d) => ({ ...d, ...patch }));
     setSaveError(undefined); // the message was about the draft before this edit
+    setFocus(undefined);
   }
 
   const changed = unsavedKeys(saved, draft);
@@ -63,6 +66,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     else { setDraft(saved); setRevision((r) => r + 1); } // remounts the uncontrolled fields with the saved values
     setConfirm(undefined);
     setSaveError(undefined);
+    setFocus(undefined);
   }
 
   // The lazy useState initializers above already drafted this `info`; resyncing here too would hand every source and stage row a
@@ -144,7 +148,13 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
 
   async function save(): Promise<void> {
     const problem = validateSettings(draft);
-    if (problem) { setView({ section: problem.section }); setSaveError(problem.message); return; }
+    if (problem) {
+      setView({ section: problem.section });
+      setSaveError(problem.message);
+      const { transition } = problem;
+      if (transition !== undefined) setFocus((f) => ({ transition, n: (f?.n ?? 0) + 1 })); // a new n re-selects it after the user moved away
+      return;
+    }
     setSaving(true);
     setSaveError(undefined);
     try {
@@ -186,7 +196,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
             <SectionContent
               key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit}
               flow={{
-                options, githubProjects, github, filterOptions,
+                options, githubProjects, github, filterOptions, focus,
                 onConnectGithub: () => void connect(), onLoadProjects: (row) => void loadProjects(row), onLoadColumns: (row) => void loadColumns(draft, row),
                 onOpenSource: (id) => setView({ section: 'flow', source: id }), onAddSource: addSource, onOpenRules: () => setView({ section: 'rules' }),
               }}
