@@ -88,14 +88,15 @@ test('an issue out of the flow: while it is read the slot shows the read line; t
   answerRead(jsonRes(ISSUE));
   expect(await slot().findByRole('heading', { name: 'Pager breaks' })).toHaveClass('text-[15px]');
   expect(slot().getByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
-  expect(slot().getByText('etapa', { selector: 'dt' })).toBeInTheDocument();
+  expect(slot().getByText('fluxo', { selector: 'dt' })).toBeInTheDocument();
   expect(slot().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
 });
 
 test('an issue of a task: the slot holds its properties with no title, which the panel draws as the task\'s (#64)', async () => {
   renderPage([TASK12], { activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [] }] }, true);
-  expect(await slot().findByRole('button', { name: 'etapa' })).toHaveTextContent('dev');
+  expect(await slot().findByText('responsável', { selector: 'dt' })).toBeInTheDocument(); // the fields route answers none: today's rows
+  expect(slot().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
   expect(slot().queryByRole('heading')).not.toBeInTheDocument();
   expect(slot().queryByText('hive/12-pager')).not.toBeInTheDocument();
 });

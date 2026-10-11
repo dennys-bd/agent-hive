@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { IssueProperties } from '@/components/IssueProperties';
+import { IssueProperties, type IssuePropertiesProps } from '@/components/IssueProperties';
 import { setLanguage } from '@/i18n';
 import type { IssuePage, ItemField, ProjectItem, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -42,32 +42,28 @@ const FIELDS: ItemField[] = [
 const withFields = (other: () => Response) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
   (String(input) === FIELDS_PATH && init?.method !== 'POST' ? jsonRes({ fields: FIELDS }) : other());
 const terms = (): (string | null)[] => [...document.body.querySelectorAll('dt')].map((d) => d.textContent);
+const renderProps = (props: Partial<IssuePropertiesProps> = {}) => {
+  const onChanged = vi.fn(async () => {});
+  render(<IssueProperties issue={ISSUE} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={onChanged} {...props} />);
+  return onChanged;
+};
 
-test('a task of a source: its stage as a select that moves it, its labels, then the assignees and every field of its source in the project\'s order, the read-only ones as text; its source and workspace; no frame, no header and no activity block, which the details panel draws (#757, #686, #64)', async () => {
-  const user = userEvent.setup();
+test('a task of a source with its fields read: the "esta issue" box with its fields as field cells, the stage beside Status and the note; no stage select, no source or workspace rows, which the panel\'s header shows (#65)', async () => {
   fetchMock.mockImplementation(withFields(() => jsonRes({ ok: true })));
-  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
-  expect(await panel().findByText('P2')).toBeInTheDocument();
+  renderProps({ task: TASK });
+  const box = within(await panel().findByRole('region', { name: 'esta issue' }));
   expect(fetchMock).toHaveBeenCalledWith(FIELDS_PATH);
-  expect(terms()).toEqual(['etapa', 'labels', 'responsável', 'Status', 'Priority', 'Repository', 'source', 'workspace']);
-  expect(panel().getByRole('button', { name: 'etapa' })).toHaveTextContent('dev');
-  expect(panel().getByRole('button', { name: 'editar Status' })).toHaveTextContent('In review');
-  expect(panel().getByRole('button', { name: 'editar Assignees' })).toHaveTextContent('ana');
-  expect(panel().getByText('acme/site').closest('[title]')).toHaveAttribute('title', 'somente leitura');
-  expect(panel().queryByRole('button', { name: 'editar Repository' })).not.toBeInTheDocument();
-  expect(panel().getByText('bug')).toBeInTheDocument();
-  expect(panel().getByText('roadmap')).toBeInTheDocument();
-  expect(panel().getByText('github project')).toBeInTheDocument();
-  expect(panel().getByText('site')).toBeInTheDocument();
-  expect(panel().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
+  expect(box.getByText('campos de roadmap')).toBeInTheDocument();
+  expect(terms()).toEqual(['Status', 'Labels', 'responsável', 'Priority', 'Repository']);
+  expect(box.getByRole('button', { name: 'editar Status' })).toHaveTextContent('In review· etapa dev');
+  expect(box.getByRole('button', { name: 'editar Labels' })).toHaveTextContent('bug');
+  expect(box.getByText('mudar o status move a tarefa para a etapa ligada a ele.')).toBeInTheDocument();
+  expect(panel().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
+  expect(panel().queryByRole('button', { name: 'fluxo…' })).not.toBeInTheDocument();
+  expect(panel().queryByRole('button', { name: 'remover bug' })).not.toBeInTheDocument(); // the labels are the field's cell, not #757's chips
+  expect(panel().queryByText('github project')).not.toBeInTheDocument();
   expect(panel().queryByText('hive/12-pager')).not.toBeInTheDocument(); // the branch is the panel's properties grid
-  expect(panel().queryByRole('button', { name: 'abrir atividade' })).not.toBeInTheDocument(); // the panel's footer
   expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: 'propriedades' })).not.toBeInTheDocument();
-  panel().getByRole('button', { name: 'etapa' }).focus(); // Radix's menu opens on a key under jsdom
-  await user.keyboard('{Enter}');
-  await user.click(screen.getByRole('menuitem', { name: 'review' }));
-  expect(fetchMock).toHaveBeenCalledWith('/tasks/roadmap%3APVTI_12/move-to', expect.objectContaining({ method: 'POST', body: JSON.stringify({ stage: 'review' }) }));
 });
 
 test('a field written from the sidebar shows the value the source answered (#686)', async () => {
@@ -75,24 +71,27 @@ test('a field written from the sidebar shows the value the source answered (#686
   const row: ProjectItem = { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: 'b', url: URL12, labels: ['bug'], assignees: ['ana'], fields: { Priority: 'P0' }, pullRequests: [] };
   const written = FIELDS.map((f) => (f.name === 'Priority' ? { ...f, value: 'P0' } : f));
   fetchMock.mockImplementation(withFields(() => jsonRes({ fields: written, row })));
-  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
+  const onChanged = renderProps({ task: TASK });
   (await panel().findByRole('button', { name: 'editar Priority' })).focus();
   await user.keyboard('{Enter}');
   await user.click(screen.getByRole('menuitem', { name: 'P0' }));
   await waitFor(() => expect(panel().getByRole('button', { name: 'editar Priority' })).toHaveTextContent('P0'));
   expect(fetchMock).toHaveBeenCalledWith(FIELDS_PATH, expect.objectContaining({ method: 'POST', body: JSON.stringify({ field: 'Priority', value: 'P0' }) }));
+  expect(onChanged).toHaveBeenCalled(); // the page reads the issue again: the center's labels and assignees follow (#65)
 });
 
-test('outside the flow: fluxo… in place of the stage, no source, no activity block; the fields of the native view row it was opened from (#757, #686)', async () => {
+test('an issue in a source\'s Project with no task: the "fluxo" row with fluxo… above the box; no stage beside Status, no note (#65, #757, #686)', async () => {
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   fetchMock.mockImplementation(withFields(() => jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201)));
-  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} workspace="site" itemId="roadmap:PVTI_12" meta="roadmap" onGoTo={onGoTo} onChanged={async () => {}} />);
-  expect(await panel().findByText('P2')).toBeInTheDocument();
-  expect(panel().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
-  expect(panel().queryByText('roadmap')).not.toBeInTheDocument();
-  expect(panel().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
-  await user.click(panel().getByRole('button', { name: 'fluxo…' }));
+  renderProps({ state: { ...STATE, tasks: [] }, itemId: 'roadmap:PVTI_12', meta: 'roadmap', onGoTo });
+  const box = await panel().findByRole('region', { name: 'esta issue' });
+  const create = panel().getByRole('button', { name: 'fluxo…' });
+  expect(create.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(terms()).toEqual(['fluxo', 'Status', 'Labels', 'responsável', 'Priority', 'Repository']);
+  expect(within(box).getByRole('button', { name: 'editar Status' })).toHaveTextContent(/^In review$/);
+  expect(panel().queryByText(/mudar o status/)).not.toBeInTheDocument();
+  await user.click(create);
   await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
   await waitFor(() => expect(onGoTo).toHaveBeenCalledWith('local:1'));
   expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({
@@ -103,7 +102,9 @@ test('outside the flow: fluxo… in place of the stage, no source, no activity b
 test('a repository\'s issue out of the flow creates its task with no origin: it came from no source item (#757)', async () => {
   const user = userEvent.setup();
   fetchMock.mockImplementation(async () => jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201));
-  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
+  renderProps({ state: { ...STATE, tasks: [] } });
+  expect(terms()).toEqual(['fluxo', 'labels', 'responsável', 'workspace']);
+  expect(panel().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
   await user.click(panel().getByRole('button', { name: 'fluxo…' }));
   await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({
@@ -111,4 +112,15 @@ test('a repository\'s issue out of the flow creates its task with no origin: it 
   })));
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/fields'))).toBe(false); // in no source: #757's rows only
   expect(panel().getByText('ana')).toBeInTheDocument();
+});
+
+test('a task whose fields do not answer keeps today\'s rows: labels, the assignees read only, its source and workspace; no stage select, no box (#65, #757)', async () => {
+  renderProps({ task: TASK }); // the fields route answers { ok: true }: no fields
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(FIELDS_PATH));
+  expect(terms()).toEqual(['labels', 'responsável', 'source', 'workspace']);
+  expect(panel().getByText('ana')).toBeInTheDocument();
+  expect(panel().getByText('github project')).toBeInTheDocument();
+  expect(panel().getByRole('button', { name: 'remover bug' })).toBeInTheDocument();
+  expect(panel().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
+  expect(panel().queryByRole('region', { name: 'esta issue' })).not.toBeInTheDocument();
 });

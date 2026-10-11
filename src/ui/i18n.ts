@@ -1625,7 +1625,7 @@ const en = {
   'issue.comments': 'comments · {n}',
   'issue.moreComments': '{n} more on GitHub ›',
   'issue.openPr': 'open PR ›',
-  'issue.props.stage': 'stage', 'issue.props.labels': 'labels', 'issue.props.assignee': 'assignee',
+  'issue.props.flow': 'flow', 'issue.props.labels': 'labels', 'issue.props.assignee': 'assignee',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
   'issue.prs.open': 'open', // #65: the issue page's PRs list: "open" opens the PR, the marks' labels
   'issue.prs.checks.success': 'checks passed', 'issue.prs.checks.failure': 'checks failed', 'issue.prs.checks.pending': 'checks running',
@@ -3385,7 +3385,7 @@ const pt: Record<MessageKey, string> = {
   'issue.comments': 'comentários · {n}',
   'issue.moreComments': 'mais {n} no GitHub ›',
   'issue.openPr': 'abrir PR ›',
-  'issue.props.stage': 'etapa', 'issue.props.labels': 'labels', 'issue.props.assignee': 'responsável',
+  'issue.props.flow': 'fluxo', 'issue.props.labels': 'labels', 'issue.props.assignee': 'responsável',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
   'issue.prs.open': 'abrir',
   'issue.prs.checks.success': 'checks passaram', 'issue.prs.checks.failure': 'checks falharam', 'issue.prs.checks.pending': 'checks executando',
