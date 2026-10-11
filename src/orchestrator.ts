@@ -7,7 +7,7 @@ import { forgetFailedFreeRun, forgetFailedSession, keepRecord, withDecomposition
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
-import type { Activity, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item } from './types.js';
+import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item } from './types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
@@ -252,8 +252,9 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
 
 // A task created in the Hive (#132): the next local number (never reused: localCount only grows), entered into the stage like a polled task
 // (enteredAt now, so `after` counts from creation) and appended right after the stage's last task, unpinned. `local` keeps it off every source
-// write and out of the poll's missing mark. Unknown stage: nothing (the route checked; a race is a no-op).
-function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
+// write and out of the poll's missing mark. Unknown stage: nothing (the route checked; a race is a no-op). With pr (#67) the task holds that PR
+// from birth, in a record with no live activity: the shape a deleted activity leaves, which taskOfPr, prsOf and the PR poll already read.
+function createTask(state: State, { title, body, stage: name, prefix, workspace, auto, url, origin, pr }: Extract<HiveEvent, { type: 'createTask' }>): Reduced {
   const stage = stageOf(state.stages, name);
   if (!stage) return none(state);
   const n = state.localCount + 1;
@@ -262,7 +263,9 @@ function createTask(state: State, { title, body, stage: name, prefix, workspace,
   const task = enter({ item, stage: stage.name, boardColumn: '', created: true, auto, ...placed }, stage);
   // "End of its stage" is right after the last task of that stage, as moveTask reads it; an empty stage appends to the list
   const at = state.tasks.reduce((end, c, i) => (c.stage === stage.name ? i + 1 : end), state.tasks.length);
-  return none(settleEntries(state.tasks, { ...state, localCount: n, tasks: [...state.tasks.slice(0, at), task, ...state.tasks.slice(at)] }));
+  const held: ActivityRecord | undefined = pr && { id: pr.recordId, taskIds: [item.itemId], sessions: [], prs: [{ url: pr.url, state: 'open' }] };
+  const activityRecords = held === undefined ? state.activityRecords : [...state.activityRecords, held];
+  return none(settleEntries(state.tasks, { ...state, localCount: n, tasks: [...state.tasks.slice(0, at), task, ...state.tasks.slice(at)], activityRecords }));
 }
 
 // The auto switch (#164, #573): off takes the task out of the fill, the delete-activity stages (unless nonAutoTasks, #496) and every automatic

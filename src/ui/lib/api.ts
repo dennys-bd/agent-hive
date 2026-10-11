@@ -22,3 +22,8 @@ export function sendJson<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, bod
 }
 
 export const postJson = <T>(path: string, body?: unknown, opts: { keepalive?: boolean } = {}): Promise<T> => sendJson<T>('POST', path, body, opts);
+
+/** A hive task made from a PR (#67): POST /tasks with the link as pr and the destination hive, the only one such a task has, so the answer is
+ * always the task, never a source's notice. The title and stage are the caller's (the PR page sends the PR's title). */
+export const createTaskFromPr = ({ url, title, stage, auto }: { url: string; title: string; stage: string; auto: boolean }): Promise<{ id: string; itemId: string }> =>
+  postJson<{ id: string; itemId: string }>('/tasks', { title, stage, auto, pr: url, source: 'hive' });

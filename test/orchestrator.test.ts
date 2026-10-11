@@ -4,7 +4,7 @@ import { candidates, canOpenSession, sessionsOf, canDeleteActivity, differsFromS
 import { canSchedule, canStart, effectiveLimits, extractPrUrl, initialState, isChildSession, isFree, reduce, type Reduced, WAITING_NOTIFICATIONS } from '../src/orchestrator.js';
 import { startMode } from '../src/task-runs.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
+import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf, taskOfPr, taskOfWorker, usageOf, withActivity, withRecord } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, ActivityRecord, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
@@ -2427,6 +2427,21 @@ test('createTask keeps the url and the origin on the new item and returns a new 
   assert.equal(two.tasks.length, before, 'the input state is untouched');
   const plain = reduce(two, { type: 'createTask', title: 'x', body: '', stage: 'spec', prefix: 'HIVE', auto: true }).state.tasks.find((c) => c.created)!.item;
   assert.deepEqual([plain.url, 'origin' in plain], ['', false]);
+});
+
+test('createTask with pr adds exactly one record holding the PR for the new task and no activity, so taskOfPr finds it; without pr the records stay as they are (#67)', () => {
+  const two = signaled(twoWorkspaces(0), 'yellow').state;
+  const link = 'https://github.com/acme/app/pull/7';
+  const recordId = '0d9a2f3e-1111-4222-8333-444455556666';
+  const { state } = reduce(two, { type: 'createTask', title: 'The PR', body: '', stage: 'spec', prefix: 'HIVE', auto: false, url: link, pr: { url: link, recordId } });
+  const made = state.tasks.find((c) => c.created)!.item.itemId;
+  assert.deepEqual(state.activityRecords.slice(0, two.activityRecords.length), two.activityRecords, 'the records before it stay');
+  assert.deepEqual(state.activityRecords.slice(two.activityRecords.length), [{ id: recordId, taskIds: [made], sessions: [], prs: [{ url: link, state: 'open' }] }]);
+  assert.deepEqual(state.activities, two.activities, 'no activity is created');
+  assert.equal(taskOfPr(state, link)?.item.itemId, made);
+  assert.deepEqual(prsOf(state, made), [{ url: link, state: 'open' }]);
+  const plain = reduce(two, { type: 'createTask', title: 'x', body: '', stage: 'spec', prefix: 'HIVE', auto: false }).state;
+  assert.deepEqual(plain.activityRecords, two.activityRecords, 'no pr: no record');
 });
 
 test('a task writes only to its own source: its source\'s onStart and onFinish, nothing where its source has no entry (#180)', () => {

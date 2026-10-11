@@ -30,7 +30,7 @@ const PAGE = {
 const PAGE_VIEW = {
   body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main', commits: 2, additions: 10, deletions: 3,
   decision: 'approved', approvals: 1, canEdit: true, headOwner: 'bia', baseOwner: 'acme', canPush: true, behindBy: 4, checks: { state: 'success', at: AT, items: [{ name: 'test', state: 'success', at: AT }] },
-  reviews: [{ id: 'R1', author: 'caio', at: AT, kind: 'approved', text: 'ship it' }], comments: [{ id: 'IC1', author: 'ghost', at: AT, text: 'thanks' }],
+  reviews: [{ id: 'R1', author: 'caio', at: AT, kind: 'approved', text: 'ship it' }], comments: [{ id: 'IC1', author: 'ghost', at: AT, text: 'thanks' }], reviewRequests: [],
 };
 const answer = (pr: Record<string, unknown> = {}) => ({
   viewer: { login: 'ana' },
@@ -159,6 +159,40 @@ test('a merged PR, whose head branch may be gone, is read without the compare: o
 
 test('the timeline reads its last items, so the newest reviews and comments of a long PR show (#758)', () => {
   assert.match(PR_QUERY, /timelineItems\(last: 100,/);
+});
+
+const requestOf = (reviewer: unknown) => ({ requestedReviewer: reviewer });
+
+test('parsePrData reads the pending review requests: a user one naming the viewer with its latest request time, a team one never the viewer\'s, a malformed one skipped; none reads [] (#67)', () => {
+  const EARLY = '2026-09-29T10:00:00Z';
+  const view = parsePrData(answer({
+    reviewRequests: { nodes: [
+      requestOf({ __typename: 'User', login: 'ana' }), requestOf({ __typename: 'Team', slug: 'core' }), requestOf({ __typename: 'User', login: 'caio' }),
+      requestOf(null), requestOf({ __typename: 'User', login: 7 }), requestOf({ __typename: 'Team' }), 'junk',
+    ] },
+    requested: { nodes: [
+      { createdAt: EARLY, requestedReviewer: { __typename: 'User', login: 'ana' } },
+      { createdAt: AT, requestedReviewer: { __typename: 'User', login: 'ana' } },
+      { createdAt: EARLY, requestedReviewer: { __typename: 'Team', slug: 'core' } },
+      { createdAt: AT, requestedReviewer: { __typename: 'User', login: 'core' } }, // a user named like the team: not the team's request
+      { createdAt: 5, requestedReviewer: { __typename: 'User', login: 'caio' } },
+      {},
+    ] },
+  }));
+  assert.deepEqual(view.reviewRequests, [
+    { reviewer: 'ana', team: false, viewer: true, at: AT },
+    { reviewer: 'core', team: true, viewer: false, at: EARLY },
+    { reviewer: 'caio', team: false, viewer: false },
+  ]);
+  assert.deepEqual(parsePrData(answer()).reviewRequests, [], 'no requests: []');
+  const anonymous = parsePrData({ ...answer({ reviewRequests: { nodes: [requestOf({ __typename: 'User', login: 'ana' })] } }), viewer: null });
+  assert.deepEqual(anonymous.reviewRequests, [{ reviewer: 'ana', team: false, viewer: false }], 'no viewer login: nobody is the viewer');
+});
+
+test('PR_QUERY asks the review requests and, under their own alias, the ReviewRequestedEvents; the conversation\'s timeline keeps its two kinds (#67)', () => {
+  assert.match(PR_QUERY, /reviewRequests\(first: 100\) \{ nodes \{ requestedReviewer \{ __typename \.\.\. on User \{ login \} \.\.\. on Team \{ slug \} \.\.\. on Mannequin \{ login \} \} \} \}/);
+  assert.match(PR_QUERY, /requested: timelineItems\(last: 100, itemTypes: \[REVIEW_REQUESTED_EVENT\]\) \{ nodes \{ \.\.\. on ReviewRequestedEvent \{ createdAt requestedReviewer \{ __typename /);
+  assert.match(PR_QUERY, / timelineItems\(last: 100, itemTypes: \[PULL_REQUEST_REVIEW, ISSUE_COMMENT\]\)/);
 });
 
 test('parsePrChecks reads the checks, the merge state and updatedAt alone; a PR without checks has none; a null resource is PrNotFound (#758)', () => {

@@ -838,17 +838,20 @@ export interface PrReviewEvent { id: string; author: string; at: string; kind: '
 export interface PrIssueComment { id: string; author: string; at: string; text: string }
 /** GitHub's reviewDecision, shortened (#758); a repository that requires no review has none. */
 export type PrReviewDecision = 'approved' | 'changes' | 'pending';
+/** A pending review request on a PR (#67): a user by login or a team by slug; viewer: the request names the viewer's own login; at: when
+ * the latest request for that reviewer was made, as the timeline reads it. */
+export interface PrReviewRequest { reviewer: string; team: boolean; viewer: boolean; at?: string }
 
 /** A PR as its page reads it (#592, #758): the PR as GitHub holds it, its diff and its conversations, and the page's fields. truncated:
  * GitHub holds more than 100 threads; behindBy: how far the base moved past the head, absent when GitHub cannot compare them; conflicts: the
  * files a merge of the base would conflict in, only when computed; canEdit: GitHub lets the login edit the title and description; canPush: the
- * login may merge and re-run there (#854); headOwner / baseOwner: the two repositories' owners, which differ on a fork's PR. */
+ * login may merge and re-run there (#854); headOwner / baseOwner: the two repositories' owners, which differ on a fork's PR. reviewRequests: who is asked to review, pending only (#67). */
 export interface PrData {
   url: string; id: string; number: number; title: string; state: PrState; isDraft: boolean; mergeState: PrMergeState; head: string;
   methods: MergeMethod[]; viewer: string; files: FileDiff[]; threads: PrThread[]; truncated: boolean;
   body: string; author: string; createdAt: string; updatedAt: string; headRef: string; baseRef: string; commits: number; additions: number; deletions: number;
   decision?: PrReviewDecision; approvals: number; checks?: PrChecks; reviews: PrReviewEvent[]; comments: PrIssueComment[]; behindBy?: number;
-  conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string;
+  conflicts?: string[]; canEdit: boolean; canPush: boolean; headOwner: string; baseOwner: string; reviewRequests: PrReviewRequest[];
 }
 /** GET …/pulls/:number/checks (#758): what the checks' poll reads, nothing else of the PR. */
 export type PrChecksRead = Pick<PrData, 'checks' | 'mergeState' | 'updatedAt'>;
@@ -1286,7 +1289,7 @@ export type HiveEvent =
   | { type: 'restored'; itemId: string; branch?: string } // #619: the restore's git ended well; `branch` when it checked out a new -r<n>
   | { type: 'restoreFailed'; itemId: string } // #619: the restore's git failed: the mark goes
   | { type: 'clearSessions'; activityId: string; sessionId: string } // one session's limpar in the panel (#304); a record id (#629)
-  | { type: 'createTask'; title: string; body: string; stage: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756)
+  | { type: 'createTask'; title: string; body: string; stage: string; prefix: string; workspace?: string; auto: boolean; url?: string; origin?: string; pr?: { url: string; recordId: string } } // a task created in the Hive (#132); POST /tasks validated it. auto false: the new activity dialog's (redesign 03), which starts it itself. url and origin: the native view's flow… (#756). pr: a task made from a PR, with the record id the route drew so the reducer stays pure (#67)
   | { type: 'closeTask'; taskId: string } // close on a missing task, remove on a stopped local one (#132): the task and its session go; a missing task's worktree stays (#182), a local task's goes first, in the route (#542)
   | { type: 'keepTask'; taskId: string } // manter on a missing task
   | { type: 'closeMissing'; stage: string } // close all in a stage's missing strip (#279): every closable missing task of the stage goes

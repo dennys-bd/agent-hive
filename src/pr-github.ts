@@ -1,7 +1,7 @@
 // The PR page's GitHub side (#592, #758): the GraphQL documents and the parsing of their answers. Pure: every user value (link, node id,
 // text, path, line, method, head) travels as a variable, never inside a query's text. No node module either: the UI reads mergeBlocker from here.
 import { AWAITING_ROLLUP, canPushOf, countOf, decisionOf, isObject, mergeState, nodesOf, prChecksOf, prStateOf, readable } from './pr-checks.js';
-import type { Gql, LineAnchor, MergeMethod, PrChecksRead, PrComment, PrData, PrDraft, PrIssueComment, PrMergeState, PrReviewEvent, PrReviewEventInput, PrThread } from './types.js';
+import type { Gql, LineAnchor, MergeMethod, PrChecksRead, PrComment, PrData, PrDraft, PrIssueComment, PrMergeState, PrReviewEvent, PrReviewEventInput, PrReviewRequest, PrThread } from './types.js';
 
 export { mergeState };
 
@@ -21,11 +21,16 @@ const PAGE_FIELDS = 'body author { login } createdAt updatedAt headRefName baseR
   + '... on PullRequestReview { id author { login } submittedAt state body } ... on IssueComment { id author { login } createdAt body } } }';
 const THREAD_FIELDS = 'id path diffSide line startLine originalLine originalStartLine isOutdated isResolved subjectType '
   + `comments(first: ${PR_PAGE}) { totalCount nodes { id body createdAt author { login } } }`;
+const REVIEWER = '__typename ... on User { login } ... on Team { slug } ... on Mannequin { login }';
+// Who is asked to review (#67): the pending requests, and when each was made from the ReviewRequestedEvents, read under their own alias so
+// the conversation's timeline keeps its two kinds
+const REQUEST_FIELDS = `reviewRequests(first: ${PR_PAGE}) { nodes { requestedReviewer { ${REVIEWER} } } } `
+  + `requested: timelineItems(last: ${PR_PAGE}, itemTypes: [REVIEW_REQUESTED_EVENT]) { nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ${REVIEWER} } } } }`;
 
 /** Everything the page draws in one call (#592, #758); $head is the head branch's name, which PR_HEAD_QUERY reads first, and $open whether the
  * PR is open: a merged or closed PR may have lost its branch, so it is read without the compare (#849). ponytail: GitHub's errors win over its
  * data, so a compare GitHub refuses on an open PR still fails the whole read; a fork's branch answers null, which reads as no behindBy. */
-export const PR_QUERY = `query($url: URI!, $head: String!, $open: Boolean!) { viewer { login } resource(url: $url) { ... on PullRequest { ${PR_FIELDS} ${PAGE_FIELDS} `
+export const PR_QUERY = `query($url: URI!, $head: String!, $open: Boolean!) { viewer { login } resource(url: $url) { ... on PullRequest { ${PR_FIELDS} ${PAGE_FIELDS} ${REQUEST_FIELDS} `
   + `reviewThreads(first: ${PR_PAGE}) { totalCount nodes { ${THREAD_FIELDS} } } } } }`;
 /** The head alone (#592): its oid, read again after the diff, which carries none; its branch's name, what PR_QUERY compares the base to (#758);
  * and its state, since only an open PR is compared (#849). */
@@ -128,7 +133,36 @@ function originOf(pr: Record<string, unknown>): Pick<PrData, 'headOwner' | 'base
   return { headOwner: ownerLogin(pr.headRepositoryOwner), baseOwner: ownerLogin(base.owner), canPush: canPushOf(base.viewerPermission) };
 }
 
-type PageFields = Omit<PrView, 'id' | 'number' | 'title' | 'state' | 'isDraft' | 'mergeState' | 'head' | 'methods' | 'viewer' | 'threads' | 'truncated'>;
+type Reviewer = Pick<PrReviewRequest, 'reviewer' | 'team'>;
+
+// Who a request or a ReviewRequestedEvent names (#67): a team by its slug, a user or a mannequin by its login; none for a deleted account, a
+// bot (not selected) or a name that is no non-empty string
+function reviewerOf(node: unknown): Reviewer | undefined {
+  const who = isObject(node) ? node.requestedReviewer : undefined;
+  if (!isObject(who)) return undefined;
+  const team = who.__typename === 'Team';
+  const name = team ? who.slug : who.login;
+  return typeof name === 'string' && name !== '' ? { reviewer: name, team } : undefined;
+}
+
+const sameReviewer = (a: Reviewer, b: Reviewer): boolean => a.reviewer === b.reviewer && a.team === b.team;
+
+// The pending review requests (#67), in GitHub's order. viewer: a user request naming the viewer's login (ponytail: GitHub does not say whether
+// the viewer is in a requested team, so a team request is never the viewer's); at: the latest event for that reviewer among the last PR_PAGE
+function reviewRequestsOf(pr: Record<string, unknown>, viewer: string): PrReviewRequest[] {
+  const events = nodesOf(pr.requested).flatMap((node) => {
+    const who = reviewerOf(node);
+    return who !== undefined && isObject(node) && typeof node.createdAt === 'string' ? [{ ...who, at: node.createdAt }] : [];
+  });
+  return nodesOf(pr.reviewRequests).flatMap((node) => {
+    const who = reviewerOf(node);
+    if (who === undefined) return [];
+    const at = events.filter((e) => sameReviewer(e, who)).at(-1)?.at; // the timeline reads oldest first
+    return [{ ...who, viewer: !who.team && who.reviewer === viewer, ...(at === undefined ? {} : { at }) }];
+  });
+}
+
+type PageFields = Omit<PrView, 'id' | 'number' | 'title' | 'state' | 'isDraft' | 'mergeState' | 'head' | 'methods' | 'viewer' | 'reviewRequests' | 'threads' | 'truncated'>;
 
 // The page's fields (#758); the optional ones only when GitHub answered them
 function pageOf(pr: Record<string, unknown>, skip: (reason: string) => void): PageFields {
@@ -151,10 +185,10 @@ export function parsePrData(data: unknown, skip: (reason: string) => void = () =
   if (!isObject(pr)) throw new PrNotFound();
   const state = prStateOf(pr.state);
   if (state === undefined || typeof pr.number !== 'number') throw new Error('not a pull request answer');
+  const viewer = isObject(answer.viewer) && typeof answer.viewer.login === 'string' ? answer.viewer.login : '';
   return {
     id: text(pr.id, 'id'), number: pr.number, title: text(pr.title, 'title'), state, isDraft: pr.isDraft === true, mergeState: mergeState(pr.mergeStateStatus),
-    head: text(pr.headRefOid, 'headRefOid'), methods: methodsOf(pr.repository),
-    viewer: isObject(answer.viewer) && typeof answer.viewer.login === 'string' ? answer.viewer.login : '',
+    head: text(pr.headRefOid, 'headRefOid'), methods: methodsOf(pr.repository), viewer, reviewRequests: reviewRequestsOf(pr, viewer),
     threads: readable(nodesOf(pr.reviewThreads), threadOf, skip), truncated: isCut(pr.reviewThreads), ...pageOf(pr, skip),
   };
 }
