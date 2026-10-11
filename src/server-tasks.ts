@@ -44,6 +44,7 @@ export const RUNNING_MESSAGE = 'tarefa já está executando';
 export const SETUP_RUNNING_MESSAGE = 'o setup desta tarefa ainda está em andamento'; // #351: one worktree, one setup at a time
 export const MISSING_MESSAGE = 'tarefa sumiu do source: feche ou mantenha';
 export const LEAVING_MESSAGE = 'tarefa saindo da source'; // #491: an archive, remove or delete of the source is in flight on it (#286)
+const EPIC_MESSAGE = 'um épico não executa: sua etapa vem das filhas'; // #31: a show epic; the reducer's start ignores it
 const DIFFERENT_STAGES_MESSAGE = 'tarefas em etapas diferentes';
 const NOTHING_MISSING_MESSAGE = 'nenhuma tarefa dessa etapa saiu da source'; // #279: the stage's close all has nothing canCloseMissing allows
 const DELETING_MESSAGE = 'atividade sendo excluída'; // a delete-activity stage or route is running git on it (#573)
@@ -95,6 +96,7 @@ export const blockedMessage = (task: Task): string => `task bloqueado por ${(tas
 function startRefusal(state: State, itemId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === itemId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
+  if (task.item.epic !== undefined) return { status: HTTP_CONFLICT, message: EPIC_MESSAGE };
   const activity = activityOf(state, itemId);
   if (activity?.setup) return { status: HTTP_CONFLICT, message: SETUP_RUNNING_MESSAGE }; // before RUNNING: both paths answer the same (#351)
   if (activity?.workerId !== undefined || inAction(activity)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE }; // #755, #834: a stage action runs

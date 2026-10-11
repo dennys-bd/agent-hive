@@ -265,6 +265,7 @@ export interface Item {
   parent?: string; // #28: the parent's itemId, from the sub-issues of the listed items; absent on a task created in the Hive and on an issue with no parent on the Project
   children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
+  epic?: { follows: EpicFollows; switchAt: string }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise
 }
 
 export type SessionPolicy = 'new' | 'continue';
@@ -663,8 +664,9 @@ export interface State {
   error?: string;
 }
 
-/** What the GitHub adapter does with an issue that has sub-issues (#30): ignore = a regular task; show = listed with its children (#31 keeps it
- * from running); hide = dropped, only its sub-issues are tasks. The parser and the source's select read EPICS_MODES. */
+/** What the GitHub adapter does with an issue that has sub-issues (#30): ignore = a regular task; show = listed with its children, stamped
+ * `item.epic`, never run, its stage computed from its children's (#31, src/epic-follow.ts); hide = dropped, only its sub-issues are tasks.
+ * The parser and the source's select read EPICS_MODES. */
 export const EPICS_MODES = ['ignore', 'show', 'hide'] as const;
 export type EpicsMode = (typeof EPICS_MODES)[number];
 /** Which child an epic's stage follows (#30, computed by #31): the furthest behind, the furthest ahead, or ahead up to switchAt and behind after. */

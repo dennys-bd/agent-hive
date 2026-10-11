@@ -182,6 +182,10 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
   return { item: { ...hinted, autoOnEntry: auto ?? taskProps.defaults.auto }, column };
 }
 
+// #31: under show an issue with sub-issues is an epic: it never runs and its stage follows its children, by the source's own rule
+const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig): SourceItem =>
+  ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt } } });
+
 // Every listed task gets its relations (#441): a stage's view filter and a source's blocked rule read blocked on any task, and a blocked task
 // refuses a session wherever it sits. relationsQuery aliases each task by its index here, a task with no
 // issue url being skipped, so `i<index>` finds its answer.
@@ -276,8 +280,11 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
     const kept = groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
       if (!matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
-      if (epics === 'hide' && isEpicItem(item.content)) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
-      return tasks.get(item) ?? [];
+      const epic = isEpicItem(item.content);
+      if (epics === 'hide' && epic) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
+      const task = tasks.get(item);
+      if (task === undefined) return [];
+      return [epics === 'show' && epic ? asEpic(task, source) : task];
     });
     // Items carry no relations; a failed query rejects the poll, never "no blockers". The blocked rules (#441) are judged on what it read.
     return (await withBlockers(kept, gql)).filter((task) => matchesRules(blocked, task.item));

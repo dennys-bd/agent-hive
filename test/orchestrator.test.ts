@@ -3404,3 +3404,31 @@ test('forkSynced sets the sync on its activity, a new object, with no effect and
   assert.equal(describeEvent({ type: 'forkSynced', activityId: id, sync: { ...sync, reason: 'fatal: secret words' } }).includes('secret'), false);
   assert.match(describeEvent({ type: 'forkSynced', activityId: id, sync }), /^forkSynced activity=\S+ github diverged$/);
 });
+
+test('the fill never picks a show epic: the leaf behind it takes the worker (#31)', () => {
+  const epic: SourceItem = { item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const { state } = polled(base(1), [epic, listed(2)]);
+  assert.deepEqual(owners(state, occupied(state)), ['board:item2']);
+  assert.ok(!cands(state).some((c) => c.item.itemId === 'board:item1'));
+});
+
+test('moveToStage and a start on a show epic are no-ops: its children decide its stage, and it never runs (#31)', () => {
+  const epic: SourceItem = { item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const before = polled(base(0), [epic]).state;
+  const moved = reduce(before, { type: 'moveToStage', taskId: 'board:item1', stage: 'review' });
+  assert.equal(task(moved.state, 1)?.stage, 'spec');
+  assert.deepEqual(moved.effects, []);
+  const start = started(before, 'board:item1');
+  assert.deepEqual(start.effects, [], 'no spawn');
+  assert.equal(work(start.state, 1), undefined, 'no activity born for it');
+});
+
+test('a poll that moves the children moves their show epic in the same reduction, its column written like any move (#31)', () => {
+  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2', 'board:item3'], epic: { follows: 'behind', switchAt: 'dev' } }, column });
+  const first = polled(base(0), [epic('Backlog'), listed(2), listed(3)]).state;
+  assert.equal(task(first, 1)?.stage, 'spec', 'every child in spec: the epic stays');
+  const { state, effects } = polled(first, [epic('Backlog'), listed(2, 'Ready'), listed(3, 'Ready')]);
+  assert.equal(task(state, 1)?.stage, 'dev', 'the furthest-behind child is in dev now');
+  assert.equal(task(state, 1)?.boardColumn, 'Ready');
+  assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]);
+});

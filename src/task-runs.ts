@@ -70,7 +70,7 @@ export function handoverRun(activity: Activity): { activity: Activity; run: Spaw
 export function startMode(task: Task, state: Pick<State, 'stages' | 'workers' | 'activities' | 'activityRecords'>): StartMode {
   const stage = stageOf(state.stages, task.stage);
   const activity = activityOf(state, taskId(task));
-  if (!stage || task.missing || activity?.deleting || task.leaving) return 'none';
+  if (!stage || task.missing || activity?.deleting || task.leaving || task.item.epic !== undefined) return 'none'; // #31: a show epic never runs
   if (stage.action === undefined && (stage.prompt === undefined || isBlocked(task.item))) return 'none';
   if (activity?.workerId !== undefined || inAction(activity)) return 'running'; // #755, #834: a commands stage or a wait for CI in flight runs too
   if (activity?.setup) return 'none'; // a first open's worktree setup runs (#351): nothing to start, continue or restart until it ends

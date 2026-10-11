@@ -159,10 +159,11 @@ export const inAction = (activity: Pick<Activity, 'commands' | 'ci'> | undefined
 
 /** A task a stage may act on: stopped, no delete activity in flight, still on the source, not carrying a failure that waits for a manual start, with
  * auto on (#164, #573) unless `nonAutoToo` (a delete-activity stage under nonAutoTasks, #496; the fill never passes it), not stopped by the
- * user or by a run that died (#283), not leaving the source (#286), not awaiting approval (#268), and not running its worktree setup (#351) or a stage action (#755, #834). */
+ * user or by a run that died (#283), not leaving the source (#286), not awaiting approval (#268), not running its worktree setup (#351) or a stage
+ * action (#755, #834), and not a show epic (#31: its children run, it never does, by the fill or by a stage action). */
 const isIdle = (task: Task, activity: Activity | undefined, nonAutoToo = false): boolean =>
   activity?.workerId === undefined && !activity?.deleting && !task.missing && activity?.error === undefined && (nonAutoToo || task.auto) && !activity?.stopped
-  && !task.leaving && !activity?.approval && !activity?.setup && !inAction(activity);
+  && !task.leaving && !activity?.approval && !activity?.setup && !inAction(activity) && task.item.epic === undefined;
 
 /** Started (#727): the task has a live activity, whatever made it: a stage run, a free session, a first open. What a signal's resume picks up
  * when the task's auto is on and it is not stopped; a task without one is new. */
@@ -569,7 +570,8 @@ export function defaultSession(task: Task, state: WorkersState, stage: Stage | u
  * source, not leaving it, and held by no stage run. A free session or a terminal on it holds nothing: the session is the user's own and
  * has no stage (#283). The reducer, the route, the menu and the drag share it. */
 export const canMoveToStage = (task: Task, state: WorkersState): boolean =>
-  !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
+  task.item.epic === undefined // #31: its children decide its stage; the rule would move it back at the next reduction
+  && !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
   && !workersOf(state, task).some((s) => !s.freeSession);
 
 /** What a workspace's shell (#292) is named by in place of a task's slug: its launch's slug, which the kill effect and the log name. */

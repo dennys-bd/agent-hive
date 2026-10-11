@@ -25,6 +25,7 @@ import { captureSession, dropOrphanTerminals, forgetTerminal, sleepTerminal, wak
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
+import { followEpics } from './epic-follow.js';
 
 export { isFree } from './reducer-kit.js';
 export { canSchedule, canStart, effectiveLimits } from './fill.js';
@@ -79,11 +80,15 @@ export function isChildSession(worker: Worker | undefined, payload: HookPayload)
   return isSessionId(worker?.sessionId) && isSessionId(payload.session_id) && payload.session_id !== worker.sessionId;
 }
 
-/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it. Expired disables go first (#297),
- * on the state as it stood before the event, so a rise the event brings is counted against a rule already back on. */
+/** Every event, then the shutdown-when-done step (#233), on the state as the event and its fill left it, then the show epics' pass (#31).
+ * Expired disables go first (#297), on the state as it stood before the event, so a rise the event brings is counted against a rule already
+ * back on. */
 export function reduce(state: State, event: HiveEvent): Reduced {
   // #672: then the sleeping runs, read across the whole reduction: a run freed by the event, its fill or the shutdown sweep
-  const reduced = withSlept(state, event, drainForShutdown(step(dropExpiredDisables(state, Date.now()), event), Date.now()), Date.now());
+  const stepped = withSlept(state, event, drainForShutdown(step(dropExpiredDisables(state, Date.now()), event), Date.now()), Date.now());
+  // #31: every show epic where its children now put it, whatever moved them: one pass, so no event has to wire it
+  const epics = followEpics(stepped.state);
+  const reduced = epics.state === stepped.state ? stepped : { state: epics.state, effects: [...stepped.effects, ...epics.effects] };
   // #629: wherever a task left, its work went with it; #696: and the terminals of any activity gone, a removed workspace's local one included;
   // #727: and the worker of any commands run gone with it or dropped by the boot
   const { state: pruned, effects: dropped } = dropOrphanTerminals(freedLostRuns(pruneWork(reduced.state)), reduced.state);
@@ -222,7 +227,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   const task = placed?.task;
   const stage = task && stageOf(state.stages, task.stage);
   const activity = activityOf(state, itemId);
-  if (!placed || !task || !stage || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351
+  if (!placed || !task || !stage || task.item.epic !== undefined || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351; #31: a show epic never runs
   if (resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) === undefined) return none(state); // the route asks for one first (#179)
   // a manual start clears the last failure (spawn, delete activity or a commands stage's) and tries again
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);

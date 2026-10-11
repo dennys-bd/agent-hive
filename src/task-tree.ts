@@ -1,4 +1,4 @@
-import type { Task } from './types.js';
+import type { Stage, Task } from './types.js';
 
 /** How many nodes under a parent are done, out of how many (#28). A child with no task still counts, as one node. */
 export interface TreeCount { done: number; total: number }
@@ -74,4 +74,29 @@ export function treeProgress(tasks: readonly Task[], itemId: string, lastStage: 
 export function treeStarted(tasks: readonly Task[], itemId: string, isStarted: (task: Task) => boolean): boolean {
   const root = rootOf(tasks, itemId);
   return root !== undefined && [root, ...descendants(tasks, root.item.itemId)].some(isStarted);
+}
+
+/** Every direct child done (#31): what sends a show epic out through the last stage's end. A leaf has nothing to be done. */
+export function allDone(tasks: readonly Task[], itemId: string, lastStage: string): boolean {
+  const { done, total } = progress(tasks, itemId, lastStage);
+  return total > 0 && done === total;
+}
+
+/** The stage a show epic's rule puts it in (#31), over its direct children that are tasks in a stage of `stages` (the pipeline order):
+ * behind, the lowest; ahead, the highest; aheadThenBehind, the highest up to switchAt and the lowest past it. Undefined with no such child,
+ * or for a task with no epic stamp. A switchAt the flow lost reads as before every stage, so the rule falls back to behind. */
+export function epicStage(tasks: readonly Task[], stages: readonly Pick<Stage, 'name'>[], epic: Task): string | undefined {
+  const rule = epic.item.epic;
+  if (rule === undefined) return undefined;
+  const indexOf = (name: string): number => stages.findIndex((s) => s.name === name);
+  const placed = (epic.item.children ?? []).flatMap((id) => {
+    const child = taskOf(tasks, id);
+    const at = child === undefined ? -1 : indexOf(child.stage);
+    return at < 0 ? [] : [at];
+  });
+  if (placed.length === 0) return undefined;
+  const behind = Math.min(...placed);
+  const ahead = Math.max(...placed);
+  const at = rule.follows === 'behind' ? behind : rule.follows === 'ahead' ? ahead : Math.max(Math.min(ahead, indexOf(rule.switchAt)), behind);
+  return stages[at].name;
 }

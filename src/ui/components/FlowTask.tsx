@@ -3,6 +3,7 @@ import { type MouseEvent, useState } from 'react';
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
+import { progress } from '../../task-tree';
 import { taskLabel, isBlocked, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
@@ -69,12 +70,22 @@ interface TaskStatus { tone?: Tone; text?: string }
 
 const blockedText = (task: Task): string => t('task.blockedBy', { ids: (task.item.blockedBy ?? []).join(', ') });
 
-// What the footer says (#542): in the status colour sumiu da source, then out of tries (#913), then a failed start (#945), then the task's state (#663: its sessions' worst at work, else aguardando
+// #31: a show epic's line: its direct children done over all of them, against the flow's last stage
+function waitingText(task: Task, state: State): string {
+  const { done, total } = progress(state.tasks, task.item.itemId, state.stages.at(-1)?.name ?? '');
+  return t('task.waitingChildren', { done, total });
+}
+
+// What the footer says (#542): in the status colour sumiu da source, then, muted, a show epic's wait for its children (#31: it never runs, so
+// no other state is its own), then out of tries (#913), then a failed start (#945), then the task's state (#663: its sessions' worst at work, else aguardando
 // review, else aguardando aprovação), the precedence the border always had (#229, #268, #279); in muted the worktree setup (#351), a spawn
 // error or the blocker. Nothing otherwise
 function taskStatus(task: Task, state: State): TaskStatus {
   if (task.missing) return { tone: 'destructive', text: t('task.missing') };
   const error = activityOf(state, task.item.itemId)?.error;
+  if (task.item.epic !== undefined) { // #31: a refused end action freezes the epic (followEpics skips it), so its error must show over the wait
+    return error === undefined ? { text: waitingText(task, state) } : { tone: 'destructive', text: taskError(error) };
+  }
   if (error !== undefined && isExhausted(task, state)) return { tone: 'destructive', text: taskError(error) }; // #913: halted, worse than a question
   if (isStartFailure(error) && workersOf(state, task).length === 0) return { tone: 'destructive', text: taskError(error) }; // #945: a failed start, red; a live worker's status wins
   const current = taskState(task, state);
@@ -217,7 +228,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       {/* The approval status hides the blocker in the footer, so it gets its own line; approving still works (#595) */}
       {live?.approval && isBlocked(task.item) && <span className="truncate text-muted-foreground text-xs">⊘ {blockedText(task)}</span>}
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
-        {task.auto && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
+        {task.auto && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         {setup && <SetupLogsButton consoleId={setup.consoleId} />}

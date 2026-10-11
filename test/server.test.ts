@@ -858,6 +858,16 @@ test('POST /tasks/:id/start is 409 for a blocked task; with every worker taken i
   assert.equal(server.getState()?.error, undefined);
 });
 
+test('POST /tasks/:id/start is 409 for a show epic: it never runs (#31)', async (t) => {
+  const { base, server, workers } = await start(t); // 1 worker, I1 working
+  const epic = { itemId: 'board:I2', source: 'board', id: '2', title: 'epic', body: '', url: 'https://github.com/acme/r/issues/2', epic: { follows: 'behind' as const, switchAt: 'fila' } };
+  await server.dispatch({ type: 'poll', source: 'board', items: [{ item: { itemId: 'board:I1', source: 'board', id: '1', title: 'from Ready', body: '', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' }, { item: epic, column: 'Ready' }] });
+  const refused = await postJson(`${base}/tasks/board:I2/start`);
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await refused.json(), { error: 'um épico não executa: sua etapa vem das filhas' });
+  assert.equal(workers.length, 1, 'nothing spawned');
+});
+
 test('POST /tasks/:id/close and /keep answer a missing task: close kills and removes it, keep makes it an orphan; 404 unknown, 409 while it is still on the source', async (t) => {
   const { base, server, workers } = await start(t); // I1 running
   assert.equal((await postJson(`${base}/tasks/nope/close`)).status, 404);
