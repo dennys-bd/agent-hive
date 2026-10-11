@@ -85,7 +85,9 @@ export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
       const files = scope === 'commit' ? await commitDiff(worktree, exec) : await taskDiff(worktree, base.commit, exec);
       const answer: TaskDiff = { scope, base: base.label, files };
       res.json(answer);
-      if (latest.get(key) === mine) await dropStale(deps, task.item.itemId, scope, files);
+      // The checkpoint scope's marks are keyed by scope and path, shared by every checkpoint number: one checkpoint's files cannot tell which marks of
+      // another are stale. isReviewedIn compares the hash, so a leftover mark reads unreviewed until its own diff matches.
+      if (scope !== 'checkpoint' && latest.get(key) === mine) await dropStale(deps, task.item.itemId, scope, files);
     } catch (err) {
       refuse(res, failure(err));
     }
