@@ -91,6 +91,7 @@ test('the counter reads "{n} of {total}", "no results", 1000+ past the highlight
   expect(counterText('fail', { resultIndex: 2, resultCount: 5 })).toBe('3 of 5');
   expect(counterText('fail', { resultIndex: -1, resultCount: 0 })).toBe('no results');
   expect(counterText('fail', { resultIndex: -1, resultCount: 1000 })).toBe('1000+');
+  expect(counterText('fail', { resultIndex: 4, resultCount: 1000 })).toBe('1000+'); // the addon caps the count at the limit
   expect(counterText('', { resultIndex: 2, resultCount: 5 })).toBe('');
   expect(counterText('fail', undefined)).toBe('');
   setLanguage('pt');
@@ -120,4 +121,19 @@ test('a theme switch with matches shown searches again, in the new colours (#12)
   document.documentElement.setAttribute('data-theme', 'light');
   await vi.waitFor(() => expect(search.cleared).toBe(1));
   expect(search.calls.at(-1)).toEqual(['next', 'fail', true]);
+});
+
+test('a new xterm under an open bar searches it again without taking the focus (#12)', async () => {
+  const user = userEvent.setup();
+  const { onClose, view } = harness();
+  const { rerender } = render(view(true, 1));
+  await user.type(field(), 'error');
+  field().blur();
+  const term = new FakeTerminal();
+  term.selection = 'other';
+  const search = new FakeSearchAddon();
+  rerender(<TerminalFind term={term as unknown as Terminal} search={search as unknown as SearchAddon} isOpen request={1} onClose={onClose} />);
+  expect(field()).toHaveValue('error');
+  expect(field()).not.toHaveFocus();
+  expect(search.calls).toEqual([['next', 'error', true]]);
 });

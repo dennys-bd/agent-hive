@@ -18,11 +18,12 @@ export interface FindTarget { term: Terminal; search: SearchAddon }
 
 interface TerminalFindProps extends FindTarget { isOpen: boolean; request: number; onClose(): void }
 
-/** The counter: nothing for an empty field or before the first results, "no results", 1000+ past the highlight limit, else "{n} of {total}". */
+/** The counter: nothing for an empty field or before the first results, "no results", 1000+ at the highlight limit, else "{n} of {total}".
+ * The addon caps the count at the limit, so a count that reaches it means more matches, wherever the active one is. */
 export function counterText(query: string, results: FindResults | undefined): string {
   if (query === '' || results === undefined) return '';
   if (results.resultCount === 0) return t('terminal.find.none');
-  if (results.resultIndex === -1) return `${HIGHLIGHT_LIMIT}+`;
+  if (results.resultIndex === -1 || results.resultCount >= HIGHLIGHT_LIMIT) return `${HIGHLIGHT_LIMIT}+`;
   return t('terminal.find.count', { n: results.resultIndex + 1, total: results.resultCount });
 }
 
@@ -51,15 +52,20 @@ function selectedLine(term: Terminal): string | undefined {
 interface SeedArgs extends FindTarget { input: RefObject<HTMLInputElement | null>; isOpen: boolean; request: number; setQuery(query: string): void }
 
 // Each press of the binding fills the field from the selection, else keeps the last query, searches it and selects it, so typing replaces
-// it. Written to the field at once: select() must see the new text before the re-render.
+// it. Written to the field at once: select() must see the new text before the re-render. A new xterm under an open bar (its effect re-runs
+// when a link setting changes) only searches again: the focus moves on a press, never behind the user's back.
 function useSeed({ input, term, search, isOpen, request, setQuery }: SeedArgs): void {
+  const handled = useRef(0);
   useEffect(() => {
     const field = input.current;
     if (!isOpen || request === 0 || field === null) return;
-    const seed = selectedLine(term) ?? field.value;
+    const isPress = request !== handled.current;
+    handled.current = request;
+    const seed = isPress ? (selectedLine(term) ?? field.value) : field.value;
     field.value = seed;
     setQuery(seed);
     if (seed !== '') search.findNext(seed, findOptions(true));
+    if (!isPress) return;
     field.focus();
     field.select();
   }, [input, term, search, isOpen, request, setQuery]);
@@ -89,8 +95,8 @@ const consume = (event: KeyboardEvent): void => {
   event.stopPropagation();
 };
 
-// A click on a button leaves the focus in the field, where Enter and Escape act. ponytail: a button reached with Tab still takes the focus,
-// and the console drawer's capture listener sees its Escape first; give the drawer's OWNS_ESCAPE the bar if that ever matters
+// A click on a button leaves the focus in the field, where Enter and Escape act. A button reached with Tab keeps its Escape too: the bar's
+// data-terminal-find is in the console drawer's and the details panel's OWNS_ESCAPE
 const keepFocus = (event: MouseEvent): void => event.preventDefault();
 
 /** The find bar, at the terminal's top right. Case-insensitive; Enter / Shift+Enter step, Escape or × close and clear the highlights, the
@@ -131,7 +137,7 @@ export function TerminalFind({ term, search, isOpen, request, onClose }: Termina
   };
   const button = { type: 'button', size: 'icon-xs', variant: 'ghost', onMouseDown: keepFocus, onKeyDown: onKey } as const;
   return (
-    <div className="absolute top-2 right-4 z-10 flex items-center gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+    <div data-terminal-find="" className="absolute top-2 right-4 z-10 flex items-center gap-1 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
       <Input
         ref={input} value={query} aria-label={t('terminal.find.field')} placeholder={t('terminal.find.field')}
         className="h-6 w-44 px-2 text-xs md:text-xs" onChange={(event) => type(event.target.value)} onKeyDown={onKey}

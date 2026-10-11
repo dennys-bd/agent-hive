@@ -28,8 +28,8 @@ export function ConsoleChip({ console: channels }: { console: ConsoleChannels })
   );
 }
 
-// A key that belongs to something else: a text field keeps it, and a terminal outside the drawer sends it to its pty (#426)
-const OWNS_ESCAPE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm';
+// A key that belongs to something else: a text field keeps it, a terminal outside the drawer sends it to its pty (#426), a find bar closes (#12)
+const OWNS_ESCAPE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [data-terminal-find]';
 // An open select's list, portalled outside the drawer: its Escape closes the list alone
 const OPEN_POPUP = '[role="listbox"], [data-radix-popper-content-wrapper]';
 

@@ -104,7 +104,7 @@ function TaskFooter({ task, state, nav }: { task: Task; state: State; nav?: Deta
 }
 
 // A key that belongs to something else: a text field keeps it, and a terminal's goes to its pty, where Escape interrupts Claude Code (#426).
-const OWNS_ESCAPE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm';
+const OWNS_ESCAPE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm, [data-terminal-find]';
 
 // Escape is a fixed key (#481) and no binding, since normalizeBinding refuses it, so it is read off the event: alone, as it always closed the panel.
 const isCloseKey = (event: globalThis.KeyboardEvent): boolean =>
