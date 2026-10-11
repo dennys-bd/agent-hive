@@ -30,7 +30,7 @@ const pr = (number: number, state: string, rollup?: string, merged = state === '
 
 test('project maps a page to the native view: the Status options in order, the fields by kind minus the fixed columns, each value by its kind, the hint from a rule (#756)', async () => {
   const rule = { field: 'labels', op: 'icontains', value: 'bug', set: { workspace: 'hive' } };
-  const spec = specOf({ epics: 'queue', source: { ...GITHUB_SOURCE, taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [rule] } } });
+  const spec = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [rule] } } });
   const node = {
     ...issue(1, {
       labels: { nodes: [{ name: 'bug' }] }, assignees: { nodes: [{ login: 'ana' }] }, repository: { nameWithOwner: 'acme/r' }, milestone: { title: 'v1' },
@@ -59,22 +59,32 @@ test('project maps a page to the native view: the Status options in order, the f
   assert.deepEqual(calls.at(-1)?.variables, { login: 'acme', number: 6 });
 });
 
-test('project keeps the issues only, marks the ones the filter or epics: ignore keeps from the Hive, reads no relations, and an issue in an uncited column is not out (#756)', async () => {
+test('project keeps the issues only, marks the ones the filter or epics: hide keeps from the Hive, reads no relations, and an issue in an uncited column is not out (#756)', async () => {
   const hive = { labels: { nodes: [{ name: 'hive' }] } };
   const nodes = [
     issue(1, hive, 'Ready'),
     issue(2, { labels: { nodes: [] } }), // the label rule keeps it out
-    issue(3, { ...hive, subIssuesSummary: { completed: 0, total: 2 } }), // an epic under the default epics: ignore
+    issue(3, { ...hive, subIssuesSummary: { completed: 0, total: 2 } }), // an epic under epics: hide
     issue(4, hive, 'Done'), // passes the filter, in a column no stage cites
     { id: 'PVTI_D', fieldValueByName: { name: 'Todo' }, content: { __typename: 'DraftIssue', title: 'draft' } },
     { id: 'PVTI_P', fieldValueByName: { name: 'Todo' }, content: { __typename: 'PullRequest', number: 9, url: 'https://github.com/acme/r/pull/9' } },
   ];
   // the blocked rule is not judged here: fakeGql rejects the relations query, so a call would fail the read
   const filter = [{ field: 'label', op: 'any', values: ['hive'] }, { field: 'blocked', op: 'none' }];
-  const source = createSource(specOf({ source: { ...GITHUB_SOURCE, filter } }), { gql: fakeGql({ fields: FIELDS, projectItems: page(nodes) }).gql });
+  const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics: 'hide', filter } }), { gql: fakeGql({ fields: FIELDS, projectItems: page(nodes) }).gql });
   await source.resolveFields();
   const { items } = await source.project!();
   assert.deepEqual(items.map((i) => [i.itemId, i.out]), [['PVTI_1', undefined], ['PVTI_2', 'filter'], ['PVTI_3', 'epic'], ['PVTI_4', undefined]]);
+});
+
+test('project marks an epic out only under epics: hide; show and ignore list it (#30)', async () => {
+  const epic = issue(3, { subIssuesSummary: { completed: 0, total: 2 } }, 'Ready');
+  const outs = async (epics: string) => {
+    const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics } }), { gql: fakeGql({ fields: FIELDS, projectItems: page([epic]) }).gql });
+    await source.resolveFields();
+    return (await source.project!()).items.map((i) => i.out);
+  };
+  assert.deepEqual([await outs('hide'), await outs('show'), await outs('ignore')], [['epic'], [undefined], [undefined]]);
 });
 
 test('project reads the PRs that close an issue: merged first, OPEN open, else closed; the checks rollup as a signal, none when absent or unknown (#756)', async () => {

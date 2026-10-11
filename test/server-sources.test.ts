@@ -11,7 +11,7 @@ import { renamesRefusal } from '../src/settings-save.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Source, SourceItem, SourceSpec, Task, Config, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, combConfig, FILTER, FIXED, fakeLog, fakeSpawn, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, combConfig, EPICS, FILTER, FIXED, fakeLog, fakeSpawn, LOCAL_STAGES, move, OPTIONS, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { noCreateMessage, notInFlowNotice } from '../src/create-task.js';
 
@@ -54,8 +54,8 @@ async function startSources(t: TestContext, maxConcurrent = 0, qualifyNotes = tr
     prefix: 'HIVE', auth: AUTH, workspaces: workspacesAt(repo), stages, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS,
     shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} }, commands: [],
     sources: [
-      { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED },
-      { name: 'notes', qualifyId: qualifyNotes, type: 'github', owner: 'acme', number: NOTES_PROJECT, filter: FILTER, taskProps: FIXED },
+      { name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS, switchAt: stages[0].name },
+      { name: 'notes', qualifyId: qualifyNotes, type: 'github', owner: 'acme', number: NOTES_PROJECT, filter: FILTER, taskProps: FIXED, ...EPICS, switchAt: stages[0].name },
     ],
   };
   assert.equal((await postJson(`${base}/settings`, body)).status, 200);

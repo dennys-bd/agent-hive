@@ -64,7 +64,7 @@ function itemGql(reads: GhItemFieldsNode[]): { gql: Gql; calls: ItemCall[] } {
   return { gql, calls };
 }
 const PROJECT = 'PVT_1';
-const READ = { login: 'acme', number: 6, notFound: 'source not found', filter: [], me: undefined, epics: 'queue' as const, taskProps: FIXED };
+const READ = { login: 'acme', number: 6, notFound: 'source not found', filter: [], me: undefined, epics: 'ignore' as const, taskProps: FIXED };
 const IDS = { projectId: 'PVT_1', itemId: 'PVTI_1' };
 
 test('itemFields lists Status, the assignees and every shown field in the project\'s order, each with its value and choices; the read-only kinds flagged (#686)', () => {

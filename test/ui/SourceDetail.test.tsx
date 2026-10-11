@@ -5,17 +5,14 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { SourceDetail } from '@/components/settings/SourceDetail';
 import { setLanguage, t } from '@/i18n';
 import { type SourceDraft, emptySource } from '@/lib/settings-form';
-import type { EpicsMode, FilterOptions, GithubAuth } from '../../src/types';
+import type { FilterOptions, GithubAuth } from '../../src/types';
 
 beforeEach(() => setLanguage('pt'));
 
-interface HarnessProps {
-  source: SourceDraft; epics?: EpicsMode; auth?: GithubAuth; filterOptions?: FilterOptions; onDraft(source: SourceDraft): void; onRemove(): void;
-  onEpicsChange?(epics: EpicsMode): void; onOpenList?(): void;
-}
+interface HarnessProps { source: SourceDraft; auth?: GithubAuth; filterOptions?: FilterOptions; onDraft(source: SourceDraft): void; onRemove(): void; onOpenList?(): void }
 
 // SourceDetail is controlled: the harness holds the draft as FlowSection does and reports every patched row (was BoardDetail's harness).
-function Harness({ source: initial, epics = 'ignore', auth = 'cli', filterOptions, onDraft, onRemove, onEpicsChange = vi.fn(), onOpenList = vi.fn() }: HarnessProps) {
+function Harness({ source: initial, auth = 'cli', filterOptions, onDraft, onRemove, onOpenList = vi.fn() }: HarnessProps) {
   const [source, setSource] = useState<SourceDraft>(initial);
   const change = (patch: Partial<SourceDraft>): void => {
     const next = { ...source, ...patch };
@@ -24,8 +21,8 @@ function Harness({ source: initial, epics = 'ignore', auth = 'cli', filterOption
   };
   return (
     <SourceDetail
-      source={source} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} epics={epics} auth={auth} filterOptions={filterOptions}
-      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onEpicsChange={onEpicsChange} onOpenList={onOpenList}
+      source={source} workspaces={['hive', 'site']} githubProjects={[]} needsToken={false} auth={auth} filterOptions={filterOptions}
+      onChange={change} onRemove={onRemove} onLoadProjects={vi.fn()} onLoadColumns={vi.fn()} onOpenList={onOpenList}
     />
   );
 }
@@ -65,17 +62,12 @@ test('the groups and their headings; the type is read-only; the filter caption s
   expect(screen.getByText(t('settings.sources.qualifyId.hint'))).toBeInTheDocument();
 });
 
-test('a GitHub source shows the epics select and its hint under the filter, and the connection line; mudar calls onOpenList, escolher enfileirar calls onEpicsChange (#524)', () => {
-  const onEpicsChange = vi.fn();
+test('a GitHub source shows its own epics select and the note under the filter, and the connection line; mudar calls onOpenList, não mostrar patches the source (#524, #30)', () => {
+  const onDraft = vi.fn();
   const onOpenList = vi.fn();
-  render(
-    <Harness
-      source={{ ...emptySource('hive'), name: 'work', number: '1' }} epics="ignore" auth="cli"
-      onDraft={vi.fn()} onRemove={vi.fn()} onEpicsChange={onEpicsChange} onOpenList={onOpenList}
-    />,
-  );
+  render(<Harness source={{ ...emptySource('hive'), name: 'work', number: '1' }} auth="cli" onDraft={onDraft} onRemove={vi.fn()} onOpenList={onOpenList} />);
 
-  expect(screen.getByLabelText(t('settings.epics'))).toHaveTextContent(t('settings.epics.ignore'));
+  expect(screen.getByLabelText(t('settings.epics'))).toHaveTextContent(t('settings.epics.show'));
   expect(screen.getByText(t('settings.source.epicsHint'))).toBeInTheDocument();
   expect(screen.getByText(t('settings.source.connection', { auth: t('settings.auth.cli') }), { exact: false })).toBeInTheDocument();
 
@@ -83,8 +75,11 @@ test('a GitHub source shows the epics select and its hint under the filter, and 
   expect(onOpenList).toHaveBeenCalledTimes(1);
 
   fireEvent.click(screen.getByLabelText(t('settings.epics')));
-  fireEvent.click(screen.getByRole('option', { name: t('settings.epics.queue') }));
-  expect(onEpicsChange).toHaveBeenLastCalledWith('queue');
+  for (const key of ['settings.epics.ignore', 'settings.epics.show', 'settings.epics.hide'] as const) {
+    expect(screen.getByRole('option', { name: t(key) })).toBeInTheDocument();
+  }
+  fireEvent.click(screen.getByRole('option', { name: t('settings.epics.hide') }));
+  expect(onDraft).toHaveBeenLastCalledWith(expect.objectContaining({ epics: 'hide' }));
 });
 
 test('remover source calls onRemove (#514)', () => {

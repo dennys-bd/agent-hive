@@ -8,19 +8,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { t } from '@/i18n';
+import { type MessageKey, t } from '@/i18n';
 import { TYPE_LABEL } from '@/lib/flow-sources';
 import type { SourceDraft } from '@/lib/settings-form';
 import type { SourceTaskPropsDraft } from '@/lib/setup-source-task-props';
-import type { EpicsMode, FilterOptions, GithubAuth, ProjectSummary } from '../../../types';
+import { EPICS_MODES, type EpicsMode, type FilterOptions, type GithubAuth, type ProjectSummary } from '../../../types';
 
 interface SourceDetailProps {
-  source: SourceDraft; workspaces: string[]; githubProjects: ProjectSummary[]; needsToken: boolean; epics: EpicsMode; auth: GithubAuth;
+  source: SourceDraft; workspaces: string[]; githubProjects: ProjectSummary[]; needsToken: boolean; auth: GithubAuth;
   filterOptions?: FilterOptions; // #245: the source's real values, loaded with its columns
   onChange(patch: Partial<SourceDraft>): void; onRemove(): void; onLoadProjects(): void;
   /** Loads this row's columns; `number` when the project select passes its new value (the `source` prop still holds the one just left). */
   onLoadColumns(number?: string): void;
-  onEpicsChange(epics: EpicsMode): void;
   /** Back to the sources list, its Connections group (#524): the field row's "change" link. */
   onOpenList(): void;
 }
@@ -28,6 +27,7 @@ interface SourceDetailProps {
 interface FieldsProps { id: string; source: SourceDraft; onChange(patch: Partial<SourceDraft>): void; onLoadColumns(number?: string): void }
 
 const FIELD = 'flex flex-col gap-2'; // the design's label-over-control cell
+const EPICS_LABEL: Record<EpicsMode, MessageKey> = { ignore: 'settings.epics.ignore', show: 'settings.epics.show', hide: 'settings.epics.hide' };
 
 function GithubFields({ id, source, githubProjects, needsToken, onChange, onLoadProjects, onLoadColumns }: FieldsProps & Pick<SourceDetailProps, 'githubProjects' | 'needsToken' | 'onLoadProjects'>) {
   return (
@@ -123,21 +123,20 @@ function FieldsGroup({ id, source, githubProjects, needsToken, auth, filterOptio
   );
 }
 
-type FilterGroupProps = Pick<SourceDetailProps, 'source' | 'filterOptions' | 'epics' | 'onChange' | 'onEpicsChange'> & { id: string };
+type FilterGroupProps = Pick<SourceDetailProps, 'source' | 'filterOptions' | 'onChange'> & { id: string };
 
-/** GitHub only: the task filter, then the epics select moved here from CombTab (#524), under the filter as the design has it. */
-function FilterGroup({ id, source, filterOptions, epics, onChange, onEpicsChange }: FilterGroupProps) {
+/** GitHub only: the task filter, then the source's own epics select (#524, #30), under the filter as the design has it. */
+function FilterGroup({ id, source, filterOptions, onChange }: FilterGroupProps) {
   return (
     <SettingsGroup title="settings.source.filter" hint="settings.source.filterHint">
       <FilterRules inSettings rules={source.filter} options={filterOptions} onChange={(filter) => onChange({ filter })} />
       <div className="grid grid-cols-[320px_minmax(0,1fr)] items-end gap-3 border-t pt-3">
         <div className={FIELD}>
           <Label htmlFor={`${id}-epics`}>{t('settings.epics')}</Label>
-          <Select value={epics} onValueChange={(v) => onEpicsChange(v as EpicsMode)}>
+          <Select value={source.epics} onValueChange={(v) => onChange({ epics: v as EpicsMode })}>
             <SelectTrigger id={`${id}-epics`} className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="ignore">{t('settings.epics.ignore')}</SelectItem>
-              <SelectItem value="queue">{t('settings.epics.queue')}</SelectItem>
+              {EPICS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{t(EPICS_LABEL[mode])}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -165,13 +164,13 @@ function TaskPropsGroup({ id, source, workspaces, onChange }: TaskPropsGroupProp
 
 /** One source's detail page, Settings › fluxo › sources › <source> (#514, #524): its fields, its task filter and epics (github only), and its
  * task properties group (#688), each its own SettingsGroup. The page around it supplies the column and the breadcrumb, so this returns a fragment. */
-export function SourceDetail({ source, workspaces, githubProjects, needsToken, epics, auth, filterOptions, onChange, onRemove, onLoadProjects, onLoadColumns, onEpicsChange, onOpenList }: SourceDetailProps) {
+export function SourceDetail({ source, workspaces, githubProjects, needsToken, auth, filterOptions, onChange, onRemove, onLoadProjects, onLoadColumns, onOpenList }: SourceDetailProps) {
   const id = useId();
   return (
     <>
       <FieldsGroup id={id} source={source} githubProjects={githubProjects} needsToken={needsToken} auth={auth} filterOptions={filterOptions} onChange={onChange} onLoadProjects={onLoadProjects} onLoadColumns={onLoadColumns} onOpenList={onOpenList} />
       {source.type === 'github' && (
-        <FilterGroup id={id} source={source} filterOptions={filterOptions} epics={epics} onChange={onChange} onEpicsChange={onEpicsChange} />
+        <FilterGroup id={id} source={source} filterOptions={filterOptions} onChange={onChange} />
       )}
       <TaskPropsGroup id={id} source={source} workspaces={workspaces} onChange={onChange} />
       <Button type="button" variant="outline" className="self-start text-destructive" onClick={onRemove}>{t('settings.sources.remove')}</Button>

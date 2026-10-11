@@ -37,7 +37,6 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
     },
     auth: body.auth ?? current?.auth, // the form sends it with a GitHub source; an API caller that omits it keeps the saved transport
     claudeArgs: current?.claudeArgs,
-    epics: body.epics ?? current?.epics,
     branch: body.branch ?? current?.branch, // the form always sends it (empty field = key absent); an API caller that omits it keeps the current template
     logLevel: current?.logLevel, // never in the body: the file is the switch
     budget: body.budget ?? current?.budget,

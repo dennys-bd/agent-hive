@@ -5,12 +5,13 @@ import { createInProblem } from '../../create-in.js';
 import { branchProblem, COMB_PREFIX, HIVE_SOURCE, DEFAULT_PREFIX, DURATION, WORKSPACE_NAME, workspaceNameFor, isReservedSource } from '../../tasks.js';
 import { shortcutDef } from '../../shortcut-registry.js';
 import { collisions } from '../../shortcuts.js';
-import { type AgentId, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicsMode, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
+import { type AgentId, APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, DEFAULT_AGENT, FILE_ICONS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_DEFAULT, SHUTDOWN_IDLE_MAX, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type SourceConfig, type DeleteActivityScope, type CloseTabAction, type EpicFollows, type EpicsMode, NEW_SOURCE_EPICS, type FileIcons, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type WorkspaceFork, type SettingsBody, type SettingsInfo, type OperationId, type Shortcuts, type SidebarsPerView, type SignalSettings, type Theme } from '../../types.js';
 import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
 import { type ConventionRowDraft, conventionRows, conventionsFrom, conventionsProblem } from './settings-conventions.js';
+import { switchAtId, switchAtName } from './settings-epics.js';
 import type { SettingsSection } from './settings-sections.js';
 import { isMac } from './shortcut-bindings.js';
 import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
@@ -35,6 +36,8 @@ export interface SourceDraft {
   repository: string; // #846: owner/name, '' = none: the source is no destination
   filter: FilterRule[]; // #245: the rules as edited; one may have no values yet, which validateSettings refuses before a save
   taskProps: SourceTaskPropsDraft; // #688: the defaults and the rules as edited
+  epics: EpicsMode; epicFollows: EpicFollows; // #30
+  switchAt: string; // #30: a stage draft's id, '' = the default (switchAtStage); sent by name
 }
 export interface SettingsDraft {
   hiveSource: boolean; createIn: string; // #846: createIn is HIVE_SOURCE or a source row's id, as a stage's from is keyed, so a rename carries it
@@ -42,7 +45,7 @@ export interface SettingsDraft {
   editor: EditorDraft; // #780: the one editor config, by language
   commands: CommandDraft[]; // the Comb's run commands (#511), edited on workspaces
   stages: StageDraft[]; transitions: TransitionDraft[]; // #134: by stage draft id
-  language: Language; branch: string; epics: EpicsMode; baseBranch: string;
+  language: Language; branch: string; baseBranch: string;
   budgetHour: string; budgetDay: string; rules: RuleDraft[]; onClose: OnClose; notifications: NotificationSettings; /* #199: one switch per kind, edited on app beside onClose */ showGithubQuota: boolean; deleteActivity: DeleteActivityScope;
   closeSessionTab: CloseTabAction; closeStageTab: CloseTabAction; closeTerminalTab: CloseTabAction; closeSessionTabNotice: boolean; closeStageTabNotice: boolean; closeTerminalTabNotice: boolean; // #614, #696: what closing a tab does, and whether it warns
   sleepNotice: boolean; sleepAutoNotice: boolean; sleepIdleNotice: boolean; sleepAllNotice: boolean; // #672: one notice per cause of a sleep
@@ -82,14 +85,16 @@ export function withHost(hosts: readonly string[], text: string): string[] | und
   return hosts.includes(host) ? [...hosts] : [...hosts, host];
 }
 
-// A new row's default workspace is `workspace` (#293, #688): the Comb's first, which is what a source with one workspace meant before; auto on.
+// A new row's default workspace is `workspace` (#293, #688): the Comb's first, which is what a source with one workspace meant before; auto on;
+// a new source's epics keys, switchAt on the default (#30).
 export const emptySource = (workspace = ''): SourceDraft => ({
   id: crypto.randomUUID(), name: '', savedName: '', qualifyId: false, prefix: '', type: 'github', owner: DEFAULT_OWNER, number: '', repository: '',
-  filter: [], taskProps: emptyTaskProps(workspace),
+  filter: [], taskProps: emptyTaskProps(workspace), ...NEW_SOURCE_EPICS, switchAt: '',
 });
+// switchAt is set by draftFrom once the stages are drafted (#30): their ids come from the rows
 const sourceDraft = (b: SourceConfig): SourceDraft => ({
   ...emptySource(), name: b.name, savedName: b.name, qualifyId: b.qualifyId, prefix: b.prefix ?? '', type: b.type, taskProps: taskPropsDraft(b.taskProps),
-  owner: b.owner, number: String(b.number), repository: b.repository ?? '', filter: b.filter,
+  owner: b.owner, number: String(b.number), repository: b.repository ?? '', filter: b.filter, epics: b.epics, epicFollows: b.epicFollows,
 });
 
 // #846: the saved name as its row's id; hive, or a name no row has, stays as written for createInDraftProblem to name
@@ -98,12 +103,14 @@ const createInRow = (createIn: string | undefined, rows: SourceDraft[]): string 
 const createInName = (draft: Pick<SettingsDraft, 'createIn' | 'sources'>): string =>
   (draft.createIn === HIVE_SOURCE ? HIVE_SOURCE : (draft.sources.find((r) => r.id === draft.createIn)?.name.trim() ?? draft.createIn));
 
-/** Today's defaults (@me, ignore, the effective language) under whatever the saved config has. */
+/** Today's defaults (@me, a new source's epics keys, the effective language) under whatever the saved config has. */
 export function draftFrom(info?: SettingsInfo): SettingsDraft {
   const config = info?.config;
   const workspaces = config ? config.comb.workspaces.map(workspaceDraft) : [proposedRow(info?.proposedWorkspace)]; // the saved workspaces, else the proposal (#179)
-  const sources = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
-  const stages = (config?.comb.stages ?? []).map((c) => stageDraft(c, sources));
+  const rows = config ? config.comb.sources.map(sourceDraft) : [emptySource(workspaces[0].name)]; // a first setup: one GitHub row (#180), its default workspace the proposal (#293, #688)
+  const stages = (config?.comb.stages ?? []).map((c) => stageDraft(c, rows));
+  // #30: switchAt as its stage draft's id; the ids are kept, so the stages' from still finds each row
+  const sources = config ? rows.map((row, i) => ({ ...row, switchAt: switchAtId(config.comb.sources[i].switchAt, stages) })) : rows;
   return {
     hiveSource: config?.comb.hiveSource ?? true, // the new form's default; the parser still requires the key (#846)
     createIn: createInRow(config?.comb.createIn, sources),
@@ -117,7 +124,6 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     transitions: (config?.comb.transitions ?? []).map((t) => transitionDraft(t, stages, sources)),
     language: info?.language ?? 'en',
     branch: config?.branch ?? '', // empty = the default template; the hint under the field says which
-    epics: config?.epics ?? 'ignore',
     baseBranch: config?.baseBranch ?? '', // empty field = automatic
     budgetHour: numberField(config?.budget.maxTokensPerHour),
     budgetDay: numberField(config?.budget.maxTokensPerDay),
@@ -276,10 +282,14 @@ export function validateSettings(draft: SettingsDraft): SettingsProblem | undefi
   return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(draft.rules, draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
-/** A row as a comb.sources entry (#180): its key first, then its type's fields and its task properties (#688). */
-export function sourceFrom(row: SourceDraft): SourceConfig {
+/** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
+ * name it resolves to among `stages` (#30). */
+export function sourceFrom(row: SourceDraft, stages: readonly StageDraft[]): SourceConfig {
   const key = { name: row.name.trim(), qualifyId: row.qualifyId, ...optional('prefix', row.prefix) };
-  return { ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps) };
+  return {
+    ...key, type: 'github', owner: row.owner.trim(), number: Number(row.number), ...optional('repository', row.repository), filter: row.filter, taskProps: taskPropsFrom(row.taskProps),
+    epics: row.epics, epicFollows: row.epicFollows, switchAt: switchAtName(row.switchAt, stages),
+  };
 }
 
 // Rows loaded under another name (#278): the server carries their tasks over. A new row (savedName '') renames nothing.
@@ -307,13 +317,12 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     prefix: draft.prefix.trim(),
     workspaces: draft.workspaces.map(workspaceFrom),
     commands: draft.commands.map((c) => commandFrom(c, draft.workspaces)), // always sent (#511), [] included
-    sources: draft.sources.map((row) => sourceFrom(row)),
+    sources: draft.sources.map((row) => sourceFrom(row, draft.stages)),
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it
     ...(draft.sources.some((b) => b.type === 'github') ? { auth: { github: draft.auth } } : {}),
     stages: draft.stages.map((c) => stageFrom(c, draft.sources)),
     transitions: draft.transitions.map((d) => transitionFrom(d, draft.stages, draft.sources)), // #134: always sent, [] included
-    epics: draft.epics,
     budget: { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) },
     usageRules: rulesFrom(draft.rules), language: draft.language, ...optional('branch', draft.branch),
     // always sent, '' included: optional() would omit the key and saveSettings would keep the old branch, so clearing the field could never work

@@ -27,7 +27,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
+import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -87,7 +87,7 @@ async function start(t: TestContext, body: Omit<SettingsBody, 'workspaces'> = BO
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...body })).status, 200); // configure validates and writes; the first poll runs in the background (#59)
+  assert.equal((await postJson(`${base}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(body) })).status, 200); // configure validates and writes; the first poll runs in the background (#59)
   await server.poll(); // wait for the tasks to land before the tests below rely on them
   await server.dispatch({ type: 'setSignal', signal: 'green' }); // these tests exercise worker behavior, not the boot signal itself
   return { home, repo, base, port, server, workers };
@@ -894,7 +894,7 @@ test('POST /settings with different stages dispatches setStages: the state follo
   const { base, server } = await start(t, idle()); // I1 stopped in fila
   assert.equal(server.getState()?.tasks[0].stage, 'fila');
   const stages = [{ name: 'triagem', from: { board: ['Ready'] }, prompt: 'x' }];
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, stages })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
   await server.poll(); // reconfigure's poll runs in the background (#59)
   assert.deepEqual(server.getState()?.stages, stages);
   assert.equal(server.getState()?.tasks[0].stage, 'triagem', 'reconfigure polls: the task came back through the new from');
@@ -926,7 +926,7 @@ test('POST /settings answers once the config is written and the new stages are r
   // Turns `fila` into a delete activity stage whose onFinish archives: with nothing on the task to clean, setStages' own reduction (fill's
   // runDeletions) advances it straight into a leaving sourceAction (#286), the effect this bug used to block the answer on.
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'archive' }] } }];
-  const setup = postJson(`${base}/settings`, { ...BODY, stages });
+  const setup = postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }));
   const TIMEOUT = Symbol('timeout');
   const race = await Promise.race([setup, sleep(300).then(() => TIMEOUT)]);
   try {
@@ -962,7 +962,7 @@ test('a refused close ahead of an archive leaves the task leaving, and the archi
   const { base, server } = await start(t, idle(), undefined, {}, { sourceFactory: factory });
   // A delete activity stage with nothing to delete advances at once into its onFinish: close (refused), then archive.
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'close' }, { type: 'archive' }] } }];
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, stages })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
   await waitFor(() => server.getState()?.tasks.length === 0);
   assert.deepEqual(applied, ['I1 archive']);
 });
@@ -998,7 +998,7 @@ test('a save\'s sourceAction effects stay pinned to that save\'s own runtime eve
   // Turns `fila` into a delete activity stage: both tasks' onFinish archives in the same setStages reduction, one sourceAction effect
   // each, run in order by dispatch's effect loop (#476).
   const stages: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, action: 'deleteActivity', onFinish: { board: [{ type: 'archive' }] } }];
-  assert.equal((await postJson(`${base}/settings`, { ...BODY, stages })).status, 200);
+  assert.equal((await postJson(`${base}/settings`, onOwnStages({ ...BODY, stages }))).status, 200);
   await waitFor(() => started.includes('I1')); // I1's sourceAction is running and held; I2's has not started yet
 
   // Save #2 renames `board` away while I1's effect is still in flight: the running batch's still-pending I2 effect must

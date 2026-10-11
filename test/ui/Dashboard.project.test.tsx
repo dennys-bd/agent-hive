@@ -14,7 +14,7 @@ vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./xterm-fake
 vi.mock('@/hooks/use-comments', () => ({ useComments: () => ({ kind: 'unsupported' }) }));
 vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => [] }));
 
-const source = (name: string, number: number): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] } });
+const source = (name: string, number: number): SourceConfig => ({ name, qualifyId: false, type: 'github', owner: 'acme', number, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' });
 const NAV: SourcesNav = { sources: [source('roadmap', 6), source('notes', 8)], auth: 'cli' };
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_1', id: '1', title: 'Issue 1', body: '', url: '', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const VIEW: ProjectView = {

@@ -20,7 +20,7 @@ export type CreateFrom = Pick<ProjectItem, 'id' | 'title' | 'body' | 'url' | 'wo
 
 interface ProjectCreatePopoverProps { item: CreateFrom; source: string; state: State; onCreated(taskId: string): void }
 
-/** fluxo… (#756, handoff 01): an issue the source's filter or epics: ignore keeps out, or any issue out of the flow on its page (#757),
+/** fluxo… (#756, handoff 01): an issue the source's filter or epics: hide keeps out, or any issue out of the flow on its page (#757),
  * becomes a task of the hive source, after a warning that nothing syncs. The task is born with auto off (no worker starts on its own), in
  * the flow's first stage, with the issue's title, body and link and, from a source item, its origin; its workspace is the issue's hint when
  * the Comb has it. Offered only while the hive source is on (#846). A refusal is act's toast and the popover stays. */

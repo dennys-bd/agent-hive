@@ -89,11 +89,11 @@ export function pullRequest(pr: GhPullRequest): ProjectPr {
   return { number: pr.number, url: pr.url, state, ...(checks === undefined ? {} : { checks }), ...(pr.isDraft === true ? { draft: true as const } : {}) };
 }
 
-// Why the Hive does not take the issue, in the order listItems drops: the filter's rules, then an ignored epic. ponytail: the blocked rules
+// Why the Hive does not take the issue, in the order listItems drops: the filter's rules, then a hidden epic (#30). ponytail: the blocked rules
 // are not judged (they need the relations query for every item), so an issue kept out only by one shows as passing (#756)
 function outOf(node: GhItemNode, read: ProjectRead): ProjectItem['out'] {
   if (!matchesFilter(read.filter, read.me, node)) return 'filter';
-  return read.epics === 'ignore' && isEpicItem(node.content) ? 'epic' : undefined;
+  return read.epics === 'hide' && isEpicItem(node.content) ? 'epic' : undefined;
 }
 
 /** An issue's row; a draft or a pull request on the project is not the view's (#756). The hint comes from a rule only, as on a listed task. A field write's re-read builds one too (#686). */

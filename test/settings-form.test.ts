@@ -9,6 +9,9 @@ import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRu
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
 
+// #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
+const EPICS = { epics: 'hide', epicFollows: 'ahead', switchAt: 'dev' } as const;
+
 // A saved run command (#300), two env entries so the draft's lines keep their order
 const FRONT_LINE = 'pnpm run dev -- --port $PORT';
 const FRONT: Command = { name: 'Run Frontend', impls: [{ workspace: 'hive', command: FRONT_LINE }], menu: true, env: { PORT: '5173', HOST: 'localhost' } };
@@ -31,11 +34,11 @@ const CONFIG: Config = {
     prefix: 'HIVE',
     workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }],
     commands: [FRONT], hiveSource: true, createIn: 'hive',
-    sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED }],
+    sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     transitions: TRANSITIONS,
     stages: STAGES,
   },
-  epics: 'queue', logLevel: 'info', language: 'pt', baseBranch: 'develop',
+  logLevel: 'info', language: 'pt', baseBranch: 'develop',
   claudeArgs: [], budget: { maxTokensPerHour: 50_000 }, usageRules: [{ source: 'hour', percent: 80, signal: 'yellow' }, { source: 'session', percent: 90, maxWorkers: 1, signal: 'red' }],
   onClose: 'quit', // not the form default, so draftFrom visibly reads it (#513)
   notifications: { waiting: true, approval: false, pr: true, failed: false }, // not the form default, so draftFrom visibly reads it (#199)
@@ -58,7 +61,7 @@ const CONFIG: Config = {
   editor: EDITOR_DEFAULTS,
 };
 const withSources = (sources: SourceConfig[]): Config => ({ ...CONFIG, comb: { ...CONFIG.comb, sources } });
-const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] } };
+const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', switchAt: '' };
 const info = (config?: Config, configured = true): SettingsInfo => ({ configured, home: '/home', config, language: config?.language ?? 'en', agents: [{ agent: 'claude', available: true }] });
 // id is generated per row (React key material, never sent to the server): every literal comparison strips it out.
 const withoutId = <T extends { id: string }>(draft: T): Omit<T, 'id'> => {
@@ -74,7 +77,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.sidebarsPerView, { left: false, right: true, rightTab: false }, 'the saved sides (#821)');
   assert.deepEqual(github.signals, CONFIG.signals, 'the saved signal table (#727)');
   assert.deepEqual([github.closeSessionTab, github.closeStageTab, github.closeSessionTabNotice, github.closeStageTabNotice], ['sleep', 'sleep', false, false], 'the saved choices (#614)');
-  assert.deepEqual(github.sources.map(withoutId), [GH_ROW]);
+  assert.deepEqual(github.sources.map(withoutId), [{ ...GH_ROW, switchAt: github.stages[1].id }], 'switchAt as the dev stage draft\'s id (#30)');
   const [work] = github.sources;
   assert.deepEqual(github.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], ...NO_SETUP }]);
   assert.deepEqual(github.commands.map((c) => ({ ...withoutId(c), env: c.env.map(withoutId), impls: c.impls.map(withoutId) })), [
@@ -84,7 +87,7 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.equal(github.stages[1].session, 'continue');
   assert.deepEqual(withoutId(github.stages[2]), { name: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.notEqual(github.stages[0].id, github.stages[1].id, 'each row gets its own id');
-  assert.deepEqual([github.language, github.epics, github.budgetHour, github.budgetDay], ['pt', 'queue', '50000', '']);
+  assert.deepEqual([github.language, github.budgetHour, github.budgetDay], ['pt', '50000', '']);
   assert.equal(github.baseBranch, 'develop');
   assert.deepEqual(github.trustedDomains, ['github.com', 'docs.example.com']);
   assert.deepEqual(github.shortcuts, { toggleRight: 'CmdOrCtrl+Shift+Y', clear: null }, 'the saved changes as they are (#449)');
@@ -98,8 +101,8 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   const empty = draftFrom(info(undefined, false));
   assert.deepEqual({ ...empty, workspaces: empty.workspaces.map(withoutId), sources: empty.sources.map(withoutId) }, {
     hiveSource: true, createIn: 'hive',
-    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', taskProps: { defaults: { workspace: '', auto: true }, rules: [] } }],
-    stages: [], transitions: [], language: 'en', branch: '', epics: 'ignore', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
+    prefix: 'HIVE', workspaces: [{ name: '', path: '', env: [], ...NO_SETUP }], commands: [], editor: EDITOR_DEFAULTS, sources: [{ ...GH_ROW, name: '', savedName: '', owner: '@me', number: '', epics: 'show', epicFollows: 'aheadThenBehind', taskProps: { defaults: { workspace: '', auto: true }, rules: [] } }],
+    stages: [], transitions: [], language: 'en', branch: '', baseBranch: '', budgetHour: '', budgetDay: '', rules: [], auth: 'cli', onClose: 'menuBar',
     deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: String(SHUTDOWN_IDLE_DEFAULT), approvalMinutes: String(APPROVAL_MINUTES_DEFAULT), rateLimitWaitMinutes: String(RATE_LIMIT_WAIT_DEFAULT), showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: String(CONSOLE_LINES_DEFAULT), shortcuts: {},
     defaultAgent: 'claude', // DEFAULT_AGENT on a first run (#516)
     fileIcons: { set: 'material', scope: 'all', muted: true }, // FILE_ICONS_DEFAULTS on a new form (#754)
@@ -164,10 +167,10 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
     workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null }],
     commands: [FRONT],
     auth: { github: 'api' },
-    sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED }],
+    sources: [{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: [], taskProps: FIXED, ...EPICS }],
     renames: {},
     stages: CONFIG.comb.stages, transitions: CONFIG.comb.transitions,
-    epics: 'queue', budget: { maxTokensPerHour: 50_000 }, usageRules: CONFIG.usageRules, language: 'pt', baseBranch: 'develop', onClose: 'quit',
+    budget: { maxTokensPerHour: 50_000 }, usageRules: CONFIG.usageRules, language: 'pt', baseBranch: 'develop', onClose: 'quit',
     deleteActivity: { session: true, transcripts: true, nonAutoTasks: true },
     shutdownIdleMinutes: 45,
     approvalMinutes: 30,
@@ -198,7 +201,7 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
   assert.equal('id' in body.usageRules![0]!, false, 'id is a draft-only field, never sent to the server');
   const row: SourceDraft = { ...emptySource('hive'), name: 'notes', number: '7' };
   const bare = toSettingsBody({ ...draftFrom(undefined), sources: [row], stages: [{ ...emptyStage(), name: 'fila', from: { [row.id]: ['Ready'] } }], rules: [{ ...emptyRule('day'), percent: '80', kind: 'signal', value: 'red' }] });
-  assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED }]);
+  assert.deepEqual(bare.sources, [{ name: 'notes', qualifyId: false, type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }]);
   assert.deepEqual(bare.stages, [{ name: 'fila', from: { notes: ['Ready'] } }], 'session=new, empty model / onStart / prompt stay absent');
   assert.deepEqual(bare.usageRules, [{ source: 'day', percent: 80, signal: 'red' }], 'the consequence list folds back into keys; the absent one stays absent');
   assert.deepEqual(bare.budget, {});
@@ -222,12 +225,29 @@ test('toSettingsBody emits only filled keys, keeps stage and rule order, and rea
 
 test('the task filter rules round-trip: the row holds the saved rules, the body sends them as they are, and a new row has none (#245)', () => {
   const rules: FilterRule[] = [{ field: 'assignee', op: 'any', values: ['@me'] }, { field: 'projectField', name: 'Priority', op: 'none', values: ['P3'] }];
-  const filtered = withSources([{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: rules, taskProps: FIXED }]);
+  const filtered = withSources([{ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: rules, taskProps: FIXED, ...EPICS }]);
   const draft = draftFrom(info(filtered));
   const [row] = draft.sources;
   assert.deepEqual(row.filter, rules);
   assert.deepEqual(toSettingsBody(draft).sources, filtered.comb.sources, 'an untouched form saves the rules it loaded');
   assert.deepEqual(emptySource().filter, [], 'a new row starts with no rule');
+});
+
+test('each source row carries its epics keys (#30): switchAt loaded as its stage draft id and sent by name; a rename carries it, a removal falls back to Build, else the first stage; a new row gets show, aheadThenBehind and the default', () => {
+  const saved = draftFrom(info(CONFIG));
+  const [work] = saved.sources;
+  const dev = saved.stages[1];
+  assert.deepEqual([work.epics, work.epicFollows, work.switchAt], ['hide', 'ahead', dev.id]);
+  assert.deepEqual(toSettingsBody(saved).sources?.[0], CONFIG.comb.sources[0], 'an untouched form saves what it loaded');
+  const switchAt = (draft: SettingsDraft): string | undefined => toSettingsBody(draft).sources?.[0].switchAt;
+  assert.equal(switchAt({ ...saved, stages: saved.stages.map((s) => (s.id === dev.id ? { ...s, name: 'develop' } : s)) }), 'develop', 'the rename carries it');
+  const withoutDev = saved.stages.filter((s) => s.id !== dev.id);
+  assert.equal(switchAt({ ...saved, stages: withoutDev }), 'spec', 'removed, and no Build: the first stage');
+  assert.equal(switchAt({ ...saved, stages: [...withoutDev, { ...emptyStage(), name: 'Build' }] }), 'Build', 'removed: the stage named Build first');
+  const fresh = emptySource('hive');
+  assert.deepEqual([fresh.epics, fresh.epicFollows, fresh.switchAt], ['show', 'aheadThenBehind', '']);
+  assert.equal(switchAt({ ...saved, sources: [fresh] }), 'spec', 'a new row: Build, else the first stage');
+  assert.deepEqual(toSettingsBody({ ...saved, sources: [{ ...work, epics: 'ignore', epicFollows: 'behind' }] }).sources?.[0], { ...CONFIG.comb.sources[0], epics: 'ignore', epicFollows: 'behind' });
 });
 
 test('the branch template round-trips: the draft seeds from the saved config, an empty field is sent as no key at all, and a typed one is trimmed', () => {
@@ -324,15 +344,16 @@ test('env rows (#348, #511): a blank row is dropped, the name trimmed, the value
 
 test('each row\'s task properties (#688): read from its saved source and sent back; a new row starts on the workspace it is given with auto on, a first setup\'s on the proposed folder; a problem is a flow problem, judged after the source fields and the workspaces', () => {
   setLanguage('pt');
-  const GH = { name: 'work', qualifyId: false, type: 'github' as const, owner: 'acme', number: 6, filter: [] as FilterRule[] };
+  const GH = { name: 'work', qualifyId: false, type: 'github' as const, owner: 'acme', number: 6, filter: [] as FilterRule[], ...EPICS };
   const ROUTED: SourceTaskProps = { defaults: { auto: false }, rules: [{ field: 'title', op: 'icontains', value: '[api]', set: { workspace: 'hive' } }] };
-  const body = (row: SourceDraft) => toSettingsBody({ ...draftFrom(info(CONFIG)), sources: [row] }).sources?.[0];
-  const [routed] = draftFrom(info(withSources([{ ...GH, taskProps: ROUTED }]))).sources;
+  const body = (row: SourceDraft, draft: SettingsDraft) => toSettingsBody({ ...draft, sources: [row] }).sources?.[0];
+  const routedDraft = draftFrom(info(withSources([{ ...GH, taskProps: ROUTED }])));
+  const [routed] = routedDraft.sources;
   assert.equal(routed.taskProps.defaults.workspace, '', 'no default workspace');
-  assert.deepEqual(body(routed), { ...GH, taskProps: ROUTED });
+  assert.deepEqual(body(routed, routedDraft), { ...GH, taskProps: ROUTED });
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
   const [fixed] = valid.sources;
-  assert.deepEqual(body(fixed), { ...GH, taskProps: FIXED });
+  assert.deepEqual(body(fixed, valid), { ...GH, taskProps: FIXED });
   assert.deepEqual([emptySource('hive').taskProps, emptySource().taskProps.defaults.workspace], [{ defaults: { workspace: 'hive', auto: true }, rules: [] }, '']);
   assert.equal(draftFrom({ ...info(undefined, false), proposedWorkspace: '/work/app' }).sources[0].taskProps.defaults.workspace, 'app');
   const at = (workspace: string): SourceDraft => ({ ...fixed, taskProps: { ...fixed.taskProps, defaults: { workspace, auto: true } } });
@@ -357,7 +378,7 @@ test('source rows: a valid name (not "local" or "hive"), unique, a prefix like t
   const [work] = valid.sources;
   const stage = { ...emptyStage(), name: 'dev', from: { [work.id]: ['Ready'], [notes.id]: ['todo'] }, onStart: { [notes.id]: [{ type: 'move' as const, column: 'doing' }] } };
   const body = toSettingsBody({ ...valid, sources: [work, notes], stages: [stage] });
-  assert.deepEqual(body.sources?.[1], { name: 'notes', qualifyId: true, prefix: 'N', type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED });
+  assert.deepEqual(body.sources?.[1], { name: 'notes', qualifyId: true, prefix: 'N', type: 'github', owner: '@me', number: 7, filter: [], taskProps: FIXED, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'dev' });
   assert.deepEqual(body.stages?.[0], { name: 'dev', from: { work: ['Ready'], notes: ['todo'] }, onStart: { notes: [{ type: 'move', column: 'doing' }] } }, 'no entry, no key');
   assert.deepEqual(toSettingsBody({ ...valid, sources: [notes], stages: [stage] }).stages?.[0].from, { notes: ['todo'] }, 'a removed row\'s entries go with it');
   assert.deepEqual(toSettingsBody({ ...valid, sources: [notes] }).auth, { github: 'api' }, 'a GitHub source sends auth');
@@ -468,7 +489,7 @@ test('a renamed source row (#278): savedName holds the loaded name, the body sen
     [{ job: ['Ready'] }, { job: [{ type: 'move', column: 'In progress' }] }],
     [{ job: ['Done'] }, undefined],
   ], 'the bindings follow the row, keyed by its id in the draft');
-  const two = draftFrom(info(withSources([CONFIG.comb.sources[0], { name: 'notes', qualifyId: false, type: 'github', owner: 'acme', number: 7, filter: [], taskProps: FIXED }])));
+  const two = draftFrom(info(withSources([CONFIG.comb.sources[0], { name: 'notes', qualifyId: false, type: 'github', owner: 'acme', number: 7, filter: [], taskProps: FIXED, ...EPICS }])));
   const [a, b] = two.sources;
   assert.deepEqual(toSettingsBody({ ...two, sources: [{ ...a, name: 'notes' }, { ...b, name: 'work' }] }).renames, { work: 'notes', notes: 'work' }, 'a swap is sent as one map');
 });

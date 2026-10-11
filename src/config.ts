@@ -11,19 +11,18 @@ import { parseTransitions, parseVerdicts } from './config-transitions.js';
 import { parseConventions } from './conventions.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseTimeout } from './run-commands.js';
+import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseSignals } from './signals-config.js';
-import { AGENT_IDS, END, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type EpicsMode, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { AGENT_IDS, END, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
 export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github'];
-export const EPICS_MODES: readonly EpicsMode[] = ['ignore', 'queue'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
-  epics: 'ignore',
   logLevel: 'info',
   claudeArgs: [],
   budget: {},
@@ -119,6 +118,7 @@ export function parseSource(raw: unknown, field: string, workspaces: readonly st
         filter: parseFilter(raw.filter, `${field}.filter`), // after owner and number: a source missing those still names them first
         taskProps: parseSourceTaskProps(raw.taskProps, `${field}.taskProps`, workspaces),
         ...(raw.repository === undefined ? {} : { repository: requireRepository(raw.repository, `${field}.repository`) }),
+        ...parseSourceEpics(raw, field), // #30: last, so a source from before the keys names its older faults first
       };
     default:
       throw new Error(`${CONFIG_FILE}: "${field}.type" must be one of: ${SOURCE_TYPES.join(', ')}`);
@@ -392,6 +392,7 @@ function parseComb(raw: unknown): CombConfig {
   const sources = parseSources(raw.sources, workspaces);
   const commands = parseCommands(raw.commands, 'comb.commands', workspaces.map((p) => p.name)); // #511, #755: each command's lines name its workspaces
   const stages = parseStages(raw.stages, sources);
+  requireSwitchAt(sources, stages); // #30: once the stages are known
   // #134: a transition's sources are read as onStart is, with a leaving action allowed last
   const transitions = parseTransitions(raw.transitions, stages, (value, field) => parseSourceMap(value, field, sources, requireActionList(false)));
   return { prefix, workspaces, sources, stages, transitions, commands, ...parseCreateIn(raw, sources) };
@@ -549,6 +550,7 @@ export function parseConfig(raw: unknown): Config {
   if (moved) throw new Error(`${CONFIG_FILE}: "${moved}" moved to "comb.${moved}"`);
   // #573: a renamed key, not a missing one; single user, no legacy path: the one file is fixed by hand
   if (raw.cleanup !== undefined) throw new Error(`${CONFIG_FILE}: "cleanup" is now "deleteActivity"`);
+  refuseTopLevelEpics(raw); // #30: moved into each source, no legacy path
   const comb = parseComb(raw.comb);
   // Only the GitHub adapter logs in: auth is required next to it, checked when written anywhere else, and absent stays absent.
   const withAuth = comb.sources.some((b) => b.type === 'github') || raw.auth !== undefined;
@@ -556,10 +558,6 @@ export function parseConfig(raw: unknown): Config {
   return {
     comb,
     ...(withAuth ? { auth: parseAuth(raw.auth) } : {}),
-    epics: optional(raw.epics, DEFAULT_CONFIG.epics, (v) => {
-      if (!EPICS_MODES.includes(v as EpicsMode)) throw new Error(`${CONFIG_FILE}: "epics" must be one of: ${EPICS_MODES.join(', ')}`);
-      return v as EpicsMode;
-    }),
     logLevel: optional(raw.logLevel, DEFAULT_CONFIG.logLevel, (v) => {
       if (!LOG_LEVELS.includes(v as LogLevel)) throw new Error(`${CONFIG_FILE}: "logLevel" must be one of: ${LOG_LEVELS.join(', ')}`);
       return v as LogLevel;

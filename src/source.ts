@@ -11,19 +11,19 @@ export interface SourceDeps {
   log?: Logger; // every GraphQL call is logged at debug
 }
 
-/** What the server hands createSource for one entry (#180): that source next to the Comb's stages, the transport and the epics mode. */
-export const sourceSpec = ({ auth, epics, comb }: Config, source: SourceConfig): SourceSpec => ({ auth, epics, source, stages: comb.stages, transitions: comb.transitions });
+/** What the server hands createSource for one entry (#180): that source (its epics keys included, #30) next to the Comb's stages and the transport. */
+export const sourceSpec = ({ auth, comb }: Config, source: SourceConfig): SourceSpec => ({ auth, source, stages: comb.stages, transitions: comb.transitions });
 
 /** One adapter for one source (#180): it reads only its own source's entries of the stages' and transitions' maps. */
 export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
-  const { auth, source, stages, transitions, epics } = spec;
+  const { auth, source, stages, transitions } = spec;
   const cited = citedColumns(stages, transitions, source.name);
   switch (source.type) {
     case 'github': {
       // The log wraps whichever runner is in play, the configured transport or an injected one, so a test sees the same debug lines.
       // parseConfig requires auth next to a github source; a hand-built spec without it fails with that same message.
       const gql = deps.gql ?? gqlFor((auth ?? parseAuth(undefined)).github);
-      return createGithubSource(source, cited, epics, deps.log ? loggedGql(gql, deps.log) : gql);
+      return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql);
     }
   }
 }
@@ -55,9 +55,10 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
   };
 }
 
-// What an adapter bakes in at creation, per entry: the entry, its cited columns, epics and the transport. A change of any needs a new instance.
+// What an adapter bakes in at creation, per entry: the entry (its epics keys included, #30), its cited columns and the transport. A change of
+// any needs a new instance.
 const bakedIn = (config: Config, name: string): unknown[] => [
-  config.comb.sources.find((b) => b.name === name), citedColumns(config.comb.stages, config.comb.transitions, name), config.epics, config.auth,
+  config.comb.sources.find((b) => b.name === name), citedColumns(config.comb.stages, config.comb.transitions, name), config.auth,
 ];
 
 /** One namespaced source per comb.sources entry, in order, keyed by name (#180). With `reuse` (the live config and sources) an entry whose
