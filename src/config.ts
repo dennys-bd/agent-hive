@@ -451,7 +451,7 @@ function parseDeleteActivity(raw: unknown): DeleteActivityScope {
 }
 
 // Required, no default: a whole number from `min` to `max`. The shutdown window (#233) and the approval window (#268) in minutes, the console's
-// lines per channel (#353); hive.ts prefills a file without them.
+// lines per channel (#353), hive.ts prefilling a file without them; a workspace's memoryCap (#73), never prefilled.
 function requireIntFrom(raw: unknown, field: string, min: number, max: number): number {
   if (Number.isInteger(raw) && (raw as number) >= min && (raw as number) <= max) return raw as number;
   throw new Error(`${CONFIG_FILE}: "${field}" must be an integer from ${min} to ${max}`);
