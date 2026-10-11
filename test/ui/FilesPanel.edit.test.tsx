@@ -15,7 +15,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 // as off macOS: rename F2, delete Delete)
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md'], marks: {}, folders: [] };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const TAKEN = 'a file or folder with this name already exists';
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let isTaken = false;

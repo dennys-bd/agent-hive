@@ -16,7 +16,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const UNTITLED = /^Sem título-\d+$/;
 let fileAnswer = (): Response => jsonResponse({ path: 'notes.md', version: 'v1' });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-  if (url.endsWith('/tree')) return jsonResponse({ root: '/wt', files: [], marks: {}, folders: [] });
+  if (url.endsWith('/tree')) return jsonResponse({ root: '/wt', files: [], marks: {}, folders: [], ignored: { files: [], folders: [] } });
   if (url.endsWith('/tree/file')) return fileAnswer();
   return jsonResponse({ ok: true });
 });

@@ -13,7 +13,7 @@ import { taskPairOf } from '../fixtures/work';
 // The tree lists docs and src as folders, docs first, then README.md
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'src/b.ts', 'README.md', 'docs/x.md'], marks: {}, folders: [] };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'src/b.ts', 'README.md', 'docs/x.md'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 let moveAnswer = (): Response => new Response(null, { status: 204 });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (url.endsWith('/tree') ? json(TREE) : moveAnswer()));

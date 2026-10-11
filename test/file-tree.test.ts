@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ancestorsOf, buildTree, parentOf, renamedPath, visibleRows } from '../src/ui/lib/file-tree.js';
+import { ancestorsOf, buildTree, ignoredToRead, parentOf, renamedPath, visibleRows } from '../src/ui/lib/file-tree.js';
 
 const FILES = ['b.ts', 'src/z.ts', 'src/lib/a.ts', '.env', '.github/ci.yml', 'a.md'];
 
@@ -39,4 +39,32 @@ test('renamedPath follows a rename to the path itself and to every path under a 
 
 test('ancestorsOf lists the folders above a path, outermost first (#818)', () => {
   assert.deepEqual([ancestorsOf('a/b/c.ts'), ancestorsOf('README.md')], [['a', 'a/b'], []]);
+});
+
+test('buildTree adds the ignored files and folders as ignored, with no mark; an ignored folder not read yet is unloaded with no children; hidden ones only when asked (HIVE-22)', () => {
+  const tree = buildTree(['src/a.ts'], {}, false, [], { files: ['debug.log', 'src/gen.js', '.env.local'], folders: ['node_modules', '.cache'] });
+  assert.deepEqual(tree.map((n) => [n.path, n.isIgnored, n.isUnloaded, n.children?.length]), [
+    ['node_modules', true, true, 0], ['src', undefined, undefined, 2], ['debug.log', true, undefined, undefined],
+  ]);
+  assert.deepEqual(tree[1].children?.map((n) => [n.path, n.isIgnored, n.mark]), [['src/a.ts', undefined, undefined], ['src/gen.js', true, undefined]]);
+  assert.deepEqual(buildTree([], {}, true, [], { files: ['.env.local'], folders: ['.cache'] }).map((n) => n.path), ['.cache', '.env.local']);
+});
+
+test('buildTree fills a loaded ignored folder from the map, a loaded subfolder from it too, and leaves any other subfolder unloaded (HIVE-22)', () => {
+  const loaded = new Map([
+    ['docs', { files: ['glossary.md', '.hidden'], folders: ['agent', 'old'] }],
+    ['docs/agent', { files: ['plan.md'], folders: [] }],
+  ]);
+  const [docs] = buildTree([], {}, false, [], { files: [], folders: ['docs'] }, loaded);
+  assert.deepEqual([docs.path, docs.isIgnored, docs.isUnloaded], ['docs', true, undefined]);
+  assert.deepEqual(docs.children?.map((n) => [n.path, n.isIgnored, n.isUnloaded]), [
+    ['docs/agent', true, undefined], ['docs/old', true, true], ['docs/glossary.md', true, undefined],
+  ]);
+  assert.deepEqual(docs.children?.[0].children?.map((n) => [n.path, n.isIgnored]), [['docs/agent/plan.md', true]]);
+});
+
+test('ignoredToRead reads the expanded ignored folders and the expanded ones under them whose folders down from the ignored one are all expanded, sorted (HIVE-22)', () => {
+  const ignored = ['node_modules', 'docs'];
+  assert.deepEqual(ignoredToRead(new Set(['src', 'docs/agent', 'docs', 'node_modules/x']), ignored), ['docs', 'docs/agent']);
+  assert.deepEqual(ignoredToRead(new Set(['docs/agent', 'docsx']), ignored), []);
 });

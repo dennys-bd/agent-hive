@@ -307,7 +307,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerFileBaseRoutes(app, deps); // GET /activities/:id/file-base: what a file's changes compare against (#668)
   registerDiffRoutes(app, deps); // GET /activities/:id/diff (#270)
   registerReviewRoutes(app, deps); // GET /tasks/:id/review and the reviewed marks (#591)
-  registerTreeRoutes(app, deps); // GET /activities/:id/tree, POST /activities/:id/reveal (redesign 07)
+  registerTreeRoutes(app, deps); // GET /activities/:id/tree, POST /activities/:id/reveal (redesign 07), GET /activities/:id/tree/folder (HIVE-22)
   registerMoveRoutes(app, deps); // POST /activities/:id/tree/move, the file tree's drop (#594)
   registerTreeOpsRoutes(app, deps); // POST /activities/:id/tree/create, /rename, /trash, /file: the files tree's own operations (#818)
 }

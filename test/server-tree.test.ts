@@ -4,9 +4,9 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { parseStatus, REVEAL_BODY_MESSAGE, treeRoot } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, parseStatus, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
-import { OUTSIDE_MESSAGE } from '../src/tree-paths.js';
+import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
 import { LOCAL_ACTIVITY_MESSAGE } from '../src/activity-routes.js';
 import { UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-files.js';
@@ -22,6 +22,10 @@ import { savedTasks, type WithWork, withLocal, workPath } from './fixtures/work.
 const LISTED = ['a.txt', 'src/b.ts', 'gone.txt', 'new.txt', 'vendor/lib/', ''].join('\0');
 // git's --directory listing (#818): an empty folder, a folder a listed file sits under, and the nested repository LISTED names too
 const DIRS = ['empty/', 'src/', 'vendor/lib/', ''].join('\0');
+// git's ignored listing (HIVE-22): an ignored file, two ignored folders git did not walk into, and a .git the guard drops
+const IGNORED = ['debug.log', 'node_modules/', 'docs/', '.git/', ''].join('\0');
+// the vendor/lib nested repository the --directory listing names (it holds .git) joins the ignored folders
+const IGNORED_ENTRIES = { files: ['debug.log'], folders: ['docs', 'node_modules', 'vendor/lib'] };
 const STATUS = [' M src/b.ts', ' D gone.txt', '?? new.txt', 'R  moved.ts', 'old.ts', ''].join('\0');
 const task = (n: number, extra: Partial<WithWork> = {}): WithWork => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive', ...extra,
@@ -40,6 +44,7 @@ async function startTree(t: TestContext, tasks: (repo: string) => WithWork[]): P
   const calls: [string, string[]][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, args]);
+    if (args.includes('--ignored')) return { stdout: IGNORED };
     if (args.includes('--directory')) return { stdout: DIRS };
     if (args.includes('ls-files')) return { stdout: LISTED };
     return { stdout: args.includes('status') ? STATUS : '' };
@@ -63,7 +68,7 @@ test('parseStatus marks changed files M and new, untracked or renamed ones A, dr
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const res = await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'] }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) {
     assert.equal(file, 'git');
     assert.deepEqual(args.slice(0, 3), ['--no-optional-locks', '-C', worktreePath(f.repo, 'hive-1-task')]);
@@ -92,7 +97,7 @@ const LOCAL = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
 test('GET /activities/local:<workspace>/tree lists the workspace checkout with its marks, and its reveal shows the checkout (#633, #658)', async (t) => {
   const f = await startTree(t, () => []);
   const res = await hiveFetch(`${f.base}${LOCAL}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: f.repo, files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'] }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: f.repo, files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) assert.deepEqual([file, ...args.slice(0, 3)], ['git', '--no-optional-locks', '-C', f.repo]);
   f.calls.length = 0;
   assert.equal((await postJson(`${f.base}${LOCAL}/reveal`)).status, 204);
@@ -116,11 +121,41 @@ test('treeRoot resolves a local activity to its frozen workspace\'s checkout, an
   assert.deepEqual(treeRoot(state, config, localActivityId('site')), { status: 404, message: UNKNOWN_WORKSPACE_MESSAGE });
 });
 
-test('GET /activities/:id/tree lists as folders the --directory entries no listed file sits under, leaves out a nested repository, and answers its root (#818)', async (t) => {
+test('GET /activities/:id/tree lists as folders the --directory entries no listed file sits under, moves a nested repository to the ignored folders, and answers its root (#818, HIVE-22)', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const tree = (await (await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`)).json()) as TaskTree;
-  assert.deepEqual([tree.root, tree.folders], [worktreePath(f.repo, 'hive-1-task'), ['empty']]);
-  assert.ok(f.calls.some(([, args]) => args.join(' ').endsWith('ls-files -z --others --directory --exclude-standard')));
+  assert.deepEqual([tree.root, tree.folders, tree.ignored], [worktreePath(f.repo, 'hive-1-task'), ['empty'], IGNORED_ENTRIES]);
+  const argv = f.calls.map(([, args]) => args.join(' '));
+  assert.ok(argv.some((line) => line.endsWith('ls-files -z --others --directory --exclude-standard')));
+  assert.ok(argv.some((line) => line.endsWith('ls-files -z --others --ignored --exclude-standard --directory')));
+});
+
+test('taskTree answers the ignored entries outermost and sorted, whatever order git gives, with a nested repository it does not ignore and no .git at any depth (HIVE-22)', async () => {
+  const exec: Exec = async (_file, args) => {
+    if (args.includes('--ignored')) return { stdout: ['node_modules/', 'docs/', 'z.log', 'a.log', '.git/', 'sub/.GIT/config', ''].join('\0') };
+    if (args.includes('--directory')) return { stdout: ['vendor/lib/', 'empty/', ''].join('\0') };
+    return { stdout: args.includes('status') ? '' : ['a.txt', ''].join('\0') };
+  };
+  const tree = await taskTree('/wt', exec, async (folder) => folder.endsWith('vendor/lib/'));
+  assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
+});
+
+test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused (HIVE-22)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const wt = worktreePath(f.repo, 'hive-1-task');
+  await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
+  await writeFile(join(wt, 'docs', 'glossary.md'), 'g');
+  await writeFile(join(wt, 'docs', 'README.md'), 'r');
+  await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
+  const folder = (query: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder${query}`);
+  const res = await folder('?path=docs');
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'] }]);
+  const refusals = [['?path=..%2Fx', OUTSIDE_MESSAGE], ['?path=vendor%2Flib%2F.git', GIT_MESSAGE], ['?path=nope', FOLDER_MISSING_MESSAGE], ['', FOLDER_QUERY_MESSAGE], ['?path=a&path=b', FOLDER_QUERY_MESSAGE]] as const;
+  for (const [query, message] of refusals) {
+    const refused = await folder(query);
+    assert.deepEqual([refused.status, await refused.json()], [400, { error: message }], query);
+  }
+  assert.deepEqual(f.calls, []);
 });
 
 test('POST /activities/:id/reveal with a path shows that item, by its real path; one outside the root or a bad path runs nothing (#818)', async (t) => {

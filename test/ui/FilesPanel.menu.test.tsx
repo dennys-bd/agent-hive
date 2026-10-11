@@ -14,7 +14,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
 const local: LocalActivity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md'], marks: {}, folders: [] };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url.endsWith('/tree')) return json(TREE);
