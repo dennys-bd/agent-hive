@@ -99,3 +99,14 @@ test('an empty body keeps the header and says no description (#62)', () => {
   expect(panel().getByText('sem descrição')).toHaveClass('text-muted-foreground');
   expect(panel().queryByRole('button', { name: /mostrar tudo/ })).toBeNull();
 });
+
+test('an open edit closes when the PR stops being editable: a merge or a lost permission read by a poll (#62)', async () => {
+  const user = userEvent.setup();
+  const onChanged = vi.fn(async () => {});
+  const { rerender } = show(prData(), undefined, onChanged);
+  await user.click(panel().getByRole('button', { name: 'editar' }));
+  expect(panel().getByRole('textbox', { name: 'descrição' })).toBeInTheDocument();
+  rerender(<PrDescription pr={prData({ state: 'merged' })} onChanged={onChanged} />);
+  expect(panel().queryByRole('textbox')).toBeNull();
+  expect(panel().getByText('The description')).toBeInTheDocument();
+});

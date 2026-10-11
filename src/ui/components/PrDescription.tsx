@@ -89,6 +89,7 @@ export interface PrDescriptionProps { pr: PrData; sessionId?: string; onChanged(
 export function PrDescription({ pr, sessionId, onChanged }: PrDescriptionProps) {
   const [isOpen, setIsOpen] = useState(false); // here, not in the body: a save remounts the body and must not collapse it again
   const editing = useEditable({ label: t('pr.description'), value: pr.body, updatedAt: pr.updatedAt, isMultiline: true, changed: t('pr.changed'), onSave: saverOf(pr, onChanged)('body') });
+  const isEditing = editing.isEditing && canEditPr(pr); // a merge or a lost permission read by a poll closes the form a draft left open
   const body = pr.body.trim() === ''
     ? <p className={`px-4 py-3 text-[13px] ${MUTED}`}>{t('pr.description.empty')}</p>
     : <CollapsibleBody text={pr.body} isOpen={isOpen} onToggle={() => setIsOpen(!isOpen)} />;
@@ -99,9 +100,9 @@ export function PrDescription({ pr, sessionId, onChanged }: PrDescriptionProps) 
         <span className="font-medium">{pr.author}</span>
         <OpenedLine createdAt={pr.createdAt} sessionId={sessionId} />
         <span className="flex-1" />
-        {canEditPr(pr) && !editing.isEditing && <Button type="button" size="xs" variant="outline" onClick={editing.edit}>{t('issue.edit')}</Button>}
+        {canEditPr(pr) && !isEditing && <Button type="button" size="xs" variant="outline" onClick={editing.edit}>{t('issue.edit')}</Button>}
       </header>
-      {editing.isEditing ? <div className="px-4 py-3">{editing.form}</div> : body}
+      {isEditing ? <div className="px-4 py-3">{editing.form}</div> : body}
     </section>
   );
 }
