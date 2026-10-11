@@ -5,8 +5,14 @@ import type { PrData, PrReviewEvent } from '../../types.js';
 export type ReviewerState = 'approved' | 'changes' | 'resolved' | 'commented' | 'requested';
 export interface Reviewer { login: string; team: boolean; state: ReviewerState }
 
-// A person's newest submitted review; GitHub writes every time in one ISO format, so the text order is the time order
-const latestOf = (reviews: PrReviewEvent[]): PrReviewEvent => reviews.reduce((kept, review) => (review.at >= kept.at ? review : kept));
+// GitHub writes every time in one ISO format, so the text order is the time order
+const newestOf = (reviews: PrReviewEvent[]): PrReviewEvent => reviews.reduce((kept, review) => (review.at >= kept.at ? review : kept));
+// A person's row review: their newest approval or change request, as GitHub's reviewDecision counts it (a later comment does not lift a
+// change request); their newest comment only when they never approved nor asked for changes
+function latestOf(reviews: PrReviewEvent[]): PrReviewEvent {
+  const opinionated = reviews.filter((review) => review.kind !== 'commented');
+  return newestOf(opinionated.length > 0 ? opinionated : reviews);
+}
 
 // A change request reads resolved once every review thread its author opened (the thread's first comment is theirs) is resolved; with no
 // thread of theirs there is nothing to resolve

@@ -107,7 +107,7 @@ function ClosesValue({ pr, onOpenIssue }: { pr: PrData; onOpenIssue(url: string)
     <span className="flex flex-wrap items-baseline gap-x-1.5">
       {pr.closes.map((issue) => (
         <button key={issue.url} type="button" className="text-review hover:underline" onClick={() => onOpenIssue(issue.url)}>
-          {issue.repository === repo ? `#${issue.number}` : `${issue.repository}#${issue.number}`}
+          {issue.repository.toLowerCase() === repo.toLowerCase() ? `#${issue.number}` : `${issue.repository}#${issue.number}`}
         </button>
       ))}
       {pr.state === 'open' && <span className={MUTED}>{t('pr.block.closes.onMerge')}</span>}

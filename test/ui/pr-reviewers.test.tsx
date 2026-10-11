@@ -33,6 +33,11 @@ test('requests come first in GitHub\'s order; a pending request overrides an old
   ]);
 });
 
+test('a later comment does not lift a change request or an approval, as GitHub\'s reviewDecision; a comment alone gives commented (#66)', () => {
+  const pr = prData({ threads: [], reviews: [review('ana', 'changes', T1), review('ana', 'commented', T2), review('bia', 'approved', T1), review('bia', 'commented', T2)] });
+  expect(reviewersOf(pr).map((r) => [r.login, r.state])).toEqual([['ana', 'changes'], ['bia', 'approved']]);
+});
+
 test('no review and no request: no row (#66)', () => {
   expect(reviewersOf(prData())).toEqual([]);
 });
