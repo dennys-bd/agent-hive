@@ -7,7 +7,7 @@ import type { CommentsState } from '@/hooks/use-comments';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { ActivityRecord, Stage, StageCommands, TaskFile, TaskPr, Shortcuts, Transition, Worker, State } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork, withTasks, movedWork, withWork } from '../fixtures/work';
 
 const task: WithWork = {
@@ -531,4 +531,21 @@ test('a task out of tries shows the exhausted block in place of the status box a
   expect(screen.queryByRole('region', { name: 'tentativas esgotadas' })).not.toBeInTheDocument();
   const tries = screen.getByText('tentativas').closest('details') as HTMLElement;
   expect(before(screen.getAllByRole('region')[0], tries)).toBe(true); // the status box first, then the section
+});
+
+test('a failed start shows its short message in the viewer\'s language; the raw text (path, git\'s lines) only behind detalhes, closed by default (#945)', async () => {
+  const user = userEvent.setup();
+  const raw = '/repo has changes that are not committed:\n M src/app.ts\n?? notes.md';
+  render(<Panel state={movedWork({ ...IDLE, tasks: [{ ...STOPPED, error: SPAWN_FAILED + raw }] })} initial={TASK} />);
+  const alert = screen.getByRole('alert');
+  expect(within(alert).getByText('o workspace tem mudanças não commitadas: faça commit ou stash e inicie de novo')).toHaveClass('text-destructive');
+  expect(alert).not.toHaveTextContent('/repo');
+  const toggle = within(alert).getByRole('button', { name: 'detalhes' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(alert).toHaveTextContent('/repo has changes that are not committed: M src/app.ts ?? notes.md');
+  expect(alert).not.toHaveTextContent('start failed');
+  await user.click(toggle);
+  expect(alert).not.toHaveTextContent('/repo');
 });
