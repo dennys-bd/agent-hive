@@ -100,10 +100,13 @@ test('an issue page shows its task in the panel ahead of the selection, with its
   await openIssue12(user);
   expect(await panel().findByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();
   expect(panel().getByText('hive · roadmap')).toBeInTheDocument();
+  expect(await panel().findByRole('button', { name: 'etapa' })).toHaveTextContent('dev'); // the page's block, in third place
+  expect(main().queryByRole('complementary')).not.toBeInTheDocument();
   await user.click(main().getByRole('tab', { name: 'PRs 2' }));
   expect(await panel().findByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   await user.click(await main().findByText('Fix the pager'));
   expect(await panel().findByRole('heading', { name: 'HIVE-2 Fix it' })).toBeInTheDocument();
+  expect(await panel().findByText('acme/site')).toBeInTheDocument(); // a hive task's PR: its repository and workspace
   await user.click(automation().getByRole('button', { name: /^todas/ }));
   expect(panel().getByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   expect(calls).toEqual([]); // the selection never changed: leaving the pages restores it
@@ -134,8 +137,10 @@ test('with a page open and the center under Atividades the panel shows the selec
   showActivities();
   const hidden = within(screen.getByRole('complementary', { name: 'detalhe', hidden: true }));
   expect(hidden.getByRole('heading', { name: 'HIVE-1 Task A', hidden: true })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'etapa', hidden: true })).not.toBeInTheDocument(); // the slot is empty, the page renders no portal
   showFlow();
   expect(panel().getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();
+  expect(await panel().findByRole('button', { name: 'etapa' })).toBeInTheDocument();
 });
 
 test('a PR page whose repository the last read no longer lists gives no page mode: the panel shows the selection (#64)', async () => {

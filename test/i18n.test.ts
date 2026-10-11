@@ -388,3 +388,7 @@ test('issue › on the details panel\'s title row reads the same in both languag
   assert.equal(MESSAGES.en['detail.issueLink'], 'issue ›');
   assert.equal(MESSAGES.pt['detail.issueLink'], 'issue ›');
 });
+
+test('the pages\' properties column and its activity block are gone: the details panel draws them (#64)', () => {
+  for (const key of ['issue.props', 'issue.activity', 'issue.openActivity']) assert.equal(key in MESSAGES.en || key in MESSAGES.pt, false, `${key} is gone (#64)`);
+});

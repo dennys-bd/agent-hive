@@ -215,21 +215,21 @@ function useCenterNav(state: State | undefined, sources: SourcesNav | undefined,
   };
 }
 
-interface CenterProps { state: State; locale: string; selected?: Selection; picks: SourcePick; repositories: RepoSummary[]; onSelect(selection: Selection): void; goTo(taskId: string): void; stageCaps: Record<string, number>; back?: BackLink }
+interface CenterProps { state: State; selected?: Selection; picks: SourcePick; repositories: RepoSummary[]; onSelect(selection: Selection): void; goTo(taskId: string): void; stageCaps: Record<string, number>; back?: BackLink }
 
-interface RepoCenterArgs { state: State; locale: string; picks: SourcePick; repo: RepoSummary; goTo(taskId: string): void; onOpenIssue(url: string): void; onOpenPr(url: string): void; back?: BackLink }
+interface RepoCenterArgs { state: State; picks: SourcePick; repo: RepoSummary; goTo(taskId: string): void; onOpenIssue(url: string): void; onOpenPr(url: string): void; back?: BackLink }
 
 // The center under a repository (#757, #758): its PR list or one PR's page under PRs; its issues or one issue's page under issues. A page
 // keeps the header
-function repoCenter({ state, locale, picks, repo, goTo, onOpenIssue, onOpenPr, back }: RepoCenterArgs): ReactNode {
+function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: RepoCenterArgs): ReactNode {
   const heading: RepoHeader = { summary: repo, tab: picks.repoTab, onTab: picks.onRepoTab, onRepository: picks.pickRepository };
   // #911: a page's header carries the way back, never a list's
   const header = (reload: () => Promise<void>) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} />;
   const { issue, pr } = picks;
   // #69: the merge goes back as the header's button does; an empty stack has no back, so the page stays and shows the PR merged
-  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} locale={locale} pr={pr} summary={repo} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
+  if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} summary={repo} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
   if (issue) {
-    return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} locale={locale} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} />;
+    return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} />;
   }
   if (picks.repoTab === 'prs') {
     return <RepoPrTable key={repo.repository} state={state} summary={repo} onTab={picks.onRepoTab} onRepository={picks.pickRepository} onOpen={(row) => picks.openPrPage({ repository: repo.repository, number: row.number })} />;
@@ -244,14 +244,14 @@ function repoCenter({ state, locale, picks, repo, goTo, onOpenIssue, onOpenPr, b
 
 // The center under Automação: a repository's lists and pages (#757, #758), a source's native view or one issue's page (#756, #757), else the
 // flow. A page keeps the header it was opened from
-function Center({ state, locale, selected, picks, repositories, onSelect, goTo, stageCaps, back }: CenterProps) {
+function Center({ state, selected, picks, repositories, onSelect, goTo, stageCaps, back }: CenterProps) {
   const { picked, external, tabs, repo, issue } = picks;
-  if (repo) return repoCenter({ state, locale, picks, repo, goTo, onOpenIssue: issueOpener(picks, repositories), onOpenPr: prOpener(picks, repositories), back });
+  if (repo) return repoCenter({ state, picks, repo, goTo, onOpenIssue: issueOpener(picks, repositories), onOpenPr: prOpener(picks, repositories), back });
   if (external && tabs?.active === 'native') {
     if (issue) {
       return (
         <IssuePage
-          key={`${issue.repository}#${issue.number}`} state={state} locale={locale} issue={issue} meta={external.name}
+          key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={external.name}
           workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
           header={(reload) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} />} onGoTo={goTo}
         />
@@ -314,7 +314,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
       >
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {hasSource && <SyncErrors syncs={state.syncs} />}
-          <NavScrollContext.Provider value={pending}><Center state={state} locale={locale} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
+          <NavScrollContext.Provider value={pending}><Center state={state} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
         </main>
       </MainDock>
       {/* redesign 02: the signal, the workers, the rules with their pause popover and shut down when done; the manual signal and the
