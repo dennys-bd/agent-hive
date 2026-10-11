@@ -3422,3 +3422,13 @@ test('moveToStage and a start on a show epic are no-ops: its children decide its
   assert.deepEqual(start.effects, [], 'no spawn');
   assert.equal(work(start.state, 1), undefined, 'no activity born for it');
 });
+
+test('a poll that moves the children moves their show epic in the same reduction, its column written like any move (#31)', () => {
+  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2', 'board:item3'], epic: { follows: 'behind', switchAt: 'dev' } }, column });
+  const first = polled(base(0), [epic('Backlog'), listed(2), listed(3)]).state;
+  assert.equal(task(first, 1)?.stage, 'spec', 'every child in spec: the epic stays');
+  const { state, effects } = polled(first, [epic('Backlog'), listed(2, 'Ready'), listed(3, 'Ready')]);
+  assert.equal(task(state, 1)?.stage, 'dev', 'the furthest-behind child is in dev now');
+  assert.equal(task(state, 1)?.boardColumn, 'Ready');
+  assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]);
+});
