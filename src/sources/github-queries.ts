@@ -222,6 +222,10 @@ export const REPOSITORY_LABEL = `query($owner: String!, $name: String!, $label: 
 export const CREATE_LABEL = `mutation($repositoryId: ID!, $name: String!, $color: String!) {
   createLabel(input: { repositoryId: $repositoryId, name: $name, color: $color }) { label { id } }
 }`;
+// A decomposition's PR (#936): the file's branch to its repository's default branch, with the Hive's own login
+export const CREATE_PULL_REQUEST = `mutation($repositoryId: ID!, $baseRefName: String!, $headRefName: String!, $title: String!, $body: String!) {
+  createPullRequest(input: { repositoryId: $repositoryId, baseRefName: $baseRefName, headRefName: $headRefName, title: $title, body: $body }) { pullRequest { number url } }
+}`;
 // An issue already in the project answers its existing item: a replay is harmless
 export const ADD_PROJECT_ITEM = `mutation($projectId: ID!, $contentId: ID!) {
   addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) { item { id } }
@@ -312,6 +316,7 @@ export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: stri
 export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
 export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
 export interface RepositoryBranchData { repository?: { id: string; defaultBranchRef?: { name: string } | null } | null } // #936
+export interface CreatePullRequestData { createPullRequest?: { pullRequest?: { number: number; url: string } | null } | null } // #936
 
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */
 export interface GhIssueChoices {

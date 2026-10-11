@@ -8,7 +8,7 @@ import { initialState } from '../src/orchestrator.js';
 import { registerApprovalRoutes } from '../src/server-approval.js';
 import { registerDecompositionRoutes } from '../src/server-decomposition.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
-import { ADD_PROJECT_ITEM, CREATE_ISSUE, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
+import { ADD_PROJECT_ITEM, CREATE_ISSUE, CREATE_PULL_REQUEST, ISSUE_ID, PROJECT_FIELDS, REPOSITORY_BRANCH } from '../src/sources/github-queries.js';
 import { worktreePath } from '../src/worktree.js';
 import type { CombConfig, DecompositionPreview, Exec, HiveEvent, SourceConfig, State, Task } from '../src/types.js';
 import { fakeGqlJson, GITHUB_ENTRY } from './fakes.js';
@@ -75,6 +75,7 @@ async function routes(t: TestContext, setup: Setup = {}) {
       return { createIssue: { issue: { id: `I${number}`, number } } };
     }
     if (query === ADD_PROJECT_ITEM) return { addProjectV2ItemById: { item: { id: 'PI' } } };
+    if (query === CREATE_PULL_REQUEST) return { createPullRequest: { pullRequest: { number: 300, url: 'https://github.com/acme/docs/pull/300' } } };
     return {};
   });
   const app = express();
@@ -157,7 +158,7 @@ test('POST on a GitHub goal records each step as it is done, then approves the s
   const { url, events, calls } = await routes(t);
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
-  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'done=7', 'approve']);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106', 'pr=300', 'done=7', 'approve']);
   assert.deepEqual(events.at(-1), { type: 'approve', activityId: activityIdOf('board:I7') });
   const bodies = calls.filter((c) => c.query === CREATE_ISSUE).map((c) => String(c.variables.body));
   assert.match(bodies[0], /^Parent: #7$/m);
@@ -168,7 +169,7 @@ test('POST on a GitHub goal records each step as it is done, then approves the s
 test('POST on a local goal writes its root issue first and ends with closeTask (#865)', async (t) => {
   const { url, events } = await routes(t, { task: LOCAL, origin: 'git@github.com:acme/hive.git' });
   assert.equal((await post(url, CHOICE)).status, 200);
-  assert.deepEqual(stepsOf(events), ['root=101', '1=102', '1.1=103', '1.2=104', '2=105', '2.1=106', '2.2=107', 'done=101', 'closeTask']);
+  assert.deepEqual(stepsOf(events), ['root=101', '1=102', '1.1=103', '1.2=104', '2=105', '2.1=106', '2.2=107', 'pr=300', 'done=101', 'closeTask']);
   const local = await routes(t, { task: LOCAL });
   const refused = await post(local.url, CHOICE);
   assert.deepEqual([refused.status, await refused.json()], [409, { error: 'o workspace não tem origin no GitHub' }]);
@@ -179,6 +180,33 @@ test('POST refuses a file in no git checkout before any issue is written (#936)'
   const res = await post(url, CHOICE);
   assert.deepEqual([res.status, await res.json()], [502, { error: 'the decomposition file is in no git checkout' }]);
   assert.deepEqual([events, calls.some((c) => c.query === CREATE_ISSUE)], [[], false]);
+});
+
+test('POST commits a hand edit in the file\'s checkout, pushes its branch and opens the PR in the file\'s repository before done; a retry with pr recorded opens none (#936)', async (t) => {
+  const dirty = await routes(t, { dirty: true });
+  assert.equal((await post(dirty.url, CHOICE)).status, 200);
+  assert.deepEqual(dirty.git.map((args) => args.slice(2)), [
+    ['rev-parse', '--show-toplevel'], ['remote', 'get-url', 'origin'], ['branch', '--show-current'],
+    ['status', '--porcelain', '--', 'decomposition.md'], ['add', '--', 'decomposition.md'], ['commit', '-m', 'docs: decomposition for #7', '--', 'decomposition.md'],
+    ['push', '-u', 'origin', 'hive/7-site'],
+  ]);
+  assert.ok(dirty.git.every((args) => args[0] === '-C' && args[1] === dirty.worktree), 'every git call runs in the file\'s checkout');
+  const [pr] = dirty.calls.filter((c) => c.query === CREATE_PULL_REQUEST).map((c) => c.variables);
+  assert.deepEqual([pr?.repositoryId, pr?.baseRefName, pr?.headRefName], ['RD', 'trunk', 'hive/7-site']);
+  const issues = { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106 };
+  const retried = await routes(t, { result: { ...PENDING, decompositionIssues: { ...issues, pr: 300 } } });
+  assert.equal((await post(retried.url, CHOICE)).status, 200);
+  assert.deepEqual(
+    [stepsOf(retried.events), retried.git.map((args) => args[2]), retried.calls.some((c) => c.query === CREATE_PULL_REQUEST)],
+    [['done=7', 'approve'], ['rev-parse', 'remote', 'branch'], false],
+  );
+});
+
+test('a failed push answers 502 with git\'s words; the issues stay recorded and neither pr nor done is (#936)', async (t) => {
+  const { url, events } = await routes(t, { pushFails: 'rejected: non-fast-forward' });
+  const res = await post(url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [502, { error: 'rejected: non-fast-forward' }]);
+  assert.deepEqual(stepsOf(events), ['design=7', '1=101', '1.1=102', '1.2=103', '2=104', '2.1=105', '2.2=106']);
 });
 
 test('a GitHub error answers 502 with its message; the steps done stay recorded and the stage does not end (#865)', async (t) => {

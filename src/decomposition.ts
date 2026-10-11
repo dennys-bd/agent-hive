@@ -10,6 +10,7 @@ import type { Decomposition, DecompositionNode, DecompositionProblem } from './t
 export const ROOT_KEY = 'root';
 export const DESIGN_KEY = 'design';
 export const DONE_KEY = 'done';
+export const PR_KEY = 'pr'; // #936: the decomposition's PR, so a second press opens none
 
 /** What parseDecomposition reads (#865): the tree only when it has no problem; the count of `## Suggestions` items, which never become issues;
  * the overlap warnings (#936), only when there is no problem. */

@@ -4,7 +4,7 @@ import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { DONE_KEY, decompositionPending, fileAddress, type ParsedDecomposition, parseDecomposition, recordedIssues } from './decomposition.js';
-import { fileCheckout } from './decomposition-deliver.js';
+import { deliverDecomposition, fileCheckout } from './decomposition-deliver.js';
 import { readRepository, writeDecomposition, type WriteTarget } from './decomposition-write.js';
 import { resolveActivityPath } from './ide.js';
 import { issueOfLink } from './repos/issue-task.js';
@@ -37,7 +37,7 @@ const WRITING_MESSAGE = 'as issues desta decomposição já estão sendo criadas
 export interface DecompositionRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // each step's decompositionIssue, then approve or closeTask
-  exec: Exec; // git remote get-url origin: a local goal's repository
+  exec: Exec; // git remote get-url origin: a local goal's repository; the file's checkout, and the delivery's status, add, commit and push (#936)
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the issue page's writes (#757)
 }
 
@@ -135,8 +135,8 @@ async function choiceOf(config: Pick<Config, 'comb'>, gql: GqlJson, body: unknow
 }
 
 // The write and the stage's end: the file's checkout resolved first (#936), so a file the Hive cannot deliver writes nothing; each step
-// dispatched as decompositionIssue before the next; `done` once everything is done; then approve for a GitHub goal or closeTask for a local
-// one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
+// dispatched as decompositionIssue before the next; the file delivered and its PR recorded as pr; `done` once everything is done; then approve for
+// a GitHub goal or closeTask for a local one, straight to the reducer, past the approve route's guard. An error is a 502 with GitHub's words, and the steps done stay
 async function write(deps: DecompositionRouteDeps, current: Live, activityId: string, body: unknown, res: Response): Promise<void> {
   const goal = await readGoal(deps, current, activityId);
   if ('status' in goal) return refuse(res, goal);
@@ -155,6 +155,10 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   };
   const written = await writeDecomposition({ gql: deps.gql, record }, ready.decomposition, target, recordedIssues(goal.result));
   if ('error' in written) return refuse(res, { status: HTTP_BAD_GATEWAY, message: written.error });
+  const delivered = await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+    checkout, repositoryId: docs.id, base: docs.defaultBranch, root: written.root, goal: ready.repository,
+  }, recordedIssues(goal.result));
+  if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);
   await deps.dispatch(goal.number === undefined ? { type: 'closeTask', taskId } : { type: 'approve', activityId });
   res.json({ ok: true });
