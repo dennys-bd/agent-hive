@@ -183,7 +183,7 @@ test('with nothing saved the rows group by status in Status order with counts an
   renderTable();
   await screen.findByText('5 issues · 1 no fluxo');
   expect(groups()).toEqual(['Todo2sem etapa', 'Ready1→ dev', 'Done1sem etapa', 'sem status1']);
-  expect(groupRows()[0]).toHaveClass('relative', 'z-[1]', 'bg-background'); // opaque and above the overlay: a divider stops at it
+  expect(groupRows()[0]).toHaveClass('sticky', 'z-[5]', 'bg-card'); // opaque and above the overlay: a divider stops at it
   expect(group(/^Done/)).toHaveAttribute('aria-expanded', 'false');
   expect(numbers()).toEqual(['#3', '#5', '#12', '#7']);
   await user.click(group(/^Done/));

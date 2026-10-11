@@ -30,17 +30,18 @@ export function ProjectGroupMenu({ options, groupBy, onChange }: ProjectGroupMen
   );
 }
 
-/** A group's row (handoff 01b): ⌄ or ›, its name, its count and, grouped by status, its stage. A click folds or unfolds it. */
+/** A group's header (handoff 01b, #60): ⌄ or ›, its name, its count in a pill and, grouped by status, its stage. Sticky under the 34px table
+ * header on its own card fill, so the next group's header covers it as it reaches the top. A click folds or unfolds it. */
 export function ProjectGroupRow({ group, isCollapsed, onToggle }: { group: ProjectGroup; isCollapsed: boolean; onToggle(): void }) {
   const Chevron = isCollapsed ? ChevronRightIcon : ChevronDownIcon;
   return (
-    // opaque and stacked above the dividers' overlay, so a divider stops at it (#59); the header's full look is 3.2's
-    <tr className="relative z-[1] flex h-8 items-center border-b bg-background px-3 text-muted-foreground text-xs">
+    // opaque and above the dividers' overlay, so a divider stops at it (#59); under the table header's z-10
+    <tr className="sticky top-[34px] z-[5] flex h-9 items-center border-y bg-card px-3 text-muted-foreground text-xs">
       <td className="min-w-0 flex-1">
         <button type="button" aria-expanded={!isCollapsed} onClick={onToggle} className="flex w-full min-w-0 items-center gap-1.5">
-          <Chevron aria-hidden="true" className="size-3.5 shrink-0" />
-          <span className="truncate font-medium text-foreground">{group.label}</span>
-          <span className="tabular-nums">{group.items.length}</span>
+          <Chevron aria-hidden="true" className="size-3.5 shrink-0 text-foreground" />
+          <span className="truncate font-semibold text-[13px] text-foreground">{group.label}</span>
+          <span className="shrink-0 rounded-[9px] bg-muted px-1.5 tabular-nums">{group.items.length}</span>
           {group.stage !== undefined && <span className="truncate">{group.stage}</span>}
         </button>
       </td>
