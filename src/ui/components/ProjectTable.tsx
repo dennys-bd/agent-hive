@@ -5,6 +5,7 @@ import { useIsFlowShown } from '@/components/MainDock';
 import { ProjectColumnsMenu } from '@/components/ProjectColumnsMenu';
 import { ProjectGroupMenu, ProjectGroupRow } from '@/components/ProjectGroupMenu';
 import { ProjectRow } from '@/components/ProjectRow';
+import { useNavScroll } from '@/hooks/use-back-stack';
 import { type ProjectState, useProject } from '@/hooks/use-project';
 import { t } from '@/i18n';
 import { clampWidth, columnLabel, DATES, defaultColumns, FIELD_KEY, gridTemplate, minWidth, type ProjectColumn, projectColumns, withWidths } from '@/lib/project-columns';
@@ -149,9 +150,10 @@ function GridBody({ view, visible, rows, grouping, linked, state, onGoTo, source
 // The table (handoff 01, 01b): a 34px header on card that stays as the body scrolls, 40px rows, then the footer's X de N and the ⇧↵ hint
 function ProjectGrid(props: ProjectGridProps) {
   const { view, visible, rows, sort, onSort, onDrag, onResize } = props;
+  const scroller = useNavScroll(); // #911: a back restores this table's scroll
   return (
     <div className="mx-3.5 mb-3.5 flex min-h-0 flex-col overflow-hidden rounded-[10px] border">
-      <div className="min-h-0 overflow-auto">
+      <div ref={scroller} className="min-h-0 overflow-auto">
         <table className="block w-full" style={{ minWidth: minWidth(visible) }}>
           <thead className="sticky top-0 z-10 block">
             <tr className="grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: gridTemplate(visible) }}>

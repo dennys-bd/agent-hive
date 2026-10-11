@@ -6,6 +6,7 @@ import { PrDescription } from '@/components/PrDescription';
 import { PrMergeBox } from '@/components/PrMergeBox';
 import { PrStack } from '@/components/PrStack';
 import { PrTimeline } from '@/components/PrTimeline';
+import { useNavScroll } from '@/hooks/use-back-stack';
 import { prPath } from '@/hooks/use-pr';
 import { t, tPlural } from '@/i18n';
 
@@ -35,8 +36,9 @@ export interface PrConversationProps { pr: PrData; task?: Task; state: State; on
 /** conversation (#758, handoff 03): 16px 24px, gap 16, beside the properties; a merged or closed PR says first that it is read only. Then the
  * PR line, the description, the stack, the checks, the timeline and, on an open PR, the comment box and the merge box. */
 export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInDiff }: PrConversationProps) {
+  const scroller = useNavScroll(); // #911: the PR page's conversation; files keeps its own (out of scope)
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+    <div ref={scroller} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
       {pr.state !== 'open' && <p className="text-muted-foreground text-xs">{t('pr.readOnly', { state: t(`prs.state.${pr.state}`) })}</p>}
       <PrLine pr={pr} />
       <PrDescription pr={pr} onChanged={onChanged} />

@@ -5,6 +5,7 @@ import { ForkEmpty } from '@/components/ForkEmpty';
 import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoIssueRow } from '@/components/RepoIssueRow';
+import { useNavScroll } from '@/hooks/use-back-stack';
 import { useRepoIssues } from '@/hooks/use-repo-issues';
 import { reloadRepositories } from '@/hooks/use-repositories';
 import { type MessageKey, t } from '@/i18n';
@@ -43,9 +44,10 @@ function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
 
 // The table (handoff 02): a 34px header on card, 40px rows, then the footer's X de N and the ↵ hint
 function IssueGrid({ rows, total, state, onOpen }: { rows: RepoIssue[]; total: number; state: State; onOpen?(issue: RepoIssue): void }) {
+  const scroller = useNavScroll(); // #911
   return (
     <div className="mx-3.5 mb-3.5 flex min-h-0 flex-col overflow-hidden rounded-[10px] border">
-      <div className="min-h-0 overflow-auto">
+      <div ref={scroller} className="min-h-0 overflow-auto">
         <table className="block w-full">
           <thead className="block">
             <tr className="grid h-[34px] items-center gap-3 border-b bg-card px-3 text-muted-foreground text-xs" style={{ gridTemplateColumns: COLUMNS }}>
