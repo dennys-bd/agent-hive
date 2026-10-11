@@ -19,6 +19,7 @@ import { registerCheckRoutes } from './server-check.js';
 import { registerFileBaseRoutes } from './server-file-base.js';
 import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
+import { registerRetryRoute } from './server-retry.js';
 import type { Activity, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree } from './worktree.js';
@@ -40,7 +41,7 @@ export const UNKNOWN_TASK_MESSAGE = 'tarefa desconhecida';
 const TASK_ON_SOURCE_MESSAGE = 'tarefa ainda está na source';
 export const RUNNING_MESSAGE = 'tarefa já está executando';
 export const SETUP_RUNNING_MESSAGE = 'o setup desta tarefa ainda está em andamento'; // #351: one worktree, one setup at a time
-const MISSING_MESSAGE = 'tarefa sumiu do source: feche ou mantenha';
+export const MISSING_MESSAGE = 'tarefa sumiu do source: feche ou mantenha';
 const LEAVING_MESSAGE = 'tarefa saindo da source'; // #491: an archive, remove or delete of the source is in flight on it (#286)
 const DIFFERENT_STAGES_MESSAGE = 'tarefas em etapas diferentes';
 const NOTHING_MISSING_MESSAGE = 'nenhuma tarefa dessa etapa saiu da source'; // #279: the stage's close all has nothing canCloseMissing allows
@@ -298,6 +299,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerBaseRoute(app, deps);
   registerDeleteActivityRoute(app, deps);
   registerAutoRoutes(app, deps);
+  registerRetryRoute(app, deps); // POST /tasks/:id/retry (#915)
   registerSessionRoutes(app, deps);
   registerCopyRoutes(app, deps); // GET, POST …/sessions/:session/copy (#587)
   registerWorkspaceRoute(app, deps);
