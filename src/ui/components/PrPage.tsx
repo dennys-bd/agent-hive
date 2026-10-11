@@ -27,6 +27,7 @@ export interface PrPageProps {
   onGoTo(taskId: string): void; // a task with no GitHub issue: its detail in the flow
   onOpenIssue(url: string): void; // task #N: its issue's page
   onOpenPr(url: string): void; // a stack's part: its PR's page, or GitHub
+  onMerged?(): void; // #69: a merge with the Hive's button goes back one step; absent (an empty back stack), the page reads the PR again
 }
 
 // The inner tabs (handoff 03 "Topo"): conversation N and files N, a spacer, then what the page puts on the right
@@ -74,7 +75,7 @@ function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onR
 
 /** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation with the properties
  * column, or files. Read on opening, on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. */
-export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr }: PrPageProps) {
+export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
   const url = prLink(ref.repository, ref.number);
   const isShown = useIsFlowShown();
   const { load, refresh, review, reread } = usePr(url, isShown);
@@ -109,7 +110,7 @@ export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpen
       <ReviewSurfaceContext.Provider value={view.surface}>
         {tab === 'conversation' ? (
           <div className="flex min-h-0 flex-1">
-            <PrConversation pr={pr} task={task} state={state} onChanged={reload} onOpenPr={onOpenPr} onOpenInDiff={openInDiff} />
+            <PrConversation pr={pr} task={task} state={state} onChanged={reload} onOpenPr={onOpenPr} onOpenInDiff={openInDiff} onMerged={onMerged} />
             <PrProperties pr={pr} task={task} summary={summary} state={state} locale={locale} onGoTo={onGoTo} />
           </div>
         ) : <FilesTab pr={pr} view={view} onRefresh={() => void refresh()} />}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
@@ -53,13 +53,16 @@ const state: State = {
 const TASK: WithWork = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: PAGE.url, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true, workerId: 's1' };
 const WORKER: Worker = { id: 's1', status: 'working', activityId: activityIdOf('roadmap:PVTI_12'), runId: 'W1', sessionId: 'abcdef123456', startedAt: '2026-10-05T09:00:00.000Z' };
 const working: State = withPointedWork({ ...state, workers: [WORKER], tasks: [TASK] });
+// #12's activity holding PR #7 (#69): the task details link it, under Automação and in the activity sidebar
+const withPr: State = { ...working, activityRecords: working.activityRecords.map((r) => ({ ...r, prs: [{ url: PR_PAGE.url, state: 'open' as const }] })) };
 
 const jsonRes = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const ANSWERS: Record<string, unknown> = {
   '/repositories': [SITE], '/repositories/acme/site/issues?state=open': OPEN, '/repositories/acme/site/pulls?state=open': PRS, '/repositories/acme/site/issues/12': PAGE,
   '/sources/roadmap/project': VIEW, '/repositories/acme/site/pulls/7': PR_PAGE, '/repositories/acme/site/pulls/7/review': { reviewed: [], drafts: [] },
 };
-const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true }));
+const answer = async (input: RequestInfo | URL, _init?: RequestInit): Promise<Response> => jsonRes(Object.hasOwn(ANSWERS, String(input)) ? ANSWERS[String(input)] : { ok: true });
+const fetchMock = vi.fn(answer); // a POST …/pulls/7/merge answers { ok: true }: GitHub accepted the merge
 
 beforeEach(() => {
   setLanguage('pt');
@@ -67,6 +70,7 @@ beforeEach(() => {
   resetRepositories();
   forgetProjects();
   fetchMock.mockClear();
+  fetchMock.mockImplementation(answer); // a test's own answers end with it
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('WebSocket', FakeWebSocket);
 });
@@ -181,4 +185,98 @@ test('an issue opened from the Atividades view goes back to that view, the stack
   expect(main().getByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   expect(main().queryByRole('button', { name: 'atividade #12' })).not.toBeInTheDocument();
   expect(main().queryByRole('button', { name: 'PRs · site' })).not.toBeInTheDocument(); // the reset left nothing below
+});
+
+// The PR page's merge button (#69): PR_PAGE allows squash alone
+const merge = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+  await user.click(await main().findByRole('button', { name: 'squash e merge' }));
+};
+
+test('a PR opened from the GitHub Project (the task details\' PR link) and merged with the Hive\'s button goes back to the Project table (#69)', async () => {
+  const user = userEvent.setup();
+  render(<Home shown={withPr} initial={{ taskId: 'roadmap:PVTI_12' }} />);
+  showFlow();
+  await automation().findByRole('button', { name: /^site/ });
+  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await main().findByText('Elsewhere'); // the table's row out of the flow
+  await user.click(screen.getByRole('link', { name: '#7' }));
+  expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
+  expect(main().getByRole('button', { name: 'GitHub Project' })).toBeInTheDocument();
+  await merge(user);
+  expect(await main().findByText('Elsewhere')).toBeInTheDocument();
+  expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith('/repositories/acme/site/pulls/7/merge', expect.objectContaining({ method: 'POST' }));
+});
+
+test('a PR opened from the repository\'s PR list, or from its issue list, and merged goes back to that list (#69)', async () => {
+  const user = userEvent.setup();
+  render(<Home shown={withPr} initial={{ taskId: 'roadmap:PVTI_12' }} />);
+  showFlow();
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
+  await user.click(await main().findByText('Fix the pager'));
+  expect(await main().findByRole('button', { name: 'PRs · site' })).toBeInTheDocument();
+  await merge(user);
+  await waitFor(() => expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument());
+  expect(await main().findByText('Fix the pager')).toBeInTheDocument(); // its row in the PR list
+  expect(main().queryByRole('button', { name: 'PRs · site' })).not.toBeInTheDocument();
+  await user.click(main().getByRole('tab', { name: 'issues 3' }));
+  await main().findByText('Issue 12');
+  await user.click(screen.getByRole('link', { name: '#7' })); // the task details' PR link pushes the issue list
+  expect(await main().findByRole('button', { name: 'issues · site' })).toBeInTheDocument();
+  await merge(user);
+  expect(await main().findByText('Issue 12')).toBeInTheDocument();
+  expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
+});
+
+test('an issue page → its PR → merge: the issue page shows again, with its own way back to the GitHub Project (#69)', async () => {
+  const user = userEvent.setup();
+  render(<Home />);
+  showFlow();
+  await automation().findByRole('button', { name: /^site/ });
+  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await user.click(await main().findByText('Pager breaks'));
+  await user.click(await main().findByRole('button', { name: 'abrir PR ›' }));
+  expect(await main().findByRole('button', { name: 'issue #12' })).toBeInTheDocument();
+  await merge(user);
+  expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
+  expect(main().getByRole('button', { name: 'GitHub Project' })).toBeInTheDocument();
+  expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
+});
+
+test('a PR opened from the Atividades view and merged goes back to that view, on the same activity (#69)', async () => {
+  const user = userEvent.setup();
+  render(<Home shown={withPr} />);
+  showFlow();
+  await automation().findByRole('button', { name: /^site/ }); // the repositories are read: the PR opens as a page, not on GitHub
+  showActivities();
+  await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#12 Pager breaks').closest('button') as HTMLElement);
+  sideKey();
+  await user.click(within(right()).getByRole('link', { name: '#7' }));
+  expect(await main().findByRole('button', { name: 'atividade #12' })).toBeInTheDocument();
+  await merge(user);
+  await waitFor(() => expect(screen.getByRole('main', { hidden: true }).closest('[hidden]')).not.toBeNull()); // Atividades shows again
+  expect(within(right()).getByRole('link', { name: '#7' })).toBeInTheDocument(); // on the same activity, still picked
+});
+
+test('a merge GitHub refuses keeps the PR page, with its message and the way back; a PR seen merged on atualizar keeps it too, read only (#69)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementation(async (input, init) => (
+    init?.method === 'POST' && String(input).endsWith('/merge') ? jsonRes({ error: 'gh api graphql: Pull request is in a merge queue' }, 502) : answer(input, init)
+  ));
+  render(<Home />);
+  showFlow();
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
+  await user.click(await main().findByText('Fix the pager'));
+  await merge(user);
+  expect(await within(main().getByRole('region', { name: 'mergear' })).findByRole('alert')).toHaveTextContent('Pull request is in a merge queue');
+  expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
+  expect(main().getByRole('button', { name: 'PRs · site' })).toBeInTheDocument();
+  fetchMock.mockImplementation(async (input, init) => (String(input) === '/repositories/acme/site/pulls/7' ? jsonRes({ ...PR_PAGE, state: 'merged' }) : answer(input, init)));
+  await user.click(main().getByRole('button', { name: 'atualizar' }));
+  expect(await main().findByText('mergeado: só leitura')).toBeInTheDocument();
+  expect(main().getByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
+  expect(main().getByRole('button', { name: 'PRs · site' })).toBeInTheDocument();
+  expect(main().queryByRole('region', { name: 'mergear' })).not.toBeInTheDocument();
 });
