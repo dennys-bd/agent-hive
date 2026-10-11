@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { resetChecks } from '@/lib/check-session';
 import { resetDiagnostics } from '@/lib/diagnostics-store';
 import { resetSessions, setSocketFactory } from '@/lib/lsp-session';
+import { resetExpanded } from '@/lib/tree-place';
 import { resetViewState } from '@/lib/view-state';
 
 // vitest.config.ts has no `globals: true`, so Testing Library's own auto-cleanup (which looks for a
@@ -14,6 +15,9 @@ afterEach(() => { cleanup(); });
 
 // The view state (#484) is module state: a test's snapshot and pending posts never reach the next test
 afterEach(() => { resetViewState(); });
+
+// Each activity's open folders (#947) are module state too
+afterEach(() => { resetExpanded(); });
 
 // The lib measures and positions in a layout jsdom does not have; a plain host div proves the wiring and keeps the DOM shape
 // (className on the host, children inside) the Flow tests walk through.
