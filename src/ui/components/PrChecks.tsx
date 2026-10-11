@@ -1,18 +1,19 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { prRepo } from '../../pull-requests';
 import type { PrCheck, PrChecks as Checks, PrData } from '../../types';
 import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { prPath } from '@/hooks/use-pr';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 
-const MARK: Record<PrCheck['state'], { mark: string; tone: string }> = {
-  success: { mark: '✓', tone: 'text-working' }, failure: { mark: '✕', tone: 'text-destructive' }, pending: { mark: '●', tone: 'text-waiting' },
+const MARK: Record<PrCheck['state'], { mark: ReactNode; tone: string }> = {
+  success: { mark: '✓', tone: 'text-working' }, failure: { mark: '✕', tone: 'text-destructive' }, pending: { mark: <Spinner />, tone: 'text-waiting' },
 };
 const count = (checks: Checks, state: PrCheck['state']): number => checks.items.filter((c) => c.state === state).length;
 
-// The header's mark: ✕ once any failed, ● while any runs, else ✓
+// The header's mark: ✕ once any failed, the spinner while any runs, else ✓
 function worstOf(failed: number, pending: number): PrCheck['state'] {
   if (failed > 0) return 'failure';
   return pending > 0 ? 'pending' : 'success';

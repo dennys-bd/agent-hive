@@ -1,15 +1,16 @@
-import type { KeyboardEvent, MouseEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { prsOf, taskOfPr } from '../../activities';
 import { prGroups, prRepo } from '../../pull-requests';
 import type { PrReviewDecision, PrRow, State, Task } from '../../types';
+import { Spinner } from '@/components/ui/spinner';
 import { type MessageKey, t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 
 const MUTED = 'text-muted-foreground';
 const DASH = <span className={MUTED}>—</span>;
 // awaiting: a workflow waits for a maintainer, not the user, so it is muted (#854)
-const CHECK: Record<NonNullable<PrRow['checks']>, { mark: string; tone: string }> = {
-  success: { mark: '✓', tone: 'text-working' }, failure: { mark: '✕', tone: 'text-destructive' }, pending: { mark: '●', tone: 'text-waiting' },
+const CHECK: Record<NonNullable<PrRow['checks']>, { mark: ReactNode; tone: string }> = {
+  success: { mark: '✓', tone: 'text-working' }, failure: { mark: '✕', tone: 'text-destructive' }, pending: { mark: <Spinner />, tone: 'text-waiting' },
   awaiting: { mark: '◷', tone: MUTED },
 };
 const REVIEW: Record<PrReviewDecision, { key: MessageKey; tone: string }> = {

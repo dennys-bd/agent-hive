@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { activityOf } from '../../activities';
 import { stageChannel } from '../../console';
 import { stageOf } from '../../tasks';
 import type { Activity, State, Task } from '../../types';
 import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { useOpenStageOutput } from '@/hooks/use-console';
 import { t } from '@/i18n';
 import { ciLines, commandLines, lineDuration, type RunningLine, type RunningMark, silence } from '@/lib/running-lines';
@@ -15,7 +16,7 @@ import { viaTries } from '@/lib/tries';
 
 const TICK_MS = 1000; // a running clock must move
 const MUTED = 'text-muted-foreground';
-const GLYPH: Record<RunningMark, string> = { done: '✓', failed: '✕', running: '●', skipped: '', queued: '' };
+const GLYPH: Record<RunningMark, ReactNode> = { done: '✓', failed: '✕', running: <Spinner />, skipped: '', queued: '' };
 // Colour only for status: a failure destructive, the running line working; a queued or skipped line is muted whole
 const GLYPH_TONE: Record<RunningMark, string> = { done: '', failed: 'text-destructive', running: 'text-working', skipped: '', queued: '' };
 const isQuiet = (mark: RunningMark): boolean => mark === 'queued' || mark === 'skipped';
@@ -57,8 +58,8 @@ function shownOf(live: Activity | undefined, state: State, now: number): Shown |
   return ci === undefined ? undefined : { title: t('running.ci'), stage: ci.stage, lines: ciLines(ci) };
 }
 
-// ver saída: a commands stage's execution in its console tab; a wait's running check on GitHub, the one that started first (the first ● in the
-// read's order), hidden with none running or no link. parar: the stage's own stop, the pty's or the wait's
+// ver saída: a commands stage's execution in its console tab; a wait's running check on GitHub, the one that started first (the first spinner in
+// the read's order), hidden with none running or no link. parar: the stage's own stop, the pty's or the wait's
 function RunningActions({ task, live, lines }: { task: Task; live: Activity; lines: readonly RunningLine[] }) {
   const open = useOpenStageOutput();
   const run = live.commands;
