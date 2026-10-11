@@ -1,3 +1,4 @@
+import type { RestAnswer, RestGet } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow } from '../../src/read-model/rows.js';
 
 // Shaped after the answers recorded in Task 1's probe, trimmed to the fields read and with every name replaced (#765)
@@ -37,3 +38,19 @@ export const restIssue = (n: number, updatedAt: string): Record<string, unknown>
 export const restComment = (id: string, issue: number, updatedAt: string): Record<string, unknown> => ({
   ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,
 });
+
+export const NOW = (): Date => new Date('2026-10-11T12:00:00Z');
+export const ok = (body: unknown, extra: { next?: string; etag?: string } = {}): RestAnswer => ({ status: 200, body, ...extra });
+
+/** A RestGet answering `answers` in order, recording every [path, etag] it was asked. */
+export function fakeRest(answers: RestAnswer[]): { rest: RestGet; calls: [string, string | undefined][] } {
+  const queue = [...answers];
+  const calls: [string, string | undefined][] = [];
+  const rest: RestGet = async (path, etag) => {
+    calls.push([path, etag]);
+    const answer = queue.shift();
+    if (answer === undefined) throw new Error(`no answer left for ${path}`);
+    return answer;
+  };
+  return { rest, calls };
+}
