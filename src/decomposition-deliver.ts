@@ -44,7 +44,7 @@ export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, r
 
 // git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is
 // removed before the words leave
-const redacted = (text: string): string => text.replace(/:\/\/[^@\/\s]+@/g, '://');
+const redacted = (text: string): string => text.replace(/:\/\/[^@/\s]+@/g, '://');
 const messageOf = (err: unknown): string => {
   const e = err as { stderr?: unknown };
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
