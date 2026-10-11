@@ -1,13 +1,13 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { taskAction } from '@/components/FlowTask';
+import { FlowTask, taskAction } from '@/components/FlowTask';
 import { Flow } from '@/components/Flow';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { CiNotice } from '@/components/CiProgress';
 import { StageOutputContext } from '@/hooks/use-console';
 import { setLanguage } from '@/i18n';
-import type { Activity, BaseOptions, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
+import type { Activity, BaseOptions, Item, Task, TaskPr, Session, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 
@@ -367,4 +367,42 @@ test('a show epic whose end action was refused shows its error in destructive in
   render(<Flow state={state(epic)} />);
   expect(within(tile()).queryByText(/aguarda filhas/)).not.toBeInTheDocument();
   expect(tile()).toHaveClass('border-destructive');
+});
+
+// #34: 1 lists five children: 2 in the last stage (done), 3 at work, 4 new in review, 5 closed with no task, 6 open with no task
+type Links = Pick<Item, 'parent' | 'children' | 'closedChildren'>;
+const treeTask = (id: string, stage: string, links: Links, extra: Partial<WithWork> = {}): WithWork =>
+  task({ item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '', ...links }, stage, ...extra });
+const FAMILY = [
+  treeTask('1', 'dev', { children: ['I2', 'I3', 'I4', 'I5', 'I6'], closedChildren: ['I5'] }),
+  treeTask('2', 'done', { parent: 'I1' }),
+  treeTask('3', 'dev', { parent: 'I1' }, { workerId: 's1' }),
+  treeTask('4', 'review', { parent: 'I1' }),
+];
+const family = (): State => state(FAMILY[0], [working({ activityId: activityIdOf('I3') })], { tasks: FAMILY });
+const tileOf = (title: string): HTMLElement => screen.getByText(title).closest('li')!;
+
+test('a child shows ↳ before its id and a root does not; a parent shows N filhas · done/N, one segment per direct child in its status colour, and no auto badge (#34)', () => {
+  render(<Flow state={family()} />);
+  expect(within(screen.getByText('#3 Task 3')).getByText('↳')).toHaveClass('font-mono', 'font-normal', 'text-muted-foreground');
+  expect(within(screen.getByText('#1 Task 1')).queryByText('↳')).not.toBeInTheDocument();
+  const parent = tileOf('#1 Task 1');
+  expect(within(parent).getByText('5 filhas · 2/5')).toHaveClass('truncate');
+  const segments = [...parent.querySelectorAll('[data-tree-bar] > span')];
+  expect(segments.map((s) => s.className.match(/bg-[a-z-]+/)?.[0])).toEqual(['bg-muted-foreground', 'bg-working', 'bg-empty', 'bg-muted-foreground', 'bg-empty']);
+  expect(within(parent).queryByText('auto')).not.toBeInTheDocument();
+  expect(within(tileOf('#3 Task 3')).getByText('auto')).toBeInTheDocument();
+  expect(within(parent).queryByRole('button', { name: 'focar ›' })).not.toBeInTheDocument(); // Flow passes no onFocusTree until #35
+});
+
+test('focar › shows with onFocusTree and calls it with the parent\'s itemId; isHighlighted draws the foreground border and its ring (#34)', async () => {
+  const user = userEvent.setup();
+  const onFocusTree = vi.fn();
+  const s = family();
+  const NO_DRAG = { draggable: true as const, onDragStart: () => {}, onDragEnd: () => {}, onDragOver: () => {}, onDrop: () => {} };
+  const parent = s.tasks.find((c) => c.item.itemId === 'I1')!;
+  render(<ul><FlowTask task={parent} state={s} dragHandlers={NO_DRAG} isDimmed={false} isDropBefore={false} isSelected={false} onFocusTree={onFocusTree} isHighlighted /></ul>);
+  await user.click(screen.getByRole('button', { name: 'focar ›' }));
+  expect(onFocusTree).toHaveBeenCalledWith('I1');
+  expect(tileOf('#1 Task 1')).toHaveClass('border-foreground', 'ring-2', 'ring-foreground/25');
 });
