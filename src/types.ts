@@ -915,6 +915,7 @@ export interface Conventions {
   featureFlags?: FeatureFlags;
   uiCheck?: string;
   testCommand?: string;
+  decompositionLabel?: string; // #936: the label every issue a decomposition creates gets; 'none' is the skill's, which then writes no Label: line
 }
 
 /** The formatters the Hive supports (#749), in the order a save tries them; src/formatters.ts holds each one's table row. */

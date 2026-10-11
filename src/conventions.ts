@@ -5,6 +5,7 @@ import { DELIVERIES, FEATURE_FLAGS, type Conventions } from './types.js';
 
 export const CONVENTION_KEYS = [
   'docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceSize', 'featureFlags', 'uiCheck', 'testCommand',
+  'decompositionLabel',
 ] as const satisfies readonly (keyof Conventions)[];
 export type ConventionKey = (typeof CONVENTION_KEYS)[number];
 
@@ -13,6 +14,8 @@ export const SLICE_SIZE_MAX = 5000;
 const LANGUAGE_MAX = 40;
 const UI_CHECK_MAX = 2000;
 const TEST_COMMAND_MAX = 500;
+/** GitHub's limit on a label's name (#936): the convention's and the decomposition file's `Label:` line. */
+export const DECOMPOSITION_LABEL_MAX = 50;
 const DOCS_DIR = 'must be a relative path inside the docs repository';
 const LANGUAGE = `must be a language name of 1 to ${LANGUAGE_MAX} characters`;
 
@@ -24,6 +27,7 @@ export const CONVENTION_RULES: Record<ConventionKey, string> = {
   featureFlags: `must be one of ${FEATURE_FLAGS.join(', ')}`,
   uiCheck: `must be 1 to ${UI_CHECK_MAX} characters`,
   testCommand: `must be 1 to ${TEST_COMMAND_MAX} characters`,
+  decompositionLabel: `must be 1 to ${DECOMPOSITION_LABEL_MAX} characters`,
 };
 
 export const isConventionKey = (key: string): key is ConventionKey => (CONVENTION_KEYS as readonly string[]).includes(key);
@@ -62,6 +66,7 @@ export function conventionValue(key: ConventionKey, value: unknown): Conventions
     case 'sliceSize': return sliceSize(value);
     case 'uiCheck': return text(value, UI_CHECK_MAX);
     case 'testCommand': return text(value, TEST_COMMAND_MAX);
+    case 'decompositionLabel': return text(value, DECOMPOSITION_LABEL_MAX);
   }
 }
 

@@ -26,6 +26,7 @@ and the `docsRepo` because such text says so.
 | `featureFlags` | `none`, `partial` or `always`; see "Feature flags" | `none` |
 | `uiCheck` | Free text: how to run the app and capture its screens | none: no automatic visual check |
 | `testCommand` | The command that runs the repository's test gate | the one the agent instructions file names |
+| `decompositionLabel` | The label every issue a decomposition creates gets; `none` for no label | `decomposed` |
 
 ## Resolve
 
