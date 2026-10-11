@@ -236,7 +236,8 @@ function localGit(slug: string, branch: string): { exec: Exec; calls: string[][]
 function restartGit(head: string, published?: string, failing?: string, gate?: Promise<void>): { exec: Exec; calls: string[][] } {
   const calls: string[][] = [];
   const exec: Exec = async (_file, args) => {
-    const command = args.slice(2);
+    let command = args.slice(args.indexOf('-C') + 2); // after git's global options and the directory
+    while (command[0] === '-c') command = command.slice(2); // and the -c settings a read runs with (#619)
     calls.push(command);
     if (command[0] === 'reset' && gate) await gate; // holds the Restart's git while a test looks at the task
     if (command[0] === failing) throw Object.assign(new Error(`Command failed: git ${command.join(' ')}`), { stderr: 'fatal: boom\n' });
