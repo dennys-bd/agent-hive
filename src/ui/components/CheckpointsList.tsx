@@ -49,7 +49,7 @@ export function CheckpointsList({ task, state }: { task: Task; state: Checkpoint
             {own.map((a) => (
               <li key={a.n} className="flex items-baseline gap-2">
                 <span className={`min-w-0 flex-1 truncate ${MUTED}`}>{rowText(a, now)}</span>
-                <Button type="button" variant="link" size="xs" className="h-auto p-0 text-review" onClick={() => openDiff?.(task, 'checkpoint', a.n)}>{t('checkpoints.compare')}</Button>
+                <Button type="button" variant="link" size="xs" className={`h-auto p-0 ${MUTED}`} onClick={() => openDiff?.(task, 'checkpoint', a.n)}>{t('checkpoints.compare')}</Button>
                 <span title={busy ? t('checkpoints.busy') : undefined}>
                   <Button type="button" variant="link" size="xs" className={`h-auto p-0 ${MUTED}`} disabled={busy} onClick={() => setRestoring(a)}>{t('checkpoints.restore')}</Button>
                 </span>
