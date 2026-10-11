@@ -7,6 +7,8 @@ import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github.js';
 import type { GhRateLimit } from './sources/github-queries.js';
+import type { ReadModel } from './read-model/db.js';
+import { issuePageView, issuesView } from './read-model/views.js';
 import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -20,11 +22,16 @@ const COMMENT_MESSAGE = `body must be 1 to ${BODY_MAX} characters`;
 const STATE_MESSAGE = 'state must be open or closed';
 const NUMBER_MESSAGE = 'number must be an issue number';
 const UNKNOWN_REPOSITORY_MESSAGE = 'repository is not one the Hive lists';
+const ISSUE_NOT_STORED = 'issue not in the read model yet';
 const STATES: readonly RepoIssues['state'][] = ['open', 'closed'];
 const ISSUE_NUMBER = /^[1-9]\d{0,9}$/;
 const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_BAD_GATEWAY = 502; // GitHub refused a read or a write the UI asked for
 const QUOTA_MESSAGE = 'GitHub quota is low';
+
+/** The read model the repository views answer from (#765 spike): its rows for the Hive's login, and an issue's refetch, whose result comes
+ * back as a readModel event. */
+export interface RepoReadModel { db: ReadModel; source: string; refetch(repository: string, number: number): void }
 
 /** What the repository routes need (#757). */
 export interface RepoRouteDeps {
@@ -33,6 +40,7 @@ export interface RepoRouteDeps {
   gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the PR page's writes (#592, #758); a repository is no source's
   poll(names: string[]): Promise<void>; // /sources/refresh's path, for these sources only: after a write on a task's issue
   log: Pick<Logger, 'error'>;
+  readModel?: RepoReadModel; // #765 spike: absent (every #757 test, setup mode), the views read GitHub as before
 }
 
 interface Refusal { status: number; message: string }
@@ -164,6 +172,14 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
   });
 }
 
+// The page from the read model (#765 spike), its refetch started first: an issue the sync has not stored yet is a 404 until its readModel event
+function storedIssue(model: RepoReadModel, res: Response, repository: string, number: number): void {
+  model.refetch(repository, number);
+  const row = model.db.issue(model.source, repository, number);
+  if (row === undefined) return refuse(res, { status: HTTP_NOT_FOUND, message: ISSUE_NOT_STORED });
+  res.json(issuePageView(row, model.db.comments(model.source, row.nodeId)));
+}
+
 // GET /repositories (#757): the sidebar's list, read when it mounts and on the repository header's refresh, never polled; then a repository's issues
 function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories', async (_req: Request, res: Response) => {
@@ -174,13 +190,17 @@ function registerReadRoutes(app: Express, ctx: RepoContext): void {
     const state = STATES.find((s) => s === req.query.state);
     if (state === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: STATE_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await answer(res, () => readIssues(ctx.gql, found.repository, state));
+    const model = ctx.deps.readModel;
+    if (found) await answer(res, async () => (model ? issuesView(model.db.issues(model.source, found.repository, state), state) : readIssues(ctx.gql, found.repository, state)));
   });
   app.get('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     if (number === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: NUMBER_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await answer(res, () => readIssue(ctx.gql, found.repository, number));
+    if (!found) return;
+    const model = ctx.deps.readModel;
+    if (model) return storedIssue(model, res, found.repository, number);
+    await answer(res, () => readIssue(ctx.gql, found.repository, number));
   });
   app.get('/repositories/:owner/:name/labels', async (req: Request, res: Response) => {
     const found = await named(ctx, req, res);
