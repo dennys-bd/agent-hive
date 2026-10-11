@@ -1,5 +1,5 @@
 import { GitPullRequestIcon } from 'lucide-react';
-import { type MouseEvent, useState } from 'react';
+import { type MouseEvent, useContext, useState } from 'react';
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
@@ -17,6 +17,7 @@ import { SyncLine } from '@/components/ForkSyncNotice';
 import { commandsProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
 import { SetupLogsButton } from '@/components/SetupProgress';
 import { TreeProgress } from '@/components/TreeProgress';
+import { TreeHoverContext } from '@/components/tree-hover';
 import { StartDialog } from '@/components/StartDialog';
 import { runTab, useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -217,22 +218,24 @@ interface FlowTaskProps {
   onOpen?(taskId: string): void;
   indent?: number; // #34: the tree grouping's left margin, in px
   onFocusTree?(itemId: string): void; // #34: focus › on a parent's card; #35 passes it
-  isHighlighted?: boolean; // #34: the tree card #36 lights up; nothing passes it yet
   isFaded?: boolean; // #35: outside the flow's focus
 }
 
 /** A task of the flow (redesign 10, #542): the title with the workspace square, and a footer with the auto badge, the status and one button. The
- * border and the selected ring take the status colour. A child shows ↳ and a parent its children's progress, with no auto badge (#34). Out of
- * the flow's focus it reads at .3, under a drag's .5, which marks the card in hand (#35). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
-export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isHighlighted = false, isFaded = false }: FlowTaskProps) {
+ * border and the selected ring take the status colour, the details' hovered tree row's highlight over both (#36). A child shows ↳ and a parent
+ * its children's progress, with no auto badge (#34). Out of the flow's focus it reads at .3, under a drag's .5, which marks the card in hand
+ * (#35). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
+export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isFaded = false }: FlowTaskProps) {
   const status = taskStatus(task, state);
   const tries = triesText(task, state);
   const { tone } = status;
   const live = activityOf(state, task.item.itemId);
   const setup = live?.setup;
   const ring = isSelected ? `ring-2 ${TONE_RING[tone ?? 'empty']}` : '';
-  // #34: a parent never runs while it waits, so it carries no auto badge; the highlight wins over the status border and the selected ring
+  // #34: a parent never runs while it waits, so it carries no auto badge; the highlight wins over the status border and the selected ring.
+  // #36: the highlight is the details' tree row under the pointer, one source for every card, the list panel's included
   const isParent = (task.item.children ?? []).length > 0;
+  const isHighlighted = useContext(TreeHoverContext).hoveredId === task.item.itemId;
   const frame = isHighlighted ? 'border-foreground ring-2 ring-foreground/25' : `${tone ? TONE_BORDER[tone] : ''} ${ring}`;
   const openActivity = useOpenActivity(task, state);
   const onKeyDown = useTaskNavKeys(task, state, onOpen, openActivity); // #585

@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowTask, taskAction } from '@/components/FlowTask';
+import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
 import { SyncBlock } from '@/components/ForkSyncNotice';
 import { CiNotice } from '@/components/CiProgress';
@@ -395,16 +396,20 @@ test('a child shows ↳ before its id and a root does not; a parent shows N filh
   expect(within(parent).getByRole('button', { name: 'focar ›' })).toBeInTheDocument(); // #35: Flow wires the focus
 });
 
-test('focar › shows with onFocusTree and calls it with the parent\'s itemId; isHighlighted draws the foreground border and its ring (#34)', async () => {
+test('focar › shows with onFocusTree and calls it with the parent\'s itemId; the card TreeHoverContext names draws the foreground border and its ring, another keeps its status border (#34, #36)', async () => {
   const user = userEvent.setup();
   const onFocusTree = vi.fn();
   const s = family();
   const NO_DRAG = { draggable: true as const, onDragStart: () => {}, onDragEnd: () => {}, onDragOver: () => {}, onDrop: () => {} };
-  const parent = s.tasks.find((c) => c.item.itemId === 'I1')!;
-  render(<ul><FlowTask task={parent} state={s} dragHandlers={NO_DRAG} isDimmed={false} isDropBefore={false} isSelected={false} onFocusTree={onFocusTree} isHighlighted /></ul>);
+  const card = (itemId: string) => (
+    <FlowTask task={s.tasks.find((c) => c.item.itemId === itemId)!} state={s} dragHandlers={NO_DRAG} isDimmed={false} isDropBefore={false} isSelected={false} onFocusTree={onFocusTree} />
+  );
+  render(<TreeHoverContext.Provider value={{ hoveredId: 'I1', setHoveredId: () => {} }}><ul>{card('I1')}{card('I3')}</ul></TreeHoverContext.Provider>);
   await user.click(screen.getByRole('button', { name: 'focar ›' }));
   expect(onFocusTree).toHaveBeenCalledWith('I1');
   expect(tileOf('#1 Task 1')).toHaveClass('border-foreground', 'ring-2', 'ring-foreground/25');
+  expect(tileOf('#3 Task 3')).not.toHaveClass('border-foreground');
+  expect(tileOf('#3 Task 3')).toHaveClass('border-working');
 });
 
 test('a card out of the focus reads at .3; a dragged one reads at the drag\'s .5, faded or not (#35)', () => {
