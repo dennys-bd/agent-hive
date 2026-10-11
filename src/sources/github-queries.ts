@@ -5,7 +5,8 @@ const PROJECT_LIMIT = 100;
 const RELATION_LIMIT = 50; // ponytail: no pagination, GitHub's own cap per type: an issue with more blockers, blocked issues or open sub-issues than this is under-reported
 const COMMENT_LIMIT = 100; // ponytail: one page, oldest first; a longer thread shows its first 100 (paging is a later issue)
 const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-reported
-const LABEL_LIMIT = 50; // ponytail: no pagination, an issue with more labels than this is under-reported by the task filter, and a repository label past it is refused as unknown (#60)
+const LABEL_LIMIT = 50; // ponytail: no pagination, an issue with more labels than this is under-reported by the task filter
+const REPO_LABEL_LIMIT = 100; // GitHub's page size: a repository's labels are the picker's options (#60); ponytail: one page, a label past it is refused as unknown
 const SUB_ISSUE_LIMIT = 50; // ponytail: no pagination, an epic's children past this keep their own source position instead of following it, and are missing from its children and progress (#28)
 const FIELD_VALUE_LIMIT = 20; // ponytail: no pagination, an item with more set field values than this is under-read by a filter or project rule (#245, #293)
 const FIELD_LIMIT = 50; // ponytail: one page of a project's fields; a project with more lists its first 50 as filter criteria (#245)
@@ -170,7 +171,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
-      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
+      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
     }
   }
 }`;
