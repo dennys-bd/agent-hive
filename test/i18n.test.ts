@@ -392,3 +392,11 @@ test('issue › on the details panel\'s title row reads the same in both languag
 test('the pages\' properties column and its activity block are gone: the details panel draws them (#64)', () => {
   for (const key of ['issue.props', 'issue.activity', 'issue.openActivity']) assert.equal(key in MESSAGES.en || key in MESSAGES.pt, false, `${key} is gone (#64)`);
 });
+
+test('the this PR block\'s copy reads as the spec writes it, in both languages, the merged list by count (#66)', () => {
+  const keys = ['pr.block.title', 'pr.block.position', 'pr.block.closes', 'pr.block.reviewer.resolved', 'pr.block.merge.ready', 'pr.block.base.waits', 'pr.block.closes.onMerge'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['this PR', '#{n} · {k}/{total} of the stack', 'closes', 'changes resolved', 'ready · {method}', 'waits for #{n}', 'on merge']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['este PR', '#{n} · {k}/{total} da pilha', 'fecha', 'mudanças resolvidas', 'pronto · {method}', 'aguarda #{n}', 'ao fazer merge']);
+  assert.deepEqual([MESSAGES.pt['pr.block.base.merged.one'], MESSAGES.pt['pr.block.base.merged.other']], ['{list} mergeado', '{list} mergeados']);
+  assert.deepEqual([MESSAGES.en['pr.block.base.merged.one'], MESSAGES.en['pr.block.base.merged.other']], ['{list} merged', '{list} merged']);
+});

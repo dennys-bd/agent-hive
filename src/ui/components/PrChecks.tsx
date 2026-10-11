@@ -8,13 +8,14 @@ import { prPath } from '@/hooks/use-pr';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 
-const MARK: Record<PrCheck['state'], { mark: ReactNode; tone: string }> = {
+// A check's mark and tone; the this PR block's checks row draws the same (#66)
+export const MARK: Record<PrCheck['state'], { mark: ReactNode; tone: string }> = {
   success: { mark: '✓', tone: 'text-working' }, failure: { mark: '✕', tone: 'text-destructive' }, pending: { mark: <Spinner />, tone: 'text-waiting' },
 };
 const count = (checks: Checks, state: PrCheck['state']): number => checks.items.filter((c) => c.state === state).length;
 
 // The header's mark: ✕ once any failed, the spinner while any runs, else ✓
-function worstOf(failed: number, pending: number): PrCheck['state'] {
+export function worstOf(failed: number, pending: number): PrCheck['state'] {
   if (failed > 0) return 'failure';
   return pending > 0 ? 'pending' : 'success';
 }

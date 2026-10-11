@@ -1717,6 +1717,14 @@ const en = {
   'pr.checks.awaiting': 'checks · awaiting approval',
   'pr.checks.awaitingText': '{n} workflows did not run: they await the approval of a maintainer of {repo}. GitHub asks for it on PRs from forks, usually on a first contribution.',
   'pr.props.from': 'from',
+  'pr.block.title': 'this PR', 'pr.block.position': '#{n} · {k}/{total} of the stack', // #66: the details panel's this PR block
+  'pr.block.review': 'review', 'pr.block.checks': 'checks', 'pr.block.merge': 'merge', 'pr.block.base': 'base', 'pr.block.closes': 'closes',
+  'pr.block.reviewer.approved': 'approved', 'pr.block.reviewer.changes': 'requested changes', 'pr.block.reviewer.resolved': 'changes resolved',
+  'pr.block.reviewer.commented': 'commented', 'pr.block.reviewer.requested': 'requested', 'pr.block.team': 'team', 'pr.block.none': 'none',
+  'pr.block.checks.count': '{n} of {m}', 'pr.block.checks.awaiting': 'awaiting approval',
+  'pr.block.merge.ready': 'ready · {method}', 'pr.block.merge.conflicts': 'conflicts', 'pr.block.merge.noPermission': 'no permission',
+  'pr.block.base.merged.one': '{list} merged', 'pr.block.base.merged.other': '{list} merged', 'pr.block.base.waits': 'waits for #{n}', 'pr.block.and': 'and',
+  'pr.block.closes.onMerge': 'on merge',
   'pr.error.notFound': 'This PR was not found on GitHub.', 'pr.error.moved': 'The PR changed while it was read. Refresh.', // #849: the PR page's reads
   'pr.error.tooLarge': "This PR's diff is too large to show.", 'pr.error.github': "Couldn't read this PR from GitHub. Try again in a moment.",
   'pr.error.unexpected': 'Unexpected error.',
@@ -3477,6 +3485,14 @@ const pt: Record<MessageKey, string> = {
   'pr.checks.awaiting': 'checks · aguardam aprovação',
   'pr.checks.awaitingText': '{n} workflows não executaram: aguardam a aprovação de um mantenedor de {repo}. o GitHub pede isso em PRs de forks, em geral na primeira contribuição.',
   'pr.props.from': 'de',
+  'pr.block.title': 'este PR', 'pr.block.position': '#{n} · {k}/{total} da pilha',
+  'pr.block.review': 'review', 'pr.block.checks': 'checks', 'pr.block.merge': 'merge', 'pr.block.base': 'base', 'pr.block.closes': 'fecha',
+  'pr.block.reviewer.approved': 'aprovou', 'pr.block.reviewer.changes': 'pediu mudanças', 'pr.block.reviewer.resolved': 'mudanças resolvidas',
+  'pr.block.reviewer.commented': 'comentou', 'pr.block.reviewer.requested': 'pedido', 'pr.block.team': 'time', 'pr.block.none': 'nenhum',
+  'pr.block.checks.count': '{n} de {m}', 'pr.block.checks.awaiting': 'aguarda aprovação',
+  'pr.block.merge.ready': 'pronto · {method}', 'pr.block.merge.conflicts': 'conflitos', 'pr.block.merge.noPermission': 'sem permissão',
+  'pr.block.base.merged.one': '{list} mergeado', 'pr.block.base.merged.other': '{list} mergeados', 'pr.block.base.waits': 'aguarda #{n}', 'pr.block.and': 'e',
+  'pr.block.closes.onMerge': 'ao fazer merge',
   'pr.error.notFound': 'Este PR não foi encontrado no GitHub.', 'pr.error.moved': 'O PR mudou durante a leitura. Atualize.',
   'pr.error.tooLarge': 'O diff deste PR é grande demais para mostrar.', 'pr.error.github': 'Não foi possível ler este PR no GitHub. Tente de novo em instantes.',
   'pr.error.unexpected': 'Erro inesperado.',
@@ -3552,7 +3568,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions';
+export type PluralFamily = 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
