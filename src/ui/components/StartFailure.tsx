@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 
 // A failed start in the details panel (#945): the short message in the viewer's language first, the spawn's raw text (a path, git's
-// porcelain lines) only behind detalhes, for debugging. Closed whenever the panel mounts: nothing is persisted
+// porcelain lines) only behind details, for debugging. Closed whenever the panel mounts: nothing is persisted
 export function StartFailure({ error }: { error: string }) {
   const [isOpen, setIsOpen] = useState(false);
   return (
