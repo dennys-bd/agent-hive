@@ -2,6 +2,7 @@
 // header sort and its column widths, kept in the view state (#484) under projectViews, keyed by source, like the stage filters. Anything
 // unreadable is dropped on read; a view saved before sort and widths existed reads with neither.
 import { onSource } from '../../tasks.js';
+import { parseWidths } from './column-widths.js';
 import { readView, writeView } from './view-state.js';
 
 /** The header sort: a column's key (`issue` or a hideable column's) and its direction. */
@@ -16,14 +17,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const isSort = (value: unknown): value is ProjectSort | null =>
   value === null || (isRecord(value) && typeof value.key === 'string' && typeof value.desc === 'boolean');
-const isWidths = (value: unknown): value is Record<string, number> => isRecord(value) && Object.values(value).every((v) => typeof v === 'number');
 
 // What a saved view holds, sort and widths filled in when it predates them
 function prefsOf(value: unknown): ProjectViewPrefs | undefined {
   if (!isRecord(value)) return undefined;
   const { groupBy, collapsed, columns, sort = null, widths = {} } = value;
-  const isRead = (groupBy === null || typeof groupBy === 'string') && isStringList(collapsed) && isStringList(columns) && isSort(sort) && isWidths(widths);
-  return isRead ? { groupBy, collapsed, columns, sort, widths } : undefined;
+  const parsed = parseWidths(widths);
+  const isRead = (groupBy === null || typeof groupBy === 'string') && isStringList(collapsed) && isStringList(columns) && isSort(sort) && parsed !== undefined;
+  return isRead ? { groupBy, collapsed, columns, sort, widths: parsed } : undefined;
 }
 
 const stored = (): Record<string, unknown> => {
