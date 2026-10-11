@@ -6,9 +6,10 @@ import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.j
 // A PR's CI for a wait-for-CI stage (#834), on top of #758's checks (pr-checks.ts): the same rollup and the same states, plus what the stage
 // needs (the head commit, the Actions run behind each check run, the base branch's required checks) and the verdict. Pure.
 
-/** Per PR: its base branch's required checks, the login's permission on its repository (#854) and #758's rollup, with the head's oid, its check
- * suites (#854) and each check run's workflow run. */
-export const CI_FIELDS = 'baseRef { refUpdateRule { requiredStatusCheckContexts } } repository { viewerPermission } '
+/** Per PR: its base branch's required checks, the login's permission on its repository (#854), the default branch's workflows folder (#11) and
+ * #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run. */
+export const CI_FIELDS = 'baseRef { refUpdateRule { requiredStatusCheckContexts } } '
+  + 'repository { viewerPermission workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } } } '
   + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { workflowRun { databaseId } }');
 
 
@@ -43,6 +44,17 @@ function requiredOf(alias: Alias): { required?: string[] } {
   return Array.isArray(names) ? { required: names.filter((n): n is string => typeof n === 'string') } : {};
 }
 
+// #11: a repository with no workflow file on its default branch runs no Actions, so a PR there with no checks holds nothing. Only a read answer
+// marks it: no repository or no workflows field keeps the wait, and so does a base branch requiring checks, which an outside CI reports late.
+// Known ceiling: a PR adding the repository's first workflow is not waited on.
+function noCiOf(repository: unknown, required: readonly string[] = []): { noCi?: true } {
+  if (required.length > 0 || !isObject(repository) || !('workflows' in repository)) return {};
+  const { workflows } = repository;
+  if (workflows === null) return { noCi: true };
+  const names = isObject(workflows) && Array.isArray(workflows.entries) ? workflows.entries.map((e) => (isObject(e) ? e.name : undefined)) : undefined;
+  return names !== undefined && !names.some((n) => typeof n === 'string' && /\.ya?ml$/i.test(n)) ? { noCi: true } : {};
+}
+
 /** Each PR's last commit and checks, alias p<i> for urls[i], each check as #758 reads it. A null or missing alias, one with no commit, and one
  * with a check checkOf cannot read have no entry: a skipped check could be the failed one, so the wait never reads it as passed. */
 export function parseCi(urls: string[], data: unknown): CiPrRead[] {
@@ -54,7 +66,12 @@ export function parseCi(urls: string[], data: unknown): CiPrRead[] {
     const read = (node: unknown): CiCheck => ({ ...checkOf(node), pr: url, ...runIdOf(node) });
     const checks = readable(nodesOf(headRollup(alias.headCommit)?.contexts), read, () => { skipped = true; });
     const permission = isObject(alias.repository) ? alias.repository.viewerPermission : undefined;
-    return skipped ? [] : [{ url, head, ...requiredOf(alias), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission) }];
+    const { required } = requiredOf(alias);
+    const pr: CiPrRead = {
+      url, head, ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
+      ...noCiOf(alias.repository, required),
+    };
+    return skipped ? [] : [pr];
   });
 }
 
@@ -98,8 +115,8 @@ export function stageChecks(checks: readonly CiCheck[]): StageCiCheck[] {
   return checks.map(stageCheck).sort((a, b) => rankOf(a) - rankOf(b) || compare(orderKey(a), orderKey(b)) || compare(a.name, b.name));
 }
 
-/** What a read means for the stage: failed as soon as a counted check is a failure; passed when every PR has counted checks and all are
- * successes; else pending, with the count, whether no PR is open, and the pending names. fellBack: some PR's required fell back to all.
+/** What a read means for the stage: failed as soon as a counted check is a failure; passed when every PR has counted checks, or runs no CI
+ * (#11), and all are successes; else pending, with the count, whether no PR is open, and the pending names. fellBack: some PR's required fell back to all.
  * awaiting: nothing failed and a workflow waits for a maintainer's approval, which ends nothing (#854). checks: the considered ones, ordered for the running block (#914). */
 export type CiVerdict =
   | { kind: 'pending'; done: number; total: number; waitingPr: boolean; pending: string[]; fellBack: boolean; checks: StageCiCheck[] }
@@ -117,6 +134,6 @@ export function ciVerdict(reads: readonly CiPrRead[], stage: Pick<Stage, 'ciChec
   const workflows = [...new Set(reads.flatMap((r) => r.awaiting ?? []))]; // #854: GitHub ran nothing for them, so the counted checks cannot pass yet
   if (workflows.length > 0) return { kind: 'awaiting', workflows, fellBack, checks: listed };
   const pending = checks.filter((c) => c.state === 'pending').map((c) => c.name);
-  if (reads.length > 0 && pending.length === 0 && each.every((c) => c.checks.length > 0)) return { kind: 'passed', fellBack };
+  if (reads.length > 0 && pending.length === 0 && each.every((c, i) => c.checks.length > 0 || reads[i].noCi === true)) return { kind: 'passed', fellBack };
   return { kind: 'pending', done: checks.length - pending.length, total: checks.length, waitingPr: reads.length === 0, pending, fellBack, checks: listed };
 }
