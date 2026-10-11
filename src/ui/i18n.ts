@@ -1486,6 +1486,7 @@ const en = {
   'shortcuts.toggleSideTab': 'switch files and details',
   'shortcuts.sleepSession': 'sleep the focused session',
   'shortcuts.refreshFlow': 'refresh the flow',
+  'shortcuts.goBack': 'go back', // #911
   'shortcuts.zoomOut': 'zoom the flow out', // #910
   'shortcuts.zoomIn': 'zoom the flow in',
   'shortcuts.zoomReset': 'the flow at 100%',
@@ -3186,6 +3187,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleSideTab': 'alternar arquivos e detalhes',
   'shortcuts.sleepSession': 'dormir a sessão em foco',
   'shortcuts.refreshFlow': 'atualizar o fluxo',
+  'shortcuts.goBack': 'voltar',
   'shortcuts.zoomOut': 'afastar o fluxo',
   'shortcuts.zoomIn': 'aproximar o fluxo',
   'shortcuts.zoomReset': 'fluxo em 100%',

@@ -106,6 +106,9 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   fixed('taskMenu', 'flow', { mac: ['M'], other: ['M', 'Shift+F10'] }),
   fixed('pickSource', 'flow', same(digits('Alt+', 0, 9))),
   row('refreshFlow', { mac: 'CmdOrCtrl+Alt+R', other: 'F5' }, 'flow'),
+  // #911: back from an issue or PR page, as browsers and Finder bind ⌘[; Alt+Left elsewhere, the browsers' back. Before the zoom rows, so the
+  // map's flow section still ends on them
+  row('goBack', { mac: 'CmdOrCtrl+[', other: 'Alt+Left' }, 'flow'),
   // #910: the canvas's zoom; + is the = key without Shift
   row('zoomOut', both('CmdOrCtrl+-'), 'flow'),
   row('zoomIn', both('CmdOrCtrl+='), 'flow'),
