@@ -24,12 +24,13 @@ export function mergeOffReason(pr: PrData, orderBlocker: string | undefined): st
   return blocker === undefined ? undefined : t(BLOCKER_KEY[blocker]);
 }
 
-interface MergeButtonProps { pr: PrData; orderBlocker?: string; variant?: 'default' | 'outline'; onMerged(): void }
+interface MergeButtonProps { pr: PrData; orderBlocker?: string; variant?: 'default' | 'outline'; onSettled(): void; onMerged?(): void }
 
 /** {method} and merge ⌄ (#592, #758): a split button over the methods the repository allows, the last pick remembered per repository. Off
  * with mergeOffReason as the tooltip, on the wrapper since a disabled button shows none; outline at .6 in the conflict box. No confirmation:
- * the click is the user's gesture. Pending while the call runs; GitHub's message beside it on a refusal; the PR read again either way. */
-export function MergeButton({ pr, orderBlocker, variant = 'default', onMerged }: MergeButtonProps) {
+ * the click is the user's gesture. Pending while the call runs; GitHub's message beside it on a refusal. The PR is read again (onSettled)
+ * either way, except when a success leaves the page (onMerged, #69): the back unmounts it, so a re-read would race the unmount. */
+export function MergeButton({ pr, orderBlocker, variant = 'default', onSettled, onMerged }: MergeButtonProps) {
   const [method, setMethod] = useState(() => pickMethod(pr.url, pr.methods));
   const [isPending, setPending] = useState(false);
   const [error, setError] = useState<string>();
@@ -38,8 +39,15 @@ export function MergeButton({ pr, orderBlocker, variant = 'default', onMerged }:
     if (method === undefined) return;
     setPending(true);
     void prMerge(pr.url, { method, head: pr.head })
-      .then(() => setError(undefined), (err: Error) => setError(err.message))
-      .finally(() => { setPending(false); onMerged(); });
+      .then(() => {
+        setError(undefined);
+        if (onMerged === undefined) onSettled();
+        else onMerged();
+      }, (err: Error) => {
+        setError(err.message);
+        onSettled();
+      })
+      .finally(() => setPending(false));
   };
   const pick = (value: string): void => {
     const picked = pr.methods.find((m) => m === value);

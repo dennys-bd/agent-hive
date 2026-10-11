@@ -63,11 +63,11 @@ function ConflictFile({ path }: { path: string }) {
   );
 }
 
-interface BoxProps { pr: PrData; task?: Task; state: State; orderBlocker?: string; onMerged(): void }
+interface BoxProps { pr: PrData; task?: Task; state: State; orderBlocker?: string; onSettled(): void; onMerged?(): void }
 
 // conflict (handoff 03): conflicts in N files and how far the base moved; resolve in the activity on a task's PR and the merge off in outline;
 // the conflicted files and the note
-function ConflictBox({ pr, task, state, orderBlocker, onMerged }: BoxProps) {
+function ConflictBox({ pr, task, state, orderBlocker, onSettled, onMerged }: BoxProps) {
   const files = pr.conflicts ?? [];
   const title = files.length === 0 ? t('pr.merge.conflicts') : tPlural('pr.merge.conflictsN', files.length, { n: files.length });
   const behind = pr.behindBy !== undefined && pr.behindBy > 0 ? [t('pr.merge.behind', { base: pr.baseRef, n: pr.behindBy })] : [];
@@ -76,7 +76,7 @@ function ConflictBox({ pr, task, state, orderBlocker, onMerged }: BoxProps) {
       <Head tone="text-destructive" title={title} facts={factsOf(pr, behind)} />
       <div className="flex items-center gap-2">
         {task && <ResolveButton task={task} base={pr.baseRef} state={state} />}
-        <MergeButton pr={pr} orderBlocker={orderBlocker} variant="outline" onMerged={onMerged} />
+        <MergeButton pr={pr} orderBlocker={orderBlocker} variant="outline" onSettled={onSettled} onMerged={onMerged} />
       </div>
       {files.length > 0 && <ul className="flex flex-col gap-0.5">{files.map((path) => <ConflictFile key={path} path={path} />)}</ul>}
       {task && <p className={`${MUTED} text-xs`}>{t('pr.merge.resolveNote', { base: pr.baseRef })}</p>}
@@ -86,14 +86,14 @@ function ConflictBox({ pr, task, state, orderBlocker, onMerged }: BoxProps) {
 
 // ready, or held by another blocker, GitHub's or the stack's order (#592, #698): the reason in words with the button off; ready, the facts,
 // the note on a task awaiting approval (the server's #592 rule), and the button
-function ReadyBox({ pr, task, state, orderBlocker, onMerged }: BoxProps) {
+function ReadyBox({ pr, task, state, orderBlocker, onSettled, onMerged }: BoxProps) {
   const reason = mergeOffReason(pr, orderBlocker);
   const isAwaiting = task !== undefined && activityOf(state, task.item.itemId)?.approval !== undefined;
   return (
     <>
       <Head tone={reason === undefined ? 'text-working' : 'text-waiting'} title={reason ?? t('pr.merge.ready')} facts={factsOf(pr, reason === undefined ? [t('pr.merge.facts.clean')] : [])} />
       {reason === undefined && isAwaiting && <p className={`${MUTED} text-xs`}>{t('pr.merge.nextStage')}</p>}
-      <div className="flex"><MergeButton pr={pr} orderBlocker={orderBlocker} onMerged={onMerged} /></div>
+      <div className="flex"><MergeButton pr={pr} orderBlocker={orderBlocker} onSettled={onSettled} onMerged={onMerged} /></div>
     </>
   );
 }
@@ -106,28 +106,28 @@ function permissionFacts(pr: PrData): string[] {
 }
 
 // no push rights (#854, handoff item 9): in muted, as nothing is the user's to do; abrir no github and the merge off, its reason as the tooltip
-function NoPermissionBox({ pr, orderBlocker, onMerged }: BoxProps) {
+function NoPermissionBox({ pr, orderBlocker, onSettled, onMerged }: BoxProps) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
         <Head tone={MUTED} title={t('pr.merge.noPermission')} facts={factsOf(pr, permissionFacts(pr))} />
         <span className="flex-1" />
         <Button type="button" size="xs" variant="outline" onClick={() => window.open(pr.url, '_blank', 'noreferrer')}>{t('repos.menu.open')}</Button>
-        <MergeButton pr={pr} orderBlocker={orderBlocker} variant="outline" onMerged={onMerged} />
+        <MergeButton pr={pr} orderBlocker={orderBlocker} variant="outline" onSettled={onSettled} onMerged={onMerged} />
       </div>
       <p className={`${MUTED} text-xs`}>{t('pr.merge.noPermissionNote', { repo: prRepo(pr.url) })}</p>
     </>
   );
 }
 
-export interface PrMergeBoxProps { pr: PrData; task?: Task; state: State; onMerged(): void }
+export interface PrMergeBoxProps { pr: PrData; task?: Task; state: State; onSettled(): void; onMerged?(): void }
 
 /** The merge box (#758, handoff 03): ready, in conflict, or held by another blocker. The merge keeps #592's rule, which the server applies; a
  * merged or closed PR has no box. */
-export function PrMergeBox({ pr, task, state, onMerged }: PrMergeBoxProps) {
+export function PrMergeBox({ pr, task, state, onSettled, onMerged }: PrMergeBoxProps) {
   if (pr.state !== 'open') return null;
   const orderBlocker = task === undefined ? undefined : mergeOrderBlocker(prsOf(state, task.item.itemId), pr.url);
-  const props: BoxProps = { pr, task, state, orderBlocker, onMerged };
+  const props: BoxProps = { pr, task, state, orderBlocker, onSettled, onMerged };
   return (
     <section aria-label={t('pr.merge')} className="flex max-w-[680px] flex-col gap-2.5 rounded-lg border p-3">
       {pr.mergeState === 'conflicts' ? <ConflictBox {...props} /> : pr.canPush ? <ReadyBox {...props} /> : <NoPermissionBox {...props} />}

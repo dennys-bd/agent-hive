@@ -57,7 +57,7 @@ export function PrConversation({ pr, task, state, onChanged, onOpenPr, onOpenInD
         </div>
       )}
       <PrChecks checks={pr.checks} pr={pr} onChanged={() => void onChanged()} />
-      <PrMergeBox pr={pr} task={task} state={state} onMerged={() => void onChanged()} />
+      <PrMergeBox pr={pr} task={task} state={state} onSettled={() => void onChanged()} />
     </div>
   );
 }

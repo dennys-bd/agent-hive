@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 // Its own file: Radix's menus open reliably once per file under jsdom
 test('the method picker lists only what the repository allows; the pick is remembered for the repository and names the button (#592, #758)', async () => {
   const user = userEvent.setup();
-  render(<PrMergeBox pr={prData({ methods: ['merge', 'rebase'] })} state={STATE} onMerged={vi.fn()} />);
+  render(<PrMergeBox pr={prData({ methods: ['merge', 'rebase'] })} state={STATE} onSettled={vi.fn()} />);
   expect(screen.getByRole('button', { name: 'merge commit e merge' })).toBeInTheDocument();
   const trigger = screen.getByRole('button', { name: 'método de merge' });
   trigger.focus();
