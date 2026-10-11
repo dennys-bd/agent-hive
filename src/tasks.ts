@@ -136,7 +136,6 @@ export const stageOf = (stages: Stage[], name: string): Stage | undefined => sta
 export const entryStage = (stages: Stage[], source: string | undefined, boardColumn: string): Stage | undefined =>
   stages.find((c) => onSource(c.from, source)?.includes(boardColumn));
 
-
 /** Past the first door (#32): the task's stage comes later in `stages` than the first stage whose `from` names any column of the task's source.
  * The Hive has one ordered stage list, and the source's earliest door is where new work lands. A task with no source has no first stage. */
 export function isPastFirstStage(stages: Stage[], task: Pick<Task, 'item' | 'stage'>): boolean {

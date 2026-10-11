@@ -159,7 +159,7 @@ async function removeCreatedWorktree(deps: TaskRouteDeps, current: LiveView, tas
   const task = current.state.tasks.find((c) => c.item.itemId === taskId);
   const activity = activityOf(current.state, taskId);
   if (!task?.created || activity?.worktree === undefined || activity.local) return undefined;
-  const workspace = workspaceOf(current.runtime.config, task);
+  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks);
   if ('status' in workspace) return workspace;
   const scope = current.state.deleteActivity; // the worktree and its branch always go (#573)
   await deps.dispatch({ type: 'deletingTask', taskId });
@@ -492,7 +492,7 @@ function registerDeleteActivityRoute(app: Express, deps: TaskRouteDeps): void {
     if (live.local) return refuse(res, { status: HTTP_CONFLICT, message: LOCAL_MESSAGE }); // #444: no worktree to remove
     const scope = current.state.deleteActivity;
     // nothing to delete gets past removalRefusal only in a delete activity stage (#236): no git, no transcript, no workspace; the task just moves on
-    const workspace = nothingToDelete(current.state, task, scope) ? undefined : workspaceOf(current.runtime.config, task); // the worktree's repo (#179)
+    const workspace = nothingToDelete(current.state, task, scope) ? undefined : workspaceOf(current.runtime.config, task, current.state.tasks); // the worktree's repo (#179)
     if (workspace && 'status' in workspace) return refuse(res, workspace);
     const force = (req.body as { force?: unknown } | undefined)?.force === true; // only a literal true forces
     const { config, promptsDir } = current.runtime;

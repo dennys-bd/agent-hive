@@ -110,7 +110,7 @@ const noActivity = (res: Response): void => (res.headersSent ? undefined : refus
 // The session on a task whose worktree is there (#164, #249): both kinds run in the task's workspace (#179), in its live activity, read again
 // after any git (#629); the answer is the run to attach.
 async function openNow(deps: TaskRouteDeps, current: LiveView, task: Task, open: OpenAsk, res: Response): Promise<void> {
-  const workspace = workspaceOf(current.runtime.config, task);
+  const workspace = workspaceOf(current.runtime.config, task, current.state.tasks);
   if ('status' in workspace) return refuse(res, workspace);
   const live = deps.requireLive(res);
   const activityId = live && activityOf(live.state, open.taskId)?.id;
