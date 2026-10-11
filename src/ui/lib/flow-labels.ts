@@ -24,6 +24,11 @@ export function transitionLabel(transition: Pick<Transition, 'when' | 'verdict' 
   return transition.maxTries === undefined ? label : t('flow.tries', { label, n: transition.maxTries });
 }
 
+/** Whether the flow view draws a transition's pill (#908): the default path, a `done` or `approved` arrow forward, goes unlabelled; its own
+ * label, a back edge, a loop and any other trigger keep theirs. Settings draws every pill: there a pill is the button that selects it. */
+export const showsPill = (transition: Pick<Transition, 'from' | 'to' | 'when' | 'label'>, isBack: boolean): boolean =>
+  transition.label !== undefined || isBack || transition.from === transition.to || (transition.when !== 'done' && transition.when !== 'approved');
+
 /** Who runs a node, on one line (#134): the agent and its model, then the approval wait when it asks for one; the commands; the checks a wait
  * counts; the delete activity; the approval wait for a gate; only-shows for a stage with nothing to run. */
 export function executorLine(stage: Stage): string {

@@ -22,7 +22,8 @@ test('each stage is a pressed-or-not button with its summary; each transition a 
   expect(onSelect).toHaveBeenLastCalledWith({ kind: 'transition', id: transitions[1].id });
   await user.click(screen.getByRole('button', { name: /^PR/ }));
   expect(onSelect).toHaveBeenLastCalledWith({ kind: 'stage', id: stages[1].id });
-  expect(screen.getByText('fim')).toBeInTheDocument();
+  expect(screen.getByText('fim')).toBeInTheDocument(); // Settings keeps the end circle (#908)
+  expect(screen.getByRole('button', { name: 'terminou' })).toBeInTheDocument(); // and every pill: the default path's selects its transition (#908)
 });
 
 test('the canvas bleeds to the card body edges on a dotted 16px grid and scrolls sideways; the chart is centred and its nodes are 64px high, radius lg (#887)', () => {

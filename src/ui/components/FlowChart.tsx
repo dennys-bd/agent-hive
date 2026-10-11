@@ -2,7 +2,7 @@ import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { isAutomatic, transitionKey } from '../../transitions';
 import type { Stage, Transition } from '../../types';
 import { FlowEdges } from '@/components/FlowEdges';
-import { transitionLabel } from '@/lib/flow-labels';
+import { showsPill, transitionLabel } from '@/lib/flow-labels';
 import { layoutFlow, maxNodeHeight, NODE_MIN } from '@/lib/flow-layout';
 
 export const NODE_WIDTH = 190;
@@ -32,10 +32,16 @@ export function FlowChart({ stages, transitions, renderNode }: FlowChartProps) {
   const maxHeight = maxNodeHeight(viewport, sized(NODE_MIN));
   const layout = sized(maxHeight);
   const labels = Object.fromEntries(transitions.map((t) => [transitionKey(t), transitionLabel(t)]));
+  const order = new Map(stages.map((s, i) => [s.name, i]));
+  const isBack = (t: Transition): boolean => {
+    const [i, j] = [order.get(t.from), order.get(t.to)];
+    return i !== undefined && j !== undefined && j < i;
+  };
+  const pills = new Set(transitions.filter((t) => showsPill(t, isBack(t))).map(transitionKey));
   return (
     <div ref={pane} data-flow-stages className="absolute inset-0 overflow-auto [scrollbar-width:none]">
       <div className="relative" style={{ width: layout.width, height: layout.height }}>
-        <FlowEdges layout={layout} labels={labels} />
+        <FlowEdges layout={layout} labels={labels} pills={pills} />
         {layout.nodes.map((box) => {
           const stage = stages.find((s) => s.name === box.id);
           return stage && <div key={box.id} className="absolute" style={{ left: box.x, top: box.y }}>{renderNode(stage, maxHeight)}</div>;
