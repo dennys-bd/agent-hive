@@ -334,7 +334,7 @@ export function candidates(state: Pick<State, 'tasks' | 'stages'> & WorkersState
   const position = (task: Task): number => stages.findIndex((s) => s.name === task.stage); // the array order is the pipeline order
   const runnable = state.tasks.filter((c) => {
     const stage = stageOf(stages, c.stage);
-    return stage !== undefined && isQueued(c, stages, state) && isDue(c, stage, now) && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
+    return stage !== undefined && isQueued(c, stages, state) && isDue(c, stage, now) && resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
   });
   return [...runnable].sort((a, b) => position(b) - position(a)); // sort is stable: tasks in the same stage keep the Hive's order
 }
@@ -514,7 +514,7 @@ export function dueActions(state: Pick<State, 'tasks' | 'stages' | 'deleteActivi
     const live = activityOf(state, taskId(c));
     const nonAuto = stage.action === 'deleteActivity' && state.deleteActivity.nonAutoTasks; // #755: the scope widens its own stage only
     const allowed = isIdle(c, live, nonAuto);
-    const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces) !== undefined;
+    const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
     return allowed && placed && !hasSessionRun(c, state) && isDue(c, stage, now);
   });
 }
@@ -636,7 +636,7 @@ export function slugOwner(state: Pick<State, 'tasks' | 'activities' | 'activityR
 function keptSlugOwner(state: Pick<State, 'tasks' | 'activityRecords' | 'workspaces' | 'sourceWorkspaces'>, task: Task, workspace: string, slug: string): Task | undefined {
   return state.activityRecords.flatMap((r) => {
     const other = r.slug === slug && r.sessions.length > 0 && !r.taskIds.includes(taskId(task)) ? taskOfActivity(state, r.id) : undefined;
-    return other && resolveWorkspace(other, state.workspaces, state.sourceWorkspaces) === workspace ? [other] : [];
+    return other && resolveWorkspace(other, state.workspaces, state.sourceWorkspaces, state.tasks) === workspace ? [other] : [];
   })[0];
 }
 

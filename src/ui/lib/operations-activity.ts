@@ -25,7 +25,7 @@ const pick = (id: string, label: string, run: (ctx: OperationContext) => void, e
 
 // executar {command} (#300, #353): one per command of the activity's workspace, disabled as the task menu's item while canRunCommand refuses
 export function commandOperations(task: Task, ctx: OperationContext): Operation[] {
-  const workspace = resolveWorkspace(task, ctx.state.workspaces, ctx.state.sourceWorkspaces) ?? '';
+  const workspace = resolveWorkspace(task, ctx.state.workspaces, ctx.state.sourceWorkspaces, ctx.state.tasks) ?? '';
   return commandsOf(task, ctx.state).map((name) => ({
     id: `command:${name}`, group: 'activity', label: () => t('search.op.runCommand', { command: name }), target: () => `${workspace} · ${taskRef(task)}`,
     available: () => true, disabled: () => !canRunCommand(task, activityOf(ctx.state, task.item.itemId)), run: (c) => runCommand(task, c.state, name, c.nav.openConsole),

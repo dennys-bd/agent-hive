@@ -14,15 +14,15 @@ const folderOf = (path: string | undefined): string | undefined => path?.split('
 
 /** A task's pane context (#536): its stage's model when the stage sets one, and its worktree's folder, or its workspace's name on a task
  * that runs in the checkout (#444). */
-export function paneContext(task: Task, live: LiveActivity | undefined, state: Pick<State, 'stages' | 'workspaces' | 'sourceWorkspaces'>): PaneContext {
+export function paneContext(task: Task, live: LiveActivity | undefined, state: Pick<State, 'stages' | 'workspaces' | 'sourceWorkspaces' | 'tasks'>): PaneContext {
   const model = stageOf(state.stages, task.stage)?.model;
-  const folder = live?.local ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) : folderOf(live?.worktree); // the live activity's (#629)
+  const folder = live?.local ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : folderOf(live?.worktree); // the live activity's (#629)
   return { ...(model === undefined ? {} : { model }), ...(folder === undefined ? {} : { folder }) };
 }
 
 /** An activity's pane context (#590): a task's as paneContext reads it; a local activity's folder is its workspace's name, as a checkout
  * task's is (#444). */
-export const activityPane = (activity: Activity, state: Pick<State, 'stages' | 'workspaces' | 'sourceWorkspaces'>): PaneContext =>
+export const activityPane = (activity: Activity, state: Pick<State, 'stages' | 'workspaces' | 'sourceWorkspaces' | 'tasks'>): PaneContext =>
   (activity.kind === 'local' ? { folder: activity.workspace } : paneContext(activity.task, activity.activity, state));
 
 interface Header { name: string; parts: string[]; status?: Status; branch?: string }

@@ -29,7 +29,7 @@ export function startCommands(given: State, task: Task, index: number, kind: Wor
   const slot = born?.state.workers[index];
   if (!born || !slot || stage?.action !== 'commands') return none(given); // the fill and start only pass a task with a workspace
   const written = sourceWrites(task, onSource(stage.onStart, task.item.source));
-  const workspace = resolveWorkspace(task, born.state.workspaces, born.state.sourceWorkspaces); // frozen as a spawn freezes it (#179)
+  const workspace = resolveWorkspace(task, born.state.workspaces, born.state.sourceWorkspaces, born.state.tasks); // frozen as a spawn freezes it (#179)
   const started: Task = { ...written.task, ...(workspace === undefined ? {} : { workspace }) };
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = born.activity;
   const ptyId = randomUUID();

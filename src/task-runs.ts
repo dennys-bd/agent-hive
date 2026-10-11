@@ -103,8 +103,8 @@ export const capturable = (activity: Activity | undefined): activity is Activity
   activity !== undefined && activity.worktree !== undefined && !activity.worktreeGone && !activity.local;
 
 /** The run commands the task offers (#300): its workspace's command names as the config last set them; [] when it resolves to none. */
-export const commandsOf = (task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'commands'>): string[] =>
-  onSource(state.commands, resolveWorkspace(task, state.workspaces, state.sourceWorkspaces)) ?? [];
+export const commandsOf = (task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'commands' | 'tasks'>): string[] =>
+  onSource(state.commands, resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? [];
 
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

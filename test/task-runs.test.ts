@@ -183,7 +183,7 @@ test('canRunCommand: only a task open to a session whose worktree is on disk; a 
 });
 
 test('commandsOf: the command names of the workspace the task resolves to; [] with no workspace, or one the config gave no entry (#300)', () => {
-  const state = { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: ['Run Frontend'], site: ['Run API', 'Seed'] } };
+  const state = { workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: { hive: ['Run Frontend'], site: ['Run API', 'Seed'] }, tasks: [] };
   assert.deepEqual(commandsOf(task('spec', { workspace: 'hive' }), state), ['Run Frontend']);
   assert.deepEqual(commandsOf(task('spec', { item: { ...task('spec').item, source: 'board' } }), state), ['Run API', 'Seed'], 'the board default');
   assert.deepEqual(commandsOf(task('spec'), state), [], 'two workspaces, no rule: none');

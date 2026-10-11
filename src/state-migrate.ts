@@ -27,10 +27,10 @@ function recordFields(saved: Record<string, unknown>, task: Task, repo: boolean)
 
 // One task's work: both records while its activity was live and it resolves to a workspace, a record alone once it was deleted (its local, base
 // and sessionId dropped: a later start chooses again), nothing for a task with none of it
-function workOf(saved: Record<string, unknown>, task: Task, scope: WorkspaceNames): { activity?: Activity; record?: ActivityRecord } {
+function workOf(saved: Record<string, unknown>, task: Task, scope: WorkspaceNames, tasks: readonly Task[]): { activity?: Activity; record?: ActivityRecord } {
   const id = randomUUID();
   const taskIds = [task.item.itemId];
-  const workspace = resolveWorkspace(task, scope.workspaces, scope.sourceWorkspaces);
+  const workspace = resolveWorkspace(task, scope.workspaces, scope.sourceWorkspaces, tasks);
   const slug = typeof saved.slug === 'string' && SLUG.test(saved.slug) ? saved.slug : undefined;
   if (has(saved, LIVE_KEYS) && workspace !== undefined && slug !== undefined) {
     return { activity: { id, kind: 'task', workspace, slug, ...savedWork(saved) }, record: { id, taskIds, ...recordFields(saved, task, false) } };
@@ -41,7 +41,7 @@ function workOf(saved: Record<string, unknown>, task: Task, scope: WorkspaceName
 /** Steps 1 to 3 of the spec's migration, over the saved tasks (raw, as they passed isTask) and the same tasks normalized. */
 export function migrateWork(saved: Record<string, unknown>[], tasks: Task[], scope: WorkspaceNames): Pick<State, 'activities' | 'activityRecords'> {
   const raw = new Map(saved.flatMap((s) => (isJsonObject(s.item) && typeof s.item.itemId === 'string' ? [[s.item.itemId, s] as const] : [])));
-  const work = tasks.map((task) => workOf(raw.get(task.item.itemId) ?? {}, task, scope));
+  const work = tasks.map((task) => workOf(raw.get(task.item.itemId) ?? {}, task, scope, tasks));
   return { activities: work.flatMap((w) => w.activity ?? []), activityRecords: work.flatMap((w) => w.record ?? []) };
 }
 

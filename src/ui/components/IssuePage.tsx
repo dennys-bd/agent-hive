@@ -33,7 +33,7 @@ export function IssuePage(props: IssuePageProps) {
   }
   const { issue } = load;
   const task = taskOfIssue(state.tasks, issue.url, ref.itemId);
-  const shownWorkspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) : workspace;
+  const shownWorkspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : workspace;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {header(reload)}

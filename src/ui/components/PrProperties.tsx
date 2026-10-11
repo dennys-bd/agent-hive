@@ -52,7 +52,7 @@ function TaskIssueProperties({ task, issue, state, locale, onGoTo }: TaskIssuePr
   if (load.kind !== 'issue') return <Aside><p className={MUTED}>{load.kind === 'loading' ? t('project.loading') : load.message}</p></Aside>;
   return (
     <IssueProperties
-      issue={load.issue} task={task} state={state} locale={locale} workspace={resolveWorkspace(task, state.workspaces, state.sourceWorkspaces)}
+      issue={load.issue} task={task} state={state} locale={locale} workspace={resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)}
       meta={issue.repository} onGoTo={onGoTo} onChanged={reload}
     />
   );

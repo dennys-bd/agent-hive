@@ -36,6 +36,12 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
+// A goal stage with no prompt is the source's first door (#32): a root parks there and runs nothing; a child in spec or later is past it
+const TREE_STAGES: LegacyStage[] = [{ name: 'goal', from: { board: ['Goals'] } }, ...STAGES];
+const linked = (n: number, stage: string, links: Pick<Item, 'parent' | 'children'>): Task => ({ ...waiting(n, stage), item: { ...item(n), ...links } });
+const kids = (...ns: number[]): string[] => ns.map((n) => `board:item${n}`);
+const ROOT = 'board:item1';
+
 test('yellow with the defaults: a new task waits, a started one resumes (#224, #727)', () => {
   assert.deepEqual(spawned(filled(begun(hive('yellow', [waiting(1, 'build'), waiting(2, 'build')], { max: 2 }), 2))), ['2']);
 });
@@ -203,4 +209,10 @@ test('a commands run\'s start, verdict and stop never mutate the state they are 
   ended(frozen, 1);
   reduce(frozen, { type: 'stop', ptyId: activityOf(frozen, 'board:item1')?.commands?.ptyId ?? '' });
   reduce(frozen, { type: 'boot' });
+});
+
+test('a child with no workspace of its own spawns in its parent\'s hand-picked one, frozen on the task (#32)', () => {
+  const root: Task = { ...linked(1, 'goal', { children: kids(2) }), workspace: 'site' };
+  const state: State = { ...hive('green', [root, linked(2, 'build', { parent: ROOT })], { stages: TREE_STAGES }), workspaces: ['hive', 'site'] };
+  assert.deepEqual(filled(state).effects.flatMap((e) => (e.type === 'spawn' ? [e.task.workspace] : [])), ['site']);
 });

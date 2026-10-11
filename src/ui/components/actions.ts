@@ -56,8 +56,8 @@ export function continueTaskSession(task: Task, ref: SessionRef, open?: OpenRun,
 /** A workspace's run command on a task (#300): POST /run, then the console shows the command's channel with the new run (#353); no terminal
  * tab. The channel is the workspace the task resolves to, the one the server keys it by. A refusal is a toast; a spawn failure answers no run
  * and shows nothing. */
-export function runCommand(task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'activities' | 'activityRecords'>, command: string, openConsole?: OpenConsole): void {
-  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces);
+export function runCommand(task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'activities' | 'activityRecords' | 'tasks'>, command: string, openConsole?: OpenConsole): void {
+  const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   const live = activityOf(state, task.item.itemId); // a command runs in the live activity's worktree (#629)
   if (!live) return;
   void act<OpenResult>(`/activities/${encodeURIComponent(live.id)}/run`, { command, size: shownSize() }).then((result) => {

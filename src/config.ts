@@ -656,10 +656,11 @@ export const workspaceScope = ({ comb }: Pick<Config, 'comb'>): WorkspaceNames &
   commands: Object.fromEntries(comb.workspaces.map((p) => [p.name, commandsIn(comb.commands, p.name).map((c) => c.name)])),
 });
 
-/** The task's workspace in `config` (#179): resolveWorkspace against the Comb's names and the sources' defaults. */
-export function taskWorkspace(config: Pick<Config, 'comb'>, task: Pick<Task, 'workspace' | 'item'>): Workspace | undefined {
+/** The task's workspace in `config` (#179): resolveWorkspace against the Comb's names and the sources' defaults, and the parent's when `tasks`
+ * holds it (#32). */
+export function taskWorkspace(config: Pick<Config, 'comb'>, task: Pick<Task, 'workspace' | 'item'>, tasks: readonly Task[] = []): Workspace | undefined {
   const { workspaces, sourceWorkspaces } = workspaceScope(config);
-  return workspaceByName(config, resolveWorkspace(task, workspaces, sourceWorkspaces));
+  return workspaceByName(config, resolveWorkspace(task, workspaces, sourceWorkspaces, tasks));
 }
 
 export const NO_WORKSPACE_MESSAGE = 'choose a workspace';

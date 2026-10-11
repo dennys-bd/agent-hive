@@ -59,7 +59,7 @@ export function PrCell({ prs }: { prs: ProjectPr[] }) {
 // on a task, its session status in its colour
 function IssueCell({ item, task, state }: { item: ProjectItem; task?: Task; state: State }) {
   const hint = item.workspaceHint !== undefined && state.workspaces.includes(item.workspaceHint) ? item.workspaceHint : undefined;
-  const workspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) : hint;
+  const workspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : hint;
   const status = task ? taskState(task, state) : 'empty';
   return (
     <span className="flex min-w-0 items-center gap-1.5">
