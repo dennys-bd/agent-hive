@@ -31,7 +31,7 @@ export function ProblemCounts({ counts }: { counts: Counts }) {
 // ver log beside a failed source, when there is a console to open it in (none outside a Dashboard)
 function ViewLog({ log, onViewLog }: { log?: FormatLog; onViewLog?(log: FormatLog): void }) {
   if (log === undefined || onViewLog === undefined) return null;
-  return <Button type="button" variant="link" size="xs" className="h-3 p-0 text-review" onClick={() => onViewLog(log)}>{t('editor.viewLog')}</Button>;
+  return <Button type="button" variant="link" size="xs" className="h-5 p-0 text-review" onClick={() => onViewLog(log)}>{t('editor.viewLog')}</Button>;
 }
 
 /** The bar's language server part (#780): starting, ready, failed with ver log, or none with instalar; nothing for a language the catalog serves
@@ -50,7 +50,7 @@ export function ServerStatus({ activityId, path, onViewLog }: ServerStatusProps)
       {state.phase === 'absent' && (
         <>
           <span title={state.reason}>{t('editor.lsp.none')}</span>
-          {openLanguage && <Button type="button" variant="outline" size="xs" className="h-3 rounded-sm px-1.5 py-0" onClick={() => openLanguage(file.language)}>{t('editor.lsp.install', { server })}</Button>}
+          {openLanguage && <Button type="button" variant="outline" size="xs" className="h-5 rounded-sm px-1.5 py-0" onClick={() => openLanguage(file.language)}>{t('editor.lsp.install', { server })}</Button>}
         </>
       )}
     </span>
@@ -79,7 +79,7 @@ export function ProblemsButton({ activityId, path, isOpen, onToggle }: ProblemsB
   return (
     <Button
       type="button" variant="ghost" size="xs" aria-label={t('problems.title')} aria-pressed={isOpen} title={t('problems.title')} onClick={onToggle}
-      className={`h-3 shrink-0 gap-1.5 rounded-sm px-1.5 py-0 font-normal ${isOpen ? 'bg-accent' : ''}`}
+      className={`h-5 shrink-0 gap-1.5 rounded-sm px-1.5 py-0 font-normal ${isOpen ? 'bg-accent' : ''}`}
     >
       {hasCounts(counts) ? <ProblemCounts counts={counts} /> : t('problems.title')}
     </Button>
