@@ -10,7 +10,7 @@ import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, typ
 import type { Exec } from './types.js';
 
 /** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel. */
-export interface FileCheckout { toplevel: string; repository: string; branch: string; path: string }
+export interface FileCheckout { toplevel: string; repository: string; branch: string; path: string; ignored: boolean }
 
 /** The checkout of `file`, a real absolute path (#936), learned from the file itself: the Hive keeps no copy of the conventions. No checkout,
  * an origin off GitHub or a detached HEAD is refused with fixed words before anything is written. */
@@ -23,7 +23,19 @@ export async function fileCheckout(exec: Exec, file: string): Promise<FileChecko
   if (repository === undefined) throw new Error('the decomposition file\'s checkout has no GitHub origin');
   const branch = await git(toplevel, 'branch', '--show-current');
   if (branch === '') throw new Error('the decomposition file\'s checkout is on no branch: nothing to push');
-  return { toplevel, repository, branch, path: relative(toplevel, file) };
+  const path = relative(toplevel, file);
+  return { toplevel, repository, branch, path, ignored: await isIgnored(exec, toplevel, path) };
+}
+
+// check-ignore -q: exit 0 ignored, exit 1 not ignored, anything else is a failed read like the others
+async function isIgnored(exec: Exec, toplevel: string, path: string): Promise<boolean> {
+  try {
+    await exec('git', ['--literal-pathspecs', '-C', toplevel, 'check-ignore', '-q', '--', path]);
+    return true;
+  } catch (err) {
+    if ((err as { code?: unknown }).code === 1) return false;
+    throw new Error(messageOf(err));
+  }
 }
 
 /** What the delivery needs (#936): git in the file's checkout, the Hive's login, and the route's record. */
@@ -38,13 +50,14 @@ export interface DeliverTarget { checkout: FileCheckout; repositoryId: string; b
 export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, recorded: Readonly<Record<string, number>>): string | undefined {
   if (recorded[PR_KEY] !== undefined) return undefined;
   if (checkout.branch === defaultBranch) return `the decomposition file's checkout is on ${checkout.repository}'s default branch (${defaultBranch}): the Hive never pushes it`;
+  if (checkout.ignored) return 'the decomposition file is ignored by git: it cannot be committed';
   if (!checkout.path.endsWith('.md')) return 'the decomposition file is not a .md file';
   return undefined;
 }
 
 // git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is
 // removed before the words leave
-const redacted = (text: string): string => text.replace(/:\/\/[^@/\s]+@/g, '://');
+const redacted = (text: string): string => text.replace(/:\/\/[^/\s]*@/g, '://');
 const messageOf = (err: unknown): string => {
   const e = err as { stderr?: unknown };
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
@@ -69,7 +82,9 @@ async function commitFile(exec: Exec, { toplevel, path }: FileCheckout, root: nu
 async function openPullRequest(deps: DeliverDeps, t: DeliverTarget): Promise<number | undefined> {
   const variables = { ...ownerName(t.checkout.repository), head: t.checkout.branch, base: t.base };
   const data = (await deps.gql(OPEN_PULL_REQUEST, variables)) as OpenPullRequestData;
-  return data.repository?.pullRequests?.nodes?.[0]?.number;
+  // a fork's PR of the same branch name is not this checkout's: only a head in the checkout's own repository is adopted
+  const own = t.checkout.repository.toLowerCase();
+  return data.repository?.pullRequests?.nodes?.find((n) => n.headRepository?.nameWithOwner?.toLowerCase() === own)?.number;
 }
 
 // The PR's number: the one created, else, when GitHub refuses (a crash between its opening and the record leaves one), the open one

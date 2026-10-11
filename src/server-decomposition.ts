@@ -168,19 +168,23 @@ async function write(deps: DecompositionRouteDeps, current: Live, activityId: st
   if ('status' in project) return refuse(res, project);
   const taskId = goal.task.item.itemId;
   const record = async (id: string, number: number): Promise<void> => { await deps.dispatch({ type: 'decompositionIssue', taskId, id, number }); };
-  const { checkout, docs } = await deliveryOf(deps, goal);
-  const refusal = deliveryRefusal(checkout, docs.defaultBranch, recordedIssues(goal.result)); // before any issue: a refused delivery writes nothing
+  const recorded = recordedIssues(goal.result);
+  // Once pr is recorded nothing is delivered, so the checkout is not read: a moved or removed one cannot block finishing `done`
+  const delivery = recorded[PR_KEY] === undefined ? await deliveryOf(deps, goal) : undefined;
+  const refusal = delivery === undefined ? undefined : deliveryRefusal(delivery.checkout, delivery.docs.defaultBranch, recorded); // before any issue: a refused delivery writes nothing
   if (refusal !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: refusal });
-  const issues = checkout.repository === ready.repository ? docs : await readRepository(deps.gql, ready.repository);
+  const issues = delivery !== undefined && delivery.checkout.repository === ready.repository ? delivery.docs : await readRepository(deps.gql, ready.repository);
   const target: WriteTarget = {
-    repository: ready.repository, repositoryId: issues.id, address: fileAddress(checkout.repository, docs.defaultBranch, checkout.path), project,
+    repository: ready.repository, repositoryId: issues.id, project,
+    // every issue is written by the time pr is recorded, so no Design: link is built from an empty address
+    address: delivery === undefined ? '' : fileAddress(delivery.checkout.repository, delivery.docs.defaultBranch, delivery.checkout.path),
     ...(goal.number === undefined ? {} : { goal: goal.number }),
   };
-  const written = await writeDecomposition({ gql: deps.gql, record }, ready.decomposition, target, recordedIssues(goal.result));
+  const written = await writeDecomposition({ gql: deps.gql, record }, ready.decomposition, target, recorded);
   if ('error' in written) return refuse(res, { status: HTTP_BAD_GATEWAY, message: written.error });
-  const delivered = await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
-    checkout, repositoryId: docs.id, base: docs.defaultBranch, root: written.root, goal: ready.repository,
-  }, recordedIssues(goal.result));
+  const delivered = delivery === undefined ? undefined : await deliverDecomposition({ exec: deps.exec, gql: deps.gql, record }, {
+    checkout: delivery.checkout, repositoryId: delivery.docs.id, base: delivery.docs.defaultBranch, root: written.root, goal: ready.repository,
+  }, recorded);
   if (delivered !== undefined) return refuse(res, { status: HTTP_BAD_GATEWAY, message: delivered });
   await record(DONE_KEY, written.root);
   await deps.dispatch(goal.number === undefined ? { type: 'closeTask', taskId } : { type: 'approve', activityId });

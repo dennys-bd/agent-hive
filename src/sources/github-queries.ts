@@ -226,9 +226,10 @@ export const CREATE_LABEL = `mutation($repositoryId: ID!, $name: String!, $color
 export const CREATE_PULL_REQUEST = `mutation($repositoryId: ID!, $baseRefName: String!, $headRefName: String!, $title: String!, $body: String!) {
   createPullRequest(input: { repositoryId: $repositoryId, baseRefName: $baseRefName, headRefName: $headRefName, title: $title, body: $body }) { pullRequest { number url } }
 }`;
-// The open PR of a head and base (#936): when GitHub refuses a second one, that is the one to record
+// The open PRs of a head and base (#936): when GitHub refuses a second one, the one from the repository itself is the one to record; a fork's
+// PR of the same branch name matches headRefName too, so its head repository comes with it
 export const OPEN_PULL_REQUEST = `query($owner: String!, $name: String!, $head: String!, $base: String!) {
-  repository(owner: $owner, name: $name) { pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 1) { nodes { number } } }
+  repository(owner: $owner, name: $name) { pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 10) { nodes { number headRepository { nameWithOwner } } } }
 }`;
 // An issue already in the project answers its existing item: a replay is harmless
 export const ADD_PROJECT_ITEM = `mutation($projectId: ID!, $contentId: ID!) {
@@ -320,7 +321,7 @@ export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: stri
 export interface RepositoryLabelData { repository?: { label?: { id: string } | null } | null } // #936
 export interface CreateLabelData { createLabel?: { label?: { id: string } | null } | null } // #936
 export interface RepositoryBranchData { repository?: { id: string; defaultBranchRef?: { name: string } | null } | null } // #936
-export interface OpenPullRequestData { repository?: { pullRequests?: { nodes?: { number: number }[] } | null } | null } // #936
+export interface OpenPullRequestData { repository?: { pullRequests?: { nodes?: { number: number; headRepository?: { nameWithOwner?: string } | null }[] } | null } | null } // #936
 export interface CreatePullRequestData { createPullRequest?: { pullRequest?: { number: number; url: string } | null } | null } // #936
 
 /** What an issue's own fields can be (#686), read off its repository by ITEM_FIELDS only. */

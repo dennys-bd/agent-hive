@@ -33,7 +33,7 @@ const DOCS_ORIGIN = 'git@github.com:acme/docs.git';
 
 interface Setup {
   task?: Task; result?: Record<string, unknown>; awaiting?: boolean; text?: string; origin?: string; fail?: string; sources?: SourceConfig[];
-  dirty?: boolean; pushFails?: string; noCheckout?: boolean; branch?: string; // #936: the file's checkout as git answers it
+  dirty?: boolean; pushFails?: string; noCheckout?: boolean; ignored?: boolean; branch?: string; // #936: the file's checkout as git answers it
 }
 
 async function routes(t: TestContext, setup: Setup = {}) {
@@ -58,6 +58,10 @@ async function routes(t: TestContext, setup: Setup = {}) {
     if (args.includes('--show-toplevel')) {
       if (setup.noCheckout === true) throw Object.assign(new Error('Command failed: git rev-parse'), { stderr: 'fatal: not a git repository\n' });
       return { stdout: `${worktree}\n` };
+    }
+    if (args.includes('check-ignore')) {
+      if (setup.ignored === true) return { stdout: '' };
+      throw Object.assign(new Error('Command failed: git check-ignore'), { code: 1, stderr: '' });
     }
     if (args.includes('--show-current')) return { stdout: `${setup.branch ?? 'hive/7-site'}\n` };
     if (args.includes('--porcelain')) return { stdout: setup.dirty === true ? ' M decomposition.md\n' : '' };
@@ -215,10 +219,10 @@ test('POST commits a hand edit in the file\'s checkout, pushes its branch and op
   const dirty = await routes(t, { dirty: true });
   assert.equal((await post(dirty.url, CHOICE)).status, 200);
   const literal = (args: string[]): boolean => args[0] === '--literal-pathspecs';
-  assert.deepEqual(dirty.git.filter((args) => args.includes('--')).map(literal), [true, true, true], 'status, add and commit read the path literally');
+  assert.deepEqual(dirty.git.filter((args) => args.includes('--')).map(literal), [true, true, true, true], 'check-ignore, status, add and commit read the path literally');
   const plain = dirty.git.map((args) => (literal(args) ? args.slice(1) : args));
   assert.deepEqual(plain.map((args) => args.slice(2)), [
-    ['rev-parse', '--show-toplevel'], ['remote', 'get-url', 'origin'], ['branch', '--show-current'],
+    ['rev-parse', '--show-toplevel'], ['remote', 'get-url', 'origin'], ['branch', '--show-current'], ['check-ignore', '-q', '--', 'decomposition.md'],
     ['status', '--porcelain', '--', 'decomposition.md'], ['add', '--', 'decomposition.md'], ['commit', '-m', 'docs: decomposition for #7', '--', 'decomposition.md'],
     ['push', '-u', 'origin', 'hive/7-site'],
   ]);
@@ -230,8 +234,18 @@ test('POST commits a hand edit in the file\'s checkout, pushes its branch and op
   assert.equal((await post(retried.url, CHOICE)).status, 200);
   assert.deepEqual(
     [stepsOf(retried.events), retried.git.map((args) => args[2]), retried.calls.some((c) => c.query === CREATE_PULL_REQUEST)],
-    [['done=7', 'approve'], ['rev-parse', 'remote', 'branch'], false],
+    [['done=7', 'approve'], [], false],
   );
+});
+
+test('an ignored file is refused 409 before any issue, and a recorded pr never reads the checkout, so a moved one cannot block done (#936)', async (t) => {
+  const ignored = await routes(t, { ignored: true });
+  const res = await post(ignored.url, CHOICE);
+  assert.deepEqual([res.status, await res.json()], [409, { error: 'the decomposition file is ignored by git: it cannot be committed' }]);
+  assert.equal(ignored.calls.some((c) => c.query === CREATE_ISSUE), false);
+  const moved = await routes(t, { noCheckout: true, result: { ...PENDING, decompositionIssues: { design: 7, '1': 101, '1.1': 102, '1.2': 103, '2': 104, '2.1': 105, '2.2': 106, pr: 300 } } });
+  assert.equal((await post(moved.url, CHOICE)).status, 200);
+  assert.deepEqual([stepsOf(moved.events), moved.git], [['done=7', 'approve'], []]);
 });
 
 test('a failed push answers 502 with git\'s words; the issues stay recorded and neither pr nor done is (#936)', async (t) => {
