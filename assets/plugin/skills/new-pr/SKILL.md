@@ -1,6 +1,6 @@
 ---
 name: new-pr
-description: Opens the pull requests for the current task: resolves the conventions, finds the repository's PR template, reads the commits and the diff, pushes with -u and creates one PR, or one per slice, with gh, after the docs PR when docsRepo is set; every body links the walkthrough. Runs on its own on any branch, and as the last stage of /hive:new-build.
+description: Opens the pull requests for the current task: resolves the conventions, finds the repository's PR template, reads the commits and the diff, pushes with -u and creates one PR, or one per slice, with gh, after the docs PR when docsRepo is set; every body carries the walkthrough. Runs on its own on any branch, and as the last stage of /hive:new-build.
 ---
 
 # /hive:new-pr
@@ -108,14 +108,16 @@ summary, grouped by area.
 
 **Docs**: the spec, the plan and the walkthrough (the argument first),
 found as `reference/conventions.md` says under "Finding the previous
-stage's files". Link the walkthrough as a GitHub URL,
+stage's files". Read the walkthrough's content: every body carries it
+whole (Phase 5), because a reader of the code repository may not be able
+to open `docsRepo`. Also keep its link for the fallback, a GitHub URL
 `<repository URL>/blob/<branch that carries it>/<path>`. Without
 `docsRepo`, the URL is `gh repo view --json url` and the branch is the
 head that carries it; with `docsRepo`, the URL is
 `gh repo view <docs repo> --json url`, the branch is the docs head and
 `<path>` is relative to `docsRepo`. When the walkthrough is ignored, the
-repository has no GitHub remote, or there is no docs PR (Phase 2), give
-its path as text.
+repository has no GitHub remote, or there is no docs PR (Phase 2), the
+link is its path as text.
 
 ## Phase 4 — Push
 
@@ -173,14 +175,30 @@ Every body, template or not, carries:
 
 - `Closes #<n>` on its own line, only on the PR that targets the base,
   omitted when there is no issue;
-- `Walkthrough: <link>` on its own line;
-- `Docs: <docs PR URL>` on its own line, when there is a docs PR;
 - on a slice PR, `Slice <k> of <total>: <name>`, the name from the plan's
   index.
 
+Every body ends with the walkthrough, whole, in a collapsed block (the
+template's own block when it has one), omitted when there is no
+walkthrough:
+
+```
+<details>
+<summary>Walkthrough</summary>
+
+<the walkthrough's content>
+
+</details>
+```
+
+When the body, the block included, would pass GitHub's 65,536-character
+limit, put
+`Walkthrough: <link>` on its own line instead of the block.
+
 **With a template**: fill every section using the commit and file
 analysis. Leave sections that do not apply as `N/A` rather than deleting
-them.
+them, except the template's `Closes` line and walkthrough block, which
+follow the rules above.
 
 **Without a template**, after those lines, in this order:
 
