@@ -7,12 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { formatCount, t } from '@/i18n';
-import { readStats } from '@/lib/memory-api';
+import { readMemory, readStats, saveCap } from '@/lib/memory-api';
+import { isMemoryCap, memoryCapTokens } from '@/lib/memory-cap';
 import { charactersText, lastText, lessonsText, statNumbers } from '@/lib/memory-view';
 import { workspaceColor } from '@/lib/workspace-color';
-import type { MemoryStats, MemoryView } from '../../../types';
+import { MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryStats, type MemoryView } from '../../../types';
 
-interface MemoryDialogProps { workspace: string; view: MemoryView; open: boolean; onOpenChange(open: boolean): void; onView(view: MemoryView): void }
+interface MemoryDialogProps { workspace: string; view: MemoryView; open: boolean; onOpenChange(open: boolean): void; onView(view: MemoryView): void; onCapSaved(cap: number): void }
 
 const BLOCK = 'flex flex-col gap-3 rounded-lg border bg-card px-4 py-3.5';
 
@@ -48,18 +49,63 @@ function useMemoryStats(workspace: string, open: boolean): MemoryStats | undefin
   return stats;
 }
 
-// The limits: the total as text, the per-lesson one fixed and shown off until its entry in docs/agent/settings-candidates.md makes it a setting
-function UsageBlock({ view }: { view: MemoryView }) {
+interface CapFieldProps { workspace: string; cap: number; onCapSaved(cap: number): void; onView(view: MemoryView): void }
+
+// #115: the route's own range refusal in the user's language; any other failure is not the user's to fix, and its words go to hive.log
+const capErrorText = (err: unknown): string => t((err as { code?: unknown } | null)?.code === 'cap_range' ? 'settings.memory.capRange' : 'settings.memory.capFailed');
+
+// #115: the total limit, saved at once through PUT …/memory/cap like every edit in this dialog, never the Settings draft. Save (or Enter) only
+// for a valid value other than the saved one, so a number typed key by key is never written midway. Under the field what a full memory
+// costs per run, or the range; then a failed save's reason
+function CapField({ workspace, cap, onCapSaved, onView }: CapFieldProps) {
+  const id = useId();
+  const [text, setText] = useState(String(cap));
+  const [error, setError] = useState<string>();
+  const valid = isMemoryCap(text);
+  const next = Number(text.trim());
+  const canSave = valid && next !== cap;
+  const save = (): void => {
+    if (!canSave) return;
+    saveCap(workspace, next)
+      .then(async () => {
+        onCapSaved(next); // in the file now: the Settings draft and its baseline take it even if the read below fails
+        onView(await readMemory(workspace));
+      })
+      .catch((err: unknown) => setError(capErrorText(err)));
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={id} className="font-normal text-muted-foreground text-xs">{t('settings.memory.totalLimit')}</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          id={id} type="number" min={MEMORY_CAP_MIN} max={MEMORY_CAP_MAX} step={1} value={text} aria-invalid={!valid || error !== undefined} aria-describedby={`${id}-note`}
+          onChange={(e) => { setText(e.target.value); setError(undefined); }}
+          // a key an IME composition sends confirms its candidate, it is not the user's save
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); save(); } }}
+        />
+        <Button type="button" size="sm" disabled={!canSave} onClick={save}>{t('settings.memory.save')}</Button>
+      </div>
+      <span id={`${id}-note`} className={valid ? 'text-muted-foreground text-xs' : 'text-destructive text-xs'}>
+        {valid ? t('settings.memory.capEstimate', { n: formatCount(memoryCapTokens(next)) }) : t('settings.memory.capRange')}
+      </span>
+      {error !== undefined && <p role="alert" className="text-destructive text-xs">{error}</p>}
+    </div>
+  );
+}
+
+interface UsageBlockProps { workspace: string; view: MemoryView; onCapSaved(cap: number): void; onView(view: MemoryView): void }
+
+// The limits: the total as a field saved at once (#115), the per-lesson one fixed and shown off until its entry in
+// docs/agent/settings-candidates.md makes it a setting
+function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
   const id = useId();
   return (
     <section aria-label={t('settings.memory.usage')} className={BLOCK}>
       <h3 className={PART_TITLE}>{t('settings.memory.usage')}</h3>
       <MemoryUsage view={view} medium />
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-2">
-          <span className="text-muted-foreground text-xs">{t('settings.memory.totalLimit')}</span>
-          <span className="flex h-9 items-center text-sm">{t('settings.memory.characters', { n: formatCount(view.cap) })}</span>
-        </div>
+      <div className="grid grid-cols-2 items-start gap-3">
+        {/* keyed by the saved cap: a new one (this field's save, or a read on focus) resets what is typed */}
+        <CapField key={view.cap} workspace={workspace} cap={view.cap} onCapSaved={onCapSaved} onView={onView} />
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-max`} className="font-normal text-muted-foreground text-xs">{t('settings.memory.lessonLimit')}</Label>
           <Input id={`${id}-max`} type="number" value={view.textMax} readOnly disabled />
@@ -106,8 +152,9 @@ function RulesBlock() {
 }
 
 /** A workspace's memory (#797): what its agents know before they start, its usage, its last 7 days and its lessons. Every edit is saved at
- * once through the memory routes, never the Settings draft: workers write the same file at any moment. */
-export function MemoryDialog({ workspace, view, open, onOpenChange, onView }: MemoryDialogProps) {
+ * once through the memory routes, never the Settings draft: workers write the same file at any moment. The total limit (#115) is saved the same way,
+ * into hive.config.json, and handed up so the Settings draft keeps it. */
+export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCapSaved }: MemoryDialogProps) {
   const stats = useMemoryStats(workspace, open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,7 +167,7 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView }: Me
           <DialogDescription className="text-xs">{t('settings.memory.description')}</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-4">
-          <UsageBlock view={view} />
+          <UsageBlock workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />
           <TelemetryBlock stats={stats} total={view.entries.length} />
         </div>
         <MemoryLessons workspace={workspace} view={view} onView={onView} />

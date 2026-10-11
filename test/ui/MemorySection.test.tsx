@@ -20,14 +20,25 @@ const VIEW: MemoryView = {
 const lastAt = (): string => new Date(Date.now() - 2 * 3_600_000 - 300_000).toISOString();
 let stats: MemoryStats = { runs: 0, cited: 0 };
 
-const fetchMock = vi.fn(async (url: string) => {
-  if (url === '/workspaces/hive/memory') return jsonResponse(VIEW);
+let view: MemoryView = VIEW;
+// the route's answer to PUT …/memory/cap: by default the save, which the next read of the memory shows
+const saves = ({ cap }: { cap: number }): Response => {
+  view = { ...view, cap };
+  return jsonResponse({ ok: true });
+};
+let capAnswer = saves;
+
+const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  if (url === '/workspaces/hive/memory/cap' && init?.method === 'PUT') return capAnswer(JSON.parse(String(init.body)) as { cap: number });
+  if (url === '/workspaces/hive/memory') return jsonResponse(view);
   if (url === '/workspaces/hive/memory/stats') return jsonResponse(stats);
   return jsonResponse({ error: 'unknown workspace' }, 404);
 });
 
 beforeEach(() => {
   setLanguage('pt');
+  view = VIEW;
+  capAnswer = saves;
   stats = { runs: 12, cited: 2, tokensPerRun: 150, last: { at: lastAt(), task: '812', stage: 'build', cited: 1 } };
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
@@ -36,7 +47,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 test('the section shows the usage and the lessons, and ver memória… opens the dialog with its usage, telemetry and rules; fechar closes it (#797)', async () => {
   const user = userEvent.setup();
-  render(<MemorySection workspace="hive" saved />);
+  render(<MemorySection workspace="hive" saved onCapSaved={vi.fn()} />);
   expect(await screen.findByText('87 de 4.000 caracteres')).toBeInTheDocument();
   expect(screen.getByText('3 lições · 2 vindas de tarefas')).toBeInTheDocument();
   expect(screen.getByRole('progressbar', { name: 'memória usada' })).toBeInTheDocument();
@@ -44,7 +55,10 @@ test('the section shows the usage and the lessons, and ver memória… opens the
   const dialog = within(await screen.findByRole('dialog', { name: 'Memória de hive' }));
   expect(dialog.getByText(/^o que os agentes deste workspace sabem/)).toBeInTheDocument();
   const usage = within(dialog.getByRole('region', { name: 'uso' }));
-  expect(usage.getByText('4.000 caracteres')).toBeInTheDocument();
+  expect(usage.getByRole('spinbutton', { name: 'limite total' })).toHaveValue(4000);
+  expect(usage.getByText('≈ 1.100 tokens por execução com a memória cheia')).toBeInTheDocument();
+  expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
+  expect(usage.getByText('no limite, nenhuma lição nova entra, nem sua nem de tarefa, até você remover ou encurtar outra')).toBeInTheDocument();
   expect(usage.getByRole('spinbutton', { name: 'limite por lição (caracteres)' })).toHaveValue(300);
   expect(usage.getByRole('spinbutton', { name: 'limite por lição (caracteres)' })).toBeDisabled();
   const telemetry = within(dialog.getByRole('region', { name: 'telemetria · últimos 7 dias' }));
@@ -61,7 +75,7 @@ test('the section shows the usage and the lessons, and ver memória… opens the
 test('with no run carrying memory in the window the telemetry shows dashes and no last injection (#797)', async () => {
   stats = { runs: 0, cited: 0 };
   const user = userEvent.setup();
-  render(<MemorySection workspace="hive" saved />);
+  render(<MemorySection workspace="hive" saved onCapSaved={vi.fn()} />);
   await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
   const telemetry = within(await screen.findByRole('region', { name: 'telemetria · últimos 7 dias' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/workspaces/hive/memory/stats'));
@@ -72,11 +86,13 @@ test('with no run carrying memory in the window the telemetry shows dashes and n
 test('the section and the dialog read in English (#797)', async () => {
   setLanguage('en');
   const user = userEvent.setup();
-  render(<MemorySection workspace="hive" saved />);
+  render(<MemorySection workspace="hive" saved onCapSaved={vi.fn()} />);
   expect(await screen.findByText('87 of 4,000 characters')).toBeInTheDocument();
   expect(screen.getByText('3 lessons · 2 from tasks')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'view memory…' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'hive memory' }));
+  expect(within(dialog.getByRole('region', { name: 'usage' })).getByRole('spinbutton', { name: 'total limit' })).toHaveValue(4000);
+  expect(dialog.getByText("at the limit no new lesson comes in, yours or a task's, until you remove or shorten another")).toBeInTheDocument();
   expect(await dialog.findByText('last injected 2 h ago, in the build stage of #812 · 1 lesson cited')).toBeInTheDocument();
   expect(dialog.getByText('prompts with memory')).toBeInTheDocument();
   expect(dialog.getByRole('button', { name: 'close' })).toBeInTheDocument();
@@ -85,20 +101,20 @@ test('the section and the dialog read in English (#797)', async () => {
 test('a workspace the live config does not have yet says so and keeps the dialog shut, in both languages; an unnamed one asks nothing (#797)', async () => {
   for (const [language, text, open] of [['en', 'save the workspace to see its memory', 'view memory…'], ['pt', 'salve o workspace para ver a memória', 'ver memória…']] as const) {
     setLanguage(language);
-    const { unmount } = render(<MemorySection workspace="new" saved={false} />);
+    const { unmount } = render(<MemorySection workspace="new" saved={false} onCapSaved={vi.fn()} />);
     expect(await screen.findByText(text)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: open })).toBeDisabled();
     unmount();
   }
   fetchMock.mockClear();
-  render(<MemorySection workspace="" saved />);
+  render(<MemorySection workspace="" saved onCapSaved={vi.fn()} />);
   expect(screen.getByText('salve o workspace para ver a memória')).toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test('typing the name of a workspace that is not saved never asks for /workspaces/<partial>/memory (#797)', async () => {
   const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000' };
-  const Editor = ({ name }: { name: string }) => <WorkspacesEditor workspaces={[{ ...row, name }]} savedNames={['hive']} onChange={vi.fn()} />;
+  const Editor = ({ name }: { name: string }) => <WorkspacesEditor workspaces={[{ ...row, name }]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />;
   const { rerender } = render(<Editor name="hive" />);
   expect(await screen.findByText('87 de 4.000 caracteres')).toBeInTheDocument();
   fetchMock.mockClear();
@@ -109,9 +125,59 @@ test('typing the name of a workspace that is not saved never asks for /workspace
 
 test('the memory section closes each workspace card, after the conventions, with its hint (#797)', async () => {
   const row: WorkspaceDraft = { id: 'w1', name: 'hive', path: '/repo', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000' };
-  render(<WorkspacesEditor workspaces={[row]} savedNames={['hive']} onChange={vi.fn()} />);
+  render(<WorkspacesEditor workspaces={[row]} savedNames={['hive']} onChange={vi.fn()} onCapSaved={vi.fn()} />);
   const hive = within(screen.getByRole('region', { name: 'hive' }));
   expect(hive.getAllByRole('heading', { level: 3 }).map((h) => h.textContent).slice(-2)).toEqual(['convenções', 'memória']);
   expect(hive.getByText('preferências, fatos do código e o que evitar, que toda sessão das tarefas deste workspace recebe')).toBeInTheDocument();
   expect(await hive.findByText('87 de 4.000 caracteres')).toBeInTheDocument();
+});
+
+test('the dialog edits the total limit: save stays off for the saved value or one out of range, which shows the range; a new one is saved at once, then the memory is read again and both bars show it (#115)', async () => {
+  const user = userEvent.setup();
+  const onCapSaved = vi.fn();
+  render(<MemorySection workspace="hive" saved onCapSaved={onCapSaved} />);
+  await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
+  const usage = within(await screen.findByRole('region', { name: 'uso' }));
+  const cap = usage.getByRole('spinbutton', { name: 'limite total' });
+  await user.clear(cap);
+  await user.type(cap, '20001');
+  expect(cap).toHaveAttribute('aria-invalid', 'true');
+  expect(usage.getByText('um número inteiro de 300 a 20.000')).toBeInTheDocument();
+  expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
+  await user.clear(cap);
+  await user.type(cap, '6000');
+  expect(usage.getByText('≈ 1.600 tokens por execução com a memória cheia')).toBeInTheDocument();
+  await user.click(usage.getByRole('button', { name: 'salvar' }));
+  expect(await usage.findByText('87 de 6.000 caracteres')).toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledWith('/workspaces/hive/memory/cap', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ cap: 6000 }) }));
+  const calls = fetchMock.mock.calls.map(([url, init]) => `${init?.method ?? 'GET'} ${url}`);
+  expect(calls.slice(calls.indexOf('PUT /workspaces/hive/memory/cap'))).toContain('GET /workspaces/hive/memory');
+  expect(onCapSaved).toHaveBeenCalledWith(6000);
+  expect(usage.getByRole('spinbutton', { name: 'limite total' })).toHaveValue(6000);
+  expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(screen.getByText('87 de 6.000 caracteres')).toBeInTheDocument(); // the card's bar, with no window focus
+});
+
+test('a cap the route refuses shows the range under the field, any other failure Erro inesperado and never the server\'s words; Enter saves too, and a new value clears the message (#115)', async () => {
+  const user = userEvent.setup();
+  const onCapSaved = vi.fn();
+  render(<MemorySection workspace="hive" saved onCapSaved={onCapSaved} />);
+  await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
+  const usage = within(await screen.findByRole('region', { name: 'uso' }));
+  const cap = usage.getByRole('spinbutton', { name: 'limite total' });
+  capAnswer = () => jsonResponse({ error: 'cap must be an integer from 300 to 20000', code: 'cap_range' }, 400);
+  await user.clear(cap);
+  await user.type(cap, '5000{Enter}');
+  expect(await usage.findByRole('alert')).toHaveTextContent('um número inteiro de 300 a 20.000');
+  capAnswer = () => jsonResponse({ error: 'EACCES: permission denied' }, 500);
+  await user.clear(cap);
+  await user.type(cap, '5001');
+  expect(usage.queryByRole('alert')).not.toBeInTheDocument();
+  await user.click(usage.getByRole('button', { name: 'salvar' }));
+  expect(await usage.findByRole('alert')).toHaveTextContent('Erro inesperado');
+  expect(usage.queryByText(/EACCES/)).not.toBeInTheDocument();
+  expect(onCapSaved).not.toHaveBeenCalled();
+  expect(usage.getByText('87 de 4.000 caracteres')).toBeInTheDocument();
 });
