@@ -34,7 +34,14 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
   const prefix = `${entry.name}:`;
   const own = (itemId: string): string => (itemId.startsWith(prefix) ? itemId.slice(prefix.length) : itemId);
   const shown = entry.prefix ?? entry.name;
-  const item = (t: Item): Item => ({ ...t, itemId: `${prefix}${t.itemId}`, source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}) });
+  const named = (id: string): string => `${prefix}${id}`;
+  // #28: the tree links name items too, so they carry the same prefix as itemId; an absent key stays absent
+  const tree = ({ parent, children, closedChildren }: Item): Partial<Item> => ({
+    ...(parent === undefined ? {} : { parent: named(parent) }),
+    ...(children === undefined ? {} : { children: children.map(named) }),
+    ...(closedChildren === undefined ? {} : { closedChildren: closedChildren.map(named) }),
+  });
+  const item = (t: Item): Item => ({ ...t, ...tree(t), itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}) });
   const { comments, project, fieldsOf, setField, create } = adapter;
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
