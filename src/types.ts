@@ -402,7 +402,12 @@ export interface TaskSetup {
 export interface CommandFailure { name: string; code: number; output: string }
 /** A commands stage in flight (#755): the stage, the index of the command running, that command's pty, and the failures so far. Persisted so
  * the boot can stop it; it never survives the boot. */
-export interface StageCommands { stage: string; at: number; ptyId: string; runId: string; failed: CommandFailure[]; workerId: string } // runId: the first command's ptyId, kept to the last: what groups the execution's console runs; workerId: the worker the run holds (#727)
+export interface StageCommands {
+  stage: string; at: number; ptyId: string; runId: string; failed: CommandFailure[]; workerId: string; // runId: the first command's ptyId, kept to the last: what groups the execution's console runs; workerId: the worker the run holds (#727)
+  started: string[]; // #914: each command's start (ISO) by index; '' for one whose pty never started
+  outputAt?: string; // #914: the current command's last output, throttled to 30 s; dropped when the next command starts
+  skipped?: number[]; // #914: the indexes onMissing skip passed over, so the running block says pulado
+}
 /** How a commands stage's failure starts on its activity's error (#755), the failed commands after it: the card shows it in the viewer's language. */
 export const CHECKS_FAILED = 'checks failed: ';
 /** One CI check on a PR's last commit as a wait for CI reads it (#834): #758's PrCheck (success, failure or pending; url: its page), with the
@@ -1225,6 +1230,8 @@ export type HiveEvent =
   | { type: 'activityDeleted'; activityId: string } // the deleteActivity effect ended well: the task advances as after a prompt
   | { type: 'deleteActivityFailed'; activityId: string; message: string } // git refused: the task carries the message until a manual start
   | { type: 'stageCommandEnded'; activityId: string; ptyId: string; code: number; output: string } // #755: that command's pty ended with `code` (124: its timeout ran out); output: its tail, ANSI stripped
+  | { type: 'stageCommandStarted'; activityId: string; ptyId: string; at: string; skipped?: true } // #914: the current command's pty started at `at` (ISO), or it was skipped (skipped: true)
+  | { type: 'stageCommandOutput'; activityId: string; ptyId: string; at: string } // #914: the current command wrote output at `at` (ISO); at most once every 30 s per pty
   | { type: 'stageCommandsRefused'; activityId: string; ptyId: string; message: string } // #755: the stage cannot run: a name not enabled in the task's workspace, or its worktree failed; nothing more runs
   | { type: 'ciClock'; activityId: string; at: string } // #834: a tick at `at` (ISO) with no read (the query failed or left a PR out): only the timeout is checked
   | { type: 'ciRead'; activityId: string; at: string; prs: CiPrRead[] } // #834: one read of the activity's open PRs' checks at `at` (ISO): the wait goes on, passes, re-runs or fetches the failed logs

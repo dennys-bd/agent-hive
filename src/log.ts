@@ -184,6 +184,8 @@ export function describeEvent(event: HiveEvent): string {
     case 'activityDeleted': return `activityDeleted activity=${shortId(event.activityId)}`;
     case 'deleteActivityFailed': return `deleteActivityFailed activity=${shortId(event.activityId)}: ${event.message.split('\n')[0]}`; // a failed teardown's output tail follows the first line: never logged (#654)
     case 'stageCommandEnded': return `stageCommandEnded activity=${shortId(event.activityId)} pty=${shortId(event.ptyId)} code=${event.code}`; // #755: the output is the command's: never logged
+    case 'stageCommandStarted': return `stageCommandStarted activity=${shortId(event.activityId)} pty=${shortId(event.ptyId)}${event.skipped ? ' skipped' : ''}`; // #914
+    case 'stageCommandOutput': return `stageCommandOutput activity=${shortId(event.activityId)} pty=${shortId(event.ptyId)}`; // #914: never the output
     case 'stageCommandsRefused': return `stageCommandsRefused activity=${shortId(event.activityId)}: ${event.message.split('\n')[0]}`; // #755: the first line only
     case 'ciClock': return `ciClock activity=${shortId(event.activityId)}`; // #834
     case 'ciRead': return `ciRead activity=${shortId(event.activityId)} prs=${event.prs.map((p) => `#${prNumber(p.url)}`).join(',') || '-'}`; // #834: numbers, never the links

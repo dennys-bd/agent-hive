@@ -221,7 +221,7 @@ test('a commands stage shows the command running after the setup\'s own line and
   const checks: Stage = { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build', 'lint'], stopOnFailure: true };
   const at = (work: Partial<Activity>, made: Parameters<typeof withWork>[3] = {}): State => withWork(state(task({ stage: 'checks' }), [], { stages: [...stages, checks] }), 'I1', work, made);
   const flow = (s: State) => <StageOutputContext.Provider value={openOutput}><Flow state={s} /></StageOutputContext.Provider>;
-  const running = { stage: 'checks', at: 1, ptyId: 'P1', runId: 'R1', failed: [], workerId: 'w1' };
+  const running = { stage: 'checks', at: 1, ptyId: 'P1', runId: 'R1', failed: [], workerId: 'w1', started: [] };
   const { rerender } = render(flow(at({ commands: running, setup: { consoleId: 'setup:I1' } })));
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument(); // the worktree setup's line first
   rerender(flow(at({ commands: running })));

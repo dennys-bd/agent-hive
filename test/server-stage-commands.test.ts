@@ -19,7 +19,7 @@ const BUILD: Command = { name: 'build', impls: [{ workspace: 'hive', command: 'p
 const LINT: Command = { name: 'lint', impls: [{ workspace: null, command: 'pnpm lint' }], menu: false, env: {}, timeout: '1s' };
 const STAGE: Stage = { name: 'checks', from: {}, action: 'commands', commands: ['build', 'lint'], stopOnFailure: true, onMissing: 'fail' };
 const TASK: Task = { item: { itemId: 'board:I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'checks', boardColumn: '', auto: true, workspace: 'hive' };
-const runAt = (at: number): StageCommands => ({ stage: 'checks', at, ptyId: `P${at}`, runId: 'P0', failed: [], workerId: 'w1' });
+const runAt = (at: number): StageCommands => ({ stage: 'checks', at, ptyId: `P${at}`, runId: 'P0', failed: [], workerId: 'w1', started: [] });
 const ACTIVITY: Activity = { id: 'a1', kind: 'task', workspace: 'hive', slug: 'hive-1-task-1', commands: runAt(0) };
 const CWD = taskDir('/repo', ACTIVITY);
 const E2E: Command = { name: 'e2e', impls: [{ workspace: 'site', command: 'pnpm e2e' }], menu: true, env: {} };
