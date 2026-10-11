@@ -71,16 +71,19 @@ interface FlowNodeProps {
   stage: Stage; state: State; tasks: Task[]; order: Task[]; shown: number; filteredOut: number; rules: FilterRule[]; drag: DragRef; selectedId?: string;
   isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void;
   isTree?: boolean; collapsed?: readonly string[]; onToggleGroup?(key: string): void; // #34: the tree toggle Flow resolved, and the collapsed groups
+  focus?: ReadonlySet<string>; onFocusTree?(itemId: string): void; // #35: the focus Flow holds, and focus › on a parent's card
 }
 
 /** A stage as a node of the flowchart (#134, 1b): NODE_WIDTH wide (#54), its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
  * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
-  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList, isTree = false, collapsed = [], onToggleGroup } = props;
+  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList, isTree = false, collapsed = [], onToggleGroup, focus, onFocusTree } = props;
   // #34: grouped by tree over the whole task list, or as today; a drop still reads `order`, the stage's whole order (#366)
   const rows = isTree ? nodeRows(state.tasks, tasks, stage.name, collapsed) : flatRows(tasks);
   const fold = useFold(rows.filter((row) => row.kind === 'task').length);
+  // #35: outside the focus when none of these tasks is in it; with no focus nothing fades. The counts above stay the totals
+  const isOut = (itemIds: readonly string[]): boolean => focus !== undefined && !itemIds.some((id) => focus.has(id));
   const waiting = order.filter((c) => awaitsYou(c, state)).length;
   const exhausted = order.filter((c) => isExhausted(c, state)).length;
   const { draggedId, dropBefore, taskDragProps, dropAtEnd, dragOverEnd, onListDragLeave } = useStageDrag(drag, stage, order, state);
@@ -106,11 +109,12 @@ export function FlowNode(props: FlowNodeProps) {
       >
         {tasks.length === 0 && <li className="text-muted-foreground text-xs">{t(order.length === 0 ? 'stage.empty' : 'stage.filterNone')}</li>}
         {rows.map((row) => (row.kind === 'group'
-          ? <TreeGroupHeader key={row.key} root={row.root} count={row.count} isCollapsed={row.isCollapsed} onToggle={() => onToggleGroup?.(row.key)} />
+          ? <TreeGroupHeader key={row.key} root={row.root} count={row.count} isCollapsed={row.isCollapsed} isFaded={isOut(row.itemIds)} onToggle={() => onToggleGroup?.(row.key)} />
           : (
             <FlowTask
               key={row.task.item.itemId} task={row.task} state={state} indent={row.indent} dragHandlers={{ draggable: true, ...taskDragProps(row.task) }}
               isDimmed={draggedId === row.task.item.itemId} isDropBefore={dropBefore === row.task.item.itemId} isSelected={selectedId === row.task.item.itemId} onOpen={onOpen}
+              isFaded={isOut([row.task.item.itemId])} onFocusTree={onFocusTree}
             />
           )))}
       </ul>

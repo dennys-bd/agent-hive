@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allDone, depthOf, descendants, epicStage, parentOf, progress, rootOf, treeProgress, treeStarted } from '../src/task-tree.js';
+import { allDone, depthOf, descendants, epicStage, lineage, parentOf, progress, rootOf, treeProgress, treeStarted } from '../src/task-tree.js';
 import type { EpicFollows, Item, Task } from '../src/types.js';
 
 const LAST = 'Done';
@@ -45,6 +45,12 @@ test('descendants goes depth first in sub-issue order, skips ids with no task, a
   assert.deepEqual(ids(descendants(CYCLE, 'X')), ['Y'], 'the task itself, the duplicate and the self-reference are skipped');
   assert.equal(rootOf(CYCLE, 'X')?.item.itemId, 'Y', 'the walk up stops at the repeat');
   assert.equal(depthOf(CYCLE, 'X'), 1);
+});
+
+test('lineage lists the task and its ancestors, nearest first; an item that is no task gives none, and a cycle stops at the repeat (#35)', () => {
+  assert.deepEqual(ids(lineage(TREE, 'A1')), ['A1', 'A', 'R']);
+  assert.deepEqual(ids(lineage(TREE, 'nope')), []);
+  assert.deepEqual(ids(lineage(CYCLE, 'X')), ['X', 'Y']);
 });
 
 test('progress counts a direct child in the last stage and a closed child with no task as done, an open one with no task as not (#28)', () => {

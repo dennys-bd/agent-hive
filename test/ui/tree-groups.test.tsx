@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { collapseKey, groupTasks, hasTree, segmentTone, type TreeGroup } from '@/lib/tree-groups';
+import { collapseKey, groupTasks, hasTree, nodeRows, segmentTone, type TreeGroup } from '@/lib/tree-groups';
 import type { Item, Task } from '../../src/types';
 import { activityIdOf, taskPairOf } from '../fixtures/work';
 
@@ -44,4 +44,10 @@ test('hasTree is true only with a parent or a child task in the list; segmentTon
   };
   expect(['D', 'C', 'N', 'E', 'F'].map((id) => segmentTone(state, P, id, 'Done'))).toEqual(['done', 'working', 'new', 'done', 'empty']);
   expect([collapseKey('Build', R), collapseKey('Build')]).toEqual(['Build\u0000R', 'Build\u0000none']);
+});
+
+test('nodeRows gives each group row the itemIds of its tasks in the node, a collapsed group\'s included (#35)', () => {
+  const rows = nodeRows(ALL, [X, B1, R, Y, A, B], 'Build', [collapseKey('Build', R)]);
+  const groups = rows.flatMap((row) => (row.kind === 'group' ? [[row.root?.item.itemId ?? 'none', row.itemIds]] : []));
+  expect(groups).toEqual([['R', ['R', 'A', 'B', 'B1']], ['none', ['X', 'Y']]]);
 });

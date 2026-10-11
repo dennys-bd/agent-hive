@@ -60,10 +60,14 @@ const en = {
   'flow.tree.ungroup': 'grouped by tree · click to ungroup',
   'flow.tree.group': 'group by tree',
   'flow.tree.children': '{n} children · {done}/{n}', // #34: a parent's card, over its direct children
-  'flow.tree.focus': 'focus ›', // #34: shown once #35 wires the focus
+  'flow.tree.focus': 'focus ›', // #34: on a parent's card; #35 focuses the flow on its subtree
   'flow.tree.none': 'no tree', // #34: a node's group of the tasks in no tree
   'flow.tree.collapse': 'collapse', // #34: the group header's chevron
   'flow.tree.expand': 'expand',
+  'flow.focus.trail': 'focused tree', // #35: the focus's trail over the canvas
+  'flow.focus.count': '{n} tasks · the rest dimmed',
+  'flow.focus.to': 'focus {id}', // #35: an ancestor's id in the trail
+  'flow.focus.leave': 'leave focus',
   'flow.zoom.out': 'zoom out', // #910: the canvas's floating zoom controls
   'flow.zoom.in': 'zoom in',
   'flow.zoom.reset': 'back to 100%',
@@ -1788,6 +1792,10 @@ const pt: Record<MessageKey, string> = {
   'flow.tree.none': 'sem árvore',
   'flow.tree.collapse': 'recolher',
   'flow.tree.expand': 'expandir',
+  'flow.focus.trail': 'árvore em foco',
+  'flow.focus.count': '{n} tarefas · o resto esmaecido',
+  'flow.focus.to': 'focar {id}',
+  'flow.focus.leave': 'sair do foco',
   'flow.zoom.out': 'afastar',
   'flow.zoom.in': 'aproximar',
   'flow.zoom.reset': 'voltar a 100%',

@@ -47,9 +47,10 @@ export function segmentTone(state: Pick<State, 'tasks'> & TaskStateInput, parent
   return child === undefined ? 'empty' : taskState(child, state);
 }
 
-/** A row of a stage node's list (#34): a group's header, or a card with its indent. */
+/** A row of a stage node's list (#34): a group's header, or a card with its indent. A header's `itemIds` are its tasks in the node, collapsed
+ * ones included, so the focus (#35) can tell a header with none of them in it. */
 export type NodeRow =
-  | { kind: 'group'; key: string; root?: Task; count: number; isCollapsed: boolean }
+  | { kind: 'group'; key: string; root?: Task; count: number; isCollapsed: boolean; itemIds: string[] }
   | { kind: 'task'; task: Task; indent: number };
 
 const INDENT_PX = 10; // per level below the root's direct children, the handoff's
@@ -65,7 +66,7 @@ export function nodeRows(all: readonly Task[], shown: readonly Task[], stage: st
   return groups.flatMap((group): NodeRow[] => {
     const key = collapseKey(stage, group.root);
     const isCollapsed = collapsed.includes(key);
-    const header: NodeRow = { kind: 'group', key, root: group.root, count: group.tasks.length, isCollapsed };
+    const header: NodeRow = { kind: 'group', key, root: group.root, count: group.tasks.length, isCollapsed, itemIds: group.tasks.map(({ task }) => idOf(task)) };
     if (isCollapsed) return [header];
     return [header, ...group.tasks.map(({ task, depth }): NodeRow => ({ kind: 'task', task, indent: Math.max(depth - 1, 0) * INDENT_PX }))];
   });

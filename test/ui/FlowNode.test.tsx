@@ -16,12 +16,16 @@ const state = (tasks: WithWork[], workers: Worker[] = []): State => withPointedW
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages: [STAGE], transitions: [], tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [],
   workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
-function Node({ s, tasks, onList = () => {}, isTree, collapsed, onToggleGroup }: { s: State; tasks: Task[]; onList?(): void; isTree?: boolean; collapsed?: string[]; onToggleGroup?(key: string): void }) {
+interface NodeProps {
+  s: State; tasks: Task[]; onList?(): void; isTree?: boolean; collapsed?: string[]; onToggleGroup?(key: string): void;
+  focus?: ReadonlySet<string>; onFocusTree?(itemId: string): void;
+}
+function Node({ s, tasks, onList = () => {}, isTree, collapsed, onToggleGroup, focus, onFocusTree }: NodeProps) {
   const drag = useRef<Dragging | undefined>(undefined);
   return (
     <FlowNode
       stage={STAGE} state={s} tasks={tasks} order={tasks} shown={tasks.length} filteredOut={0} rules={[]} drag={drag} isListed={false} maxHeight={400}
-      onFilter={() => {}} onClearFilter={() => {}} onList={onList} isTree={isTree} collapsed={collapsed} onToggleGroup={onToggleGroup}
+      onFilter={() => {}} onClearFilter={() => {}} onList={onList} isTree={isTree} collapsed={collapsed} onToggleGroup={onToggleGroup} focus={focus} onFocusTree={onFocusTree}
     />
   );
 }
@@ -128,4 +132,32 @@ test('a collapsed group keeps its header, its › and its count and hides its ca
   expect(onToggleGroup).toHaveBeenLastCalledWith('Build\u0000I1');
   await user.click(within(groupRow('sem árvore')).getByRole('button', { name: 'recolher sem árvore' }));
   expect(onToggleGroup).toHaveBeenLastCalledWith('Build\u0000none');
+});
+
+// #35: a focus on I3 holds I3 and I4 (FOREST: I1 lists I2 and I3, I3 lists I4; I5 and I6 are in no tree)
+const FADED = 'opacity-30';
+const card = (title: string): HTMLElement => screen.getByText(title).closest('li')!;
+const TITLES = ['#1 Task 1', '#2 Task 2', '#3 Task 3', '#4 Task 4', '#5 Task 5', '#6 Task 6'];
+
+test('with a focus, the cards outside it and a header with none of its tasks in it fade; the cards in it, a header holding one and the node count do not; focar › asks to focus that parent (#35)', async () => {
+  const user = userEvent.setup();
+  const onFocusTree = vi.fn();
+  const s = state(FOREST);
+  render(<Node s={s} tasks={s.tasks} isTree focus={new Set(['I3', 'I4'])} onFocusTree={onFocusTree} />);
+  expect(TITLES.filter((title) => card(title).classList.contains(FADED))).toEqual(['#1 Task 1', '#2 Task 2', '#5 Task 5', '#6 Task 6']);
+  expect(groupRow('⑂ #1 Task 1')).not.toHaveClass(FADED);
+  expect(groupRow('sem árvore')).toHaveClass(FADED);
+  const header = screen.getByRole('heading', { level: 3, name: 'Build' }).parentElement as HTMLElement;
+  expect(within(header).getByText('6')).toBeInTheDocument();
+  await user.click(within(card('#3 Task 3')).getByRole('button', { name: 'focar ›' }));
+  expect(onFocusTree).toHaveBeenCalledWith('I3');
+});
+
+test('a collapsed group whose hidden tasks hold the focus keeps its header unfaded; with no focus nothing fades (#35)', () => {
+  const s = state(FOREST);
+  const { rerender } = render(<Node s={s} tasks={s.tasks} isTree collapsed={['Build\u0000I1']} focus={new Set(['I4'])} />);
+  expect(groupRow('⑂ #1 Task 1')).not.toHaveClass(FADED);
+  expect(card('#5 Task 5')).toHaveClass(FADED);
+  rerender(<Node s={s} tasks={s.tasks} isTree collapsed={['Build\u0000I1']} />);
+  expect(document.querySelector(`.${FADED}`)).toBeNull();
 });
