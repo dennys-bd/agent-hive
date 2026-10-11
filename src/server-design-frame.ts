@@ -2,7 +2,7 @@
 // design's folder under the URL's token, outside the secret gate. A sandboxed frame has an opaque origin and no usable credential, so the
 // token is the capability and the route never reads the port's cookie. Every answer carries its own sandboxing policy.
 import { readFile } from 'node:fs/promises';
-import { basename, dirname, extname, resolve } from 'node:path';
+import { basename, dirname, extname, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { bridgeScript } from './design-bridge.js';
@@ -66,25 +66,30 @@ export function withBridge(html: string): string {
   return `${html.slice(0, at)}${bridgeScript()}${html.slice(at)}`;
 }
 
-// The asked file, if it is a regular file strictly inside the token's folder: checked on the joined path (nothing outside is even
-// probed), then on its realpath (a symlink out is caught)
+// A dot segment (.env, .git, .hive) is never a design's asset, and serving one would hand a token holder the checkout's secrets
+const hasDotSegment = (folder: string, path: string): boolean => relative(folder, path).split(sep).some((part) => part.startsWith('.'));
+
+// The asked file, if it is a regular file strictly inside the token's folder and under no dot segment: checked on the joined path (nothing
+// outside is even probed), then on its realpath (a symlink out, or onto a dotfile, is caught)
 async function servedFile(folder: string, segments: string[]): Promise<string | undefined> {
   const asked = resolve(folder, ...segments);
-  if (!isInside(folder, asked)) return undefined;
+  if (!isInside(folder, asked) || hasDotSegment(folder, asked)) return undefined;
   const real = await DISK.realpath(asked).catch(() => undefined);
-  return real !== undefined && isInside(folder, real) && (await DISK.isFile(real)) ? real : undefined;
+  return real !== undefined && isInside(folder, real) && !hasDotSegment(folder, real) && (await DISK.isFile(real)) ? real : undefined;
 }
 
 // A refusal: 404 with no body, so an unknown token, an escape, a folder and a missing file look the same. The debug line names the method
 // alone: the token is a capability and the path is the design's
 function refuseFrame(req: Request, res: Response, log: FrameDeps['log']): void {
   log.debug(`refused design frame: ${req.method}`);
+  if (res.headersSent) return void res.destroy(); // a send that failed midway: no second answer on the same response
   res.status(HTTP_NOT_FOUND).set('content-security-policy', REFUSED_POLICY).end();
 }
 
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
 async function serveFrame(req: Request, res: Response, { tokens, log }: FrameDeps): Promise<void> {
-  res.set({ 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }); // the pane reloads on a version change and must get the new file
+  // no-store: the pane reloads on a version change and must get the new file; no-referrer: the token never leaves in a Referer
+  res.set({ 'x-content-type-options': 'nosniff', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
   const token = String(req.params.token);
   const folder = tokens.folderOf(token);
   const segments: unknown = req.params.path; // Express 5's *path: the decoded segments
@@ -108,13 +113,14 @@ export function registerDesignFrameRoute(app: Express, deps: FrameDeps): void {
 }
 
 // The frame URL of the activity's design: located as the editor locates its file, then refused unless it is a Hive design inside the
-// activity's folder (locate has no inside check, #697)
+// activity's folder (locate has no inside check, #697). A design at the folder's root is refused too: its token would serve the whole checkout
+// where designs belong in their own <designsDir>/<date>-<slug>/ folder
 async function frameUrl(current: Live, id: string, path: unknown, tokens: DesignFrameTokens): Promise<{ url: string } | Refusal> {
   const located = await locate(current, id, path);
   if ('status' in located) return located;
   if (!located.file.endsWith(DESIGN_SUFFIX)) return { status: HTTP_BAD_REQUEST, message: NOT_DESIGN_MESSAGE };
   const folder = await DISK.realpath(located.folder).catch(() => undefined); // locate's file is real; its folder may not be (macOS's tmpdir)
-  if (folder === undefined || !isInside(folder, located.file)) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
+  if (folder === undefined || !isInside(folder, located.file) || dirname(located.file) === folder) return { status: HTTP_NOT_FOUND, message: MISSING_FILE_MESSAGE };
   return { url: `${DESIGN_FRAME_PREFIX}${tokens.mint(dirname(located.file))}/${encodeURIComponent(basename(located.file))}` };
 }
 

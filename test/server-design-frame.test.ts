@@ -63,6 +63,10 @@ async function startFrames(t: TestContext): Promise<Frames> {
   await writeFile(join(worktree, 'secret.txt'), 'outside the design folder\n');
   await symlink(join(worktree, 'secret.txt'), join(design, 'link.css'));
   await writeFile(join(repo, 'outside.hv.html'), DESIGN);
+  await mkdir(join(design, '.git'));
+  await writeFile(join(design, '.env'), 'TOKEN=x\n');
+  await writeFile(join(design, '.git', 'config'), '[core]\n');
+  await writeFile(join(worktree, 'root.hv.html'), DESIGN);
   await saveState(made.home, withWork({ ...initialState(0), localCount: 1, tasks: [TASK] }, 'local:1', { id: savedActivityId(1), slug: SLUG }));
   const { log, lines } = fakeLog();
   const server = createServer({ secret: SECRET, home: made.home, exec: async () => ({ stdout: '' }), log });
@@ -97,6 +101,7 @@ test('a minted URL serves the design without the secret, with the frame policy, 
   assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
   assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(page.headers.get('cache-control'), 'no-store');
+  assert.equal(page.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(await page.text(), DESIGN.replace('<head>', `<head>${bridgeScript()}`));
   const css = await fetch(`${f.base}/design-frame/${token}/style.css`);
   assert.equal(css.status, 200);
@@ -105,7 +110,7 @@ test('a minted URL serves the design without the secret, with the frame policy, 
   assert.equal(await css.text(), CSS);
 });
 
-test('an unknown token, a ../ path, a symlink out of the folder, a folder and a missing file answer 404 with no body, the port\'s cookie and secret changing nothing; the debug line names neither the token nor the path (#108)', async (t) => {
+test('an unknown token, a ../ path, a symlink out of the folder, a folder, a missing file and a dot segment answer 404 with no body, the port\'s cookie and secret changing nothing; the debug line names neither the token nor the path (#108)', async (t) => {
   const f = await startFrames(t);
   const url = await minted(f, 'design/home.hv.html');
   const folder = url.slice(0, url.lastIndexOf('/') + 1);
@@ -113,7 +118,7 @@ test('an unknown token, a ../ path, a symlink out of the folder, a folder and a 
   const credentials = { cookie: `${secretCookie(f.port)}=${SECRET}`, [SECRET_HEADER]: SECRET };
   // %2F keeps ../ inside one segment: fetch's URL parser resolves a bare ../ (and %2e%2e) before the request leaves
   const asked: [string, Record<string, string>][] = [
-    [unknown, {}], [unknown, credentials], [`${folder}..%2Fsecret.txt`, {}], [`${folder}link.css`, {}], [`${folder}assets`, {}], [`${folder}nope.css`, {}],
+    [unknown, {}], [unknown, credentials], [`${folder}..%2Fsecret.txt`, {}], [`${folder}link.css`, {}], [`${folder}assets`, {}], [`${folder}nope.css`, {}], [`${folder}.env`, {}], [`${folder}.git/config`, {}],
   ];
   for (const [path, headers] of asked) {
     const res = await fetch(`${f.base}${path}`, { headers });
@@ -125,7 +130,7 @@ test('an unknown token, a ../ path, a symlink out of the folder, a folder and a 
   assert.ok(!f.lines.some((line) => line.includes(token) || line.includes('secret.txt') || line.includes('0'.repeat(64))), 'no token, no path in hive.log');
 });
 
-test('the mint stays behind the gate: 403 without the secret; 400 for a file that is not a .hv.html; 404 for a design outside the worktree or an unknown activity (#108)', async (t) => {
+test('the mint stays behind the gate: 403 without the secret; 400 for a file that is not a .hv.html; 404 for a design outside the worktree, at its root, or of an unknown activity (#108)', async (t) => {
   const f = await startFrames(t);
   const bare = await mint(f, 'design/home.hv.html', fetch);
   assert.equal(bare.status, 403);
@@ -136,6 +141,8 @@ test('the mint stays behind the gate: 403 without the secret; 400 for a file tha
   const outside = await mint(f, join(f.repo, 'outside.hv.html'));
   assert.equal(outside.status, 404);
   assert.deepEqual(await outside.json(), { error: 'file not found' });
+  const atRoot = await mint(f, 'root.hv.html'); // its token would serve the whole worktree
+  assert.equal(atRoot.status, 404);
   const unknown = await hiveFetch(`${f.base}/activities/${savedActivityId(99)}/design-frame?path=design%2Fhome.hv.html`);
   assert.equal(unknown.status, 404);
 });
