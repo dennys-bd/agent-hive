@@ -40,6 +40,11 @@ test('the header shows the name, the count and ● N in waiting for the tasks aw
   expect(within(header).queryByText('auto')).not.toBeInTheDocument();
 });
 
+test('the node is 220px wide, the width the chart lays it out at (#54)', () => {
+  const { container } = render(<Node s={state([])} tasks={[]} />);
+  expect(container.querySelector<HTMLElement>('[data-stage="Build"]')!.style.width).toBe('220px');
+});
+
 test('the footer appears only when the list overflows: rola para ver N and lista ›, which opens the list (#134)', async () => {
   const user = userEvent.setup();
   const s = state([task('1'), task('2'), task('3'), task('4')]);

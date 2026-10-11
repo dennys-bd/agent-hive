@@ -5,6 +5,7 @@ import type { FilterRule, Stage, State, Task } from '../../types';
 import { stageWorkerCount } from '../../worker-count';
 import { act } from '@/components/actions';
 import { Confirm } from '@/components/Confirm';
+import { NODE_WIDTH } from '@/components/FlowChart';
 import { FlowTask } from '@/components/FlowTask';
 import { FilterIndicator } from '@/components/StageFilter';
 import { StageMenu } from '@/components/StageMenu';
@@ -69,7 +70,7 @@ interface FlowNodeProps {
   isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void;
 }
 
-/** A stage as a node of the flowchart (#134, 1b): 190px, its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
+/** A stage as a node of the flowchart (#134, 1b): NODE_WIDTH wide (#54), its header (name, count, ● N out of tries (#913), ● N awaiting you, ⋯), who runs it, the view filter's indicator
  * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
@@ -80,7 +81,7 @@ export function FlowNode(props: FlowNodeProps) {
   const { draggedId, dropBefore, taskDragProps, dropAtEnd, dragOverEnd, onListDragLeave } = useStageDrag(drag, stage, order, state);
   const tailDrop = dropBefore !== undefined && (dropBefore === 'end' || !tasks.some((c) => c.item.itemId === dropBefore));
   return (
-    <div data-stage={stage.name} style={{ maxHeight }} className={`flex w-[190px] flex-col gap-1.5 rounded-xl border bg-card py-2 pl-2 ${isListed ? 'border-foreground' : ''}`}>
+    <div data-stage={stage.name} style={{ maxHeight, width: NODE_WIDTH }} className={`flex flex-col gap-1.5 rounded-xl border bg-card py-2 pl-2 ${isListed ? 'border-foreground' : ''}`}>
       <div className="flex flex-none items-center gap-1.5 pr-2 text-muted-foreground text-xs">
         <h3 className="truncate font-medium text-foreground">{stage.name}</h3>
         <span>{shown}</span>

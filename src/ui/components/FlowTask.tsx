@@ -4,7 +4,7 @@ import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
 import { progress } from '../../task-tree';
-import { taskLabel, isBlocked, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
+import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
 import { taskAutoBadge } from '@/lib/auto-badge';
@@ -68,7 +68,23 @@ const TONE_RING: Record<Tone, string> = {
 
 interface TaskStatus { tone?: Tone; text?: string }
 
-const blockedText = (task: Task): string => t('task.blockedBy', { ids: (task.item.blockedBy ?? []).join(', ') });
+// #54: the blockers the ⊘ line names. An epic's blockedBy holds its open sub-issues too, and its footer already counts its children, so
+// those are left out; a sub-issue off the Project is not a task here and still shows, until #55's Item.blockers tells them apart
+function shownBlockers(task: Task, state: State): string[] {
+  const blockers = task.item.blockedBy ?? [];
+  if (task.item.epic === undefined) return blockers;
+  const children = new Set(task.item.children ?? []);
+  const childIds = new Set(state.tasks.filter((c) => children.has(c.item.itemId)).map((c) => c.item.id));
+  return blockers.filter((id) => !childIds.has(id));
+}
+
+// #54: the blocker's own line between the title and the footer, in every state
+function BlockedLine({ task, state }: { task: Task; state: State }) {
+  const ids = shownBlockers(task, state);
+  if (ids.length === 0) return null;
+  const text = `⊘ ${t('task.blockedBy', { ids: ids.join(', ') })}`;
+  return <span className="truncate text-muted-foreground text-xs" title={text}>{text}</span>;
+}
 
 // #31: a show epic's line: its direct children done over all of them, against the flow's last stage
 function waitingText(task: Task, state: State): string {
@@ -102,9 +118,8 @@ function taskStatus(task: Task, state: State): TaskStatus {
     return tone === undefined ? { text: waiting } : { tone, text: waiting };
   }
   if (live?.error !== undefined) return { text: taskError(live.error) }; // #755, #834: a stage action's failure in the viewer's language
-  const blocked = startMode(task, state) === 'none' && isBlocked(task.item) && stageOf(state.stages, task.stage)?.action === undefined;
   if (byAction) return { tone: 'working', text: statusText('working') }; // an action whose progress has nothing to say yet
-  return blocked ? { text: blockedText(task) } : current === 'new' ? { text: statusText('new') } : {}; // #727: new, muted
+  return current === 'new' ? { text: statusText('new') } : {}; // #727: new, muted; #54: a blocker has its own line, not the footer
 }
 
 // The title (#134, 1b): the workspace's colour square before the id, its name as the square's title, two lines at most. No square when no rule
@@ -225,8 +240,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       <TaskTitle task={task} state={state} />
       <PrLine task={task} state={state} />
       <SyncLine task={task} state={state} /> {/* #854 */}
-      {/* The approval status hides the blocker in the footer, so it gets its own line; approving still works (#595) */}
-      {live?.approval && isBlocked(task.item) && <span className="truncate text-muted-foreground text-xs">⊘ {blockedText(task)}</span>}
+      <BlockedLine task={task} state={state} />
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
         {task.auto && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
