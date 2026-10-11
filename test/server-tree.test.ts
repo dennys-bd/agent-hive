@@ -4,7 +4,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { FOLDER_QUERY_MESSAGE, parseStatus, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, nestedRepoOf, parseStatus, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
@@ -63,6 +63,26 @@ test('parseStatus marks changed files M and new, untracked or renamed ones A, dr
   const { marks, deleted } = parseStatus(STATUS);
   assert.deepEqual(marks, { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' });
   assert.deepEqual([...deleted], ['gone.txt']);
+});
+
+test('repoViewOf marks the folder\'s direct child files as the outer tree does, leaves a deeper path and a deletion out, reads a rename as new, and names the children the nested repository ignores, an ignored folder covering its subtree (#1)', () => {
+  const status = [' M agent/foo.md', '?? agent/new.md', ' M agent/deep/y.md', ' D agent/gone.md', 'R  agent/moved.md', 'agent/was.md', '!! agent/x.log', '!! agent/old/', '!! agent/deep/z.log', ''].join('\0');
+  const children = { files: ['foo.md', 'moved.md', 'new.md', 'tracked.md', 'x.log'], folders: ['deep', 'old'] };
+  assert.deepEqual(repoViewOf(status, 'agent', children), { marks: { 'foo.md': 'M', 'moved.md': 'A', 'new.md': 'A' }, ignored: ['old', 'x.log'] });
+  // the read folder inside an ignored one: git names only the folder, `dir/`, and every child sits under it
+  assert.deepEqual(repoViewOf(['!! agent/old/', ''].join('\0'), 'agent/old', { files: ['a.txt'], folders: ['b'] }), { marks: {}, ignored: ['a.txt', 'b'] });
+  // the nested repository's own root: no prefix
+  assert.deepEqual(repoViewOf([' M README.md', '!! build/', ''].join('\0'), '', { files: ['README.md'], folders: ['build'] }), { marks: { 'README.md': 'M' }, ignored: ['build'] });
+});
+
+test('nestedRepoOf answers the nearest folder holding .git from the read folder up, a repository inside a nested one for its own files, the tree\'s root left out (#1)', async () => {
+  const repos = new Set(['/wt', '/wt/docs', '/wt/docs/vendor/lib']);
+  const hasGit = async (folder: string): Promise<boolean> => repos.has(folder);
+  assert.equal(await nestedRepoOf('/wt', 'docs', hasGit), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/agent/specs', hasGit), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/vendor/lib/src', hasGit), 'docs/vendor/lib');
+  assert.equal(await nestedRepoOf('/wt', 'node_modules/x', hasGit), undefined);
+  assert.equal(await nestedRepoOf('/wt', '', hasGit), undefined);
 });
 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {

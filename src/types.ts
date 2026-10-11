@@ -680,10 +680,12 @@ export interface IgnoredEntries {
   folders: string[]; // without the trailing /
 }
 
-/** A folder's direct children on disk (HIVE-22), names only, `.git` left out. */
+/** A folder's direct children on disk (HIVE-22), names only, `.git` left out. Inside a nested repository (#1), that repository's view of
+ *  them: `marks` by name, and the names it ignores. Absent outside a nested repository. */
 export interface FolderEntries {
   files: string[];
   folders: string[];
+  repo?: { marks: Record<string, GitMark>; ignored: string[] };
 }
 
 /** The diffs a task offers (#270, #591): what its current stage changed, everything its worktree changed, or its last commit. */

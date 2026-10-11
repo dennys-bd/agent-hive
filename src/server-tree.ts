@@ -24,6 +24,7 @@ const NO_WORKTREE_MESSAGE = 'tarefa sem worktree no disco';
 const TREE_MAX_BYTES = 16 * 1024 * 1024; // a monorepo's path list passes execFile's 1 MB default long before it bothers the page
 const RENAME_OR_COPY = /^[RC]/;
 const MIN_ENTRY = 4; // `XY p`: two status letters, a space, at least one character of path
+const IGNORED_XY = '!!'; // #1: what a status run with --ignored says of an ignored path
 // HIVE-22: what git ignores, outermost: `dir/` for a folder it never walked into, a path for a file
 const IGNORED_ARGS = ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'];
 
@@ -34,21 +35,38 @@ const refuse = (res: Response, refusal: Refusal): void => {
 const markOf = (xy: string): GitMark => (xy === '??' || RENAME_OR_COPY.test(xy) || xy.startsWith('A') ? 'A' : 'M');
 
 /** `git status --porcelain=v1 -z` as marks and removed paths (redesign 07). A rename or copy carries its old path as the next entry, which is
- *  skipped: the new path reads as new. Pure: no git. */
-export function parseStatus(text: string): { marks: Record<string, GitMark>; deleted: Set<string> } {
+ *  skipped: the new path reads as new; with --ignored, the `!!` entries as ignored paths (#1). Pure: no git. */
+export function parseStatus(text: string): { marks: Record<string, GitMark>; deleted: Set<string>; ignored: string[] } {
   const entries = text.split('\0');
   const marks: Record<string, GitMark> = {};
   const deleted = new Set<string>();
+  const ignored: string[] = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     if (entry.length < MIN_ENTRY) continue; // the trailing empty entry
     const xy = entry.slice(0, 2);
     const path = entry.slice(3);
     if (RENAME_OR_COPY.test(xy)) i++;
-    if (xy.includes('D')) deleted.add(path);
+    if (xy === IGNORED_XY) ignored.push(path);
+    else if (xy.includes('D')) deleted.add(path);
     else marks[path] = markOf(xy);
   }
-  return { marks, deleted };
+  return { marks, deleted, ignored };
+}
+
+/** A nested repository's view of a folder's children (#1), from its `git status` limited to that folder (paths relative to the repository):
+ *  the direct child files' marks, as parseStatus reads them, and the children it ignores, an ignored folder (`dir/`) covering its subtree.
+ *  `inRepo` is the folder relative to the repository, '' at its root. Only names on disk; sorted. Pure: no git. */
+export function repoViewOf(status: string, inRepo: string, children: FolderEntries): NonNullable<FolderEntries['repo']> {
+  const prefix = inRepo === '' ? '' : `${inRepo}/`;
+  const { marks, ignored } = parseStatus(status);
+  const isIgnored = (name: string): boolean => {
+    const path = `${prefix}${name}`;
+    return ignored.some((entry) => entry === path || entry === `${path}/` || (entry.endsWith('/') && path.startsWith(entry)));
+  };
+  // hasOwn: a file named `constructor` must not pick up Object's
+  const childMarks = children.files.flatMap((name) => (Object.hasOwn(marks, `${prefix}${name}`) ? [[name, marks[`${prefix}${name}`]] as const] : []));
+  return { marks: Object.fromEntries(childMarks), ignored: [...children.folders, ...children.files].filter(isIgnored).sort() };
 }
 
 // --no-optional-locks: a status refreshes the index, and its lock would race the worker's own git; core.fsmonitor=false as in diff.ts.
@@ -57,6 +75,15 @@ const git = (worktree: string, args: string[], exec: Exec): Promise<string> =>
     .then(({ stdout }) => stdout, (err: unknown) => { throw new Error(wordsOf(err)); });
 
 const holdsGit = (folder: string): Promise<boolean> => access(join(folder, '.git')).then(() => true, () => false);
+
+/** The nested repository a folder of the tree lies in (#1): the nearest folder holding .git (a directory, or a worktree's file) from `folder`
+ *  up, so a repository inside a nested one answers for its own files. The tree's root is left out: its own git already marks the tree.
+ *  Relative to `root`, as `folder` is ('' is the root); undefined outside any. */
+export async function nestedRepoOf(root: string, folder: string, hasGit: (folder: string) => Promise<boolean>): Promise<string | undefined> {
+  const candidates = folder === '' ? [] : folder.split('/').map((_, i, parts) => parts.slice(0, i + 1).join('/')).reverse();
+  const holds = await Promise.all(candidates.map((candidate) => hasGit(join(root, candidate))));
+  return candidates.find((_, i) => holds[i]);
+}
 
 // The --directory listing's folders no listed file sits under (#818), relative, without their trailing /: the empty ones, and the nested
 // repositories (they hold .git), which the tree shows as ignored folders (HIVE-22). ponytail: git lists a folder that holds only empty
