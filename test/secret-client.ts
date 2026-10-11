@@ -11,3 +11,9 @@ export function hiveFetch(input: string | URL, init: RequestInit = {}): Promise<
   headers.set(SECRET_HEADER, SECRET);
   return fetch(input, { ...init, headers });
 }
+
+/** A CSP directive's sources, split on spaces; undefined when the policy has no such directive. */
+export function directive(policy: string, name: string): string[] | undefined {
+  const found = policy.split(';').map((part) => part.trim().split(/\s+/)).find(([key]) => key === name);
+  return found?.slice(1);
+}

@@ -58,8 +58,9 @@ import { shellCwd } from './shell-procs.js';
 import { removeTerminalFiles, restoreScrollbacks } from './terminal-files.js';
 import { allowedHosts, attachPtySocket, type PtySocket } from './server-pty-socket.js';
 import { SECRET_FILE } from './daemon-files.js';
-import { matchesSecret, PAGE_POLICY, presentedSecret } from './secret.js';
+import { matchesSecret, pagePolicy, presentedSecret } from './secret.js';
 import { registerConsoleRoutes } from './server-console.js';
+import { createDesignFrameTokens, registerDesignFrameMint, registerDesignFrameRoute } from './server-design-frame.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
 import { registerOpenRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
@@ -755,6 +756,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const app = express();
+  const designFrames = createDesignFrameTokens(); // #108: one store per boot, written by the mint and read by the frame route
 
   // Rejects DNS-rebinding / cross-origin requests that don't target this exact bound
   // address: hooks and the UI always call http://127.0.0.1:<port> or localhost:<port>.
@@ -764,6 +766,13 @@ export function createServer(deps: ServerDeps): HiveServer {
       res.status(HTTP_FORBIDDEN).json({ error: FORBIDDEN_HOST_MESSAGE });
       return;
     }
+    next();
+  });
+  // #108: between the Host check and the secret. The sandboxed frame presents no credential: its URL's token is the capability, and the
+  // route never reads the port's cookie
+  registerDesignFrameRoute(app, { tokens: designFrames, log });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const port = boundPort ?? 0; // the Host check above refused every request before listen bound the port
     // The Host check stops a web page, not a process: anything that reaches 127.0.0.1 knows the header names, another account's process
     // included. Only this boot's secret opens the daemon (#467): hive.secret (0600), a worker's env, the viewer's cookie. The log line
     // names the request, never the value presented.
@@ -1033,6 +1042,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
   registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, events: wiring.events });
   registerTaskRoutes(app, taskDeps);
+  registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since
   // throws (EBADF, as the input effect meets it): that delivery failed, the others go on.
   const write = (ptyId: string, data: string): boolean => {
@@ -1125,7 +1135,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // under a dot-directory (e.g. a .claude worktree) would otherwise 404 every request, the leading segment
   // of the absolute path always failing containsDotFile.
   app.use((_req: Request, res: Response, next: NextFunction) => {
-    res.set('content-security-policy', PAGE_POLICY); // every page and asset below: the port's cookie never reaches another port (#467)
+    res.set('content-security-policy', pagePolicy(boundPort ?? 0)); // every page and asset below: the port's cookie never reaches another port (#467); frames only from the design frame route (#108). The Host check refused every request before listen bound the port
     next();
   });
   app.get('/', (_req: Request, res: Response) => res.sendFile('index.html', { root: UI_DIR }));

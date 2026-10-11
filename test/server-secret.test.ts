@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { newSecret, SECRET_HEADER, secretCookie } from '../src/secret.js';
 import { createServer } from '../src/server.js';
 import { fakeLog } from './fakes.js';
-import { SECRET } from './secret-client.js';
+import { directive, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
 // A daemon in setup mode on a free port: every route below answers before any config exists, so whatever refuses a request is the gate (#467)
@@ -61,14 +61,8 @@ test('a refusal is logged at debug with its method and path, never with a value 
   assert.ok(!lines.some((line) => line.includes(presented) || line.includes(SECRET)), 'no secret in a log line');
 });
 
-// The directive's sources, split on spaces; undefined when the policy has no such directive
-function directive(policy: string, name: string): string[] | undefined {
-  const found = policy.split(';').map((part) => part.trim().split(/\s+/)).find(([key]) => key === name);
-  return found?.slice(1);
-}
-
-test('the pages answer with a Content-Security-Policy: images and media never reach an http: listener, connections stay same-origin, no object, frame or base (#467)', async (t) => {
-  const { base } = await start(t);
+test('the pages answer with a Content-Security-Policy: images and media never reach an http: listener, connections stay same-origin, no object or base, frames only from the design frame route (#467, #108)', async (t) => {
+  const { base, port } = await start(t);
   for (const path of ['/', '/terminal.html']) {
     const res = await fetch(`${base}${path}`, { headers: { [SECRET_HEADER]: SECRET } });
     assert.equal(res.status, 200, path);
@@ -79,6 +73,7 @@ test('the pages answer with a Content-Security-Policy: images and media never re
       assert.ok(!sources.includes('http:') && !sources.includes('*'), `${path} ${name}: another 127.0.0.1 port would get the port's cookie`);
     }
     assert.deepEqual(directive(policy, 'connect-src'), ["'self'"], `${path}: ${policy}`);
-    for (const name of ['object-src', 'frame-src', 'base-uri']) assert.deepEqual(directive(policy, name), ["'none'"], `${path} ${name}`);
+    for (const name of ['object-src', 'base-uri']) assert.deepEqual(directive(policy, name), ["'none'"], `${path} ${name}`);
+    assert.deepEqual(directive(policy, 'frame-src'), [`http://127.0.0.1:${port}/design-frame/`, `http://localhost:${port}/design-frame/`], `${path}: the design frame route alone (#108)`);
   }
 });
