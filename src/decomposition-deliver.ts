@@ -4,8 +4,9 @@
 import { dirname, relative } from 'node:path';
 import { PR_KEY } from './decomposition.js';
 import type { WriteDeps } from './decomposition-write.js';
+import { ownerName } from './repos/github-repos.js';
 import { originRepository } from './repos/repositories.js';
-import { CREATE_PULL_REQUEST, type CreatePullRequestData } from './sources/github-queries.js';
+import { CREATE_PULL_REQUEST, type CreatePullRequestData, OPEN_PULL_REQUEST, type OpenPullRequestData } from './sources/github-queries.js';
 import type { Exec } from './types.js';
 
 /** The file's checkout (#936): its toplevel, its origin's owner/name, its current branch, and the file's path relative to the toplevel. */
@@ -32,11 +33,22 @@ export interface DeliverDeps extends WriteDeps { exec: Exec }
  * repository (owner/name), which the PR names it in. */
 export interface DeliverTarget { checkout: FileCheckout; repositoryId: string; base: string; root: number; goal: string }
 
-// git's own words: Node's message carries the command, an absolute path included
+/** Why the file cannot be delivered (#936), or undefined: its checkout sits on the repository's default branch (the Hive never pushes it) or the
+ * file is not a .md. Nothing is pushed once `pr` is recorded, so a recorded one is never refused. Checked before any issue is written. */
+export function deliveryRefusal(checkout: FileCheckout, defaultBranch: string, recorded: Readonly<Record<string, number>>): string | undefined {
+  if (recorded[PR_KEY] !== undefined) return undefined;
+  if (checkout.branch === defaultBranch) return `the decomposition file's checkout is on ${checkout.repository}'s default branch (${defaultBranch}): the Hive never pushes it`;
+  if (!checkout.path.endsWith('.md')) return 'the decomposition file is not a .md file';
+  return undefined;
+}
+
+// git's own words: Node's message carries the command, an absolute path included. A remote's URL may carry its credentials: userinfo is
+// removed before the words leave
+const redacted = (text: string): string => text.replace(/:\/\/[^@\/\s]+@/g, '://');
 const messageOf = (err: unknown): string => {
   const e = err as { stderr?: unknown };
   const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
-  return stderr !== '' ? stderr : err instanceof Error ? err.message : String(err);
+  return redacted(stderr !== '' ? stderr : err instanceof Error ? err.message : String(err));
 };
 
 // The PR may sit in a docs repository: it names the root issue with its own repository, and closes nothing
@@ -46,24 +58,42 @@ const prBody = (t: DeliverTarget): string =>
 
 // The file's own changes only: a hand edit in the editor pane is committed, nothing else of the checkout slips in
 async function commitFile(exec: Exec, { toplevel, path }: FileCheckout, root: number): Promise<void> {
-  const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', toplevel, ...args]);
+  // literal: a name with glob or magic characters matches only itself, never other files of the checkout
+  const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['--literal-pathspecs', '-C', toplevel, ...args]);
   if ((await git('status', '--porcelain', '--', path)).stdout.trim() === '') return;
   await git('add', '--', path);
   await git('commit', '-m', `docs: decomposition for #${root}`, '--', path);
 }
 
+// GitHub refuses a second PR for the same head: the open one is the delivery's PR. Absent when there is none
+async function openPullRequest(deps: DeliverDeps, t: DeliverTarget): Promise<number | undefined> {
+  const variables = { ...ownerName(t.checkout.repository), head: t.checkout.branch, base: t.base };
+  const data = (await deps.gql(OPEN_PULL_REQUEST, variables)) as OpenPullRequestData;
+  return data.repository?.pullRequests?.nodes?.[0]?.number;
+}
+
+// The PR's number: the one created, else, when GitHub refuses (a crash between its opening and the record leaves one), the open one
+async function pullRequestNumber(deps: DeliverDeps, t: DeliverTarget): Promise<number> {
+  const variables = { repositoryId: t.repositoryId, baseRefName: t.base, headRefName: t.checkout.branch, title: prTitle(t), body: prBody(t) };
+  try {
+    const pr = ((await deps.gql(CREATE_PULL_REQUEST, variables)) as CreatePullRequestData).createPullRequest?.pullRequest;
+    if (!pr) throw new Error('createPullRequest answered no pull request');
+    return pr.number;
+  } catch (err) {
+    const open = await openPullRequest(deps, t).catch(() => undefined);
+    if (open === undefined) throw err;
+    return open;
+  }
+}
+
 /** The delivery (#936), after the issues and links: undefined once the PR is recorded, or when `pr` already was; else the first error, and
- * nothing is recorded. ponytail: a crash between GitHub opening the PR and the record leaves GitHub refusing a second one for the same head
- * (the spec accepts the same window for issues) */
+ * nothing is recorded. */
 export async function deliverDecomposition(deps: DeliverDeps, t: DeliverTarget, recorded: Readonly<Record<string, number>>): Promise<string | undefined> {
   if (recorded[PR_KEY] !== undefined) return undefined;
   try {
     await commitFile(deps.exec, t.checkout, t.root);
     await deps.exec('git', ['-C', t.checkout.toplevel, 'push', '-u', 'origin', t.checkout.branch]);
-    const variables = { repositoryId: t.repositoryId, baseRefName: t.base, headRefName: t.checkout.branch, title: prTitle(t), body: prBody(t) };
-    const pr = ((await deps.gql(CREATE_PULL_REQUEST, variables)) as CreatePullRequestData).createPullRequest?.pullRequest;
-    if (!pr) throw new Error('createPullRequest answered no pull request');
-    await deps.record(PR_KEY, pr.number);
+    await deps.record(PR_KEY, await pullRequestNumber(deps, t));
     return undefined;
   } catch (err) {
     return messageOf(err);

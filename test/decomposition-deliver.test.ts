@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deliverDecomposition, type DeliverTarget, fileCheckout } from '../src/decomposition-deliver.js';
-import { CREATE_PULL_REQUEST } from '../src/sources/github-queries.js';
+import { deliverDecomposition, type DeliverTarget, deliveryRefusal, fileCheckout } from '../src/decomposition-deliver.js';
+import { CREATE_PULL_REQUEST, OPEN_PULL_REQUEST } from '../src/sources/github-queries.js';
 import type { Exec } from '../src/types.js';
 import { fakeGqlJson } from './fakes.js';
 
@@ -71,9 +71,9 @@ test('a dirty file is committed alone in its checkout, the branch pushed, and on
   const { recorded, record } = recorder();
   assert.equal(await deliverDecomposition({ exec, gql, record }, TARGET, {}), undefined);
   assert.deepEqual(calls, [
-    ['git', '-C', '/docs-repo', 'status', '--porcelain', '--', PATH],
-    ['git', '-C', '/docs-repo', 'add', '--', PATH],
-    ['git', '-C', '/docs-repo', 'commit', '-m', 'docs: decomposition for #7', '--', PATH],
+    ['git', '--literal-pathspecs', '-C', '/docs-repo', 'status', '--porcelain', '--', PATH],
+    ['git', '--literal-pathspecs', '-C', '/docs-repo', 'add', '--', PATH],
+    ['git', '--literal-pathspecs', '-C', '/docs-repo', 'commit', '-m', 'docs: decomposition for #7', '--', PATH],
     ['git', '-C', '/docs-repo', 'push', '-u', 'origin', 'hive/7-site'],
   ]);
   const [pr] = asked.map((c) => c.variables);
@@ -85,7 +85,7 @@ test('a dirty file is committed alone in its checkout, the branch pushed, and on
 test('a clean file is not committed again (#936)', async () => {
   const { calls, exec } = deliverGit(false);
   assert.equal(await deliverDecomposition({ exec, gql: github().gql, record: recorder().record }, TARGET, {}), undefined);
-  assert.deepEqual(calls.map((c) => c[3]), ['status', 'push']);
+  assert.deepEqual(calls.map((c) => c.find((a) => ['status', 'push'].includes(a))), ['status', 'push']);
 });
 
 test('a recorded pr skips the delivery: nothing committed, pushed or opened (#936)', async () => {
@@ -101,4 +101,53 @@ test('a failed push answers git\'s own words and opens no PR (#936)', async () =
   const { recorded, record } = recorder();
   assert.equal(await deliverDecomposition({ exec, gql, record }, TARGET, {}), 'rejected: non-fast-forward');
   assert.deepEqual([asked, recorded], [[], []]);
+});
+
+test('git reads the file\'s path literally: a name with glob characters matches only itself (#936)', async () => {
+  const { calls, exec } = deliverGit(true);
+  const odd = { ...TARGET, checkout: { ...TARGET.checkout, path: 'agent/specs/[a]*?.md' } };
+  assert.equal(await deliverDecomposition({ exec, gql: github().gql, record: recorder().record }, odd, {}), undefined);
+  const withPath = calls.filter((c) => c.includes('agent/specs/[a]*?.md'));
+  assert.equal(withPath.length, 3);
+  assert.ok(withPath.every((c) => c[1] === '--literal-pathspecs' && c[2] === '-C'));
+});
+
+test('credentials in git\'s words are removed before they are answered (#936)', async () => {
+  const exec: Exec = async (_file, args) => {
+    if (args.includes('push')) throw Object.assign(new Error('Command failed'), { stderr: 'fatal: unable to access \'https://octo:ghp_secret@github.com/acme/docs.git/\': denied\n' });
+    return { stdout: '' };
+  };
+  const answer = await deliverDecomposition({ exec, gql: github().gql, record: recorder().record }, TARGET, {});
+  assert.equal(answer, 'fatal: unable to access \'https://github.com/acme/docs.git/\': denied');
+});
+
+// GitHub refuses a second PR for the same head: the open one is found and recorded, else the refusal is answered
+function refusingGithub(open: number | undefined) {
+  return fakeGqlJson((query) => {
+    if (query === CREATE_PULL_REQUEST) throw new Error('A pull request already exists for acme:hive/7-site.');
+    if (query === OPEN_PULL_REQUEST) return { repository: { pullRequests: { nodes: open === undefined ? [] : [{ number: open }] } } };
+    return {};
+  });
+}
+
+test('when GitHub refuses the PR and one is open for that head and base, it is recorded as pr and the delivery goes on (#936)', async () => {
+  const { calls, gql } = refusingGithub(299);
+  const { recorded, record } = recorder();
+  assert.equal(await deliverDecomposition({ exec: deliverGit(false).exec, gql, record }, TARGET, {}), undefined);
+  assert.deepEqual(recorded, [['pr', 299]]);
+  assert.deepEqual(calls.find((c) => c.query === OPEN_PULL_REQUEST)?.variables, { owner: 'acme', name: 'docs', head: 'hive/7-site', base: 'main' });
+});
+
+test('when GitHub refuses the PR and none is open, the original error is answered and nothing is recorded (#936)', async () => {
+  const { recorded, record } = recorder();
+  assert.equal(await deliverDecomposition({ exec: deliverGit(false).exec, gql: refusingGithub(undefined).gql, record }, TARGET, {}), 'A pull request already exists for acme:hive/7-site.');
+  assert.deepEqual(recorded, []);
+});
+
+test('deliveryRefusal: the default branch, a file that is not .md and a recorded pr (#936)', () => {
+  const checkout = TARGET.checkout;
+  assert.equal(deliveryRefusal(checkout, 'main', {}), undefined);
+  assert.match(String(deliveryRefusal({ ...checkout, branch: 'main' }, 'main', {})), /default branch/);
+  assert.match(String(deliveryRefusal({ ...checkout, path: 'agent/notes.txt' }, 'main', {})), /\.md/);
+  assert.equal(deliveryRefusal({ ...checkout, branch: 'main' }, 'main', { pr: 3 }), undefined, 'delivered already: nothing will be pushed');
 });
