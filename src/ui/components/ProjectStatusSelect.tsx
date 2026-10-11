@@ -1,6 +1,7 @@
-import { CheckIcon, ChevronDownIcon } from 'lucide-react';
+import { CheckIcon } from 'lucide-react';
 import type { ProjectItem, ProjectView } from '../../types';
 import { act } from '@/components/actions';
+import { FieldCell } from '@/components/FieldCell';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
 
@@ -19,10 +20,7 @@ export function ProjectStatusSelect({ source, itemId, status, statuses, onRow }:
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="flex max-w-full items-center gap-1 rounded-[5px] border px-2 py-0.5 text-xs">
-          <span className="truncate">{status ?? '—'}</span>
-          <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground" />
-        </button>
+        <FieldCell><span className="truncate">{status ?? '—'}</span></FieldCell>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[240px]">
         <DropdownMenuLabel className="flex justify-between font-normal text-muted-foreground text-xs">

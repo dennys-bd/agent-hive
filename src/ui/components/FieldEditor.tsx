@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { STATUS } from '../../field-values';
 import type { FieldValue, ItemField } from '../../types';
+import { FieldCell } from '@/components/FieldCell';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -10,7 +11,6 @@ import { type FieldAnswer, readFields, writeField } from '@/hooks/use-item-field
 import { t } from '@/i18n';
 
 const MUTED = 'text-muted-foreground';
-const TRIGGER = 'flex min-h-5 w-full min-w-0 items-center text-left disabled:opacity-50';
 
 export interface FieldEditorProps {
   itemId: string; // namespaced: the source is its prefix
@@ -59,7 +59,7 @@ function ChoiceEditor({ itemId, field, display, onWritten }: EditorProps) {
   return (
     <DropdownMenu onOpenChange={(isOpen) => { if (isOpen) load(); }}>
       <DropdownMenuTrigger asChild disabled={isBusy}>
-        <button type="button" aria-label={t('field.edit', { field: field.name })} className={TRIGGER}>{display}</button>
+        <FieldCell aria-label={t('field.edit', { field: field.name })}>{display}</FieldCell>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-[320px] w-[220px] overflow-y-auto">
         {options === undefined && <p className={`px-2 py-1.5 text-xs ${MUTED}`}>{t('project.loading')}</p>}
@@ -80,24 +80,24 @@ function ChoiceEditor({ itemId, field, display, onWritten }: EditorProps) {
   );
 }
 
-// The assignees (IssueLabelsPopover's pattern): a checkbox per login, the current ones first; a toggle writes the whole new set
-function AssigneesEditor({ itemId, field, display, onWritten }: EditorProps) {
+// The assignees and the labels (IssueLabelsPopover's pattern): a checkbox per value, the current ones first; a toggle writes the whole new set
+function MultiEditor({ itemId, field, display, onWritten }: EditorProps) {
   const { isBusy, write } = useWrite(itemId, field, onWritten);
   const { options, load } = useOptions(itemId, field);
   const current = Array.isArray(field.value) ? field.value : [];
-  const toggle = (login: string): void => void write(current.includes(login) ? current.filter((l) => l !== login) : [...current, login]);
+  const toggle = (value: string): void => void write(current.includes(value) ? current.filter((v) => v !== value) : [...current, value]);
   return (
     <Popover onOpenChange={(isOpen) => { if (isOpen) load(); }}>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={t('field.edit', { field: field.name })} className={TRIGGER}>{display}</button>
+        <FieldCell aria-label={t('field.edit', { field: field.name })}>{display}</FieldCell>
       </PopoverTrigger>
       <PopoverContent align="start" className="flex max-h-[320px] w-[220px] flex-col gap-1 overflow-y-auto p-2">
         {options === undefined
           ? <p className={`text-xs ${MUTED}`}>{t('project.loading')}</p>
-          : [...new Set([...current, ...options])].map((login) => (
-            <label key={login} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted">
-              <input type="checkbox" checked={current.includes(login)} disabled={isBusy} onChange={() => toggle(login)} />
-              {login}
+          : [...new Set([...current, ...options])].map((value) => (
+            <label key={value} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted">
+              <input type="checkbox" checked={current.includes(value)} disabled={isBusy} onChange={() => toggle(value)} />
+              {value}
             </label>
           ))}
       </PopoverContent>
@@ -141,7 +141,7 @@ function InputEditor({ itemId, field, display, onWritten }: EditorProps) {
       isClosed.current = false;
       setDraft(field.value === null ? '' : String(field.value));
     };
-    return <button type="button" aria-label={t('field.edit', { field: field.name })} disabled={isBusy} className={TRIGGER} onClick={open}>{display}</button>;
+    return <FieldCell aria-label={t('field.edit', { field: field.name })} disabled={isBusy} onClick={open}>{display}</FieldCell>;
   }
   return (
     <Input
@@ -151,13 +151,13 @@ function InputEditor({ itemId, field, display, onWritten }: EditorProps) {
   );
 }
 
-/** One field's editor (#686), by kind: a choice menu, the assignees' checkboxes, or a text, number or date input. A read-only kind is its value
+/** One field's editor (#686), by kind: a choice menu, the assignees' or the labels' checkboxes, or a text, number or date input. A read-only kind is its value
  * as text. Each write goes to the source at once; its answer (the re-read fields and row) is the caller's to show. */
 export function FieldEditor(props: FieldEditorProps) {
   const { field } = props;
   const editor: EditorProps = { ...props, display: props.display ?? <FieldText value={field.value} /> };
   if (field.readOnly) return <span className="min-w-0 truncate" title={t('field.readOnly')}>{editor.display}</span>;
-  if (field.type === 'assignees') return <AssigneesEditor {...editor} />;
+  if (field.type === 'assignees' || field.type === 'labels') return <MultiEditor {...editor} />;
   if (field.type === 'text' || field.type === 'number' || field.type === 'date') return <InputEditor {...editor} />;
   return <ChoiceEditor {...editor} />;
 }

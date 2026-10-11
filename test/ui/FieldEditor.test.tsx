@@ -147,3 +147,21 @@ test('the Status choice offers no limpar: a task is always in a column (#686)', 
   expect(await screen.findByRole('menuitem', { name: 'Done' })).toBeInTheDocument();
   expect(screen.queryByRole('menuitem', { name: 'limpar' })).not.toBeInTheDocument();
 });
+
+test('every editor\'s trigger is a field cell with the ⌄; a read-only field is none (#60)', () => {
+  renderEditor({ name: 'Priority', type: 'singleSelect', value: 'P1', options: ['P0', 'P1'] });
+  renderEditor({ name: 'Notes', type: 'text', value: 'x' });
+  renderEditor({ name: 'Assignees', type: 'assignees', value: [], options: [] });
+  renderEditor({ name: 'Repository', type: 'repository', value: 'acme/site', readOnly: true });
+  for (const name of ['Priority', 'Notes', 'Assignees']) expect(trigger(name)).toHaveAttribute('data-slot', 'field-cell');
+  expect(document.querySelectorAll('[data-slot="field-cell"]')).toHaveLength(3);
+});
+
+test('the labels are checkboxes like the assignees, the current ones first: a toggle writes the whole new set (#60)', async () => {
+  const user = userEvent.setup();
+  renderEditor({ name: 'Labels', type: 'labels', value: ['ui'], options: ['bug', 'ui'] });
+  await user.click(trigger('Labels'));
+  expect(screen.getAllByRole('checkbox').map((c) => c.closest('label')?.textContent)).toEqual(['ui', 'bug']);
+  await user.click(screen.getByRole('checkbox', { name: 'bug' }));
+  await waitFor(() => expect(posted()).toEqual([[PATH, { field: 'Labels', value: ['ui', 'bug'] }]]));
+});

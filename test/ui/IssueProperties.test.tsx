@@ -34,6 +34,7 @@ const FIELDS_PATH = '/sources/roadmap/items/roadmap%3APVTI_12/fields';
 const FIELDS: ItemField[] = [
   { name: 'Status', type: 'singleSelect', value: 'In review', options: ['Ready', 'In review', 'Done'] },
   { name: 'Assignees', type: 'assignees', value: ['ana'], options: ['ana', 'bia'] },
+  { name: 'Labels', type: 'labels', value: ['bug'], options: ['bug', 'docs'] },
   { name: 'Priority', type: 'singleSelect', value: 'P2', options: ['P0', 'P1', 'P2'] },
   { name: 'Repository', type: 'repository', value: 'acme/site', readOnly: true },
 ];
