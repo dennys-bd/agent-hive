@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -140,6 +140,17 @@ export function treeLinks(nodes: GhItemNode[]): Map<string, TreeLinks> {
   }));
 }
 
+// Only what is there (#28): a leaf, and an issue with no parent on the Project, carry none of the three keys
+const treeFields = ({ parent, children, closedChildren }: TreeLinks): Pick<Item, 'parent' | 'children' | 'closedChildren'> => ({
+  ...(parent === undefined ? {} : { parent }),
+  ...(children.length > 0 ? { children } : {}),
+  ...(closedChildren.length > 0 ? { closedChildren } : {}),
+});
+
+// #28: the last listing with one re-read node in its place (appended when the listing lacked it), so its links equal the next poll's
+const inPlace = (nodes: GhItemNode[], node: GhItemNode): GhItemNode[] =>
+  nodes.some((n) => n.id === node.id) ? nodes.map((n) => (n.id === node.id ? node : n)) : [...nodes, node];
+
 // What a rule reads on one item (#293, #688): `title`, each label's name for `labels`, else the named Project field's set value, single-select or
 // text, riding the same fieldValues the task filter already fetches (#245); a field the item has no value for reads nothing.
 export function itemReader(item: GhItemNode): (field: string) => string[] {
@@ -155,12 +166,17 @@ export function itemReader(item: GhItemNode): (field: string) => string[] {
 
 // The task for an issue item in one of the cited columns; a draft, a pull request or another column is not on the Hive's source. Its facets
 // (#374) ride along for a stage's view filter, read off the item the poll already fetched. Its task properties (#688): the hint only from a
-// rule, so a default changed in Settings still reaches it through sourceWorkspaces; auto resolved whole, since it is a birth value.
-function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskProps): SourceItem | undefined {
+// rule, so a default changed in Settings still reaches it through sourceWorkspaces; auto resolved whole, since it is a birth value. Its tree
+// links (#28) come from the whole listing, which the caller read them over.
+function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskProps, links: TreeLinks | undefined): SourceItem | undefined {
   const column = statusOf(node);
   const c = node.content;
   if (column === undefined || !names.has(column) || c?.__typename !== 'Issue' || typeof c.number !== 'number' || !c.url) return undefined;
-  const item = { itemId: node.id, id: String(c.number), title: c.title ?? `#${c.number}`, body: c.body ?? '', url: c.url, facets: facetsOf(node), ...(typeof c.createdAt === 'string' ? { createdAt: c.createdAt } : {}) }; // #742: lead time counts from the issue's own creation
+  const item = {
+    itemId: node.id, id: String(c.number), title: c.title ?? `#${c.number}`, body: c.body ?? '', url: c.url, facets: facetsOf(node),
+    ...(typeof c.createdAt === 'string' ? { createdAt: c.createdAt } : {}), // #742: lead time counts from the issue's own creation
+    ...(links === undefined ? {} : treeFields(links)),
+  };
   const { workspace, auto } = matchTaskProps(taskProps.rules, itemReader(node));
   const hinted = workspace === undefined ? item : { ...item, workspaceHint: workspace };
   return { item: { ...hinted, autoOnEntry: auto ?? taskProps.defaults.auto }, column };
@@ -225,6 +241,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   let lastQuota: SourceQuota | undefined; // what the last poll read; undefined before the first one
   let login: string | undefined; // `owner` with `@me` resolved, once; a failed lookup is retried on the next poll
   let me: string | undefined; // the polling account's login, asked only when the filter says @me; a transport change builds a new adapter
+  let lastNodes: GhItemNode[] = []; // #28: the last listing's nodes, what a field write's re-read reads its tree links over
   let contents = new Map<string, GhItemNode['content']>(); // every item the last listing saw, draft or filtered out: what apply acts on (#286)
 
   async function resolveFields(): Promise<void> {
@@ -248,11 +265,12 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
 
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
-  // under their epics, then the filter, the hidden epics, the relations and the blocked rules
-  async function listed(items: GhItemNode[]): Promise<SourceItem[]> {
+  // under their epics, then the filter, the hidden epics, the relations and the blocked rules. The tree links (#28) are read over every node
+  // first, before a column or a filter drops one: a child filtered out or in another column is still a child
+  async function listed(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): Promise<SourceItem[]> {
     const names = new Set(cited.map((c) => c.column));
     const tasks = new Map(items.flatMap<[GhItemNode, SourceItem]>((item) => {
-      const task = issueItem(item, names, source.taskProps);
+      const task = issueItem(item, names, source.taskProps, links.get(item.id));
       return task ? [[item, task]] : [];
     }));
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
@@ -268,6 +286,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   async function listItems(): Promise<SourceItem[]> {
     const items = await listNodes();
     contents = new Map(items.map((item) => [item.id, item.content]));
+    lastNodes = items;
     return listed(items);
   }
 
@@ -338,9 +357,11 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // #686: a field write, then the item re-read and run through the poll's own steps, so `entry` is what the next poll would list
   async function setField(itemId: string, field: string, value: FieldValue): Promise<FieldWrite> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    // listed([node]) is the poll's steps on one item. groupUnderEpics only reorders a list and changes no item's data, and the rest of the steps
-    // read the item alone, so the one-item entry equals the poll's for that item
-    return writeItemField({ gql, projectId: resolved.projectId, read: await projectRead(), entry: async (node) => (await listed([node]))[0] }, itemId, field, value);
+    // listed([node]) is the poll's steps on one item. groupUnderEpics only reorders a list and changes no item's data, the tree links (#28)
+    // are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so the one-item entry
+    // equals the poll's for that item
+    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => (await listed([node], treeLinks(inPlace(lastNodes, node))))[0];
+    return writeItemField({ gql, projectId: resolved.projectId, read: await projectRead(), entry }, itemId, field, value);
   }
 
   async function fieldsOf(itemId: string): Promise<ItemField[]> { // #686

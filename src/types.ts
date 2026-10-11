@@ -262,6 +262,9 @@ export interface Item {
   facets?: ItemFacets; // #374: what a stage's view filter reads; replaced on every poll like every other task field
   createdAt?: string; // #742: ISO, the source's own creation time (the GitHub issue's); absent when the source has none. What lead time counts from
   origin?: string; // #756: the itemId of the source item a task created in the Hive was made from (the native view's flow…); never synced either way
+  parent?: string; // #28: the parent's itemId, from the sub-issues of the listed items; absent on a task created in the Hive and on an issue with no parent on the Project
+  children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
+  closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
 }
 
 export type SessionPolicy = 'new' | 'continue';

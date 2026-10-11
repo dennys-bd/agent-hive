@@ -302,6 +302,22 @@ test('the listing and the one-item re-read ask each sub-issue\'s state (#28)', (
   assert.match(ITEM_FIELDS, /subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
 });
 
+test('a poll\'s listed item carries parent, children and closedChildren, linked before the column and filter steps drop anything; a leaf carries none of them (#28)', async () => {
+  const hive = (n: number, subIssues: number[] = [], status = 'Ready', closed: number[] = []) => {
+    const node = linked(n, subIssues, status, closed);
+    return { ...node, content: { ...node.content, labels: { nodes: [{ name: 'hive' }] } } };
+  };
+  const labelled = specOf({ source: { ...GITHUB_SOURCE, epics: 'ignore', filter: [{ field: 'label', op: 'any', values: ['hive'] }] } });
+  // 1 lists 2 (listed), 3 (filtered out: no label), 9 (no item) and 4 (closed, in the uncited Done); 5 is a leaf
+  const nodes = [hive(1, [2, 3, 9, 4], 'Ready', [4]), hive(2), linked(3), hive(4, [], 'Done'), hive(5)];
+  const listed = await createSource(labelled, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
+  assert.deepEqual(listed.map((c) => c.item.id), ['1', '2', '5']);
+  const [parent, child, leaf] = listed.map((c) => c.item);
+  assert.deepEqual([parent.parent, parent.children, parent.closedChildren], [undefined, ['I2', 'I3', 'I4'], ['I4']]);
+  assert.deepEqual([child.parent, 'children' in child, 'closedChildren' in child], ['I1', false, false]);
+  assert.deepEqual(['parent' in leaf, 'children' in leaf, 'closedChildren' in leaf], [false, false, false]);
+});
+
 test('listItems groups before it drops: with epics: hide the epic\'s sub-issues take its place, with epics: ignore they follow it; the items query asks each issue for its node id and its sub-issue ids, at no extra call (#211)', async () => {
   // A B C D F G, where B (2) is an epic with sub-issues F (6) then G (7)
   const nodes = [linked(1), linked(2, [6, 7]), linked(3), linked(4), linked(6), linked(7)];
