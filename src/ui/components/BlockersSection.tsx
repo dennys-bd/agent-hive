@@ -5,6 +5,7 @@ import type { BlockerChange, BlockerRef, ItemBlockers, State, Task } from '../..
 import { BlockerAddRow, shownBlockerId } from '@/components/BlockerAddRow';
 import { Button } from '@/components/ui/button';
 import { type MessageKey, t } from '@/i18n';
+import { blockerErrorText } from '@/lib/blocker-errors';
 import { editBlocker } from '@/lib/blockers-api';
 
 type Kind = BlockerChange['kind'];
@@ -12,16 +13,7 @@ type Kind = BlockerChange['kind'];
 const MUTED = 'text-muted-foreground';
 const NONE: ItemBlockers = { blockedBy: [], blocking: [] };
 const KIND_LABEL: Record<Kind, MessageKey> = { blockedBy: 'blockers.blockedBy', blocking: 'blockers.blocking' };
-// The route's refusal codes (#56), each with copy of its own; anything else reads as unexpected, so a raw message never reaches the panel
-const CODES: readonly MessageKey[] = [
-  'blockers.unknownItem', 'blockers.unknownRef', 'blockers.crossSource', 'blockers.self', 'blockers.cycle', 'blockers.refused', 'blockers.badRequest',
-];
 const ADDING = 'add'; // the pending key of an add; a row's is `<kind>:<id>`, which never equals it
-
-function errorText(err: unknown): string {
-  const code = typeof err === 'object' && err !== null && 'code' in err ? err.code : undefined;
-  return t(CODES.find((c) => c === code) ?? 'blockers.unexpected');
-}
 
 /** Whether a task shows the blockers section (#57): a hive task, or a source item whose relations were read (every GitHub item since #56).
  * A source that cannot relate reads none, and its route would answer blockers.unknownItem. */
@@ -44,7 +36,7 @@ function useBlockerEdit(source: string, itemId: string) {
       await editBlocker(source, itemId, change);
       return true;
     } catch (err) {
-      setError(errorText(err));
+      setError(blockerErrorText(err));
       return false;
     } finally {
       setPending(undefined);
