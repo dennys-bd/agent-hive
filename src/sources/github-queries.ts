@@ -188,6 +188,12 @@ export const ISSUE_ID = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) { id } }
 }`;
 
+// #57: the blockers add row's search. The whole search string (`repo:<owner/name> is:issue in:title <text>`) is the $q variable: what the user
+// types never becomes part of this text
+export const SEARCH_ISSUES = `query($q: String!) {
+  search(type: ISSUE, first: 8, query: $q) { nodes { ... on Issue { number title state repository { nameWithOwner } } } }
+}`;
+
 // A decomposition's write (#865): the repository the issues are created in, each issue, its project item, its parent and its blockers.
 // Every value travels as a variable through cliGqlJson's stdin, never in the query's text.
 export const REPOSITORY_ID = `query($owner: String!, $name: String!) {
@@ -280,6 +286,7 @@ export interface ViewerData { viewer?: { login?: string } | null }
 export interface GhComment { author?: { login?: string } | null; createdAt: string; body: string; url: string }
 export interface CommentsData { node?: { content?: { comments?: { nodes: GhComment[] } | null } | null } | null }
 export interface IssueIdData { repository?: { issue?: { id: string } | null } | null }
+export interface SearchIssuesData { search?: { nodes: Partial<GhBlockerRef>[] } | null } // #57: a node that is no issue answers {}
 export interface CreateIssueData { createIssue?: { issue?: { id: string; number: number; url: string } | null } | null } // #865
 export interface AddProjectItemData { addProjectV2ItemById?: { item?: { id: string } | null } | null } // #865
 

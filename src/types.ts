@@ -1639,6 +1639,7 @@ export interface Source {
   fieldsOf?(itemId: string): Promise<ItemField[]>; // #686: in the project's order, Status included
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
+  findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8
   create?(fields: { title: string; body?: string; column: string }): Promise<string>; // #846: a new item in column, resolving to its adapter id (namespaced: its itemId); a type that cannot create leaves it out
   project?(): Promise<ProjectView>; // #756: the source's native view, every issue unfiltered; read on demand by its route, never by the poll
 }

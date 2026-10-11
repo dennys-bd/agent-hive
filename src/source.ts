@@ -33,14 +33,14 @@ const SHORT_REF = /^\d+$/; // #56: a blocker in the item's own repository; `owne
 
 /** #56: a source's blocker ids as its tasks' own ids read. Under qualifyId a short ref takes the shown prefix on the way out (`12` -> `foo-12`)
  * and drops it on the way in; `owner/repo#n` passes both ways as it is. */
-interface BlockerIds { shownBlockers(b: ItemBlockers): ItemBlockers; ownRef(ref: string): string }
+interface BlockerIds { shownRef(r: BlockerRef): BlockerRef; shownBlockers(b: ItemBlockers): ItemBlockers; ownRef(ref: string): string }
 function blockerIds(qualifyId: boolean, shown: string): BlockerIds {
   const shownRef = (r: BlockerRef): BlockerRef => (qualifyId && SHORT_REF.test(r.id) ? { ...r, id: `${shown}-${r.id}` } : r);
   const ownRef = (ref: string): string => {
     const rest = ref.slice(shown.length + 1);
     return qualifyId && ref.startsWith(`${shown}-`) && SHORT_REF.test(rest) ? rest : ref;
   };
-  return { shownBlockers: (b) => ({ blockedBy: b.blockedBy.map(shownRef), blocking: b.blocking.map(shownRef) }), ownRef };
+  return { shownRef, shownBlockers: (b) => ({ blockedBy: b.blockedBy.map(shownRef), blocking: b.blocking.map(shownRef) }), ownRef };
 }
 
 // #56: relate under the listed ids, in and out; a write whose re-read failed still carries its relations under them
@@ -73,7 +73,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
     itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}),
   });
-  const { comments, project, fieldsOf, setField, create, relate } = adapter;
+  const { comments, project, fieldsOf, setField, create, relate, findBlockers } = adapter;
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
   // #686: a write's answer under the ids the listed tasks carry: the row as the native view's, the entry as listItems' own
@@ -91,6 +91,8 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(fieldsOf ? { fieldsOf: (itemId: string) => fieldsOf(own(itemId)) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),
     ...(relate ? { relate: shownRelate(relate, own, ids, item) } : {}),
+    // #57: the search under the listed ids, so a found issue reads as the section's rows and tasks do
+    ...(findBlockers ? { findBlockers: async (itemId: string, text: string) => (await findBlockers(own(itemId), text)).map(ids.shownRef) } : {}),
   };
 }
 

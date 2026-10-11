@@ -708,6 +708,18 @@ test('namespaced shows a short blocker id like the item\'s own under qualifyId, 
   });
 });
 
+test('namespaced hands findBlockers the adapter\'s id and shows a found short id like the item\'s own under qualifyId (#57)', async () => {
+  const found = [{ id: '12', title: 'Pager', state: 'open' as const }, { id: 'other/lib#3', title: 'T3', state: 'closed' as const }];
+  const asked: string[] = [];
+  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], listItems: async () => [], setColumn: async () => {}, apply: async () => {} };
+  const adapter: Source = { ...bare, findBlockers: async (itemId, text) => { asked.push(`${itemId} ${text}`); return found; } };
+  const entry = (qualifyId: boolean): SourceConfig => ({ name: 'work', qualifyId, prefix: 'foo', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS });
+  assert.deepEqual(await namespaced(entry(true), adapter).findBlockers?.('work:PVTI_1', 'pag'), [{ ...found[0], id: 'foo-12' }, found[1]]);
+  assert.deepEqual(await namespaced(entry(false), adapter).findBlockers?.('work:PVTI_1', 'pag'), found, 'unqualified: as the adapter finds them');
+  assert.deepEqual(asked, ['PVTI_1 pag', 'PVTI_1 pag'], 'the adapter gets its own id');
+  assert.equal(namespaced(entry(true), bare).findBlockers, undefined);
+});
+
 test('createSources builds one namespaced source per entry in order; given the live sources it keeps each instance whose entry (its epics keys included), columns and auth did not change; resolveSources names the source that fails (#180)', async () => {
   const notes = { name: 'notes', qualifyId: false, ...GITHUB_SOURCE, number: 8, taskProps: FIXED };
   const configOf = (work: Record<string, unknown>) =>
