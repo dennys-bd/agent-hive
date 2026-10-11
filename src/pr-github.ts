@@ -1,7 +1,7 @@
 // The PR page's GitHub side (#592, #758): the GraphQL documents and the parsing of their answers. Pure: every user value (link, node id,
 // text, path, line, method, head) travels as a variable, never inside a query's text. No node module either: the UI reads mergeBlocker from here.
 import { AWAITING_ROLLUP, canPushOf, countOf, decisionOf, isObject, mergeState, nodesOf, prChecksOf, prStateOf, readable } from './pr-checks.js';
-import type { Gql, LineAnchor, MergeMethod, PrChecksRead, PrComment, PrData, PrDraft, PrIssueComment, PrMergeState, PrReviewEvent, PrReviewEventInput, PrReviewRequest, PrThread } from './types.js';
+import type { Gql, LineAnchor, MergeMethod, PrChecksRead, PrClosingIssue, PrComment, PrData, PrDraft, PrIssueComment, PrMergeState, PrReviewEvent, PrReviewEventInput, PrReviewRequest, PrThread } from './types.js';
 
 export { mergeState };
 
@@ -13,10 +13,12 @@ export const PR_PAGE = 100;
 
 const PR_FIELDS = 'id number title state isDraft mergeStateStatus headRefOid repository { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed }';
 // The page's own fields (#758): the description, the branches and counts, the review decision and the approvals, how far the base moved past
-// the head, the head commit's checks, and the timeline's reviews and general comments
+// the head, the head commit's checks, the issues it closes (#66), and the timeline's reviews and general comments
+const CLOSES_PAGE = 10; // #66: enough for one PR; more are cut silently
 const PAGE_FIELDS = 'body author { login } createdAt updatedAt headRefName baseRefName commits { totalCount } additions deletions reviewDecision viewerCanUpdate '
   + 'headRepositoryOwner { login } baseRepository { owner { login } viewerPermission } '
   + `latestOpinionatedReviews(first: ${PR_PAGE}) { nodes { state } } baseRef { compare(headRef: $head) @include(if: $open) { behindBy } } ${AWAITING_ROLLUP} `
+  + `closingIssuesReferences(first: ${CLOSES_PAGE}) { nodes { number url repository { nameWithOwner } } } `
   + `timelineItems(last: ${PR_PAGE}, itemTypes: [PULL_REQUEST_REVIEW, ISSUE_COMMENT]) { nodes { __typename `
   + '... on PullRequestReview { id author { login } submittedAt state body } ... on IssueComment { id author { login } createdAt body } } }';
 const THREAD_FIELDS = 'id path diffSide line startLine originalLine originalStartLine isOutdated isResolved subjectType '
@@ -162,6 +164,15 @@ function reviewRequestsOf(pr: Record<string, unknown>, viewer: string): PrReview
   });
 }
 
+// The issues the PR closes on merge (#66): a node with no number, url or repository name is no issue the block can open, so it is dropped
+function closesOf(connection: unknown): PrClosingIssue[] {
+  return nodesOf(connection).flatMap((node) => {
+    if (!isObject(node) || typeof node.number !== 'number' || typeof node.url !== 'string') return [];
+    const name = isObject(node.repository) ? node.repository.nameWithOwner : undefined;
+    return typeof name === 'string' ? [{ repository: name, number: node.number, url: node.url }] : [];
+  });
+}
+
 type PageFields = Omit<PrView, 'id' | 'number' | 'title' | 'state' | 'isDraft' | 'mergeState' | 'head' | 'methods' | 'viewer' | 'reviewRequests' | 'threads' | 'truncated'>;
 
 // The page's fields (#758); the optional ones only when GitHub answered them
@@ -173,7 +184,7 @@ function pageOf(pr: Record<string, unknown>, skip: (reason: string) => void): Pa
     body: text(pr.body, 'body'), author: loginOf(pr.author), createdAt: text(pr.createdAt, 'createdAt'), updatedAt: text(pr.updatedAt, 'updatedAt'),
     headRef: text(pr.headRefName, 'headRefName'), baseRef: text(pr.baseRefName, 'baseRefName'), commits: countOf(pr.commits),
     additions: numberOf(pr.additions), deletions: numberOf(pr.deletions), approvals: approvalsOf(pr.latestOpinionatedReviews), canEdit: pr.viewerCanUpdate === true,
-    ...originOf(pr), ...timelineOf(pr.timelineItems, skip),
+    ...originOf(pr), ...timelineOf(pr.timelineItems, skip), closes: closesOf(pr.closingIssuesReferences),
     ...(decision === undefined ? {} : { decision }), ...(checks === undefined ? {} : { checks }), ...(behindBy === undefined ? {} : { behindBy }),
   };
 }

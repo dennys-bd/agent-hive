@@ -76,7 +76,7 @@ function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onR
 
 /** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation or files. Read on opening,
  * on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. Its properties are its block in
- * the details panel's slot on both tabs (#64), headed by the PR's title when the PR is no task's; before the PR is read, the read line. */
+ * the details panel's slot on both tabs (#64), the this PR box on a task's PR (#66), headed by the PR's title when the PR is no task's; before the PR is read, the read line. */
 export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
   const url = prLink(ref.repository, ref.number);
   const isShown = useIsFlowShown();
@@ -118,7 +118,7 @@ export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, o
       </ReviewSurfaceContext.Provider>
       <DetailSlot>
         {task === undefined && <SlotTitle>{pr.title}</SlotTitle>}
-        <PrProperties pr={pr} task={task} summary={summary} state={state} onGoTo={onGoTo} />
+        <PrProperties pr={pr} task={task} summary={summary} state={state} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} />
       </DetailSlot>
     </div>
   );

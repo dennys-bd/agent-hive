@@ -29,7 +29,7 @@ const PRS: RepoPrs = {
 const PR_PAGE: PrData = {
   url: 'https://github.com/acme/site/pull/7', id: 'PR_7', number: 7, title: 'Fix the pager', state: 'open', isDraft: false, mergeState: 'clean', head: 'f'.repeat(40),
   methods: ['squash'], viewer: 'ana', files: [], threads: [], truncated: false, body: 'Fixes the pager.', author: 'bia', createdAt: '2026-10-05T09:00:00Z',
-  updatedAt: '2026-10-05T09:00:00Z', headRef: 'fix-pager', baseRef: 'main', commits: 1, additions: 3, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [],
+  updatedAt: '2026-10-05T09:00:00Z', headRef: 'fix-pager', baseRef: 'main', commits: 1, additions: 3, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [], closes: [],
 };
 const PR_8: PrData = { ...PR_PAGE, url: 'https://github.com/acme/site/pull/8', id: 'PR_8', number: 8, title: 'Second slice' };
 const PAGE: Issue = { ...OPEN.issues[0], title: 'Pager breaks', repository: 'acme/site', body: 'b', author: 'bia', createdAt: '2026-10-01T09:00:00Z', comments: [], commentCount: 0, pullRequests: [{ number: 7, url: 'https://github.com/acme/site/pull/7', state: 'open' }] };

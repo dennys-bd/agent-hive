@@ -48,13 +48,21 @@ test('a PR without a task has no task #N and no column of its own; its title, re
   expect(slot().getByText('hive')).toBeInTheDocument();
 });
 
-test('a task\'s PR leaves the title to the panel, and its slot block stays on the files tab (#64)', async () => {
+test('a task\'s PR fills the slot with este PR and the task\'s other PRs, never the issue\'s fields, on both tabs; a closing issue and another PR open through the page (#64, #66)', async () => {
   const user = userEvent.setup();
-  renderPage(WITH_TASK, {}, { slotted: true });
-  expect(await slot().findByText('acme/app')).toBeInTheDocument(); // the Hive lists no repository here: the task's issue cannot be read
-  expect(slot().queryByRole('heading')).toBeNull();
+  hive.pr = prData({ closes: [{ repository: 'acme/app', number: 1, url: 'https://github.com/acme/app/issues/1' }] });
+  const state = { ...WITH_TASK, activityRecords: [{ ...WITH_TASK.activityRecords[0], prs: [...PRS, { url: PR2, state: 'open' as const }] }] };
+  const { props } = renderPage(state, {}, { slotted: true });
+  expect(await slot().findByRole('region', { name: 'este PR' })).toBeInTheDocument();
+  expect(slot().queryByRole('heading')).toBeNull(); // the title is the panel's
+  expect(slot().queryByText('acme/app')).toBeNull(); // the repository block is a PR without a task's
+  expect(slot().queryByRole('button', { name: 'etapa' })).toBeNull(); // the issue's fields live on the issue page (#65)
+  await user.click(slot().getByRole('button', { name: '#1' }));
+  expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
+  await user.click(within(slot().getByRole('region', { name: 'outros PRs da tarefa' })).getByRole('button', { name: 'abrir' }));
+  expect(props.onOpenPr).toHaveBeenCalledWith(PR2);
   await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
-  expect(slot().getByText('acme/app')).toBeInTheDocument();
+  expect(slot().getByRole('region', { name: 'este PR' })).toBeInTheDocument();
 });
 
 test('while the PR is read the slot shows the same read line as the page (#64)', () => {

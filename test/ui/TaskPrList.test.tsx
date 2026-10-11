@@ -68,3 +68,24 @@ test('a task with no PR renders nothing (#65)', () => {
   expect(container).toBeEmptyDOMElement();
   expect(fetchMock).not.toHaveBeenCalled();
 });
+
+// #66: on a PR's page the list leaves that PR out, takes its repository as the own one and is headed by "outros PRs da tarefa" and the count
+const OTHERS: TaskPr[] = [
+  { url: DOCS, state: 'open' }, { url: `${APP}9`, state: 'open', slice: { k: 3, type: 'stacked' } }, { url: `${APP}7`, state: 'open', slice: { k: 2, type: 'stacked' } },
+  { url: `${APP}6`, state: 'merged', slice: { k: 1, type: 'stacked' } },
+];
+test('on a PR\'s page: outros PRs da tarefa with the count, every PR but this one in stack order, abrir on the open ones (#66)', async () => {
+  const user = userEvent.setup();
+  const onOpenPr = vi.fn();
+  render(<TaskPrList task={WITH_TASK.tasks[0]} state={withPrs(OTHERS)} except={`${APP}7`} onOpenPr={onOpenPr} />);
+  const list = within(screen.getByRole('region', { name: 'outros PRs da tarefa' }));
+  expect(list.getByText('3')).toHaveClass('text-muted-foreground');
+  expect(list.getAllByRole('listitem').map((li) => li.firstElementChild?.textContent)).toEqual(['1/3 #6 mergeado', '3/3 #9 aberto', '#88 docs · fora da pilha · aberto']);
+  await user.click(within(list.getAllByRole('listitem')[1]).getByRole('button', { name: 'abrir' }));
+  expect(onOpenPr).toHaveBeenCalledWith(`${APP}9`);
+});
+
+test('on a PR\'s page, a task that holds this PR alone shows no list (#66)', () => {
+  const { container } = render(<TaskPrList task={WITH_TASK.tasks[0]} state={withPrs([{ url: `${APP}7`, state: 'open' }])} except={`${APP}7`} onOpenPr={vi.fn()} />);
+  expect(container).toBeEmptyDOMElement();
+});

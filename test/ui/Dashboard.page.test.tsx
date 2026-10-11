@@ -33,7 +33,7 @@ const PRS: RepoPrs = {
 const PR_PAGE: PrData = {
   url: 'https://github.com/acme/site/pull/7', id: 'PR_7', number: 7, title: 'Fix the pager', state: 'open', isDraft: false, mergeState: 'clean', head: 'f'.repeat(40),
   methods: ['squash'], viewer: 'ana', files: [], threads: [], truncated: false, body: 'Fixes the pager.', author: 'bia', createdAt: '2026-10-05T09:00:00Z',
-  updatedAt: '2026-10-05T09:00:00Z', headRef: 'fix-pager', baseRef: 'main', commits: 1, additions: 3, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [],
+  updatedAt: '2026-10-05T09:00:00Z', headRef: 'fix-pager', baseRef: 'main', commits: 1, additions: 3, deletions: 1, approvals: 0, reviews: [], comments: [], canEdit: true, canPush: true, headOwner: 'acme', baseOwner: 'acme', reviewRequests: [], closes: [],
 };
 const PAGE: Issue = { ...OPEN.issues[0], title: 'Pager breaks', repository: 'acme/site', body: 'b', author: 'bia', createdAt: '2026-10-01T09:00:00Z', comments: [], commentCount: 0, pullRequests: [] };
 // #12 is the roadmap task T12; PR #7 is the hive task B's; A, a hive task, is the selection
@@ -106,7 +106,8 @@ test('an issue page shows its task in the panel ahead of the selection, with its
   expect(await panel().findByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   await user.click(await main().findByText('Fix the pager'));
   expect(await panel().findByRole('heading', { name: 'HIVE-2 Fix it' })).toBeInTheDocument();
-  expect(await panel().findByText('acme/site')).toBeInTheDocument(); // a hive task's PR: its repository and workspace
+  expect(await panel().findByRole('region', { name: 'este PR' })).toBeInTheDocument(); // a hive task's PR: the this PR block (#66)
+  expect(panel().queryByText('acme/site')).not.toBeInTheDocument(); // the repository block is a PR without a task's
   await user.click(automation().getByRole('button', { name: /^todas/ }));
   expect(panel().getByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   expect(calls).toEqual([]); // the selection never changed: leaving the pages restores it
