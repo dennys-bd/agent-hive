@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
-import { initialState } from '../src/orchestrator.js';
-import { advance, type EndOf, take, unrouted } from '../src/transit.js';
+import { initialState, reduce } from '../src/orchestrator.js';
+import { advance, type EndOf, retry, take, unrouted } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
 import type { Activity, Item, Stage, State, Task, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
@@ -86,4 +86,38 @@ test('a user\'s transition and a move by hand drop the log with the tries; an au
   const passed: Transition = { from: 'checks', to: 'fix', when: 'verdict', verdict: 'passed' };
   const onward = pure(placed(work), (s) => take(s, s.tasks[0], passed, { trigger: 'verdict', verdict: 'passed' })).state;
   assert.deepEqual(log(onward), [recordOf(KEY, 1)]);
+});
+
+const OTHER: Transition = { from: 'fix', to: 'checks', when: 'done', maxTries: 2 };
+const HALTED: Partial<Activity> = { stopped: true, stoppedAt: AT, error: 'tries out: verdict:failed · 3' };
+
+test('retry takes the spent transition again: its counter and records gone, the other transition\'s kept, the stop and error cleared, the task in the destination with its handover (#915)', () => {
+  const prompted: Transition = { ...RETRY, prompt: 'Fix: {verdict}' };
+  const other = recordOf(transitionKey(OTHER), 1);
+  const work: Partial<Activity> = { ...HALTED, tries: { [KEY]: 3, [transitionKey(OTHER)]: 1 }, tryLog: [...[1, 2, 3].map((n) => recordOf(KEY, n)), other] };
+  const state = placed(work, { transitions: [prompted, OTHER], result: { commands: { verdict: 'failed', output: 'build (1)\nboom' } } });
+  const retried = pure(state, (s) => retry(s, ID));
+  assert.ok(retried);
+  const live = activityOf(retried.state, ID);
+  assert.deepEqual([retried.state.tasks[0].stage, live?.stopped, live?.stoppedAt, live?.error], ['fix', undefined, undefined, undefined]);
+  assert.deepEqual([live?.tries, live?.tryLog, live?.via], [{ [transitionKey(OTHER)]: 1 }, [other], KEY], 'a retry counts no try and records none');
+  assert.match(live?.handover?.prompt ?? '', /^Fix: build \(1\)\nboom/);
+});
+
+test('retry answers undefined when the error is no TRIES_OUT, the transition is gone or renamed, a run holds the task, or the task is unknown (#915)', () => {
+  const tries = { [KEY]: 3 };
+  assert.equal(retry(placed({ ...HALTED, error: 'no transition: verdict:failed', tries }), ID), undefined);
+  assert.equal(retry(placed({ ...HALTED, tries }, { transitions: [] }), ID), undefined);
+  assert.equal(retry(placed({ ...HALTED, tries }, { transitions: [{ ...RETRY, verdict: 'passed' }] }), ID), undefined);
+  assert.equal(retry(placed({ ...HALTED, tries, workerId: 'w1' }), ID), undefined);
+  assert.equal(retry(placed({ ...HALTED, tries }), 'board:nope'), undefined);
+});
+
+test('a retry event into a prompt stage starts the destination\'s run at once: the fill picks the task once its stop is cleared (#915)', () => {
+  const task: Task = { item, stage: 'checks', boardColumn: '', auto: true, workspace: 'hive' };
+  const halted = deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], stages: STAGES, transitions: [RETRY], tasks: [task] }, ID,
+    { ...HALTED, tries: { [KEY]: 3 } }, { result: { commands: { verdict: 'failed', output: OUTPUT } } }));
+  const { state, effects } = pure(halted, (s) => reduce(s, { type: 'retry', taskId: ID }));
+  const spawn = effects.find((e) => e.type === 'spawn');
+  assert.deepEqual([state.tasks[0].stage, spawn?.type === 'spawn' ? spawn.stage.name : undefined], ['fix', 'fix']);
 });

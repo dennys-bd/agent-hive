@@ -1273,6 +1273,7 @@ export type HiveEvent =
   | { type: 'captureSession'; terminalId: string; runId: string; sessionId: string } // #696: the shim's register: a free session in that terminal
   | { type: 'worktreeReady'; activityId: string; path: string; branch: string; base: TaskBase | null; local: boolean } // POST /tasks/:id/worktree created it (#164); local = it runs in its workspace's own checkout (#444)
   | { type: 'moveToStage'; taskId: string; stage: string; drop?: { before?: string } } // right-click → move to, or a drag across stages (#164, #366); `drop` pins the task before `before`, or at the end without it
+  | { type: 'retry'; taskId: string } // #915: POST /tasks/:id/retry on a task stopped with TRIES_OUT: the spent transition again, its counter back at 0
   | { type: 'approve'; activityId: string } // Aprovar on a task awaiting approval (#268): the approved transition's sources and the move; a held worker goes on in place
   | { type: 'feedback'; activityId: string; text: string; start: boolean } // start: begin now or queue; ignored on a held worker, which always answers now (#268)
   | { type: 'extendApproval'; activityId: string } // Estender on a held worker (#268)

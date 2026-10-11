@@ -266,3 +266,14 @@ test('a failed commands stage records its try: the failed commands as the cause,
   const out = ended(retried, 1, 'again').state;
   assert.deepEqual([live(out)?.error, live(out)?.tryLog?.length], ['tries out: verdict:failed · 1', 1]);
 });
+
+test('retry on a task out of tries runs the stage again at once with the counter back at 0; on any other task it changes nothing (#915)', () => {
+  const retry: Transition = { from: 'checks', to: 'checks', when: 'verdict', verdict: 'failed', maxTries: 1 };
+  const first = polled({}, { transitions: [...chained([checks(), REVIEW]).transitions, retry] }).state;
+  const retried = ended(first, 1, 'boom').state;
+  assert.equal(reduce(retried, { type: 'retry', taskId: ID }).state, retried, 'not out of tries: the same state');
+  const out = deepFreeze(ended(retried, 1, 'again').state);
+  const { state, effects } = reduce(out, { type: 'retry', taskId: ID });
+  assert.ok(commandOf(effects), 'the loop runs the stage again at once');
+  assert.deepEqual([live(state)?.stopped, live(state)?.error, live(state)?.tries, live(state)?.tryLog], [undefined, undefined, undefined, undefined]);
+});

@@ -1,10 +1,10 @@
 import { activityOf, resultOf, withActivity } from './activities.js';
 import { withoutControls } from './pty-paste.js';
-import { ensureActivity, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
+import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
-import { enter, onSource, stageOf, taskId } from './tasks.js';
-import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
+import { canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
+import { exitName, exitOf, isAutomatic, outgoing, needsHandover, resolveSession, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
   END, FEEDBACK_MAX, NO_TRANSITION, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
 } from './types.js';
@@ -174,4 +174,28 @@ export function advance(state: State, task: Task, end: EndOf): Advanced {
   if (stageOf(state.stages, task.stage) === undefined) return left(state, task, []);
   const transition = exitOf(state, task.stage, end.trigger, end.verdict);
   return transition ? take(state, task, transition, end) : halted(state, task, `${NO_TRANSITION}${exitName(end.trigger, end.verdict)}`);
+}
+
+/** The transition whose tries ran out on the task (#915): the one leaving its stage whose exit the TRIES_OUT error names, only the limit after
+ * it; undefined for any other error, or once a save removed or renamed that transition. (from, when, verdict) is unique, so the exit names one. */
+export function retryTransition(state: Pick<State, 'transitions'>, task: Task, error: string | undefined): Transition | undefined {
+  if (error === undefined || !error.startsWith(TRIES_OUT)) return undefined;
+  return outgoing(state.transitions, task.stage).find((t) => {
+    const prefix = `${TRIES_OUT}${exitName(t.when, t.verdict)} · `;
+    return error.startsWith(prefix) && /^\d+$/.test(error.slice(prefix.length));
+  });
+}
+
+/** Retry (#915): a task stopped with TRIES_OUT takes the spent transition again, as its automatic try would have: that transition's counter
+ * back at 0 and its records gone, the other transitions' kept; the error and the stop go so its next run starts. The user's act: it counts no
+ * try and records none. Undefined when the task is not halted so, the transition is gone, or a run holds it or it is leaving. */
+export function retry(state: State, id: string): Reduced | undefined {
+  const task = state.tasks.find((t) => taskId(t) === id);
+  const live = activityOf(state, id);
+  const transition = task && retryTransition(state, task, live?.error);
+  if (task === undefined || live === undefined || transition === undefined || !canMoveToStage(task, state)) return undefined;
+  const { error: _error, stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = live;
+  const { [transitionKey(transition)]: _spent, ...tries } = live.tries ?? {};
+  const { state: next, effects } = pass(withActivity(state, unstopped), task, transition, { trigger: transition.when, verdict: transition.verdict }, tries);
+  return { state: next, effects };
 }
