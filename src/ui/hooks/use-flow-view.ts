@@ -44,8 +44,10 @@ export function useFlowView(isShown: boolean): FlowViewControls {
   const [fitRequest, setFitRequest] = useState(0);
   // The scroll's latest pan, out of state: a scroll writes flowView and never renders the flow again; `view.pan` is what the canvas restores
   const pan = useRef(view.pan);
+  const latest = useRef(view); // what was last written: a scroll's handler may be a render older than a zoom or a toggle
   const save = (next: FlowView): void => {
     const saved = { ...next, pan: pan.current };
+    latest.current = saved;
     writeFlowView(saved);
     setView(saved);
   };
@@ -70,7 +72,8 @@ export function useFlowView(isShown: boolean): FlowViewControls {
     toggleLoops: () => save({ ...view, loops: !view.loops }),
     onPan: (next) => {
       pan.current = next;
-      writeFlowView({ ...view, pan: next });
+      latest.current = { ...latest.current, pan: next };
+      writeFlowView(latest.current);
     },
     onFit: (zoom) => {
       pan.current = { x: 0, y: 0 };

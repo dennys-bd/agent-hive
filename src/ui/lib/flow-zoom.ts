@@ -20,7 +20,8 @@ export function stepZoom(zoom: number, direction: 1 | -1): number {
 /** The zoom that shows the whole `graph` (the layout with every node at NODE_MIN) in `viewport`: never above 100%, never under ZOOM_MIN, where
  * a chart wider than twice the canvas stays scrollable. */
 export function fitZoom(viewport: { width: number; height: number }, graph: { width: number; height: number }): number {
-  return clamp(Math.min(viewport.width / graph.width, viewport.height / graph.height), ZOOM_MIN, 1);
+  const ratio = Math.min(viewport.width / graph.width, viewport.height / graph.height);
+  return Number.isFinite(ratio) ? clamp(ratio, ZOOM_MIN, 1) : 1; // an empty or unmeasured chart: 0 / 0 is no zoom
 }
 
 /** The scroll offset on one axis that keeps the point at the viewport's centre in place when the zoom goes `from` → `to`; never before 0. */

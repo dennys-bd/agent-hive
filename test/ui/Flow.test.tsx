@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Flow } from '@/components/Flow';
@@ -501,6 +501,38 @@ test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled 
   paneOf(canvas).scrollLeft = 50;
   fireEvent.scroll(paneOf(canvas));
   expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 50, y: 15 } });
+});
+
+test('a zoom keeps the centre of the last scroll, not of the offsets the browser already clamped to the smaller chart (#910)', async () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  const user = userEvent.setup();
+  viewport(400, 600);
+  render(<Flow state={twoStages()} />);
+  const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
+  pane.scrollLeft = 100;
+  fireEvent.scroll(pane);
+  pane.scrollLeft = 0; // the clamp a zoom out's smaller sizer makes before the anchor runs
+  await user.click(screen.getByRole('button', { name: 'afastar' }));
+  expect(pane.scrollLeft).toBeCloseTo((100 + 200) * 0.9 - 200); // anchoredScroll(100, 400, 1, 0.9)
+});
+
+test('coming back to the flow after Atividades hid it (display: none) puts the last scroll back (#596, #910)', () => {
+  onTestFinished(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  const resizes: Array<() => void> = [];
+  vi.stubGlobal('ResizeObserver', class { constructor(read: () => void) { resizes.push(read); } observe(): void {} disconnect(): void {} });
+  viewport(400, 600);
+  render(<Flow state={twoStages()} />);
+  const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
+  pane.scrollLeft = 40;
+  pane.scrollTop = 25;
+  fireEvent.scroll(pane);
+  viewport(0, 0); // hidden: the pane has no size and the browser drops its offsets
+  act(() => { for (const read of resizes) read(); });
+  pane.scrollLeft = 0;
+  pane.scrollTop = 0;
+  viewport(400, 600);
+  act(() => { for (const read of resizes) read(); });
+  expect([pane.scrollLeft, pane.scrollTop]).toEqual([40, 25]);
 });
 
 // Radix opens a DropdownMenu on pointerdown, which jsdom does not deliver as a PointerEvent; the keyboard path opens the same menu.

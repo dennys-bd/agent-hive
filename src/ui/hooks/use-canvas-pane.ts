@@ -22,36 +22,41 @@ function usePaneSize(pane: RefObject<HTMLDivElement | null>): Size {
   return size;
 }
 
-/** The flow canvas's scrolling pane (#910): its size; the stored pan set once, the first time the pane has a height (before that the chart is
- * not at its size yet and the scroll would clamp); the point at the viewport's centre kept put when the zoom changes; a fit each time
- * `fitRequest` changes (the zoom that shows `graph`, the chart at NODE_MIN, scrolled to 0, 0); and every scroll reported, in scaled pixels. */
+// Scrolls the pane and keeps the copy the anchor and a re-show read
+function scrollPane(el: HTMLDivElement, scroll: RefObject<Pan>, next: Pan): void {
+  el.scrollLeft = next.x;
+  el.scrollTop = next.y;
+  scroll.current = next;
+}
+
+/** The flow canvas's scrolling pane (#910): its size; the stored pan set the first time the pane has a height (before that the chart is
+ * not at its size yet and the scroll would clamp), and the last scroll each time it gets one back; the point at the viewport's centre kept
+ * put when the zoom changes; a fit each time `fitRequest` changes (the zoom that shows `graph`, the chart at NODE_MIN, scrolled to 0, 0);
+ * and every scroll reported, in scaled pixels. */
 export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit }: CanvasPaneOptions): CanvasPane {
   const pane = useRef<HTMLDivElement>(null);
   const size = usePaneSize(pane);
-  const isRestored = useRef(false);
+  const hasHeight = size.height > 0;
+  // The pane's last scroll, kept by onScroll: a zoom out shrinks the sizer before the anchor runs and the browser clamps the live offsets, and
+  // hiding the flow under Atividades (#596, display: none) drops them; this copy is what the anchor scales and what a re-show puts back
+  const scroll = useRef(pan);
   const scrolledAt = useRef(zoom); // the zoom the pane's scroll offsets belong to
   const fits = useRef(fitRequest);
-  const restore = useEffectEvent((el: HTMLDivElement): void => {
-    el.scrollLeft = pan.x;
-    el.scrollTop = pan.y;
-  });
+  // Each time the pane gets a height: the stored pan on the first, the last scroll after the flow was hidden
   useLayoutEffect(() => {
     const el = pane.current;
-    if (!el || isRestored.current || size.height === 0) return;
-    isRestored.current = true;
-    restore(el);
-  }, [size.height]);
+    if (el && hasHeight) scrollPane(el, scroll, scroll.current);
+  }, [hasHeight]);
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el || scrolledAt.current === zoom) return;
-    el.scrollLeft = anchoredScroll(el.scrollLeft, el.clientWidth, scrolledAt.current, zoom);
-    el.scrollTop = anchoredScroll(el.scrollTop, el.clientHeight, scrolledAt.current, zoom);
+    const { x, y } = scroll.current;
+    scrollPane(el, scroll, { x: anchoredScroll(x, el.clientWidth, scrolledAt.current, zoom), y: anchoredScroll(y, el.clientHeight, scrolledAt.current, zoom) });
     scrolledAt.current = zoom;
   }, [zoom]);
   const applyFit = useEffectEvent((el: HTMLDivElement): void => {
     const next = fitZoom(size, graph);
-    el.scrollLeft = 0;
-    el.scrollTop = 0;
+    scrollPane(el, scroll, { x: 0, y: 0 });
     scrolledAt.current = next; // the fit's scroll is already its own: no anchor when its zoom arrives
     onFit(next);
   });
@@ -63,7 +68,9 @@ export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit }: Ca
   }, [fitRequest]);
   const onScroll = (): void => {
     const el = pane.current;
-    if (el) onPan({ x: el.scrollLeft, y: el.scrollTop });
+    if (!el) return;
+    scroll.current = { x: el.scrollLeft, y: el.scrollTop };
+    onPan(scroll.current);
   };
   return { pane, size, onScroll };
 }
