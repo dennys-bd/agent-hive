@@ -58,7 +58,9 @@ export function parseStatus(text: string): { marks: Record<string, GitMark>; del
     if (xy === IGNORED_XY) ignored.push(path);
     else {
       marks[path] = markOf(xy);
+      // a staged delete re-created on disk comes back as `??` after its `D `: the later entry wins, so the file is listed again
       if (marks[path] === 'D') deleted.add(path);
+      else deleted.delete(path);
     }
   }
   return { marks, deleted, ignored };

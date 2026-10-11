@@ -72,6 +72,9 @@ test('parseStatus marks changed files M, new, untracked or renamed ones A, and d
   // a staged deletion, and a file added then deleted from the worktree: both gone from the disk
   const staged = parseStatus(['D  staged.txt', 'AD added-gone.txt', ''].join('\0'));
   assert.deepEqual([staged.marks, [...staged.deleted]], [{ 'staged.txt': 'D', 'added-gone.txt': 'D' }, ['staged.txt', 'added-gone.txt']]);
+  // a staged delete re-created on disk: git lists `D ` then `??`; the file is back, new and no longer deleted
+  const back = parseStatus(['D  back.txt', '?? back.txt', ''].join('\0'));
+  assert.deepEqual([back.marks, [...back.deleted]], [{ 'back.txt': 'A' }, []]);
 });
 
 test('repoViewOf marks the folder\'s direct child files as the outer tree does, leaves a deeper path out, marks a deleted direct child D (it has no row, only its folders read it), reads a rename as new, and names the children the nested repository ignores, an ignored folder covering its subtree (#1)', () => {
