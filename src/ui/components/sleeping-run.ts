@@ -44,8 +44,8 @@ export function heldSession(activity: Activity, ptyId: string): string | undefin
 
 const HTTP_CONFLICT = 409;
 
-/** A sleeping terminal wakes in its own id (#696): its line, its tab and its activity's pick all go through here. A 409 is a wake that lost a
- * harmless race (a double click, a repeated pick: already awake, or its old pty still ending): no toast. Any other refusal shows its reason. */
+/** A sleeping terminal wakes in its own id (#696): its line and its tab go through here. A 409 is a wake that lost a
+ * harmless race (a double click: already awake, or its old pty still ending): no toast. Any other refusal shows its reason. */
 export const wakeTerminal = (terminalId: string): Promise<OpenResult | undefined> =>
   postJson<OpenResult>(`/terminals/${encodeURIComponent(terminalId)}/wake`, { size: shownSize() }).catch((err: Error & { status?: number }) => {
     if (err.status !== HTTP_CONFLICT) toast.error(err.message);
