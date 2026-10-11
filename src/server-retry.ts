@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { activityOf } from './activities.js';
 import { LEAVING_MESSAGE, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { canMoveToStage } from './tasks.js';
-import { retryTransition } from './transit.js';
+import { retryTransition } from './transitions.js';
 import { TRIES_OUT, type State } from './types.js';
 
 // Retry on a task stopped with TRIES_OUT (#915), out of server-tasks.ts, which is past 400 lines. The checks answer what the reducer would
