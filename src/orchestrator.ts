@@ -11,7 +11,7 @@ import type { Activity, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Tran
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
-import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, continueStage, stageStarted, stop } from './runs.js';
+import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
 import { advance, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
@@ -157,6 +157,10 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'restarting': return restarting(state, liveTaskId(state, event.activityId)); // no fill: a mark only (#283)
     case 'restart': return restart(state, liveTaskId(state, event.activityId), event.branch); // idem (#283)
     case 'stageStarted': return stageStarted(state, event); // no fill: a record only (#283)
+    case 'checkpointCaptured': return checkpointCaptured(state, event); // no fill: a record only (#619)
+    case 'restoring': return restoring(state, event.itemId); // no fill: a mark only, as restarting (#619)
+    case 'restored': return restored(state, event); // no fill: the task stays as it was in its stage (#619)
+    case 'restoreFailed': return restoreFailed(state, event.itemId); // no fill: only the mark goes (#619)
     case 'clearSessions': return clearSessions(state, event); // no fill: the fill never reads sessions (#283)
     case 'closeTask': return fill(closeTask(state, event.taskId));
     case 'keepTask': return fill(keepTask(state, event.taskId));
@@ -552,6 +556,10 @@ function finish(state: State, ptyId: string, end: EndOf = { trigger: 'done' }): 
 // has a transition of its own or what just ended is the handoff a transition asked for; then the handoff the destination asks for comes first.
 function endStage(state: State, ptyId: string, task: Task | undefined): Reduced {
   if (!task) return finish(state, ptyId);
+  return capturedFirst(state, task, stageEnd(state, ptyId, task)); // #619: whatever the end emits, the checkpoint that ended is captured first
+}
+
+function stageEnd(state: State, ptyId: string, task: Task): Reduced {
   const verdict = state.workers.find((s) => s.runId === ptyId)?.verdict;
   const end: EndOf = verdict === undefined ? { trigger: 'done' } : { trigger: 'verdict', verdict };
   const asked = activityOf(state, taskId(task))?.handoffPending !== undefined;

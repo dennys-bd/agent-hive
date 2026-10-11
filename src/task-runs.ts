@@ -97,6 +97,10 @@ export const canRunCommand = (task: Task, activity: Activity | undefined): boole
 export const canDiff = (task: Task, activity: Activity | undefined, scope: DiffScope): boolean =>
   activity?.worktree !== undefined && !activity.worktreeGone && (scope !== 'stage' || activity.stageStart?.stage === task.stage);
 
+/** Whether a checkpoint can be captured on the activity (#619): its worktree on disk, as canDiff reads it, never the user's own checkout (#444). */
+export const capturable = (activity: Activity | undefined): activity is Activity =>
+  activity !== undefined && activity.worktree !== undefined && !activity.worktreeGone && !activity.local;
+
 /** The run commands the task offers (#300): its workspace's command names as the config last set them; [] when it resolves to none. */
 export const commandsOf = (task: Task, state: Pick<State, 'workspaces' | 'sourceWorkspaces' | 'commands'>): string[] =>
   onSource(state.commands, resolveWorkspace(task, state.workspaces, state.sourceWorkspaces)) ?? [];

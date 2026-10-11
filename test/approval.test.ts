@@ -248,7 +248,7 @@ test('hive_done in a free session in an approval stage parks the task awaiting a
   const opened = reduce(idle, { type: 'openSession', activityId: workId(idle, ID) }).state;
   const session = opened.workers.find((s) => s.freeSession)!;
   const { state, effects } = reduce(opened, { type: 'done', ptyId: session.runId!, result: { spec: 'docs/x.md' } });
-  assert.deepEqual(effects, [], 'no advance, no board write');
+  assert.deepEqual(effects.map((e) => e.type), ['captureCheckpoint'], 'no advance, no board write: only the checkpoint that ended (#619)');
   assert.deepEqual([task(state)?.stage, typeof task(state)?.approval?.since, task(state)?.approval?.until, resultOf(state, ID)], ['spec', 'string', undefined, { spec: 'docs/x.md' }]);
   assert.equal(state.workers.find((s) => s.freeSession)?.status, 'working', 'the session stays open');
   const approved = reduce(state, { type: 'approve', activityId: workId(state, ID) });

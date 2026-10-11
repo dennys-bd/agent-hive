@@ -436,8 +436,8 @@ test('Stop or SessionEnd from a child session changes nothing: no finish, no exi
   assert.equal(child.effects.length, 0);
   const end = hook(started, id, { hook_event_name: 'SessionEnd', session_id: 'another-child-session-0001' });
   assert.equal(end.state, started);
-  assert.deepEqual(stopped(started, id).effects.map((e) => e.type), ['setColumn', 'setColumn', 'continue'], 'the main session still finishes its stage and goes on into dev in place: dev outranks task 2 in spec (#316)');
-  assert.deepEqual(hook(done(started, id), id, { hook_event_name: 'Stop', session_id: mainId }).effects.map((e) => e.type), ['setColumn', 'setColumn', 'continue']);
+  assert.deepEqual(stopped(started, id).effects.map((e) => e.type), ['captureCheckpoint', 'setColumn', 'setColumn', 'continue'], 'the main session still finishes its stage and goes on into dev in place: dev outranks task 2 in spec (#316)');
+  assert.deepEqual(hook(done(started, id), id, { hook_event_name: 'Stop', session_id: mainId }).effects.map((e) => e.type), ['captureCheckpoint', 'setColumn', 'setColumn', 'continue']);
 });
 
 // A /clear (#655): Claude Code's SessionEnd reason=clear with the old id, then a SessionStart source=clear with a new one, in the same process
@@ -484,7 +484,7 @@ test('a stage run that called hive_done before a /clear finishes its stage on th
   const cleared = clearedFrom(done(state, id), id, first);
   assert.equal(cleared.workers[0].done, true, 'the /clear neither finishes nor stops the stage');
   const finished = hook(cleared, id, { hook_event_name: 'Stop', session_id: CLEARED });
-  assert.deepEqual(finished.effects.map((e) => e.type), ['setColumn', 'setColumn', 'continue']);
+  assert.deepEqual(finished.effects.map((e) => e.type), ['captureCheckpoint', 'setColumn', 'setColumn', 'continue']);
   assert.equal(task(finished.state, 1)?.stage, 'dev');
   assert.deepEqual(sessionsN(finished.state, 1).map((s) => [s.id, s.stages]), [[CLEARED, ['spec', 'dev']]]);
 });
@@ -1636,8 +1636,8 @@ test('setStages: a stopped task in a stage turned into delete activity is cleane
   assert.deepEqual(effects, [deletion(state, 2)], 'the stopped one at once; the running one waits for its Stop');
   assert.equal(work(state, 1)?.workerId, state.workers[0].id);
   const finished = stopped(state, state.workers[0].runId!);
-  assert.deepEqual(finished.effects.map((e) => e.type), ['kill', 'setColumn', 'deleteActivity', 'forgetScrollback'], 'the Stop ends the stage as before (onFinish, next stage, no delete activity of dev), then review, with no after, cleans it in the same reduction');
-  assert.deepEqual(finished.effects[2], deletion(finished.state, 1));
+  assert.deepEqual(finished.effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn', 'deleteActivity', 'forgetScrollback'], 'the Stop ends the stage as before (the checkpoint first, #619; onFinish, next stage, no delete activity of dev), then review, with no after, cleans it in the same reduction');
+  assert.deepEqual(finished.effects[3], deletion(finished.state, 1));
   assert.deepEqual([task(finished.state, 1)?.stage, work(finished.state, 1)?.deleting], ['review', true], 'no poll needed');
 });
 
@@ -1651,10 +1651,10 @@ function devBeforeDone(done: Partial<Stage>): { state: State; id: string } {
 test('a Stop that finishes a task into a delete activity stage with no after starts its delete activity in the same reduction: kill, onFinish, onStart, delete activity, and the task is marked deleting (#284)', () => {
   const { state: running, id } = devBeforeDone({ after: undefined, onStart: { board: [move('Cleaning')] } });
   const { state, effects } = stopped(running, id);
-  assert.deepEqual(effects.map((e) => e.type), ['kill', 'setColumn', 'setColumn', 'deleteActivity']);
-  assert.deepEqual(effects[0], { type: 'kill', slug: 'hive-1-task-1', ptyId: id }, 'first: the server awaits it, so git only runs once the session is gone');
-  assert.deepEqual(effects.slice(1, 3), [{ type: 'setColumn', itemId: 'board:item1', column: 'In review' }, { type: 'setColumn', itemId: 'board:item1', column: 'Cleaning' }], 'dev\'s onFinish, then done\'s onStart against the board as just written');
-  assert.deepEqual(effects[3], deletion(state, 1));
+  assert.deepEqual(effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn', 'setColumn', 'deleteActivity']);
+  assert.deepEqual(effects[1], { type: 'kill', slug: 'hive-1-task-1', ptyId: id }, 'right after the checkpoint (#619): the server awaits it, so the delete\'s git only runs once the session is gone');
+  assert.deepEqual(effects.slice(2, 4), [{ type: 'setColumn', itemId: 'board:item1', column: 'In review' }, { type: 'setColumn', itemId: 'board:item1', column: 'Cleaning' }], 'dev\'s onFinish, then done\'s onStart against the board as just written');
+  assert.deepEqual(effects[4], deletion(state, 1));
   assert.deepEqual([task(state, 1)?.stage, task(state, 1)?.boardColumn, work(state, 1)?.deleting, work(state, 1)?.worktree], ['done', 'Cleaning', true, WORKTREE]);
   assert.equal(state.workers[0].status, 'empty', 'a delete activity takes no worker');
 });
@@ -1662,7 +1662,7 @@ test('a Stop that finishes a task into a delete activity stage with no after sta
 test('a Stop into a delete activity stage whose after has not passed only writes onFinish; the poll past the after cleans it, as before (#284)', () => {
   const { state: running, id } = devBeforeDone({}); // done keeps its after: 5d
   const { state, effects } = stopped(running, id);
-  assert.deepEqual(effects.map((e) => e.type), ['kill', 'setColumn'], 'just entered: 5d to go');
+  assert.deepEqual(effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn'], 'just entered: 5d to go');
   assert.deepEqual([task(state, 1)?.stage, 'deleting' in (work(state, 1) ?? {})], ['done', false]);
   const due = polled(aged(state, 'board:item1', 6 * DAY_MS), [listed(1, 'In review')]);
   assert.deepEqual(due.effects, [deletion(due.state, 1)]);
@@ -1684,7 +1684,7 @@ test('a finish runs every due delete activity, not only the task that moved: ano
   // 2 sits in done, due and not yet cleaned: as a boot leaves a task whose delete activity never answered, before the next poll
   const waiting: Task = { item: item(2), stage: 'done', boardColumn: 'Done', auto: true };
   const { state, effects } = stopped(withLive({ ...running, tasks: [...running.tasks, waiting] }, 2, { worktree: '/tmp/worktrees/hive-2-task-2' }), id);
-  assert.deepEqual(effects.map((e) => e.type), ['kill', 'setColumn', 'deleteActivity', 'deleteActivity']);
+  assert.deepEqual(effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn', 'deleteActivity', 'deleteActivity']);
   assert.deepEqual(effects.flatMap((e) => (e.type === 'deleteActivity' ? [e.task.item.id] : [])), ['1', '2']);
   assert.deepEqual([work(state, 1)?.deleting, work(state, 2)?.deleting], [true, true]);
 });
@@ -2059,9 +2059,9 @@ test('with nonAutoTasks on, a task without auto whose stage run ends into a dele
   const { state: running, id } = devBeforeDone({ after: undefined });
   // marked mid-run: its stage run goes on (#164)
   const marked = (deleteActivity: DeleteActivityScope): State => reduce({ ...running, deleteActivity }, { type: 'setAuto', taskId: 'board:item1', auto: false }).state;
-  assert.deepEqual(stopped(marked(DELETE_ACTIVITY_DEFAULTS), id).effects.map((e) => e.type), ['kill', 'setColumn'], 'off: it only moves into done');
+  assert.deepEqual(stopped(marked(DELETE_ACTIVITY_DEFAULTS), id).effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn'], 'off: it only moves into done');
   const { state, effects } = stopped(marked(NON_AUTO), id);
-  assert.deepEqual(effects.map((e) => e.type), ['kill', 'setColumn', 'deleteActivity']);
+  assert.deepEqual(effects.map((e) => e.type), ['captureCheckpoint', 'kill', 'setColumn', 'deleteActivity']);
   assert.deepEqual([task(state, 1)?.stage, work(state, 1)?.deleting, task(state, 1)?.auto], ['done', true, false]);
 });
 
@@ -2987,7 +2987,7 @@ test('hive_done in a free session advances the task at once, onFinish written an
   const opened = reduce(given, { type: 'openSession', activityId: workId(given, 'board:item1') }).state;
   const id = opened.workers[1].runId!; // appended past the free worker (#459)
   const { state, effects } = reduce(opened, { type: 'done', ptyId: id, result: { spec: 'docs/x.md' } });
-  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]);
+  assert.deepEqual([effects[0]?.type, effects.slice(1)], ['captureCheckpoint', [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]], 'the checkpoint first (#619)');
   assert.deepEqual([task(state, 1)?.stage, resultN(state, 1), state.workers[1].status, state.workers[1].runId], ['dev', { spec: 'docs/x.md' }, 'working', id]);
   const stop = hook(state, id, { hook_event_name: 'Stop' });
   assert.deepEqual([stop.effects, stop.state.workers[1].status], [[], 'waiting']);
@@ -3002,7 +3002,7 @@ test('hive_done in a free session advances the task even while its stage run hol
   const advanced = reduce(opened, { type: 'done', ptyId: opened.workers[1].runId! }).state;
   assert.deepEqual([task(advanced, 1)?.stage, work(advanced, 1)?.workerId, advanced.workers[0].runId], ['dev', running.workers[0].id, stageWorker], 'the stage run is not touched');
   const later = stopped(signaled(advanced, 'red').state, stageWorker); // red: no continuation in place
-  assert.deepEqual([task(later.state, 1)?.stage, later.effects[0]], ['review', { type: 'kill', slug: 'hive-1-task-1', ptyId: stageWorker }], 'dev ends: the task moves on from dev');
+  assert.deepEqual([task(later.state, 1)?.stage, later.effects[1]], ['review', { type: 'kill', slug: 'hive-1-task-1', ptyId: stageWorker }], 'dev ends: the task moves on from dev');
 });
 
 test('stop on a free session only kills it; a boot drops free sessions with no stopped task and no crash line for them (#283)', () => {

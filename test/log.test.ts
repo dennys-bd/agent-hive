@@ -7,7 +7,7 @@ import { createAppender, createLogger, describeChanges, describeEffect, describe
 import { initialState } from '../src/orchestrator.js';
 import { localActivityId } from '../src/activities.js';
 import { activityIdOf, withLocal, withWork, type WithWork } from './fixtures/work.js';
-import { SIGNALS_DEFAULTS, type Activity, type HookPayload, type Task, type Stage, type Worker, type State, type Item } from '../src/types.js';
+import { SIGNALS_DEFAULTS, type Activity, type Checkpoint, type HookPayload, type Task, type Stage, type Worker, type State, type Item } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 const LINE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z (ERROR|WARN |INFO |DEBUG) /;
@@ -450,4 +450,15 @@ test('setSignals logs its opening signal only: the rows are config, read from th
 
 test('describeEvent names a retry by its task only (#915)', () => {
   assert.equal(describeEvent({ type: 'retry', taskId: 'board:I7' }), 'retry #board:I7');
+});
+
+test('describeEvent and describeEffect name a checkpoint by number, stage and end, never its shas (#619)', () => {
+  const checkpoint: Checkpoint = { n: 2, stage: 'dev', start: 'a1b2c3d', head: 'b2c3d4e', commit: 'c3d4e5f', branch: 'hive/1-x', at: '2026-10-10T10:00:00.000Z', ended: 'restart' };
+  assert.equal(describeEvent({ type: 'checkpointCaptured', activityId: 'fedcba98-0000-4000-8000-000000000002', checkpoint }), 'checkpointCaptured activity=fedcba98 n=2 stage=dev ended=restart');
+  assert.equal(describeEvent({ type: 'restoring', itemId: 'board:I1' }), 'restoring #board:I1');
+  assert.equal(describeEvent({ type: 'restored', itemId: 'board:I1', branch: 'hive/1-x-r2' }), 'restored #board:I1 branch=hive/1-x-r2');
+  assert.equal(describeEvent({ type: 'restoreFailed', itemId: 'board:I1' }), 'restoreFailed #board:I1');
+  const task = { item: { itemId: 'board:I1', id: '1', title: 't', body: '', url: '' }, stage: 'dev', boardColumn: 'x', auto: true };
+  const activity = { id: 'a', kind: 'task' as const, workspace: 'hive', slug: 'hive-1-x' };
+  assert.equal(describeEffect({ type: 'captureCheckpoint', activity, task, stage: 'dev', ended: 'done' }), 'captureCheckpoint #1 slug=hive-1-x stage=dev');
 });
