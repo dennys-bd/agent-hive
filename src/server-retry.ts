@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from 'express';
 import { activityOf } from './activities.js';
-import { MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
+import { LEAVING_MESSAGE, MISSING_MESSAGE, type Refusal, refuse, RUNNING_MESSAGE, type TaskRouteDeps, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import { canMoveToStage } from './tasks.js';
 import { retryTransition } from './transit.js';
 import { TRIES_OUT, type State } from './types.js';
@@ -19,7 +19,7 @@ function retryRefusal(state: State, taskId: string): Refusal | undefined {
   const task = state.tasks.find((c) => c.item.itemId === taskId);
   if (!task) return { status: HTTP_NOT_FOUND, message: UNKNOWN_TASK_MESSAGE };
   if (task.missing) return { status: HTTP_CONFLICT, message: MISSING_MESSAGE };
-  if (!canMoveToStage(task, state)) return { status: HTTP_CONFLICT, message: RUNNING_MESSAGE };
+  if (!canMoveToStage(task, state)) return { status: HTTP_CONFLICT, message: task.leaving ? LEAVING_MESSAGE : RUNNING_MESSAGE };
   const error = activityOf(state, taskId)?.error;
   if (retryTransition(state, task, error) === undefined) {
     return { status: HTTP_CONFLICT, message: error?.startsWith(TRIES_OUT) === true ? TRANSITION_GONE_MESSAGE : NOT_OUT_OF_TRIES_MESSAGE };

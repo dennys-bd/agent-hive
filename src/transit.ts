@@ -98,14 +98,16 @@ export function keepsRun(state: State, task: Task, transition: Transition, next:
 }
 
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
+// Command and CI output reach the record raw: no control characters (the page may paste it into a pty) and capped, as an evidence is
+const shown = (text: string): string => withoutControls(text).slice(0, FEEDBACK_MAX);
 
 // The try take just counted (#915), as the try history reads it: the failed names a commands or wait-for-CI end gave, else the exit name; the
 // first line of what {verdict} reads, only on a verdict end (a done carries no evidence, and an older verdict may still sit on the record)
 function tryRecord(state: State, task: Task, transition: Transition, end: EndOf, n: number): TryRecord {
   const text = end.trigger === 'verdict' ? verdictText(stageOf(state.stages, transition.from), resultOf(state, taskId(task))) : '';
   return {
-    transition: transitionKey(transition), n, max: transition.maxTries ?? 0, cause: end.cause ?? exitName(end.trigger, end.verdict),
-    error: firstLine(text), at: new Date().toISOString(), stage: transition.to,
+    transition: transitionKey(transition), n, max: transition.maxTries ?? 0, cause: shown(end.cause ?? exitName(end.trigger, end.verdict)),
+    error: shown(firstLine(text)), at: new Date().toISOString(), stage: transition.to,
   };
 }
 

@@ -4,6 +4,7 @@ import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { advance, type EndOf, retry, take, unrouted } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
+import { FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Stage, State, Task, Transition, TryRecord } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
 
@@ -120,4 +121,12 @@ test('a retry event into a prompt stage starts the destination\'s run at once: t
   const { state, effects } = pure(halted, (s) => reduce(s, { type: 'retry', taskId: ID }));
   const spawn = effects.find((e) => e.type === 'spawn');
   assert.deepEqual([state.tasks[0].stage, spawn?.type === 'spawn' ? spawn.stage.name : undefined], ['fix', 'fix']);
+});
+
+test('a try\'s cause and error lose their control characters and stay within FEEDBACK_MAX (#915)', () => {
+  const raw = `\u001b[31m${'x'.repeat(FEEDBACK_MAX + 10)}`;
+  const state = placed({}, { result: { commands: { verdict: 'failed', output: raw } } });
+  const [record] = log(advance(state, state.tasks[0], { ...FAILED, cause: '\u001b[1mbuild (1)' }).state) ?? [];
+  assert.equal(record?.cause, '[1mbuild (1)');
+  assert.ok(record !== undefined && record.error.length === FEEDBACK_MAX && !record.error.includes('\u001b'));
 });

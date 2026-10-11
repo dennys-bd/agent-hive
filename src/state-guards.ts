@@ -140,7 +140,7 @@ function savedSync(value: unknown): { sync?: ForkSyncResult } {
 // #915: a try's record as take wrote it; the session id reaches claude's argv through a handover, so only its uuid shape is kept
 const isTryRecord = (value: unknown): value is TryRecord =>
   isJsonObject(value) && isCapped(value.transition, FEEDBACK_MAX) && isRunCount(value.n) && isRunCount(value.max)
-  && typeof value.cause === 'string' && typeof value.error === 'string' && isDate(value.at) && typeof value.stage === 'string';
+  && isCapped(value.cause, FEEDBACK_MAX) && isCapped(value.error, FEEDBACK_MAX) && isDate(value.at) && isCapped(value.stage, FEEDBACK_MAX);
 const savedTryRecord = (r: TryRecord): TryRecord => ({
   transition: r.transition, n: r.n, max: r.max, cause: r.cause, error: r.error, at: r.at, stage: r.stage, ...(isUuid(r.sessionId) ? { sessionId: r.sessionId } : {}),
 });
