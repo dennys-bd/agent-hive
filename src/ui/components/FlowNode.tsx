@@ -38,21 +38,6 @@ function MissingStrip({ stage, tasks, state }: { stage: string; tasks: Task[]; s
   );
 }
 
-// The node's own height, read on every resize: the chart routes the arrows from each node's real bottom
-function useHeight(stage: string, onHeight: (stage: string, height: number) => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const read = (): void => onHeight(stage, node.offsetHeight);
-    const observer = new ResizeObserver(read);
-    observer.observe(node);
-    read();
-    return () => observer.disconnect();
-  }, [stage, onHeight]);
-  return ref;
-}
-
 // The list's fold, read on every scroll and resize: whether it overflows, and how many tasks sit below it
 function useFold(count: number) {
   const ref = useRef<HTMLUListElement>(null);
@@ -81,21 +66,20 @@ function StageLoad({ stage, cap, state }: { stage: string; cap?: number; state: 
 
 interface FlowNodeProps {
   stage: Stage; state: State; tasks: Task[]; order: Task[]; shown: number; filteredOut: number; rules: FilterRule[]; drag: DragRef; selectedId?: string;
-  isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void; onHeight(stage: string, height: number): void;
+  isListed: boolean; maxHeight: number; cap?: number; onOpen?(taskId: string): void; onFilter(): void; onClearFilter(): void; onList(): void;
 }
 
 /** A stage as a node of the flowchart (#134, 1b): 190px, its header (name, count, ● N awaiting you, ⋯), who runs it, the view filter's indicator
  * (#374), the missing strip (#279) and its tasks, scrolling inside up to `maxHeight`; the footer only when they overflow. `tasks` are what the
  * source pick, the view filter and the search let through; `order` is the stage's whole order, which a drop is read in (#366). */
 export function FlowNode(props: FlowNodeProps) {
-  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList, onHeight } = props;
-  const root = useHeight(stage.name, onHeight);
+  const { stage, state, tasks, order, shown, filteredOut, rules, drag, selectedId, isListed, maxHeight, cap, onOpen, onFilter, onClearFilter, onList } = props;
   const fold = useFold(tasks.length);
   const waiting = order.filter((c) => awaitsYou(c, state)).length;
   const { draggedId, dropBefore, taskDragProps, dropAtEnd, dragOverEnd, onListDragLeave } = useStageDrag(drag, stage, order, state);
   const tailDrop = dropBefore !== undefined && (dropBefore === 'end' || !tasks.some((c) => c.item.itemId === dropBefore));
   return (
-    <div ref={root} data-stage={stage.name} style={{ maxHeight }} className={`flex w-[190px] flex-col gap-1.5 rounded-xl border bg-card py-2 pl-2 ${isListed ? 'border-foreground' : ''}`}>
+    <div data-stage={stage.name} style={{ maxHeight }} className={`flex w-[190px] flex-col gap-1.5 rounded-xl border bg-card py-2 pl-2 ${isListed ? 'border-foreground' : ''}`}>
       <div className="flex flex-none items-center gap-1.5 pr-2 text-muted-foreground text-xs">
         <h3 className="truncate font-medium text-foreground">{stage.name}</h3>
         <span>{shown}</span>
