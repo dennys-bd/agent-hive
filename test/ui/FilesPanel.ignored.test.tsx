@@ -4,19 +4,27 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ActivitySide } from '@/components/FilesPanel';
 import { FileOpenerContext, type OpenFile } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
-import type { Task, TaskTree } from '../../src/types';
+import type { FolderEntries, Task, TaskTree } from '../../src/types';
 import type { TaskActivity } from '@/lib/activities';
 import { taskPairOf } from '../fixtures/work';
 
 // HIVE-22: what git ignores shows dimmed beside the rest, and an ignored folder's children are read from disk only once it is expanded
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['README.md'], marks: { 'README.md': 'M' }, folders: [], ignored: { files: ['debug.log'], folders: ['node_modules'] } };
-const FOLDER_URL = '/activities/a-I1/tree/folder?path=node_modules';
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['README.md'], marks: { 'README.md': 'M' }, folders: [], ignored: { files: ['debug.log'], folders: ['docs', 'node_modules'] } };
+const FOLDER = '/activities/a-I1/tree/folder?path=';
+const FOLDER_URL = `${FOLDER}node_modules`;
+// #1: docs is a nested repository, so the route answers its view of each of its folders
+const FOLDERS: Record<string, FolderEntries> = {
+  [FOLDER_URL]: { files: ['left-pad.js'], folders: [] },
+  [`${FOLDER}docs`]: { files: ['README.md'], folders: ['agent'], repo: { marks: {}, ignored: [] } },
+  [`${FOLDER}docs%2Fagent`]: { files: ['foo.md', 'old.log'], folders: [], repo: { marks: { 'foo.md': 'M' }, ignored: ['old.log'] } },
+};
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url.endsWith('/tree')) return json(TREE);
-  return url === FOLDER_URL ? json({ files: ['left-pad.js'], folders: [] }) : new Response(null, { status: 204 });
+  const folder = FOLDERS[url];
+  return folder ? json(folder) : new Response(null, { status: 204 });
 });
 const openFile = vi.fn<OpenFile>(() => true);
 const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
@@ -44,4 +52,19 @@ test('node_modules shows muted and collapsed, is not read until expanded, and a 
   await user.click(await screen.findByRole('button', { name: 'left-pad.js' }));
   expect(urls()).toContain(FOLDER_URL);
   expect(openFile).toHaveBeenCalledWith('I1', 'node_modules/left-pad.js');
+});
+
+test('a nested repository is not read while collapsed; expanded, its changed file shows the M mark, a tracked one plain and one it ignores dimmed, docs itself still dimmed (#1)', async () => {
+  const user = userEvent.setup();
+  render(side());
+  const docs = await screen.findByRole('button', { name: 'docs' });
+  expect(urls().filter((url) => url.startsWith(`${FOLDER}docs`))).toEqual([]);
+  await user.dblClick(docs);
+  await user.dblClick(await screen.findByRole('button', { name: 'agent' }));
+  const foo = await screen.findByTitle('docs/agent/foo.md');
+  expect(within(foo).getByText('foo.md')).toHaveClass('text-waiting');
+  expect(foo.querySelector('[data-git-mark]')).toHaveTextContent('M');
+  expect(within(screen.getByTitle('docs/agent/old.log')).getByText('old.log')).toHaveClass('text-muted-foreground');
+  expect(within(screen.getByTitle('docs/README.md')).getByText('README.md')).toHaveClass('text-foreground');
+  expect(within(docs).getByText('docs')).toHaveClass('text-muted-foreground');
 });

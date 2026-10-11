@@ -7,7 +7,7 @@ export interface TreeNode {
   path: string; // relative to the worktree
   mark?: GitMark; // a file's own; a folder has none
   children?: TreeNode[]; // present on a folder
-  isIgnored?: true; // HIVE-22: git ignores it, or it lies in a nested repository; never marked
+  isIgnored?: true; // HIVE-22: git ignores it, or it lies in a nested repository that ignores it (#1); never marked
   isUnloaded?: true; // HIVE-22: an ignored folder whose children were not read yet (children: [])
 }
 
@@ -23,6 +23,7 @@ const byKindThenName = (a: TreeNode, b: TreeNode): number =>
 const IGNORED = { isIgnored: true } as const;
 const NO_IGNORED: IgnoredEntries = { files: [], folders: [] };
 const NOTHING_LOADED: ReadonlyMap<string, FolderEntries> = new Map();
+const UNLOADED = { isUnloaded: true } as const;
 
 interface Folder { files: TreeNode[]; folders: Map<string, Folder>; flags?: Pick<TreeNode, 'isIgnored' | 'isUnloaded'> }
 
@@ -49,14 +50,25 @@ function addFile(root: Folder, path: string, extra: Pick<TreeNode, 'mark' | 'isI
   descend(root, parts).files.push({ name, path, ...extra });
 }
 
-// An ignored folder (HIVE-22): its children as read from disk when the map has them, each loaded subfolder's own from the same map; else
-// unloaded, so the panel shows it collapsed and empty
-function addIgnoredFolder(root: Folder, path: string, loaded: ReadonlyMap<string, FolderEntries>, isShown: (path: string) => boolean): void {
+// A child's look in a folder read from disk: outside a nested repository, ignored; inside one (#1), that repository's mark, and dimmed only
+// when that repository ignores it. hasOwn: a file named `constructor` must not pick up Object's
+function childOf(entries: FolderEntries, name: string): Pick<TreeNode, 'mark' | 'isIgnored'> {
+  const { repo } = entries;
+  if (!repo) return IGNORED;
+  const mark = Object.hasOwn(repo.marks, name) ? repo.marks[name] : undefined;
+  return { ...(mark ? { mark } : {}), ...(repo.ignored.includes(name) ? IGNORED : {}) };
+}
+
+// A folder read from disk (HIVE-22): its children as the map has them, each loaded subfolder's own from the same map; else unloaded, so the
+// panel shows it collapsed and empty. Dimmed unless a nested repository tracks it (#1)
+function addIgnoredFolder(root: Folder, path: string, loaded: ReadonlyMap<string, FolderEntries>, isShown: (path: string) => boolean, isIgnored: boolean): void {
   const entries = loaded.get(path);
-  descend(root, path.split('/')).flags = entries ? IGNORED : { ...IGNORED, isUnloaded: true };
+  descend(root, path.split('/')).flags = { ...(isIgnored ? IGNORED : {}), ...(entries ? {} : UNLOADED) };
   if (!entries) return;
-  for (const name of entries.folders) if (isShown(`${path}/${name}`)) addIgnoredFolder(root, `${path}/${name}`, loaded, isShown);
-  for (const name of entries.files) if (isShown(`${path}/${name}`)) addFile(root, `${path}/${name}`, IGNORED);
+  for (const name of entries.folders) {
+    if (isShown(`${path}/${name}`)) addIgnoredFolder(root, `${path}/${name}`, loaded, isShown, childOf(entries, name).isIgnored === true);
+  }
+  for (const name of entries.files) if (isShown(`${path}/${name}`)) addFile(root, `${path}/${name}`, childOf(entries, name));
 }
 
 /** The paths as a sorted tree, the hidden ones left out unless asked for; an empty folder (#818) is a folder with no children; what git
@@ -66,7 +78,7 @@ export function buildTree(files: string[], marks: Record<string, GitMark>, showH
   const isShown = (path: string): boolean => showHidden || !isHidden(path);
   for (const path of folders.filter(isShown)) descend(root, path.split('/'));
   for (const path of files.filter(isShown)) addFile(root, path, marks[path] ? { mark: marks[path] } : {});
-  for (const path of ignored.folders.filter(isShown)) addIgnoredFolder(root, path, loaded, isShown);
+  for (const path of ignored.folders.filter(isShown)) addIgnoredFolder(root, path, loaded, isShown, true); // the outer repository ignores each of these
   for (const path of ignored.files.filter(isShown)) addFile(root, path, IGNORED);
   return toNodes(root, '');
 }

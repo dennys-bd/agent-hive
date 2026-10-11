@@ -4,7 +4,7 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import { FOLDER_QUERY_MESSAGE, parseStatus, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
+import { FOLDER_QUERY_MESSAGE, nestedRepoOf, parseStatus, repoViewOf, REVEAL_BODY_MESSAGE, taskTree, treeRoot } from '../src/server-tree.js';
 import { revealCommand } from '../src/platform-commands.js';
 import { FOLDER_MISSING_MESSAGE, GIT_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { localActivityId } from '../src/activities.js';
@@ -26,6 +26,8 @@ const DIRS = ['empty/', 'src/', 'vendor/lib/', ''].join('\0');
 const IGNORED = ['debug.log', 'node_modules/', 'docs/', '.git/', ''].join('\0');
 // the vendor/lib nested repository the --directory listing names (it holds .git) joins the ignored folders
 const IGNORED_ENTRIES = { files: ['debug.log'], folders: ['docs', 'node_modules', 'vendor/lib'] };
+// a nested repository's git status (#1), its paths relative to that repository
+const NESTED_STATUS = [' M agent/foo.md', '!! agent/x.log', ''].join('\0');
 const STATUS = [' M src/b.ts', ' D gone.txt', '?? new.txt', 'R  moved.ts', 'old.ts', ''].join('\0');
 const task = (n: number, extra: Partial<WithWork> = {}): WithWork => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `Task ${n}`, body: '', url: '' }, stage: 'fila', boardColumn: '', auto: true, created: true, workspace: 'hive', ...extra,
@@ -44,6 +46,10 @@ async function startTree(t: TestContext, tasks: (repo: string) => WithWork[]): P
   const calls: [string, string[]][] = [];
   const exec: Exec = async (file, args) => {
     calls.push([file, args]);
+    if (args.includes('--ignored=matching')) {
+      if (args[2].endsWith('broken')) throw new Error('fatal: not a git repository');
+      return { stdout: NESTED_STATUS };
+    }
     if (args.includes('--ignored')) return { stdout: IGNORED };
     if (args.includes('--directory')) return { stdout: DIRS };
     if (args.includes('ls-files')) return { stdout: LISTED };
@@ -63,6 +69,26 @@ test('parseStatus marks changed files M and new, untracked or renamed ones A, dr
   const { marks, deleted } = parseStatus(STATUS);
   assert.deepEqual(marks, { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' });
   assert.deepEqual([...deleted], ['gone.txt']);
+});
+
+test('repoViewOf marks the folder\'s direct child files as the outer tree does, leaves a deeper path and a deletion out, reads a rename as new, and names the children the nested repository ignores, an ignored folder covering its subtree (#1)', () => {
+  const status = [' M agent/foo.md', '?? agent/new.md', ' M agent/deep/y.md', ' D agent/gone.md', 'R  agent/moved.md', 'agent/was.md', '!! agent/x.log', '!! agent/old/', '!! agent/deep/z.log', ''].join('\0');
+  const children = { files: ['foo.md', 'moved.md', 'new.md', 'tracked.md', 'x.log'], folders: ['deep', 'old'] };
+  assert.deepEqual(repoViewOf(status, 'agent', children), { marks: { 'foo.md': 'M', 'moved.md': 'A', 'new.md': 'A' }, ignored: ['old', 'x.log'] });
+  // the read folder inside an ignored one: git names only the folder, `dir/`, and every child sits under it
+  assert.deepEqual(repoViewOf(['!! agent/old/', ''].join('\0'), 'agent/old', { files: ['a.txt'], folders: ['b'] }), { marks: {}, ignored: ['a.txt', 'b'] });
+  // the nested repository's own root: no prefix
+  assert.deepEqual(repoViewOf([' M README.md', '!! build/', ''].join('\0'), '', { files: ['README.md'], folders: ['build'] }), { marks: { 'README.md': 'M' }, ignored: ['build'] });
+});
+
+test('nestedRepoOf answers the nearest folder holding .git from the read folder up, a repository inside a nested one for its own files, the tree\'s root left out (#1)', async () => {
+  const repos = new Set(['/wt', '/wt/docs', '/wt/docs/vendor/lib']);
+  const hasGit = async (folder: string): Promise<boolean> => repos.has(folder);
+  assert.equal(await nestedRepoOf('/wt', 'docs', hasGit), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/agent/specs', hasGit), 'docs');
+  assert.equal(await nestedRepoOf('/wt', 'docs/vendor/lib/src', hasGit), 'docs/vendor/lib');
+  assert.equal(await nestedRepoOf('/wt', 'node_modules/x', hasGit), undefined);
+  assert.equal(await nestedRepoOf('/wt', '', hasGit), undefined);
 });
 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
@@ -140,7 +166,7 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
 });
 
-test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused (HIVE-22)', async (t) => {
+test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused, running no git (HIVE-22, #1)', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const wt = worktreePath(f.repo, 'hive-1-task');
   await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
@@ -149,13 +175,43 @@ test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sort
   await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
   const folder = (query: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder${query}`);
   const res = await folder('?path=docs');
-  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'] }]);
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['README.md', 'glossary.md'], folders: ['agent'], repo: { marks: {}, ignored: [] } }]);
+  // docs holds .git: one status in it, its own root as the pathspec `.`
+  assert.deepEqual(f.calls.map(([, args]) => [args[2], args.at(-1)]), [[join(wt, 'docs'), '.']]);
+  f.calls.length = 0;
   const refusals = [['?path=..%2Fx', OUTSIDE_MESSAGE], ['?path=vendor%2Flib%2F.git', GIT_MESSAGE], ['?path=nope', FOLDER_MISSING_MESSAGE], ['', FOLDER_QUERY_MESSAGE], ['?path=a&path=b', FOLDER_QUERY_MESSAGE]] as const;
   for (const [query, message] of refusals) {
     const refused = await folder(query);
     assert.deepEqual([refused.status, await refused.json()], [400, { error: message }], query);
   }
   assert.deepEqual(f.calls, []);
+});
+
+test('GET /activities/:id/tree/folder answers a nested repository\'s marks and ignored names from one status in that repository, limited to the folder; a folder with no repository above runs no git (#1)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
+  const wt = worktreePath(f.repo, 'hive-1-task');
+  await mkdir(join(wt, 'docs', 'agent'), { recursive: true });
+  await mkdir(join(wt, 'src'), { recursive: true });
+  await writeFile(join(wt, 'docs', '.git'), 'gitdir: elsewhere'); // a docs worktree's .git is a file
+  await Promise.all(['foo.md', 'bar.md', 'x.log'].map((name) => writeFile(join(wt, 'docs', 'agent', name), name)));
+  await writeFile(join(wt, 'src', 'b.ts'), 'b');
+  const folder = (path: string): Promise<Response> => hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree/folder?path=${encodeURIComponent(path)}`);
+  const res = await folder('docs/agent');
+  assert.deepEqual([res.status, await res.json()], [200, { files: ['bar.md', 'foo.md', 'x.log'], folders: [], repo: { marks: { 'foo.md': 'M' }, ignored: ['x.log'] } }]);
+  assert.deepEqual(f.calls, [['git', ['--no-optional-locks', '-C', join(wt, 'docs'), '-c', 'core.fsmonitor=false', '-c', 'core.quotepath=off', '--literal-pathspecs', 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignored=matching', '--', 'agent']]]);
+  f.calls.length = 0;
+  // a path written with `..` finds the same repository and pathspec
+  assert.deepEqual((await (await folder('src/../docs/agent')).json()).repo, { marks: { 'foo.md': 'M' }, ignored: ['x.log'] });
+  assert.deepEqual(f.calls.map(([, args]) => [args[2], args.at(-1)]), [[join(wt, 'docs'), 'agent']]);
+  f.calls.length = 0;
+  assert.deepEqual(await (await folder('src')).json(), { files: ['b.ts'], folders: [] });
+  assert.deepEqual(f.calls, []);
+  // a nested repository whose status fails still lists its folder, without marks
+  await mkdir(join(wt, 'broken'), { recursive: true });
+  await writeFile(join(wt, 'broken', '.git'), 'gitdir: gone');
+  await writeFile(join(wt, 'broken', 'a.md'), 'a');
+  const broken = await folder('broken');
+  assert.deepEqual([broken.status, await broken.json()], [200, { files: ['a.md'], folders: [] }]);
 });
 
 test('POST /activities/:id/reveal with a path shows that item, by its real path; one outside the root or a bad path runs nothing (#818)', async (t) => {
