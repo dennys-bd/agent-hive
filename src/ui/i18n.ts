@@ -1422,6 +1422,7 @@ const en = {
   'shortcuts.toggleLeft': 'open or close the left panel',
   'shortcuts.toggleRight': 'open or close the right panel',
   'shortcuts.clear': 'clear the terminal', // #448
+  'shortcuts.findInTerminal': 'find in terminal', // #12
   'shortcuts.viewFlow': 'go to flow', // #533
   'shortcuts.viewActivities': 'go to activities',
   'shortcuts.newActivity': 'new activity', // redesign 08
@@ -3098,6 +3099,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleLeft': 'abrir ou fechar o painel da esquerda',
   'shortcuts.toggleRight': 'abrir ou fechar o painel da direita',
   'shortcuts.clear': 'limpar o terminal',
+  'shortcuts.findInTerminal': 'buscar no terminal', // #12
   'shortcuts.viewFlow': 'ir para fluxo',
   'shortcuts.viewActivities': 'ir para atividades',
   'shortcuts.newActivity': 'nova atividade',
