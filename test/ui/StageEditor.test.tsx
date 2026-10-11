@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { AgentAvailability } from '../../src/types';
-import { type StageSource, StageEditor } from '@/components/settings/StageEditor';
+import { type StageSource, StageEditor, type TransitionFocus } from '@/components/settings/StageEditor';
 import { setLanguage, t } from '@/i18n';
 import { emptyStage, type StageDraft } from '@/lib/settings-form';
 import { stageMeta } from '@/lib/settings-stages';
@@ -26,9 +26,9 @@ const AGENTS: AgentAvailability[] = [{ agent: 'claude', available: true }];
 
 // StageEditor over its own flow, as CombTab holds the draft: every onChange is seen and applied.
 type Flow = { stages: StageDraft[]; transitions: TransitionDraft[] };
-function Harness({ initial, transitions = [], sources = SOURCES, agents = AGENTS, onChange }: { initial: StageDraft[]; transitions?: TransitionDraft[]; sources?: StageSource[]; agents?: AgentAvailability[]; onChange(next: Flow): void }) {
+function Harness({ initial, transitions = [], sources = SOURCES, agents = AGENTS, focus, onChange }: { initial: StageDraft[]; transitions?: TransitionDraft[]; sources?: StageSource[]; agents?: AgentAvailability[]; focus?: TransitionFocus; onChange(next: Flow): void }) {
   const [flow, setFlow] = useState<Flow>({ stages: initial, transitions });
-  return <StageEditor stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} onChange={(next) => { onChange(next); setFlow(next); }} />;
+  return <StageEditor stages={flow.stages} transitions={flow.transitions} sources={sources} agents={agents} defaultAgent="claude" commands={[]} workspaces={['hive']} focus={focus} onChange={(next) => { onChange(next); setFlow(next); }} />;
 }
 const setup = (initial: StageDraft[] = STAGES, sources: StageSource[] = SOURCES, agents: AgentAvailability[] = AGENTS) => {
   const user = userEvent.setup();
@@ -314,4 +314,13 @@ test('exige aprovação carries the stage\'s exits in the same change: terminou 
   expect(exits().getByRole('button', { name: /^aprovado → Review/ })).toBeInTheDocument();
   await user.click(approval);
   expect(exits().getByRole('button', { name: /^terminou → Review/ })).toBeInTheDocument();
+});
+
+test('a focus selects the transition it names and opens its editor; one naming no transition leaves the stage selected (#918)', () => {
+  const { stages, transitions } = planFlow();
+  const { unmount } = render(<Harness initial={stages} transitions={transitions} focus={{ transition: transitions[0].id, n: 1 }} onChange={vi.fn()} />);
+  expect(screen.getByRole('region', { name: 'Plan → Review · terminou' })).toBeInTheDocument();
+  unmount();
+  render(<Harness initial={stages} transitions={transitions} focus={{ transition: 'gone', n: 1 }} onChange={vi.fn()} />);
+  expect(nameField()).toHaveValue('Plan');
 });
