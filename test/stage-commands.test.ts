@@ -256,3 +256,13 @@ test('the two events log their activity and pty, never an output (#914)', () => 
   assert.equal(describeEvent({ type: 'stageCommandStarted', activityId: 'a', ptyId: 'p', at: T0, skipped: true }).endsWith(' skipped'), true);
   assert.equal(describeEvent({ type: 'stageCommandOutput', activityId: 'a', ptyId: 'p', at: T0 }).startsWith('stageCommandOutput '), true);
 });
+
+test('a failed commands stage records its try: the failed commands as the cause, the output\'s first line as the error; the exhausting end records none (#915)', () => {
+  const retry: Transition = { from: 'checks', to: 'checks', when: 'verdict', verdict: 'failed', maxTries: 1 };
+  const first = polled({}, { transitions: [...chained([checks(), REVIEW]).transitions, retry] }).state;
+  const retried = ended(first, 1, 'boom').state;
+  const [{ at: _at, ...record }] = live(retried)?.tryLog ?? [];
+  assert.deepEqual(record, { transition: '["checks","verdict","failed"]', n: 1, max: 1, cause: 'build (1)', error: 'build (1)', stage: 'checks' });
+  const out = ended(retried, 1, 'again').state;
+  assert.deepEqual([live(out)?.error, live(out)?.tryLog?.length], ['tries out: verdict:failed · 1', 1]);
+});
