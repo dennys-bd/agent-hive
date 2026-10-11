@@ -2,8 +2,8 @@
 // (terminal.ts, #252), over one WebSocket (#407): output in, keys and sizes out. A WebSocket sits outside Chromium's 6-per-host HTTP pool,
 // which a stream and two POSTs per terminal used to exhaust, leaving every other fetch of the page waiting.
 import type { Terminal } from '@xterm/xterm';
-
-type PtyMessage = { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number }; // parsePtyMessage in src/terminal-wire.ts
+import { probeKeys } from '@/lib/key-probe';
+import type { PtyMessage } from '../../terminal-wire.js'; // what parsePtyMessage reads; type only, nothing of the daemon's reaches the bundle
 
 // A drag's ResizeObserver ticks dozens of times; the shell redraws its prompt on every SIGWINCH, so it should see one per drag, not one per
 // tick. #451
@@ -34,6 +34,21 @@ function replayGate(term: Terminal): { write(data: string): void; isReplaying():
   };
 }
 
+// What is sent before the socket opens waits for it, then goes in the order sent (#407)
+function senderOf(socket: WebSocket): (message: PtyMessage) => void {
+  let queued: string[] | undefined = []; // undefined once open
+  socket.addEventListener('open', () => {
+    const held = queued ?? [];
+    queued = undefined;
+    for (const text of held) socket.send(text);
+  });
+  return (message) => {
+    const text = JSON.stringify(message);
+    if (queued) queued = [...queued, text];
+    else socket.send(text);
+  };
+}
+
 /** What connectPty hands its view (#808). postSize sends the xterm's grid now, past the debounce, dropping a resize still pending: a view
  * calls it on its first shown fit and whenever it becomes the one in front of the user. The host drops a grid the pty already has. */
 export interface PtyConnection { disconnect(): void; postSize(): void }
@@ -42,22 +57,12 @@ export interface PtyConnection { disconnect(): void; postSize(): void }
  * Its keys go over the socket as soon as they're typed; a resize is debounced (#451) so only the last grid of a drag, once it has been quiet for RESIZE_SETTLE_MS, goes out; the last resize of any viewer
  * wins. A key never waits behind a pending resize. What is sent before the socket opens waits for it. Any close the page did not ask for (the pty exited, the daemon refused
  * or dropped the socket) calls onExit: an internal pty dies with the daemon, so there is nothing to reconnect to. Returns the connection (#808):
- * its teardown, which drops any resize still pending, and postSize. */
+ * its teardown, which drops any resize still pending, and postSize. Every batch of the dead-key probe (#732) goes out as a keys message, under the same replay gate as a key. */
 export function connectPty(term: Terminal, ptyId: string, onExit: () => void): PtyConnection {
   const socket = new WebSocket(`ws://${location.host}/ptys/${encodeURIComponent(ptyId)}/pty`);
-  let queued: string[] | undefined = []; // undefined once open
+  const send = senderOf(socket);
   let stopped = false; // the teardown's own close is not the run's end
   const frames = replayGate(term);
-  const send = (message: PtyMessage): void => {
-    const text = JSON.stringify(message);
-    if (queued) queued = [...queued, text];
-    else socket.send(text);
-  };
-  socket.addEventListener('open', () => {
-    const held = queued ?? [];
-    queued = undefined;
-    for (const text of held) socket.send(text);
-  });
   socket.addEventListener('message', (event) => {
     if (typeof event.data === 'string') frames.write(event.data);
   });
@@ -67,6 +72,10 @@ export function connectPty(term: Terminal, ptyId: string, onExit: () => void): P
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const typed = term.onData((data) => {
     if (!frames.isReplaying() && !FOCUS_REPORTS.has(data)) send({ type: 'input', data });
+  });
+  // #732: the dead-key probe's batches follow the replay gate as keys do, so probeKeys never needs to know about the replay
+  const stopProbe = probeKeys(term, (events) => {
+    if (!frames.isReplaying()) send({ type: 'keys', events });
   });
   const dropPending = (): void => {
     if (resizeTimer) clearTimeout(resizeTimer);
@@ -89,6 +98,7 @@ export function connectPty(term: Terminal, ptyId: string, onExit: () => void): P
     socket.close();
     typed.dispose();
     sized.dispose();
+    stopProbe();
   };
   return { disconnect, postSize };
 }
