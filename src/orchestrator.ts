@@ -222,7 +222,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   const task = placed?.task;
   const stage = task && stageOf(state.stages, task.stage);
   const activity = activityOf(state, itemId);
-  if (!placed || !task || !stage || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351
+  if (!placed || !task || !stage || task.item.epic !== undefined || activity?.workerId !== undefined || activity?.deleting || inAction(activity) || task.missing || task.leaving || activity?.approval || activity?.setup) return none(state); // setup: #351; #31: a show epic never runs
   if (resolveWorkspace(task, state.workspaces, state.sourceWorkspaces) === undefined) return none(state); // the route asks for one first (#179)
   // a manual start clears the last failure (spawn, delete activity or a commands stage's) and tries again
   if (stage.action === 'deleteActivity') return startDeleteActivity(clearedError(state, task), task);

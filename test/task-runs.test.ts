@@ -85,6 +85,12 @@ test('startMode never offers Restart on a checkout task: it would reset the user
   assert.deepEqual(startMode(ran('spec', { stageStart: { stage: 'spec', commit: 'a1b2c3d' }, local: true }), state), { continue: true, restart: false });
 });
 
+test('startMode is none for a show epic in any stage, run before or not: it never runs (#31)', () => {
+  const state = { stages, workers: [] };
+  const item = { ...task('spec').item, children: ['board:2'], epic: { follows: 'behind' as const, switchAt: 'dev' } };
+  for (const c of [task('spec', { item }), ran('spec', { item, stopped: true }), task('done', { item })]) assert.equal(startMode(c, state), 'none', c.stage);
+});
+
 test('ownBranch trusts a task branch only when it is the template or <template>-r<n>; taskBranch falls back to the template (#283)', () => {
   const template = 'hive/1-fix.it';
   assert.equal(ownBranch({ branch: template }, template), template);

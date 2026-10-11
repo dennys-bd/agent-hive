@@ -3404,3 +3404,21 @@ test('forkSynced sets the sync on its activity, a new object, with no effect and
   assert.equal(describeEvent({ type: 'forkSynced', activityId: id, sync: { ...sync, reason: 'fatal: secret words' } }).includes('secret'), false);
   assert.match(describeEvent({ type: 'forkSynced', activityId: id, sync }), /^forkSynced activity=\S+ github diverged$/);
 });
+
+test('the fill never picks a show epic: the leaf behind it takes the worker (#31)', () => {
+  const epic: SourceItem = { item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const { state } = polled(base(1), [epic, listed(2)]);
+  assert.deepEqual(owners(state, occupied(state)), ['board:item2']);
+  assert.ok(!cands(state).some((c) => c.item.itemId === 'board:item1'));
+});
+
+test('moveToStage and a start on a show epic are no-ops: its children decide its stage, and it never runs (#31)', () => {
+  const epic: SourceItem = { item: { ...item(1), epic: { follows: 'behind', switchAt: 'dev' } }, column: 'Backlog' };
+  const before = polled(base(0), [epic]).state;
+  const moved = reduce(before, { type: 'moveToStage', taskId: 'board:item1', stage: 'review' });
+  assert.equal(task(moved.state, 1)?.stage, 'spec');
+  assert.deepEqual(moved.effects, []);
+  const start = started(before, 'board:item1');
+  assert.deepEqual(start.effects, [], 'no spawn');
+  assert.equal(work(start.state, 1), undefined, 'no activity born for it');
+});
