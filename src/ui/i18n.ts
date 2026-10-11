@@ -211,6 +211,7 @@ const en = {
   'detail.stopped': 'stopped',
   'detail.ago': '{time} ago',
   'detail.openActivity': 'open activity',
+  'detail.issueLink': 'issue ›', // #64: on a PR page, the details' title row opens the task's issue
   'detail.showFlow': 'see in flow',
   'detail.more': 'more actions',
   'detail.menu.openIssue': 'open issue in {source}',
@@ -1963,6 +1964,7 @@ const pt: Record<MessageKey, string> = {
   'detail.stopped': 'parada',
   'detail.ago': 'há {time}',
   'detail.openActivity': 'abrir atividade',
+  'detail.issueLink': 'issue ›',
   'detail.showFlow': 'ver no fluxo',
   'detail.more': 'mais ações',
   'detail.menu.openIssue': 'abrir issue no {source}',

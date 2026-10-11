@@ -383,3 +383,8 @@ test('the blockers section\'s copy (#57): both languages, the handoff\'s Portugu
   for (const code of codes) assert.ok(MESSAGES.en[`blockers.${code}`].length > 0 && MESSAGES.pt[`blockers.${code}`].length > 0, code);
   assert.deepEqual([MESSAGES.en['blockers.unexpected'], MESSAGES.pt['blockers.unexpected']], ['Unexpected error', 'Erro inesperado']);
 });
+
+test('issue › on the details panel\'s title row reads the same in both languages (#64)', () => {
+  assert.equal(MESSAGES.en['detail.issueLink'], 'issue ›');
+  assert.equal(MESSAGES.pt['detail.issueLink'], 'issue ›');
+});
