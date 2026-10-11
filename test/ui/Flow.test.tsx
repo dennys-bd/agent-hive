@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Flow } from '@/components/Flow';
+import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage, t } from '@/i18n';
 import { MARGIN } from '@/lib/flow-layout';
 import { readView, resetViewState } from '@/lib/view-state';
@@ -729,4 +730,35 @@ test('a capped stage\'s node shows n/cap after its count; over the cap the numbe
   rerender(<Flow state={s} stageCaps={{ dev: 2 }} />);
   expect(within(header('dev')).getByText('2/2')).not.toHaveClass('text-foreground');
   expect(within(header('dev')).getByText('2/2')).not.toHaveAttribute('title');
+});
+
+// jsdom runs as off macOS: CmdOrCtrl is Ctrl. code carries the key under Shift, as a real keydown does
+const ZOOM_IN = { key: '=', code: 'Equal', ctrlKey: true };
+const ZOOM_OUT = { key: '-', code: 'Minus', ctrlKey: true };
+const ZOOM_RESET = { key: '0', code: 'Digit0', ctrlKey: true };
+const ZOOM_FIT = { key: '!', code: 'Digit1', shiftKey: true };
+
+test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do, only while the flow shows; ⇧1 in buscar tarefas types (#910)', () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  viewport(400, 600);
+  const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={twoStages()} /></FlowShownContext.Provider>;
+  const { rerender } = render(flow(true));
+  const scale = (): string => scaledOf(screen.getByRole('region', { name: 'fluxograma' })).style.transform;
+  expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(false); // prevented: the key is the flow's
+  expect(scale()).toBe('scale(1.1)');
+  fireEvent.keyDown(window, ZOOM_OUT);
+  fireEvent.keyDown(window, ZOOM_OUT);
+  expect(scale()).toBe('scale(0.9)');
+  fireEvent.keyDown(window, ZOOM_RESET);
+  expect(scale()).toBe('scale(1)');
+  expect(fireEvent.keyDown(screen.getByRole('textbox', { name: 'buscar tarefas' }), ZOOM_FIT)).toBe(true); // not prevented: it types
+  expect(scale()).toBe('scale(1)');
+  expect(fireEvent.keyDown(window, ZOOM_FIT)).toBe(false); // prevented: matched by hand, since Shift+1 is no binding
+  expect(scale()).toBe('scale(0.8)');
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 } });
+  fireEvent.keyDown(window, ZOOM_RESET); // back to 100%, so a fit while hidden would show
+  rerender(flow(false)); // under Atividades the flow stays mounted (#596), its keys unbound
+  expect(fireEvent.keyDown(window, ZOOM_IN)).toBe(true);
+  expect(fireEvent.keyDown(window, ZOOM_FIT)).toBe(true);
+  expect(scale()).toBe('scale(1)');
 });
