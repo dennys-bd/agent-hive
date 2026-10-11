@@ -49,11 +49,46 @@ export function sizeIn(body: unknown): TerminalSize | undefined {
   return isSize(size) ? { cols: size.cols, rows: size.rows } : undefined;
 }
 
-/** What a terminal's WebSocket sends the daemon (#407): its keys, and every new grid a fit gives. */
-export type PtyMessage = { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number };
+/** One event of the dead-key probe (#732): src/ui/lib/key-probe.ts records it in the page, the daemon writes it to hive.log at debug. */
+export type KeyProbeKind = 'keydown' | 'compositionstart' | 'compositionupdate' | 'compositionend' | 'data';
+export interface KeyProbeEvent {
+  kind: KeyProbeKind;
+  at: number; // ms since the first event of its batch
+  key?: string;
+  code?: string;
+  isComposing?: boolean;
+  data?: string;
+  length?: number; // a data event's length when its data was too long to keep
+}
 
-// A socket frame comes from the page: anything but the two shapes, checked as the old POST routes did, is undefined and dropped, never a
-// throw that would close the terminal (#407). Rebuilt from the known keys, so nothing else rides along to the pty.
+/** What a terminal's WebSocket sends the daemon (#407): its keys, every new grid a fit gives, and the dead-key probe's batches (#732). */
+export type PtyMessage = { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number } | { type: 'keys'; events: KeyProbeEvent[] };
+
+// #732: a probe frame comes from the page like any other. Its strings are capped, so a crafted one cannot fill hive.log, and so is the batch
+export const PROBE_STRING_MAX = 16;
+export const PROBE_BATCH_MAX = 64;
+const KEY_PROBE_KINDS: readonly KeyProbeKind[] = ['keydown', 'compositionstart', 'compositionupdate', 'compositionend', 'data'];
+const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
+const cap = (text: string): string => text.slice(0, PROBE_STRING_MAX);
+
+// One probe event rebuilt from its known keys; undefined for an unknown kind or a timestamp that is not a count
+function keyProbeEvent(raw: unknown): KeyProbeEvent | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const { kind, at, key, code, isComposing, data, length } = raw as Record<string, unknown>;
+  if (!KEY_PROBE_KINDS.includes(kind as KeyProbeKind) || !isCount(at)) return undefined;
+  return {
+    kind: kind as KeyProbeKind,
+    at,
+    ...(typeof key === 'string' && { key: cap(key) }),
+    ...(typeof code === 'string' && { code: cap(code) }),
+    ...(typeof isComposing === 'boolean' && { isComposing }),
+    ...(typeof data === 'string' && { data: cap(data) }),
+    ...(isCount(length) && { length }),
+  };
+}
+
+// A socket frame comes from the page: anything but the three shapes, checked as the old POST routes did, is undefined and dropped, never a
+// throw that would close the terminal (#407). Rebuilt from the known keys, so nothing else rides along to the pty or to hive.log.
 export function parsePtyMessage(raw: string): PtyMessage | undefined {
   let value: unknown;
   try {
@@ -62,11 +97,26 @@ export function parsePtyMessage(raw: string): PtyMessage | undefined {
     return undefined;
   }
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, data } = value as Record<string, unknown>;
+  const { type, data, events } = value as Record<string, unknown>;
   if (type === 'input') return typeof data === 'string' ? { type: 'input', data } : undefined;
   if (type === 'resize' && isSize(value)) return { type: 'resize', cols: value.cols, rows: value.rows };
+  // the batch is cut before its events are read, so a huge array costs nothing past the cap
+  if (type === 'keys') return Array.isArray(events) ? { type: 'keys', events: events.slice(0, PROBE_BATCH_MAX).flatMap((e) => keyProbeEvent(e) ?? []) } : undefined;
   return undefined;
 }
+
+// A key as the reading guide wants it: the literal Dead bare, anything else as JSON, so `'` reads as "'" and a control is escaped
+const keyText = (key: string): string => (key === 'Dead' ? key : JSON.stringify(key));
+
+function describeKey(event: KeyProbeEvent): string {
+  if (event.kind === 'keydown') return `keydown ${keyText(event.key ?? '')} ${event.code ?? ''} composing=${event.isComposing === true}`;
+  if (event.kind === 'data') return event.data === undefined ? `data len=${event.length ?? 0}` : `data ${JSON.stringify(event.data)}`;
+  return `${event.kind} ${JSON.stringify(event.data ?? '')}`;
+}
+
+/** A probe batch as its hive.log line reads (#732, pinned by the spec): events joined by ` · `, each after the first led by `+<ms>`. */
+export const describeKeys = (events: readonly KeyProbeEvent[]): string =>
+  events.map((event, i) => `${i === 0 ? '' : `+${event.at} `}${describeKey(event)}`).join(' · ');
 
 /** Whether a value is a full WindowBounds record: only the shape readBounds and readMainWindowBounds accept as saved, real bounds. */
 export const isBounds = (value: unknown): value is Required<WindowBounds> => {

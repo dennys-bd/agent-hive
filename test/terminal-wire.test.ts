@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DEFAULT_TERMINAL_WINDOW, insideRect, parsePtyMessage, readBounds, sizeIn, writeBounds } from '../src/terminal-wire.js';
+import { DEFAULT_TERMINAL_WINDOW, describeKeys, insideRect, parsePtyMessage, readBounds, sizeIn, writeBounds } from '../src/terminal-wire.js';
 import { tempDir } from './temp-dir.js';
 
 test('readBounds gives the default when the file is missing or not a bounds record, and what writeBounds stored otherwise', async (t) => {
@@ -44,6 +44,7 @@ test('parsePtyMessage answers undefined, never a throw, for what is not JSON, no
     '{"type":"input"}', '{"type":"input","data":5}',
     '{"type":"resize"}', '{"type":"resize","cols":0,"rows":40}', '{"type":"resize","cols":1.5,"rows":40}', '{"type":"resize","cols":"120","rows":40}',
     '{"type":"resize","cols":1001,"rows":40}', '{"type":"resize","cols":120,"rows":501}', // #808: past the cap, which would grow the host's fallback for good
+    '{"type":"keys"}', '{"type":"keys","events":"Dead"}', '{"type":"keys","events":{"0":{"kind":"data","at":0}}}', // #732: events must be an array
   ];
   for (const raw of bad) assert.equal(parsePtyMessage(raw), undefined, raw);
 });
@@ -53,4 +54,61 @@ test('sizeIn reads a run-opening body\'s size, rebuilt from cols and rows; anyth
   const none = [undefined, null, 'x', {}, { size: null }, { size: '132x41' }, { size: { cols: 0, rows: 41 } }, { size: { cols: 132 } }, { size: { cols: '132', rows: 41 } }, { size: { cols: 1e9, rows: 41 } }, { size: { cols: 132, rows: 1e9 } }];
   assert.deepEqual(sizeIn({ size: { cols: 1000, rows: 500 } }), { cols: 1000, rows: 500 }); // the cap itself still passes
   for (const body of none) assert.equal(sizeIn(body), undefined, JSON.stringify(body));
+});
+
+test('parsePtyMessage reads the key probe\'s keys frame, each event rebuilt from its known keys; an unknown kind, a bad timestamp or a non-object is dropped (#732)', () => {
+  const raw = JSON.stringify({
+    type: 'keys',
+    events: [
+      { kind: 'keydown', at: 0, key: 'Dead', code: 'Quote', isComposing: false, extra: 'x' },
+      { kind: 'compositionend', at: 2, data: 'é' },
+      { kind: 'data', at: 3, length: 40 },
+      { kind: 'keyup', at: 4, key: 'a' },
+      { kind: 'data', at: -1, data: 'x' },
+      { kind: 'data', at: 1.5, data: 'x' },
+      'keydown',
+      null,
+    ],
+  });
+  assert.deepEqual(parsePtyMessage(raw), {
+    type: 'keys',
+    events: [
+      { kind: 'keydown', at: 0, key: 'Dead', code: 'Quote', isComposing: false },
+      { kind: 'compositionend', at: 2, data: 'é' },
+      { kind: 'data', at: 3, length: 40 },
+    ],
+  });
+});
+
+test('parsePtyMessage cuts every probe string to 16 characters and a batch to its first 64 events (#732)', () => {
+  const long = 'x'.repeat(40);
+  const cut = 'x'.repeat(16);
+  assert.deepEqual(parsePtyMessage(JSON.stringify({ type: 'keys', events: [{ kind: 'data', at: 0, key: long, code: long, data: long }] })), {
+    type: 'keys',
+    events: [{ kind: 'data', at: 0, key: cut, code: cut, data: cut }],
+  });
+  const many = parsePtyMessage(JSON.stringify({ type: 'keys', events: Array.from({ length: 100 }, (_, at) => ({ kind: 'data', at, data: 'é' })) }));
+  assert.equal(many?.type === 'keys' ? many.events.length : -1, 64);
+  assert.deepEqual(many?.type === 'keys' ? many.events.at(-1) : undefined, { kind: 'data', at: 63, data: 'é' });
+});
+
+test('describeKeys writes the probe\'s pinned line: events joined by " · ", +<ms> before every one but the first, Dead bare and any other key as JSON (#732)', () => {
+  assert.equal(
+    describeKeys([
+      { kind: 'keydown', at: 0, key: 'Dead', code: 'Quote', isComposing: false },
+      { kind: 'compositionstart', at: 2, data: '' },
+      { kind: 'compositionupdate', at: 2, data: '´' },
+      { kind: 'compositionend', at: 140, data: 'é' },
+      { kind: 'data', at: 141, data: 'é' },
+    ]),
+    'keydown Dead Quote composing=false · +2 compositionstart "" · +2 compositionupdate "´" · +140 compositionend "é" · +141 data "é"',
+  );
+  assert.equal(
+    describeKeys([
+      { kind: 'keydown', at: 0, key: "'", code: 'Quote', isComposing: true },
+      { kind: 'data', at: 12, length: 5 },
+      { kind: 'data', at: 13, data: '\x1b' },
+    ]),
+    'keydown "\'" Quote composing=true · +12 data len=5 · +13 data "\\u001b"',
+  );
 });
