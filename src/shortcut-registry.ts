@@ -18,7 +18,7 @@ export interface ShortcutDef { id: OperationId; defaults: PlatformKeys; inTermin
 
 export type FixedShortcutId =
   | 'signal' | 'settings' | 'quit' | 'goToTab' | 'copy' | 'paste' | 'selectAll' | 'moveFocus' | 'openDetails' | 'closeDetails' | 'runStages' | 'freeSession' | 'approve'
-  | 'feedback' | 'openActivity' | 'autoTask' | 'taskMenu' | 'pickSource' | 'cancel' | 'treeCut' | 'treeCopy' | 'treePaste';
+  | 'feedback' | 'openActivity' | 'autoTask' | 'taskMenu' | 'pickSource' | 'cancel' | 'treeCut' | 'treeCopy' | 'treePaste' | 'zoomFit';
 
 /** A key that is no binding (#481, #585): listed read only, never in the config. keys: every key it acts on per platform, a range expanded. */
 export interface FixedShortcut { id: FixedShortcutId; label: MessageKey; scope: ShortcutScope; keys: { mac: string[]; other: string[] }; soon?: true }
@@ -104,6 +104,12 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   fixed('taskMenu', 'flow', { mac: ['M'], other: ['M', 'Shift+F10'] }),
   fixed('pickSource', 'flow', same(digits('Alt+', 0, 9))),
   row('refreshFlow', { mac: 'CmdOrCtrl+Alt+R', other: 'F5' }, 'flow'),
+  // #910: the canvas's zoom; + is the = key without Shift
+  row('zoomOut', both('CmdOrCtrl+-'), 'flow'),
+  row('zoomIn', both('CmdOrCtrl+='), 'flow'),
+  row('zoomReset', both('CmdOrCtrl+0'), 'flow'),
+  // The handoff's ⇧1: Shift+digit types and is no binding (#585), so fit is a fixed key the flow matches by hand, as it does I, L and A
+  fixed('zoomFit', 'flow', same(['Shift+1'])),
   row('confirm', both('CmdOrCtrl+Enter'), 'dialogs'),
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),

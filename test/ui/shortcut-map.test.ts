@@ -47,3 +47,12 @@ test('with every activity shortcut off, the activities scope keeps the terminal\
   ]);
   expect(activities(MAC)?.map((row) => row.keys)).toEqual(['⌘C', '⌘V', '⌘A']);
 });
+
+test('the flow scope lists the zoom keys after atualizar, then the fixed ⇧1, in this platform\'s symbols (#910)', () => {
+  const zoomRows = (mac: boolean) => shortcutMapSections({}, mac).find((s) => s.scope === 'flow')?.rows.slice(-4);
+  expect(zoomRows(MAC)).toEqual([
+    { label: 'shortcuts.zoomOut', keys: '⌘-' }, { label: 'shortcuts.zoomIn', keys: '⌘=' },
+    { label: 'shortcuts.zoomReset', keys: '⌘0' }, { label: 'shortcuts.fixed.zoomFit', keys: '⇧1' },
+  ]);
+  expect(zoomRows(OTHER)?.map((row) => row.keys)).toEqual(['Ctrl+-', 'Ctrl+=', 'Ctrl+0', 'Shift+1']);
+});

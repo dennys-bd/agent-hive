@@ -126,7 +126,7 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
-  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow']);
+  assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
   assert.deepEqual(FIXED_SHORTCUTS.filter((f) => f.soon).map((f) => f.id), ['goToTab']);
@@ -238,5 +238,18 @@ test('a files key meets the activities and the global keys, never the flow\'s: �
   assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+T' }, MAC), [['newTerminal', 'treeReveal']]);
   assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+P' }, MAC), [['search', 'treeReveal']]);
   assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+F' }, MAC), [], 'the flow\'s search');
+  assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
+});
+
+test('the flow\'s zoom keys (#910): ⌘- ⌘= ⌘0 on both tables, flow rows never in a terminal, and fit the handoff\'s ⇧1 as a fixed flow key; colliding with nothing', () => {
+  const ids = ['zoomOut', 'zoomIn', 'zoomReset'] as const;
+  assert.deepEqual(ids.map(pair), [['CmdOrCtrl+-', 'CmdOrCtrl+-'], ['CmdOrCtrl+=', 'CmdOrCtrl+='], ['CmdOrCtrl+0', 'CmdOrCtrl+0']]);
+  assert.deepEqual(ids.map((id) => [shortcutDef(id).scope, shortcutDef(id).inTerminal]), ids.map(() => ['flow', false]));
+  assert.deepEqual([fixedShortcut('zoomFit').scope, fixedShortcut('zoomFit').keys], ['flow', { mac: ['Shift+1'], other: ['Shift+1'] }]);
+  // Shift+digit types (#585), so no binding takes it and bindingFromEvent never yields it: the reason fit is fixed and the flow matches it by hand
+  assert.equal(normalizeBinding('Shift+1'), undefined);
+  assert.deepEqual([displayKeys(['Shift+1'], MAC), displayKeys(['Shift+1'], OTHER)], ['⇧1', 'Shift+1']);
+  assert.equal(bindingFromEvent(key({ key: '=', code: 'Equal', metaKey: true }), MAC), 'CmdOrCtrl+=');
+  assert.equal(bindingFromEvent(key({ key: '-', code: 'Minus', ctrlKey: true }), OTHER), 'CmdOrCtrl+-');
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
 });
