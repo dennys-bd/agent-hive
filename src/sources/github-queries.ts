@@ -2,7 +2,7 @@ import type { Item } from '../types.js';
 
 export const PAGE_SIZE = 100; // raw GraphQL caps `items` at 100 per page; the adapter pages up to ITEM_LIMIT
 const PROJECT_LIMIT = 100;
-const RELATION_LIMIT = 50; // ponytail: no pagination, an issue with more open blockers/sub-issues than this is under-reported
+const RELATION_LIMIT = 50; // ponytail: no pagination, GitHub's own cap per type: an issue with more blockers, blocked issues or open sub-issues than this is under-reported
 const COMMENT_LIMIT = 100; // ponytail: one page, oldest first; a longer thread shows its first 100 (paging is a later issue)
 const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-reported
 const LABEL_LIMIT = 50; // ponytail: no pagination, an issue with more labels than this is under-reported by the task filter
@@ -220,7 +220,9 @@ export const COMMENTS = `query($id: ID!) {
 export interface GhProject { number: number; title: string; url: string; closed?: boolean }
 export interface GhOption { id: string; name: string }
 export interface GhIssueRef { number: number; state: string }
-export interface GhIssueRelations { blockedBy?: { nodes: GhIssueRef[] } | null; subIssues?: { nodes: GhIssueRef[] } | null }
+/** The other issue of a blocker relation (#56): what a BlockerRef shows of it, and its repository, which decides whether its id is short. */
+export interface GhBlockerRef extends GhIssueRef { title: string; repository: { nameWithOwner: string } }
+export interface GhIssueRelations { blockedBy?: { nodes: GhBlockerRef[] } | null; blocking?: { nodes: GhBlockerRef[] } | null; subIssues?: { nodes: GhIssueRef[] } | null }
 export interface GhRateLimit { limit?: unknown; remaining?: unknown; resetAt?: unknown }
 /** One set field value of an item and its field's name (#245, #756): a single-select answers name, a text field text, a number number, a
  * date date (ISO day), an iteration title; ITEMS asks only the first two, so any other kind answers {} there. */
@@ -287,13 +289,17 @@ export interface GhIssueChoices {
 export type GhItemFieldsNode = GhItemNode & { project?: { id: string; fields?: { nodes: GhProjectField[] } | null } | null };
 export interface ItemFieldsData { node?: GhItemFieldsNode | null }
 
+// #56: what a BlockerRef shows of each side of a relation, and the repository that decides whether its id is short
+const BLOCKER_NODES = 'nodes { number title state repository { nameWithOwner } }';
+
 // owner / name / number come from the issue url; they match only [\w.-], so JSON.stringify yields safe GraphQL string literals.
 function issueSelection(item: Item, alias: string): string | undefined {
   const match = ISSUE_URL.exec(item.url);
   if (!match) return undefined;
   const [, owner, name, number] = match;
   return `${alias}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) { issue(number: ${number}) {`
-    + ` blockedBy(first: ${RELATION_LIMIT}) { nodes { number state } }`
+    + ` blockedBy(first: ${RELATION_LIMIT}) { ${BLOCKER_NODES} }`
+    + ` blocking(first: ${RELATION_LIMIT}) { ${BLOCKER_NODES} }`
     + ` subIssues(first: ${RELATION_LIMIT}) { nodes { number state } } } }`;
 }
 

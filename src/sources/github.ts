@@ -13,6 +13,7 @@ import {
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
 import { readItemFields, writeItemField } from './github-fields.js';
+import { blockersOf } from './github-blockers.js';
 import { readProject, type ProjectRead } from './github-project.js';
 
 const ITEM_LIMIT = 200; // the ceiling the gh --limit used to enforce; two pages of 100: the poll's and the filter options'
@@ -188,14 +189,18 @@ const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig)
 
 // Every listed task gets its relations (#441): a stage's view filter and a source's blocked rule read blocked on any task, and a blocked task
 // refuses a session wherever it sits. relationsQuery aliases each task by its index here, a task with no
-// issue url being skipped, so `i<index>` finds its answer.
+// issue url being skipped, so `i<index>` finds its answer. #56: a task whose issue was read also gets its blocker relations both ways,
+// empty lists included, so "none" and "not read" differ
 async function withBlockers(tasks: SourceItem[], gql: Gql): Promise<SourceItem[]> {
   const query = relationsQuery(tasks.map((c) => c.item));
   if (!query) return tasks;
   const data = (await gql(query)) as RelationsData;
   return tasks.map((task, i) => {
-    const blockedBy = openBlockers(data[`i${i}`]?.issue);
-    return blockedBy.length > 0 ? { ...task, item: { ...task.item, blockedBy } } : task;
+    const issue = data[`i${i}`]?.issue;
+    const blockedBy = openBlockers(issue);
+    const repo = issueRepo(task.item.url);
+    const blockers = issue && repo ? { blockers: blockersOf(issue, `${repo.owner}/${repo.name}`) } : {};
+    return { ...task, item: { ...task.item, ...(blockedBy.length > 0 ? { blockedBy } : {}), ...blockers } };
   });
 }
 

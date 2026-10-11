@@ -254,6 +254,15 @@ export interface ItemFacets {
   fields: Record<string, string>; // single-select GitHub Project field name → the item's option; Status left out
 }
 
+/** One end of a blocker relation (#56): the other item, as the UI shows it. */
+export interface BlockerRef {
+  id: string; // the display id: `12` in the item's own repository, `owner/repo#12` in another; a hive task's id (`HIVE-3`)
+  title: string;
+  state: 'open' | 'closed';
+}
+/** An item's blocker relations (#56), both directions. */
+export interface ItemBlockers { blockedBy: BlockerRef[]; blocking: BlockerRef[] }
+
 /** What a source adapter reads for a task (glossary: item): the raw record; its id is itemId. */
 export interface Item {
   itemId: string; // `${source}:${adapter id}` for a source task (#180); `local:<n>` for a local one; the adapter's own key after the source's name
@@ -272,6 +281,7 @@ export interface Item {
   children?: string[]; // #28: the itemIds of the sub-issues on the Project, any column, in sub-issue order; absent or empty = a leaf
   closedChildren?: string[]; // #28: those of `children` closed on GitHub: what counts a child that left the Hive as done
   epic?: { follows: EpicFollows; switchAt: string }; // #31: stamped by the GitHub adapter under epics: show on an issue with sub-issues: it never runs and its stage follows its children; absent otherwise
+  blockers?: ItemBlockers; // #56: the relations the UI shows and edits, both directions, sub-issues never; absent = none read. Not the start gate: that is blockedBy
 }
 
 export type SessionPolicy = 'new' | 'continue';
