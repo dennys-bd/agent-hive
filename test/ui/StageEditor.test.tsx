@@ -294,3 +294,24 @@ test('the same transition opened from its pill on the chart shows no way back (#
   expect(screen.getByRole('region', { name: failed })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^voltar para/ })).not.toBeInTheDocument();
 });
+
+const planFlow = (): Flow => {
+  const stages = [stage('Plan', { prompt: '/p' }), stage('Review', { prompt: '/r' })];
+  return { stages, transitions: [emptyTransition(stages[0], stages)] };
+};
+const exits = () => within(screen.getByRole('list', { name: 'saídas' }));
+
+test('exige aprovação carries the stage\'s exits in the same change: terminou becomes aprovado when it turns on, terminou again when it turns off (#918)', async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const { stages, transitions } = planFlow();
+  render(<Harness initial={stages} transitions={transitions} onChange={onChange} />);
+  const approval = screen.getByRole('switch', { name: t('settings.stages.approval') });
+  expect(exits().getByRole('button', { name: /^terminou → Review/ })).toBeInTheDocument();
+  await user.click(approval);
+  expect(onChange).toHaveBeenCalledOnce();
+  expect((onChange.mock.lastCall as [Flow])[0]).toMatchObject({ stages: [{ approval: true }, {}], transitions: [{ when: 'approved' }] });
+  expect(exits().getByRole('button', { name: /^aprovado → Review/ })).toBeInTheDocument();
+  await user.click(approval);
+  expect(exits().getByRole('button', { name: /^terminou → Review/ })).toBeInTheDocument();
+});
