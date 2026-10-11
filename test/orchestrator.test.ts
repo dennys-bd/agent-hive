@@ -2012,6 +2012,21 @@ test('setAuto turns auto off and on: off keeps a free worker under green from ta
   assert.equal(reduce(gone, { type: 'setAuto', taskId: 'board:item1', auto: false }).state, gone);
 });
 
+test('setAuto on clears the activity\'s stopped mark so the fill may pick the task; off leaves the mark (#892)', () => {
+  const STOPPED_AT = '2026-10-10T00:00:00.000Z';
+  const stopped = withLive(manualState(1), 1, { stopped: true, stoppedAt: STOPPED_AT });
+  const off = reduce(stopped, { type: 'setAuto', taskId: 'board:item1', auto: false }).state;
+  assert.deepEqual([work(off, 1)?.stopped, work(off, 1)?.stoppedAt], [true, STOPPED_AT], 'auto off keeps the mark');
+  const queued = reduce(signaled(stopped, 'red').state, { type: 'setAuto', taskId: 'board:item1', auto: true });
+  assert.deepEqual([work(queued.state, 1)?.stopped, work(queued.state, 1)?.stoppedAt], [undefined, undefined], 'auto on clears it');
+  assert.deepEqual(queued.effects, [], 'under red nothing fills: the task waits for a worker');
+  const green = signaled(stopped, 'green').state;
+  assert.deepEqual(reduce(green, { type: 'setAuto', taskId: 'board:item1', auto: true }).effects.map((e) => e.type), ['spawn'], 'a free worker takes it at once');
+  const failed = withLive(green, 1, { error: 'commands failed' });
+  const kept = reduce(failed, { type: 'setAuto', taskId: 'board:item1', auto: true });
+  assert.deepEqual([work(kept.state, 1)?.stopped, work(kept.state, 1)?.stoppedAt, kept.effects], [true, STOPPED_AT, []], 'a failure\'s stop keeps its mark: the error still bars the fill');
+});
+
 test('the fill skips a task with auto false and takes one with auto true (#573)', () => {
   const queued = polled(signaled(base(1), 'red').state, [listed(1)]).state; // red: the poll starts nothing
   const withAuto = (auto: boolean): State => ({ ...queued, tasks: queued.tasks.map((c) => ({ ...c, auto })) });
