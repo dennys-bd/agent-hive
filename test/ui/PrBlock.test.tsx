@@ -142,6 +142,12 @@ test('a PR no task holds: #N alone, branch in base\'s place with head → base (
   expect(within(cell('merge')).getByText('● pronto · squash')).toHaveClass('text-working');
 });
 
+test('a PR whose head repository is gone names no empty owner on the branch row (#68)', () => {
+  renderBlock(prData({ headOwner: '' }), STATE);
+  expect(cell('branch')).toHaveTextContent('feature → main');
+  expect(cell('branch')).not.toHaveTextContent(':');
+});
+
 test('a task\'s PR keeps its stack position, base and the viewer\'s login even while GitHub awaits a review (#68)', () => {
   renderBlock(prData({ decision: 'pending', reviewRequests: [{ reviewer: 'ana', team: false, viewer: true }] }), stack('merged'));
   expect(within(box()).getByText('#7 · 3/3 da pilha')).toBeInTheDocument();

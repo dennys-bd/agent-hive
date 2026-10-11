@@ -105,7 +105,7 @@ function BaseValue({ baseRef, merged, waits }: { baseRef: string; merged: string
 
 // A PR no task holds (#68): the author's branch → the base, owner:ref on both sides for a fork's PR, as the conversation's PR line writes it
 function BranchValue({ pr }: { pr: PrData }) {
-  const across = pr.headOwner !== pr.baseOwner;
+  const across = pr.headOwner !== '' && pr.headOwner !== pr.baseOwner; // a deleted fork reads no owner
   return (
     <span className="block truncate font-mono">
       {across ? `${pr.headOwner}:${pr.headRef}` : pr.headRef}
