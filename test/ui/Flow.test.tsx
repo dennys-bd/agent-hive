@@ -64,7 +64,7 @@ test('a running task shows abrir and no iniciar; a blocked task and a stage with
   const running = task('1', 'dev', { workerId: 's1', branch: 'hive-1-task-1' });
   render(<Flow state={state([running, task('2', 'dev', { item: { ...task('2', 'dev').item, blockedBy: ['1'] } }), task('3', 'review')], [worker('s1', 'I1'), worker('s2')])} />);
   expect(screen.getByRole('button', { name: 'abrir' })).toBeInTheDocument();
-  expect(screen.getByText('bloqueada por 1')).toBeInTheDocument();
+  expect(screen.getByText('⊘ bloqueada por 1')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
   expect(screen.getByText('trabalhando')).toBeInTheDocument();
   expect(screen.queryByText('vazia')).not.toBeInTheDocument(); // both stages have a task
@@ -433,7 +433,7 @@ const viewport = (width: number, height: number): void => {
   vi.spyOn(Element.prototype, 'clientWidth', 'get').mockReturnValue(width);
   vi.spyOn(Element.prototype, 'clientHeight', 'get').mockReturnValue(height);
 };
-// Two stages and the arrow between them: MARGIN + 2 × 190 + GAP + MARGIN = 500 wide, MARGIN + NODE_MIN + MARGIN = 208 tall at NODE_MIN
+// Two stages and the arrow between them: MARGIN + 2 × NODE_WIDTH (220) + GAP + MARGIN = 560 wide, MARGIN + NODE_MIN + MARGIN = 208 tall at NODE_MIN
 const twoStages = (): State => ({ ...state([task('1', 'dev')], [worker('s1')]), transitions: [{ from: 'dev', to: 'review', when: 'done' }] });
 
 test('− and + move the zoom by 10% and the number goes back to 100%; the chart scales inside a centred sizer, the list panel does not, and flowView keeps the zoom (#910)', async () => {
@@ -469,14 +469,14 @@ test('− and + move the zoom by 10% and the number goes back to 100%; the chart
 test('ajustar on a chart wider than the canvas zooms out until it fits and scrolls to the start, the nodes still reaching the bottom; on a small chart it is 100% (#910)', async () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
   const user = userEvent.setup();
-  viewport(400, 600);
+  viewport(448, 600);
   const { unmount } = render(<Flow state={twoStages()} />);
   let canvas = screen.getByRole('region', { name: 'fluxograma' });
   paneOf(canvas).scrollLeft = 30;
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
-  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // 400 / 500
+  expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // 448 / 560
   expect(scaledOf(canvas).style.transform).toBe('scale(0.8)');
-  expect(sizerOf(canvas).style.width).toBe('400px');
+  expect(sizerOf(canvas).style.width).toBe('448px');
   expect([paneOf(canvas).scrollLeft, paneOf(canvas).scrollTop]).toEqual([0, 0]);
   expect(canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.style.maxHeight).toBe(`${600 / 0.8 - 2 * MARGIN}px`);
   expect(readView('flowView')).toEqual({ loops: true, zoom: 0.8, pan: { x: 0, y: 0 } });
@@ -487,7 +487,7 @@ test('ajustar on a chart wider than the canvas zooms out until it fits and scrol
   expect(screen.getByRole('button', { name: '80%' })).toBeInTheDocument(); // flowView's zoom, back
   await user.click(screen.getByRole('button', { name: 'ajustar' }));
   expect(screen.getByRole('button', { name: '100%' })).toBeInTheDocument(); // never above 100%
-  expect(sizerOf(canvas).style.width).toBe('500px');
+  expect(sizerOf(canvas).style.width).toBe('560px');
 });
 
 test('a stored flowView with zoom 0.8 and a pan draws the chart at 80% scrolled to that pan, and a scroll keeps the new pan: the come-back case (#910)', () => {
@@ -621,7 +621,7 @@ test('a task shows the auto badge unless it is manual; a manual task offers what
   const { rerender } = render(<Flow state={state([blocked], [worker('s1')])} />);
   const item = () => screen.getByText('#1 Task 1').closest('li')!;
   expect(within(item()).queryByText('auto')).not.toBeInTheDocument();
-  expect(screen.getByText('bloqueada por 9')).toBeInTheDocument();
+  expect(screen.getByText('⊘ bloqueada por 9')).toBeInTheDocument();
   rerender(<Flow state={state([task('1', 'dev', { auto: false })], [worker('s1')])} />);
   expect(screen.getByRole('button', { name: 'iniciar' })).toBeInTheDocument();
   rerender(<Flow state={state([task('1', 'dev')], [worker('s1')])} />);
@@ -773,7 +773,7 @@ const ZOOM_FIT = { key: '!', code: 'Digit1', shiftKey: true };
 
 test('Ctrl+=, Ctrl+-, Ctrl+0 and ⇧1 do what +, −, the number and ajustar do, only while the flow shows; ⇧1 in buscar tarefas types (#910)', () => {
   onTestFinished(() => { vi.restoreAllMocks(); });
-  viewport(400, 600);
+  viewport(448, 600);
   const flow = (isShown: boolean) => <FlowShownContext.Provider value={isShown}><Flow state={twoStages()} /></FlowShownContext.Provider>;
   const { rerender } = render(flow(true));
   const scale = (): string => scaledOf(screen.getByRole('region', { name: 'fluxograma' })).style.transform;

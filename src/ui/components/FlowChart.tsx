@@ -7,7 +7,7 @@ import { showsPill, transitionLabel } from '@/lib/flow-labels';
 import { layoutFlow, maxNodeHeight, NODE_MIN } from '@/lib/flow-layout';
 import type { FlowView } from '@/lib/flow-view';
 
-export const NODE_WIDTH = 190;
+export const NODE_WIDTH = 220; // #54
 
 interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];

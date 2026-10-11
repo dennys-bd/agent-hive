@@ -115,18 +115,32 @@ test('a task awaiting approval that is blocked keeps the approval look and adds 
   expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
 });
 
-test('a blocked task without approval shows its blocker once, in the footer, with no extra line (#595)', () => {
-  render(<Flow state={state(task({ item: { ...task().item, blockedBy: ['#98'] } }))} />);
-  expect(within(tile()).getAllByText(/bloqueada por #98/)).toHaveLength(1);
-  expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
+test('a blocked task shows every blocker once, on its own ⊘ line with the full text as title, outside approval too; the footer keeps its own status and no button (#54)', () => {
+  const blocked = task({ item: { ...task().item, blockedBy: ['274', '280'] } });
+  const { rerender } = render(<Flow state={state(blocked)} />);
+  const line = within(tile()).getByText('⊘ bloqueada por 274, 280');
+  expect(line).toHaveClass('truncate', 'text-muted-foreground', 'text-xs');
+  expect(line).toHaveAttribute('title', '⊘ bloqueada por 274, 280');
+  expect(within(tile()).getAllByText(/bloqueada por/)).toHaveLength(1);
+  expect(within(tile()).getByText('nova')).toBeInTheDocument(); // the footer's own status, not the blocker
+  expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar)$/ })).not.toBeInTheDocument();
+  rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['274'] } }), [working({ status: 'waiting' })])} />);
+  expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
 });
 
-test('the status in muted: the blocker, the worktree setup (iniciando, then its step), a spawn error in full as its title; iniciar stays on an error (#351, #542)', async () => {
+test('an epic hides the ⊘ line when its blockers are only its children, and names only the others when there are (#54)', () => {
+  const child = (n: string): Task => ({ ...task(), item: { ...task().item, itemId: `C${n}`, id: n, title: `Child ${n}` } });
+  const epic = (blockedBy: string[]): Task => task({ item: { ...task().item, blockedBy, children: ['C2', 'C3'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  const withChildren = (e: Task): State => ({ ...state(e), tasks: [e, child('2'), child('3')] });
+  const { rerender } = render(<Flow state={withChildren(epic(['2', '3']))} />);
+  expect(within(tile()).queryByText(/⊘/)).not.toBeInTheDocument();
+  rerender(<Flow state={withChildren(epic(['2', '274']))} />);
+  expect(within(tile()).getByText('⊘ bloqueada por 274')).toBeInTheDocument();
+});
+
+test('the status in muted: the worktree setup (iniciando, then its step), a spawn error in full as its title; iniciar stays on an error (#351, #542)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state(task({ item: { ...task().item, blockedBy: ['274'] } }))} />);
-  expect(within(tile()).getByText('bloqueada por 274')).toHaveClass('text-muted-foreground');
-  expect(within(tile()).queryByRole('button', { name: /^(iniciar|abrir|continuar)$/ })).not.toBeInTheDocument();
-  rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1' } }))} />);
+  const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1' } }))} />);
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument();
   rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install' } }))} />);
   expect(within(tile()).getByText('preparando: RUN pnpm install')).toHaveClass('text-muted-foreground');
@@ -298,11 +312,12 @@ test('a task stopped with no transition or out of tries reads it in the viewer\'
   expect(within(tile()).getByText('no transition for "approved"')).toBeInTheDocument();
 });
 
-test('a new task\'s face says so in muted text, no status colour; a blocked one shows its blocker instead (#727)', () => {
+test('a new task\'s face says so in muted text, no status colour; a blocked one too, its blocker on its own line (#727, #54)', () => {
   const { rerender } = render(<Flow state={state(task())} />);
   expect(within(tile()).getByText('nova')).toHaveClass('text-muted-foreground');
   rerender(<Flow state={state(task({ item: { ...task().item, blockedBy: ['9'] } }))} />);
-  expect(within(tile()).queryByText('nova')).not.toBeInTheDocument();
+  expect(within(tile()).getByText('nova')).toBeInTheDocument();
+  expect(within(tile()).getByText('⊘ bloqueada por 9')).toBeInTheDocument();
 });
 
 test('a task out of tries reads destructive: border, ring, the status and abrir, which opens its details instead of continuar (#913)', async () => {
