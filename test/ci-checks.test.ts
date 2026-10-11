@@ -117,7 +117,7 @@ test('parseCi reads the workflows awaiting a maintainer\'s approval from the hea
   assert.deepEqual(parseCi([A], { p0: answer('h', [run('x', 'COMPLETED', 'ACTION_REQUIRED')]) })[0].checks.map((c) => c.state), ['failure']);
   const query = ciQuery([A]) ?? '';
   assert.match(query, /checkSuites\(first: 50\) \{ nodes \{ conclusion app \{ slug \} workflowRun \{ workflow \{ name \} \} \} \}/);
-  assert.match(query, /repository \{ viewerPermission \}/);
+  assert.match(query, /repository \{ viewerPermission workflows: /);
 });
 
 test('stageChecks orders the considered checks for the running block: finished by end, running by start, queued by name; the times and only an https url kept (#914)', () => {
@@ -142,4 +142,26 @@ test('ciVerdict lists the considered checks: an unreported required name is a qu
   assert.deepEqual(required.kind === 'pending' ? required.checks : [], [{ name: 'build', state: 'success' }, { name: 'deploy', state: 'pending' }]);
   const listed = ciVerdict([read([check('e2e-chrome', 'pending'), check('docs', 'success')])], { ciChecks: 'list', checks: ['e2e-*'] });
   assert.deepEqual(listed.kind === 'pending' ? listed.checks.map((c) => c.name) : [], ['e2e-chrome']);
+});
+
+test('parseCi marks noCi only when the repository\'s default branch has no workflow file: no .github/workflows, or a tree with no .yml/.yaml; an unread repository holds the wait (#11)', () => {
+  const withRepo = (workflows: unknown) => ({ ...answer('h', []), repository: { viewerPermission: 'WRITE', workflows } });
+  const tree = (...names: string[]) => ({ entries: names.map((name) => ({ name })) });
+  assert.equal(parseCi([A], { p0: withRepo(null) })[0].noCi, true, 'no .github/workflows');
+  assert.equal(parseCi([A], { p0: withRepo(tree('README.md')) })[0].noCi, true, 'a folder with no workflow file');
+  assert.equal(parseCi([A], { p0: withRepo(tree('ci.yml')) })[0].noCi, undefined);
+  assert.equal(parseCi([A], { p0: withRepo(tree('ci.YAML')) })[0].noCi, undefined);
+  assert.equal(parseCi([A], { p0: answer('h', []) })[0].noCi, undefined, 'no repository read');
+  assert.equal(parseCi([A], { p0: { ...answer('h', []), repository: { viewerPermission: 'WRITE' } } })[0].noCi, undefined, 'no workflows field read');
+  assert.match(ciQuery([A]) ?? '', /workflows: object\(expression: "HEAD:\.github\/workflows"\) \{ \.\.\. on Tree \{ entries \{ name \} \} \}/);
+});
+
+test('ciVerdict: a PR whose repository has no CI does not hold the wait; one with CI and no checks yet still does (#11)', () => {
+  const all = { ciChecks: 'all' as const };
+  const docs = read([], { url: B, head: 'h2', noCi: true });
+  const code = read(['build', 'test', 'lint'].map((n) => check(n, 'success')));
+  assert.deepEqual(ciVerdict([docs, code], all), { kind: 'passed', fellBack: false });
+  assert.deepEqual(ciVerdict([docs], all), { kind: 'passed', fellBack: false });
+  assert.equal(ciVerdict([read([], { url: B, head: 'h2' }), code], all).kind, 'pending', 'a repository with CI and no checks yet');
+  assert.equal(ciVerdict([read([check('vercel', 'pending', B)], { url: B, head: 'h2', noCi: true }), code], all).kind, 'pending', 'a noCi PR\'s own checks still count');
 });
