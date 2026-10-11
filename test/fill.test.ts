@@ -216,3 +216,30 @@ test('a child with no workspace of its own spawns in its parent\'s hand-picked o
   const state: State = { ...hive('green', [root, linked(2, 'build', { parent: ROOT })], { stages: TREE_STAGES }), workspaces: ['hive', 'site'] };
   assert.deepEqual(filled(state).effects.flatMap((e) => (e.type === 'spawn' ? [e.task.workspace] : [])), ['site']);
 });
+
+// R (1) parks in goal with children 2 and 3; 3 is the new task that waits in spec (#32)
+const tree = (two: Task, signals: SignalSettings = SIGNALS_DEFAULTS): State =>
+  hive('yellow', [linked(1, 'goal', { children: kids(2, 3) }), two, linked(3, 'spec', { parent: ROOT })], { signals, stages: TREE_STAGES });
+
+test('under tree the fill starts a child whose sibling has a live activity, and skips one of a tree with no started task (#32)', () => {
+  const sibling = linked(2, 'goal', { parent: ROOT });
+  assert.deepEqual(spawned(filled(begun(tree(sibling), 2))), ['3']);
+  assert.deepEqual(spawned(filled(tree(sibling))), [], 'nothing of the tree started: the child waits');
+});
+
+test('under tree a sibling past the first stage counts as started with no activity: the tree\'s first children may have finished (#32)', () => {
+  assert.deepEqual(spawned(filled(tree(linked(2, 'review', { parent: ROOT })))), ['3']);
+});
+
+test('under tree a standalone new task never starts, wherever it entered; a started one still follows started (#32)', () => {
+  const alone = (signals: SignalSettings = SIGNALS_DEFAULTS): State => hive('yellow', [waiting(4, 'build')], { signals, stages: TREE_STAGES });
+  assert.deepEqual(spawned(filled(alone())), [], 'past the first stage, but new');
+  assert.deepEqual(spawned(filled(begun(alone(), 4))), ['4'], 'resumeAndContinue resumes it');
+  assert.deepEqual(spawned(filled(begun(alone(row('yellow', { started: 'continueOnly' })), 4))), [], 'continueOnly does not');
+});
+
+test('always and never ignore the tree: always starts a standalone task, never not even a child of a started tree (#32)', () => {
+  const always = hive('yellow', [waiting(4, 'build')], { signals: row('yellow', { newTasks: 'always' }), stages: TREE_STAGES });
+  assert.deepEqual(spawned(filled(always)), ['4']);
+  assert.deepEqual(spawned(filled(begun(tree(linked(2, 'goal', { parent: ROOT }), row('yellow', { newTasks: 'never' })), 2))), []);
+});

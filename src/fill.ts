@@ -1,9 +1,10 @@
 // What the Hive starts on its own (#727): the effective limits, the fill and the in-place continuation, out of orchestrator.ts, which is over
-// 800 lines. One signal table decides: a new task needs `newTasks`, a started one waiting for a worker needs resume, a session that ends its
+// 800 lines. One signal table decides: a new task needs `newTasks` (#32: always, or tree with its tree started), a started one waiting for a worker needs resume, a session that ends its
 // stage needs continue (its session is #134's keepsRun, checked by the callers); caps and budget hold as before, and a manual act passes none
 // of this. Pure: every function returns new objects.
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
-import { candidates, isStarted, stageOf, taskId } from './tasks.js';
+import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
+import { treeStarted } from './task-tree.js';
 import { hasBudget } from './usage.js';
 import { activeRules, applyUsageRules, disableExpired, disabledStatuses, firedRules, isGlobalRule, sourcePercents, stageCapRules, stageCaps, worstSignal } from './usage-rules.js';
 import { hasRoom, isFree, occupy, type Reduced, slugTaken, stageHasRoom, withTask } from './reducer-kit.js';
@@ -50,11 +51,21 @@ export function canSchedule(state: State, now: number): boolean {
   return hasBudget(state.usage, state.budget, now) && canStart(behaviour, state.workers, maxWorkers);
 }
 
-// The tasks the fill may start, best first (#224, #727): a started one only by its row's resume, a new one only by `newTasks`, so a row that
+// Whether `behaviour` lets the fill start `task`, which has not started (#32): any under always, none under never; under tree only one whose tree
+// already started, a task of it with a live activity or past the first stage its source enters through (an activity ends, a finished child
+// still counts). The task itself counts by its activity alone, which a new task never has: a standalone new task never starts under tree,
+// wherever it entered
+function mayStartNew(state: State, behaviour: SignalBehaviour, task: Task): boolean {
+  if (behaviour.newTasks !== 'tree') return behaviour.newTasks === 'always';
+  const started = (t: Task): boolean => isStarted(state, t) || (taskId(t) !== taskId(task) && isPastFirstStage(state.stages, t));
+  return treeStarted(state.tasks, taskId(task), started);
+}
+
+// The tasks the fill may start, best first (#224, #727): a started one only by its row's resume, a new one only by mayStartNew, so a row that
 // starts new tasks never hands a started one a worker its `stay` / `continueOnly` withholds; `keep` (the task a continuation asks about)
 // passes whatever the resume says. Only a task whose stage has room under its cap (#475), counted on `state`.
 function startable(state: State, gate: Gate, now: number, keep?: string): Task[] {
-  const allowed = (c: Task): boolean => taskId(c) === keep || (isStarted(state, c) ? mayResume(gate.behaviour) : gate.behaviour.newTasks === 'always');
+  const allowed = (c: Task): boolean => taskId(c) === keep || (isStarted(state, c) ? mayResume(gate.behaviour) : mayStartNew(state, gate.behaviour, c));
   return candidates(state, now).filter((c) => allowed(c) && stageHasRoom(state, c.stage, gate.stageCaps));
 }
 
