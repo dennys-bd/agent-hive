@@ -13,7 +13,7 @@ export const RESIZE_SETTLE_MS = 150;
 // shortly after a focus-in, and in the Hive any click outside a terminal blurs it: the next click on one of claude's options was lost (#599).
 // Never forwarded, claude always sees a focused terminal. Every pty goes through here, plain terminals too: a vim in one loses FocusGained,
 // a smaller cost than a lost click. A key or a bracketed paste never equals one of them.
-const FOCUS_REPORTS = new Set(['\x1b[I', '\x1b[O']);
+export const FOCUS_REPORTS: ReadonlySet<string> = new Set(['\x1b[I', '\x1b[O']); // exported for the key probe (#732)
 
 // The socket's first frame is the replay (#831), the ring or an empty one. xterm answers the queries in it (device attributes, cursor
 // position) as if they were typed, and a dead prompt's queries would type their replies into the running program. So from the first
