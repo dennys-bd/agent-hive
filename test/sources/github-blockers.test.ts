@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BadBlockerRefError, BlockerRefNotFoundError, relateItem, RelationRereadError, SelfBlockerError } from '../../src/sources/github-blockers.js';
+import { BadBlockerRefError, BlockerRefNotFoundError, findBlockers, relateItem, RelationRereadError, SelfBlockerError } from '../../src/sources/github-blockers.js';
 import type { FieldsContext } from '../../src/sources/github-fields.js';
-import { ADD_BLOCKED_BY, ISSUE_ID, ITEM_FIELDS, REMOVE_BLOCKED_BY, type GhItemFieldsNode } from '../../src/sources/github-queries.js';
+import { ADD_BLOCKED_BY, ISSUE_ID, ITEM_FIELDS, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhItemFieldsNode } from '../../src/sources/github-queries.js';
 import { parseConfig } from '../../src/config.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import type { BlockerChange, Gql, SourceItem } from '../../src/types.js';
@@ -117,9 +117,29 @@ test('relateItem whose re-read fails after the write rejects with a RelationRere
   assert.equal(mutations(calls).length, 1, 'the write landed');
 });
 
-test('the GitHub adapter has relate, refused before resolveFields like setField (#56)', async () => {
+test('findBlockers searches the item\'s repository by title with the whole query as the q variable, maps the issues to refs with their states and caps at 8 (#57)', async () => {
+  const calls: Call[] = [];
+  const issues = Array.from({ length: 10 }, (_, i) => ref(20 + i, i === 0 ? 'CLOSED' : 'OPEN'));
+  const gql: Gql = async (query, variables) => {
+    calls.push({ query, variables });
+    if (query === ITEM_FIELDS) return { node: NODE };
+    if (query === SEARCH_ISSUES) return { search: { nodes: [{}, ref(3, 'OPEN', 'other/lib'), ...issues] } }; // {}: a node that is no issue
+    return {};
+  };
+  const found = await findBlockers(ctxOf(gql), 'PVTI_1', 'pager "v2"');
+  assert.deepEqual(calls.find((c) => c.query === SEARCH_ISSUES)?.variables, { q: 'repo:acme/site is:issue in:title pager "v2"' });
+  assert.equal(SEARCH_ISSUES.includes('$q'), true, 'the text travels as a variable');
+  assert.equal(found.length, 8);
+  assert.deepEqual(found.slice(0, 3), [
+    { id: 'other/lib#3', title: 'T3', state: 'open' }, { id: '20', title: 'T20', state: 'closed' }, { id: '21', title: 'T21', state: 'open' },
+  ]);
+});
+
+test('the GitHub adapter has relate and findBlockers, both refused before resolveFields like setField (#56, #57)', async () => {
   const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER } }));
   const source = createSource(sourceSpec(config, config.comb.sources[0]), { gql: blockerGql([]).gql });
   assert.ok(source.relate);
+  assert.ok(source.findBlockers);
   await assert.rejects(source.relate('PVTI_1', change('add', 'blockedBy', '7')), /source not resolved/);
+  await assert.rejects(source.findBlockers('PVTI_1', 'pager'), /source not resolved/);
 });

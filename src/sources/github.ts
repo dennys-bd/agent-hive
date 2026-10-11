@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -13,7 +13,7 @@ import {
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
 import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
-import { blockersOf, relateItem } from './github-blockers.js';
+import { blockersOf, findBlockers, relateItem } from './github-blockers.js';
 import { readProject, type ProjectRead } from './github-project.js';
 
 const ITEM_LIMIT = 200; // the ceiling the gh --limit used to enforce; two pages of 100: the poll's and the filter options'
@@ -385,9 +385,14 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return relateItem(await fieldsContext(), itemId, change);
   }
 
+  // #57: the add row's search, under the same context a relation write uses
+  async function searchBlockers(itemId: string, text: string): Promise<BlockerRef[]> {
+    return findBlockers(await fieldsContext(), itemId, text);
+  }
+
   async function fieldsOf(itemId: string): Promise<ItemField[]> { // #686
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     return readItemFields(gql, itemId, resolved.projectId);
   }
-  return { resolveFields, listItems, setColumn, create, apply, settingsOptions, comments, project, fieldsOf, setField, relate, quota: async () => lastQuota };
+  return { resolveFields, listItems, setColumn, create, apply, settingsOptions, comments, project, fieldsOf, setField, relate, findBlockers: searchBlockers, quota: async () => lastQuota };
 }

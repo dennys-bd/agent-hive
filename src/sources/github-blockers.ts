@@ -1,7 +1,8 @@
 import type { BlockerChange, BlockerRef, BlockerWrite, Gql, Item, ItemBlockers } from '../types.js';
 import { readItem, reread, type FieldsContext } from './github-fields.js';
 import {
-  ADD_BLOCKED_BY, ISSUE_ID, issueRepo, relationsQuery, REMOVE_BLOCKED_BY, type GhBlockerRef, type GhIssueRelations, type IssueIdData, type RelationsData,
+  ADD_BLOCKED_BY, ISSUE_ID, issueRepo, relationsQuery, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhBlockerRef, type GhIssueRelations, type IssueIdData,
+  type RelationsData, type SearchIssuesData,
 } from './github-queries.js';
 
 // #56: the id the UI shows a related issue by: its number in the item's own repository, `owner/repo#n` in another. GitHub's casing of a name
@@ -103,4 +104,19 @@ export async function relateItem(ctx: FieldsContext, itemId: string, change: Blo
   const [issueId, blockingIssueId] = change.kind === 'blockedBy' ? [c.id, otherId] : [otherId, c.id];
   await ctx.gql(change.action === 'add' ? ADD_BLOCKED_BY : REMOVE_BLOCKED_BY, { issueId, blockingIssueId });
   return afterWrite(ctx, itemId, c.url, repo);
+}
+
+const FOUND_MAX = 8; // the add row's list (#57), as the search's own first: 8
+
+const isIssue = (n: Partial<GhBlockerRef>): n is GhBlockerRef => typeof n.number === 'number' && n.repository !== undefined;
+
+/** The blockers add row's suggestions on a GitHub item (#57): issues of the item's own repository whose title holds the text, open and
+ * closed, at most 8, under the ids the section shows (`12` here, `owner/repo#12` when a qualifier in the text reached another). */
+export async function findBlockers(ctx: FieldsContext, itemId: string, text: string): Promise<BlockerRef[]> {
+  const c = (await readItem(ctx.gql, itemId, ctx.projectId)).content;
+  const own = issueRepo(c?.url ?? '');
+  if (own === undefined) throw new Error(`item ${itemId} is not an issue`);
+  const repo = `${own.owner}/${own.name}`;
+  const data = (await ctx.gql(SEARCH_ISSUES, { q: `repo:${repo} is:issue in:title ${text}` })) as SearchIssuesData;
+  return refsOf((data.search?.nodes ?? []).filter(isIssue), repo).slice(0, FOUND_MAX);
 }

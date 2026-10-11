@@ -6,6 +6,7 @@ import type { Task, TaskFile, State } from '../../types';
 import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
 import { DetailMenu } from '@/components/DetailMenu';
 import { CheckpointsList } from '@/components/CheckpointsList';
+import { BlockersSection } from '@/components/BlockersSection';
 import { CiNotice } from '@/components/CiProgress';
 import { isStartFailure } from '@/components/CommandsProgress';
 import { RunningBlock } from '@/components/RunningBlock';
@@ -63,15 +64,16 @@ function StatusBlock({ task, state, locale, isActivity }: { task: Task; state: S
   return <StatusBox task={task} state={state} isActivity={isActivity} />;
 }
 
-// The scrolling body (redesign 06): the title, the task's error in full (a failed start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), the status block (the status
-// box, the running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the
-// tries section under it, the metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
+// The scrolling body (redesign 06), with no visible bar and 14px under its last line (#57): the title, the task's error in full (a failed
+// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), the status block (the status box, the
+// running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
+// section under it, the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the issue and its comments.
 function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProps) {
   const { item } = task;
   const live = activityOf(state, item.itemId); // the activity's (#629)
   const error = live?.error; // #916: not shown while the exhausted block says it in words
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-auto px-3.5 py-3.5">
+    <div className="scrollbar-none flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-3.5 py-3.5">
       <h2 className="break-words font-semibold text-[15px] text-foreground leading-5">{taskLabel(task)}</h2>
       {error && !isExhausted(task, state) && (isStartFailure(error)
         ? <StartFailure error={error} /> // #945: the short message, the raw text behind details
@@ -80,6 +82,7 @@ function TaskBody({ task, state, comments, files, locale, isActivity }: BodyProp
       <TriesSection task={task} state={state} />
       <SyncBlock task={task} state={state} />
       <CiNotice task={task} state={state} />
+      <BlockersSection key={item.itemId} task={task} state={state} />
       <MetaGrid task={task} state={state} isActivity={isActivity} />
       <SessionsList task={task} state={state} locale={locale} />
       <CheckpointsList task={task} state={state} />
