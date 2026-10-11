@@ -85,7 +85,7 @@ test('the docs folders default under docs/hive, and no plugin file names the old
     assert.doesNotMatch(text, /(?<!hive\/)docs\/(specs|plans|walkthroughs)/, `${file} names an old default docs folder`);
   }
   const conventions = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
-  for (const folder of ['docs/hive/specs', 'docs/hive/plans', 'docs/hive/walkthroughs']) {
+  for (const folder of ['docs/hive/specs', 'docs/hive/plans', 'docs/hive/walkthroughs', 'docs/hive/designs']) {
     assert.ok(conventions.includes(`\`${folder}\``), `reference/conventions.md does not name ${folder} as a default`);
   }
 });
