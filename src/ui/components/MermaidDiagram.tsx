@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 type Mermaid = typeof import('mermaid').default;
 type Drawn = { status: 'loading' } | { status: 'ready'; svg: string } | { status: 'error'; message: string };
@@ -22,21 +22,45 @@ async function draw(id: string, code: string, theme: 'neutral' | 'dark'): Promis
   return (await mermaid.render(id, code)).svg;
 }
 
-/** A ```mermaid block as its diagram (#697), drawn again when its code or the app's theme changes. While it loads, the code block; on a
- * parse error, the code block and the message. */
+// Drawings by theme and code (#906): a diagram mounted again with the same text shows its drawing at once instead of its code
+const CACHE_LIMIT = 50;
+const drawings = new Map<string, string>();
+function remember(key: string, svg: string): void {
+  drawings.delete(key);
+  drawings.set(key, svg);
+  const oldest = drawings.keys().next();
+  if (drawings.size > CACHE_LIMIT && oldest.done !== true) drawings.delete(oldest.value);
+}
+const cachedDrawing = (key: string): Drawn => {
+  const svg = drawings.get(key);
+  return svg === undefined ? { status: 'loading' } : { status: 'ready', svg };
+};
+
+/** A ```mermaid block as its diagram (#697), drawn again when its code or the app's theme changes, the previous drawing kept meanwhile
+ * (#906). Before its first drawing, the code block; on a parse error, the code block and the message. */
 export function MermaidDiagram({ code }: { code: string }) {
   const id = `mermaid-${useId().replace(/[^\w-]/g, '')}`; // mermaid takes it as a CSS id: useId's colons and guillemets go
   const theme = useSyncExternalStore(subscribeTheme, themeNow);
   const host = useRef<HTMLDivElement>(null);
-  const [drawn, setDrawn] = useState<Drawn>({ status: 'loading' });
-  useEffect(() => {
+  const key = `${theme}\n${code}`;
+  const [drawn, setDrawn] = useState<Drawn>(() => cachedDrawing(key));
+  // A layout effect, so a cached drawing replaces the previous one before the browser paints it
+  useLayoutEffect(() => {
+    const cached = drawings.get(key);
+    if (cached !== undefined) {
+      setDrawn((now) => (now.status === 'ready' && now.svg === cached ? now : { status: 'ready', svg: cached }));
+      return;
+    }
+    // The previous drawing stays while this one draws; a previous error does not, it belonged to the old code
+    setDrawn((now) => (now.status === 'error' ? { status: 'loading' } : now));
     let live = true;
     draw(id, code, theme).then(
-      (svg) => { if (live) setDrawn({ status: 'ready', svg }); },
+      // Cached even when the effect is gone: the entry is keyed by its own code and theme, so a late drawing is still right
+      (svg) => { remember(key, svg); if (live) setDrawn({ status: 'ready', svg }); },
       (err: unknown) => { if (live) setDrawn({ status: 'error', message: err instanceof Error ? err.message : String(err) }); },
     );
     return () => { live = false; };
-  }, [id, code, theme]);
+  }, [id, key, code, theme]);
   // mermaid's own strict-mode SVG, never the document's text, set on its container (no dangerouslySetInnerHTML: Biome refuses it)
   useLayoutEffect(() => {
     if (drawn.status === 'ready' && host.current !== null) host.current.innerHTML = drawn.svg;

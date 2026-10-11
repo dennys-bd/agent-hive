@@ -1,6 +1,6 @@
 import 'katex/dist/katex.min.css';
 import { InfoIcon, LightbulbIcon, type LucideIcon, MessageSquareWarningIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef } from 'react';
 import Markdown, { type Components, type ExtraProps, type Options } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -108,9 +108,14 @@ export interface DocMarkdownProps { text: string; repository?: string; onLink(hr
 /** A markdown document from the disk, rendered as GitHub renders it (#697): the preview pane's body. IssueMarkdown stays as it is: an issue
  * body keeps raw HTML off. */
 export function DocMarkdown({ text, repository, onLink }: DocMarkdownProps) {
+  // Built once (#906): a new components object each render gives react-markdown new component types, and React mounts every diagram
+  // again, its code back in its place until mermaid draws it; the links read the latest onLink instead
+  const latestOnLink = useRef(onLink);
+  useLayoutEffect(() => { latestOnLink.current = onLink; });
+  const components = useMemo(() => componentsFor((href) => latestOnLink.current(href)), []);
   return (
     <div className={PROSE}>
-      <Markdown remarkPlugins={remarkFor(repository)} rehypePlugins={REHYPE} components={componentsFor(onLink)}>{text}</Markdown>
+      <Markdown remarkPlugins={remarkFor(repository)} rehypePlugins={REHYPE} components={components}>{text}</Markdown>
     </div>
   );
 }
