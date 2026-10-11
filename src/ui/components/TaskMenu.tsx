@@ -5,7 +5,7 @@ import { canMoveToStage, canOpenSession, canSetWorkspace, createdRemovalBlocker,
 import { nextPr } from '../../pull-requests';
 import { activityOf, prsOf } from '../../activities';
 import type { Task, State } from '../../types';
-import { act, runCommand } from '@/components/actions';
+import { act, runCommand, stageMoves } from '@/components/actions';
 import { FeedbackDialog } from '@/components/ApprovalActions';
 import { Confirm } from '@/components/Confirm';
 import { AutoStartItem, deleteActivityMessage } from '@/components/DetailMenu';
@@ -142,14 +142,13 @@ function useDeleteTask(task: Task, runs: Runs): { item: ReactNode; dialog: React
 }
 
 // mover para etapa › (#164, #366, #708): on every task, auto on or off, disabled while canMoveToStage refuses (a stage run holds it, or it
-// is leaving); the drag shares canMoveToStage
-function StageSub({ task, state, id }: { task: Task; state: State; id: string }) {
-  const others = state.stages.filter((s) => s.name !== task.stage);
+// is leaving); the drag shares canMoveToStage; its items are stageMoves', which the exhausted block's mover para… lists too (#916)
+function StageSub({ task, state }: { task: Task; state: State }) {
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger disabled={!canMoveToStage(task, state)}>{t('task.moveToStage')}</ContextMenuSubTrigger>
       <ContextMenuSubContent>
-        {others.map((s) => <ContextMenuItem key={s.name} onSelect={() => act(`/tasks/${id}/move-to`, { stage: s.name })}>{s.name}</ContextMenuItem>)}
+        {stageMoves(task, state).map(({ stage, move }) => <ContextMenuItem key={stage} onSelect={move}>{stage}</ContextMenuItem>)}
       </ContextMenuSubContent>
     </ContextMenuSub>
   );
@@ -217,7 +216,7 @@ export function TaskMenu({ task, state, children }: { task: Task; state: State; 
           <DiffItems task={task} state={state} />
           <ContextMenuSeparator />
           <AutoStartItem task={task} kit={CONTEXT_KIT} />
-          <StageSub task={task} state={state} id={id} />
+          <StageSub task={task} state={state} />
           <WorkspaceSub task={task} state={state} id={id} />
           {(deleteActivity.item || deleteTask.item) && <ContextMenuSeparator />}
           {deleteActivity.item}
