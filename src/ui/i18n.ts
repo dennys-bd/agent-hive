@@ -62,6 +62,7 @@ const en = {
   'flow.zoom.fit': 'fit',
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
+  'back.title': 'back · {key}', // #911: the page header's back button
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -1767,6 +1768,7 @@ const pt: Record<MessageKey, string> = {
   'flow.zoom.fit': 'ajustar',
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
+  'back.title': 'voltar · {key}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',

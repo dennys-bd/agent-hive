@@ -1,4 +1,5 @@
-import { createContext, type RefCallback, type RefObject, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, type RefCallback, type RefObject, useCallback, useContext, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { onShortcutKey } from '@/lib/dock-layout';
 
 /** A screen to go back to (#911): its name on the back button, how to show it again, and its center's scroll when it was left. */
 export interface BackEntry { label: string; restore(): void; scroll?: number }
@@ -35,6 +36,29 @@ export function useBackStack(): BackStack {
       top.restore();
     },
   };
+}
+
+const MOUSE_BACK = 3; // the mouse's back side button: Electron on macOS reports it as button 3
+
+/** ⌘[ (goBack, #585) and the mouse's back button call `onBack` while it is given: while the back button shows (#911). Both on window, as every
+ * shortcut is; the mouse's default is prevented. The listeners read the latest render's onBack. */
+export function useBackKeys(onBack: (() => void) | undefined): void {
+  const isOn = onBack !== undefined;
+  const act = useEffectEvent((): void => onBack?.());
+  useEffect(() => {
+    if (!isOn) return undefined;
+    const offKey = onShortcutKey([[true, 'goBack']], () => act());
+    const onMouse = (event: MouseEvent): void => {
+      if (event.button !== MOUSE_BACK) return;
+      event.preventDefault();
+      act();
+    };
+    window.addEventListener('mouseup', onMouse);
+    return () => {
+      offKey();
+      window.removeEventListener('mouseup', onMouse);
+    };
+  }, [isOn]);
 }
 
 // The scroll a back left for the restored screen (#911): the Dashboard provides its stack's. Outside one (a page rendered alone) none ever is,
