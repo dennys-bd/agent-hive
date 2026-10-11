@@ -406,3 +406,19 @@ test('focar › shows with onFocusTree and calls it with the parent\'s itemId; i
   expect(onFocusTree).toHaveBeenCalledWith('I1');
   expect(tileOf('#1 Task 1')).toHaveClass('border-foreground', 'ring-2', 'ring-foreground/25');
 });
+
+test('a card out of the focus reads at .3; a dragged one reads at the drag\'s .5, faded or not (#35)', () => {
+  const s = state(task());
+  const one = s.tasks.find((c) => c.item.itemId === 'I1')!;
+  const NO_DRAG = { draggable: true as const, onDragStart: () => {}, onDragEnd: () => {}, onDragOver: () => {}, onDrop: () => {} };
+  const face = (isDimmed: boolean, isFaded: boolean) => (
+    <ul><FlowTask task={one} state={s} dragHandlers={NO_DRAG} isDimmed={isDimmed} isDropBefore={false} isSelected={false} isFaded={isFaded} /></ul>
+  );
+  const { rerender } = render(face(false, true));
+  expect(tile()).toHaveClass('opacity-30');
+  rerender(face(true, true));
+  expect(tile()).toHaveClass('opacity-50');
+  expect(tile()).not.toHaveClass('opacity-30');
+  rerender(face(false, false));
+  expect(tile()).not.toHaveClass('opacity-30');
+});

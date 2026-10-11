@@ -2,15 +2,15 @@ import { taskLabel } from '../../tasks';
 import type { Task } from '../../types';
 import { t } from '@/i18n';
 
-interface TreeGroupHeaderProps { root?: Task; count: number; isCollapsed: boolean; onToggle(): void }
+interface TreeGroupHeaderProps { root?: Task; count: number; isCollapsed: boolean; isFaded?: boolean; onToggle(): void }
 
 /** A tree's group header in a stage node (#34): the chevron collapses the group in this node only, then ⑂ and the root, and the group's card
- * count; no root is sem árvore. An li: it sits in the node's task list. */
-export function TreeGroupHeader({ root, count, isCollapsed, onToggle }: TreeGroupHeaderProps) {
+ * count; no root is sem árvore. An li: it sits in the node's task list. Faded when none of its tasks here is in the flow's focus (#35). */
+export function TreeGroupHeader({ root, count, isCollapsed, isFaded = false, onToggle }: TreeGroupHeaderProps) {
   // In the button's label too: every group's button would otherwise read alike
   const name = root === undefined ? t('flow.tree.none') : `⑂ ${taskLabel(root)}`;
   return (
-    <li className="flex min-w-0 items-center gap-1 px-0.5 pt-1 text-xs">
+    <li className={`flex min-w-0 items-center gap-1 px-0.5 pt-1 text-xs ${isFaded ? 'opacity-30' : ''}`}>
       <button
         type="button" aria-expanded={!isCollapsed} aria-label={`${t(isCollapsed ? 'flow.tree.expand' : 'flow.tree.collapse')} ${name}`}
         className="w-3 shrink-0 text-muted-foreground" onClick={onToggle}

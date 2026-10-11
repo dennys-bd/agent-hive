@@ -218,11 +218,13 @@ interface FlowTaskProps {
   indent?: number; // #34: the tree grouping's left margin, in px
   onFocusTree?(itemId: string): void; // #34: focus › on a parent's card; #35 passes it
   isHighlighted?: boolean; // #34: the tree card #36 lights up; nothing passes it yet
+  isFaded?: boolean; // #35: outside the flow's focus
 }
 
 /** A task of the flow (redesign 10, #542): the title with the workspace square, and a footer with the auto badge, the status and one button. The
- * border and the selected ring take the status colour. A child shows ↳ and a parent its children's progress, with no auto badge (#34). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
-export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isHighlighted = false }: FlowTaskProps) {
+ * border and the selected ring take the status colour. A child shows ↳ and a parent its children's progress, with no auto badge (#34). Out of
+ * the flow's focus it reads at .3, under a drag's .5, which marks the card in hand (#35). Drag, click-to-open and the right-click menu stay; a missing task has no menu. */
+export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, isSelected, onOpen, indent = 0, onFocusTree, isHighlighted = false, isFaded = false }: FlowTaskProps) {
   const status = taskStatus(task, state);
   const tries = triesText(task, state);
   const { tone } = status;
@@ -246,7 +248,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       onClick={openOnClick(task.item.itemId, onOpen)}
       onKeyDown={onKeyDown}
       title={t(dragHint(task, state))} // what a drag may do with it (#366)
-      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : task.orphan ? 'opacity-70' : ''}`}
+      className={`relative flex cursor-grab outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 flex-col gap-[5px] rounded-lg border bg-background px-2 py-[7px] before:absolute before:inset-x-0 before:-top-1 before:hidden before:h-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block ${frame} ${isDimmed ? 'opacity-50' : isFaded ? 'opacity-30' : task.orphan ? 'opacity-70' : ''}`}
     >
       <TaskTitle task={task} state={state} />
       {isParent && <TreeProgress task={task} state={state} onFocusTree={onFocusTree} />}
