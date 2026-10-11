@@ -124,7 +124,7 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   assert.deepEqual([...new Set(SHORTCUT_MAP.map((row) => row.scope))], [...SHORTCUT_SCOPES], 'contiguous, in scope order');
   const rows = (scope: ShortcutScope): string[] => SHORTCUT_MAP.filter((row) => row.scope === scope).map((row) => ('keys' in row ? `fixed:${row.id}` : row.id));
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
-  assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
+  assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
@@ -135,6 +135,15 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   assert.deepEqual([fixedShortcut('signal').keys, fixedShortcut('taskMenu').keys], [{ mac: ['CmdOrCtrl+Alt+1', 'CmdOrCtrl+Alt+2', 'CmdOrCtrl+Alt+3'], other: ['CmdOrCtrl+Shift+1', 'CmdOrCtrl+Shift+2', 'CmdOrCtrl+Shift+3'] }, { mac: ['M'], other: ['M', 'Shift+F10'] }]);
 });
 
+test('findInTerminal is Cmd+F on macOS and Ctrl+Shift+F elsewhere, an activity key that acts in the terminal, and meets neither searchTasks nor fullScreen (#12)', () => {
+  assert.deepEqual(pair('findInTerminal'), ['CmdOrCtrl+F', 'CmdOrCtrl+Shift+F']);
+  assert.equal(shortcutDef('findInTerminal').scope, 'activities');
+  assert.equal(shortcutDef('findInTerminal').inTerminal, true);
+  assert.equal(takesTerminalKey('CmdOrCtrl+Shift+F', OTHER), false, "Ctrl+F stays readline's forward-char off macOS");
+  assert.deepEqual(collisions({ searchTasks: 'CmdOrCtrl+Shift+F' }, OTHER), [], 'the flow and the activities never meet');
+  assert.deepEqual(collisions({ findInTerminal: 'CmdOrCtrl+K' }, MAC), [['clear', 'findInTerminal']]);
+});
+
 test('sleepSession and sleepAll keep stopSession\'s and stopAll\'s keys; the old ids are no shortcut any more (#672)', () => {
   assert.deepEqual([pair('sleepSession'), pair('sleepAll')], [['CmdOrCtrl+.', 'CmdOrCtrl+Shift+.'], ['CmdOrCtrl+Shift+.', 'CmdOrCtrl+Alt+Shift+.']]);
   assert.throws(() => parseShortcuts({ stopSession: null }, MAC), { message: `hive.config.json: "shortcuts" names "stopSession", which is no shortcut (${IDS})` });
@@ -143,7 +152,7 @@ test('sleepSession and sleepAll keep stopSession\'s and stopAll\'s keys; the old
 test('two keys collide only when both act in one scope or one of them is global, a fixed key of a scope included (#585)', () => {
   assert.deepEqual(collisions({ searchTasks: 'CmdOrCtrl+K' }, MAC), [], 'the flow\'s key and an activity\'s: never both live');
   assert.deepEqual(collisions({ confirm: 'CmdOrCtrl+Shift+K' }, OTHER), [], 'a dialog\'s key and an activity\'s');
-  assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+F' }, MAC), [['toggleConsole', 'searchTasks']], 'a global key meets the flow');
+  assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+F' }, MAC), [['toggleConsole', 'findInTerminal'], ['toggleConsole', 'searchTasks']], 'a global key meets the flow and the activities');
   assert.deepEqual(collisions({ refreshFlow: 'Alt+3' }, OTHER), [['refreshFlow', fixedShortcut('pickSource')]], 'a fixed key of the flow');
   assert.deepEqual(collisions({ clear: 'Alt+3' }, MAC), [], 'go to tab is Ctrl+1–9 on macOS');
 });
@@ -237,7 +246,7 @@ test('the files tree\'s keys (#818): rename ↵ / F2, delete ⌘⌫ / Delete, re
 test('a files key meets the activities and the global keys, never the flow\'s: ⌥⌘R is the flow\'s refresh too (#818)', () => {
   assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+T' }, MAC), [['newTerminal', 'treeReveal']]);
   assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+P' }, MAC), [['search', 'treeReveal']]);
-  assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+F' }, MAC), [], 'the flow\'s search');
+  assert.deepEqual(collisions({ treeReveal: 'CmdOrCtrl+F' }, MAC), [['findInTerminal', 'treeReveal']], 'the files tree meets the activities (find in terminal, #12), not the flow\'s search');
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
 });
 

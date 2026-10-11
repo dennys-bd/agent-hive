@@ -1209,6 +1209,12 @@ const en = {
   'session.sleeping': 'sleeping', // #614: a session no run holds, on its sidebar line
   'terminal.forget': 'forget', // #696: a sleeping terminal goes for good, its output and history with it
   'terminal.wake': 'wake', // #696: a sleeping terminal's pane
+  'terminal.find.field': 'find', // #12: the find bar's field, its placeholder and its name
+  'terminal.find.count': '{n} of {total}',
+  'terminal.find.none': 'no results',
+  'terminal.find.previous': 'previous match',
+  'terminal.find.next': 'next match',
+  'terminal.find.close': 'close',
   'session.continue': 'continue', // #672: a sleeping pane's click, and the sleep notice's button
   'session.pick': 'session',
   'session.new': 'new',
@@ -1422,6 +1428,7 @@ const en = {
   'shortcuts.toggleLeft': 'open or close the left panel',
   'shortcuts.toggleRight': 'open or close the right panel',
   'shortcuts.clear': 'clear the terminal', // #448
+  'shortcuts.findInTerminal': 'find in terminal', // #12
   'shortcuts.viewFlow': 'go to flow', // #533
   'shortcuts.viewActivities': 'go to activities',
   'shortcuts.newActivity': 'new activity', // redesign 08
@@ -2885,6 +2892,12 @@ const pt: Record<MessageKey, string> = {
   'session.sleeping': 'dormindo', // #614
   'terminal.forget': 'esquecer', // #696
   'terminal.wake': 'acordar', // #696
+  'terminal.find.field': 'buscar', // #12
+  'terminal.find.count': '{n} de {total}',
+  'terminal.find.none': 'sem resultados',
+  'terminal.find.previous': 'resultado anterior',
+  'terminal.find.next': 'próximo resultado',
+  'terminal.find.close': 'fechar',
   'session.continue': 'continuar', // #672
   'session.pick': 'sessão',
   'session.new': 'nova',
@@ -3098,6 +3111,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.toggleLeft': 'abrir ou fechar o painel da esquerda',
   'shortcuts.toggleRight': 'abrir ou fechar o painel da direita',
   'shortcuts.clear': 'limpar o terminal',
+  'shortcuts.findInTerminal': 'buscar no terminal', // #12
   'shortcuts.viewFlow': 'ir para fluxo',
   'shortcuts.viewActivities': 'ir para atividades',
   'shortcuts.newActivity': 'nova atividade',

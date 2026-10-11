@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import type { Terminal } from '@xterm/xterm';
 import { toast } from 'sonner';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import { clearTerminal, escapePath, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
+import { clearTerminal, escapePath, findOptions, FONT_FAMILY, linkTaskRefs, openRefUrl, paintTerminal, shownSize, terminalFontStack, terminalKeys, terminalPaste, trackTerminal } from '@/lib/xterm-setup';
 import type { Shortcuts } from '../../src/types';
 import { FakeTerminal } from './xterm-fakes';
 
@@ -114,6 +114,45 @@ test('terminalKeys follows the configured clear binding, read at each key; turne
   expect(handle(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, altKey: true }))).toBe(true);
   expect(clear).toHaveBeenCalledOnce();
   setShortcuts({});
+});
+
+// A terminal whose find key opens a bar (#12), its handler attached
+function findTerm(onFind?: () => void): (event: KeyboardEvent) => boolean {
+  let handle: (event: KeyboardEvent) => boolean = () => true;
+  terminalKeys({ attachCustomKeyEventHandler: (fn: typeof handle) => { handle = fn; } } as unknown as Terminal, onFind);
+  return (event) => handle(event);
+}
+const FIND: KeyboardEventInit = { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }; // off macOS, as jsdom runs
+
+test('terminalKeys: the find binding calls onFind once and every event of the key is refused to xterm; Ctrl+F stays the program\'s off macOS; with no onFind the key goes to xterm (#12)', () => {
+  const onFind = vi.fn();
+  const handle = findTerm(onFind);
+  const down = new KeyboardEvent('keydown', { ...FIND, cancelable: true });
+  expect(handle(down)).toBe(false);
+  expect(down.defaultPrevented).toBe(true);
+  expect(handle(new KeyboardEvent('keyup', FIND))).toBe(false);
+  expect(onFind).toHaveBeenCalledOnce();
+  expect(handle(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', ctrlKey: true }))).toBe(true);
+  expect(findTerm()(new KeyboardEvent('keydown', FIND))).toBe(true);
+  expect(onFind).toHaveBeenCalledOnce();
+});
+
+test('terminalKeys on macOS: Cmd+F opens the find bar (#12)', () => {
+  vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel');
+  const onFind = vi.fn();
+  expect(findTerm(onFind)(new KeyboardEvent('keydown', { key: 'f', code: 'KeyF', metaKey: true, cancelable: true }))).toBe(false);
+  expect(onFind).toHaveBeenCalledOnce();
+});
+
+test('findOptions paints every match and the active one from the page\'s tokens, read at each call, so a theme change reaches the next search (#12)', () => {
+  const tokens: Record<string, string> = { '--secondary': '#333333', '--muted-foreground': '#999999', '--foreground': '#ffffff' };
+  vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: (name: string) => ` ${tokens[name] ?? ''}` }));
+  expect(findOptions(true)).toEqual({
+    incremental: true,
+    decorations: { matchBackground: '#333333', matchBorder: '#999999', matchOverviewRuler: '#999999', activeMatchBorder: '#ffffff', activeMatchColorOverviewRuler: '#ffffff' },
+  });
+  tokens['--foreground'] = '#000000';
+  expect(findOptions(false)).toMatchObject({ incremental: false, decorations: { activeMatchBorder: '#000000' } });
 });
 
 // The terminal's clipboard keys off macOS (#644); jsdom runs as off macOS

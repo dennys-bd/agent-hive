@@ -3,7 +3,7 @@ interface FakeLink { text: string; activate(): void }
 export interface FakeLinkProvider { provideLinks(y: number, callback: (links: FakeLink[] | undefined) => void): void }
 
 // Stand-ins for xterm and WebSocket (#251, #407): jsdom has no canvas, and its WebSocket would dial a real host. A test mocks '@xterm/xterm'
-// and '@xterm/addon-fit' with these classes, stubs WebSocket with FakeWebSocket, and drives the output, the keys and the close by hand.
+// and '@xterm/addon-fit' (and '@xterm/addon-search', #12) with these classes, stubs WebSocket with FakeWebSocket, and drives the output, the keys and the close by hand.
 export class FakeTerminal {
   static all: FakeTerminal[] = [];
   options: Record<string, unknown> = {};
@@ -14,6 +14,8 @@ export class FakeTerminal {
   lines: string[] = []; // the screen's rows as text, read by a link provider through the buffer (#400)
   providers: FakeLinkProvider[] = [];
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea'); // xterm's hidden input, there once open() ran: the key probe listens on it (#732)
+  selection = ''; // #12: what hasSelection / getSelection answer, '' for none
+  private keyHandler: (event: KeyboardEvent) => boolean = () => true; // terminalKeys' handler (#448); press() drives it
   buffer = { active: { getLine: (y: number) => (this.lines[y] === undefined ? undefined : { translateToString: () => this.lines[y] }) } };
   private typed: ((data: string) => void)[] = [];
   private sized: ((size: { cols: number; rows: number }) => void)[] = [];
@@ -25,7 +27,18 @@ export class FakeTerminal {
   loadAddon(): void {}
   open(): void {}
   focus(): void {}
-  attachCustomKeyEventHandler(): void {}
+  attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+    this.keyHandler = handler;
+  }
+  press(init: KeyboardEventInit): boolean { // a keydown as xterm hands it to the custom handler; false: refused to xterm
+    return this.keyHandler(new KeyboardEvent('keydown', { cancelable: true, ...init }));
+  }
+  hasSelection(): boolean {
+    return this.selection !== '';
+  }
+  getSelection(): string {
+    return this.selection;
+  }
   registerLinkProvider(provider: FakeLinkProvider): { dispose(): void } {
     this.providers.push(provider);
     return { dispose: () => {} };
@@ -62,6 +75,39 @@ export class FakeTerminal {
 
 export class FakeFitAddon {
   fit(): void {}
+}
+
+type FakeResults = { resultIndex: number; resultCount: number };
+
+/** The search addon (#12): it records each search and clear, and a test fires its results by hand. */
+export class FakeSearchAddon {
+  static all: FakeSearchAddon[] = [];
+  readonly options: unknown;
+  calls: [string, string, boolean | undefined][] = []; // [next | previous, term, incremental]
+  cleared = 0;
+  private listeners: ((results: FakeResults) => void)[] = [];
+  constructor(options?: unknown) {
+    this.options = options;
+    FakeSearchAddon.all.push(this);
+  }
+  findNext(term: string, options?: { incremental?: boolean }): boolean {
+    this.calls.push(['next', term, options?.incremental]);
+    return true;
+  }
+  findPrevious(term: string, options?: { incremental?: boolean }): boolean {
+    this.calls.push(['previous', term, options?.incremental]);
+    return true;
+  }
+  clearDecorations(): void {
+    this.cleared += 1;
+  }
+  onDidChangeResults(listener: (results: FakeResults) => void): { dispose(): void } {
+    this.listeners.push(listener);
+    return { dispose: () => { this.listeners = this.listeners.filter((l) => l !== listener); } };
+  }
+  results(resultIndex: number, resultCount: number): void {
+    for (const listener of this.listeners) listener({ resultIndex, resultCount });
+  }
 }
 
 export class FakeWebSocket {
@@ -107,5 +153,6 @@ export class FakeWebSocket {
 
 export function resetFakes(): void {
   FakeTerminal.all.length = 0;
+  FakeSearchAddon.all.length = 0;
   FakeWebSocket.all.length = 0;
 }

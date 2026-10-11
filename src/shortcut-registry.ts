@@ -71,6 +71,8 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('splitTerminalVertical', { mac: 'CmdOrCtrl+D', other: 'CmdOrCtrl+Shift+D' }, 'activities'),
   row('splitTerminalHorizontal', { mac: 'CmdOrCtrl+Shift+D', other: 'CmdOrCtrl+Alt+Shift+D' }, 'activities'),
   row('clear', { mac: 'CmdOrCtrl+K', other: 'CmdOrCtrl+Shift+K' }, 'activities'),
+  // #12: the terminal's find bar. Off macOS Ctrl+F is the program's (readline's forward-char); Cmd+F's searchTasks acts only in the flow
+  row('findInTerminal', { mac: 'CmdOrCtrl+F', other: 'CmdOrCtrl+Shift+F' }, 'activities'),
   row('nextPane', { mac: 'CmdOrCtrl+]', other: 'CmdOrCtrl+Shift+]' }, 'activities', SOON),
   row('prevPane', { mac: 'CmdOrCtrl+[', other: 'CmdOrCtrl+Shift+[' }, 'activities', SOON),
   row('nextActivity', { mac: 'CmdOrCtrl+Alt+Down', other: 'CmdOrCtrl+Shift+PageDown' }, 'activities', SOON),

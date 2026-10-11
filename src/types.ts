@@ -1041,7 +1041,7 @@ export type OperationId =
   | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'openDiff' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
-  | 'splitTerminalHorizontal' | 'clear' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
+  | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' // #818
   | 'confirm' | 'feedbackQueue' | 'switchStartMode';

@@ -1,6 +1,6 @@
 // A detached run's window (#252): one xterm over the run's pty in the daemon, through the routes the main window's panel tabs use, under a title
-// strip of its own that drags the window and holds the way back to the panel (#340, #377). Plain DOM, two elements, plus a React root holding
-// only the link dialog (#404). The Express server serves the files and answers GET /settings (the theme, the font, the language) and the
+// strip of its own that drags the window and holds the way back to the panel (#340, #377). Plain DOM, two elements, plus React roots holding only
+// the link dialog (#404), the toasts (#644) and the find bar (#12). The Express server serves the files and answers GET /settings (the theme, the font, the language) and the
 // task references' open-ref (#588); a file link goes through main to the main window's editor pane (#717).
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
@@ -8,6 +8,7 @@ import '@xterm/xterm/css/xterm.css';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { LinkConfirm } from '@/components/LinkConfirm';
+import { TerminalFind } from '@/components/TerminalFind';
 import { Toaster } from '@/components/ui/sonner';
 import './index.css'; // Tailwind + theme.css: the link dialog is the main window's own AlertDialog (#404); the page's own rules are unlayered and win
 import type { SettingsInfo } from '../types';
@@ -18,7 +19,7 @@ import { setShortcuts } from './lib/shortcut-bindings.js';
 import { refPrefixes } from './lib/task-refs.js';
 import { applyTheme } from './lib/theme.js';
 import { linkHandler, openLink, setTrustedDomains } from './lib/trusted-links.js';
-import { FONT_FAMILY, linkFiles, linkTaskRefs, openRefUrl, paintTerminal, terminalFontStack, terminalKeys, terminalPaste } from './lib/xterm-setup.js';
+import { FONT_FAMILY, linkFiles, linkTaskRefs, loadSearch, openRefUrl, paintTerminal, terminalFontStack, terminalKeys, terminalPaste } from './lib/xterm-setup.js';
 
 const host = document.getElementById('terminal');
 if (!host) throw new Error('terminal.html: #terminal missing');
@@ -91,9 +92,29 @@ function linkRefs(info: SettingsInfo): void {
   linkTaskRefs(term, refLinks, () => prefixes, { task: (taskId) => window.hiveTerminal.openTask(taskId), url: (url) => openLink(url, askLink) });
 }
 
-// claude turns mouse tracking on, which hands every drag to it; Option+drag is the macOS way back to a selection
-const term = new Terminal({ fontFamily: FONT_FAMILY, cursorBlink: true, macOptionClickForcesSelection: true, linkHandler: linkHandler(askLink) });
-terminalKeys(term);
+// claude turns mouse tracking on, which hands every drag to it; Option+drag is the macOS way back to a selection. allowProposedApi: the find
+// bar's highlights are xterm decorations, still proposed API (#12)
+const term = new Terminal({ fontFamily: FONT_FAMILY, cursorBlink: true, macOptionClickForcesSelection: true, allowProposedApi: true, linkHandler: linkHandler(askLink) });
+terminalKeys(term, openFind);
+const search = loadSearch(term);
+
+// The find bar (#12): a React root of its own, created at the first press of the binding. Its query lives in the component, which stays
+// mounted while closed, so the next open finds it. A fixed box under the title strip holds it at the terminal's top right.
+let findBar: Root | undefined;
+let findRequest = 0;
+function renderFind(isOpen: boolean): void {
+  if (!findBar) {
+    const box = document.createElement('div');
+    box.style.cssText = 'position: fixed; top: var(--titlebar-height); right: 0;';
+    document.body.append(box);
+    findBar = createRoot(box);
+  }
+  findBar.render(createElement(TerminalFind, { term, search, isOpen, request: findRequest, onClose: () => renderFind(false) }));
+}
+function openFind(): void {
+  findRequest += 1;
+  renderFind(true);
+}
 
 // system before the first paint, so a system config never paints the wrong theme first; the saved one replaces it once GET /settings answers
 let stopTheme = applyTheme('system', () => paintTerminal(term));
