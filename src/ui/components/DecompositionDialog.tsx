@@ -66,6 +66,17 @@ function Repository({ repository }: { repository?: string }) {
   return <p className="text-sm"><span className={MUTED}>{`${t('decomposition.repository')} `}</span><span className="font-mono">{repository}</span></p>;
 }
 
+// Where the file is pushed (#936): the checkout's repository, branch and path, or why it cannot go; the user sees what is pushed before creating anything
+function Delivery({ preview }: { preview: DecompositionPreview }) {
+  const { delivery, deliveryRefusal } = preview;
+  return (
+    <>
+      {delivery && <p className="text-sm"><span className={MUTED}>{`${t('decomposition.delivery')} `}</span><span className="font-mono">{`${delivery.repository} · ${delivery.branch} · ${delivery.path}`}</span></p>}
+      {deliveryRefusal !== undefined && <p className="text-destructive text-sm">{deliveryRefusal}</p>}
+    </>
+  );
+}
+
 /** The decomposition's confirm (#865): what the tree writes, or its problems with their lines; the target repository; the GitHub source
  * (the first preselected) and the Status column (the first stage's, suggested). criar issues is disabled while there is a problem, no
  * repository or no choice. A failure stays here with GitHub's words, and a second press resumes the write. */
@@ -79,7 +90,7 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
     getJson<DecompositionPreview>(path).then((read) => { setPreview(read); setChoice(chosen(read.sources[0])); }, (err: Error) => setError(err.message));
   }, [path]);
   const source = preview?.sources.find((s) => s.name === choice.source);
-  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && source !== undefined && choice.column !== undefined && !isWriting;
+  const canWrite = preview !== undefined && preview.problems.length === 0 && preview.repository !== undefined && preview.deliveryRefusal === undefined && source !== undefined && choice.column !== undefined && !isWriting;
   const write = (): void => {
     setIsWriting(true);
     setError(undefined);
@@ -94,6 +105,7 @@ export function DecompositionDialog({ activityId, onClose }: { activityId: strin
         </DialogHeader>
         {preview && <Summary preview={preview} />}
         {preview && <Repository repository={preview.repository} />}
+        {preview && <Delivery preview={preview} />}
         {preview && preview.sources.length === 0 && <p className="text-destructive text-sm">{t('decomposition.noSource')}</p>}
         {preview && preview.sources.length > 0 && (
           <div className="grid grid-cols-2 gap-2">

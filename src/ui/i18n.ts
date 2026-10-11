@@ -138,6 +138,7 @@ const en = {
   'decomposition.create': 'create issues', // #865: in place of approve while the decomposition is not on GitHub
   'decomposition.title': 'Create issues',
   'decomposition.repository': 'repository',
+  'decomposition.delivery': 'delivery', // #936: where the file is pushed
   'decomposition.noRepository': 'The workspace has no GitHub origin: there is nowhere to create the issues.',
   'decomposition.noSource': 'No GitHub source to create the issues in.',
   'decomposition.source': 'source',
@@ -1894,6 +1895,7 @@ const pt: Record<MessageKey, string> = {
   'decomposition.create': 'criar issues',
   'decomposition.title': 'Criar issues',
   'decomposition.repository': 'repositório',
+  'decomposition.delivery': 'entrega',
   'decomposition.noRepository': 'O workspace não tem origin no GitHub: não há onde criar as issues.',
   'decomposition.noSource': 'Nenhuma fonte GitHub para criar as issues.',
   'decomposition.source': 'source',

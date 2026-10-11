@@ -83,3 +83,20 @@ test('lists each overlap under the counts, muted, and keeps criar issues enabled
   expect(item.closest('div')).toHaveClass('text-muted-foreground');
   expect(create()).toBeEnabled();
 });
+
+test('shows where the file is pushed, repository, branch and path, under the repository line (#936)', async () => {
+  preview = { ...PREVIEW, delivery: { repository: 'acme/docs', branch: 'hive/7-site', path: 'agent/specs/site-decomposition.md' } };
+  render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
+  const line = await screen.findByText('acme/docs · hive/7-site · agent/specs/site-decomposition.md');
+  expect(line).toHaveClass('font-mono');
+  expect(screen.getByText('entrega')).toHaveClass('text-muted-foreground');
+  expect(create()).toBeEnabled();
+});
+
+test('a delivery that cannot go says why and keeps criar issues disabled (#936)', async () => {
+  const reason = 'the decomposition file\'s checkout is on acme/docs\'s default branch (main): the Hive never pushes it';
+  preview = { ...PREVIEW, delivery: { repository: 'acme/docs', branch: 'main', path: 'a.md' }, deliveryRefusal: reason };
+  render(<DecompositionDialog activityId="a-I1" onClose={vi.fn()} />);
+  expect(await screen.findByText(reason)).toHaveClass('text-destructive');
+  expect(create()).toBeDisabled();
+});
