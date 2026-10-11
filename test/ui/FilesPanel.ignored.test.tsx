@@ -38,7 +38,7 @@ test('an ignored file\'s name is muted and carries no mark, while a changed file
   const log = await screen.findByRole('button', { name: 'debug.log' });
   expect(within(log).getByText('debug.log')).toHaveClass('text-muted-foreground');
   expect(log.querySelector('[data-git-mark]')).toBeNull();
-  expect(within(screen.getByTitle('README.md')).getByText('README.md')).toHaveClass('text-waiting');
+  expect(within(screen.getByTitle('README.md')).getByText('README.md')).toHaveClass('text-git-modified');
 });
 
 test('node_modules shows muted and collapsed, is not read until expanded, and a file read from it opens in the editor (HIVE-22)', async () => {
@@ -54,7 +54,7 @@ test('node_modules shows muted and collapsed, is not read until expanded, and a 
   expect(openFile).toHaveBeenCalledWith('I1', 'node_modules/left-pad.js');
 });
 
-test('a nested repository is not read while collapsed; expanded, its changed file shows the M mark, a tracked one plain and one it ignores dimmed, docs itself still dimmed (#1)', async () => {
+test('a nested repository is not read while collapsed; expanded, its changed file shows the M mark, a tracked one plain and one it ignores dimmed, docs itself taking the M over its dimming (#1, #903)', async () => {
   const user = userEvent.setup();
   render(side());
   const docs = await screen.findByRole('button', { name: 'docs' });
@@ -62,9 +62,10 @@ test('a nested repository is not read while collapsed; expanded, its changed fil
   await user.dblClick(docs);
   await user.dblClick(await screen.findByRole('button', { name: 'agent' }));
   const foo = await screen.findByTitle('docs/agent/foo.md');
-  expect(within(foo).getByText('foo.md')).toHaveClass('text-waiting');
+  expect(within(foo).getByText('foo.md')).toHaveClass('text-git-modified');
   expect(foo.querySelector('[data-git-mark]')).toHaveTextContent('M');
   expect(within(screen.getByTitle('docs/agent/old.log')).getByText('old.log')).toHaveClass('text-muted-foreground');
   expect(within(screen.getByTitle('docs/README.md')).getByText('README.md')).toHaveClass('text-foreground');
-  expect(within(docs).getByText('docs')).toHaveClass('text-muted-foreground');
+  // #903: the M under it wins over the dimming
+  expect(within(docs).getByText('docs')).toHaveClass('text-git-modified');
 });

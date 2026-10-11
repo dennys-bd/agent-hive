@@ -32,6 +32,9 @@
   --color-review: var(--review);
   --color-approval: var(--approval);
   --color-backoff: var(--backoff);
+  --color-git-modified: var(--git-modified);
+  --color-git-added: var(--git-added);
+  --color-git-deleted: var(--git-deleted);
   --color-diff-add: var(--diff-add);
   --color-diff-del: var(--diff-del);
   --color-signal-green: var(--signal-green);

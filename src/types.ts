@@ -681,12 +681,13 @@ export type ChangesBase = 'head' | 'task';
  * absent with no base at all (outside a repository, a binary, oversized or not-UTF-8 blob). */
 export interface FileBase { against: ChangesBase; label: string; oid?: string; text?: string }
 
-/** A file's git mark in the files sidebar (redesign 07): M changed, A new (staged or untracked). */
-export type GitMark = 'M' | 'A';
+/** A file's git mark in the files sidebar (redesign 07): M changed, A new (staged or untracked), D deleted (#903). */
+export type GitMark = 'M' | 'A' | 'D';
 
 /** A task's worktree as the files sidebar lists it (redesign 07): every path git does not ignore, relative to the worktree, and the marks;
  * its empty folders (#818), relative; and its root, absolute (#818): copy path, the clipboard and the untitled save need it, and a local
- * activity has no worktree on the page; and what git ignores, with the nested repositories (HIVE-22), outermost. */
+ * activity has no worktree on the page; and what git ignores, with the nested repositories (HIVE-22), outermost. A `D` path is in `marks`
+ * only, never in `files`: its folders take the mark (#903). */
 export interface TaskTree {
   root: string;
   files: string[];

@@ -18,17 +18,19 @@ import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
 import { type TreeState, useTaskTree } from '@/hooks/use-task-tree';
 import { t, tPlural } from '@/i18n';
-import { activityCounts, type Counts, foldersWithErrors } from '@/lib/diagnostics-store';
+import { activityCounts, type Counts } from '@/lib/diagnostics-store';
 import { type Activity, activityKey, isTask } from '@/lib/activities';
 import { ancestorsOf, buildTree, type TreeNode, type TreeRow, visibleRows } from '@/lib/file-tree';
 import { isMac } from '@/lib/shortcut-bindings';
 import { expandedOf, onTreeSelect, rememberExpanded, rememberFolder } from '@/lib/tree-place';
+import { fileStatus, folderStatuses, marksWithLoaded, type TreeStatus } from '@/lib/tree-status';
 import { readView, writeView } from '@/lib/view-state';
 
 /** Which of the activity sidebar's two views shows (redesign 07). */
 export type SideTab = 'files' | 'details';
 
-const MARK_TEXT: Record<GitMark, string> = { M: 'text-waiting', A: 'text-working' };
+// #903: the git marks have their own tokens, so a modified file never reads as a warning
+const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added', D: 'text-git-deleted' };
 
 // A file's diagnostic as the tree shows it (#780): the most severe count, errors before warnings; infos never show
 interface Worst { n: number; tone: string; family: 'editor.diag.errors' | 'editor.diag.warnings' }
@@ -38,12 +40,13 @@ function worstOf(counts: Counts | undefined): Worst | undefined {
   return counts.warnings > 0 ? { n: counts.warnings, tone: 'text-waiting', family: 'editor.diag.warnings' } : undefined;
 }
 
-// The name's colour by priority (#780): an error, a warning, then the git mark; what git ignores is dimmed (HIVE-22), never coloured. A
-// folder only reds for an error under it
-function nameTone(node: TreeNode, worst: Worst | undefined, hasError: boolean): string {
-  if (node.children !== undefined && hasError) return 'text-destructive';
-  if (worst !== undefined) return worst.tone;
-  if (node.mark) return MARK_TEXT[node.mark];
+// #903: a checker's error and warning keep the status colours, a git mark has its own
+const STATUS_TEXT: Record<TreeStatus, string> = { error: 'text-destructive', warning: 'text-waiting', ...MARK_TEXT };
+
+// The name's colour (#780, #903): a file's own worst status, a folder's the worst of anything under it; with none, what git ignores is dimmed
+// (HIVE-22), so a status under an ignored folder wins over the dimming
+function nameTone(node: TreeNode, status: TreeStatus | undefined): string {
+  if (status !== undefined) return STATUS_TEXT[status];
   return node.isIgnored ? 'text-muted-foreground' : 'text-foreground';
 }
 
@@ -124,7 +127,7 @@ function RowIcon({ icons, node, isOpen }: RowIconProps) {
 }
 
 interface RowProps {
-  node: TreeNode; depth: number; isOpen: boolean; isDropTarget: boolean; isSelected: boolean; worst?: Worst; hasError: boolean; icons: FileIconsView;
+  node: TreeNode; depth: number; isOpen: boolean; isDropTarget: boolean; isSelected: boolean; worst?: Worst; status?: TreeStatus; icons: FileIconsView;
   drag: RowDragHandlers; actions: TreeActions; selected: string[]; onToggle(path: string): void; onSelect(node: TreeNode, event: MouseEvent): void; onMenu(path: string): void;
 }
 
@@ -132,9 +135,9 @@ interface RowProps {
 // click selects it (#818: ⌘ toggles, ⇧ ranges) and a plain click on a file opens it; a folder opens on a double click, on its caret, or on
 // Enter (a keyboard click, detail 0). The selected rows take bg-accent; a right-click on a row out of the selection selects it alone. Every
 // row drags, and the rows of the folder a drag would land in take bg-muted as one block (#594). Each has its menu (#818).
-function TreeRowView({ node, depth, isOpen, isDropTarget, isSelected, worst, hasError, icons, drag, actions, selected, onToggle, onSelect, onMenu }: RowProps) {
+function TreeRowView({ node, depth, isOpen, isDropTarget, isSelected, worst, status, icons, drag, actions, selected, onToggle, onSelect, onMenu }: RowProps) {
   const isFolder = node.children !== undefined;
-  const tone = nameTone(node, worst, hasError);
+  const tone = nameTone(node, status);
   const Caret = isOpen ? ChevronDownIcon : ChevronRightIcon;
   const onClick = (event: MouseEvent): void => {
     onSelect(node, event);
@@ -172,29 +175,28 @@ function TreeRowView({ node, depth, isOpen, isDropTarget, isSelected, worst, has
 }
 
 interface BodyProps {
-  tree: TreeState; rows: TreeRow[]; activityId: string; expanded: ReadonlySet<string>; drag: TreeDrag; selection: TreeSelection; actions: TreeActions; edit: TreeEditing;
+  tree: TreeState; marks: Record<string, GitMark>; rows: TreeRow[]; activityId: string; expanded: ReadonlySet<string>; drag: TreeDrag; selection: TreeSelection; actions: TreeActions; edit: TreeEditing;
   onToggle(path: string): void; onSelect(node: TreeNode, event: MouseEvent): void; onMenu(path: string): void;
 }
 
 // The tree as the latest poll has it, or why there is none
-function TreeBody({ tree, rows, activityId, expanded, drag, selection, actions, edit, onToggle, onSelect, onMenu }: BodyProps) {
+function TreeBody({ tree, marks, rows, activityId, expanded, drag, selection, actions, edit, onToggle, onSelect, onMenu }: BodyProps) {
   const icons = useFileIcons(); // once per tree: every row shares the loaded set
   useDiagnostics(); // #780: the counts follow the language servers
   const counts = activityCounts(activityId);
-  const errorFolders = foldersWithErrors(counts);
   if (tree.status === 'loading') return <p className={MUTED}>{t('files.loading')}</p>;
   if (tree.status === 'error') return <p role="alert" className="px-3 text-destructive text-xs">{tree.message}</p>;
   if (rows.length === 0 && edit.editing === undefined) return <p className={MUTED}>{t('files.empty')}</p>;
-  return <RowList rows={rows} expanded={expanded} drag={drag} selection={selection} actions={actions} edit={edit} counts={counts} errorFolders={errorFolders} icons={icons} onToggle={onToggle} onSelect={onSelect} onMenu={onMenu} />;
+  return <RowList rows={rows} expanded={expanded} drag={drag} selection={selection} actions={actions} edit={edit} counts={counts} folders={folderStatuses(counts, marks)} icons={icons} onToggle={onToggle} onSelect={onSelect} onMenu={onMenu} />;
 }
 
-interface RowListProps extends Omit<BodyProps, 'tree' | 'activityId'> {
-  counts: ReturnType<typeof activityCounts>; errorFolders: ReturnType<typeof foldersWithErrors>; icons: FileIconsView;
+interface RowListProps extends Omit<BodyProps, 'tree' | 'marks' | 'activityId'> {
+  counts: ReturnType<typeof activityCounts>; folders: ReadonlyMap<string, TreeStatus>; icons: FileIconsView;
 }
 
 // The rows, with the inline input where an edit stands (#818): a rename in its row's place, a new item at the top of its folder (the root's
 // above every row)
-function RowList({ rows, expanded, drag, selection, actions, edit, counts, errorFolders, icons, onToggle, onSelect, onMenu }: RowListProps) {
+function RowList({ rows, expanded, drag, selection, actions, edit, counts, folders, icons, onToggle, onSelect, onMenu }: RowListProps) {
   const { editing } = edit;
   const input = (key: string, depth: number, initial: string) => (
     <TreeNameInput key={key} indent={FIRST_INDENT_PX + depth * INDENT_PX} initial={initial} error={editing?.error} onSubmit={edit.submit} onCancel={edit.cancel} />
@@ -205,10 +207,11 @@ function RowList({ rows, expanded, drag, selection, actions, edit, counts, error
       {rows.map(({ node, depth }) => {
         if (editing?.kind === 'rename' && editing.path === node.path) return input(`rename:${node.path}`, depth, node.name);
         const isOpen = expanded.has(node.path);
+        const isFile = node.children === undefined;
         const row = (
           <TreeRowView
             key={node.path} node={node} depth={depth} isOpen={isOpen} isDropTarget={isInDropBlock(node.path, drag.hovered)} isSelected={selection.paths.has(node.path)}
-            worst={node.children === undefined ? worstOf(counts.get(node.path)) : undefined} hasError={errorFolders.has(node.path)} icons={icons}
+            worst={isFile ? worstOf(counts.get(node.path)) : undefined} status={isFile ? fileStatus(counts.get(node.path), node.mark) : folders.get(node.path)} icons={icons}
             drag={drag.rowProps(node, isOpen)} actions={actions} selected={actedOn(selection, node.path)} onToggle={onToggle} onSelect={onSelect} onMenu={onMenu}
           />
         );
@@ -256,6 +259,7 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const ready = tree.status === 'ready' ? tree.tree : undefined;
   const loaded = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
   const root = ready?.root;
+  const marks = marksWithLoaded(ready?.marks ?? {}, loaded); // #1: a nested repository's marks count for its folders too
   const rows = ready ? visibleRows(buildTree(ready.files, ready.marks, view.showHidden, ready.folders, ready.ignored, loaded), view.expanded) : [];
   const [selection, setSelection] = useState<TreeSelection>(NO_SELECTION);
   useSelectionPlace(activity.id, rows, selection, setSelection, onView);
@@ -281,7 +285,7 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
       {activity.branch !== undefined && <p className="truncate px-3 pb-2 font-mono text-muted-foreground text-xs">{activity.branch}</p>}
       <RootMenu actions={ops.actions}>
         <div ref={container} data-testid="files-tree" data-drop-target={isRootTarget || undefined} tabIndex={-1} {...treeClipboard(activity.id, root, selectedOf)} className={`flex min-h-0 flex-1 flex-col focus:outline-none${isRootTarget ? ' bg-muted' : ''}`} {...drag.area}>
-          <TreeBody tree={tree} rows={rows} activityId={activity.id} expanded={view.expanded} drag={drag} selection={selection} actions={ops.actions} edit={edit} onToggle={folders.toggle} onSelect={select} onMenu={onMenu} />
+          <TreeBody tree={tree} marks={marks} rows={rows} activityId={activity.id} expanded={view.expanded} drag={drag} selection={selection} actions={ops.actions} edit={edit} onToggle={folders.toggle} onSelect={select} onMenu={onMenu} />
         </div>
       </RootMenu>
       <TrashConfirm paths={ops.trashing} onConfirm={ops.confirmTrash} onCancel={ops.cancelTrash} />

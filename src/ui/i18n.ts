@@ -196,6 +196,7 @@ const en = {
   'files.empty': 'no files',
   'files.mark.M': 'modified',
   'files.mark.A': 'added',
+  'files.mark.D': 'deleted',
   'files.drop.noBridge': 'drag files from your file manager into the Hive window, not a browser', // #594: a browser gives no dropped file's path
   'detail.pr.open': 'open',
   'detail.pr.merged': 'merged',
@@ -1823,6 +1824,7 @@ const pt: Record<MessageKey, string> = {
   'files.empty': 'sem arquivos',
   'files.mark.M': 'modificado',
   'files.mark.A': 'adicionado',
+  'files.mark.D': 'removido',
   'files.drop.noBridge': 'arraste arquivos do gerenciador de arquivos para a janela do Hive, não para um navegador',
   'detail.pr.open': 'aberto',
   'detail.pr.merged': 'mergeado',

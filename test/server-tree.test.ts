@@ -65,16 +65,22 @@ async function startTree(t: TestContext, tasks: (repo: string) => WithWork[]): P
   return { base, repo, calls, server };
 }
 
-test('parseStatus marks changed files M and new, untracked or renamed ones A, drops deleted ones, and skips a rename\'s old path', () => {
+test('parseStatus marks changed files M, new, untracked or renamed ones A, and deleted ones D, which it also lists as deleted; a rename\'s old path is skipped (#903)', () => {
   const { marks, deleted } = parseStatus(STATUS);
-  assert.deepEqual(marks, { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' });
+  assert.deepEqual(marks, { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' });
   assert.deepEqual([...deleted], ['gone.txt']);
+  // a staged deletion, and a file added then deleted from the worktree: both gone from the disk
+  const staged = parseStatus(['D  staged.txt', 'AD added-gone.txt', ''].join('\0'));
+  assert.deepEqual([staged.marks, [...staged.deleted]], [{ 'staged.txt': 'D', 'added-gone.txt': 'D' }, ['staged.txt', 'added-gone.txt']]);
+  // a staged delete re-created on disk: git lists `D ` then `??`; the file is back, new and no longer deleted
+  const back = parseStatus(['D  back.txt', '?? back.txt', ''].join('\0'));
+  assert.deepEqual([back.marks, [...back.deleted]], [{ 'back.txt': 'A' }, []]);
 });
 
-test('repoViewOf marks the folder\'s direct child files as the outer tree does, leaves a deeper path and a deletion out, reads a rename as new, and names the children the nested repository ignores, an ignored folder covering its subtree (#1)', () => {
+test('repoViewOf marks the folder\'s direct child files as the outer tree does, leaves a deeper path out, marks a deleted direct child D (it has no row, only its folders read it), reads a rename as new, and names the children the nested repository ignores, an ignored folder covering its subtree (#1)', () => {
   const status = [' M agent/foo.md', '?? agent/new.md', ' M agent/deep/y.md', ' D agent/gone.md', 'R  agent/moved.md', 'agent/was.md', '!! agent/x.log', '!! agent/old/', '!! agent/deep/z.log', ''].join('\0');
   const children = { files: ['foo.md', 'moved.md', 'new.md', 'tracked.md', 'x.log'], folders: ['deep', 'old'] };
-  assert.deepEqual(repoViewOf(status, 'agent', children), { marks: { 'foo.md': 'M', 'moved.md': 'A', 'new.md': 'A' }, ignored: ['old', 'x.log'] });
+  assert.deepEqual(repoViewOf(status, 'agent', children), { marks: { 'foo.md': 'M', 'gone.md': 'D', 'moved.md': 'A', 'new.md': 'A' }, ignored: ['old', 'x.log'] });
   // the read folder inside an ignored one: git names only the folder, `dir/`, and every child sits under it
   assert.deepEqual(repoViewOf(['!! agent/old/', ''].join('\0'), 'agent/old', { files: ['a.txt'], folders: ['b'] }), { marks: {}, ignored: ['a.txt', 'b'] });
   // the nested repository's own root: no prefix
@@ -94,7 +100,7 @@ test('nestedRepoOf answers the nearest folder holding .git from the read folder 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const res = await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) {
     assert.equal(file, 'git');
     assert.deepEqual(args.slice(0, 3), ['--no-optional-locks', '-C', worktreePath(f.repo, 'hive-1-task')]);
@@ -123,7 +129,7 @@ const LOCAL = `/activities/${encodeURIComponent(localActivityId('hive'))}`;
 test('GET /activities/local:<workspace>/tree lists the workspace checkout with its marks, and its reveal shows the checkout (#633, #658)', async (t) => {
   const f = await startTree(t, () => []);
   const res = await hiveFetch(`${f.base}${LOCAL}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: f.repo, files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: f.repo, files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) assert.deepEqual([file, ...args.slice(0, 3)], ['git', '--no-optional-locks', '-C', f.repo]);
   f.calls.length = 0;
   assert.equal((await postJson(`${f.base}${LOCAL}/reveal`)).status, 204);

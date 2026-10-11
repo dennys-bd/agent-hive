@@ -394,7 +394,7 @@ test('muted icons carry the muted class (#754)', async () => {
   await waitFor(() => expect(iconOf(src)).toHaveClass('file-icon-muted'), { timeout: LOAD_MS });
 });
 
-test('a row shows the most severe count then its git letter, each in its colour; the name by priority; a folder with an error is destructive; nothing while not ready (#780)', async () => {
+test('a row shows the most severe count then its git letter, each in its colour; the name by priority; a folder with an error is destructive; nothing while not ready (#780), each mark in its own git colour (#903)', async () => {
   const user = userEvent.setup();
   store.setClient('k', 'a-I1', 'typescript-language-server', { phase: 'ready' });
   store.setDiagnostics('k', 'src/a.ts', problemsOf('src/a.ts', { errors: 1, warnings: 3 }));
@@ -404,14 +404,14 @@ test('a row shows the most severe count then its git letter, each in its colour;
   expect(within(src).getByText('src')).toHaveClass('text-destructive');
   await user.dblClick(src);
   const marks = (row: HTMLElement): [string | null, string | undefined][] =>
-    [...row.querySelectorAll('[data-diag-count], [data-git-mark]')].map((el) => [el.textContent, el.className.match(/text-\w+/)?.[0]]);
+    [...row.querySelectorAll('[data-diag-count], [data-git-mark]')].map((el) => [el.textContent, el.className.match(/text-[\w-]+/)?.[0]]);
   const a = screen.getByTitle('src/a.ts');
   const b = screen.getByTitle('src/b.ts');
   expect(within(a).getByText('a.ts')).toHaveClass('text-destructive');
-  expect(marks(a)).toEqual([['1', 'text-destructive'], ['M', 'text-waiting']]);
+  expect(marks(a)).toEqual([['1', 'text-destructive'], ['M', 'text-git-modified']]);
   expect(within(b).getByText('b.ts')).toHaveClass('text-waiting');
-  expect(marks(b)).toEqual([['2', 'text-waiting'], ['A', 'text-working']]);
+  expect(marks(b)).toEqual([['2', 'text-waiting'], ['A', 'text-git-added']]);
   act(() => store.setClient('k', 'a-I1', 'typescript-language-server', { phase: 'starting' }));
-  expect(within(screen.getByTitle('src/b.ts')).getByText('b.ts')).toHaveClass('text-working');
+  expect(within(screen.getByTitle('src/b.ts')).getByText('b.ts')).toHaveClass('text-git-added');
   expect(document.querySelector('[data-diag-count]')).toBeNull();
 });
