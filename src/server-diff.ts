@@ -13,7 +13,9 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_CONFLICT = 409;
 const HTTP_TOO_LARGE = 413;
 const HTTP_SERVER_ERROR = 500;
-const SCOPE_MESSAGE = 'scope deve ser stage, worktree ou commit';
+const SCOPE_MESSAGE = 'scope deve ser stage, worktree, commit ou checkpoint';
+const NO_CHECKPOINTS_MESSAGE = 'a tarefa não tem pontos de restauração';
+const CHECKPOINT_MESSAGE = 'informe checkpoint: o número de um ponto de restauração da tarefa';
 const NO_PARENT_MESSAGE = 'o último commit não tem pai';
 const NO_WORKTREE_MESSAGE = 'tarefa sem worktree no disco';
 const NO_STAGE_START_MESSAGE = 'a etapa atual não tem início registrado';
@@ -27,7 +29,8 @@ const refuse = (res: Response, refusal: Refusal): void => {
 // Why the task has no diff of `scope` (#270): canDiff's two reasons, worded apart; undefined when it has one.
 function noDiffReason(task: Task, activity: Activity | undefined, scope: DiffScope): string | undefined {
   if (canDiff(task, activity, scope)) return undefined;
-  return canDiff(task, activity, 'worktree') ? NO_STAGE_START_MESSAGE : NO_WORKTREE_MESSAGE;
+  if (!canDiff(task, activity, 'worktree')) return NO_WORKTREE_MESSAGE;
+  return scope === 'checkpoint' ? NO_CHECKPOINTS_MESSAGE : NO_STAGE_START_MESSAGE;
 }
 
 // A failed diff as its answer (#270, #591): a root commit's 409, an oversized diff's 413, git's own words as a 500
@@ -50,7 +53,7 @@ async function dropStale(deps: Pick<TaskRouteDeps, 'reviews' | 'notifyReview' | 
   }
 }
 
-/** GET /activities/:id/diff?scope=stage|worktree|commit (#270, #591): the task's worktree on disk against the scope's base, as files, hunks and lines. The path
+/** GET /activities/:id/diff?scope=stage|worktree|commit|checkpoint (with `&checkpoint=<n>` for the last; #270, #591): the task's worktree on disk against the scope's base, as files, hunks and lines. The path
  * comes from the slug (taskDir), never from the activity's worktree path, which a hook posts. No value of the request reaches git: `scope` only picks a
  * branch here, and the base is a sha or a ref the Hive stored. Read-only for the repo: see taskDiff. */
 export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec' | 'requireLive' | 'reviews' | 'notifyReview' | 'log'>): void {
@@ -71,12 +74,14 @@ export function registerDiffRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     if (!workspace) return refuse(res, { status: HTTP_CONFLICT, message: noWorkspaceReason(task) });
     const reason = noDiffReason(task, activity, scope);
     if (reason) return refuse(res, { status: HTTP_CONFLICT, message: reason });
+    const checkpoint = scope === 'checkpoint' ? activity.checkpoints?.find((a) => String(a.n) === req.query.checkpoint) : undefined; // #619: only an n the activity lists reaches git, as a sha it stored
+    if (scope === 'checkpoint' && checkpoint === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: CHECKPOINT_MESSAGE });
     const worktree = taskDir(workspace.path, activity); // the checkout for a local task (#444)
-    const key = `${task.item.itemId}\n${scope}`;
+    const key = `${task.item.itemId}\n${scope}${checkpoint?.n ?? ''}`;
     const mine = (latest.get(key) ?? 0) + 1;
     latest.set(key, mine);
     try {
-      const base = await diffBase(task, activity, workspaceBase(config, workspace), worktree, scope, exec);
+      const base = await diffBase(task, activity, workspaceBase(config, workspace), worktree, scope, exec, checkpoint);
       const files = scope === 'commit' ? await commitDiff(worktree, exec) : await taskDiff(worktree, base.commit, exec);
       const answer: TaskDiff = { scope, base: base.label, files };
       res.json(answer);

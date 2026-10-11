@@ -46,7 +46,7 @@ const activityTitle = (activity: Activity): string => (activity.kind === 'task' 
 /** A tab's text in its strip (#457, #458): a run's own label (#489: what runs in it, never its kind); a diff's scope; a file's name
  * (#717); Preview and its name (#697); Alterações and its name (#668); console. */
 export function refText(item: CenterTabRef, activity: Activity): string {
-  if (item.kind === 'diff') return t(DIFF_SCOPE_KEY[item.scope]);
+  if (item.kind === 'diff') return t(DIFF_SCOPE_KEY[item.scope], { n: item.checkpoint ?? '' });
   if (item.kind === 'untitled') return t('editor.untitled', { n: item.n }); // #818
   if (item.kind === 'file') return baseName(item.path);
   if (item.kind === 'preview') return `${t('preview.title')} ${baseName(item.path)}`;
@@ -246,8 +246,8 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, o
   if (item.kind === 'console') return <ConsoleTab item={item} active={active} fontFamily={fontFamily} ops={ops} />;
   if (item.kind === 'diff') {
     if (activity.kind === 'local') return null; // a local activity has no stage or worktree to diff (#590)
-    const tab = diffTab(activity.task, item.scope);
-    return <DiffView tab={tab} label={tabLabel(tab)} active={active} activity={activity} onScope={(scope) => ops.retarget(refKey(item), { kind: 'diff', scope })} />;
+    const tab = diffTab(activity.task, item.scope, item.checkpoint);
+    return <DiffView tab={tab} label={tabLabel(tab)} active={active} activity={activity} onScope={(scope, checkpoint) => ops.retarget(refKey(item), { kind: 'diff', scope, ...(checkpoint === undefined ? {} : { checkpoint }) })} />;
   }
   if (item.kind === 'file') {
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;

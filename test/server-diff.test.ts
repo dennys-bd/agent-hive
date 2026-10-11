@@ -6,7 +6,7 @@ import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import { worktreePath } from '../src/worktree.js';
-import type { Task, Exec, SettingsBody } from '../src/types.js';
+import type { Checkpoint, Task, Exec, SettingsBody } from '../src/types.js';
 import { fileHash } from '../src/diff.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
@@ -91,8 +91,8 @@ test('GET /activities/:id/diff refuses an unknown task (404), a scope that is no
   ]);
   const refusals: [string, string | undefined, number, string][] = [
     ['local:9', 'stage', 404, 'atividade desconhecida'], // #629: no activity under that id, checked first
-    ['local:1', undefined, 400, 'scope deve ser stage, worktree ou commit'],
-    ['local:1', 'all', 400, 'scope deve ser stage, worktree ou commit'],
+    ['local:1', undefined, 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
+    ['local:1', 'all', 400, 'scope deve ser stage, worktree, commit ou checkpoint'],
     ['local:1', 'stage', 409, 'a etapa atual não tem início registrado'],
     ['local:4', 'stage', 409, 'a etapa atual não tem início registrado'],
     ['local:2', 'worktree', 404, 'atividade desconhecida'], // #629: never opened, so no activity to diff
@@ -126,4 +126,23 @@ test('GET /activities/:id/diff?scope=commit answers HEAD^ against HEAD in the wo
   f.orphan();
   const root = await get(f, 'local:1', 'commit');
   assert.deepEqual([root.status, await root.json()], [409, { error: 'o último commit não tem pai' }]);
+});
+
+test('GET /activities/:id/diff?scope=checkpoint&checkpoint=<n> diffs the worktree against that checkpoint\'s point; a missing or unknown n is a 400, a task with no checkpoint a 409 (#619)', async (t) => {
+  const A1: Checkpoint = { n: 1, stage: 'fila', start: START, head: START, commit: PARENT, branch: '', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
+  const f = await startDiffs(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task'), checkpoints: [A1] }), task(2, { worktree: worktreePath(repo, 'hive-2-task') })]);
+  const res = await get(f, 'local:1', 'checkpoint&checkpoint=1');
+  assert.deepEqual([res.status, await res.json()], [200, { scope: 'checkpoint', base: '0f1e2d3 (checkpoint 1)', files: FILES }]);
+  assert.equal(f.calls.at(-1)?.at(-1), PARENT, 'the diff runs against the point');
+  f.calls.length = 0;
+  const refusals: [string, string, number, string][] = [
+    ['local:1', 'checkpoint', 400, 'informe checkpoint: o número de um ponto de restauração da tarefa'],
+    ['local:1', 'checkpoint&checkpoint=9', 400, 'informe checkpoint: o número de um ponto de restauração da tarefa'],
+    ['local:2', 'checkpoint&checkpoint=1', 409, 'a tarefa não tem pontos de restauração'],
+  ];
+  for (const [id, scope, status, error] of refusals) {
+    const refused = await get(f, id, scope);
+    assert.deepEqual([refused.status, await refused.json()], [status, { error }], `${id} ${scope}`);
+  }
+  assert.deepEqual(f.calls, [], 'no refusal runs git');
 });

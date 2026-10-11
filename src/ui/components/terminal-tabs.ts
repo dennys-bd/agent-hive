@@ -40,7 +40,7 @@ export const StartedTaskContext = createContext<OpenStarted | undefined>(undefin
 
 export const useOpenStarted = (): OpenStarted | undefined => useContext(StartedTaskContext);
 
-export type OpenDiff = (task: Task, scope: DiffScope) => void; // a task's diff from its menu (#270)
+export type OpenDiff = (task: Task, scope: DiffScope, checkpoint?: number) => void; // a task's diff from its menu (#270)
 
 /** The Dashboard's diff opener (#458): a running task's diff becomes a tab of its activity's center, any other task's a tab of the Terminal
  * panel, as before. Undefined outside a Dashboard, as TerminalTabsContext is. */
@@ -91,7 +91,7 @@ const KIND_KEY: Record<RunKind, MessageKey> = { stage: 'terminal.panel.kind.stag
 
 // The kind a tab's label names after the task (#251, #270)
 function kindText(tab: PanelTab): string {
-  if (tab.kind === 'diff') return t(DIFF_SCOPE_KEY[tab.scope]);
+  if (tab.kind === 'diff') return t(DIFF_SCOPE_KEY[tab.scope], { n: tab.checkpoint ?? '' });
   return t(KIND_KEY[tab.kind]);
 }
 
@@ -165,13 +165,13 @@ export function droppedTab(text: string): RunTab | undefined {
 export interface LiveProjectShell { ptyId: string; project: string }
 
 /** A task's diff as a tab of the panel (#270): drawn by DiffView, not a terminal, with no worker behind it. */
-export interface DiffTab { kind: 'diff'; task: string; scope: DiffScope; title: string } // task: item.itemId; title: taskLabel(task)
+export interface DiffTab { kind: 'diff'; task: string; scope: DiffScope; checkpoint?: number; title: string } // task: item.itemId; title: taskLabel(task)
 
 /** Every tab the panel holds (#270): a run's terminal or a task's diff. `kind` tells them apart: a RunTab's is a RunKind. */
 export type PanelTab = RunTab | DiffTab;
 
 /** A tab's identity in the panel (#270): a run's pty id, or its task and scope for a diff, so a second open of either selects the first. */
-export const tabKey = (tab: PanelTab): string => (tab.kind === 'diff' ? `diff:${tab.task}:${tab.scope}` : tab.ptyId);
+export const tabKey = (tab: PanelTab): string => (tab.kind === 'diff' ? `diff:${tab.task}:${tab.scope}${tab.checkpoint === undefined ? '' : `:${tab.checkpoint}`}` : tab.ptyId);
 
 /** `tabs` with the one keyed `key` moved to `toIndex` (#359), clamped to the array's bounds: a drag reorder in the session list, or a no-op
  * when the key is unknown or already at `toIndex`. Always a new array, `tabs` itself never touched. */
@@ -185,4 +185,4 @@ export function moveTab(tabs: readonly PanelTab[], key: string, toIndex: number)
 }
 
 /** A task's diff as a tab (#270), titled like its runs' tabs. */
-export const diffTab = (task: Task, scope: DiffScope): DiffTab => ({ kind: 'diff', task: task.item.itemId, scope, title: taskLabel(task) });
+export const diffTab = (task: Task, scope: DiffScope, checkpoint?: number): DiffTab => ({ kind: 'diff', task: task.item.itemId, scope, ...(checkpoint === undefined ? {} : { checkpoint }), title: taskLabel(task) });

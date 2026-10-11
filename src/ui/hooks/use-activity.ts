@@ -30,7 +30,7 @@ export interface ActivitySelection {
   open(key: string): void; // a worker chip: the pick, and the Activities tab shown
   openRun(key: string, ptyId: string): void; // a run opened from the UI: open, and that run's tab in the center
   openFile(key: string, path: string, kind?: FileTabKind): void; // one of its files (#717): open, and its editor pane tab in the center, its preview pane tab (#697) or its changes pane tab (#668)
-  openDiff(taskId: string, scope: DiffScope): void; // a running task's diff from its menu (#458): open, and the diff's tab in the center
+  openDiff(taskId: string, scope: DiffScope, checkpoint?: number): void; // a running task's diff from its menu (#458): open, and the diff's tab in the center
   openConsole(key: string, channel?: string, locked?: boolean, run?: string): void; // the console drawer's abrir como aba (redesign 05), on the drawer's channel; locked: a commands stage's tab (#755)
   openStarted(taskId: string): void; // a start the server took: open, but only once the task's run shows
   activateTab(id: PanelId): void; // DockFrame's tab click: Automação's and Atividades' set the center's mode
@@ -91,7 +91,7 @@ export function useActivity(activities: Activity[], onSelect: (selection: Select
   }, [show]);
   const open = useCallback((key: string) => openWith(key), [openWith]);
   const openRun = useCallback((key: string, ptyId: string) => openWith(key, { tab: { kind: 'run', ptyId } }), [openWith]);
-  const openDiff = useCallback((taskId: string, scope: DiffScope) => openWith(taskId, { tab: { kind: 'diff', scope } }), [openWith]);
+  const openDiff = useCallback((taskId: string, scope: DiffScope, checkpoint?: number) => openWith(taskId, { tab: { kind: 'diff', scope, ...(checkpoint === undefined ? {} : { checkpoint }) } }), [openWith]);
   const openFile = useCallback((key: string, path: string, kind: FileTabKind = 'file') => openWith(key, { tab: { kind, path } }), [openWith]);
   const openConsole = useCallback((key: string, channel?: string, locked?: boolean, run?: string) => openWith(key, { tab: consoleRef(channel, locked, run) }), [openWith]);
   const openStarted = useCallback((taskId: string) => setPicked({ key: taskId, hasShown: false, request: {}, isDeferred: true }), []);

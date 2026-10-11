@@ -727,8 +727,8 @@ export interface FolderEntries {
   repo?: { marks: Record<string, GitMark>; ignored: string[] };
 }
 
-/** The diffs a task offers (#270, #591): what its current stage changed, everything its worktree changed, or its last commit. */
-export type DiffScope = 'stage' | 'worktree' | 'commit';
+/** The diffs a task offers (#270, #591): what its current stage changed, everything its worktree changed, its last commit, or a checkpoint's restore point (#619). */
+export type DiffScope = 'stage' | 'worktree' | 'commit' | 'checkpoint';
 
 /** One line of a hunk (#270), numbered on each side it exists on. */
 export interface DiffLine {

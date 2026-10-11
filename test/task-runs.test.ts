@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as runs from '../src/task-runs.js';
-import { taskBranch, commandsOf, liveCommand, localRuns, ownBranch, sessionLabel } from '../src/task-runs.js';
+import { capturable, taskBranch, commandsOf, liveCommand, localRuns, ownBranch, sessionLabel } from '../src/task-runs.js';
 import { localActivityId } from '../src/activities.js';
-import type { Activity, ActivityRecord, Task, Session, Terminal, Stage, Worker, State } from '../src/types.js';
+import type { Activity, ActivityRecord, Checkpoint, Task, Session, Terminal, Stage, Worker, State } from '../src/types.js';
 
 const SPEC: Stage = { name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive:spec {url}' };
 const DEV: Stage = { name: 'dev', from: { board: ['Ready'] }, prompt: '/hive:build {url}', session: 'continue' };
@@ -302,4 +302,14 @@ test('after a free run in the task\'s stage startMode offers no continue: start 
   const holder: Worker = { id: 's9', status: 'working', runId: 'w9', activityId: 'a-1', sessionId: 'a-session-0001', freeSession: true };
   assert.deepEqual(startMode(ran('spec', { freeSessionStage: 'spec', ...recorded }), { stages, workers: [holder] }), { continue: true, restart: true, live: 'w9' }, 'no second process on the session');
   assert.deepEqual(startMode(ran('spec', { stopped: true, freeSessionStage: 'dev' }), state), { continue: true, restart: false }, 'a free run in another stage');
+});
+
+test('canDiff offers the checkpoint scope only with a checkpoint and the worktree on disk; capturable needs the worktree and no checkout (#619)', () => {
+  const task: Task = { item: { itemId: 'I1', id: '1', title: 't', body: '', url: '' }, stage: 'dev', boardColumn: 'x', auto: true };
+  const checkpoint: Checkpoint = { n: 1, stage: 'dev', start: 'a1b2c3d', head: 'a1b2c3d', commit: 'a1b2c3d', branch: 'b', at: '2026-10-10T10:00:00.000Z', ended: 'done' };
+  const live: Activity = { id: 'a', kind: 'task', workspace: 'hive', slug: 'hive-1-t', worktree: '/wt' };
+  assert.equal(runs.canDiff(task, live, 'checkpoint'), false);
+  assert.equal(runs.canDiff(task, { ...live, checkpoints: [checkpoint] }, 'checkpoint'), true);
+  assert.equal(runs.canDiff(task, { ...live, checkpoints: [checkpoint], worktreeGone: true }, 'checkpoint'), false);
+  assert.deepEqual([capturable(live), capturable({ ...live, local: true }), capturable({ ...live, worktreeGone: true }), capturable(undefined)], [true, false, false, false]);
 });
