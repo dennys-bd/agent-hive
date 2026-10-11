@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { resetViewState } from '@/lib/view-state';
 import type { BlockerRef, ItemField, ProjectItem, ProjectView } from '../../src/types';
@@ -45,6 +46,8 @@ const BLOCKED: ProjectView = {
   ...VIEW, items: [{ ...VIEW.items[0], blockedBy: [closed('521', 'Old pager'), open('274', 'Dock layout')] }, { ...VIEW.items[1], blockedBy: [] }, VIEW.items[2]],
 };
 const CELL = 'editar bloqueada por';
+const FIELD = '#número ou título…';
+const BLOCKERS_PATH = '/sources/roadmap/items/roadmap%3APVTI_12/blockers';
 const cell12 = (): HTMLElement => within(rowOf('#12')).getByRole('button', { name: CELL });
 // The blocked-by column shown; a blockers write answered by `write`, the add row's search by nothing, any other read by the view
 function showBlockedBy(view: ProjectView, write: () => Response = () => jsonRes({ ok: true })): void {
@@ -54,6 +57,7 @@ function showBlockedBy(view: ProjectView, write: () => Response = () => jsonRes(
     return init?.method === 'POST' ? write() : jsonRes(view);
   });
 }
+const posted = (): [string, unknown][] => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([input, init]) => [String(input), init?.body]);
 
 test('the blocked-by cell shows the open refs first in foreground, the closed ones in muted with · fechada, the whole list as its title; — with none or never read; 112px with its own divider (#61)', async () => {
   showBlockedBy(BLOCKED);
@@ -81,4 +85,51 @@ test('the blocked-by header sorts by the first ref the cell shows; another repos
   await screen.findByText('3 de 3');
   await user.click(screen.getByRole('button', { name: /^bloqueada por/ }));
   expect(numbers()).toEqual(['#40', '#12', '#3']); // 7, 274 (the open one, shown first), then other/lib#3
+});
+
+test('× in the popover removes the ref through the blockers route and the row shows the answer at once, with no reload of the view (#61)', async () => {
+  const user = userEvent.setup();
+  showBlockedBy(BLOCKED, () => jsonRes({ blockers: { blockedBy: [open('274', 'Dock layout')], blocking: [] } }));
+  renderTable();
+  await screen.findByText('3 de 3');
+  await user.click(cell12());
+  const popover = await screen.findByRole('dialog', { name: 'bloqueada por' });
+  expect(within(popover).getAllByRole('button', { name: /^remover/ }).map((b) => b.getAttribute('aria-label'))).toEqual(['remover #274', 'remover #521']);
+  await user.click(within(popover).getByRole('button', { name: 'remover #521' }));
+  await waitFor(() => expect(cell12()).toHaveTextContent(/^#274$/));
+  expect(posted()).toEqual([[BLOCKERS_PATH, JSON.stringify({ action: 'remove', kind: 'blockedBy', ref: '521' })]]);
+  expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/sources/roadmap/project')).toHaveLength(1);
+});
+
+test('the popover\'s add row has the field focused and no kind select; a typed #99 posts an add, the row shows the answer, the field empties and the popover stays (#61)', async () => {
+  const user = userEvent.setup();
+  const after = { blockedBy: [closed('521', 'Old pager'), open('274', 'Dock layout'), open('99', 'Search')], blocking: [] };
+  showBlockedBy(BLOCKED, () => jsonRes({ blockers: after }));
+  renderTable();
+  await screen.findByText('3 de 3');
+  await user.click(cell12());
+  expect(await screen.findByRole('combobox', { name: FIELD })).toHaveFocus();
+  expect(screen.queryByRole('combobox', { name: 'tipo' })).not.toBeInTheDocument();
+  await user.keyboard('#99{Enter}');
+  await waitFor(() => expect(cell12()).toHaveTextContent('#274, #99, #521 · fechada'));
+  expect(posted()).toEqual([[BLOCKERS_PATH, JSON.stringify({ action: 'add', kind: 'blockedBy', ref: '99' })]]);
+  expect(screen.getByRole('combobox', { name: FIELD })).toHaveValue('');
+  expect(screen.getByRole('dialog', { name: 'bloqueada por' })).toBeInTheDocument();
+});
+
+test('a refusal shows its blockers copy inside the popover, no toast, and the row stays; Escape closes only the popover (#61)', async () => {
+  const user = userEvent.setup();
+  const onOpenIssue = vi.fn();
+  showBlockedBy(BLOCKED, () => jsonRes({ error: 'the other item is already blocked by this one', code: 'blockers.cycle' }, 409));
+  renderTable({ onOpenIssue });
+  await screen.findByText('3 de 3');
+  await user.click(cell12());
+  await user.keyboard('#40{Enter}');
+  const popover = screen.getByRole('dialog', { name: 'bloqueada por' });
+  expect(await within(popover).findByRole('alert')).toHaveTextContent('a outra tarefa já está bloqueada por esta');
+  expect(cell12()).toHaveTextContent('#274, #521 · fechada');
+  expect(toast.error).not.toHaveBeenCalled();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'bloqueada por' })).not.toBeInTheDocument());
+  expect(onOpenIssue).not.toHaveBeenCalled();
 });
