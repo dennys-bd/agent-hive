@@ -15,6 +15,8 @@ const ASSIGNABLE_LIMIT = 100; // ponytail: one page of a repository's assignable
 const MILESTONE_LIMIT = 100; // ponytail: one page of a repository's open milestones (#686)
 const ISSUE_TYPE_LIMIT = 25; // GitHub's own cap on an organization's issue types: never under-read
 const ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/issues\/(\d+)$/;
+// #56: what a BlockerRef shows of each side of a relation, and the repository that decides whether its id is short
+const BLOCKER_NODES = 'nodes { number title state repository { nameWithOwner } }';
 
 // `repositoryOwner` resolves a user or an organization in one query, so the adapter never needs to know which kind it was given.
 export const PROJECTS = `query($login: String!) {
@@ -92,7 +94,7 @@ const ALL_FIELD_VALUES = `fieldValues(first: ${FIELD_VALUE_LIMIT}) {
 // the view renders, and on an issue what its row shows: body, labels, assignees, repository and milestone (the filter's facets), its
 // sub-issues' progress and the PRs that close it, merged or closed included, with their checks' rollup. A PR that only mentions the issue
 // is not in closedByPullRequestsReferences. Its dates, parent and issue type are read off the issue itself, as are its milestone and
-// repository: one read whatever field kinds the project lists (addendum 2).
+// repository: one read whatever field kinds the project lists (addendum 2). Its blocked-by relations ride along (#61): the table's blocked-by column.
 export const PROJECT_ITEMS = `query($login: String!, $number: Int!, $after: String) {
   rateLimit { limit remaining resetAt }
   repositoryOwner(login: $login) {
@@ -105,7 +107,7 @@ export const PROJECT_ITEMS = `query($login: String!, $number: Int!, $after: Stri
             id
             fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             ${ALL_FIELD_VALUES}
-            content { __typename ... on Issue { number title body url createdAt updatedAt closedAt parent { number title } issueType { name } subIssuesSummary { completed total } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { title } repository { nameWithOwner } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } } }
+            content { __typename ... on Issue { number title body url createdAt updatedAt closedAt parent { number title } issueType { name } subIssuesSummary { completed total } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } labels(first: ${LABEL_LIMIT}) { nodes { name } } milestone { title } repository { nameWithOwner } blockedBy(first: ${RELATION_LIMIT}) { ${BLOCKER_NODES} } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } } }
           }
         }
       }
@@ -161,7 +163,8 @@ export function labelsMutation(op: 'addLabelsToLabelable' | 'removeLabelsFromLab
 // One item's fields for its editors (#686), by its project item id. It reads:
 // - the project's fields with their ids, options and iterations: what a name resolves against;
 // - the item's values, as PROJECT_ITEMS reads them;
-// - the issue, as both the poll (ITEMS) and the native view read it, so the re-read is a row and an entry;
+// - the issue, as both the poll (ITEMS) and the native view read it, with its blocked-by relations (#61), so the re-read is a row and an entry
+//   and a write's row keeps the blocked-by cell;
 // - what the issue's own fields can be: the repository's assignable users, labels, open milestones and issue types.
 // Read before a write and again after it.
 export const ITEM_FIELDS = `query($itemId: ID!) {
@@ -171,7 +174,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
-      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
+      content { __typename ... on Issue { id number title body url createdAt updatedAt closedAt parent { number title } issueType { id name } subIssuesSummary { completed total } subIssues(first: ${SUB_ISSUE_LIMIT}) { nodes { id state } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { id login } } labels(first: ${LABEL_LIMIT}) { nodes { id name } } milestone { id title } closedByPullRequestsReferences(first: ${PROJECT_PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged statusCheckRollup { state } } } blockedBy(first: ${RELATION_LIMIT}) { ${BLOCKER_NODES} } repository { nameWithOwner assignableUsers(first: ${ASSIGNABLE_LIMIT}) { nodes { id login } } labels(first: ${REPO_LABEL_LIMIT}) { nodes { id name } } milestones(first: ${MILESTONE_LIMIT}, states: [OPEN]) { nodes { id title } } issueTypes(first: ${ISSUE_TYPE_LIMIT}) { nodes { id name } } } } }
     }
   }
 }`;
@@ -257,6 +260,7 @@ export interface GhItemNode {
     assignees?: { nodes: { id?: string; login: string }[] } | null; labels?: { nodes: { id?: string; name: string }[] } | null; milestone?: { id?: string; title: string } | null;
     repository?: ({ nameWithOwner: string } & GhIssueChoices) | null; // owner/name: what a repository rule matches (#245); the choices: ITEM_FIELDS only (#686)
     closedByPullRequestsReferences?: { nodes: GhPullRequest[] } | null; // PROJECT_ITEMS only (#756)
+    blockedBy?: { nodes: GhBlockerRef[] } | null; // PROJECT_ITEMS and ITEM_FIELDS (#61): the blocked-by column
     updatedAt?: string; closedAt?: string | null; parent?: { number: number; title: string } | null; issueType?: { id?: string; name: string } | null; // PROJECT_ITEMS only
   } | null;
 }
@@ -309,9 +313,6 @@ export interface GhIssueChoices {
 /** One project item as ITEM_FIELDS answers it (#686): an item node with its project's fields; a node that is no project item answers {}. */
 export type GhItemFieldsNode = GhItemNode & { project?: { id: string; fields?: { nodes: GhProjectField[] } | null } | null };
 export interface ItemFieldsData { node?: GhItemFieldsNode | null }
-
-// #56: what a BlockerRef shows of each side of a relation, and the repository that decides whether its id is short
-const BLOCKER_NODES = 'nodes { number title state repository { nameWithOwner } }';
 
 // owner / name / number come from the issue url; they match only [\w.-], so JSON.stringify yields safe GraphQL string literals.
 function issueSelection(item: Item, alias: string): string | undefined {

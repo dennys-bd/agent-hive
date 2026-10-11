@@ -10,7 +10,8 @@ import {
 const refId = (nameWithOwner: string, number: number, repo: string): string =>
   (nameWithOwner.toLowerCase() === repo.toLowerCase() ? String(number) : `${nameWithOwner}#${number}`);
 
-const refsOf = (nodes: GhBlockerRef[] | undefined, repo: string): BlockerRef[] =>
+/** A relation's other issues as the UI shows them (#56); the Project's blocked-by column reads the same (#61). */
+export const refsOf = (nodes: GhBlockerRef[] | undefined, repo: string): BlockerRef[] =>
   (nodes ?? []).map((n): BlockerRef => ({ id: refId(n.repository.nameWithOwner, n.number, repo), title: n.title, state: n.state === 'OPEN' ? 'open' : 'closed' }));
 
 /** An issue's blocker relations as the UI shows them (#56), both directions. Sub-issues never: they gate a start, they are no relation.
