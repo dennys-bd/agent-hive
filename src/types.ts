@@ -1246,6 +1246,7 @@ export type HiveEvent =
   | { type: 'boot' }
   | { type: 'poll'; source?: string; items: SourceItem[] } // source absent: a Comb with no sources (#132), merge nothing
   | { type: 'itemRead'; source: string; itemId: string; entry?: SourceItem } // #686: one item re-read after a field write; entry absent when it is out of the source's listing
+  | { type: 'blockerSet'; itemId: string; change: BlockerChange } // #56: a hive task's relation, written on both tasks; POST …/blockers checked it
   | { type: 'setMax'; max: number }
   | { type: 'setSignal'; signal: Signal }
   | { type: 'setSignals'; signals: SignalSettings } // like setUsageRules: the signal table, from a save that changed it (#727)

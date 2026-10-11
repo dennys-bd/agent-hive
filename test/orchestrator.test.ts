@@ -1980,6 +1980,17 @@ test('closeTask removes a stopped local task and leaves its worktree on disk (#1
   assert.equal(reduce(deleting, { type: 'closeTask', taskId: 'local:1' }).state, deleting, 'deleting: refused');
 });
 
+test('an open hive blocker stops its task\'s start; closing the blocker leaves a closed ref and frees it (#56)', () => {
+  const two = created(created(base(0), 'dev').state, 'dev', 'Blocker').state; // no worker: nothing fills on its own
+  const blocked = reduce(two, { type: 'blockerSet', itemId: 'local:1', change: { action: 'add', kind: 'blockedBy', ref: 'HIVE-2' } }).state;
+  assert.deepEqual(blocked.tasks.find((c) => c.item.itemId === 'local:1')?.item.blockedBy, ['HIVE-2']);
+  assert.equal(reduce(blocked, { type: 'start', itemId: 'local:1' }).effects.some((e) => e.type === 'spawn'), false, 'blocked: no spawn');
+  const freed = reduce(blocked, { type: 'closeTask', taskId: 'local:2' }).state;
+  const first = freed.tasks.find((c) => c.item.itemId === 'local:1');
+  assert.deepEqual([first?.item.blockedBy, first?.item.blockers?.blockedBy], [undefined, [{ id: 'HIVE-2', title: 'Blocker', state: 'closed' }]]);
+  assert.equal(reduce(freed, { type: 'start', itemId: 'local:1' }).effects.some((e) => e.type === 'spawn'), true, 'freed: it starts');
+});
+
 test('a settings save that removes the stage of a stopped local task moves it to the first Comb stage instead of dropping it', () => {
   const made = created(signaled(base(1), 'yellow').state, 'review').state; // yellow: nothing spawns, the task stays stopped
   const stages = made.stages.filter((c) => c.name !== 'review');
