@@ -127,3 +127,12 @@ test('a fork whose workspace sends PRs to the original shows the empty states wi
   expect(rowOf('PR 7').getByText('sem permissão')).toHaveClass('text-muted-foreground');
   expect(rowOf('PR 7').getByText('◷')).toHaveClass('text-muted-foreground');
 });
+
+test('a PR whose checks still run shows the spinner in the waiting tone, not a dot; reduced motion stills it (#48)', async () => {
+  fetchMock.mockImplementation(async () => jsonRes({ ...OPEN, rows: [row(7, { checks: 'pending', decision: 'approved' })] }));
+  renderTable();
+  const spinner = (await screen.findByText('PR 7')).closest('tr')?.querySelector('[data-testid="spinner"]');
+  expect(spinner?.parentElement).toHaveClass('text-waiting');
+  expect(spinner).toHaveClass('animate-spin', 'motion-reduce:animate-none');
+  expect(rowOf('PR 7').queryByText('●')).toBeNull();
+});

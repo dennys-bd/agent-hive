@@ -28,7 +28,8 @@ test('a failed check turns the mark to ✕ and says how many failed; a running o
   expect(box().getByText('· 1 pendentes')).toHaveClass('text-waiting');
   expect(box().getAllByText('✕')[0]).toHaveClass('text-destructive');
   rerender(<PrChecks checks={PENDING} />);
-  expect(box().getAllByText('●')[0]).toHaveClass('text-waiting');
+  expect(box().getAllByTestId('spinner')[0].parentElement).toHaveClass('text-waiting');
+  expect(box().queryByText('●')).toBeNull();
   rerender(<PrChecks />);
   expect(screen.queryByRole('region', { name: 'checks' })).toBeNull();
 });

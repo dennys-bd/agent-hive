@@ -29,7 +29,8 @@ const CHECK_LIST: StageCiCheck[] = [
 ];
 const WAIT: StageCi = { stage: 'ci', since: '2026-10-10T10:00:00.000Z', reran: [], done: 2, total: 4, checks: CHECK_LIST };
 const RUN: StageCommands = { stage: 'checks', at: 1, ptyId: 'P1', runId: 'R1', failed: [], workerId: 'w1', started: ['2026-10-10T10:00:00.000Z', '2026-10-10T10:02:05.000Z'] };
-const texts = (region: HTMLElement): (string | null)[] => within(region).getAllByRole('listitem').map((li) => li.textContent);
+// a running line's mark is the spinner, an svg with no text: ◌ stands for it
+const texts = (region: HTMLElement): string[] => within(region).getAllByRole('listitem').map((li) => `${within(li).queryByTestId('spinner') ? '◌' : ''}${li.textContent ?? ''}`);
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
 beforeEach(() => {
   setLanguage('pt');
@@ -40,23 +41,23 @@ beforeEach(() => {
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-test('a wait for CI with four checks, two passed, shows two ✓ with their durations, one ● with its running duration and one muted queued line, in the working tone (#914)', () => {
+test('a wait for CI with four checks, two passed, shows two ✓ with their durations, one spinner with its running duration and one muted queued line, in the working tone (#914)', () => {
   render(block(at('ci', { ci: WAIT })));
   const region = screen.getByRole('region', { name: 'aguardando CI' });
   expect(region).toHaveClass('border-working', 'bg-working/12');
   expect(within(region).getByText('etapa ci')).toBeInTheDocument();
-  expect(texts(region)).toEqual(['✓lint45s', '✓build1m 30s', '●test3m 10s', 'e2e']);
+  expect(texts(region)).toEqual(['✓lint45s', '✓build1m 30s', '◌test3m 10s', 'e2e']);
   expect(within(region).getAllByRole('listitem')[3]).toHaveClass('text-muted-foreground');
 });
 
-test('a commands stage on its second command shows the first ✓ with its duration and the second ●; a failed one ✕, a skipped one pulado (#914)', () => {
+test('a commands stage on its second command shows the first ✓ with its duration and the second a spinner; a failed one ✕, a skipped one pulado (#914)', () => {
   const { rerender } = render(block(at('checks', { commands: RUN })));
   const region = screen.getByRole('region', { name: 'executando checks' });
   expect(within(region).getByText('etapa checks')).toBeInTheDocument();
-  expect(texts(region)).toEqual(['✓build2m 5s', '●test3m 5s', 'lint']);
+  expect(texts(region)).toEqual(['✓build2m 5s', '◌test3m 5s', 'lint']);
   const third: StageCommands = { ...RUN, at: 2, started: [...RUN.started, '2026-10-10T10:04:00.000Z'], failed: [{ name: 'build', code: 1, output: 'x' }], skipped: [1] };
   rerender(block(at('checks', { commands: third })));
-  expect(texts(screen.getByRole('region', { name: 'executando checks' }))).toEqual(['✕build2m 5s', 'testpulado', '●lint1m 10s']);
+  expect(texts(screen.getByRole('region', { name: 'executando checks' }))).toEqual(['✕build2m 5s', 'testpulado', '◌lint1m 10s']);
 });
 
 test('an activity that came through checks → build with maxTries 3, on its second try, shows volta 2/3 (#914)', () => {
