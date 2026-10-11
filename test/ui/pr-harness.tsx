@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { vi } from 'vitest';
 import { PrPage, type PrPageProps } from '@/components/PrPage';
+import { WithSlot } from './detail-slot-harness';
 import type { TaskPr, FileDiff, PrData, PrReviewFile, PrThread, RepoSummary, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { jsonResponse } from '../fakes';
@@ -64,10 +65,11 @@ export const WITH_TASK: State = {
   activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions: [], prs: PRS }],
 };
 
-/** acme/app#7's page (#758) over `state`; answers the render and the props, its callbacks spies. */
-export function renderPage(state: State = STATE, extra: Partial<PrPageProps> = {}) {
+/** acme/app#7's page (#758) over `state`; answers the render and the props, its callbacks spies. With `slotted`, beside the details panel's
+ * slot (#64), where its properties render. */
+export function renderPage(state: State = STATE, extra: Partial<PrPageProps> = {}, options: { slotted?: boolean } = {}) {
   const props: PrPageProps = {
-    state, locale: 'pt-BR', pr: { repository: 'acme/app', number: 7 }, summary: APP, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
+    state, pr: { repository: 'acme/app', number: 7 }, summary: APP, header: () => null, onGoTo: vi.fn(), onOpenIssue: vi.fn(), onOpenPr: vi.fn(), ...extra,
   };
-  return { ...render(<PrPage {...props} />), props };
+  return { ...render(<PrPage {...props} />, options.slotted ? { wrapper: WithSlot } : {}), props };
 }

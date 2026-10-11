@@ -50,6 +50,7 @@ export interface MainDockProps {
   activityRecords?: State['activityRecords']; // #629: the records, each workspace's local sessions (#587) in its local activity's (#590); absent (the terminal's harness): none
   sourceWorkspaces?: Record<string, string>; // what the home's rows resolve a task's workspace colour with (redesign 08)
   stages?: Stage[]; // the flow's stages (#586): what the Activities tab groups by; absent (the terminal's harness): none, each activity under its own stage
+  pageKey?: string; // #64: the link of the page the center shows under Automação; a new one opens the panel holding Detalhes, as a pick does
   sidebarsPerView?: SidebarsPerView; // #821: what each view keeps of its sidebars, from the config; absent (the terminal's harness): every side shared
   onAddWorkspace?(): void; // the home's and the sidebar's adicionar workspace…: Settings on workspaces
   // An activity's right-click menu (redesign 03), from the Dashboard, which holds the State; absent (the terminal's harness): no menu
@@ -237,7 +238,7 @@ function activityEntry(selection: ActivitySelection): BackEntry | undefined {
 // its details unless the tab is kept (#821). keepTab is read at the pick, not a dependency: a save that flips it must not replay the last pick and
 // reopen that side. The toggleSideTab key (#585) opens the side, then switches files and details. Bound only while the center shows a task's
 // activity, the one sidebar with the two tabs.
-function useSideTab(selected: Selection | undefined, activate: (id: PanelId) => void, hasSideTabs: boolean, keepTab: boolean): [SideTab, (tab: SideTab) => void] {
+function useSideTab(selected: Selection | undefined, pageKey: string | undefined, activate: (id: PanelId) => void, hasSideTabs: boolean, keepTab: boolean): [SideTab, (tab: SideTab) => void] {
   const [sideTab, setSideTab] = useState<SideTab>('files');
   const followPick = useEffectEvent(() => {
     activate('detail');
@@ -247,6 +248,9 @@ function useSideTab(selected: Selection | undefined, activate: (id: PanelId) => 
     if (!selected || selected.fromActivity) return;
     followPick();
   }, [selected]);
+  useEffect(() => {
+    if (pageKey !== undefined) followPick(); // #64: a page shows its task's details at once; closed on it, the panel stays closed until another
+  }, [pageKey]);
   useEffect(() => (hasSideTabs ? onShortcutKey([[true, 'toggleSideTab']], () => {
     activate('detail');
     setSideTab((tab) => (tab === 'files' ? 'details' : 'files'));
@@ -262,7 +266,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * a run's terminal a tab of its activity's center. Each side is a panel that opens and closes (#452). The center follows the left panel's
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
-  const { selected, onSelect, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children } = props;
+  const { selected, onSelect, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
   const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
@@ -296,7 +300,7 @@ export function MainDock(props: MainDockProps) {
   // object on each pick. An activity's pick does not (#457): Detalhes shows it only when its panel is already open. The sidebar switches to
   // detalhes with it (useSideTab)
   const keepTab = sidebarsPerView.right && sidebarsPerView.rightTab; // #821: rightTab counts only while the right side is kept per view
-  const [sideTab, setSideTab] = useSideTab(selected, activate, selection.center === 'activities' && current?.kind === 'task', keepTab);
+  const [sideTab, setSideTab] = useSideTab(selected, pageKey, activate, selection.center === 'activities' && current?.kind === 'task', keepTab);
   useEffect(() => onPanelKey(toggle), [toggle]); // Cmd+B, Cmd+Shift+B (#452)
   const hasHeader = header !== undefined;
   useEffect(() => (hasHeader ? onViewKey(activateTab) : undefined), [hasHeader, activateTab]); // Cmd+1, Cmd+2 (#533)

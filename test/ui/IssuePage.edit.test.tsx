@@ -46,7 +46,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const renderPage = () => render(
-  <IssuePage state={STATE} locale="pt-BR" issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onGoTo={vi.fn()} />,
+  <IssuePage state={STATE} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => null} onGoTo={vi.fn()} />,
 );
 const posts = (): unknown[] => fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
 

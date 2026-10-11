@@ -2,7 +2,8 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { AT, fakePrHive, type FakePrHive, PR, PR2, PRS, prData, renderPage, thread, WITH_TASK } from './pr-harness';
+import { slot } from './detail-slot-harness';
+import { AT, fakePrHive, type FakePrHive, PR, PR2, PRS, prData, renderPage, STATE, thread, WITH_TASK } from './pr-harness';
 
 let hive: FakePrHive;
 beforeEach(() => { setLanguage('pt'); localStorage.clear(); hive = fakePrHive(); });
@@ -38,13 +39,27 @@ test('task #N shows on a task\'s PR and opens its issue\'s page (#758)', async (
   expect(props.onOpenIssue).toHaveBeenCalledWith('https://github.com/acme/app/issues/1');
 });
 
-test('a PR without a task has no task #N, and its properties are its repository and workspace (#758)', async () => {
-  renderPage();
-  await screen.findByRole('heading', { name: 'The PR' });
+test('a PR without a task has no task #N and no column of its own; its title, repository and workspace go to the panel\'s slot (#758, #64)', async () => {
+  renderPage(STATE, {}, { slotted: true });
+  expect(await slot().findByRole('heading', { name: 'The PR' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^tarefa/ })).toBeNull();
-  const props = within(screen.getByRole('complementary', { name: 'propriedades' }));
-  expect(props.getByText('acme/app')).toBeInTheDocument();
-  expect(props.getByText('hive')).toBeInTheDocument();
+  expect(screen.queryByRole('complementary')).toBeNull();
+  expect(slot().getByText('acme/app')).toBeInTheDocument();
+  expect(slot().getByText('hive')).toBeInTheDocument();
+});
+
+test('a task\'s PR leaves the title to the panel, and its slot block stays on the files tab (#64)', async () => {
+  const user = userEvent.setup();
+  renderPage(WITH_TASK, {}, { slotted: true });
+  expect(await slot().findByText('acme/app')).toBeInTheDocument(); // the Hive lists no repository here: the task's issue cannot be read
+  expect(slot().queryByRole('heading')).toBeNull();
+  await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
+  expect(slot().getByText('acme/app')).toBeInTheDocument();
+});
+
+test('while the PR is read the slot shows the same read line as the page (#64)', () => {
+  renderPage(STATE, {}, { slotted: true });
+  expect(slot().getByText('carregando…')).toBeInTheDocument();
 });
 
 test('files keeps its footer\'s counts and key hint, with no enviar revisão and no general comment: the review popover sends the review (#758)', async () => {

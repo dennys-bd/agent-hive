@@ -28,7 +28,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
 });
 afterEach(() => vi.unstubAllGlobals());
-const panel = () => within(screen.getByRole('complementary', { name: 'propriedades' }));
+const panel = () => within(document.body); // #64: no column of its own; the details panel's slot frames it
 
 const FIELDS_PATH = '/sources/roadmap/items/roadmap%3APVTI_12/fields';
 const FIELDS: ItemField[] = [
@@ -41,12 +41,12 @@ const FIELDS: ItemField[] = [
 // The item's fields on a read of its route; anything else answers `other`
 const withFields = (other: () => Response) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
   (String(input) === FIELDS_PATH && init?.method !== 'POST' ? jsonRes({ fields: FIELDS }) : other());
-const terms = (): (string | null)[] => [...screen.getByRole('complementary', { name: 'propriedades' }).querySelectorAll('dt')].map((d) => d.textContent);
+const terms = (): (string | null)[] => [...document.body.querySelectorAll('dt')].map((d) => d.textContent);
 
-test('a task of a source: its stage as a select that moves it, its labels, then the assignees and every field of its source in the project\'s order, the read-only ones as text; its source, workspace and activity block (#757, #686)', async () => {
+test('a task of a source: its stage as a select that moves it, its labels, then the assignees and every field of its source in the project\'s order, the read-only ones as text; its source and workspace; no frame, no header and no activity block, which the details panel draws (#757, #686, #64)', async () => {
   const user = userEvent.setup();
   fetchMock.mockImplementation(withFields(() => jsonRes({ ok: true })));
-  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} locale="pt-BR" workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
+  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
   expect(await panel().findByText('P2')).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledWith(FIELDS_PATH);
   expect(terms()).toEqual(['etapa', 'labels', 'responsável', 'Status', 'Priority', 'Repository', 'source', 'workspace']);
@@ -59,9 +59,11 @@ test('a task of a source: its stage as a select that moves it, its labels, then 
   expect(panel().getByText('roadmap')).toBeInTheDocument();
   expect(panel().getByText('github project')).toBeInTheDocument();
   expect(panel().getByText('site')).toBeInTheDocument();
-  const activity = within(panel().getByRole('region', { name: 'atividade' }));
-  expect(activity.getByText('hive/12-pager')).toBeInTheDocument();
-  expect(activity.getByRole('button', { name: 'abrir atividade' })).toBeDisabled(); // no live run to show
+  expect(panel().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
+  expect(panel().queryByText('hive/12-pager')).not.toBeInTheDocument(); // the branch is the panel's properties grid
+  expect(panel().queryByRole('button', { name: 'abrir atividade' })).not.toBeInTheDocument(); // the panel's footer
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'propriedades' })).not.toBeInTheDocument();
   panel().getByRole('button', { name: 'etapa' }).focus(); // Radix's menu opens on a key under jsdom
   await user.keyboard('{Enter}');
   await user.click(screen.getByRole('menuitem', { name: 'review' }));
@@ -73,7 +75,7 @@ test('a field written from the sidebar shows the value the source answered (#686
   const row: ProjectItem = { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: 'b', url: URL12, labels: ['bug'], assignees: ['ana'], fields: { Priority: 'P0' }, pullRequests: [] };
   const written = FIELDS.map((f) => (f.name === 'Priority' ? { ...f, value: 'P0' } : f));
   fetchMock.mockImplementation(withFields(() => jsonRes({ fields: written, row })));
-  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} locale="pt-BR" workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
+  render(<IssueProperties issue={ISSUE} task={TASK} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
   (await panel().findByRole('button', { name: 'editar Priority' })).focus();
   await user.keyboard('{Enter}');
   await user.click(screen.getByRole('menuitem', { name: 'P0' }));
@@ -85,7 +87,7 @@ test('outside the flow: fluxo… in place of the stage, no source, no activity b
   const user = userEvent.setup();
   const onGoTo = vi.fn();
   fetchMock.mockImplementation(withFields(() => jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201)));
-  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} locale="pt-BR" workspace="site" itemId="roadmap:PVTI_12" meta="roadmap" onGoTo={onGoTo} onChanged={async () => {}} />);
+  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} workspace="site" itemId="roadmap:PVTI_12" meta="roadmap" onGoTo={onGoTo} onChanged={async () => {}} />);
   expect(await panel().findByText('P2')).toBeInTheDocument();
   expect(panel().queryByRole('button', { name: 'etapa' })).not.toBeInTheDocument();
   expect(panel().queryByText('roadmap')).not.toBeInTheDocument();
@@ -101,7 +103,7 @@ test('outside the flow: fluxo… in place of the stage, no source, no activity b
 test('a repository\'s issue out of the flow creates its task with no origin: it came from no source item (#757)', async () => {
   const user = userEvent.setup();
   fetchMock.mockImplementation(async () => jsonRes({ id: 'HIVE-1', itemId: 'local:1' }, 201));
-  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} locale="pt-BR" workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
+  render(<IssueProperties issue={ISSUE} state={{ ...STATE, tasks: [] }} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={async () => {}} />);
   await user.click(panel().getByRole('button', { name: 'fluxo…' }));
   await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/tasks', expect.objectContaining({

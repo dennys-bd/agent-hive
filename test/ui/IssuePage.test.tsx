@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { IssuePage } from '@/components/IssuePage';
 import { setLanguage } from '@/i18n';
+import { slot, WithSlot } from './detail-slot-harness';
 import type { IssuePage as Issue, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
@@ -37,9 +38,12 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}) => render(
-  <IssuePage state={state(tasks, extra)} locale="pt-BR" issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} />,
+// With `slotted`, beside the details panel's slot, as the dock mounts it (#64)
+const renderPage = (tasks: Task[] = [], extra: Partial<State> = {}, slotted = false) => render(
+  <IssuePage state={state(tasks, extra)} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" workspace="site" header={() => <div>HEADER</div>} onGoTo={vi.fn()} />,
+  slotted ? { wrapper: WithSlot } : {},
 );
+const TASK12: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Pager breaks', body: '', url: URL12, source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 
 test('the page reads its issue: the header it came from, the title, the meta, the PR line, the description and the comments, the rest on GitHub (#757)', async () => {
   renderPage();
@@ -74,4 +78,30 @@ test('a failed read with nothing shown is its message and a toast (#757)', async
   renderPage();
   expect(await screen.findByText('Could not resolve to an Issue')).toBeInTheDocument();
   expect(toast.error).toHaveBeenCalledWith('Could not resolve to an Issue');
+});
+
+test('an issue out of the flow: while it is read the slot shows the read line; then the issue\'s own title and its properties, no column of its own (#64)', async () => {
+  let answerRead: (res: Response) => void = () => {};
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answerRead = resolve; }));
+  renderPage([], {}, true);
+  expect(slot().getByText('lendo…')).toBeInTheDocument();
+  answerRead(jsonRes(ISSUE));
+  expect(await slot().findByRole('heading', { name: 'Pager breaks' })).toHaveClass('text-[15px]');
+  expect(slot().getByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
+  expect(slot().getByText('etapa', { selector: 'dt' })).toBeInTheDocument();
+  expect(slot().queryByRole('region', { name: 'atividade' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+});
+
+test('an issue of a task: the slot holds its properties with no title, which the panel draws as the task\'s (#64)', async () => {
+  renderPage([TASK12], { activities: [{ id: 'A1', kind: 'task', workspace: 'site', branch: 'hive/12-pager' }], activityRecords: [{ id: 'A1', taskIds: [TASK12.item.itemId], sessions: [] }] }, true);
+  expect(await slot().findByRole('button', { name: 'etapa' })).toHaveTextContent('dev');
+  expect(slot().queryByRole('heading')).not.toBeInTheDocument();
+  expect(slot().queryByText('hive/12-pager')).not.toBeInTheDocument();
+});
+
+test('a failed read shows its message in the slot as well (#64)', async () => {
+  fetchMock.mockImplementationOnce(async () => jsonRes({ error: 'Could not resolve to an Issue' }, 502));
+  renderPage([], {}, true);
+  expect(await slot().findByText('Could not resolve to an Issue')).toBeInTheDocument();
 });

@@ -3,6 +3,7 @@ import { taskOfPr } from '../../activities';
 import { prLink, prRepo, repoName } from '../../pull-requests';
 import { issueOfLink } from '../../repos/issue-task';
 import type { PrData, RepoSummary, State, Task } from '../../types';
+import { DetailSlot, SlotTitle } from '@/components/DetailSlot';
 import { useIsFlowShown } from '@/components/MainDock';
 import { PrConversation } from '@/components/PrConversation';
 import { PrTitle } from '@/components/PrDescription';
@@ -21,7 +22,7 @@ export interface PrRef { repository: string; number: number }
 type PageTab = 'conversation' | 'files';
 
 export interface PrPageProps {
-  state: State; locale: string; pr: PrRef;
+  state: State; pr: PrRef;
   summary: RepoSummary; // the PR's repository: what a PR without a task shows as its properties
   header(reload: () => Promise<void>): ReactNode; // the repository header; its atualizar reads the PR again
   onGoTo(taskId: string): void; // a task with no GitHub issue: its detail in the flow
@@ -73,9 +74,10 @@ function FilesTab({ pr, view, onRefresh }: { pr: PrData; view: PrReviewView; onR
   );
 }
 
-/** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation with the properties
- * column, or files. Read on opening, on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. */
-export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
+/** A PR's own page (#758, handoff 03) under its repository's header: its title, the inner tabs, then conversation or files. Read on opening,
+ * on the header's atualizar and after every write; neither read nor polled while hidden under Atividades. Its properties are its block in
+ * the details panel's slot on both tabs (#64), headed by the PR's title when the PR is no task's; before the PR is read, the read line. */
+export function PrPage({ state, pr: ref, summary, header, onGoTo, onOpenIssue, onOpenPr, onMerged }: PrPageProps) {
   const url = prLink(ref.repository, ref.number);
   const isShown = useIsFlowShown();
   const { load, refresh, review, reread } = usePr(url, isShown);
@@ -97,7 +99,9 @@ export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpen
     setTab('files');
     setJump(path);
   };
-  if (pr === undefined || view.surface === undefined) return <div className="flex min-h-0 flex-1 flex-col">{header(reload)}<PrStatus load={load} /></div>;
+  if (pr === undefined || view.surface === undefined) {
+    return <div className="flex min-h-0 flex-1 flex-col">{header(reload)}<PrStatus load={load} /><DetailSlot><PrStatus load={load} /></DetailSlot></div>;
+  }
   const task = taskOfPr(state, url);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -108,13 +112,14 @@ export function PrPage({ state, locale, pr: ref, summary, header, onGoTo, onOpen
         {task && <TaskLink task={task} pr={pr} onGoTo={onGoTo} onOpenIssue={onOpenIssue} />}
       </PageTabs>
       <ReviewSurfaceContext.Provider value={view.surface}>
-        {tab === 'conversation' ? (
-          <div className="flex min-h-0 flex-1">
-            <PrConversation pr={pr} task={task} state={state} onChanged={reload} onOpenPr={onOpenPr} onOpenInDiff={openInDiff} onMerged={onMerged} />
-            <PrProperties pr={pr} task={task} summary={summary} state={state} locale={locale} onGoTo={onGoTo} />
-          </div>
-        ) : <FilesTab pr={pr} view={view} onRefresh={() => void refresh()} />}
+        {tab === 'conversation'
+          ? <div className="flex min-h-0 flex-1"><PrConversation pr={pr} task={task} state={state} onChanged={reload} onOpenPr={onOpenPr} onOpenInDiff={openInDiff} onMerged={onMerged} /></div>
+          : <FilesTab pr={pr} view={view} onRefresh={() => void refresh()} />}
       </ReviewSurfaceContext.Provider>
+      <DetailSlot>
+        {task === undefined && <SlotTitle>{pr.title}</SlotTitle>}
+        <PrProperties pr={pr} task={task} summary={summary} state={state} onGoTo={onGoTo} />
+      </DetailSlot>
     </div>
   );
 }

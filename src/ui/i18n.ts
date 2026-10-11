@@ -211,6 +211,7 @@ const en = {
   'detail.stopped': 'stopped',
   'detail.ago': '{time} ago',
   'detail.openActivity': 'open activity',
+  'detail.issueLink': 'issue ›', // #64: on a PR page, the details' title row opens the task's issue
   'detail.showFlow': 'see in flow',
   'detail.more': 'more actions',
   'detail.menu.openIssue': 'open issue in {source}',
@@ -1615,11 +1616,8 @@ const en = {
   'issue.comments': 'comments · {n}',
   'issue.moreComments': '{n} more on GitHub ›',
   'issue.openPr': 'open PR ›',
-  'issue.props': 'properties', // #757: the issue page's properties column
   'issue.props.stage': 'stage', 'issue.props.labels': 'labels', 'issue.props.assignee': 'assignee',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
-  'issue.activity': 'activity',
-  'issue.openActivity': 'open activity',
   'issue.edit': 'edit', 'issue.save': 'save', 'issue.cancel': 'cancel', // #757: the issue page's edit in place
   'issue.title': 'title',
   'issue.changed': 'the issue changed on GitHub; reloaded. your draft is still in the field.', 'issue.comment.placeholder': 'comment on the issue…', // #757: the issue page's comment box and labels
@@ -1964,6 +1962,7 @@ const pt: Record<MessageKey, string> = {
   'detail.stopped': 'parada',
   'detail.ago': 'há {time}',
   'detail.openActivity': 'abrir atividade',
+  'detail.issueLink': 'issue ›',
   'detail.showFlow': 'ver no fluxo',
   'detail.more': 'mais ações',
   'detail.menu.openIssue': 'abrir issue no {source}',
@@ -3364,11 +3363,8 @@ const pt: Record<MessageKey, string> = {
   'issue.comments': 'comentários · {n}',
   'issue.moreComments': 'mais {n} no GitHub ›',
   'issue.openPr': 'abrir PR ›',
-  'issue.props': 'propriedades',
   'issue.props.stage': 'etapa', 'issue.props.labels': 'labels', 'issue.props.assignee': 'responsável',
   'issue.props.source': 'source', 'issue.props.workspace': 'workspace',
-  'issue.activity': 'atividade',
-  'issue.openActivity': 'abrir atividade',
   'issue.edit': 'editar', 'issue.save': 'salvar', 'issue.cancel': 'cancelar',
   'issue.title': 'título',
   'issue.changed': 'a issue mudou no GitHub; recarregada. seu rascunho continua no campo.',  'issue.comment.placeholder': 'comentar na issue…',
