@@ -42,3 +42,20 @@ test('a comment whose issue is not stored stops its page: the cursor stays on th
   assert.deepEqual(db.nodeIds(SOURCE, REPO, 'comments'), ['C1']);
   assert.equal(db.cursor(scopeOf(SOURCE, REPO, 'comments'))?.cursor, T1);
 });
+
+test('a comments page blocked on its first comment keeps no ETag, so the next round reads it again instead of a 304 (#765)', async () => {
+  const db = openReadModel(':memory:');
+  const { rest, calls } = fakeRest([ok([restComment('C9', 9, T1)], { etag: 'E1' }), ok([restComment('C9', 9, T1)])]);
+  const deps = { db, rest, source: SOURCE, now: NOW };
+  await syncScope(deps, REPO, 'comments');
+  assert.deepEqual(db.cursor(scopeOf(SOURCE, REPO, 'comments')), { cursor: null, etag: null, syncedAt: NOW().toISOString() });
+  await syncScope(deps, REPO, 'comments');
+  assert.equal(calls[1]?.[1], undefined);
+});
+
+test('a row stored at exactly the cursor is a change, though the cursor does not move (#765)', async () => {
+  const db = openReadModel(':memory:');
+  db.setCursor(scopeOf(SOURCE, REPO, 'issues'), { cursor: T1, etag: null, syncedAt: NOW().toISOString() });
+  const { rest } = fakeRest([ok([restIssue(1, T1)])]);
+  assert.equal((await syncScope({ db, rest, source: SOURCE, now: NOW }, REPO, 'issues')).changed, true);
+});

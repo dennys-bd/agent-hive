@@ -73,3 +73,11 @@ test('on disk the file is owner-only and in WAL mode (#765)', async (t) => {
   assert.equal(existsSync(`${path}-wal`), true);
   assert.equal((await stat(`${path}-wal`)).mode & 0o777, 0o600);
 });
+
+test('an upsert of an identical row writes nothing (#765)', () => {
+  const db = openReadModel(':memory:');
+  assert.equal(db.upsertIssue(issueRow(12, T1)), true);
+  assert.equal(db.upsertIssue(issueRow(12, T1)), false);
+  assert.equal(db.upsertComment(commentRow('C1', 'I_12', T1)), true);
+  assert.equal(db.upsertComment(commentRow('C1', 'I_12', T1)), false);
+});

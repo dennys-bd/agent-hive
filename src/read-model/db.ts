@@ -1,4 +1,4 @@
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import type { CommentRow, IssueRow } from './rows.js';
 
@@ -18,18 +18,22 @@ CREATE INDEX IF NOT EXISTS comments_by_issue ON comments (source, issue_node_id,
 CREATE TABLE IF NOT EXISTS sync_cursors (scope TEXT PRIMARY KEY, cursor TEXT, etag TEXT, synced_at TEXT);`;
 
 // The updated_at rule (#765): a row is replaced only by one at least as new, so a sync page read before a write never undoes it. GitHub's
-// ISO strings (one format, Z) sort as the instants they name
+// ISO strings (one format, Z) sort as the instants they name. A row identical to the stored one writes nothing, so a write means a change
 const UPSERT_ISSUE = `INSERT INTO issues (source, node_id, repository, number, kind, state, title, body, author, labels, created_at, updated_at, closed_at, comments)
   VALUES ($source, $nodeId, $repository, $number, $kind, $state, $title, $body, $author, $labels, $createdAt, $updatedAt, $closedAt, $comments)
   ON CONFLICT (source, node_id) DO UPDATE SET repository = excluded.repository, number = excluded.number, kind = excluded.kind, state = excluded.state,
   title = excluded.title, body = excluded.body, author = excluded.author, labels = excluded.labels, created_at = excluded.created_at,
   updated_at = excluded.updated_at, closed_at = excluded.closed_at, comments = excluded.comments
-  WHERE excluded.updated_at >= issues.updated_at`;
+  WHERE excluded.updated_at >= issues.updated_at AND (excluded.repository, excluded.number, excluded.kind, excluded.state, excluded.title, excluded.body,
+    excluded.author, excluded.labels, excluded.created_at, excluded.updated_at, excluded.closed_at, excluded.comments) IS NOT
+    (issues.repository, issues.number, issues.kind, issues.state, issues.title, issues.body, issues.author, issues.labels, issues.created_at,
+    issues.updated_at, issues.closed_at, issues.comments)`;
 const UPSERT_COMMENT = `INSERT INTO comments (source, node_id, issue_node_id, repository, author, body, created_at, updated_at)
   VALUES ($source, $nodeId, $issueNodeId, $repository, $author, $body, $createdAt, $updatedAt)
   ON CONFLICT (source, node_id) DO UPDATE SET issue_node_id = excluded.issue_node_id, repository = excluded.repository, author = excluded.author,
   body = excluded.body, created_at = excluded.created_at, updated_at = excluded.updated_at
-  WHERE excluded.updated_at >= comments.updated_at`;
+  WHERE excluded.updated_at >= comments.updated_at AND (excluded.issue_node_id, excluded.repository, excluded.author, excluded.body, excluded.created_at,
+    excluded.updated_at) IS NOT (comments.issue_node_id, comments.repository, comments.author, comments.body, comments.created_at, comments.updated_at)`;
 const UPSERT_CURSOR = `INSERT INTO sync_cursors (scope, cursor, etag, synced_at) VALUES ($scope, $cursor, $etag, $syncedAt)
   ON CONFLICT (scope) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
@@ -143,6 +147,7 @@ function restrict(path: string): void {
 
 /** Opens, and creates on first use, the read model at `path`; `:memory:` keeps it in memory (the tests, the measurement). */
 export function openReadModel(path: string): ReadModel {
+  if (path !== MEMORY) writeFileSync(path, '', { flag: 'a', mode: FILE_MODE }); // owner-only from creation, not after sqlite made it with the umask's mode
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL'); // a reader outside the daemon (the sqlite3 CLI during the spike) never blocks its writes
   db.exec(SCHEMA);

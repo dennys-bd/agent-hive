@@ -36,3 +36,31 @@ test('a repository whose sync fails is logged and the next one still syncs; a re
   await loop.refetch(REPO, 7);
   assert.deepEqual(notified, [REPO]);
 });
+
+test('rows stored by the issues scope notify even when the comments scope then fails (#765)', async () => {
+  const db = openReadModel(':memory:');
+  const notified: string[] = [];
+  const rest: RestGet = async (path) => {
+    if (path.includes('/comments')) throw new Error('gh api: HTTP 502');
+    return ok([restIssue(1, T1)]);
+  };
+  const loop = createReadModelLoop({ db, source: SOURCE, rest, repositories: async () => [REPO], notify: (_s, repository) => { notified.push(repository); }, log: quiet, now: NOW });
+  await loop.runOnce();
+  assert.deepEqual(notified, [REPO]);
+});
+
+test('one refetch per issue at a time, and none of the same issue within ten seconds (#765)', async () => {
+  const db = openReadModel(':memory:');
+  let clock = Date.parse('2026-10-11T12:00:00Z');
+  const paths: string[] = [];
+  const rest: RestGet = async (path) => { paths.push(path); return path.endsWith('/7') ? ok(restIssue(7, T1)) : ok([]); };
+  const loop = createReadModelLoop({ db, source: SOURCE, rest, repositories: async () => [], notify: () => undefined, log: quiet, now: () => new Date(clock) });
+  await Promise.all([loop.refetch(REPO, 7), loop.refetch(REPO, 7)]);
+  await loop.refetch(REPO, 7);
+  assert.equal(paths.filter((p) => p === 'repos/acme/hive/issues/7').length, 1);
+  await loop.refetch(REPO, 8);
+  assert.equal(paths.filter((p) => p === 'repos/acme/hive/issues/8').length, 1, 'another issue is not held back');
+  clock += 10_000;
+  await loop.refetch(REPO, 7);
+  assert.equal(paths.filter((p) => p === 'repos/acme/hive/issues/7').length, 2);
+});

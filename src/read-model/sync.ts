@@ -42,24 +42,26 @@ function rowOf(deps: SyncDeps, repository: string, kind: ScopeKind, item: unknow
   return kind === 'issues' ? issueFromRest(source, repository, item) : commentFromRest(source, repository, item, (n) => db.nodeIdOf(source, repository, n));
 }
 
-// One page in one transaction: the last updated_at it stored, and whether a comment with no stored issue stopped it there
-function storePage(deps: SyncDeps, repository: string, kind: ScopeKind, items: unknown[]): { last: string | undefined; blocked: boolean } {
+// One page in one transaction: the last updated_at it stored, whether a row changed, and whether a comment with no stored issue stopped it there
+function storePage(deps: SyncDeps, repository: string, kind: ScopeKind, items: unknown[]): { last: string | undefined; changed: boolean; blocked: boolean } {
   const { db } = deps;
   return db.transaction(() => {
     let last: string | undefined;
+    let changed = false;
     for (const item of items) {
       const row = rowOf(deps, repository, kind, item);
-      if (row === undefined) return { last, blocked: true };
-      if ('number' in row) db.upsertIssue(row);
-      else db.upsertComment(row);
+      if (row === undefined) return { last, changed, blocked: true };
+      const wrote = 'number' in row ? db.upsertIssue(row) : db.upsertComment(row);
+      changed = changed || wrote;
       last = row.updatedAt;
     }
-    return { last, blocked: false };
+    return { last, changed, blocked: false };
   });
 }
 
 /** One scope of one repository (#765): every page from the cursor, then the cursor moved to the last updated_at stored. The first page's
- * ETag names the URL of the cursor the run started from, so it is kept only when the cursor stands still. */
+ * ETag names the URL of the cursor the run started from, so it is kept only when the cursor stands still and no page was cut short (a
+ * blocked comment must be read again, which a 304 would forbid). */
 export async function syncScope(deps: SyncDeps, repository: string, kind: ScopeKind): Promise<SyncReport> {
   const scope = scopeOf(deps.source, repository, kind);
   const saved = deps.db.cursor(scope);
@@ -68,6 +70,7 @@ export async function syncScope(deps: SyncDeps, repository: string, kind: ScopeK
   let first = true;
   let firstEtag: string | null = null;
   let last = from;
+  let blocked = false;
   let report = EMPTY_REPORT;
   while (path !== undefined) {
     const answer = await deps.rest(path, first ? (saved?.etag ?? undefined) : undefined);
@@ -76,12 +79,12 @@ export async function syncScope(deps: SyncDeps, repository: string, kind: ScopeK
     if (answer.status !== 200) throw new Error(`read model: the ${kind} of ${repository} answered HTTP ${answer.status}`);
     if (first) firstEtag = answer.etag ?? null;
     const page = storePage(deps, repository, kind, itemsOf(answer.body));
-    const moved = page.last !== undefined && (last === null || page.last > last);
-    last = page.last ?? last;
-    report = mergeReports(report, { changed: moved, requests: { 200: 1, 304: 0 }, ...quota });
+    last = page.last !== undefined && (last === null || page.last > last) ? page.last : last;
+    blocked = blocked || page.blocked;
+    report = mergeReports(report, { changed: page.changed, requests: { 200: 1, 304: 0 }, ...quota });
     path = page.blocked ? undefined : answer.next;
     first = false;
   }
-  deps.db.setCursor(scope, { cursor: last, etag: last === from ? firstEtag : null, syncedAt: deps.now().toISOString() });
+  deps.db.setCursor(scope, { cursor: last, etag: last === from && !blocked ? firstEtag : null, syncedAt: deps.now().toISOString() });
   return report;
 }

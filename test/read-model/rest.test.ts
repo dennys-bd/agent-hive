@@ -16,14 +16,21 @@ test('ghRest sends the ETag as If-None-Match and reads a 200: its JSON, its ETag
   assert.deepEqual(answer, { status: 200, body: [{ node_id: 'I_1' }], etag: 'W/"abc"', next: 'repositories/1/issues?per_page=100&page=2', quota: QUOTA });
 });
 
-test('a 304 and a 404 carry no body; with no ETag no header is sent; a Link off api.github.com is not followed (#765)', async () => {
+test('a 304 and a 404 carry no body; with no ETag no header is sent; a Link off api.github.com is refused (#765)', async () => {
   const calls: string[][] = [];
-  const answers = [http('304 Not Modified', QUOTA_HEADERS), http('404 Not Found', []), http('200 OK', ['Link: <https://example.com/x?page=2>; rel="next"'], '[]')];
+  const answers = [http('304 Not Modified', QUOTA_HEADERS), http('404 Not Found', [])];
   const rest = ghRest(async (args) => { calls.push(args); return answers[calls.length - 1]; });
   assert.deepEqual(await rest('p1', 'W/"e"'), { status: 304, quota: QUOTA });
   assert.deepEqual(await rest('p2'), { status: 404 });
-  assert.deepEqual(await rest('p3'), { status: 200, body: [] });
   assert.deepEqual(calls[1], ['api', '-i', 'p2']);
+});
+
+test('a next Link off api.github.com or outside the listed repository is an error, not the end of the listing (#765)', async () => {
+  const listing = (link: string) => ghRest(async () => http('200 OK', [`Link: <${link}>; rel="next"`], '[]'))('repos/acme/hive/issues?per_page=100');
+  await assert.rejects(listing('https://example.com/x?page=2'), { message: 'github rest: a next page left the repository' });
+  await assert.rejects(listing('https://api.github.com/repos/other/repo/issues?page=2'), { message: 'github rest: a next page left the repository' });
+  await assert.rejects(listing('https://api.github.com/user/repos?page=2'), { message: 'github rest: a next page left the repository' });
+  assert.equal((await listing('https://api.github.com/repos/Acme/Hive/issues?page=2')).status, 200);
 });
 
 test('gh prints the status line with a bare newline and the headers with CRLF; both parse (#765)', async () => {

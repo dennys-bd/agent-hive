@@ -49,12 +49,16 @@ function quotaOf(headers: Map<string, string>): RestQuota | undefined {
   return { limit, remaining, used, resetsAt: new Date(reset * MS_PER_SECOND).toISOString() };
 }
 
-// Only GitHub's own API is followed: a Link elsewhere never gets the login's credentials
-function nextOf(link: string | undefined): string | undefined {
+// Only GitHub's own API is followed, and only within the listed repository (by name, or by id as GitHub's own Links spell it): anything else
+// is an error, since a silent end of paging would pass a partial listing off as complete
+function nextOf(link: string | undefined, requested: string): string | undefined {
   const url = link === undefined ? undefined : /<([^>]+)>;\s*rel="next"/.exec(link)?.[1];
   if (url === undefined) return undefined;
   const parsed = new URL(url);
-  return parsed.origin === API_ORIGIN ? `${parsed.pathname.slice(1)}${parsed.search}` : undefined;
+  const home = `/${requested.split('/').slice(0, 3).join('/').toLowerCase()}/`;
+  const path = parsed.pathname.toLowerCase();
+  if (parsed.origin !== API_ORIGIN || !(path.startsWith(home) || /^\/repositories\/\d+\//.test(path))) throw new Error('github rest: a next page left the repository');
+  return `${parsed.pathname.slice(1)}${parsed.search}`;
 }
 
 function parseBody(body: string): unknown {
@@ -67,18 +71,18 @@ function parseBody(body: string): unknown {
 
 const isGone = (status: number): status is 301 | 404 | 410 => status === 301 || status === 404 || status === 410;
 
-function answerOf(raw: RawHttp): RestAnswer {
+function answerOf(raw: RawHttp, requested: string): RestAnswer {
   const quota = quotaOf(raw.headers);
   const extra = quota === undefined ? {} : { quota };
   if (raw.status === 304) return { status: 304, ...extra };
   if (isGone(raw.status)) return { status: raw.status, ...extra };
   if (raw.status !== 200) throw new Error(`github rest: HTTP ${raw.status}`);
   const etag = raw.headers.get('etag');
-  const next = nextOf(raw.headers.get('link'));
+  const next = nextOf(raw.headers.get('link'), requested);
   return { status: 200, body: parseBody(raw.body), ...(etag === undefined ? {} : { etag }), ...(next === undefined ? {} : { next }), ...extra };
 }
 
 /** The read transport over `gh api -i` (#765): gh holds the login, so no token passes through the Hive. */
 export function ghRest(run: GhRun = ghRun): RestGet {
-  return async (path, etag) => answerOf(parseHttp(await run(['api', '-i', ...(etag === undefined ? [] : ['-H', `If-None-Match: ${etag}`]), path])));
+  return async (path, etag) => answerOf(parseHttp(await run(['api', '-i', ...(etag === undefined ? [] : ['-H', `If-None-Match: ${etag}`]), path])), path);
 }

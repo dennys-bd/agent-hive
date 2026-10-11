@@ -45,7 +45,7 @@ async function hybridArm(repositories: string[], source: string, rounds: number,
     const started = Date.now();
     for (const repository of repositories) {
       try {
-        await syncRepository(deps, repository, false);
+        await syncRepository(deps, repository, false, () => undefined);
       } catch {
         errors += 1;
       }
