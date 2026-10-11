@@ -28,7 +28,7 @@ export function stageTasks(state: State, stage: string, source: string | undefin
 }
 
 // The loops toggle flipped and kept in the view state (#909), so a reload shows the flow as it was left; zoom and pan ride along untouched
-function withLoopsToggled(view: FlowView): FlowView {
+function toggleLoops(view: FlowView): FlowView {
   const next = { ...view, loops: !view.loops };
   writeFlowView(next);
   return next;
@@ -64,7 +64,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
   const listedTasks = listedStage && of(listedStage.name);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={view.loops} onLoops={() => setView(withLoopsToggled(view))} />
+      <FlowHeader state={state} source={source} tasks={shown} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} loops={view.loops} onLoops={() => setView(toggleLoops(view))} />
       <MenuBoundaryContext.Provider value={canvas}>
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart stages={state.stages} transitions={state.transitions} loops={view.loops} renderNode={node} />

@@ -21,7 +21,7 @@ function readPan(value: unknown): FlowView['pan'] {
  * defaults (loops on, zoom 1, pan 0, 0). */
 export function readFlowView(): FlowView {
   const stored = readView('flowView');
-  if (!isRecord(stored)) return FLOW_VIEW_DEFAULTS;
+  if (!isRecord(stored)) return { ...FLOW_VIEW_DEFAULTS, pan: { ...FLOW_VIEW_DEFAULTS.pan } }; // a copy: a caller's edit never reaches the defaults
   const zoom = finiteOr(stored.zoom, FLOW_VIEW_DEFAULTS.zoom);
   return {
     loops: typeof stored.loops === 'boolean' ? stored.loops : FLOW_VIEW_DEFAULTS.loops,
