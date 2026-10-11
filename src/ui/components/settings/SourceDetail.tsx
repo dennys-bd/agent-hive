@@ -131,7 +131,7 @@ function FieldsGroup({ id, source, githubProjects, needsToken, auth, filterOptio
 
 type EpicsProps = Pick<SourceDetailProps, 'source' | 'stages' | 'onChange'> & { id: string };
 
-/** o épico acompanha and troca em (#30, handoff árvore §1): troca em only with aheadThenBehind, its column otherwise taken by the hint; both
+/** The epic follows and switches at (#30, tree handoff §1): switches at only with aheadThenBehind, its column otherwise taken by the hint; both
  * off at 50% under ignore, where the hint says why. hide leaves them on. */
 function FollowsRow({ id, source, stages, onChange }: EpicsProps) {
   const off = source.epics === 'ignore';
