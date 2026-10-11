@@ -526,6 +526,22 @@ export interface Activity {
   via?: string; // #134: the key of the transition the task entered its stage through: what the card's tries read; replaced on every transition
   tryLog?: TryRecord[]; // #915: the tries behind tries, oldest first; dropped wherever tries is
   freeSessionStage?: string; // #812: the stage a free run last started in; continue is not offered there until a stage run starts or the task enters a stage again
+  checkpoints?: Checkpoint[]; // #619: in capture order; absent when none. Goes with the activity's delete
+}
+
+/** How a checkpoint ended (#619): its stage's hive_done, a Restart, or a restore that replaced it. */
+export type CheckpointEnd = 'done' | 'restart' | 'restore';
+
+/** One checkpoint of a stage (#619): the worktree as it was when the checkpoint ended, kept by refs/hive/<slug>/checkpoint/<n>. */
+export interface Checkpoint {
+  n: number; // 1-based, per task; also the ref's last segment
+  stage: string; // the stage the checkpoint ran in
+  start: string; // the stageStart commit the checkpoint started from
+  head: string; // HEAD when captured
+  commit: string; // the restore point: `head` itself when the worktree was clean
+  branch: string; // the branch HEAD was on
+  at: string; // ISO, when captured
+  ended: CheckpointEnd;
 }
 
 /** What an activity produced (glossary: activity record): born with it under the same id, outlives its deletion. */
