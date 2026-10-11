@@ -2,7 +2,7 @@ import { isPrUrl, isSessionId, isUuid } from './orchestrator.js';
 import { PR_STATES } from './pull-requests.js';
 import { cleanTitle } from './usage.js';
 import { localActivityId } from './activities.js';
-import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage } from './types.js';
+import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -137,14 +137,28 @@ function savedSync(value: unknown): { sync?: ForkSyncResult } {
   };
 }
 
-// #134: the tries an automatic transition took (whole counts of at least one) and the arrow the task came through, each only in that shape
-function savedRouting(tries: unknown, via: unknown): Pick<Activity, 'tries' | 'via'> {
+// #915: a try's record as take wrote it; the session id reaches claude's argv through a handover, so only its uuid shape is kept
+const isTryRecord = (value: unknown): value is TryRecord =>
+  isJsonObject(value) && isCapped(value.transition, FEEDBACK_MAX) && isRunCount(value.n) && isRunCount(value.max)
+  && isCapped(value.cause, FEEDBACK_MAX) && isCapped(value.error, FEEDBACK_MAX) && isDate(value.at) && isCapped(value.stage, FEEDBACK_MAX);
+const savedTryRecord = (r: TryRecord): TryRecord => ({
+  transition: r.transition, n: r.n, max: r.max, cause: r.cause, error: r.error, at: r.at, stage: r.stage, ...(isUuid(r.sessionId) ? { sessionId: r.sessionId } : {}),
+});
+
+// #134: the tries an automatic transition took (whole counts of at least one) and the arrow the task came through, each only in that shape;
+// #915: the log only for a key the tries still count, a malformed record dropped alone
+function savedRouting(tries: unknown, via: unknown, tryLog: unknown): Pick<Activity, 'tries' | 'via' | 'tryLog'> {
   const counted = isJsonObject(tries) ? Object.entries(tries).filter((entry): entry is [string, number] => isRunCount(entry[1])) : [];
-  return { ...(counted.length > 0 ? { tries: Object.fromEntries(counted) } : {}), ...(isCapped(via, FEEDBACK_MAX) ? { via } : {}) };
+  const keys = new Set(counted.map(([key]) => key));
+  const log = Array.isArray(tryLog) ? tryLog.filter(isTryRecord).filter((r) => keys.has(r.transition)).map(savedTryRecord) : [];
+  return {
+    ...(counted.length > 0 ? { tries: Object.fromEntries(counted) } : {}), ...(log.length > 0 ? { tryLog: log } : {}),
+    ...(isCapped(via, FEEDBACK_MAX) ? { via } : {}),
+  };
 }
 
 export function savedWork(value: Record<string, unknown>): Partial<Activity> {
-  const { worktree, branch, worktreeGone, local, base, sessionId, workerId, stopped, stoppedAt, stageStart, error, handover, handoffPending, handoffFeedback, tries, via, freeSessionStage } = value;
+  const { worktree, branch, worktreeGone, local, base, sessionId, workerId, stopped, stoppedAt, stageStart, error, handover, handoffPending, handoffFeedback, tries, tryLog, via, freeSessionStage } = value;
   return {
     ...(typeof worktree === 'string' ? { worktree } : {}), ...(typeof branch === 'string' ? { branch } : {}),
     ...(worktreeGone === true ? { worktreeGone: true as const } : {}), ...(local === true ? { local: true as const } : {}),
@@ -156,7 +170,7 @@ export function savedWork(value: Record<string, unknown>): Partial<Activity> {
     ...(isCapped(handoffPending, FEEDBACK_MAX) ? { handoffPending } : {}), // #692, #134: the waiting transition's key
     ...(isCapped(handoffFeedback, FEEDBACK_MAX) ? { handoffFeedback } : {}), // #134: the feedback it fires with
     ...(typeof freeSessionStage === 'string' ? { freeSessionStage } : {}), // #812: a stage name, only compared with task.stage
-    ...savedRouting(tries, via), // #134
+    ...savedRouting(tries, via, tryLog), // #134, #915
     ...savedCommands(value.commands), // #755: the boot stops it
     ...savedCi(value.ci), // #834: the boot keeps it
     ...savedSync(value.sync), // #854: shown while the activity lives

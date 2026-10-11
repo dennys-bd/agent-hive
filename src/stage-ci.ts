@@ -49,7 +49,7 @@ function failCi(state: State, { activity, task }: Wait, output: string, names: r
   const { ci: _ci, ...rest } = activity;
   if (exitOf(state, task.stage, 'verdict', 'failed') !== undefined) { // #134: a failed transition takes the task on with the logs on the record
     const failed = withResult(withActivity(state, rest), task, { ci: { verdict: 'failed', output } });
-    const { state: advanced, effects } = advance(failed, task, { trigger: 'verdict', verdict: 'failed' });
+    const { state: advanced, effects } = advance(failed, task, { trigger: 'verdict', verdict: 'failed', cause: names.join(', ') }); // #915: every name, the try's cause
     return { state: advanced, effects };
   }
   const stopped: Activity = { ...rest, stopped: true, stoppedAt: new Date().toISOString(), error: `${CI_FAILED}${listed(names)}` };

@@ -328,3 +328,12 @@ test('a failure re-run keeps its ✕ line on the wait while the re-run is awaite
   assert.deepEqual(live(asked)?.ci?.checks?.map((c) => [c.name, c.state]), [['build', 'failure'], ['lint', 'pending']]);
   assert.deepEqual(live(asked)?.ci?.reran, ['h1']);
 });
+
+test('a failed wait\'s try names every failed check as its cause and the log\'s first line as its error (#915)', () => {
+  const back: Transition = { from: 'ci', to: 'review', when: 'verdict', verdict: 'failed', maxTries: 2 };
+  const waiting = polled({}, { transitions: [...chained([ci(), REVIEW]).transitions, back] }).state;
+  const collecting = read(waiting, [pr([check('build', 'failure', { runId: 1, at: LATER }), check('test', 'failure', { runId: 1, at: LATER })])]).state;
+  const { state } = failedOf(collecting, ['build', 'test'], '\nbuild log\nmore');
+  const [{ cause, error, n, stage }] = live(state)?.tryLog ?? [];
+  assert.deepEqual({ cause, error, n, stage }, { cause: 'build, test', error: 'build log', n: 1, stage: 'review' });
+});

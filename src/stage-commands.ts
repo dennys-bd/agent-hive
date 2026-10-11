@@ -79,7 +79,7 @@ function failedCommands(state: State, activity: Activity, task: Task, output: st
   if (exitOf(freed, task.stage, 'verdict', 'failed') === undefined) return failCommands(freed, activity, task, output, list, runId);
   const { commands: _commands, ...rest } = activity;
   const failed = withResult(withActivity(freed, rest), task, { commands: { verdict: 'failed', output, runId } });
-  const { state: advanced, effects } = advance(failed, task, { trigger: 'verdict', verdict: 'failed' });
+  const { state: advanced, effects } = advance(failed, task, { trigger: 'verdict', verdict: 'failed', cause: list }); // #915: the try's cause
   return { state: advanced, effects };
 }
 

@@ -225,6 +225,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'extendApproval': return `extendApproval ${act(event.activityId)}`;
     case 'approvalExpired': return `approvalExpired pty=${shortId(event.ptyId)}`;
     case 'retryDue': return `retryDue pty=${shortId(event.ptyId)} until=${event.until}`; // #805
+    case 'retry': return `retry #${event.taskId}`; // #915
   }
 }
 

@@ -447,3 +447,7 @@ test('retryDue names its pty and its until; a StopFailure hook line never carrie
 test('setSignals logs its opening signal only: the rows are config, read from the file (#727)', () => {
   assert.equal(describeEvent({ type: 'setSignals', signals: SIGNALS_DEFAULTS }), 'setSignals onOpen=yellow');
 });
+
+test('describeEvent names a retry by its task only (#915)', () => {
+  assert.equal(describeEvent({ type: 'retry', taskId: 'board:I7' }), 'retry #board:I7');
+});
