@@ -155,3 +155,27 @@ test('with a repository the header shows its workspace square, its name, its wor
   await user.click(issues);
   expect(onTab).toHaveBeenCalledWith('issues');
 });
+
+test('↺ voltas shows only with onLoops, after the spacer and before the search: pressed with its hide title while on, its show title while off; a click calls onLoops (#909)', async () => {
+  const user = userEvent.setup();
+  const onLoops = vi.fn();
+  const { rerender } = render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} />);
+  expect(within(header()).queryByRole('button', { name: '↺ voltas' })).not.toBeInTheDocument();
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
+  const loops = within(header()).getByRole('button', { name: '↺ voltas' });
+  expect(loops.nextElementSibling).toBe(screen.getByRole('textbox', { name: 'buscar tarefas' }).closest('label'));
+  expect(loops).toHaveAttribute('aria-pressed', 'true');
+  expect(loops).toHaveAttribute('title', 'esconder as voltas · ficam só as setas entre as etapas');
+  expect(loops).toHaveClass('bg-muted', 'text-foreground');
+  await user.click(loops);
+  expect(onLoops).toHaveBeenCalledOnce();
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops={false} onLoops={onLoops} />);
+  expect(loops).toHaveAttribute('aria-pressed', 'false');
+  expect(loops).toHaveAttribute('title', 'mostrar as voltas');
+  expect(loops).toHaveClass('bg-transparent', 'text-muted-foreground');
+  setLanguage('en');
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops={false} onLoops={onLoops} />);
+  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'show the loops');
+  rerender(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} loops onLoops={onLoops} />);
+  expect(screen.getByRole('button', { name: '↺ loops' })).toHaveAttribute('title', 'hide the loops · only the arrows between stages stay');
+});

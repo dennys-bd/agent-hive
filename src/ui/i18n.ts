@@ -52,6 +52,9 @@ const en = {
   'flow.search': 'search tasks',
   'flow.updated': 'updated {time}',
   'flow.refresh': 'refresh',
+  'flow.loops': '↺ loops', // #909: the flow header's toggle of the back edges and loops
+  'flow.loops.hide': 'hide the loops · only the arrows between stages stay',
+  'flow.loops.show': 'show the loops',
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'footer.rules': 'rules',
@@ -1668,6 +1671,9 @@ const pt: Record<MessageKey, string> = {
   'flow.search': 'buscar tarefas',
   'flow.updated': 'atualizado {time}',
   'flow.refresh': 'atualizar',
+  'flow.loops': '↺ voltas',
+  'flow.loops.hide': 'esconder as voltas · ficam só as setas entre as etapas',
+  'flow.loops.show': 'mostrar as voltas',
   'flow.tab.flow': 'fluxo',
   'flow.tab.native.github': 'GitHub Project',
   'footer.rules': 'regras',

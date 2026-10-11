@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { Flow } from '@/components/Flow';
 import { setLanguage, t } from '@/i18n';
 import { MARGIN } from '@/lib/flow-layout';
+import { readView, resetViewState } from '@/lib/view-state';
 import type { ActivityRecord, BaseOptions, Task, Session, Stage, Transition, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
@@ -377,6 +378,48 @@ test('the flow view draws no pill on the default path; a labelled arrow, a verdi
   expect(within(canvas).queryByText('terminou')).not.toBeInTheDocument();
   expect(within(canvas).queryByText('aprovado')).not.toBeInTheDocument();
   for (const pill of ['design', 'passou', 'falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
+});
+
+// A forward arrow, a back edge with its tries, a loop and an unlabelled skip forward (#909)
+const LOOP_STAGES: Stage[] = [...stages, { name: 'pr', from: { board: ['PR'] } }];
+const LOOPED: Transition[] = [
+  { from: 'dev', to: 'review', when: 'done' },
+  { from: 'review', to: 'dev', when: 'verdict', verdict: 'failed', maxTries: 3 },
+  { from: 'pr', to: 'pr', when: 'feedback' },
+  { from: 'dev', to: 'pr', when: 'approved' },
+];
+const kinds = (canvas: HTMLElement): (string | null)[] => [...canvas.querySelectorAll('path[data-kind]')].map((p) => p.getAttribute('data-kind'));
+
+test('↺ voltas hides every back edge, loop and unlabelled skip with their pills, the row falling to the margin, keeps it in flowView, and brings them back (#909)', async () => {
+  resetViewState();
+  onTestFinished(() => resetViewState()); // drops the pending post
+  const user = userEvent.setup();
+  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  const row = (): string => canvas.querySelector<HTMLElement>('[data-stage="dev"]')!.parentElement!.style.top;
+  const loops = screen.getByRole('button', { name: '↺ voltas' });
+  expect(loops).toHaveAttribute('aria-pressed', 'true');
+  expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);
+  for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).getByText(pill)).toBeInTheDocument();
+  expect(row()).not.toBe(`${MARGIN}px`);
+  await user.click(loops);
+  expect(kinds(canvas)).toEqual(['forward']);
+  for (const pill of ['falhou · 3x', 'feedback']) expect(within(canvas).queryByText(pill)).not.toBeInTheDocument();
+  expect(row()).toBe(`${MARGIN}px`);
+  expect(readView('flowView')).toEqual({ loops: false, zoom: 1, pan: { x: 0, y: 0 } });
+  await user.click(loops);
+  expect(kinds(canvas)).toEqual(['forward', 'above', 'loop', 'above']);
+  expect(readView('flowView')).toEqual({ loops: true, zoom: 1, pan: { x: 0, y: 0 } });
+});
+
+test('a stored flowView with loops off draws the flow without them on the first render, the button not pressed: the reload case (#909)', () => {
+  resetViewState({ flowView: { loops: false, zoom: 1, pan: { x: 0, y: 0 } } });
+  onTestFinished(() => resetViewState());
+  render(<Flow state={{ ...state([], [worker('s1')], LOOP_STAGES), transitions: LOOPED }} />);
+  const canvas = screen.getByRole('region', { name: 'fluxograma' });
+  expect(screen.getByRole('button', { name: '↺ voltas' })).toHaveAttribute('aria-pressed', 'false');
+  expect(kinds(canvas)).toEqual(['forward']);
+  expect(within(canvas).queryByText('falhou · 3x')).not.toBeInTheDocument();
 });
 
 // Radix opens a DropdownMenu on pointerdown, which jsdom does not deliver as a PointerEvent; the keyboard path opens the same menu.
