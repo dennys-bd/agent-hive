@@ -112,3 +112,27 @@ test('hive:designer tells the calling session how comments and the review reach 
   const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
   for (const name of ['hive_reply', 'resolve', 'designsDir', 'handoff.md', 'hive:design-reviewer']) assert.ok(body.includes(name), `its text does not name ${name}`);
 });
+
+test('every section the design agents quote by name is a heading of reference/design.md or reference/conventions.md', async () => {
+  const headings = new Set<string>();
+  for (const file of ['design.md', 'conventions.md']) {
+    const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
+    for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
+  }
+  for (const agent of ['designer', 'design-reviewer']) {
+    const text = await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8');
+    for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name), `agents/${agent} quotes "${name}", which no reference heading carries`);
+  }
+});
+
+test('no agent description holds ": ", which strict YAML reads as a nested mapping', async () => {
+  for (const agent of AGENTS) {
+    const { description = '' } = frontmatter(await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8'));
+    assert.ok(!description.includes(': '), `agents/${agent}'s description holds ": "`);
+  }
+});
+
+test('CREDITS.md credits Impeccable and ecc\'s frontend-design-direction for reference/design.md', async () => {
+  const text = await readFile(join(PLUGIN, 'CREDITS.md'), 'utf8');
+  for (const source of ['Impeccable', 'frontend-design-direction', 'reference/design.md']) assert.ok(text.includes(source), `CREDITS.md does not name ${source}`);
+});

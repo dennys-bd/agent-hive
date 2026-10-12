@@ -77,12 +77,12 @@ The minimum every screen meets. Check it on the built result.
 - The brief wins: honour pinned fonts, palettes, eras and materials.
 - An update, sync, normalize or refine changes only what the run is for.
 - Keep the incumbent identity, behaviour, copy and everything outside scope.
-- Ask before replacing factual copy or adding claims.
+- Never replace factual copy or add claims on your own; propose them in the handoff.
 - Redesign only when asked; then treat the old look as an anti-reference and
   keep product truth, content and function.
 - Never split the difference by polishing the look a redesign discarded.
 - Verify in bounded passes: build fully, inspect once in a batched round, fix
-  everything in one batch, confirm with at most one more round, then stop.
+  everything in one batch, then stop.
 
 ## Operate and Read
 
@@ -125,18 +125,19 @@ Technical checks of what is measurable. Report; do not fix.
 - Focus is visible, tab order is logical, nothing traps the keyboard.
 - Motion honours `prefers-reduced-motion` while keeping the state change visible.
 - Layout at 1280, 768 and 390 px with no horizontal scroll and no clipped text.
-- Touch targets at least 44 by 44 px at 390 px.
+- Touch targets at least 44 by 44 px at 390 px; Operate's density applies at 1280 px.
 - No fixed widths that break narrow screens.
 - Colours come from tokens; dark and light themes both keep contrast.
 - Every state the spec names is present.
 - No URL or absolute path outside the screen's folder (`## The .hv.html format`).
 - The screen is specific to this product, not interchangeable with another.
-- Rank each finding by what it blocks: task, AA compliance, layout, or polish only.
+- Rank each finding: what breaks the task, AA compliance or the layout is
+  `blocking`; polish only is `advisory`.
 - Name the evidence: rendered at which width, or read from the CSS.
 
 ## Critique
 
-The design review, with the ecc review checklist folded in as questions.
+The design review, with a review checklist folded in as questions.
 
 - Does the first view say what the product, workflow or object is?
 - Does the hierarchy support scanning and repeated use?
@@ -210,16 +211,46 @@ frame, with no network.
   `<body>`, each closed.
 - Self-contained: CSS in `<style>`, scripts in `<script>`, images as inline
   SVG or `data:` URLs, or files inside the screen's own folder by a relative
-  path without `..`. No `http:`, `https:`, `//` or absolute path in `src`,
-  `href`, `url(` or `@import`. Fonts are a system stack, or the design
+  path without `..`. No `http:`, `https:`, `file:`, `//` or absolute path in
+  any attribute, `url(`, `image-set(`, `@import` or `import`. Fonts are a system stack, or the design
   system's font with a system fallback; never a font CDN.
 - States are sections of the one file, one after another: one `<section>`
   per state (empty, loading, error, filled…), `id="state-<name>"`, headed by
-  the state's name, so the pane shows them together and a comment's anchor
-  names the state.
+  the state's name, so the pane shows them together and each state is easy
+  to find.
 - An alternative direction the user asked for is its own file,
   `<screen>.<variant>.hv.html` (`a`, `b`…).
 - Lays out at 1280, 768 and 390 px wide.
 - Real copy in the product's own words and languages; never lorem ipsum.
 - Scripts only show states and interactions: no `fetch`, `XMLHttpRequest`
   or `WebSocket`.
+- No secret, token or absolute home path in a screen or the handoff: the
+  handoff may be posted to a public issue.
+
+### The check
+
+Run from the docs repository, `<folder>` the design folder, quoted. Both
+commands print nothing:
+
+```bash
+grep -nEi "(src|srcset|href|action|formaction|poster|data)\s*=\s*[\"']?\s*(https?:|file:|//|/)|(url|image-set)\(\s*[\"']?\s*(https?:|file:|//|/)|@import\s+[\"']?\s*(https?:|file:|//|/)|import\s*\(?\s*[\"'](https?:|//)|\.\.[/\\]|http-equiv\s*=\s*[\"']?refresh|sendBeacon|EventSource|window\.open|fetch\s*\(|XMLHttpRequest|WebSocket" "<folder>"/*.hv.html
+find "<folder>" -type l
+```
+
+Each file also holds `<!doctype html>`, `<html`, `<head`, `</head>`, `<body`,
+`</body>` and `</html>`, in that order.
+
+### Seeing it rendered
+
+Only after the check passes, and only when a browser is at hand: a browser
+tool the session offers, or a Chromium on `PATH`
+(`command -v chromium chromium-browser google-chrome`). Screenshot into a
+`mktemp -d` folder outside the repositories, with no network and a throwaway
+profile, never `--no-sandbox`:
+
+```bash
+chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolver-rules="MAP * ~NOTFOUND" --window-size=390,2400 --screenshot="$tmp/<screen>-390.png" "file://<absolute path>"
+```
+
+One round at 1280 and 390 px, then delete the folder. Without a browser, say
+the screens were not seen rendered.
