@@ -301,6 +301,11 @@ const en = {
   'start.noStages': 'no stage to run from {stage}.', // #774: why executar etapas is off for the picked task
   'start.base': 'base',
   'start.local': 'run in the local checkout, no worktree',
+  'start.orphan.worktree': 'A worktree for this task already exists with no activity', // #861
+  'start.orphan.branch': 'A branch for this task already exists with no activity',
+  'start.orphan.reuse': 'Reuse',
+  'start.orphan.discard': 'Discard and start from the base',
+  'start.orphan.failed': 'Could not discard the existing work',
   'start.preparing': 'preparing the worktree', // the Start and open dialogs' submit while the worktree setup runs (#351)
   'start.stacked': 'tell the worker of {id} · stacked PR',
   'start.agent': 'agent',
@@ -587,6 +592,7 @@ const en = {
   'worktrees.orphanCount.one': '1 orphan',
   'worktrees.orphanCount.other': '{n} orphans',
   'worktrees.orphan': 'orphan · no task in the flow',
+  'worktrees.kept': 'kept · no task in the flow', // #861: its activity waits for its task to return
   'worktrees.stopped': 'stopped',
   'worktrees.sessionOpen': 'session open',
   'worktrees.sessionBlocks': "close the task's session first",
@@ -787,6 +793,10 @@ const en = {
   'settings.cancel': 'cancel',
   'settings.discard.message': 'Discard the unsaved changes?',
   'settings.discard.confirm': 'Discard',
+  'settings.stages.deleteMoves.confirm': 'Delete stage', // #861
+  'settings.stages.deleteMoves.message': 'The deleted stages hold tasks. They move to:',
+  'settings.stages.deleteMoves.move.one': '1 task → {stage}',
+  'settings.stages.deleteMoves.move.other': '{n} tasks → {stage}',
   'settings.back': 'back', // #510
   'settings.nav': 'sections',
   'settings.search': 'search settings',
@@ -1246,6 +1256,7 @@ const en = {
   'tries.sectionOf': 'tries · {trigger} {n}/{max}',
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
+  'stage.error.stageGone': 'The stage "{stage}" no longer exists', // #861: its run's stage was deleted in Settings
   'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
   'start.failed.agent_missing': 'the agent is not installed', // #945: a failed start's short message, by run.spawn_failed's code; the raw text behind details
   'start.failed.no_workspace': 'choose a workspace for the task',
@@ -2087,6 +2098,11 @@ const pt: Record<MessageKey, string> = {
   'start.noStages': 'nenhuma etapa para executar a partir de {stage}.',
   'start.base': 'base',
   'start.local': 'executar no local, sem worktree',
+  'start.orphan.worktree': 'Já existe uma worktree desta tarefa sem atividade',
+  'start.orphan.branch': 'Já existe um branch desta tarefa sem atividade',
+  'start.orphan.reuse': 'Reaproveitar',
+  'start.orphan.discard': 'Descartar e começar da base',
+  'start.orphan.failed': 'Não foi possível descartar o trabalho existente',
   'start.preparing': 'preparando a worktree',
   'start.stacked': 'avisar o worker de {id} · PR empilhado',
   'start.agent': 'agente',
@@ -2370,6 +2386,7 @@ const pt: Record<MessageKey, string> = {
   'worktrees.orphanCount.one': '1 órfã',
   'worktrees.orphanCount.other': '{n} órfãs',
   'worktrees.orphan': 'órfã · sem tarefa no fluxo',
+  'worktrees.kept': 'mantida · sem tarefa no fluxo',
   'worktrees.stopped': 'parado',
   'worktrees.sessionOpen': 'sessão aberta',
   'worktrees.sessionBlocks': 'feche a sessão da tarefa antes',
@@ -2570,6 +2587,10 @@ const pt: Record<MessageKey, string> = {
   'settings.cancel': 'cancelar',
   'settings.discard.message': 'Descartar as alterações não salvas?',
   'settings.discard.confirm': 'Descartar',
+  'settings.stages.deleteMoves.confirm': 'Excluir etapa',
+  'settings.stages.deleteMoves.message': 'As etapas excluídas têm tarefas. Elas vão para:',
+  'settings.stages.deleteMoves.move.one': '1 tarefa → {stage}',
+  'settings.stages.deleteMoves.move.other': '{n} tarefas → {stage}',
   'settings.back': 'voltar',
   'settings.nav': 'seções',
   'settings.search': 'buscar configuração',
@@ -3027,6 +3048,7 @@ const pt: Record<MessageKey, string> = {
   'tries.sectionOf': 'tentativas · {trigger} {n}/{max}',
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
+  'stage.error.stageGone': 'A etapa "{stage}" não existe mais',
   'stage.error.triesOut': 'esgotou · {trigger} {n}x',
   'start.failed.agent_missing': 'o agente não está instalado',
   'start.failed.no_workspace': 'escolha um workspace para a tarefa',
@@ -3595,7 +3617,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

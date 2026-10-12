@@ -352,6 +352,17 @@ test('baseOptions: the default, the other tasks that have a worktree (git\'s bra
   assert.equal((await baseOptions(repo, SLUG_7, [], { ...ORIGIN, branch: 'develop' }, exec)).defaultRef, 'origin/develop', 'config.baseBranch names the default');
 });
 
+test('baseOptions with the task\'s branch (it has no activity, #861): what git holds for the slug is an orphan, and the lists are read so a discard can pick a base', async (t) => {
+  const present = await repoWith(t, { worktree: true });
+  const both = baseGit({ 'worktree list': listing(present.repo, present.worktree, `branch refs/heads/${BRANCH}`), 'refs/remotes/origin': 'refs/heads/main\nrefs/heads/feature-x\n' });
+  assert.deepEqual(await baseOptions(present.repo, SLUG_7, [], ORIGIN, both.exec, BRANCH), { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: ['feature-x'], remote: [], orphan: { worktree: true, branch: true } });
+  const gone = await repoWith(t);
+  const branchOnly = baseGit({ 'refs/remotes/origin': 'refs/heads/main\n' });
+  assert.deepEqual((await baseOptions(gone.repo, SLUG_7, [], ORIGIN, branchOnly.exec, BRANCH)).orphan, { worktree: false, branch: true });
+  const none = baseGit({ 'refs/remotes/origin': 'refs/heads/main\n' }, NO_BRANCH);
+  assert.equal('orphan' in (await baseOptions(gone.repo, SLUG_7, [], ORIGIN, none.exec, BRANCH)), false, 'nothing on disk: no orphan');
+});
+
 test('baseOptions answers hasWorktree, and no lists, when git lists the task\'s worktree with its directory there: the adoption test; the ref read still runs in parallel, but its result is dropped', async (t) => {
   const present = await repoWith(t, { worktree: true });
   const adopted = baseGit({ 'worktree list': listing(present.repo, present.worktree, `branch refs/heads/${BRANCH}`) });

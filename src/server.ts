@@ -68,7 +68,7 @@ import { registerRuleRoutes } from './server-rules.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
-import { configFrom, hiveSourceRefusal, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
+import { configFrom, hiveSourceRefusal, movedStages, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool } from './ptys.js';
@@ -475,7 +475,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, events: wiring.events });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, events: wiring.events });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -706,21 +706,26 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live) throw new Error('Hive já configurado: use reconfigure()');
     const runtime = await activate(config, sources);
     const saved = await loadState(home, workspaceScope(config));
-    // stages come from the config; tasks from the saved state are re-listed by the poll() below, which is the source of truth
-    // #727: signals on the state before boot, which opens on onOpen
-    live = { runtime, state: withWorkspaces({ ...saved, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals }, config) };
+    // #861: the saved stages first, so a stage a hand edit removed while the Hive was down is a deletion setStages places, never a stranded
+    // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
+    const flow = saved.stages.length > 0 ? { stages: saved.stages, transitions: saved.transitions } : { stages: config.comb.stages, transitions: config.comb.transitions };
+    live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
     await boot(saved);
+    if (!isDeepStrictEqual(flow.stages, config.comb.stages) || !isDeepStrictEqual(flow.transitions, config.comb.transitions)) {
+      await dispatch({ type: 'setStages', stages: config.comb.stages, transitions: config.comb.transitions });
+    }
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     pollInBackground(refreshPlanLimits);
   }
 
-  async function reconfigure(config: Config, sources: Map<string, Source>, renames: Record<string, string>): Promise<void> {
+  async function reconfigure(config: Config, sources: Map<string, Source>, renames: Record<string, string>, stageRenames: Record<string, string>): Promise<void> {
     if (!live) throw new Error('Hive não configurado: use configure()');
     const runtime = await activate(config, sources);
     live = { runtime, state: live.state };
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
+    if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
     // setBudget, setUsageRules, setStages and setWorkspaces run fill, whose effects (deleteActivity, sourceAction, spawn) can take a
     // while: POST /settings answers once the config is written and reduced, not after those effects settle (#476). renameSources,
     // setDeleteActivity, setShutdownIdle, setApprovalMinutes, setRateLimitWait, setDefaultAgent and setSources emit no effects, so they stay awaited. queueSave only
@@ -981,7 +986,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     try {
       await writeConfigFile(config);
       log.info('settings saved');
-      await (live ? reconfigure(config, sources, body.renames ?? {}) : configure(config, sources)); // a first setup has no tasks to carry (#278)
+      await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
       return;
@@ -1042,7 +1047,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const taskDeps = { exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, events: wiring.events };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
-  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, events: wiring.events });
+  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, events: wiring.events });
   registerTaskRoutes(app, taskDeps);
   registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since

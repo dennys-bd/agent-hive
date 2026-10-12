@@ -369,6 +369,7 @@ test('poll, pollFailed and sourceQuota lines name the source, a source-less poll
   assert.equal(describeEvent({ type: 'pollFailed', source: 'notes', message: 'project not found' }), 'pollFailed source=notes project not found');
   assert.equal(describeEvent({ type: 'setSources', sources: ['work', 'notes'] }), 'setSources work,notes');
   assert.equal(describeEvent({ type: 'renameSources', renames: { work: 'job', a: 'b' } }), 'renameSources work→job,a→b'); // #278
+  assert.equal(describeEvent({ type: 'renameStages', renames: { Backlog: 'Spec', a: 'b' } }), 'renameStages Backlog→Spec,a→b'); // #861
 });
 
 test('describeEffect names a local session by its workspace and a copy\'s first run, and dropCopiedTranscript by the short id only, never the dir (#587)', () => {

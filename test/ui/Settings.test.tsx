@@ -4,11 +4,11 @@ import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { AppSection } from '@/components/settings/AppSection';
 import { Settings } from '@/components/settings/Settings';
-import { setLanguage, t } from '@/i18n';
+import { setLanguage, t, tPlural } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
 import { draftFrom } from '@/lib/settings-form';
 import { fmt } from '@/lib/usage';
-import type { FilterOptions, SettingsInfo, State } from '../../src/types';
+import type { FilterOptions, SettingsInfo, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
 const open = (user: UserEvent, s: SettingsSection) => user.click(screen.getByRole('button', { name: t(`settings.section.${s}`) }));
@@ -731,4 +731,19 @@ test('the link under the default agent takes the settings to the Flow section (#
   await open(user, 'execution');
   await user.click(within(screen.getByRole('main')).getByRole('button', { name: t('settings.section.flow') }));
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(t('settings.section.flow'));
+});
+
+test('a save that deletes a stage holding tasks asks first, naming how many go where; confirming sends the save (#861)', async () => {
+  const user = userEvent.setup();
+  const two: SettingsInfo = { ...info, config: { ...info.config!, comb: { ...info.config!.comb, stages: [{ name: 'fila', from: { board: ['Ready'] } }, { name: 'dev', from: { board: ['Doing'] } }] } } };
+  const queued: Task = { item: { itemId: 'board:I1', id: '1', title: 'T', body: '', url: '', source: 'board' }, stage: 'fila', boardColumn: 'Ready', auto: true };
+  render(<Settings info={two} state={{ ...BASE_STATE, tasks: [queued] }} onSaved={vi.fn()} />);
+  await open(user, 'flow');
+  await user.click(screen.getByRole('button', { name: t('settings.stages.remove') }));
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+  const dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent(tPlural('settings.stages.deleteMoves.move', 1, { n: 1, stage: 'dev' }));
+  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
+  await user.click(within(dialog).getByRole('button', { name: t('settings.stages.deleteMoves.confirm') }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
 });

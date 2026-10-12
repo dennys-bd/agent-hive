@@ -6,10 +6,10 @@ import { diffBase } from './diff.js';
 import { workspaceBase } from './fork.js';
 import { type ConsoleStore, orphanTeardownRunId } from './console.js';
 import type { Logger } from './log.js';
-import { activityOf, worktreeOwner } from './activities.js';
+import { activityOf, keptActivity, worktreeOwner } from './activities.js';
 import type { PtyHost } from './pty-host.js';
 import { removeInRun } from './task-setup.js';
-import type { Activity, Task, Config, Exec, State, Workspace, WorktreeRow } from './types.js';
+import type { Activity, Task, Config, Effect, Exec, HiveEvent, State, Workspace, WorktreeRow } from './types.js';
 import { taskDir, cleanWorktree, listWorktrees, removeWorktree } from './worktree.js';
 import type { EventLog } from './events.js';
 
@@ -28,6 +28,7 @@ export interface WorktreeRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb' | 'baseBranch'>; promptsDir: string } } | undefined;
   ptys: Pick<PtyHost, 'adopt' | 'subscribe'>; // the teardown's console run (#654)
   consoleStore: Pick<ConsoleStore, 'begin' | 'append' | 'end'>;
+  dispatch(event: HiveEvent): Promise<Effect[]>; // #861: a removed worktree's kept activity is marked gone, so pruneWork lets it go
   events?: Pick<EventLog, 'write'>; // #742: the teardown's worktree.step
 }
 
@@ -190,5 +191,7 @@ async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps
     return;
   }
   log.info(`worktreeRemoved ${slug}`);
+  const kept = keptActivity(current.state, name, slug); // #861: the activity kept for this worktree goes with it
+  if (kept !== undefined) await deps.dispatch({ type: 'worktreeGone', activityId: kept.id });
   res.json({ removed: true });
 }

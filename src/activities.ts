@@ -60,11 +60,17 @@ export function pruneRecords<S extends WorkState & Pick<State, 'tasks'>>(state: 
   return kept.length === state.activityRecords.length ? state : { ...state, activityRecords: kept };
 }
 
+// #861: a task activity whose tasks all left stays while its worktree is on disk and nothing runs, deletes or checks out there: a returning task
+// finds it through recordsOf, and Settings › worktrees lists it until its removal marks it worktreeGone
+const isKept = (a: Activity): boolean =>
+  a.worktree !== undefined && a.worktreeGone === undefined && a.workerId === undefined && a.deleting === undefined && a.local === undefined
+  && a.setup === undefined && a.ci === undefined;
+
 /** A task's activity outlives none of its tasks (#629): once every task its record lists has left the Hive (dropTask, closeTask, closeMissing,
- * the last stage, a stage that vanished), it goes, and then pruneRecords. Local activities stay. The same object when nothing goes. */
+ * the last stage, a stage that vanished), it goes, and then pruneRecords, unless isKept holds it (#861). Local activities stay. The same object when nothing goes. */
 export function pruneWork(state: State): State {
   const tasks = new Set(state.tasks.map((t) => t.item.itemId));
-  const orphan = (a: Activity): boolean => a.kind === 'task' && !(recordOf(state, a.id)?.taskIds.some((id) => tasks.has(id)) ?? false);
+  const orphan = (a: Activity): boolean => a.kind === 'task' && !isKept(a) && !(recordOf(state, a.id)?.taskIds.some((id) => tasks.has(id)) ?? false);
   const activities = state.activities.filter((a) => !orphan(a));
   return pruneRecords(activities.length === state.activities.length ? state : { ...state, activities });
 }
@@ -147,6 +153,10 @@ export function worktreeOwner(state: Pick<State, 'tasks' | 'activities' | 'activ
   const owner = state.activities.find((a) => a.kind === 'task' && a.workspace === workspace && a.slug === slug);
   return owner && taskOfActivity(state, owner.id);
 }
+
+/** The task activity of `workspace` with the worktree `slug` whose tasks all left (#861): kept by pruneWork for a task that may return. */
+export const keptActivity = (state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, workspace: string, slug: string): Activity | undefined =>
+  state.activities.find((a) => a.kind === 'task' && a.workspace === workspace && a.slug === slug && taskOfActivity(state, a.id) === undefined);
 
 /** An activity that holds its slug (#180): a worktree, a run or a session on it. */
 export const holdsSlug = (state: Pick<State, 'activityRecords'>, activity: Activity): boolean =>

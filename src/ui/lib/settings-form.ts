@@ -16,8 +16,8 @@ import type { SettingsSection } from './settings-sections.js';
 import { isMac } from './shortcut-bindings.js';
 import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
-import { type RuleDraft, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
-import { limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom } from './settings-stages.js';
+import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
+import { limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
 import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
 
 export { emptyStage, type StageDraft } from './settings-stages.js';
@@ -283,7 +283,7 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(draft.rules, draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
@@ -317,6 +317,7 @@ const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
 export function toSettingsBody(draft: SettingsDraft): SettingsBody {
   const hour = limitFrom(draft.budgetHour);
   const day = limitFrom(draft.budgetDay);
+  const stageRenames = stageRenamesFrom(draft.stages); // #861: the server carries the renamed stages' tasks over
   return {
     hiveSource: draft.hiveSource, createIn: createInName(draft), // always sent (#846)
     prefix: draft.prefix.trim(),
@@ -326,10 +327,10 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     renames: renamesFrom(draft.sources), // always sent (#278), {} included
     // only the GitHub adapter logs in: with no GitHub source no auth is sent, and a saved one stays as the server has it
     ...(draft.sources.some((b) => b.type === 'github') ? { auth: { github: draft.auth } } : {}),
-    stages: draft.stages.map((c) => stageFrom(c, draft.sources)),
+    stages: draft.stages.map((c) => stageFrom(c, draft.sources)), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }),
     transitions: draft.transitions.map((d) => transitionFrom(d, draft.stages, draft.sources)), // #134: always sent, [] included
     budget: { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) },
-    usageRules: rulesFrom(draft.rules), language: draft.language, ...optional('branch', draft.branch),
+    usageRules: rulesFrom(renamedRuleDrafts(draft.rules, stageRenames)), language: draft.language, ...optional('branch', draft.branch),
     // always sent, '' included: optional() would omit the key and saveSettings would keep the old branch, so clearing the field could never work
     baseBranch: draft.baseBranch.trim(),
     onClose: draft.onClose, // always sent (#513)

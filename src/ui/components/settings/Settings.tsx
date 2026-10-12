@@ -13,6 +13,7 @@ import type { NewSource } from '@/lib/flow-sources';
 import { withMemoryCap } from '@/lib/memory-cap';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
+import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-stages';
 import { isRecording } from '@/lib/shortcut-bindings';
 import { WINDOW_CHROME } from '@/lib/window-chrome';
 import type { FilterOptions, GithubAuthStatus, ProjectSummary, SettingsInfo, SettingsResult, State } from '../../../types';
@@ -42,6 +43,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   const [saving, setSaving] = useState(false);
   const [github, setGithub] = useState<GithubAuthStatus>();
   const [confirm, setConfirm] = useState<'revert' | 'leave' | undefined>();
+  const [moves, setMoves] = useState<StageMove[] | undefined>(); // #861: where a save's deleted stages send their tasks, asked before the save
   const hasGithub = draft.sources.some((b) => b.type === 'github');
   const source = view.section === 'flow' ? draft.sources.find((b) => b.id === view.source) : undefined; // a removed or reverted row reads as the list
   const pageRef = useRef<HTMLDivElement>(null);
@@ -154,7 +156,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     if (draft.auth === 'cli') for (const row of draft.sources) if (row.type === 'github') void loadProjects(row); // api without a token lists nothing: the user connects first
   }, []);
 
-  async function save(): Promise<void> {
+  async function save(confirmed = false): Promise<void> {
     const problem = validateSettings(draft);
     if (problem) {
       setView({ section: problem.section });
@@ -163,10 +165,14 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
       if (transition !== undefined) setFocus((f) => ({ transition, n: (f?.n ?? 0) + 1 })); // a new n re-selects it after the user moved away
       return;
     }
+    const body = toSettingsBody(draft);
+    // #861: a deleted stage holding tasks asks first, naming how many go where; Cancel keeps the form as it is
+    const pending = confirmed ? [] : deletionMoves(draft.stages, info.config?.comb.stages ?? [], body.stages ?? [], state?.tasks ?? []);
+    if (pending.length > 0) { setMoves(pending); return; }
     setSaving(true);
     setSaveError(undefined);
     try {
-      const result = await postJson<SettingsResult>('/settings', toSettingsBody(draft));
+      const result = await postJson<SettingsResult>('/settings', body);
       // the viewer re-reads the menu bar settings now (#198); the save already went through, so a failure here is only a toast
       void window.hive?.settingsChanged().catch((err: Error) => toast.error(err.message));
       await onSaved(result);
@@ -214,6 +220,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
         </main>
       </div>
       <Confirm open={confirm !== undefined} onOpenChange={(open) => { if (!open) setConfirm(undefined); }} message={t('settings.discard.message')} confirmLabel={t('settings.discard.confirm')} onConfirm={discard} />
+      <Confirm open={moves !== undefined} onOpenChange={(open) => { if (!open) setMoves(undefined); }} message={deletionMessage(moves ?? [])} confirmLabel={t('settings.stages.deleteMoves.confirm')} onConfirm={() => void save(true)} />
     </div>
   );
 }

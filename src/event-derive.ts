@@ -88,9 +88,9 @@ function createdAt(task: Task, now: number): { source_created_at?: string } {
   return task.created ? { source_created_at: iso(now) } : {};
 }
 
-// A task that appeared, moved or left. A rename of sources swaps every id, which is neither (#278)
+// A task that appeared, moved or left. A rename of sources swaps every id and a rename of stages every stage name, which is neither (#278, #861)
 function taskRecords(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
-  if (event.type === 'renameSources') return [];
+  if (event.type === 'renameSources' || event.type === 'renameStages') return [];
   const before = new Map(prev.tasks.map((t) => [taskId(t), t]));
   const kept = new Set(next.tasks.map(taskId));
   const present = next.tasks.flatMap((task): RecordInput[] => {
@@ -198,6 +198,7 @@ function runKind(prev: State, worker: Worker, event: HiveEvent, activityId: stri
 /** The stage runs this reduction started (#742): each record whose stageRuns grew, with the run that took its activity. attempt is the count
  * the same reduce just wrote, so the derivation stays a function of its arguments. */
 export function startedRuns(prev: State, next: State, event: HiveEvent, now: number): StartedRun[] {
+  if (event.type === 'renameStages') return []; // #861: a rename re-keys stageRuns; it starts no run
   return next.activityRecords.flatMap((record) => {
     const before = recordOf(prev, record.id)?.stageRuns ?? {};
     const worker = next.workers.find((w) => occupied(w) && w.activityId === record.id && !w.freeSession);

@@ -71,3 +71,8 @@ export const consequenceLabel = (c: Consequence): string => {
   if (c.kind === 'signal') return t('settings.rules.effect.signal');
   return c.stage === '' ? t('settings.rules.effect.maxWorkers') : t('settings.rules.effect.stageWorkers', { stage: c.stage });
 };
+
+/** The rows with each stage cap under its stage's new name (#861): a row loaded under a name this save renames follows it, so the form neither
+ * refuses its own save nor sends an old name. Known ceiling: a row picked in the same save under a name that save renames away follows too. */
+export const renamedRuleDrafts = (rows: readonly RuleDraft[], renames: Record<string, string>): RuleDraft[] =>
+  rows.map((r) => (r.stage !== '' && Object.hasOwn(renames, r.stage) ? { ...r, stage: renames[r.stage] } : r));

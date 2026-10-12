@@ -159,9 +159,18 @@ test('a terminal whose activity went (its workspace removed, its task gone) leav
   assert.deepEqual(removed.effects.filter((e) => e.type === 'kill' || e.type === 'dropTerminalFiles'), [
     { type: 'kill', slug: 'workspace', ptyId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: SHELL_ID },
   ]);
-  const orphaned = { ...withShell({ asleep: true }), tasks: [] };
+  const shell = withShell({ asleep: true });
+  const orphaned = { ...shell, tasks: [], activities: shell.activities.map((a) => ({ ...a, worktreeGone: true as const })) }; // #861: a task activity with a worktree on disk is kept, so this one's is gone
   const gone = reduce(orphaned, { type: 'setMax', max: 1 });
   assert.deepEqual([gone.state.activities, gone.state.terminals, gone.effects], [[], [], [{ type: 'dropTerminalFiles', terminalId: SHELL_ID }]]);
+});
+
+test('a kept activity (its task gone, its worktree on disk) keeps no terminal: a live one killed, its files dropped, the activity stays (#861)', () => {
+  const shell = withShell({});
+  const kept = reduce({ ...shell, tasks: [] }, { type: 'setMax', max: 1 });
+  assert.equal(kept.state.activities.length, shell.activities.length);
+  assert.deepEqual(kept.state.terminals, []);
+  assert.deepEqual(kept.effects.filter((e) => e.type === 'kill' || e.type === 'dropTerminalFiles').map((e) => e.type), ['kill', 'dropTerminalFiles']);
 });
 
 test('boot opens on signals.onOpen: yellow, green or the saved signal under last; a saved red always opens red (#727)', () => {

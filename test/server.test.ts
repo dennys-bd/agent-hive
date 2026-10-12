@@ -18,6 +18,7 @@ import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '..
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
 import { sessionsOf, slugFor } from '../src/tasks.js';
 import { deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
+import { saveState } from '../src/state-store.js';
 import { createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import { CONTINUE_PROMPT } from '../src/server-spawn.js';
@@ -25,8 +26,8 @@ import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { renderPrompt } from '../src/spawn.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
+import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
 import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
@@ -1415,7 +1416,12 @@ test('GET /tasks/:id/bases lists the default, the other tasks that have a worktr
   const own = slugFor(task0(server).item); // #629: with no activity yet, the slug its title gives (the poll above renamed it)
   await mkdir(worktreePath(repo, own), { recursive: true });
   git.answers.listing = [main, at(own, 'hive/1-task-1'), at('hive-2-task-2', 'hive/2-task-2')].join('\n');
-  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] });
+  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), {
+    hasWorktree: false, defaultRef: 'origin/main', tasks: [{ ref: 'hive/2-task-2', id: '2', title: 'Task 2' }], local: ['feature-x'], remote: ['origin/feature-y'],
+    orphan: { worktree: true, branch: false },
+  }, '#861: no activity owns it: an orphan, with the lists a discard picks its base from');
+  await server.dispatch({ type: 'createActivity', taskId: 'board:I1' });
+  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] }, 'its activity adopts it');
   const unknown = await hiveFetch(`${base}/tasks/nope/bases`);
   assert.equal(unknown.status, 404);
   assert.deepEqual(await unknown.json(), { error: 'tarefa desconhecida' });
@@ -2710,4 +2716,60 @@ test('POST /rules/disable and /rules/enable (#297): a bad source, percent or unt
   const on = await postJson(`${base}/rules/enable`, { source: 'session', percent: 80 });
   assert.deepEqual([on.status, await json(on)], [200, { ok: true }]);
   assert.deepEqual(server.getState()?.disabledRules, []);
+});
+
+test('a save that renames a stage carries its tasks: the running one stays in it under the new name and its Stop ends the renamed stage through its transition (#861)', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, repo, server, workers } = await start(t, BODY, log);
+  const ptyId = worker0(server).runId!;
+  const renamed = { ...BODY, workspaces: workspacesAt(repo), stages: [{ ...STAGES[0], name: 'Spec' }], stageRenames: { fila: 'Spec' } };
+  assert.equal((await postJson(`${base}/settings`, onOwnStages(renamed))).status, 200);
+  assert.deepEqual([task0(server).stage, worker0(server).runId, work0(server)?.stageGone], ['Spec', ptyId, undefined]);
+  await markDone(server, ptyId);
+  assert.equal((await hookEvent(base, ptyId, { hook_event_name: 'Stop' })).status, 204);
+  assert.deepEqual(server.getState()?.tasks, [], 'the renamed stage ended and its transition took the task out');
+  assert.ok(lines.includes('INFO setColumn #board:I1 → In review ok'), lines.join('\n'));
+  assert.equal(workers.length, 1);
+});
+
+test('a boot whose config lost a stage the saved state uses places its task in the destination instead of stranding it (#861)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const parked: Task = { item: { itemId: 'board:I7', source: 'board', id: '7', title: 'Task 7', body: '', url: 'https://github.com/acme/r/issues/7' }, stage: 'gone', boardColumn: 'Nowhere', auto: false };
+  await saveState(home, { ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(BODY) })).status, 200);
+  assert.equal(server.getState()!.tasks.find((c) => c.item.itemId === 'board:I7')?.stage, 'fila', 'gone was last: fila comes before it');
+});
+
+test('a task that leaves with its worktree keeps its activity: GET /worktrees lists it as kept, and removing it lets the activity go (#861)', async (t) => {
+  const git = listedGit();
+  const { base, repo, server } = await ranOnce(t, { exec: git.exec });
+  await server.dispatch({ type: 'poll', source: 'board', items: [] });
+  await server.dispatch({ type: 'closeTask', taskId: 'board:I1' });
+  assert.deepEqual([server.getState()!.tasks.length, server.getState()!.activities.filter((a) => a.kind === 'task').length], [0, 1]);
+  const rows = await json<WorktreeRow[]>(hiveFetch(`${base}/worktrees`));
+  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept' });
+  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${TASK_SLUG}/remove`)), { removed: true });
+  assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');
+});
+
+test('POST /tasks/:id/start with discardOrphan removes what git holds for a task with no activity before it starts from the base; a refusal is a 409 with git\'s words and starts nothing (#861)', async (t) => {
+  const refs = ['refs/heads/feature-x', `refs/heads/${TASK_BRANCH}`]; // the task's branch is there, no worktree
+  const git = refsGit({ refs });
+  const { base, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true })), { ok: true });
+  const deleted = git.calls.findIndex((c) => c[0] === 'branch' && c[1] === '-d');
+  const added = git.calls.findIndex((c) => c[0] === 'worktree' && c[1] === 'add');
+  assert.ok(deleted >= 0 && deleted < added, 'the branch goes before the worktree is made');
+  assert.equal(workers.length, 1);
+  const refusing = refsGit({ refs });
+  const unmerged: Exec = async (file, args) => (args.includes('merge-base') ? Promise.reject(Object.assign(new Error('Command failed: git merge-base'), { code: 1 })) : refusing.exec(file, args));
+  const again = await start(t, idle(), undefined, {}, { exec: unmerged });
+  const res = await postJson(`${again.base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true });
+  assert.equal(res.status, 409);
+  assert.deepEqual(await res.json(), { error: `the branch '${TASK_BRANCH}' is not fully merged into HEAD`, code: DISCARD_FAILED });
+  assert.equal(again.workers.length, 0, 'nothing started');
 });

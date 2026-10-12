@@ -84,9 +84,9 @@ test('draftFrom fills every field as strings from a github config, and defaults 
   assert.deepEqual(github.commands.map((c) => ({ ...withoutId(c), env: c.env.map(withoutId), impls: c.impls.map(withoutId) })), [
     { name: 'Run Frontend', impls: [{ workspace: github.workspaces[0].id, command: FRONT_LINE }], menu: true, env: [{ name: 'PORT', value: '5173' }, { name: 'HOST', value: 'localhost' }], timeout: '' },
   ], 'comb.commands over the workspace rows: env as rows, in order, each line\'s workspace as a row id (#300, #348, #511, #755)');
-  assert.deepEqual(withoutId(github.stages[0]), { name: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+  assert.deepEqual(withoutId(github.stages[0]), { name: 'spec', savedName: 'spec', session: 'new', model: 'opus', agent: '', from: { [work.id]: ['Backlog'] }, onStart: {}, gate: false, verdicts: [], prompt: '/hive-spec {url}', action: '', after: '', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.equal(github.stages[1].session, 'continue');
-  assert.deepEqual(withoutId(github.stages[2]), { name: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
+  assert.deepEqual(withoutId(github.stages[2]), { name: 'done', savedName: 'done', session: 'new', model: '', agent: '', from: { [work.id]: ['Done'] }, onStart: {}, gate: false, verdicts: [], prompt: '', action: 'deleteActivity', after: '5d', approval: false, handoff: false, maxWorkers: '', commands: [], stopOnFailure: true, onMissing: 'fail', ciChecks: 'required', checks: [], rerunOnce: false, timeout: '60m' });
   assert.notEqual(github.stages[0].id, github.stages[1].id, 'each row gets its own id');
   assert.deepEqual([github.language, github.budgetHour, github.budgetDay], ['pt', '50000', '']);
   assert.equal(github.baseBranch, 'develop');
@@ -657,4 +657,14 @@ test('the form no longer judges a memory total limit; withMemoryCap sets the cap
   assert.deepEqual(next.workspaces.map((w) => w.memoryCap), ['6000', '4000']);
   assert.equal(next.workspaces[1], web, 'another row is the same object');
   assert.deepEqual(two.workspaces.map((w) => w.memoryCap), ['4000', '4000'], 'the draft given is not changed');
+});
+
+test('a renamed stage sends stageRenames and its stage rules under the new name; nothing renamed sends no key (#861)', () => {
+  const saved = draftFrom(info({ ...CONFIG, usageRules: [{ source: 'hour', percent: 50, maxWorkers: 1, stage: 'dev' }] }));
+  assert.equal('stageRenames' in toSettingsBody(saved), false);
+  const renamed = { ...saved, stages: saved.stages.map((s) => (s.name === 'dev' ? { ...s, name: 'build' } : s)) };
+  assert.equal(validateSettings(renamed), undefined, 'the rule follows the rename: no unknown stage');
+  const body = toSettingsBody(renamed);
+  assert.deepEqual(body.stageRenames, { dev: 'build' });
+  assert.deepEqual(body.usageRules, [{ source: 'hour', percent: 50, maxWorkers: 1, stage: 'build' }]);
 });

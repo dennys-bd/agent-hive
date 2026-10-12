@@ -2,7 +2,7 @@ import { type KeyboardEvent, useCallback, useContext, useEffect, useId, useRef, 
 import { activityOf, workIdOf } from '../../activities';
 import { startMode } from '../../task-runs';
 import { canOpenSession, defaultSession, HIVE_SOURCE, stageOf } from '../../tasks';
-import type { AgentId, Task, OpenResult, State } from '../../types';
+import { DISCARD_FAILED, type AgentId, type Task, type OpenResult, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { DefaultAgentContext } from '@/components/NewRunButton';
 import { TaskPicker } from '@/components/TaskPicker';
@@ -186,11 +186,11 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
       else onStarted?.(itemId);
       onActivity?.(itemId);
       onClose();
-    }, (err: Error) => {
+    }, (err: Error & { code?: string }) => {
       // closed while it was on its way: a task created here that never started goes, as a cancel would have removed it
       if (done.current) { if (isCreated) void act(`${taskPath(itemId)}/close`); return; }
       setPending(false);
-      setError(err.message);
+      setError(err.code === DISCARD_FAILED ? `${t('start.orphan.failed')}\n${err.message}` : err.message); // #861: git's words under the dialog's own heading
     });
   };
   useAutoStart(held.awaiting, task, isBlocked || pending || done.current, () => { held.clearAwaiting(); submit(); });
@@ -234,7 +234,7 @@ export function StartDialog(props: StartDialogProps) {
         <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
         <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
         {mode === 'stages' ? <StagesBox task={task} stages={state.stages} /> : <FreeFields id={id} task={task} state={state} session={session} agent={agent} onSession={setSession} onAgent={setAgent} />}
-        {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
+        {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>
           <SetupSubmit

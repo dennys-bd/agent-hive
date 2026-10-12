@@ -759,3 +759,11 @@ test('isStarted: a task with a live activity is started, whatever made it (a run
   assert.equal(isStarted(withWork(initialState(0), 'item1'), t1), true);
   assert.equal(isStarted(withKeptRecord(initialState(0), 'item1', 'old'), t1), false, 'a deleted activity\'s record alone: new again');
 });
+
+test('worktreeRows: a worktree whose kept activity has no task in the flow is kept, not noTask; another workspace\'s slug is still noTask (#861)', () => {
+  const row = { slug: 'hive-9-gone', path: '/r/.hive/worktrees/hive-9-gone', branch: 'hive/9-gone' };
+  const kept = withWork({ ...initialState(0), workspaces: ['hive', 'site'] }, 'board:item9', { slug: 'hive-9-gone', worktree: row.path });
+  const state = { ...kept, stages: STAGES, deleteActivity: DELETE_ACTIVITY_DEFAULTS };
+  assert.deepEqual(worktreeRows([row], state, 'hive'), [{ ...row, workspace: 'hive', orphan: 'kept' }]);
+  assert.equal(worktreeRows([row], state, 'site')[0].orphan, 'noTask');
+});

@@ -5,7 +5,7 @@ import { activityOf, resultOf, withActivity } from '../src/activities.js';
 import { sessionsOf } from '../src/tasks.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, SourceItem, Task, Effect, State, Item } from '../src/types.js';
-import { APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT } from '../src/types.js';
+import { APPROVAL_HOLD_MAX_MIN, APPROVAL_MINUTES_DEFAULT, STAGE_GONE } from '../src/types.js';
 import { move, chained } from './fakes.js';
 import { workId } from './fixtures/work.js';
 
@@ -323,3 +323,9 @@ test('an armed shutdown-when-done never closes a held worker: it waits for the w
   assert.deepEqual(types(expired.effects), ['release', 'kill', 'shutdown']);
 });
 
+
+test('a save that deletes the stage a Stop is held in ends that run now with no decision and halts the task in its destination: no approve can fire the new stage\'s transitions (#861)', () => {
+  const { state, effects } = reduce(held(), { type: 'setStages', ...chained([STAGES[1], STAGES[2]]) });
+  assert.deepEqual(types(effects).filter((t) => t === 'release' || t === 'kill'), ['release', 'kill']);
+  assert.deepEqual([task(state)?.stage, task(state)?.error, task(state)?.approval, state.workers[0].status], ['dev', `${STAGE_GONE}spec`, undefined, 'empty']);
+});

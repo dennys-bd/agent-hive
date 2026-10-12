@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, localActivityId, pruneRecords, prsOf, recordOf, recordsOf, resultOf, usageOf } from '../src/activities.js';
+import { activityOf, localActivityId, pruneRecords, pruneWork, prsOf, recordOf, recordsOf, resultOf, usageOf } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
-import type { Item, State, Task } from '../src/types.js';
+import type { Activity, Item, State, Task } from '../src/types.js';
 import { activityIdOf, withKeptRecord, withLocal, withWork } from './fixtures/work.js';
 
 const item = (n: number): Item => ({ itemId: `board:item${n}`, id: String(n), title: `Task ${n}`, body: '', url: '', source: 'board' });
@@ -49,4 +49,15 @@ test('pruneRecords drops a record once no live activity has its id and its task 
   assert.equal(pruneRecords(state), state, 'nothing to prune: the same state');
   const left = { ...state, tasks: [task(2)] };
   assert.deepEqual(pruneRecords(left).activityRecords.map((r) => r.id).sort(), [activityIdOf('board:item2'), localActivityId('hive')].sort());
+});
+
+test('pruneWork keeps a task activity whose tasks all left while its worktree is on disk and nothing runs, deletes or checks out there; otherwise it goes with its record (#861)', () => {
+  const left = (work: Partial<Activity>): State => withWork(base([]), ID, work);
+  const kept = left({ worktree: '/w/1' });
+  assert.equal(pruneWork(kept), kept, 'kept: the same state');
+  const gone: [string, Partial<Activity>][] = [['no worktree', {}], ['worktreeGone', { worktree: '/w/1', worktreeGone: true }], ['a run', { worktree: '/w/1', workerId: 'w1' }], ['deleting', { worktree: '/w/1', deleting: true }], ['the checkout', { worktree: '/repo', local: true }]];
+  for (const [why, work] of gone) {
+    const pruned = pruneWork(left(work));
+    assert.deepEqual([pruned.activities, pruned.activityRecords], [[], []], why);
+  }
 });

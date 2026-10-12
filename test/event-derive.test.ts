@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { correlationOf, deriveEvents, endedStageRuns, signalRecords } from '../src/event-derive.js';
 import { textRef, type RecordInput, type RunKind } from '../src/events.js';
+import { renameStages } from '../src/stage-rename.js';
 import { initialState } from '../src/orchestrator.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { HiveEvent, HookPayload, Item, State, Task, UsageRule, Worker } from '../src/types.js';
@@ -218,4 +219,10 @@ test('a start a dirty local checkout refused is run.spawn_failed code=checkout_d
   const busy = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' });
   const refused: HiveEvent = { type: 'spawnFailed', ptyId: PTY, message: '/repo has changes that are not committed:\n M src/app.ts\n?? notes.md' };
   assert.deepEqual(only(deriveEvents(busy, idle, refused, NOW), 'run.spawn_failed'), [{ event: 'run.spawn_failed', level: 'error', ...IDS, code: 'checkout_dirty' }]);
+});
+
+test('renameStages derives no task.moved and no stage.started: a rename moves nothing and starts nothing (#861)', () => {
+  const prev = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' }, { stageRuns: { dev: 1 } });
+  const event: HiveEvent = { type: 'renameStages', renames: { dev: 'build' } };
+  assert.deepEqual(deriveEvents(prev, renameStages(prev, event.renames), event, NOW), []);
 });

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, taskOfWorker } from '../src/activities.js';
+import { activityOf, taskOfWorker, withActivity } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
-import { SIGNALS_DEFAULTS, type Item, type Signal, type SignalBehaviour, type SignalSettings, type State, type Task, type Transition } from '../src/types.js';
+import { SIGNALS_DEFAULTS, STAGE_GONE, type Item, type Signal, type SignalBehaviour, type SignalSettings, type State, type Task, type Transition } from '../src/types.js';
 import { chained, move } from './fakes.js';
 import { withWork, workId } from './fixtures/work.js';
 
@@ -196,11 +196,13 @@ test('a start by hand runs a commands stage past red and over a full cap, in a d
   assert.deepEqual(r.state.workers.map((w) => [w.status, w.draining]), [['working', undefined], ['working', true]]);
 });
 
-test('a save that removes a running commands stage frees the run\'s worker with its task and activity (#755, #727)', () => {
+test('a save that deletes a running commands stage moves its task with the run marked stageGone; the run\'s end halts the task and frees its worker (#755, #727, #861)', () => {
   const { state } = filled(hive('green', [waiting(1, 'checks')], { stages: CHECKS }));
   assert.equal(state.workers[0].status, 'working');
-  const removed = reduce(state, { type: 'setStages', ...chained([{ name: 'review', from: { board: ['In review'] } }]) }).state;
-  assert.deepEqual([removed.tasks.length, removed.activities.length, removed.workers[0].status], [0, 0, 'empty']);
+  const moved = reduce(state, { type: 'setStages', ...chained([{ name: 'review', from: { board: ['In review'] } }]) }).state;
+  assert.deepEqual([moved.tasks[0].stage, activityOf(moved, 'board:item1')?.stageGone, moved.workers[0].status], ['review', 'checks', 'working']);
+  const r = ended(moved, 0);
+  assert.deepEqual([activityOf(r.state, 'board:item1')?.error, r.state.workers[0].status], [`${STAGE_GONE}checks`, 'empty']);
 });
 
 test('a commands run\'s start, verdict and stop never mutate the state they are given (#727)', () => {
@@ -242,4 +244,12 @@ test('always and never ignore the tree: always starts a standalone task, never n
   const always = hive('yellow', [waiting(4, 'build')], { signals: row('yellow', { newTasks: 'always' }), stages: TREE_STAGES });
   assert.deepEqual(spawned(filled(always)), ['4']);
   assert.deepEqual(spawned(filled(begun(tree(linked(2, 'goal', { parent: ROOT }), row('yellow', { newTasks: 'never' })), 2))), []);
+});
+
+test('a commands run whose stage was deleted (stageGone) routes no verdict at its end: the run goes, its worker frees and the task halts (#861)', () => {
+  const { state } = filled(hive('green', [waiting(1, 'checks')], { stages: CHECKS }));
+  const marked = withActivity(state, { ...activityOf(state, 'board:item1')!, stageGone: 'old' });
+  const r = ended(marked, 0);
+  const work = activityOf(r.state, 'board:item1');
+  assert.deepEqual([r.state.tasks[0].stage, work?.error, work?.commands, work?.stageGone, r.state.workers[0].status], ['checks', `${STAGE_GONE}old`, undefined, undefined, 'empty']);
 });

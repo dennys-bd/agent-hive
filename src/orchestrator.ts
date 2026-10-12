@@ -25,6 +25,8 @@ import { captureSession, dropOrphanTerminals, forgetTerminal, sleepTerminal, wak
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
+import { renameStages } from './stage-rename.js';
+import { placeVanished } from './vanished-stages.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
 
@@ -160,6 +162,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
     case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks go missing at the next poll
     case 'renameSources': return none(renameSources(state, event.renames)); // a save that renamed sources (#278): no fill; setSources and the poll follow
+    case 'renameStages': return none(renameStages(state, event.renames)); // #861: no fill; setStages follows, and a running task reads its renamed stage at once
     case 'start': return start(state, event.itemId, event.base, event.workspace, event.local); // no fill: nothing loosened, so nothing else could open
     case 'continue': return continueStage(state, recordTaskId(state, event.activityId)); // no fill: nothing loosened (#283); a deleted activity's record too (#629)
     case 'restarting': return restarting(state, liveTaskId(state, event.activityId)); // no fill: a mark only (#283)
@@ -382,17 +385,13 @@ function awaitGate(state: State, task: Task): State {
   const born = ensureActivity(state, task);
   return born ? withActivity(born.state, { ...born.activity, approval: { since: new Date().toISOString() } }) : state;
 }
-// A stopped task whose stage vanished has nowhere to be shown or run: a polled one is dropped and the next poll re-enters it through a
-// `from` if the source still has it; a local one (#132) has no source to come back from, so it enters the first stage instead. A running
-// one keeps its worker and leaves at its Stop (unknown stage: no write, no next). A stage turned into deleteActivity acts now.
+// The tasks of a stage the save removed go where destinationOf says (#861, vanished-stages.ts): a stopped one enters its destination through
+// settleEntries and the gates, keeping its activity; one a run holds is placed with no entry and halts at its run's end. A stage turned into
+// deleteActivity acts now.
 function setStages(state: State, stages: Stage[], transitions: Transition[]): Reduced {
-  const [first] = stages;
-  const tasks = state.tasks.flatMap((c) => {
-    if (activityOf(state, taskId(c))?.workerId !== undefined || stageOf(stages, c.stage) !== undefined) return [c];
-    return c.created && first ? [enter(c, first)] : [];
-  });
-  const staged = settleEntries(state.tasks, { ...state, stages, transitions, tasks });
-  return runActions(staged.tasks.reduce(awaitGate, staged));
+  const placed = placeVanished(state, stages);
+  const staged = settleEntries(placed.before, { ...placed.state, stages, transitions });
+  return runActions(staged.tasks.reduce(awaitGate, staged), placed.effects);
 }
 
 // The Comb's workspaces, each source's default and each workspace's command names, from the config on every save (#179, #180, #300).
@@ -567,8 +566,10 @@ function finish(state: State, ptyId: string, end: EndOf = { trigger: 'done' }): 
 
 // A Stop after hive_done (#268, #692, #134): its verdict when it gave one, else done. An approval stage waits for the user, unless the verdict
 // has a transition of its own or what just ended is the handoff a transition asked for; then the handoff the destination asks for comes first.
+// #861: a run whose stage was deleted under it asks for no approval, handoff or checkpoint: finish's advance halts the task with STAGE_GONE
 function endStage(state: State, ptyId: string, task: Task | undefined): Reduced {
   if (!task) return finish(state, ptyId);
+  if (activityOf(state, taskId(task))?.stageGone !== undefined) return finish(state, ptyId);
   return capturedFirst(state, task, stageEnd(state, ptyId, task)); // #619: whatever the end emits, the checkpoint that ended is captured first
 }
 

@@ -153,6 +153,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'itemRead': return `itemRead source=${event.source} #${event.itemId}${event.entry ? ` column=${event.entry.column}` : ' unlisted'}`; // #686: never a title
     case 'blockerSet': return `blockerSet #${event.itemId} ${event.change.action} ${event.change.kind}=${event.change.ref}`; // #56: ids only, never a title
     case 'setSources': return `setSources ${event.sources.join(',')}`;
+    case 'renameStages': return `renameStages ${Object.entries(event.renames).map(([from, to]) => `${from}→${to}`).join(',')}`; // #861
     case 'renameSources': return `renameSources ${Object.entries(event.renames).map(([from, to]) => `${from}→${to}`).join(',')}`;
     case 'sourceQuota': return `sourceQuota source=${event.source} remaining=${event.quota.remaining}/${event.quota.limit} resetsAt=${event.quota.resetsAt}`;
     case 'hook': {

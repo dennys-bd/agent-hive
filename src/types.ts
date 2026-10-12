@@ -439,6 +439,9 @@ export const CHECKS_FAILED = 'checks failed: ';
 /** How a failed start begins on its activity's error (#945), the spawn's raw message after it: the page shows its spawnFailureCode's short
  * message in the viewer's language, the raw text only behind details. State.error keeps the raw message. */
 export const SPAWN_FAILED = 'start failed: ';
+/** The code POST /tasks/:id/start answers with when git refuses to discard a task's orphan worktree or branch (#861): the dialog heads git's words
+ * with its own line. */
+export const DISCARD_FAILED = 'discard_failed';
 /** One CI check on a PR's last commit as a wait for CI reads it (#834): #758's PrCheck (success, failure or pending; url: its page), with the
  * PR it was read on and, for a check run, the Actions run behind it: what a re-run and the log fetch name. */
 export interface CiCheck extends PrCheck { pr: string; runId?: number }
@@ -492,6 +495,9 @@ export const FIXED_VERDICTS = ['passed', 'failed'] as const;
 export const NO_TRANSITION = 'no transition: ';
 /** How a transition whose tries ran out starts on its activity's error (#134): `verdict:failed · 3`, the exit and the limit. */
 export const TRIES_OUT = 'tries out: ';
+/** How a task halted because the stage its run started in was deleted, or its stage is unknown, starts on its activity's error (#861), that
+ * stage's name after it: the card shows it in the viewer's language. */
+export const STAGE_GONE = 'stage gone: ';
 /** What a transition tells its destination's next run (#134): the composed, rendered prompt and the session it resumes; none = a new one. */
 export interface Handover { prompt: string; sessionId?: string }
 
@@ -556,6 +562,7 @@ export interface Activity {
   tryLog?: TryRecord[]; // #915: the tries behind tries, oldest first; dropped wherever tries is
   freeSessionStage?: string; // #812: the stage a free run last started in; continue is not offered there until a stage run starts or the task enters a stage again
   checkpoints?: Checkpoint[]; // #619: in capture order; absent when none. Goes with the activity's delete
+  stageGone?: string; // #861: the deleted stage the running worker or stage action started in: its end ends no stage and the task halts with STAGE_GONE. Cleared wherever stopped is set or a stage is entered; never persisted (a boot ends the run it marks)
 }
 
 /** How a checkpoint ended (#619): its stage's hive_done, a Restart, or a restore that replaced it. */
@@ -1302,6 +1309,7 @@ export type HiveEvent =
   | { type: 'pollFailed'; source: string; message: string } // that source's listItems rejected (#180): its tasks stay as they are
   | { type: 'setSources'; sources: string[] } // like setWorkspaces: the Comb's sources, from the config on every save (#180)
   | { type: 'renameSources'; renames: Record<string, string> } // a save that renamed sources (#278): old name → new name, one simultaneous map; dispatched first by reconfigure
+  | { type: 'renameStages'; renames: Record<string, string> } // #861: a save that renamed stages: old name → new name, one simultaneous map; dispatched by reconfigure after renameSources, before setStages
   | { type: 'hook'; ptyId: string; payload: HookPayload; branch?: string; tokens?: number; title?: string } // tokens and title: the server's turn-end read (#248, #489)
   | { type: 'exit'; ptyId: string }
   | { type: 'stop'; ptyId: string; close?: CloseAction; cause?: 'manual' | 'all' } // the only way a user ends a run (#283): a stage run leaves its task stopped; the worker frees on the exit. close: hive_stop's reason (#314), written to the task's item after the kill. cause: the sleep it is (#672), absent for hive_stop and a command's timeout
@@ -1387,6 +1395,7 @@ export interface BaseOptions {
   tasks: { ref: string; id: string; title: string }[]; // other tasks' branches, only those with a worktree
   local: string[]; // other local branches, minus the default's and the tasks' branches
   remote: string[]; // `origin/*`, minus `origin/HEAD` and the default
+  orphan?: { worktree: boolean; branch: boolean }; // #861: only for a task with no activity whose slug git holds a worktree or a branch for: the dialog offers reuse or discard, and the lists are filled for a discard's base
   needsWorkspace?: true; // the task resolves to no workspace: the popup asks for one first, the lists are empty (#179)
 }
 
@@ -1397,7 +1406,7 @@ export interface WorktreeRow {
   path: string;
   branch: string | null; // what git lists checked out there; null = detached
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
-  orphan?: 'noTask' | 'deleteActivityFailed';
+  orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
 }
 
 /** How a copy's first run starts (#587): the source session resumed as a new one (--fork-session) and the notice as its first prompt when asked. */
@@ -1532,6 +1541,9 @@ export interface SettingsBody {
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */
   renames?: Record<string, string>;
+  /** Saved stage name → new name (#861). The form sends it only when a stage was renamed; an API caller that omits it renames nothing. Never
+   * written to hive.config.json. */
+  stageRenames?: Record<string, string>;
 }
 
 export interface SettingsResult {
