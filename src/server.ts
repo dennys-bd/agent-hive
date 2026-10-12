@@ -812,7 +812,16 @@ export function createServer(deps: ServerDeps): HiveServer {
   // worker goes on. Empty 204 = no decision; the one exception is a Stop whose dispatch decided to continue in place: 200 with the JSON, or one held for approval (#268).
   app.post('/hooks/event', async (req: Request, res: Response) => {
     const ptyId = req.header('x-hive-pty');
-    const raw = req.body as HookPayload | undefined;
+    const body = req.body as HookPayload | undefined;
+    // #928: the worker's own agent's runner makes its hook the reducer's before anything reads it; an unknown pty reads as
+    // LEGACY_RUN_AGENT (Claude), whose payload goes through unchanged
+    const agent = ranAgent((ptyId === undefined ? undefined : workerOf(ptyId)) ?? {});
+    const raw = ptyId && body?.hook_event_name ? runners[agent].hookPayload(body) : body;
+    if (raw === undefined && body?.hook_event_name) { // dropped by the runner: a subagent's hook, Codex's SessionEnd
+      log.debug(`hook ignored: ${agent} ${body.hook_event_name}`);
+      res.status(HTTP_NO_CONTENT).end();
+      return;
+    }
     const payload = ptyId && raw?.hook_event_name ? scopeTranscript(ptyId, raw) : raw;
     // Computed once against the worker as it stands: a subagent/teammate Stop, StopFailure or SessionEnd must not read the transcript, same as the reducer ignores it (#24, #805)
     const isChild = ptyId !== undefined && payload !== undefined && isChildSession(workerOf(ptyId), payload);
