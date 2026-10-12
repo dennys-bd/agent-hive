@@ -3,7 +3,8 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { ExecutionSection } from '@/components/settings/ExecutionSection';
 import { setLanguage, t } from '@/i18n';
 import { draftFrom } from '@/lib/settings-form';
-import { type AgentAvailability, DELETE_ACTIVITY_DEFAULTS } from '../../src/types';
+import { agentName } from '../../src/agents';
+import { AGENT_IDS, type AgentAvailability, DELETE_ACTIVITY_DEFAULTS } from '../../src/types';
 
 beforeEach(() => setLanguage('pt'));
 
@@ -112,3 +113,14 @@ test('sessões e espera: its hint, the table of situations with every control un
   ]);
 });
 
+
+test('the default agent card holds one arguments field per agent, named after it, each with its hint, and editing one sends its text (#924)', () => {
+  const onChange = vi.fn();
+  render(<ExecutionSection draft={draftFrom(undefined)} agents={FOUND} onChange={onChange} onOpenFlow={vi.fn()} />);
+  const card = screen.getByRole('region', { name: t('settings.defaultAgent') });
+  for (const agent of AGENT_IDS) expect(within(card).getByLabelText(t('settings.agentArgs', { agent: agentName(agent) }))).toBeInTheDocument();
+  expect(within(card).getAllByRole('textbox')).toHaveLength(AGENT_IDS.length);
+  expect(within(card).getAllByText(t('settings.agentArgs.hint'))).toHaveLength(AGENT_IDS.length);
+  fireEvent.change(within(card).getByLabelText(t('settings.agentArgs', { agent: 'claude' })), { target: { value: '--verbose' } });
+  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose' } });
+});

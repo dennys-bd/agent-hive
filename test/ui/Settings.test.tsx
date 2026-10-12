@@ -747,3 +747,20 @@ test('a save that deletes a stage holding tasks asks first, naming how many go w
   await user.click(within(dialog).getByRole('button', { name: t('settings.stages.deleteMoves.confirm') }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
 });
+
+test('execução shows the saved Claude arguments one per line, and the save sends agentArgs with one argument per non-blank line, as typed (#924)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={{ ...info, config: { ...info.config!, agentArgs: { claude: ['--permission-mode', 'auto'] } } }} onSaved={vi.fn()} />);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
+
+  await open(user, 'execution');
+  const field = screen.getByLabelText(t('settings.agentArgs', { agent: 'claude' }));
+  expect(field).toHaveValue('--permission-mode\nauto');
+  await user.clear(field);
+  await user.type(field, '--model{Enter}{Enter}opus 4{Enter}  ');
+  await user.click(screen.getByRole('button', { name: t('settings.save') }));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
+  const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { agentArgs: Record<string, string[]> };
+  expect(body.agentArgs).toEqual({ claude: ['--model', 'opus 4'] });
+});

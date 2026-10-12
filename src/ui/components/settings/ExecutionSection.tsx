@@ -7,9 +7,11 @@ import { WorkspaceBases } from '@/components/settings/WorkspaceBases';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import type { SettingsDraft } from '@/lib/settings-form';
-import type { AgentAvailability, DeleteActivityScope } from '../../../types';
+import { agentName } from '../../../agents';
+import { AGENT_IDS, type AgentAvailability, type DeleteActivityScope } from '../../../types';
 
 interface ExecutionSectionProps { draft: SettingsDraft; agents: readonly AgentAvailability[]; onChange(patch: Partial<SettingsDraft>): void; onOpenFlow(): void }
 
@@ -47,6 +49,24 @@ function DeleteActivitySwitches({ scope, onChange }: DeleteActivitySwitchesProps
 // #516: the agent a stage runs when it picks none. One boot did not find stays selectable as saved, with a muted note: its runs are refused.
 // #778: a low full-width band, the select beside its hint, since one select does not deserve a tall card. flush and a padded grid, so
 // SettingsGroup gains no prop for it.
+// #924: each agent's own arguments under the default agent, one per line, so a value with spaces stays one argument
+function AgentArgsFields({ draft, onChange }: Pick<ExecutionSectionProps, 'draft' | 'onChange'>) {
+  return (
+    <div className="flex flex-col gap-3 border-t px-5 py-4">
+      {AGENT_IDS.map((agent) => (
+        <div key={agent} className={FIELD}>
+          <Label htmlFor={`settings-agent-args-${agent}`} className={FIELD_LABEL}>{t('settings.agentArgs', { agent: agentName(agent) })}</Label>
+          <Textarea
+            id={`settings-agent-args-${agent}`} rows={3} className="font-mono" value={draft.agentArgs[agent]}
+            onChange={(e) => onChange({ agentArgs: { ...draft.agentArgs, [agent]: e.target.value } })}
+          />
+          <p className="text-muted-foreground text-xs">{t('settings.agentArgs.hint')}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DefaultAgentGroup({ draft, agents, onChange, onOpenFlow }: ExecutionSectionProps) {
   const missing = agents.some((a) => a.agent === draft.defaultAgent && !a.available);
   return (
@@ -64,6 +84,7 @@ function DefaultAgentGroup({ draft, agents, onChange, onOpenFlow }: ExecutionSec
           {missing && <p className="text-muted-foreground text-xs">{t('settings.defaultAgent.missing', { agent: draft.defaultAgent })}</p>}
         </div>
       </div>
+      <AgentArgsFields draft={draft} onChange={onChange} />
     </SettingsGroup>
   );
 }
