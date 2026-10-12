@@ -1,7 +1,7 @@
 import { MessageCircleIcon } from 'lucide-react';
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
-import type { DesignTarget, UnpinnedDesignAnchor } from '../../types';
+import type { DesignTarget, DesignViewport, UnpinnedDesignAnchor } from '../../types';
 import { DesignComposer, saveComment } from '@/components/DesignComposer';
 import { composerStyle, DesignPins } from '@/components/DesignPins';
 import { DesignComments, TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
@@ -228,7 +228,7 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
-interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: number; theme: DesignTheme }
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: DesignViewport; theme: DesignTheme }
 
 // The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
 function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: OverlayProps) {
@@ -239,7 +239,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: O
   const pin = nextPin(model);
   // The composer closes once the server took the comment; a refusal keeps it open with its text
   const save = (isSend: boolean) => (text: string): void => {
-    if (target !== undefined) void saveComment(model, anchorOf(target), text, isSend).then((isTaken) => { if (isTaken) canvas.close(); });
+    if (target !== undefined) void saveComment(model, anchorOf(target), text, isSend).then((isTaken) => { if (isTaken) canvas.closeIf(target); });
   };
   return (
     <>
@@ -273,17 +273,15 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
     postTheme(frame.current, theme); // the frame forgets the theme on every load
     if (reloads.take()) setReloadedAt(new Date());
   }) ?? width * FRAME_ASPECT;
-  const pickTheme = (next: DesignTheme): void => {
-    setTheme(next);
-    postTheme(frame.current, next);
-  };
+  // An aimed rect was measured in the other theme or viewport: either change drops the composer
+  const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
   };
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
       <DesignBar
-        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={setViewport} onTheme={pickTheme}
+        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={(next) => { setViewport(next); marks.close(); }} onTheme={pickTheme}
         comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
       <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">

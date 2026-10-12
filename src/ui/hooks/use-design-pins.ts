@@ -68,9 +68,9 @@ export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas
   // After an item's scroll-to, the bridge scrolls the design's inner scrollers and answers pins; then the canvas centres that pin
   useEffect(() => {
     const id = scrolling.current;
-    if (id === undefined || !rects.has(id)) return;
-    scrolling.current = undefined;
-    pinElement(canvas.current, id)?.scrollIntoView({ block: 'center' }); // a null rect drew no pin: nothing scrolls
+    if (id === undefined) return;
+    scrolling.current = undefined; // the bridge answers every scroll-to with pins (#112): disarmed there, so a later scroll never yanks the canvas
+    if (rects.has(id)) pinElement(canvas.current, id)?.scrollIntoView({ block: 'center' }); // a null rect drew no pin: nothing scrolls
   }, [canvas, rects]);
   const reload = (): void => {
     setRects(new Map()); // until the new load answers, no pin is drawn and no item reads removed
@@ -87,7 +87,7 @@ export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas
 /** What a design pane's comments show and do (#114). takeKey: c and Escape, from the pane's keydown or the bridge's key message; true: taken. */
 export interface CommentCanvas {
   isCommenting: boolean; target?: DesignTarget; selection?: CommentSelection; tab: CommentTab; isPanelShown: boolean;
-  toggle(): void; takeKey(key: string): boolean; aim(target: DesignTarget): void; close(): void;
+  toggle(): void; takeKey(key: string): boolean; aim(target: DesignTarget): void; close(): void; closeIf(aimed: DesignTarget): void;
   setTab(next: CommentTab): void; setPanelShown(shown: boolean): void; selectItem(id: string): void; selectPin(id: string): void;
 }
 
@@ -106,7 +106,7 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
   };
   // Esc closes the composer first, then the mode
   const takeKey = (key: string): boolean => {
-    if (key === 'c' && model !== undefined) toggle();
+    if (key.toLowerCase() === 'c' && model !== undefined) toggle(); // Caps Lock's C too; the pane's keydown already refuses shift
     else if (key === 'Escape' && target !== undefined) setTarget(undefined);
     else if (key === 'Escape' && isCommenting) setCommenting(false);
     else return false;
@@ -122,6 +122,7 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
     isCommenting, target, selection, tab, isPanelShown, toggle, takeKey, selectPin, setTab, setPanelShown,
     aim: (next) => { if (isCommenting) setTarget(next); }, // a new anchor re-aims an open composer, its text kept
     close: () => setTarget(undefined),
+    closeIf: (aimed) => setTarget((now) => (now === aimed ? undefined : now)), // a slow save must not close a composer re-aimed meanwhile
     selectItem: (id) => setSelection({ id, isFromPin: false }),
   };
 }

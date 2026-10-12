@@ -105,3 +105,23 @@ test('an empty text disables both buttons and both keys; esc closes the composer
   await user.keyboard('{Escape}'); // the closed composer handed the focus back to the pane
   expect(toggle()).toHaveAttribute('aria-pressed', 'false');
 });
+
+test('a viewport change drops the composer, and a slow adicionar never closes a composer re-aimed meanwhile (#114)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  await user.click(toggle());
+  anchor(ELEMENT);
+  await user.click(screen.getByRole('radio', { name: 'mobile' }));
+  expect(composer()).toBeNull(); // its rect was measured at 1280 px
+  await user.click(screen.getByRole('radio', { name: 'desktop' }));
+  let answer: (response: Response) => void = () => undefined;
+  const inner = globalThis.fetch;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+    (String(input) === '/tasks/I1/review/drafts' ? new Promise<Response>((resolve) => { answer = resolve; }) : inner(input, init))));
+  anchor(ELEMENT);
+  await user.type(field(), 'first{Enter}');
+  anchor(AREA);
+  answer(new Response(JSON.stringify({ id: 'd9' }), { status: 200 }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'adicionar' })).toBeEnabled());
+  expect(within(composer()!).getByText('área · 320×180')).toBeInTheDocument();
+});
