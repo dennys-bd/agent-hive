@@ -93,7 +93,7 @@ test('a kept terminal puts the shim dir before the workspace\'s PATH, or before 
 test('POST /tasks/:id/open with kind terminal opens a Terminal through openTerminal and answers its pty id; the retired kind shell is 400 and opens nothing (#570)', async (t) => {
   const { base, server, workers } = await start(t);
   const bad = await postJson(`${base}/tasks/${TASK}/open`, { kind: 'shell' });
-  assert.deepEqual([bad.status, await bad.json(), workers.length], [400, { error: 'kind precisa ser terminal ou claude' }, 0]);
+  assert.deepEqual([bad.status, await bad.json(), workers.length], [400, { error: 'kind precisa ser terminal ou claude, codex' }, 0]);
   const answer = (await (await postJson(`${base}/tasks/${TASK}/open`, { kind: 'terminal' })).json()) as OpenResult;
   const terminal = server.getState()?.terminals[0];
   assert.ok(terminal);

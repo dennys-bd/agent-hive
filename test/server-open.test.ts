@@ -73,3 +73,11 @@ test('a kind that is neither terminal nor an agent is refused with the accepted 
   const res = await send(base, 'POST', OPEN, { kind: 'gpt' });
   assert.deepEqual([res.status, await res.json(), workers.length], [400, { error: `kind precisa ser terminal ou ${AGENT_IDS.join(', ')}` }, 0]);
 });
+
+test('a new codex session is refused in the Hive\'s language and opens nothing; a claude one still opens (#927)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base } = await startReviews(t, { launchPty: spawn });
+  const res = await send(base, 'POST', OPEN, { kind: 'codex' });
+  assert.deepEqual([res.status, await res.json(), workers.length], [400, { error: 'codex sessions are not available yet: run codex in a flow stage' }, 0]);
+  assert.equal((await send(base, 'POST', OPEN, { kind: 'claude' })).status, 200);
+});

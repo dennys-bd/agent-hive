@@ -3,7 +3,8 @@ import { canCloseMissing, inAction, canRunIn, canMoveToStage, canSetWorkspace, c
 import { withBase, withLocal } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
-import { forgetFailedFreeRun, forgetFailedSession, keepRecord, withDecompositionIssue, withPr, withResult, withTurn } from './record-kit.js';
+import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withPr, withResult, withTurn } from './record-kit.js';
+import { ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
@@ -779,13 +780,28 @@ function recordUsage(state: State, worker: Worker, tokens: number, title?: strin
 // A free session running a session whose worktree the Hive removed (#208): its cwd is the main repo, never the task's worktree.
 const inMainRepo = (state: State, task: Task, worker: Worker): boolean => worker.freeSession === true && sessionsOf(state, taskId(task)).some((s) => s.id === worker.sessionId && s.repo === true);
 
-// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's
-// own new conversation, so the old one's entry takes the new id, before the worktree write below. Only a uuid can replace one: it reaches --resume, and SESSION_ID admits a leading '-'.
-function sessionStart(state: State, ptyId: string, worker: Worker, p: HookPayload, branch?: string): Reduced {
+// #927: a stage run that started with no id, for an agent that picks its own (Codex), takes its first SessionStart's onto its activity and into
+// a session of the running stage, as occupy records the id the Hive chose. An activity that holds an id (Claude's, or a continue) keeps it
+function firstSession(state: State, worker: Worker, id: string): State {
+  const task = taskOfWorker(state, worker);
+  const activity = activityOfWorker(state, worker);
+  if (!task || !activity || activity.sessionId !== undefined) return state;
+  return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker));
+}
+
+// The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
+// conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927); a free session always has one.
+// Only a uuid can replace or record one: it reaches --resume / codex resume, and SESSION_ID admits a leading '-'.
+function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
-  const started = p.source === 'clear' && isUuid(id) && id !== worker.sessionId
-    ? clearSession(state, worker, id)
-    : patch(state, ptyId, { sessionId: worker.sessionId ?? (isSessionId(id) ? id : undefined) }).state;
+  if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
+  if (worker.sessionId === undefined && worker.freeSession !== true && isUuid(id)) return firstSession(patch(state, ptyId, { sessionId: id }).state, worker, id);
+  return patch(state, ptyId, { sessionId: worker.sessionId ?? (isSessionId(id) ? id : undefined) }).state;
+}
+
+// The worktree write below goes after the session's: inMainRepo reads the session the run now runs
+function sessionStart(state: State, ptyId: string, worker: Worker, p: HookPayload, branch?: string): Reduced {
+  const started = namedSession(state, ptyId, worker, p);
   const current = started.workers.find((s) => s.runId === ptyId) ?? worker; // inMainRepo reads the session it now runs
   const task = taskOfWorker(started, current);
   const activity = activityOfWorker(started, current);

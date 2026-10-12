@@ -126,6 +126,7 @@ test('renderMcpConfig points the hive server at /hooks/mcp with the worker id an
   });
   const dir = await tempDir(t, '');
   const path = await writeMcpConfig(dir, 'W1', runners.claude.mcpConfig({ port: 4242, ptyId: 'W1', secret: SECRET, withHive: true }));
+  assert.ok(path);
   assert.equal(path, join(dir, 'W1.mcp.json'), 'the path carries the worker id: pkill / pgrep find claude by it');
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), renderMcpConfig(4242, 'W1', SECRET));
   assert.equal((await stat(path)).mode & 0o777, 0o600, 'it holds the secret: this user only');
@@ -147,6 +148,7 @@ test('writeMcpConfig with withHive false writes a config that lists no server, s
   const dir = await tempDir(t, 'prompts-');
   const worker = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   const path = await writeMcpConfig(dir, worker, runners.claude.mcpConfig({ port: 47821, ptyId: worker, secret: SECRET, withHive: false }));
+  assert.ok(path);
   assert.equal(path, join(dir, `${worker}.mcp.json`));
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { mcpServers: {} });
   assert.equal((await stat(path)).mode & 0o777, 0o600);
@@ -166,4 +168,10 @@ test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/,
   assert.deepEqual((await readdir(dirname(paths.stage))).sort(), ['session.md', 'stage.md'], 'no temp file left');
   assert.equal(workspaceProtocolPaths(home, 'a b').stage, join(home, PROTOCOL_DIR, 'workspaces', 'a%20b', 'stage.md'));
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
+});
+
+test('writeMcpConfig writes no file and answers undefined for an empty config: an agent whose MCP server rides its argv (#927)', async (t) => {
+  const dir = await tempDir(t, 'prompts-');
+  assert.equal(await writeMcpConfig(dir, 'W1', ''), undefined);
+  assert.deepEqual(await readdir(dir), []);
 });

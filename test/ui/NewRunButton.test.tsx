@@ -237,3 +237,7 @@ test('the +\'s arquivo is enabled where onNewFile is given, and its pick calls i
   await user.click(await screen.findByRole('menuitem', { name: 'arquivo' }));
   expect(onNewFile).toHaveBeenCalledTimes(1);
 });
+
+test('the + lists no agent that cannot open a free session, the default one included: codex waits for #931 (#927)', () => {
+  expect(newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'codex').map((e) => e.kind)).toEqual(['terminal', 'claude', 'diff']);
+});

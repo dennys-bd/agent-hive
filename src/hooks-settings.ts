@@ -59,8 +59,10 @@ export const mcpConfigPattern = (ptyId: string): string => `${ptyId}\\.mcp\\.jso
 
 /** One file per worker next to the prompts, named after the pty id: its path in the agent's argv is what killStray / isStrayAlive match
  * now that the prompt no longer carries the id. 0600 in the 0700 home (#467): a new run is a new pty id, so the mode is set at
- * creation. A stale file from an earlier boot holds a secret that no longer opens anything. `content` is the run's runner's (#924). */
-export async function writeMcpConfig(promptsDir: string, ptyId: string, content: string): Promise<string> {
+ * creation. A stale file from an earlier boot holds a secret that no longer opens anything. `content` is the run's runner's (#924); an empty
+ * one is a runner whose server rides its argv (#927, Codex): no file, no path. */
+export async function writeMcpConfig(promptsDir: string, ptyId: string, content: string): Promise<string | undefined> {
+  if (content === '') return undefined;
   const path = join(promptsDir, `${ptyId}.mcp.json`);
   await writeFile(path, content, { mode: MCP_MODE });
   return path; // ponytail: one small file per spawn, never removed; delete it on exit if the home's prompts/ ever gets crowded

@@ -14,7 +14,7 @@ const editorInfo = (editor: EditorConfig = SAVED): SettingsInfo => ({
   config: {
     auth: { github: 'cli' },
     comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], transitions: [], stages: [{ name: 'fila', from: {} }], commands: [], workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'web', path: '/web', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] },
-    logLevel: 'info', agentArgs: { claude: [] }, budget: {}, usageRules: [],
+    logLevel: 'info', agentArgs: { claude: [], codex: [] }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS,
     editor,
   },

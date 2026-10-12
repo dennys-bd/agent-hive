@@ -176,7 +176,7 @@ curl -s -X POST http://127.0.0.1:$(cat ~/.config/agent-hive/hive.port)/tasks -H 
 | `comb` | — (required) | form (`prefix` defaults to `HIVE`; `workspaces` is Settings › workspaces' list; `sources` is Settings › fluxo › sources' list, each row's detail page with its name, qualify-the-id switch and prefix, its type's fields and its `taskProps`; `stages` is the flow; `commands` is Settings › workspaces' commands section, each with its `workspaces` and an optional `timeout`) |
 | `auth` | — (required when any source is GitHub) | form (`cli` = `gh`, `api` = the Hive's own login) |
 | `signals` | — (required; the form starts with today's table) | form, `regras` section: `yellow` and `red`, each `{ "newTasks", "started": "resumeAndContinue" \| "continueOnly" \| "stay", "workerless" }`, red never looser than yellow; `onOpen`: `yellow` \| `last` \| `green`. The worker cap is not in the file: the flow sidebar edits it and the state keeps it |
-| `agentArgs` | `{ "claude": [] }` | Settings › Execution, one list per agent (e.g. `{ "claude": ["--permission-mode", "acceptEdits"] }`) |
+| `agentArgs` | `{ "claude": [], "codex": [] }` | Settings › Execution, one list per agent (e.g. `{ "claude": ["--permission-mode", "acceptEdits"] }`) |
 | `logLevel` | `info` | file (`info` or `debug`; re-read on every save of the setup form, no restart needed) |
 | `baseBranch` | the remote's default (`origin/HEAD`, else `main`) | form, `geral` tab (empty = automatic) |
 | `onClose` | — (required; the form starts on `menuBar`) | form, `app` section: `menuBar` keeps the Hive in the menu bar when the window closes, `quit` stops it and its workers |

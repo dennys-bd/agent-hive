@@ -91,3 +91,12 @@ test('dormir sleeps the local activity\'s one session at once; with a terminal l
   await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'dormir todas' }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/ptys/sleep', expect.objectContaining({ method: 'POST', body: JSON.stringify({ ptyIds: ['L1', 'T1'] }) })));
 });
+
+test('nova sessão lists terminal and the agents that can open a free session: no codex until #931 (#927)', async () => {
+  const user = userEvent.setup();
+  await openMenu(user);
+  await openSub(user, 'nova sessão');
+  expect(await screen.findByRole('menuitem', { name: 'claude' })).toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: 'terminal' })).toBeInTheDocument();
+  expect(screen.queryByRole('menuitem', { name: 'codex' })).not.toBeInTheDocument();
+});

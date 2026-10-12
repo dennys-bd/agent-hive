@@ -8,9 +8,9 @@ import { sessionsOf } from '../src/tasks.js';
 import type { AgentId, Effect, Session, Stage, State } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
 
-// #925: every run records its agent. AGENT_IDS holds only claude until 3.1; the reducer only compares and copies ids, so a second agent
-// is a cast
-const OTHER = 'other' as AgentId;
+// #925: every run records its agent; #927: the second agent is codex, which picks its own session id
+const OTHER: AgentId = 'codex';
+const S3 = '3f2504e0-4f89-11d3-9a0c-0305e82c3303';
 
 const ITEM = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
 const AT = '2026-10-11T10:00:00.000Z';
@@ -38,7 +38,7 @@ test('setDefaultAgent puts the config\'s default agent on the live state with no
 test('a stage run\'s worker and the session it records carry the stage\'s agent, else the live default (#925)', () => {
   const own = start(onDev({ agent: OTHER }));
   assert.equal(spawnOf(own.effects)?.worker.agent, OTHER);
-  assert.equal(sessionsOf(own.state, ITEM.itemId).at(-1)?.agent, OTHER);
+  assert.equal(sessionsOf(own.state, ITEM.itemId).some((s) => s.agent === OTHER), false, 'codex picks its own id: its session is recorded at its SessionStart (#927)');
   assert.equal(spawnOf(start(onDev({}, 'claude', { defaultAgent: OTHER })).effects)?.worker.agent, OTHER);
 });
 
@@ -82,4 +82,45 @@ test('a continue stage whose activity holds another agent\'s session spawns a ne
 test('the same continue stage resumes a session of its own agent (#925)', () => {
   const spawn = spawnOf(start(onDev({ session: 'continue', agent: OTHER }, OTHER)).effects);
   assert.deepEqual([spawn?.session, spawn?.activity.sessionId], ['continue', S1]);
+});
+
+const hookStart = (state: State, ptyId: string, id: string): State =>
+  reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: '/wt', source: 'startup' } }).state;
+
+test('a codex stage run starts with no session id: not on its worker, not on its activity, and no session is recorded (#927)', () => {
+  const { state, effects } = start(onDev({ agent: OTHER }));
+  const spawn = spawnOf(effects);
+  assert.deepEqual([spawn?.session, spawn?.worker.sessionId, spawn?.activity.sessionId, activityOf(state, ITEM.itemId)?.sessionId], ['new', undefined, undefined, undefined]);
+  assert.deepEqual(sessionsOf(state, ITEM.itemId).map((s) => s.id), [S1], 'only the activity\'s earlier claude session');
+});
+
+test('codex\'s first SessionStart records its id on the worker, the activity and a session of the running stage; a later one changes nothing (#927)', () => {
+  const started = start(onDev({ agent: OTHER }));
+  const worker = spawnOf(started.effects)?.worker;
+  const ptyId = worker?.runId ?? '';
+  const seen = hookStart(started.state, ptyId, S2);
+  assert.equal(seen.workers.find((w) => w.runId === ptyId)?.sessionId, S2);
+  assert.equal(activityOf(seen, ITEM.itemId)?.sessionId, S2);
+  assert.deepEqual(sessionsOf(seen, ITEM.itemId).find((s) => s.id === S2), { id: S2, startedAt: worker?.startedAt, stages: ['dev'], lastUsedAt: worker?.startedAt, agent: OTHER });
+  const again = hookStart(seen, ptyId, S3);
+  assert.equal(again.workers.find((w) => w.runId === ptyId)?.sessionId, S2, 'the first id wins (#24)');
+  assert.equal(activityOf(again, ITEM.itemId)?.sessionId, S2);
+  assert.equal(sessionsOf(again, ITEM.itemId).some((s) => s.id === S3), false);
+});
+
+test('a continue stage after a codex run resumes the id codex reported (#927)', () => {
+  const started = start(onDev({ agent: OTHER, session: 'continue' })); // S1 is claude's: the first run is new
+  const ptyId = spawnOf(started.effects)?.worker.runId ?? '';
+  const stopped = reduce(hookStart(started.state, ptyId, S2), { type: 'stop', ptyId, cause: 'manual' }).state;
+  const spawn = spawnOf(start(reduce(stopped, { type: 'exit', ptyId }).state).effects);
+  assert.deepEqual([spawn?.session, spawn?.activity.sessionId], ['continue', S2]);
+});
+
+test('a claude stage run keeps the id the Hive chose on its activity, whatever its first SessionStart names: no session is recorded for it (#927)', () => {
+  const started = start(onDev({}));
+  const ptyId = spawnOf(started.effects)?.worker.runId ?? '';
+  const chosen = activityOf(started.state, ITEM.itemId)?.sessionId;
+  const seen = hookStart(started.state, ptyId, S3);
+  assert.equal(activityOf(seen, ITEM.itemId)?.sessionId, chosen);
+  assert.equal(sessionsOf(seen, ITEM.itemId).some((s) => s.id === S3), false);
 });

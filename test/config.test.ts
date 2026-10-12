@@ -22,7 +22,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   const config = parseConfig({ ...GITHUB });
   assert.equal('maxConcurrent' in config, false, 'the state owns the cap (#727)');
   assert.equal('port' in config, false, 'the daemon binds a free port (#466): no setting');
-  assert.deepEqual(config.agentArgs, { claude: [] });
+  assert.deepEqual(config.agentArgs, { claude: [], codex: [] });
   assert.deepEqual(config.budget, {});
   assert.deepEqual(config.usageRules, []);
   assert.equal('epics' in config, false, 'the epics keys live on each source (#30)');
@@ -267,20 +267,22 @@ test('parseConfig requires closeSessionTab and closeStageTab (keep or sleep) and
   assert.equal('closeTabEndsSession' in old || 'closeTabEndsStageSession' in old, false, 'an old key is neither read nor refused');
 });
 
-test('parseConfig requires agentArgs, one array of strings per agent, and names a missing agent, a non-array value and an unknown key (#924)', () => {
-  assert.deepEqual(parseConfig(GITHUB).agentArgs, { claude: [] }, 'what combConfig writes: the form default');
-  assert.deepEqual(parseConfig({ ...GITHUB, agentArgs: { claude: ['--permission-mode', 'auto', 'a b'] } }).agentArgs, { claude: ['--permission-mode', 'auto', 'a b'] });
+test('parseConfig requires agentArgs, one array of strings per agent, and names a missing agent, a non-array value and an unknown key (#924, #927)', () => {
+  assert.deepEqual(parseConfig(GITHUB).agentArgs, { claude: [], codex: [] }, 'what combConfig writes: the form default');
+  const both = { claude: ['--permission-mode', 'auto', 'a b'], codex: ['--sandbox', 'workspace-write'] };
+  assert.deepEqual(parseConfig({ ...GITHUB, agentArgs: both }).agentArgs, both);
   const notList = 'hive.config.json: "agentArgs.claude" must be an array of strings';
   for (const bad of [undefined, {}, { claude: 'x' }, { claude: [1] }, { claude: null }]) {
     assert.throws(() => parseConfig({ ...GITHUB, agentArgs: bad }), { message: notList }, JSON.stringify(bad));
   }
-  assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: [], codex: [] } }), { message: 'hive.config.json: "agentArgs" has an unknown agent "codex"' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: [] } }), { message: 'hive.config.json: "agentArgs.codex" must be an array of strings' });
+  assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: [], codex: [], gemini: [] } }), { message: 'hive.config.json: "agentArgs" has an unknown agent "gemini"' });
 });
 
 test('parseConfig requires defaultAgent, one of the known agents, with no default (#516)', () => {
   assert.equal(parseConfig(GITHUB).defaultAgent, 'claude', 'what combConfig writes: the form default');
-  for (const bad of [undefined, 'codex', '', 1, null]) {
-    assert.throws(() => parseConfig({ ...GITHUB, defaultAgent: bad }), { message: 'hive.config.json: "defaultAgent" must be one of: claude' }, JSON.stringify(bad));
+  for (const bad of [undefined, 'gemini', '', 1, null]) {
+    assert.throws(() => parseConfig({ ...GITHUB, defaultAgent: bad }), { message: 'hive.config.json: "defaultAgent" must be one of: claude, codex' }, JSON.stringify(bad));
   }
 });
 
@@ -290,7 +292,7 @@ test("parseConfig reads a stage's agent: kept when known, absent stays absent, u
   assert.equal(parsed({ prompt: '/x', agent: 'claude' }).agent, 'claude');
   assert.equal('agent' in parsed({ prompt: '/x' }), false, 'absent = the default agent; the file stays clean');
   const bad = (extra: Record<string, unknown>) => () => parseConfig(github({ stages: [stage(extra)] }));
-  assert.throws(bad({ prompt: '/x', agent: 'codex' }), { message: 'hive.config.json: "comb.stages[0].agent" must be one of: claude' });
+  assert.throws(bad({ prompt: '/x', agent: 'gemini' }), { message: 'hive.config.json: "comb.stages[0].agent" must be one of: claude, codex' });
   assert.throws(bad({ action: 'deleteActivity', agent: 'claude' }), { message: 'hive.config.json: "comb.stages[0].agent" cannot be combined with "action"' });
 });
 
@@ -349,8 +351,8 @@ test('parseConfig requires shortcuts, the user\'s changes only: a binding stored
 });
 
 test('parseConfig keeps explicit values and ignores a leftover port (#466)', () => {
-  const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 3, filter: FILTER }, port: 5000, agentArgs: { claude: ['--model', 'sonnet'] } }));
-  assert.deepEqual(config.agentArgs, { claude: ['--model', 'sonnet'] });
+  const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 3, filter: FILTER }, port: 5000, agentArgs: { claude: ['--model', 'sonnet'], codex: [] } }));
+  assert.deepEqual(config.agentArgs, { claude: ['--model', 'sonnet'], codex: [] });
   assert.equal('port' in config, false);
 });
 
@@ -1145,4 +1147,15 @@ test('a workspace\'s memoryCap is a required integer from 300 to 20000, refused 
   assert.deepEqual([300, 20000].map((cap) => parseConfig(at(cap)).comb.workspaces[0].memoryCap), [300, 20000]);
   const message = 'hive.config.json: "comb.workspaces[0].memoryCap" must be an integer from 300 to 20000';
   for (const bad of [299, 20001, 4000.5, '4000', undefined]) assert.throws(() => parseConfig(at(bad)), { message }, String(bad));
+});
+
+test('a codex stage, by its own agent or the default, refuses a Claude model naming the field; a Codex model passes and a claude stage keeps its aliases (#927)', () => {
+  const withStage = (extra: Record<string, unknown>, top: Record<string, unknown> = {}) => github({ stages: [{ ...STAGES[0], ...extra }], ...top });
+  for (const model of ['opus', 'sonnet', 'haiku', 'sonnet[1m]', 'claude-sonnet-4']) {
+    const message = `hive.config.json: "comb.stages[0].model" "${model}" is a Claude model; a codex stage needs a Codex model name`;
+    assert.throws(() => parseConfig(withStage({ agent: 'codex', model })), { message }, model);
+  }
+  assert.throws(() => parseConfig(withStage({ model: 'opus' }, { defaultAgent: 'codex' })), /"comb\.stages\[0\]\.model" "opus" is a Claude model/, 'the default agent counts');
+  assert.equal(parseConfig(withStage({ agent: 'codex', model: 'gpt-5.6-terra' })).comb.stages[0].model, 'gpt-5.6-terra');
+  assert.equal(parseConfig(withStage({ model: 'opus' })).comb.stages[0].model, 'opus', 'a claude stage keeps its aliases');
 });

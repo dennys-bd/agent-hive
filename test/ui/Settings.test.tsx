@@ -24,7 +24,7 @@ const info: SettingsInfo = {
   config: {
     auth: { github: 'cli' },
     comb: { prefix: 'HIVE', hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], sources: [{ name: 'board', qualifyId: false, type: 'github', owner: 'acme', number: 1, filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' }], transitions: [], stages: [{ name: 'fila', from: { board: ['Ready'] } }], commands: [] },
-    logLevel: 'info', agentArgs: { claude: [] }, budget: {}, usageRules: [],
+    logLevel: 'info', agentArgs: { claude: [], codex: [] }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS,
   },
 };
@@ -750,7 +750,7 @@ test('a save that deletes a stage holding tasks asks first, naming how many go w
 
 test('execução shows the saved Claude arguments one per line, and the save sends agentArgs with one argument per non-blank line, as typed (#924)', async () => {
   const user = userEvent.setup();
-  render(<Settings info={{ ...info, config: { ...info.config!, agentArgs: { claude: ['--permission-mode', 'auto'] } } }} onSaved={vi.fn()} />);
+  render(<Settings info={{ ...info, config: { ...info.config!, agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } } }} onSaved={vi.fn()} />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));
 
   await open(user, 'execution');
@@ -762,5 +762,5 @@ test('execução shows the saved Claude arguments one per line, and the save sen
 
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
   const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { agentArgs: Record<string, string[]> };
-  expect(body.agentArgs).toEqual({ claude: ['--model', 'opus 4'] });
+  expect(body.agentArgs).toEqual({ claude: ['--model', 'opus 4'], codex: [] });
 });

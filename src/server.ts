@@ -20,7 +20,7 @@ import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
-import { excludeFromGit, mcpConfigPattern, prepareHome, type ProtocolPaths } from './hooks-settings.js';
+import { excludeFromGit, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { ALL_AGENTS, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
@@ -263,6 +263,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   }
 
   const workerOf = (ptyId: string): Worker | undefined => live?.state.workers.find((s) => s.runId === ptyId);
+  // #927: a live run's own runner's pattern; a run already gone has no agent to read, and its bare pty id is in every agent's argv (Claude's
+  // <id>.mcp.json path, Codex's x-hive-pty header)
+  const strayOf = (ptyId: string): string => {
+    const worker = workerOf(ptyId);
+    return worker === undefined ? ptyId : runners[ranAgent(worker)].strayPattern(ptyId);
+  };
 
   // What the UI and the status line speak: the saved config's language, else the system's. Setup mode reads the fallback config too.
   const effectiveLanguage = (): Language => (live?.runtime.config ?? deps.setupFallback?.config)?.language ?? systemLanguage;
@@ -435,10 +441,10 @@ export function createServer(deps: ServerDeps): HiveServer {
         ptys.forget(effect.terminalId);
         await removeTerminalFiles(home, effect.terminalId).catch((err) => log.error(`${describeEffect(effect)}: ${errorMessage(err)}`));
         return;
-      case 'killCaptured': // #696: the claude the shim started, by its --mcp-config path (<runId>.mcp.json): a session id also matches a
-        // `claude --resume <id>`, a tail or a grep elsewhere, and a /clear changes it. The exit frees the worker even when pkill missed
+      case 'killCaptured': // #696: the agent the shim started, by its runner's stray pattern (Claude's: its --mcp-config path, <runId>.mcp.json): a
+        // session id also matches a `claude --resume <id>`, a tail or a grep elsewhere, and a /clear changes it. The exit frees the worker even when pkill missed
         log.info(describeEffect(effect));
-        await killStray(mcpConfigPattern(effect.ptyId), exec).catch((err) => fail('kill', err));
+        await killStray(strayOf(effect.ptyId), exec).catch((err) => fail('kill', err));
         await dispatch({ type: 'exit', ptyId: effect.ptyId });
         return;
       case 'captureCheckpoint': { // #619: awaited, so a continue later in this batch answers the Stop only after the capture; a failure is logged

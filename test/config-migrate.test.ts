@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateCodexArgs, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -266,5 +266,15 @@ test('migrateAgentArgs moves claudeArgs into agentArgs.claude, gives a file with
 
 test('migrateConfig runs migrateAgentArgs: a pre-#924 file parses with its claudeArgs as agentArgs.claude (#924)', () => {
   const { agentArgs: _gone, ...raw } = combConfig({ stages: LOCAL_STAGES });
-  assert.deepEqual(parseConfig(migrateConfig({ ...raw, claudeArgs: ['--permission-mode', 'auto'] })).agentArgs, { claude: ['--permission-mode', 'auto'] });
+  assert.deepEqual(parseConfig(migrateConfig({ ...raw, claudeArgs: ['--permission-mode', 'auto'] })).agentArgs, { claude: ['--permission-mode', 'auto'], codex: [] });
+});
+
+test('migrateCodexArgs gives a saved agentArgs without codex an empty list, keeps one that has it, and migrateConfig runs it after migrateAgentArgs (#927)', () => {
+  const file = combConfig({ stages: LOCAL_STAGES });
+  assert.deepEqual(migrateCodexArgs({ ...file, agentArgs: { claude: ['--verbose'] } }), { ...file, agentArgs: { claude: ['--verbose'], codex: [] } });
+  assert.equal(migrateCodexArgs(file), file, "today's shape comes back as the same reference");
+  const { agentArgs: _gone, ...bare } = file;
+  assert.equal(migrateCodexArgs(bare), bare, 'no agentArgs: migrateAgentArgs makes it first');
+  assert.equal(migrateCodexArgs('x'), 'x');
+  assert.deepEqual(parseConfig(migrateConfig({ ...bare, claudeArgs: ['--x'] })).agentArgs, { claude: ['--x'], codex: [] });
 });

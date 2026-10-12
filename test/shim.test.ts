@@ -90,7 +90,7 @@ test('capturedReply answers the run id then one arg per line, and refuses an arg
 });
 
 test('a captured session\'s argv puts the workspace\'s language-server plugin right after the Hive\'s own --plugin-dir, as ptyCommand does, and nothing without one (#803, #924)', () => {
-  const base = { ptyId: 'R1', mcpPath: '/h/prompts/R1.mcp.json', hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: ['--model', 'opus'], session: { id: 'S1', resume: false } };
+  const base = { ptyId: 'R1', cwd: '/wt', port: 4242, withHive: true, mcpPath: '/h/prompts/R1.mcp.json', hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: ['--model', 'opus'], session: { id: 'S1', resume: false } };
   assert.deepEqual(runners.claude.launch({ ...base, lspPluginDir: '/h/lsp/hive', protocolPath: '/h/protocol/session.md' }).flat(), [
     '--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--plugin-dir', '/h/lsp/hive',
     '--append-system-prompt-file', '/h/protocol/session.md', '--model', 'opus', '--session-id', 'S1',

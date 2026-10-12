@@ -51,7 +51,7 @@ export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspa
       prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0], setup: WORKSPACE_SETUP, setupTimeout: SETUP_TIMEOUT }],
       sources: [], stages: armStages(seed, arm, runBranch), commands: [], hiveSource: true, createIn: 'hive',
     },
-    baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, paths) }, ...SETTINGS,
+    baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, paths), codex: [] }, ...SETTINGS,
   };
 }
 
@@ -59,7 +59,7 @@ export function evalConfig(seed: StagesSeed, workspace: string): Record<string, 
   const stages = seed.stages.map(({ name, from }) => ({ name, from, maxWorkers: 0 }));
   return {
     comb: { prefix: EXPERIMENT_PREFIX, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0] }], sources: [], stages, commands: EVAL_COMMANDS, hiveSource: true, createIn: 'hive' },
-    language: 'pt', agentArgs: { claude: [] }, ...SETTINGS,
+    language: 'pt', agentArgs: { claude: [], codex: [] }, ...SETTINGS,
   };
 }
 

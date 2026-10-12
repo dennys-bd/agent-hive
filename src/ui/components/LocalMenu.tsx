@@ -1,5 +1,6 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { AGENTS } from '../../agents';
 import { sessionLabel } from '../../task-runs';
 import { AGENT_IDS } from '../../types';
 import { act } from '@/components/actions';
@@ -33,7 +34,8 @@ function useLocalMenu(activity: LocalActivity, kit: MenuKit): { items: ReactNode
         <SubTrigger>{t('activities.menu.newSession')}</SubTrigger>
         <SubContent>
           <Item onSelect={() => openLocalRun(workspace, 'terminal', openRun)}>{t('activities.menu.terminal')}</Item>
-          {AGENT_IDS.map((agent) => <Item key={agent} onSelect={() => openLocalRun(workspace, agent, openRun)}>{agentName(agent)}</Item>)}
+          {/* #927: only an agent that can open a free session (Codex picks its own id; until #931) */}
+          {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <Item key={agent} onSelect={() => openLocalRun(workspace, agent, openRun)}>{agentName(agent)}</Item>)}
         </SubContent>
       </Sub>
       {activity.kept.length > 0 && <Separator />}

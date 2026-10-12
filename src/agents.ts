@@ -7,16 +7,25 @@ export interface AgentSpec {
   command: string; // the CLI on PATH, probed with --version, which a run's command line starts with and its shim is named after
   subcommands: readonly string[]; // the CLI's own commands (#696): the shim runs them straight through, never as a conversation
   planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the header offers their refresh
+  canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from SessionStart and opens no free session until #931
 }
 
 // A Record, so a new id in AGENT_IDS fails tsc until its entry exists; its runner joins agents/registry.ts the same way (#924).
 export const AGENTS: Record<AgentId, AgentSpec> = {
   claude: {
-    label: 'Claude', command: 'claude', planLimits: true,
+    label: 'Claude', command: 'claude', planLimits: true, canChooseSessionId: true,
     // as `claude --help` lists them, aliases included
     subcommands: [
       'agents', 'attach', 'auth', 'auto-mode', 'doctor', 'gateway', 'import', 'install', 'kill', 'logs', 'mcp', 'plugin', 'plugins', 'purge',
       'respawn', 'rm', 'setup-token', 'stop', 'ultrareview', 'update', 'upgrade',
+    ],
+  },
+  codex: {
+    label: 'Codex', command: 'codex', planLimits: false, canChooseSessionId: false, // planLimits: #929
+    // as `codex --help` lists them (finding §12), aliases included; resume and fork open a conversation, so they are not passed through
+    subcommands: [
+      'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server', 'remote-control', 'app', 'completion', 'update', 'doctor',
+      'sandbox', 'debug', 'apply', 'a', 'queue', 'archive', 'delete', 'migrate-rollouts', 'unarchive', 'cloud', 'exec-server', 'features', 'help',
     ],
   },
 };

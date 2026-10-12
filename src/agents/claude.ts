@@ -1,6 +1,7 @@
 // Claude Code behind the runner contract (#924): the argv every run of it gets, and the modules that know its home, its transcripts and its
 // plan limits. The argv is the one the Hive always passed, word for word: its own flags as [flag, value] pairs, every other word plain.
 import { claudeLspPlugin, claudeMcpConfig, prepareClaudeHome } from './claude-home.js';
+import { mcpConfigPattern } from '../hooks-settings.js';
 import { parseRateLimits, readPlanLimits } from './claude-limits.js';
 import { countMessages, readTranscript, transcriptDir } from './claude-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
@@ -32,6 +33,8 @@ export const claudeRunner: AgentRunner = {
   launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
+  strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
+  runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
   // Arrows on purpose: registry.ts sits in import cycles with usage.ts and transcript.ts, and an arrow reads the binding at call time
   prepareHome: (home, port) => prepareClaudeHome(home, port),
   mcpConfig: (server) => claudeMcpConfig(server),

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { LiveRun } from '../../src/task-runs';
+import { sameKind } from '@/components/SplitMenu';
+import type { Activity } from '@/lib/activities';
 import { RunOpenerContext } from '@/components/terminal-tabs';
 import type { TabRequest } from '@/hooks/use-activity';
 import type { CenterLayout } from '@/lib/center-layout';
@@ -94,4 +96,10 @@ test('Ctrl+Shift+\\ splits the focused group with its shown run\'s kind, the new
   posted('claude'); // W1 is the stage run: an agent's
   await waitFor(() => expect(strips()).toEqual([['Claude'], ['Terminal'], ['Claude · abcdef12']]));
   expect(saved().I1.root).toMatchObject({ kind: 'split', axis: 'row', sizes: [28, 22, 50] }); // g1's half, 56/44
+});
+
+test('dividir com o mesmo tipo repeats no agent that cannot open a free session: a codex run offers none (#927)', () => {
+  const group = { kind: 'group' as const, id: 'g1', tabs: [{ kind: 'run' as const, ptyId: STAGE.ptyId }], active: 0 };
+  expect(sameKind({ runs: [{ ...STAGE, agent: 'codex' }] } as unknown as Activity, group)).toBeUndefined();
+  expect(sameKind({ runs: [STAGE] } as unknown as Activity, group)).toBe('claude');
 });

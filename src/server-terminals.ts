@@ -110,7 +110,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     const agent = ranAgent(worker); // #925 records SHIM_AGENT on a captured run
-    let mcpPath: string;
+    let mcpPath: string | undefined;
     try {
       mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
     } catch (err) {
@@ -123,8 +123,10 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
     const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
     // #924: the capture through its worker's runner: the Hive's flags, the agent's own args and the session id the Hive chose
+    // the shim captures SHIM_AGENT, whose launch reads no cwd; the terminal's own folder is the closest the Hive knows (#927)
+    const terminal = after.state.terminals.find((x) => x.terminalId === terminalParam(req));
     const run: AgentRun = {
-      ptyId: runId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, lspPluginDir,
+      ptyId: runId, cwd: terminal?.cwd ?? '', port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, lspPluginDir,
       ...(onTask ? { protocolPath: task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session } : {}),
       extraArgs: runtime.config.agentArgs[agent], session: { id: sessionId, resume: false },
     };

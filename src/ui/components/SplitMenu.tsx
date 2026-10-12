@@ -2,7 +2,7 @@ import { ChevronDownIcon, Columns2Icon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AGENT_IDS } from '../../types';
 import { KeyHint } from '@/components/KeyHint';
-import { ranAgent } from '../../agents';
+import { AGENTS, ranAgent } from '../../agents';
 import { agentName, type NewRunKind, openNew, SEGMENT, SEGMENT_TRACK } from '@/components/NewRunButton';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,9 @@ export function sameKind(activity: Activity, group: TabGroup): NewRunKind | unde
   const ptyId = shown?.kind === 'run' ? (shown.panes?.focused ?? shown.ptyId) : undefined;
   const run = activity.runs.find((r) => r.ptyId === ptyId);
   if (run === undefined) return undefined;
-  return run.kind === 'terminal' ? 'terminal' : ranAgent(run);
+  if (run.kind === 'terminal') return 'terminal';
+  const agent = ranAgent(run);
+  return AGENTS[agent].canChooseSessionId ? agent : undefined; // #927: a codex run has no free session to repeat until #931
 }
 
 /** A split's pick: a new session of `kind`, its pane beside `group`. */
@@ -104,7 +106,7 @@ export function SplitMenu({ activity, group, onSplit }: SplitMenuProps) {
       <DropdownMenuContent align="end" className="w-[220px]">
         <DropdownMenuLabel>{t('split.with')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onSplit('terminal', group.id)}>{t('activities.menu.terminal')}</DropdownMenuItem>
-        {AGENT_IDS.map((agent) => <DropdownMenuItem key={agent} onSelect={() => onSplit(agent, group.id)}>{agentName(agent)}</DropdownMenuItem>)}
+        {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <DropdownMenuItem key={agent} onSelect={() => onSplit(agent, group.id)}>{agentName(agent)}</DropdownMenuItem>)}
         <DropdownMenuItem disabled>{t('split.file')}<span className="ml-auto text-muted-foreground text-xs">{t('split.soon')}</span></DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t('split.position')}</DropdownMenuLabel>

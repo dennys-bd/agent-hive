@@ -39,7 +39,7 @@ test('every agent has a probe command, a label and its subcommands; Claude\'s pr
     assert.ok(AGENTS[id].label.length > 0, id);
     assert.ok(AGENTS[id].subcommands.length > 0, id);
   }
-  const argv = runners.claude.launch({ ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', protocolPath: '/s.md', extraArgs: [] });
+  const argv = runners.claude.launch({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', protocolPath: '/s.md', extraArgs: [] });
   assert.deepEqual(argv.at(-1), ['--append-system-prompt-file', '/s.md'], 'appends to Claude Code\'s own system prompt, in interactive runs and with --resume');
 });
 
@@ -65,4 +65,12 @@ test('ranAgent is a run\'s own agent, claude on a literal built without one; the
 
 test('claude reports plan limits: the header offers their refresh (#925)', () => {
   assert.equal(AGENTS.claude.planLimits, true);
+});
+
+test('codex runs as `codex`, reports no plan limits until #929 and cannot choose its session id; claude can (#927)', () => {
+  assert.deepEqual(AGENT_IDS, ['claude', 'codex']);
+  assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', false, false]);
+  assert.equal(AGENTS.claude.canChooseSessionId, true);
+  assert.ok(AGENTS.codex.subcommands.includes('exec'));
+  assert.equal(AGENTS.codex.subcommands.some((c) => c === 'resume' || c === 'fork'), false, 'both open a conversation (finding §12)');
 });

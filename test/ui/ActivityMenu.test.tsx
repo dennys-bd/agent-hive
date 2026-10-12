@@ -73,3 +73,14 @@ test('executar etapas… opens the Start dialog on executar etapas for the activ
   expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeChecked();
   vi.unstubAllGlobals();
 });
+
+test('nova sessão lists the agents that can open a free session, then terminal: no codex until #931 (#927)', async () => {
+  const user = userEvent.setup();
+  render(<ActivityMenuButton task={task()} state={state(task())} onShowFlow={vi.fn()} />);
+  screen.getByRole('button', { name: 'mais ações' }).focus();
+  await user.keyboard('{Enter}');
+  (await screen.findByRole('menuitem', { name: 'nova sessão' })).focus();
+  await user.keyboard('{ArrowRight}');
+  expect(await screen.findByRole('menuitem', { name: 'claude' })).toBeInTheDocument();
+  expect(screen.queryByRole('menuitem', { name: 'codex' })).not.toBeInTheDocument();
+});

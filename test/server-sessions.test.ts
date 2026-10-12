@@ -261,3 +261,13 @@ test('POST /activities/local:<name>/sessions runs the agent its kind names, over
   assert.equal(server.getState()!.workers.find((w) => w.activityId === localActivityId(WORKSPACE))?.agent, 'claude');
   await refused(postJson(url, { kind: 'gpt' }), 400, `kind precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`, 'not an agent');
 });
+
+test('a new local session of codex, asked for or the default, is refused; a claude one still opens (#927)', async (t) => {
+  const { base, server } = await start(t);
+  const url = `${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
+  const message = 'codex sessions are not available yet: run codex in a flow stage';
+  await refused(postJson(url, { kind: 'codex' }), 400, message, 'asked for');
+  await server.dispatch({ type: 'setDefaultAgent', agent: 'codex' });
+  await refused(postJson(url, {}), 400, message, 'the default agent');
+  assert.equal((await postJson(url, { kind: 'claude' })).status, 200);
+});

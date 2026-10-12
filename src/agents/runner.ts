@@ -10,11 +10,15 @@ export type { LaunchArg };
 /** Everything a runner needs to render one run's argv after its command. */
 export interface AgentRun {
   ptyId: string;
+  cwd: string; // #927: the folder the run starts in: Codex trusts it up front, or its TUI opens on the folder-trust screen
+  port: number; // #927: the Hive's port, which Codex's inline hooks and MCP url name (Claude's read hooks.json and its MCP file)
+  withHive: boolean; // #927: a task's run has the Hive's MCP server; a local session (#587) none
   hooksPath: string;
   pluginDir: string;
   mcpPath?: string;
   lspPluginDir?: string;
   protocolPath?: string;
+  protocolText?: string; // #927: protocolPath's content, read by the shared spawn, for an agent that takes the protocol as text (Codex)
   model?: string;
   session?: { id: string; resume: boolean }; // launch: resume continues the session, else it starts under this id. copy: the fork's new id (resume ignored)
   extraArgs: readonly string[]; // agentArgs[agent]
@@ -33,6 +37,8 @@ export interface AgentRunner {
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
   clear(run: AgentRun): LaunchArg[] | undefined;
+  strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
+  runEnv(server: McpServer): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex)
   prepareHome(home: string, port: number): Promise<void>;
   mcpConfig(server: McpServer): string;
   lspPlugin(servers: LspServers): { path: string; content: string }[];

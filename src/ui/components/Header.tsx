@@ -25,12 +25,12 @@ const LIMITS: ReadonlyArray<{ key: string; short: MessageKey; long: MessageKey }
   { key: 'five_hour', short: 'header.fiveHour', long: 'header.fiveHour' },
   { key: 'seven_day', short: 'header.week', long: 'window.week' },
 ];
-// Each agent's plan limits' last reading; only Claude reports any today (#516)
-const readingOf = (state: State): Record<AgentId, RateLimits | undefined> => ({ claude: state.rateLimits });
+// Each agent's plan limits' last reading; only Claude reports any today (#516); Codex's is #929
+const readingOf = (state: State): Record<AgentId, RateLimits | undefined> => ({ claude: state.rateLimits, codex: undefined });
 
 // The agent's own colour, on its symbol in the usage group only (#669): the design system's agent-colour exception. An agent without one
 // keeps currentColor
-const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude' };
+const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex' };
 
 // The mark in the header is one filled hexagon, the honeycomb's centre cell (the handoff's ⬢), in the signal's colour
 function HiveMark({ signal }: { signal: Signal }) {
