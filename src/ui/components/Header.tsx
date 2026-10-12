@@ -1,5 +1,6 @@
 import { RotateCwIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AGENTS, agentName } from '../../agents';
 import { act } from '@/components/actions';
 import { AGENT_ICON } from '@/components/SessionLabel';
 import { Progress } from '@/components/ui/progress';
@@ -98,11 +99,11 @@ function AgentUsage({ agent, reading, now }: { agent: AgentId; reading: RateLimi
   const resets = limits.map(({ long, window }) => `${t(long)} ${t('limits.resets', { time: countdown(window.resetsAt, now) })}`);
   return (
     <div className="flex items-center gap-2 rounded-md border px-2 py-[3px] [-webkit-app-region:no-drag]" title={[agent, ...resets].join(' · ')}>
-      {Icon === undefined ? agent : <Icon className={`size-3.5 ${AGENT_COLOR[agent] ?? ''}`} />}
+      {Icon === undefined ? agentName(agent) : <Icon className={`size-3.5 ${AGENT_COLOR[agent] ?? ''}`} />}
       {limits.map(({ key, short, window }) => (
         <LimitMeter key={key} label={t(short)} percent={Math.round(window.usedPercent)} resetsAt={window.resetsAt} now={now} />
       ))}
-      {agent === 'claude' && <RefreshUsage />}
+      {AGENTS[agent].planLimits && <RefreshUsage />}{/* #925: a fact of the agent's entry, not its id */}
     </div>
   );
 }

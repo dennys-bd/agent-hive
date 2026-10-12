@@ -1,16 +1,19 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { continueLocalRun, openLocalRun } from '@/components/local-runs';
 import { ReviewContext, type ReviewPane } from '@/components/review-context';
 import { SessionLabel } from '@/components/SessionLabel';
 import { EMPTY_REVIEW } from '@/lib/review-view';
 import { chipText, commentText } from '../../src/review-message';
+import { DefaultAgentContext } from '@/components/NewRunButton';
+import { StartDialog } from '@/components/StartDialog';
 import { SessionLine } from '@/components/SessionLines';
 import { SleepNotice } from '@/components/SleepNotice';
 import { setLanguage } from '@/i18n';
 import { liveRuns } from '../../src/task-runs';
-import type { AgentId, Task } from '../../src/types';
-import { activityIdOf, taskPairOf } from '../fixtures/work';
+import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type AgentId, type BaseOptions, type State, type Task } from '../../src/types';
+import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
 
 // #925: no second agent ships until 3.1 adds codex, so this file adds one. AGENTS gains its facts (agentName reads them, so it is rebuilt
 // over the mocked map), AGENT_IDS lists it. Its id is a cast: no production id is added
@@ -68,4 +71,32 @@ test('a review names a mentioned session by its own agent, on the page and in wh
   expect(document.body.textContent).not.toMatch(/claude/i);
   const anchor = { scope: 'worktree' as const, path: 'a.ts', side: 'new' as const, start: 1, end: 1, excerpt: ['x'] };
   expect(commentText(anchor, 'T1', { text: `ask ${chipText(S)}`, mentions: [S] }, 'new', () => AGENT)).toContain('ask @othercli a1b2c3d4');
+});
+
+const BASES: BaseOptions = { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: [], remote: [] };
+const startState: State = withPointedWork({
+  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'dev', from: {}, prompt: 'x' }],
+  tasks: [{ item: { itemId: 'I4', id: 'SITE-4', title: 'Landing', body: '', url: '' }, stage: 'dev', boardColumn: 'Doing', auto: true, workspace: 'site' }],
+  sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
+  workspaces: ['site'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
+  approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+});
+
+test('sessão livre preselects the default agent and opens the session with it as the kind (#925)', async () => {
+  const user = userEvent.setup();
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
+    new Response(JSON.stringify(String(input).endsWith('/bases') ? BASES : { ptyId: 'W1' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const onClose = vi.fn();
+  render(<DefaultAgentContext.Provider value={AGENT}><StartDialog state={startState} onStarted={vi.fn()} onClose={onClose} /></DefaultAgentContext.Provider>);
+  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('option', { name: /#SITE-4/ }));
+  await user.click(screen.getByRole('radio', { name: 'sessão livre' }));
+  expect(within(screen.getByRole('dialog')).getByRole('combobox', { name: 'agente' })).toHaveTextContent('othercli');
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /sessão livre/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  const open = fetchMock.mock.calls.find(([url]) => String(url) === '/tasks/I4/open');
+  expect(JSON.parse(String(open?.[1]?.body))).toMatchObject({ kind: OTHER });
+  vi.unstubAllGlobals();
 });

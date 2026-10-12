@@ -51,9 +51,6 @@ export function useNewRunKeys(target: RunTarget): void {
   useEffect(() => onShortcutKey([['session', 'newSession'], ['diff', 'openDiff']] as const, (action) => latest.current[action]()), []);
 }
 
-/** The agent every worker run is today (#489): #101 records each run's own agent on its worker. */
-export const RUN_AGENT: AgentId = 'claude';
-
 // POST /activities/:id/open with no resume and no base (#491): the task already has its worktree or runs in the checkout, since it has a live
 // run, so Abrir sessão's questions never apply. A refusal is act's toast; a spawn failure answers no run and opens nothing (#292). onRun
 // hears the run once it is opened, so the split menu can land its tab (#536). A local activity's opens in its workspace's checkout (#590).
