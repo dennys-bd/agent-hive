@@ -1,5 +1,7 @@
 import { XIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { agentName } from '../../agents';
+import type { AgentId } from '../../types';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 
@@ -8,9 +10,9 @@ export const NOTICE_MS = 8000;
 /** Wide enough for the image's action row on one line; sonner's other toasts keep its 356px. */
 export const NOTICE_WIDTH = 440;
 
-/** Who a notice speaks of (#614): the agent and the session as its run's tab names it, and a stage's session with its stage after it. */
-export function whoOf(session: string | undefined, stage: string | undefined): string {
-  const who = session === undefined ? t('session.claude') : `${t('session.claude')} ${session}`;
+/** Who a notice speaks of (#614, #925): the session's agent and the session as its run's tab names it, and a stage's session with its stage after it. */
+export function whoOf(agent: AgentId, session: string | undefined, stage: string | undefined): string {
+  const who = session === undefined ? agentName(agent) : `${agentName(agent)} ${session}`;
   return stage === undefined ? who : t('closeTabNotice.stage', { who, stage });
 }
 

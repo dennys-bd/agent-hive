@@ -30,7 +30,7 @@ test('sessionRefOf reads a run\'s session from its worker, a stage run\'s from t
   const s = state([ONE, task('I2', '2', 'hive'), task('I3', '3', 'site')], [{ id: 'x', status: 'working', runId: 'W1', activityId: activityIdOf('local:1'), sessionId: S, freeSession: true }]);
   expect(sessionRefOf(s, { taskId: 'local:1', ptyId: 'W1' })).toEqual({ activityId: 'a-local:1', sessionId: S });
   expect(sessionRefOf(s, { taskId: 'local:1', ptyId: 'nope' })).toBeUndefined();
-  expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: 'local:hive' })).toEqual({ source: 'revisão', shortId: 'a1b2c3d4', from: 'HIVE-1', to: 'local', toRef: 'local' });
+  expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: 'local:hive' })).toEqual({ source: 'revisão', agent: 'claude', shortId: 'a1b2c3d4', from: 'HIVE-1', to: 'local', toRef: 'local' });
   expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: activityIdOf('I2') })).toMatchObject({ to: '#2 task 2', toRef: '#2' });
   expect([copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'local:1'), copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'I3'), copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'I2')])
     .toEqual(['copy.sameActivity', 'copy.otherWorkspace', undefined]);

@@ -3,7 +3,8 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import type { LiveRun } from '../../task-runs';
-import type { SleepCause } from '../../types';
+import { ranAgent } from '../../agents';
+import type { AgentId, SleepCause } from '../../types';
 import { act } from '@/components/actions';
 import { type CloseTabSettings, type SleepNoticeKey, stopRun, useCloseTab, whereOf } from '@/components/close-tab-notice';
 import { NOTICE_MS, NOTICE_WIDTH } from '@/components/NoticeShell';
@@ -17,7 +18,7 @@ import { isTabOpen, readCenterLayouts } from '@/lib/center-layout';
 export const SLEEP_NOTICE_KEY: Record<SleepCause, SleepNoticeKey> = { manual: 'sleepNotice', auto: 'sleepAutoNotice', idle: 'sleepIdleNotice', all: 'sleepAllNotice' };
 
 /** One session that slept, as the notice names it: its run, its name or short id, a stage run's stage. */
-export interface SleptSession { ptyId: string; session?: string; stage?: string }
+export interface SleptSession { ptyId: string; agent: AgentId; session?: string; stage?: string }
 
 /** What showSleepNotice shows (#672): why the sessions slept, who, where, and what continues them all. */
 export interface SleepNoticeInput { cause: SleepCause; sessions: SleptSession[]; where: string; onContinue?(): void }
@@ -29,7 +30,7 @@ export function sleepInput(activity: Activity, runs: LiveRun[], cause: SleepCaus
   const ids = runs.flatMap((run) => heldSession(activity, run.ptyId) ?? []);
   return {
     cause, where: whereOf(activity),
-    sessions: runs.map((run) => ({ ptyId: run.ptyId, session: run.session, stage: stageOf(run) })),
+    sessions: runs.map((run) => ({ ptyId: run.ptyId, agent: ranAgent(run), session: run.session, stage: stageOf(run) })),
     ...(ids.length === 0 ? {} : { onContinue: () => { for (const id of ids) continueSession(activity, id, openRun); } }),
   };
 }

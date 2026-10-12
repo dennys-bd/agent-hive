@@ -102,7 +102,7 @@ export function CopySessionDialog(props: CopySessionDialogProps) {
       >
         <DialogHeader>
           <DialogTitle>{t('copy.title', { to: labels.to })}</DialogTitle>
-          <DialogDescription className="text-[13px]">{t('copy.subtitle', { agent: t('session.claude'), id: labels.shortId, from: labels.from })}</DialogDescription>
+          <DialogDescription className="text-[13px]">{t('copy.subtitle', { agent: labels.agent, id: labels.shortId, from: labels.from })}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-name`}>{t('copy.name')}</Label>

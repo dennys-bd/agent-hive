@@ -5,7 +5,7 @@ import { setLanguage, t } from '@/i18n';
 
 // The sleep notice's view (#672), with the user's image's words: claude 9e03b7c2 of task #11
 const props = (patch: Partial<SleepNoticeProps> = {}): SleepNoticeProps => ({
-  sessions: [{ session: '9e03b7c2' }], where: '#11 Task 11', hasTab: true,
+  sessions: [{ agent: 'claude' as const, session: '9e03b7c2' }], where: '#11 Task 11', hasTab: true,
   onContinue: vi.fn(), onSettings: vi.fn(), onDontWarn: vi.fn(async () => true), onClose: vi.fn(), ...patch,
 });
 const buttons = (): string[] => screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent ?? '');
@@ -22,7 +22,7 @@ test('one session with its tab open: sessão dormindo, the tab sentence, continu
 });
 
 test('one session with no tab open sleeps in the sidebar; a stage session names its stage; in English too (#672)', () => {
-  const { unmount } = render(<SleepNotice {...props({ hasTab: false, sessions: [{ session: '9e03b7c2', stage: 'dev' }] })} />);
+  const { unmount } = render(<SleepNotice {...props({ hasTab: false, sessions: [{ agent: 'claude' as const, session: '9e03b7c2', stage: 'dev' }] })} />);
   expect(screen.getByText('claude 9e03b7c2 da etapa dev está dormindo em #11 Task 11, na lateral, e pode ser continuada.')).toBeInTheDocument();
   unmount();
   setLanguage('en');
@@ -32,7 +32,7 @@ test('one session with no tab open sleeps in the sidebar; a stage session names 
 });
 
 test('several sessions: the count in the title, the sessions listed with commas and e, continuar todas (#672)', () => {
-  render(<SleepNotice {...props({ sessions: [{ session: 'aaaaaaaa' }, { session: 'bbbbbbbb' }, { session: 'cccccccc', stage: 'dev' }] })} />);
+  render(<SleepNotice {...props({ sessions: [{ agent: 'claude' as const, session: 'aaaaaaaa' }, { agent: 'claude' as const, session: 'bbbbbbbb' }, { agent: 'claude' as const, session: 'cccccccc', stage: 'dev' }] })} />);
   expect(screen.getByText('sessões dormindo · 3')).toBeInTheDocument();
   expect(screen.getByText('claude aaaaaaaa, claude bbbbbbbb e claude cccccccc da etapa dev dormiram em #11 Task 11. as tabs e os transcripts continuam abertos, e clicar em cada tab continua a sessão.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'continuar todas' })).toBeInTheDocument();

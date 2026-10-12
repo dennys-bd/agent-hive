@@ -1272,7 +1272,6 @@ const en = {
   'task.tries': '{label} · {n}/{max}',
   'task.waitingChildren': 'waiting for children · {done}/{total}', // #31: a show epic's card: its direct children done over all of them
   'task.sendFeedback': 'send feedback…',
-  'session.claude': 'claude',
   'session.sleeping': 'sleeping', // #614: a session no run holds, on its sidebar line
   'terminal.forget': 'forget', // #696: a sleeping terminal goes for good, its output and history with it
   'terminal.wake': 'wake', // #696: a sleeping terminal's pane
@@ -3048,7 +3047,6 @@ const pt: Record<MessageKey, string> = {
   'task.tries': '{label} · {n}/{max}',
   'task.waitingChildren': 'aguarda filhas · {done}/{total}', // #31
   'task.sendFeedback': 'enviar feedback…',
-  'session.claude': 'claude',
   'session.sleeping': 'dormindo', // #614
   'terminal.forget': 'esquecer', // #696
   'terminal.wake': 'acordar', // #696

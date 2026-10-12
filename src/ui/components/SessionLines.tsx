@@ -8,9 +8,8 @@ import type { AgentId, Session, Worker, Status } from '../../types.js';
 import { act, continueTaskSession } from '@/components/actions';
 import { stopRun, useCloseTab } from '@/components/close-tab-notice';
 import { CopyToSub, useCopyHost } from '@/components/CopySession';
-import { openLocalRun, openLocalSession } from '@/components/local-runs';
+import { continueLocalRun, openLocalSession } from '@/components/local-runs';
 import { CONTEXT_KIT } from '@/components/menu-kit';
-import { RUN_AGENT } from '@/components/NewRunButton';
 import { AgentIcon } from '@/components/SessionLabel';
 import { type SleepNoticeInput, showSleepNotice, useSleep } from '@/components/sleep-notice';
 import { StatusWord } from '@/components/StatusWord';
@@ -110,7 +109,7 @@ function LocalLine({ workspace, session, worker, shown }: LocalLineProps) {
   const ref = { activityId: localActivityId(workspace), sessionId: session.id }; // #629
   const clear = (): void => void act(`${sessionPath(ref)}/clear`);
   const sleep = (id: string): void => {
-    const input: SleepNoticeInput = { cause: 'manual', where: t('activities.local'), sessions: [{ ptyId: id, session: label }], onContinue: () => openLocalRun(workspace, RUN_AGENT, openRun, { continueId: session.id }) };
+    const input: SleepNoticeInput = { cause: 'manual', where: t('activities.local'), sessions: [{ ptyId: id, agent: session.agent, session: label }], onContinue: () => continueLocalRun(workspace, session.id, openRun) };
     void stopRun(id).then((isAsleep) => { if (isAsleep) showSleepNotice(input, settings); });
   };
   const last = ptyId === undefined

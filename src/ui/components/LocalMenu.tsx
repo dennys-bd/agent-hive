@@ -3,9 +3,9 @@ import type { ReactNode } from 'react';
 import { sessionLabel } from '../../task-runs';
 import { AGENT_IDS } from '../../types';
 import { act } from '@/components/actions';
-import { openLocalRun } from '@/components/local-runs';
+import { continueLocalRun, openLocalRun } from '@/components/local-runs';
 import { CONTEXT_KIT, DROPDOWN_KIT, type MenuKit } from '@/components/menu-kit';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { agentName } from '@/components/NewRunButton';
 import { useActivitySleepMenu } from '@/components/SleepMenu';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { sessionPath } from '@/lib/copy-targets';
@@ -39,9 +39,9 @@ function useLocalMenu(activity: LocalActivity, kit: MenuKit): { items: ReactNode
       {activity.kept.length > 0 && <Separator />}
       {activity.kept.map(({ session, run }) => (
         <Sub key={session.id}>
-          <SubTrigger>{`${agentName(RUN_AGENT)} · ${sessionLabel(session)}`}</SubTrigger>
+          <SubTrigger>{`${agentName(session.agent)} · ${sessionLabel(session)}`}</SubTrigger>
           <SubContent>
-            <Item disabled={run !== undefined} onSelect={() => openLocalRun(workspace, RUN_AGENT, openRun, { continueId: session.id })}>{t('task.continue')}</Item>
+            <Item disabled={run !== undefined} onSelect={() => continueLocalRun(workspace, session.id, openRun)}>{t('task.continue')}</Item>
             <Item className={DESTRUCTIVE} disabled={run !== undefined} onSelect={() => clear(session.id)}>{t('detail.clearSession')}</Item>
           </SubContent>
         </Sub>

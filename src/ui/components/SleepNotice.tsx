@@ -1,9 +1,10 @@
+import type { AgentId } from '../../types';
 import { NoticeShell, whoOf } from '@/components/NoticeShell';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 
 export interface SleepNoticeProps {
-  sessions: { session?: string; stage?: string }[]; // who slept: one, or each of a sleep all's
+  sessions: { agent: AgentId; session?: string; stage?: string }[]; // who slept: one, or each of a sleep all's
   where: string; // the task's label, or local
   hasTab: boolean; // a single session's tab is still open on its transcript
   onContinue?(): void; onSettings?(): void; onDontWarn?(checked: boolean): Promise<boolean>; onClose(): void;
@@ -18,12 +19,12 @@ function listOf(names: string[]): string {
 /** The sleep notice (#672), in the close-tab notice's layout: the title, the body, continuar (continuar todas for several) and the settings'
  * link, não avisar de novo and the countdown bar. A pure view: showSleepNotice mounts it and binds the callbacks. */
 export function SleepNotice({ sessions, where, hasTab, onContinue, ...shell }: SleepNoticeProps) {
-  const names = sessions.map(({ session, stage }) => whoOf(session, stage));
+  const names = sessions.map(({ agent, session, stage }) => whoOf(agent, session, stage));
   const isMany = names.length > 1;
   const title = isMany ? t('sleepNotice.titleMany', { n: names.length }) : t('sleepNotice.title');
   const body = isMany
     ? t('sleepNotice.bodyMany', { list: listOf(names), where })
-    : t(hasTab ? 'sleepNotice.body.tab' : 'sleepNotice.body.noTab', { who: names[0] ?? t('session.claude'), where });
+    : t(hasTab ? 'sleepNotice.body.tab' : 'sleepNotice.body.noTab', { who: names[0] ?? '', where });
   const actions = onContinue && (
     <Button type="button" variant="outline" size="sm" className="h-7" onClick={onContinue}>{t(isMany ? 'sleepNotice.continueAll' : 'session.continue')}</Button>
   );

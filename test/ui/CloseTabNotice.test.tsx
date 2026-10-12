@@ -5,7 +5,7 @@ import { setLanguage, t } from '@/i18n';
 
 // The notice after a tab closes and its session keeps running (#614): a close that sleeps shows the sleep notice instead (#672)
 const props = (patch: Partial<CloseTabNoticeProps> = {}): CloseTabNoticeProps => ({
-  session: '9e03b7c2', where: '#11 Task 11',
+  agent: 'claude', session: '9e03b7c2', where: '#11 Task 11',
   onReopen: vi.fn(), onSleep: vi.fn(), onSettings: vi.fn(), onDontWarn: vi.fn(async () => true), onClose: vi.fn(), ...patch,
 });
 const buttons = (): string[] => screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent ?? '');

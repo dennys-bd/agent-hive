@@ -2,8 +2,7 @@
 import type { OpenResult } from '../../types';
 import { toast } from 'sonner';
 import { continueTaskSession } from '@/components/actions';
-import { openLocalRun } from '@/components/local-runs';
-import { RUN_AGENT } from '@/components/NewRunButton';
+import { continueLocalRun } from '@/components/local-runs';
 import type { OpenRun } from '@/components/terminal-tabs';
 import type { CenterOps } from '@/hooks/use-center-layouts';
 import { type Activity, sleepingOf } from '@/lib/activities';
@@ -14,7 +13,7 @@ import { shownSize } from '@/lib/xterm-setup';
 /** Continues `sessionId` of the activity in a new run (#614, #672), as its sleeping line does: the task's open route, or a local session's
  * continue; `open` hears the new run, `onNoRun` a refusal. */
 export function continueSession(activity: Activity, sessionId: string, open?: OpenRun, onNoRun?: () => void): void {
-  if (activity.kind === 'local') openLocalRun(activity.workspace, RUN_AGENT, open, { continueId: sessionId, onNoRun });
+  if (activity.kind === 'local') continueLocalRun(activity.workspace, sessionId, open, { onNoRun });
   else continueTaskSession(activity.task, keptRef(activity, sessionId), open, onNoRun);
 }
 

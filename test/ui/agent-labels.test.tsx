@@ -1,6 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { continueLocalRun, openLocalRun } from '@/components/local-runs';
 import { SessionLine } from '@/components/SessionLines';
+import { SleepNotice } from '@/components/SleepNotice';
 import { setLanguage } from '@/i18n';
 import { liveRuns } from '../../src/task-runs';
 import type { AgentId, Task } from '../../src/types';
@@ -33,4 +35,21 @@ test('a run tab is labelled with the agent its worker runs, not Claude (#925)', 
   const worker = { id: 'w', status: 'working' as const, runId: 'W1', activityId: activityIdOf('I1'), sessionId: S, freeSession: true as const, agent: AGENT };
   const [run] = liveRuns(task, { workers: [worker], terminals: [], activities: [activity], activityRecords: [record] });
   expect(run).toMatchObject({ label: 'Othercli · a1b2c3d4', agent: OTHER });
+});
+
+test('a sleep notice names the agent of the session that slept (#925)', () => {
+  render(<SleepNotice sessions={[{ agent: AGENT, session: 'a1b2c3d4' }]} where="#1 Task 1" hasTab={false} onClose={vi.fn()} />);
+  expect(document.body.textContent).toMatch(/othercli a1b2c3d4/);
+  expect(document.body.textContent).not.toMatch(/claude/i);
+});
+
+test('a new local session posts its agent as the kind; a continued one posts none: its session decides (#925)', async () => {
+  const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  openLocalRun('hive', AGENT);
+  continueLocalRun('hive', S);
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  const kinds = fetchMock.mock.calls.map(([url, init]) => [String(url), (JSON.parse(String(init?.body)) as { kind?: string }).kind]);
+  expect(kinds).toEqual([['/activities/local%3Ahive/sessions', OTHER], [`/activities/local%3Ahive/sessions/${S}/open`, undefined]]);
+  vi.unstubAllGlobals();
 });

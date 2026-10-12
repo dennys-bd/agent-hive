@@ -1,5 +1,6 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
 import { useState } from 'react';
+import { agentName } from '../../agents';
 import type { KeyLike } from '../../shortcuts';
 import { worktreeSessions } from '../../tasks';
 import type { BaseOptions, Session, Task, Stage, State } from '../../types';
@@ -179,7 +180,7 @@ export function FreeFields({ id, task, state, session, onSession }: FreeFieldsPr
   const sessions = task === undefined ? [] : sessionChoices(task, state);
   return (
     <div className="grid grid-cols-2 gap-3">
-      <SelectField id={`${id}-agent`} label={t('start.agent')} value="claude" choices={[{ value: 'claude', label: t('session.claude') }]} onChange={() => {}} />
+      <SelectField id={`${id}-agent`} label={t('start.agent')} value="claude" choices={[{ value: 'claude', label: agentName('claude') }]} onChange={() => {}} />
       <SelectField id={`${id}-session`} label={t('session.pick')} value={session} choices={sessions.length > 0 ? sessions : [{ value: session, label: t('session.new') }]} onChange={onSession} />
     </div>
   );
