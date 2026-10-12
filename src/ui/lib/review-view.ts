@@ -1,5 +1,5 @@
 // The review as the diff pane reads it (#591). Pure.
-import { type Session, type DiffLine, type DiffScope, type FileDiff, isDesignAnchor, type LineAnchor, NEW_SESSION, type ReviewAnchor, type ReviewFile, type ReviewThread, type Status, type ThreadAnchor } from '../../types.js';
+import { type AgentId, type Session, type DiffLine, type DiffScope, type FileDiff, isDesignAnchor, type LineAnchor, NEW_SESSION, type ReviewAnchor, type ReviewFile, type ReviewThread, type Status, type ThreadAnchor } from '../../types.js';
 
 export const EMPTY_REVIEW: ReviewFile = { reviewed: [], drafts: [], threads: [] };
 
@@ -11,14 +11,14 @@ export const isReviewFile = (value: unknown): value is ReviewFile =>
 export const isReviewedIn = (review: ReviewFile | undefined, scope: DiffScope, file: FileDiff): boolean =>
   review?.reviewed.some((m) => m.scope === scope && m.path === file.path && m.hash === file.hash) ?? false;
 
-export interface ReviewSession { id: string; status: Status; lastUsedAt: string }
+export interface ReviewSession { id: string; status: Status; lastUsedAt: string; agent: AgentId } // agent: #925, the session's own
 
 /** The task's sessions as the review offers them (#591), oldest first, each with the status of the worker running it now, else empty. */
 // An activity as reviewSessions reads it: structural, since activities.ts is UI-only and this file also compiles for node
 type SessionSource = { records: { sessions: Session[] }[]; sessions: { status: Status; session?: { id: string } }[] };
 
 export const reviewSessions = (activity: SessionSource): ReviewSession[] =>
-  activity.records.flatMap((r) => r.sessions).map((s) => ({ id: s.id, lastUsedAt: s.lastUsedAt, status: activity.sessions.find((a) => a.session?.id === s.id)?.status ?? 'empty' }));
+  activity.records.flatMap((r) => r.sessions).map((s) => ({ id: s.id, lastUsedAt: s.lastUsedAt, agent: s.agent, status: activity.sessions.find((a) => a.session?.id === s.id)?.status ?? 'empty' }));
 
 /** sessão padrão (#591): the saved one while it is a session of the task or a new one, else the most recently used, else a new one. */
 export function defaultSessionOf(review: ReviewFile, sessions: ReviewSession[]): string {

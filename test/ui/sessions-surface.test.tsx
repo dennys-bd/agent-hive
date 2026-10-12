@@ -22,7 +22,7 @@ beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); vi.stubGlobal('fetc
 afterEach(() => vi.unstubAllGlobals());
 const paneOf = (): ReviewPane => ({
   taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: { ...EMPTY_REVIEW, threads: [THREAD], drafts: [DRAFT] },
-  sessions: [{ id: SESSION, status: 'working', lastUsedAt: AT }], defaultSession: SESSION, refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request,
+  sessions: [{ id: SESSION, status: 'working', lastUsedAt: AT, agent: 'claude' }], defaultSession: SESSION, refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request,
 });
 const VIEW = { openFile: vi.fn(), reviewed: () => false, mark: vi.fn(), submit: { failed: [SESSION], unsaved: [], canSubmit: true, submit: vi.fn() } };
 

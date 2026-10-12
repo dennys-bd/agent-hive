@@ -1,8 +1,9 @@
-import type { RefObject } from 'react';
+import { type RefObject, useContext } from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { NEW_SESSION } from '../../types';
 import { KeyHint } from '@/components/KeyHint';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { agentName } from '../../agents';
+import { DefaultAgentContext } from '@/components/NewRunButton';
 import { useReviewPane } from '@/components/review-context';
 import { SessionLabel } from '@/components/SessionLabel';
 import { StatusWord } from '@/components/StatusWord';
@@ -27,7 +28,8 @@ function RowSide({ id, participants }: { id: string; participants: string[] }) {
 }
 
 function Row({ id, participants }: { id: string; participants: string[] }) {
-  if (id === NEW_SESSION) return <>{t('review.newSessionOf', { agent: agentName(RUN_AGENT) })}<KeyHint id="newSession" /></>;
+  const defaultAgent = useContext(DefaultAgentContext);
+  if (id === NEW_SESSION) return <>{t('review.newSessionOf', { agent: agentName(defaultAgent) })}<KeyHint id="newSession" /></>;
   return <><SessionLabel id={id} /><RowSide id={id} participants={participants} /></>;
 }
 

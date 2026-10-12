@@ -1,6 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { continueLocalRun, openLocalRun } from '@/components/local-runs';
+import { ReviewContext, type ReviewPane } from '@/components/review-context';
+import { SessionLabel } from '@/components/SessionLabel';
+import { EMPTY_REVIEW } from '@/lib/review-view';
+import { chipText, commentText } from '../../src/review-message';
 import { SessionLine } from '@/components/SessionLines';
 import { SleepNotice } from '@/components/SleepNotice';
 import { setLanguage } from '@/i18n';
@@ -52,4 +56,16 @@ test('a new local session posts its agent as the kind; a continued one posts non
   const kinds = fetchMock.mock.calls.map(([url, init]) => [String(url), (JSON.parse(String(init?.body)) as { kind?: string }).kind]);
   expect(kinds).toEqual([['/activities/local%3Ahive/sessions', OTHER], [`/activities/local%3Ahive/sessions/${S}/open`, undefined]]);
   vi.unstubAllGlobals();
+});
+
+test('a review names a mentioned session by its own agent, on the page and in what the session receives (#925)', () => {
+  const pane: ReviewPane = {
+    taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, defaultSession: S, refresh: vi.fn(), edit: vi.fn(), isSending: false,
+    track: (request) => request, sessions: [{ id: S, status: 'working', lastUsedAt: 'T', agent: AGENT }],
+  };
+  render(<ReviewContext.Provider value={pane}><SessionLabel id={S} /></ReviewContext.Provider>);
+  expect(screen.getByText(/othercli/)).toBeInTheDocument();
+  expect(document.body.textContent).not.toMatch(/claude/i);
+  const anchor = { scope: 'worktree' as const, path: 'a.ts', side: 'new' as const, start: 1, end: 1, excerpt: ['x'] };
+  expect(commentText(anchor, 'T1', { text: `ask ${chipText(S)}`, mentions: [S] }, 'new', () => AGENT)).toContain('ask @othercli a1b2c3d4');
 });

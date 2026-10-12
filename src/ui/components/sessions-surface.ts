@@ -12,8 +12,8 @@ import { sessionConversation, type SurfaceAnchor } from '@/lib/surface';
 // openFile: abrir arquivo (#591), the file in the activity's editor pane, at its top: the file header carries no line (#717)
 export interface SessionsView { openFile(path: string): void; reviewed(file: FileDiff): boolean; mark(file: FileDiff, reviewed: boolean): void; submit: Pick<ReviewSubmit, 'failed' | 'unsaved' | 'canSubmit' | 'submit'> }
 
-const errorsOf = ({ failed, unsaved }: SessionsView['submit']): string[] => [
-  ...failed.map((s) => t('review.notDeliveredTo', { session: sessionName(s) })), ...unsaved.map((s) => t('review.notSavedTo', { session: sessionName(s) })),
+const errorsOf = ({ failed, unsaved }: SessionsView['submit'], sessions: ReviewPane['sessions']): string[] => [
+  ...failed.map((s) => t('review.notDeliveredTo', { session: sessionName(s, sessions) })), ...unsaved.map((s) => t('review.notSavedTo', { session: sessionName(s, sessions) })),
 ];
 
 const isLine = (item: { anchor: ThreadAnchor }): boolean => !isDesignAnchor(item.anchor);
@@ -36,7 +36,7 @@ export function sessionsSurface(pane: ReviewPane, view: SessionsView): ReviewSur
     editDraft: (id, text, session = pane.defaultSession) => editDraft(taskId, id, { text, session }).then(reread),
     reply: (id, text, mentions) => pane.track(replyTo(taskId, id, { text, ...(mentions === undefined ? {} : { mentions }) })).then(reread),
     resolve: (id, resolved) => resolveThread(taskId, id, resolved).then(reread),
-    submit: { canSubmit: view.submit.canSubmit, submit: view.submit.submit, errors: errorsOf(view.submit) },
+    submit: { canSubmit: view.submit.canSubmit, submit: view.submit.submit, errors: errorsOf(view.submit, pane.sessions) },
     openFile: (file) => view.openFile(file.path),
     sessions: {
       defaultSession: pane.defaultSession, isSending: pane.isSending,

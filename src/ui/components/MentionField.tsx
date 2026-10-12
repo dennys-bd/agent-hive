@@ -39,7 +39,7 @@ function Backdrop({ value, chips, ref }: { value: string; chips: ChipText[]; ref
   return (
     <div ref={ref} aria-hidden="true" className={`${LAYOUT} pointer-events-none absolute inset-0 overflow-hidden text-foreground`}>
       {/* biome-ignore lint/suspicious/noArrayIndexKey: a segment is its place in the text, which is all that tells two alike apart */}
-      {segmentsOf(value, chips).map((s, index) => (s.chip === undefined ? s.text : <SessionChip key={index} text={s.text} />))}
+      {segmentsOf(value, chips).map((s, index) => (s.chip === undefined ? s.text : <SessionChip key={index} id={s.chip} text={s.text} />))}
       {LAST_LINE}
     </div>
   );
@@ -119,7 +119,7 @@ export function MentionField({ label, value, chips, participants = [], autoFocus
   const { at, anchor } = useAtAnchor(field);
   const caretAfter = useCaretAfter(field);
   const texts = chipTextsOf(chips);
-  const options = query === undefined ? [] : [...pane.sessions.map((s) => s.id).filter((id) => matchesQuery(sessionName(id), query.query)), NEW_SESSION];
+  const options = query === undefined ? [] : [...pane.sessions.map((s) => s.id).filter((id) => matchesQuery(sessionName(id, pane.sessions), query.query)), NEW_SESSION];
   // A chip whose text no longer reads whole in the field is gone
   const emit = (next: string): void => onChange(next, texts.filter((c) => next.includes(c.text)).map((c) => c.id));
   const pick = (id: string): void => {
