@@ -49,6 +49,10 @@ import { registerProjectRoutes } from './server-project.js';
 import { registerBlockerRoutes } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
+import { accessFor } from './read-model/access.js';
+import type { ReadModel, SyncKind } from './read-model/db.js';
+import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
+import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
 import { registerPrGithubRoutes } from './server-pr-github.js';
 import { recordCheckpoint } from './server-checkpoints.js';
@@ -145,6 +149,8 @@ export interface ServerDeps {
   githubLogin?: GithubLoginDeps;
   /** The settings listings' GraphQL runner for a transport (#245); tests inject a fake, the default is gqlFor with the server's log. */
   settingsGql?: (auth: GithubAuth) => Gql;
+  /** #180: hive mode's read model, opened by bootHive; absent (setup mode, a failed open, every server test) no read sync runs. */
+  readModel?: ReadModel;
 }
 
 export interface HiveServer {
@@ -249,6 +255,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let closing = false; // set by close(): a poll still in flight then is stale (isStale) and spawns nothing
   let pollTimer: NodeJS.Timeout | undefined;
   let planLimitsTimer: NodeJS.Timeout | undefined;
+  let readModel = deps.readModel; // #180: close() closes it once
   let planLimitsReason: string | undefined; // last failure logged; a repeat is silent, a change and the recovery are one line each
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
@@ -287,6 +294,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   // A PR's review file changed, or a write reached GitHub (#592): a named event as review's, so no State reader takes it for one
   function notifyPrReview(url: string): void {
     const data = `event: prReview\ndata: ${JSON.stringify({ type: 'prReview', url })}\n\n`;
+    for (const res of clients) res.write(data);
+  }
+
+  // #180: a repository's rows changed in the read model; the kinds let a view reload only for its own
+  function notifyReadModel(repository: string, kinds: SyncKind[]): void {
+    const data = readModelEvent(repository, kinds);
     for (const res of clients) res.write(data);
   }
 
@@ -1087,6 +1100,13 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerProjectRoutes(app, { requireLive, dispatch, log }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log }); // GET /repositories and a repository's issues, read and written with the Hive's own login (#757)
+  // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
+  // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
+  const readLoop = deps.readModel && createReadModelLoop({
+    db: deps.readModel, log, notify: notifyReadModel,
+    access: () => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }),
+    repositories: async () => (live ? (await listRepositories(live.runtime.config, live.state, exec)).map((ref) => ref.repository) : []),
+  });
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 
   // The header's refresh button: read the plan limits now and replace the held reading, e.g. after a plan upgrade lowered the percent
@@ -1189,6 +1209,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (deps.runtime && deps.state) live = { runtime: await activate(deps.runtime.config, deps.runtime.sources), state: withWorkspaces(deps.state, deps.runtime.config) };
     pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS); // no-op until configured
     planLimitsTimer = setInterval(() => void refreshPlanLimits(), PLAN_LIMITS_INTERVAL_MS); // no-op until configured or without the dep
+    readLoop?.start(); // #180: a round now, then every POLL_INTERVAL_MS
     return bound;
   }
 
@@ -1196,6 +1217,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     closing = true;
     if (pollTimer) clearInterval(pollTimer);
     if (planLimitsTimer) clearInterval(planLimitsTimer);
+    await readLoop?.stop(); // #180: the running round and every refetch settle first: the database never closes under a transaction
+    readModel?.close();
+    readModel = undefined; // a second close() closes nothing twice
     githubFlow?.controller.abort(); // a pending login is not a child process; without this it would poll GitHub to expiry after shutdown
     // Every stop path is a Quit (#283): POST /stop (its onStop calls this), SIGTERM and SIGINT (run.ts) and the embedded close. Saved before
     // the kills, so their exits are ignored and the next boot resumes the tasks in flight instead of reporting a crash. Once: a second close()

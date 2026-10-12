@@ -10,6 +10,7 @@ import { PROMPTS_DIR } from './hooks-settings.js';
 import { languageFrom, systemLanguage } from './language.js';
 import { createLogger, type Logger } from './log.js';
 import { predatesTaskProps } from './task-props.js';
+import { openReadModel, READ_MODEL_FILE, type ReadModel } from './read-model/db.js';
 import { newSecret } from './secret.js';
 import { createServer, type HiveServer, type ServerDeps } from './server.js';
 import { loadState } from './state-store.js';
@@ -79,6 +80,19 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   return bootHiveMode(home, log, language, deps, config, sources);
 }
 
+// The daemon's read model (#180): hive mode only, under the hive.lock bootHive already holds. openReadModel imports node:sqlite itself, so
+// its warning stays in the process that opens it. A file it cannot open is no reason to stop the Hive: logged, and no read sync runs.
+async function openModel(home: string, log: Logger): Promise<ReadModel | undefined> {
+  try {
+    const { db, resync } = await openReadModel(join(home, READ_MODEL_FILE));
+    if (resync) log.info('read model: the file could not be read and was rebuilt empty; a full sync follows');
+    return db;
+  } catch (err) {
+    log.error(`read model: not opened, so nothing syncs: ${(err as Error).message}`);
+    return undefined;
+  }
+}
+
 async function bootHiveMode(
   home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>,
 ): Promise<BootedHive> {
@@ -87,7 +101,8 @@ async function bootHiveMode(
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
   const saved = { ...(await loadState(home, workspaceScope(config))), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
-  const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps });
+  const readModel = await openModel(home, log);
+  const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const port = await listenAndRecord(server, home, deps.secret);
   await server.boot(saved); // strays and the boot reducer: the same order as the first POST /settings
   await server.poll();
