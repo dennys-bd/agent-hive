@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ranAgent, stageAgentIn } from './agents.js';
+import { AGENTS, ranAgent, stageAgentIn } from './agents.js';
 import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
 import { handoverRun } from './task-runs.js';
@@ -147,8 +147,9 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const agent = stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
   const continues = stage.session === 'continue' && work.sessionId !== undefined && resumableBy(born.state, task, work.sessionId, agent); // #925: never another agent's session
   const session = answer?.policy ?? policy ?? (continues ? 'continue' : 'new');
-  // A new run is a new Claude session, a continue the activity's own (#164); either way the session records this stage and this use (#236)
-  const sessionId = session === 'new' ? randomUUID() : work.sessionId;
+  // A new run is a new session under an id the Hive chose (#164), or none until its first SessionStart for an agent that picks its own (#927,
+  // Codex); a continue is the activity's own. Either way the session records this stage and this use (#236)
+  const sessionId = session === 'new' ? (AGENTS[agent].canChooseSessionId ? randomUUID() : undefined) : work.sessionId;
   const worker: Worker = {
     id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
     ...sessionBaseline(born.state, task, sessionId), // a resumed transcript already holds its old turns (#248)
