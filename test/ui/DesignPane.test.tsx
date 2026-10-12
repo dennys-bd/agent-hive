@@ -7,7 +7,7 @@ import type { Activity } from '@/lib/activities';
 import type { ReviewFile, Task } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import { localPairOf, taskPairOf } from '../fixtures/work';
-import { area, PATH as REVIEW_PATH, REVIEW } from './design-review';
+import { area, PATH as REVIEW_PATH, REVIEW, stubScrollIntoView, unstubScrollIntoView } from './design-review';
 
 const PATH = 'design/Landing.hv.html';
 const NAME = 'Landing.hv.html';
@@ -59,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   delete document.documentElement.dataset.theme;
   vi.restoreAllMocks();
+  unstubScrollIntoView();
   vi.unstubAllGlobals();
 });
 
@@ -270,4 +271,33 @@ test('after every ready the pane sends the file\'s comments, open and resolved, 
   const ids: [string, number][] = [['T2', 2], ['T3', 3], ['T4', 4], ['D5', 5], ['T1', 1], ['T6', 6]];
   expect(posts('anchors')).toEqual([{ hive: 'design', type: 'anchors', anchors: ids.map(([id, pin]) => ({ id, anchor: area(pin) })) }]);
   expect(posts('comment-mode')).toEqual([{ hive: 'design', type: 'comment-mode', on: false }]);
+});
+
+test('an item click posts scroll-to with its id, and the pins after it scroll the canvas to that pin (#114)', async () => {
+  const user = userEvent.setup();
+  review = REVIEW;
+  const scrolled = stubScrollIntoView();
+  render(pane());
+  await screen.findByTitle(NAME);
+  await screen.findByText('with the agent');
+  const posts = framePosts();
+  await user.click(screen.getByText('with the agent'));
+  expect(posts('scroll-to')).toEqual([{ hive: 'design', type: 'scroll-to', id: 'T4' }]);
+  expect(scrolled).not.toHaveBeenCalled();
+  fromFrame({ hive: 'design', type: 'pins', pins: [{ id: 'T4', rect: { x: 10, y: 20, width: 100, height: 30 } }] });
+  expect(scrolled).toHaveBeenCalledWith({ block: 'center' });
+  expect(scrolled.mock.contexts).toEqual([screen.getByRole('button', { name: 'comentário 4' })]);
+});
+
+test('an item whose rect came back null shows elemento removido; one with no answer yet shows nothing (#114)', async () => {
+  review = REVIEW;
+  render(pane());
+  await screen.findByTitle(NAME);
+  await screen.findByText('a question');
+  expect(screen.queryByText('elemento removido')).toBeNull();
+  fromFrame({ hive: 'design', type: 'pins', pins: [{ id: 'T2', rect: null }, { id: 'T4', rect: { x: 0, y: 40, width: 10, height: 10 } }] });
+  const removed = screen.getAllByText('elemento removido');
+  expect(removed).toHaveLength(1);
+  expect(removed[0].closest('li')).toHaveTextContent('a question');
+  expect(removed[0]).toHaveClass('text-muted-foreground');
 });

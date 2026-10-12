@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignComments } from '@/components/DesignComments';
 import { useDesignComments } from '@/hooks/use-design-comments';
+import { useCommentCanvas } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
 import { clockOf } from '@/lib/design-comments';
@@ -14,9 +15,11 @@ let hive: FakeHive;
 beforeEach(() => { setLanguage('pt'); hive = fakeHive(); hive.review = REVIEW; });
 afterEach(() => vi.unstubAllGlobals());
 
+const NO_RECTS = new Map();
 function Panel({ activity }: { activity: TaskActivity }) {
   const model = useDesignComments(activity, PATH);
-  return <DesignComments model={model} onHide={() => undefined} />;
+  const canvas = useCommentCanvas(model); // the pane's tab and selection (#114)
+  return <DesignComments model={model} tab={canvas.tab} selection={canvas.selection} rects={NO_RECTS} onTab={canvas.setTab} onSelect={canvas.selectItem} onHide={() => undefined} />;
 }
 const panel = (activity: TaskActivity = activityOf(withSessions())) => render(<Panel activity={activity} />);
 // An item by its text, and the words of its buttons

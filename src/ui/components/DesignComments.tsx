@@ -12,6 +12,7 @@ import { SessionPicker } from '@/components/SessionPicker';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
+import type { CommentSelection, CommentTab, PinRects } from '@/hooks/use-design-pins';
 import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
@@ -20,13 +21,12 @@ import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
 // The design pane's comments panel (#113): a design file's comments in the handoff's five states, their actions, and an inline box to reply
-// or reopen. The pins on the canvas and its composer are 3.4's (#114).
+// or reopen. The pins on the canvas and the composer are #114's, beside the panel.
 
 /** The pane's toggle groups (#109): a --card track, the checked item in --accent. */
 export const TOGGLE_TRACK = 'shrink-0 rounded-md bg-card p-0.5';
 export const TOGGLE_ITEM = 'h-5 px-1.5 text-xs data-[state=on]:bg-accent data-[state=on]:text-foreground';
 
-type Tab = 'open' | 'resolved';
 type BoxMode = 'reply' | 'reopen';
 interface Action { key: MessageKey; run(): void }
 type Run = DesignCommentsModel['run'];
@@ -146,12 +146,15 @@ function InlineBox({ mode, onClose, onSubmit, isBusy }: { mode: BoxMode; onClose
   );
 }
 
-interface ItemProps { item: DesignComment; model: DesignCommentsModel; isSelected: boolean; box?: BoxMode; onSelect(): void; onBox(mode?: BoxMode): void }
+interface ItemProps { item: DesignComment; model: DesignCommentsModel; isSelected: boolean; isFromPin: boolean; isRemoved: boolean; box?: BoxMode; onSelect(): void; onBox(mode?: BoxMode): void }
 
 // One comment (#113): pin, target and time; its text; every later message; the status line; the inline box. The panel runs one request at a
 // time, then reads the file again, so a double click never sends a comment twice; the undelivered mark waits for that request too
-function CommentItem({ item, model, isSelected, box, onSelect, onBox }: ItemProps) {
+function CommentItem({ item, model, isSelected, isFromPin, isRemoved, box, onSelect, onBox }: ItemProps) {
   const { run, isBusy } = model;
+  const row = useRef<HTMLLIElement>(null);
+  // A pin's click selects an item the list may hold out of view (#114); an item's own click is in view already
+  useEffect(() => { if (isSelected && isFromPin) row.current?.scrollIntoView({ block: 'nearest' }); }, [isSelected, isFromPin]);
   const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.taskId, item.id, message.id))} /> : null);
   const [first, ...later] = item.messages;
   // The box closes only once the server took the request: a refusal (undefined) keeps it open with the typed text
@@ -160,10 +163,11 @@ function CommentItem({ item, model, isSelected, box, onSelect, onBox }: ItemProp
     if (done !== undefined) onBox(undefined);
   };
   return (
-    <li aria-current={isSelected ? 'true' : undefined} onPointerDownCapture={onSelect} className={`border-b px-3 py-2.5 ${isSelected ? SELECTED : STATE_TINT[item.state] ?? ''}`}>
+    <li ref={row} aria-current={isSelected ? 'true' : undefined} onPointerDownCapture={onSelect} className={`border-b px-3 py-2.5 ${isSelected ? SELECTED : STATE_TINT[item.state] ?? ''}`}>
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <Pin item={item} />
         <span title={targetOf(item.anchor)} className="min-w-0 flex-1 truncate font-mono">{targetOf(item.anchor)}</span>
+        {isRemoved && <span className="shrink-0 text-muted-foreground">{t('design.removed')}</span>}
         {item.at !== undefined && <span className="shrink-0 tabular-nums">{clockOf(new Date(item.at))}</span>}
       </div>
       <p className={`mt-1 whitespace-pre-wrap text-[13px] leading-[19px] ${item.state === 'resolved' ? 'text-muted-foreground' : 'text-foreground'}`}>{item.text}</p>
@@ -175,7 +179,7 @@ function CommentItem({ item, model, isSelected, box, onSelect, onBox }: ItemProp
   );
 }
 
-function PanelHeader({ tab, open, resolved, onTab, onHide }: { tab: Tab; open: number; resolved: number; onTab(next: Tab): void; onHide(): void }) {
+function PanelHeader({ tab, open, resolved, onTab, onHide }: { tab: CommentTab; open: number; resolved: number; onTab(next: CommentTab): void; onHide(): void }) {
   const hide = t('design.comments.hide');
   return (
     <div className="flex h-[26px] shrink-0 items-center border-b px-2">
@@ -209,11 +213,14 @@ function SendFooter({ model }: { model: DesignCommentsModel }) {
   );
 }
 
-/** The comments panel (#113): its tabs and ×, the list, one inline box open at a time. SessionPicker and SessionLabel read the task's
- *  sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert here. */
-export function DesignComments({ model, onHide }: { model: DesignCommentsModel; onHide(): void }) {
-  const [tab, setTab] = useState<Tab>('open');
-  const [selected, setSelected] = useState<string>();
+/** The comments panel (#113): its tabs and ×, the list, one inline box open at a time. The tab and the selection are the pane's (#114),
+ *  which its pins share; rects is the bridge's answer, a null one marks its item's target removed. SessionPicker and SessionLabel read
+ *  the task's sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert. */
+export interface DesignCommentsProps {
+  model: DesignCommentsModel; tab: CommentTab; selection?: CommentSelection; rects: PinRects;
+  onTab(next: CommentTab): void; onSelect(id: string): void; onHide(): void;
+}
+export function DesignComments({ model, tab, selection, rects, onTab, onSelect, onHide }: DesignCommentsProps) {
   const [box, setBox] = useState<{ id: string; mode: BoxMode }>();
   const pane: ReviewPane = {
     taskId: model.taskId, scope: 'worktree', task: taskLabel(model.activity.task), review: model.review, sessions: model.sessions,
@@ -223,12 +230,12 @@ export function DesignComments({ model, onHide }: { model: DesignCommentsModel; 
   return (
     <ReviewContext.Provider value={pane}>
       <aside aria-label={t('design.comments')} className="flex min-h-0 min-w-0 flex-col bg-background text-xs">
-        <PanelHeader tab={tab} open={model.open.length} resolved={model.resolved.length} onTab={setTab} onHide={onHide} />
+        <PanelHeader tab={tab} open={model.open.length} resolved={model.resolved.length} onTab={onTab} onHide={onHide} />
         <ol className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
           {items.map((item) => (
             <CommentItem
-              key={item.id} item={item} model={model} isSelected={selected === item.id} box={box?.id === item.id ? box.mode : undefined}
-              onSelect={() => setSelected(item.id)} onBox={(mode) => setBox(mode === undefined ? undefined : { id: item.id, mode })}
+              key={item.id} item={item} model={model} isSelected={selection?.id === item.id} isFromPin={selection?.isFromPin === true} isRemoved={rects.get(item.id) === null} box={box?.id === item.id ? box.mode : undefined}
+              onSelect={() => onSelect(item.id)} onBox={(mode) => setBox(mode === undefined ? undefined : { id: item.id, mode })}
             />
           ))}
         </ol>

@@ -1,12 +1,13 @@
 import { MessageCircleIcon } from 'lucide-react';
-import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
+import { DesignPins } from '@/components/DesignPins';
 import { DesignComments, TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
-import { anchorsOf, bridgeData, type CommentCanvas, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
+import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX, VIEWPORTS } from '@/hooks/use-design-zoom';
 import { t } from '@/i18n';
@@ -180,23 +181,24 @@ function DesignBar({ path, name, reloadedAt, viewport, theme, zoom, comments, on
   );
 }
 
-interface CanvasProps { canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>; url?: string; name: string; width: number; height: number; zoom: DesignZoom; reloads: number; isCommenting: boolean }
+interface CanvasProps { canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>; url?: string; name: string; width: number; height: number; zoom: DesignZoom; reloads: number; isCommenting: boolean; children?: ReactNode }
 
 // The canvas scrolls a box the zoomed frame's size, and the frame inside it keeps its own size and scales from its top-left corner: a
 // transform alone leaves the layout box, so the canvas would not scroll to a zoomed frame's edges. The box does not clip (overflow visible)
-function DesignCanvas({ canvas, frame, url, name, width, height, zoom, reloads, isCommenting }: CanvasProps) {
+function DesignCanvas({ canvas, frame, url, name, width, height, zoom, reloads, isCommenting, children }: CanvasProps) {
   const scale = zoom.zoom / FULL;
   // The bridge sets the crosshair inside the frame only (#112): the margin takes it here
   const cursor = zoom.isPanning ? 'grab' : (isCommenting ? 'crosshair' : undefined);
   return (
     <div ref={canvas} data-design-canvas onPointerDown={zoom.onPointerDown} style={{ ...DOTS, cursor }} className="min-h-0 flex-1 overflow-auto bg-background p-4">
-      <div data-design-box style={{ width: width * scale, height: height * scale, boxShadow: FRAME_SHADOW }} className="mx-auto rounded-md">
+      <div data-design-box style={{ width: width * scale, height: height * scale, boxShadow: FRAME_SHADOW }} className="relative mx-auto rounded-md">
         {url !== undefined && (
           <iframe
             key={reloads} ref={frame} src={url} title={name} sandbox="allow-scripts" width={width} height={height} className="block rounded-md border-0"
             style={{ transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: zoom.isPanning ? 'none' : undefined }}
           />
         )}
+        {children}
       </div>
     </div>
   );
@@ -222,6 +224,14 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   if (metaKey || ctrlKey || altKey || shiftKey || isTextField(target) || !canvas.takeKey(key)) return false;
   event.preventDefault();
   return true;
+}
+
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; scale: number; theme: DesignTheme }
+
+// The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them
+function CommentOverlay({ model, canvas, rects, scale, theme }: OverlayProps) {
+  const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
+  return <DesignPins items={items} rects={rects} scale={scale} theme={theme} selected={canvas.selection?.id} onSelect={canvas.selectPin} />;
 }
 
 // The pane itself (#109, #113): comments only on a task's
@@ -260,8 +270,17 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
       <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
-          : <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting} />}
-        {comments !== undefined && marks.isPanelShown && <DesignComments model={comments} onHide={() => marks.setPanelShown(false)} />}
+          : (
+            <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
+              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} scale={zoom.zoom / FULL} theme={theme} />}
+            </DesignCanvas>
+          )}
+        {comments !== undefined && marks.isPanelShown && (
+          <DesignComments
+            model={comments} tab={marks.tab} selection={marks.selection} rects={pins.rects} onTab={marks.setTab} onHide={() => marks.setPanelShown(false)}
+            onSelect={(id) => { marks.selectItem(id); pins.scrollTo(id); }}
+          />
+        )}
       </div>
     </section>
   );
