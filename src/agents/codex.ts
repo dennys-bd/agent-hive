@@ -6,6 +6,7 @@ import { installShim } from '../shim.js';
 import { isRecord } from '../rate-limits.js';
 import { SECRET_HEADER } from '../secret.js';
 import type { HookPayload } from '../types.js';
+import { tomlString } from './codex-home.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
@@ -16,9 +17,6 @@ export const CODEX_HOOK_EVENTS: readonly string[] = ['SessionStart', 'UserPrompt
 
 const TRUST_FLAG = '--dangerously-bypass-hook-trust'; // the inline hooks run without the trust entry Codex would persist in config.toml (§1)
 const MODEL_FLAG = '-m';
-
-/** A TOML basic string: JSON's escapes are TOML's, except DEL, which TOML wants escaped and JSON leaves raw. */
-export const tomlString = (text: string): string => JSON.stringify(text).replace(/\u007f/g, '\\u007f');
 
 const override = (key: string, value: string): LaunchArg => ['-c', `${key}=${value}`];
 
