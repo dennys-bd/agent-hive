@@ -160,3 +160,44 @@ test('the exit of a local run that never opened forgets the entry its copy appen
   const continued = reduce(kept, { type: 'openLocalSession', activityId: localActivityId('hive'), sessionId: SOURCE }).state;
   assert.equal(localSessionsOf(reduce(continued, { type: 'exit', ptyId: continued.workers.at(-1)!.runId! }).state, 'hive').length, 1);
 });
+
+// #933: A's session as Codex's, which picks its own id: the copy opens under the Hive's placeholder, and its first SessionStart names the fork
+const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
+const SUBAGENT = 'f0f0f0f0-0000-4000-8000-000000000002';
+const codexHive = (): State => withWork(hive([A, B]), 'local:1', { worktree: worktreeOf(1), sessionId: SOURCE }, { sessions: [session({ agent: 'codex' })] });
+const sessionStart = (state: State, id: string, source: string): State =>
+  reduce(state, { type: 'hook', ptyId: state.workers.at(-1)!.runId!, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: worktreeOf(2), source } }).state;
+const entriesOf = (state: State, itemId: string) => sessionsOf(state, itemId).map((s) => [s.id, s.name, s.tokens, s.agent]);
+
+test('a copy of a codex session runs codex under a placeholder; its first SessionStart renames the worker and the entry to the fork\'s id, name and tokens kept; a later one (a subagent\'s) changes nothing (#933)', () => {
+  const before = codexHive();
+  const frozen = structuredClone(before);
+  const copied = copyTo(before, { activityId: activityIdOf('local:2') }, { copied: undefined });
+  const placeholder = copied.state.workers.at(-1)!;
+  assert.deepEqual([placeholder.agent, spawnOf(copied.effects).sessionId], ['codex', placeholder.sessionId]);
+  const forked = sessionStart(copied.state, FORK, 'fork');
+  assert.deepEqual(before, frozen, 'the input is not mutated');
+  assert.deepEqual([forked.workers.at(-1)!.sessionId, forked.workers.at(-1)!.tokens], [FORK, 1200]);
+  assert.deepEqual(entriesOf(forked, 'local:2'), [[FORK, 'no dois', 1200, 'codex']]);
+  assert.equal(activityOf(forked, 'local:2')?.sessionId, undefined, 'a free session never becomes the stage run\'s');
+  const again = sessionStart(forked, SUBAGENT, 'startup');
+  assert.deepEqual([again.workers.at(-1)!.sessionId, entriesOf(again, 'local:2')], [FORK, entriesOf(forked, 'local:2')]);
+});
+
+test('a local copy of a codex session takes the fork\'s id in its workspace\'s local record, name and tokens kept (#933)', () => {
+  const copied = copyTo(codexHive(), { activityId: localActivityId('hive') }, { copied: undefined }).state;
+  const forked = sessionStart(copied, FORK, 'fork');
+  assert.equal(forked.workers.at(-1)!.sessionId, FORK);
+  assert.deepEqual(localSessionsOf(forked, 'hive').map((s) => [s.id, s.name, s.tokens]), [[FORK, 'no dois', 1200]]);
+});
+
+test('a codex free session resumed under its own id is not renamed; a claude copy keeps the Hive\'s id whatever its first SessionStart names (#933)', () => {
+  const kept = withLocal(hive([]), 'hive', [session({ stages: [], agent: 'codex' })]);
+  const resumed = reduce(kept, { type: 'openLocalSession', activityId: localActivityId('hive'), sessionId: SOURCE }).state;
+  const seen = sessionStart(resumed, SOURCE, 'resume');
+  assert.deepEqual([seen.workers.at(-1)!.sessionId, localSessionsOf(seen, 'hive').map((s) => s.id)], [SOURCE, [SOURCE]]);
+  const claude = copyTo(hive([A, B]), { activityId: activityIdOf('local:2') }, { copied: undefined }).state;
+  const chosen = claude.workers.at(-1)!.sessionId;
+  const started = sessionStart(claude, FORK, 'startup');
+  assert.deepEqual([started.workers.at(-1)!.sessionId, sessionsOf(started, 'local:2').map((s) => s.id)], [chosen, [chosen]], 'claude runs under the id the Hive chose');
+});
