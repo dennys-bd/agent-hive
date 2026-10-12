@@ -10,7 +10,7 @@ import { commandsIn } from './run-commands.js';
 import { answerOpen, type LiveView, type TaskRouteDeps, openTask, workspaceOf, type Refusal } from './server-tasks.js';
 import { adoptTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { transcriptDir } from './usage.js';
+import { runners } from './agents/registry.js';
 import { treeRoot } from './server-tree.js';
 import { treeFolder } from './tree-paths.js';
 import { AGENT_IDS, type ActivityRecord, type Task, type Session, type State } from './types.js';
@@ -131,9 +131,10 @@ async function openLocal(deps: OpenDeps, current: LiveView, activityId: string, 
   const name = localWorkspaceOf(activityId) ?? '';
   const found = workspaceByName(current.runtime.config, name);
   if (!found) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_WORKSPACE_MESSAGE });
-  if (!continuableLocal(current.state, name).some((s) => s.id === sessionId)) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
-  if (copyPending(current.state.workers, sessionId, transcriptDir(found.path))) return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
-  if ((await findTranscript([found.path], sessionId)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
+  const session = continuableLocal(current.state, name).find((s) => s.id === sessionId);
+  if (!session) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
+  if (copyPending(current.state.workers, sessionId, runners[session.agent].transcriptDir(found.path))) return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
+  if ((await findTranscript([found.path], sessionId, session.agent)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   await answerOpen(deps, await deps.dispatch({ type: 'openLocalSession', activityId, sessionId }, size), res);
 }
 
@@ -147,10 +148,10 @@ async function openTaskSession(deps: OpenDeps, current: LiveView, record: Activi
   const workspace = taskWorkspace(current.runtime.config, task); // workspaceOf's rule (#179)
   if (!workspace) return refuse(res, { status: task.workspace === undefined ? HTTP_BAD_REQUEST : HTTP_CONFLICT, message: noWorkspaceReason(task) });
   const dir = workDir(workspace.path, task, activityOf(current.state, task.item.itemId), record); // a kept session's transcript waits there until adopted (#208, #629)
-  if (copyPending(current.state.workers, resume, transcriptDir(session.repo ? workspace.path : dir))) {
+  if (copyPending(current.state.workers, resume, runners[session.agent].transcriptDir(session.repo ? workspace.path : dir))) {
     return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
   }
-  if (session.repo && !(await adoptTranscript(dir, workspace.path, resume))) {
+  if (session.repo && !(await adoptTranscript(dir, workspace.path, resume, session.agent))) {
     return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE }); // opening would start an empty conversation under that id
   }
   await answerOpen(deps, await deps.dispatch({ type: 'openSession', activityId: record.id, continueId: resume }, size), res);

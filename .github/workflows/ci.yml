@@ -24,9 +24,9 @@ jobs:
           - lane: lint-types
             run: pnpm test:lint && pnpm test:types-ui
           - lane: node-1
-            run: pnpm exec tsc && pnpm exec vite build && node --test --test-shard=1/2 "dist/test/*.test.js" "dist/test/sources/*.test.js"
+            run: pnpm exec tsc && pnpm exec vite build && node --test --test-shard=1/2 "dist/test/*.test.js" "dist/test/agents/*.test.js" "dist/test/sources/*.test.js"
           - lane: node-2
-            run: pnpm exec tsc && pnpm exec vite build && node --test --test-shard=2/2 "dist/test/*.test.js" "dist/test/sources/*.test.js"
+            run: pnpm exec tsc && pnpm exec vite build && node --test --test-shard=2/2 "dist/test/*.test.js" "dist/test/agents/*.test.js" "dist/test/sources/*.test.js"
           # vitest is the slowest lane on this runner (a half measured 51-78 s), so it gets three runners
           - lane: vitest-1
             run: pnpm exec vitest run --shard=1/3

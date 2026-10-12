@@ -1124,7 +1124,7 @@ export interface Config {
   consoleLines: number; // required, no default (#353): the most lines a console channel keeps, summed over its runs; integer CONSOLE_LINES_MIN..CONSOLE_LINES_MAX
   /** Branch a new worker's worktree starts from (as origin/<branch>); absent = the remote's default (origin/HEAD), else main. */
   baseBranch?: string;
-  claudeArgs: string[];
+  agentArgs: Record<AgentId, string[]>; // #924: each agent's own arguments, after the Hive's flags and before the model and the session; required, every agent
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
   usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
   /** What closing the last main window does (#513, was #198's menuBar + stopOnClose): menuBar = the viewer stays in the menu bar and the
@@ -1528,6 +1528,8 @@ export interface SettingsBody {
   closeTerminalTabNotice?: boolean;
   /** Same rules as onClose (#516). */
   defaultAgent?: AgentId;
+  /** #924: the form always sends it; an API caller that omits it keeps the saved lists; a first setup without it starts with none. */
+  agentArgs?: Record<AgentId, string[]>;
   /** Same rules as onClose (#754). */
   fileIcons?: FileIcons;
   /** Same rules as onClose (#821). */
@@ -1718,20 +1720,19 @@ export interface PtyHandle {
   kill(): Promise<void>; // resolves when the process no longer exists; one kill per handle
 }
 
+/** One word of an agent's argv (#924): a plain word, or one of the Hive's own flags with its value, which ptyCommand renders bare with the
+ * value quoted. Here, not in agents/runner.ts, so the page's type check never follows a runner's imports. */
+export type LaunchArg = string | readonly [flag: string, value: string];
+
 /** Everything a spawner needs to start one run or terminal in a pty of the daemon's (#251, #647). */
 export interface PtyLaunch {
   ptyId: string;
   slug: string; // names the prompt file and the worktree directory
   cwd: string; // the task's worktree: where the worker runs. The Hive created it, so no runner needs a worktree flag of its own
   port: number;
-  hooksPath: string;
-  pluginDir: string; // the Hive's own skills and agents (<home>/plugin, #100): --plugin-dir, beside --settings. The target repo ships none
-  lspPluginDir?: string; // #803: the workspace's language-server plugin (<home>/lsp/<workspace>), a second --plugin-dir; absent when it has none, and for a terminal
-  mcpPath?: string; // the run's MCP config (#99), <promptsDir>/<ptyId>.mcp.json: its path is how pkill / pgrep find claude by the pty id
-  promptPath?: string; // the rendered prompt on disk: the command line reads it with $(cat …); absent = claude starts with no prompt (#164)
-  protocolPath?: string; // the protocol file for this run (<home>/protocol/stage.md or session.md, #167); absent = the agent is told nothing of the Hive (a local session, a terminal)
-  args: string[]; // the claude argv after --settings: claudeArgs, model, session (runArgs); [] for a terminal
-  terminal?: true; // a terminal in the task's worktree (#283, #647): no claude
+  agent?: { command: string; argv: LaunchArg[] }; // #924: the agent's CLI and the argv its runner rendered (launch or copy); absent for a terminal
+  promptPath?: string; // the rendered prompt on disk: the command line reads it with $(cat …); absent = the agent starts with no prompt (#164)
+  terminal?: true; // a terminal in the task's worktree (#283, #647): no agent
   run?: { command: string; env: Record<string, string> }; // with terminal: a workspace's run command instead of the interactive shell (#300); the run ends with it (#353); env: the command's own only (#738), names passed ENV_NAME
   env?: Record<string, string>; // the run's own on top of ptyEnv (#696, #738): the workspace's, then a kept terminal's HISTFILE and the shim's PATH
   keep?: PtyKeep; // #696: a kept terminal's ring: written to its log as it ends, the old one replayed on a wake

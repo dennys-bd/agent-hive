@@ -10,7 +10,7 @@ import { createStageCommandRunner, OUTPUT_MAX, OUTPUT_THROTTLE_MS, outputTail } 
 import type { Activity, Command, Effect, HiveEvent, SettingsBody, Stage, StageCommands, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { taskDir } from '../src/worktree.js';
-import { AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, SOURCE, tempHive, WORKSPACE } from './fakes.js';
+import { AUTH, combConfig, fakePtys, fakeSourceFactory, type FakePty, GITHUB_ENTRY, plainArgs, SOURCE, tempHive, WORKSPACE } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // A commands stage's commands on the server (#755): the runner alone over fakes, then end to end through a server over fake ptys.
@@ -92,7 +92,7 @@ test('index 0 prepares the worktree and records it, then starts the command as a
   assert.deepEqual([ready.activityId, ready.path, ready.base, ready.local], ['a1', CWD, null, false]);
   const [start] = h.started;
   assert.deepEqual(
-    [start.ptyId, start.launch.cwd, start.launch.env, start.launch.run, start.launch.terminal, start.launch.args],
+    [start.ptyId, start.launch.cwd, start.launch.env, start.launch.run, start.launch.terminal, plainArgs(start.launch)],
     ['P0', CWD, { FROM: 'workspace' }, { command: 'pnpm build', env: { NODE_ENV: 'production' } }, true, []],
   );
   assert.equal(h.begun[0].channel.id, 'stage:checks');

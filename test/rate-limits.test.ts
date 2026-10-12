@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatRateLimits, isRateLimits, MAX_WINDOWS, mergeRateLimits, parseRateLimits, parseUsage, windowLabel } from '../src/rate-limits.js';
+import { parseRateLimits, parseUsage } from '../src/agents/claude-limits.js';
+import { formatRateLimits, isRateLimits, MAX_WINDOWS, mergeRateLimits, windowLabel } from '../src/rate-limits.js';
 import type { RateLimits } from '../src/types.js';
 
 const NOW = new Date('2026-09-16T12:00:00.000Z');

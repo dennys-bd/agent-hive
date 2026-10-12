@@ -65,11 +65,11 @@ export interface Refusal { status: number; message: string }
 export interface TaskRouteDeps {
   exec: Exec; // git for the base popup (#131) and the delete-activity route (#182, #573); tests inject a fake
   log: Pick<Logger, 'debug' | 'error' | 'info'>; // the transcripts' deletion (#236): a file already gone at debug, a failure at error; the worktree setup's steps at info (#299)
-  /** The live runtime comes with the state: claudeArgs, the branch template, the base branch and the Comb's prefix are read at
+  /** The live runtime comes with the state: agentArgs, the branch template, the base branch and the Comb's prefix are read at
    * call time, a POST /settings may have changed them; the source is the live one. */
   requireLive(res: Response): {
     state: State;
-    runtime: { config: Pick<Config, 'claudeArgs' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string; pluginDir: string };
+    runtime: { config: Pick<Config, 'agentArgs' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string; pluginDir: string };
   } | undefined;
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, reaches only the spawns this event causes
   language(): Language; // the Hive's effective language, the config's else the system's: a kept-both item's " - copy" suffix (#594)

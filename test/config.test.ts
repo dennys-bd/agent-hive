@@ -22,7 +22,7 @@ test('parseConfig applies defaults on top of a minimal config', () => {
   const config = parseConfig({ ...GITHUB });
   assert.equal('maxConcurrent' in config, false, 'the state owns the cap (#727)');
   assert.equal('port' in config, false, 'the daemon binds a free port (#466): no setting');
-  assert.deepEqual(config.claudeArgs, []);
+  assert.deepEqual(config.agentArgs, { claude: [] });
   assert.deepEqual(config.budget, {});
   assert.deepEqual(config.usageRules, []);
   assert.equal('epics' in config, false, 'the epics keys live on each source (#30)');
@@ -267,6 +267,16 @@ test('parseConfig requires closeSessionTab and closeStageTab (keep or sleep) and
   assert.equal('closeTabEndsSession' in old || 'closeTabEndsStageSession' in old, false, 'an old key is neither read nor refused');
 });
 
+test('parseConfig requires agentArgs, one array of strings per agent, and names a missing agent, a non-array value and an unknown key (#924)', () => {
+  assert.deepEqual(parseConfig(GITHUB).agentArgs, { claude: [] }, 'what combConfig writes: the form default');
+  assert.deepEqual(parseConfig({ ...GITHUB, agentArgs: { claude: ['--permission-mode', 'auto', 'a b'] } }).agentArgs, { claude: ['--permission-mode', 'auto', 'a b'] });
+  const notList = 'hive.config.json: "agentArgs.claude" must be an array of strings';
+  for (const bad of [undefined, {}, { claude: 'x' }, { claude: [1] }, { claude: null }]) {
+    assert.throws(() => parseConfig({ ...GITHUB, agentArgs: bad }), { message: notList }, JSON.stringify(bad));
+  }
+  assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: [], codex: [] } }), { message: 'hive.config.json: "agentArgs" has an unknown agent "codex"' });
+});
+
 test('parseConfig requires defaultAgent, one of the known agents, with no default (#516)', () => {
   assert.equal(parseConfig(GITHUB).defaultAgent, 'claude', 'what combConfig writes: the form default');
   for (const bad of [undefined, 'codex', '', 1, null]) {
@@ -339,8 +349,8 @@ test('parseConfig requires shortcuts, the user\'s changes only: a binding stored
 });
 
 test('parseConfig keeps explicit values and ignores a leftover port (#466)', () => {
-  const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 3, filter: FILTER }, port: 5000, claudeArgs: ['--model', 'sonnet'] }));
-  assert.deepEqual(config.claudeArgs, ['--model', 'sonnet']);
+  const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 3, filter: FILTER }, port: 5000, agentArgs: { claude: ['--model', 'sonnet'] } }));
+  assert.deepEqual(config.agentArgs, { claude: ['--model', 'sonnet'] });
   assert.equal('port' in config, false);
 });
 
@@ -359,7 +369,7 @@ test('parseConfig rejects missing or wrong-typed fields with the field name', ()
   assert.throws(() => parseConfig(github({ source: { type: 'github', owner: '@me' } })), /comb\.sources\[0\]\.number/);
   assert.throws(() => parseConfig(github({ source: { type: 'github', number: 1 } })), /comb\.sources\[0\]\.owner/);
   assert.throws(() => parseConfig(github({ source: { type: 'asana', id: 1 } })), { message: 'hive.config.json: "comb.sources[0].type" must be one of: github' });
-  assert.throws(() => parseConfig({ ...GITHUB, claudeArgs: 'x' }), /claudeArgs/);
+  assert.throws(() => parseConfig({ ...GITHUB, agentArgs: { claude: 'x' } }), /agentArgs/);
 });
 
 test('loadConfig reads hive.config.json from the home and reports a missing file clearly', async (t) => {

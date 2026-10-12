@@ -6,7 +6,8 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedArgs, capturedReply, installShim, renderShim, shimPath } from '../src/claude-shim.js';
+import { capturedReply, installShim, renderShim, shimPath } from '../src/shim.js';
+import { runners } from '../src/agents/registry.js';
 import { tempDir } from './temp-dir.js';
 
 const run = promisify(execFile);
@@ -41,17 +42,17 @@ async function shimmed(t: TestContext, port: number, extraEnv: Record<string, st
   await mkdir(real);
   await writeFile(join(real, 'claude'), FAKE_CLAUDE);
   await chmod(join(real, 'claude'), 0o755);
-  await installShim(home);
+  await installShim(home, AGENTS.claude);
   const secretFile = join(home, 'hive.secret');
   await writeFile(secretFile, 'x-hive-secret: s3cret\n');
   const out = join(home, 'out');
   // a second dir before the real one holding a link to the shim: the loop must skip it as the same file, not recurse into itself
   const linked = join(home, 'linked');
   await mkdir(linked);
-  await symlink(shimPath(home), join(linked, 'claude'));
+  await symlink(shimPath(home, AGENTS.claude), join(linked, 'claude'));
   const env = { PATH: `${join(home, 'bin')}:${linked}:${real}:/usr/bin:/bin`, HIVE_PTY_ID: 'T1', HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile, OUT: out, ...extraEnv };
   return async (...args) => {
-    await run(shimPath(home), args, { env });
+    await run(shimPath(home, AGENTS.claude), args, { env });
     return (await readFile(out, 'utf8')).trimEnd().split('\n');
   };
 }
@@ -88,13 +89,13 @@ test('capturedReply answers the run id then one arg per line, and refuses an arg
   assert.equal(capturedReply(RUN_ID, ['cr\r']), undefined);
 });
 
-test('capturedArgs puts the workspace\'s language-server plugin right after the Hive\'s own --plugin-dir, as ptyCommand does, and nothing without one (#803)', () => {
-  const base = { sessionId: 'S1', mcpPath: '/h/prompts/R1.mcp.json', hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', claudeArgs: ['--model', 'opus'] };
-  assert.deepEqual(capturedArgs({ ...base, lspPluginDir: '/h/lsp/hive', protocolPath: '/h/protocol/session.md' }), [
+test('a captured session\'s argv puts the workspace\'s language-server plugin right after the Hive\'s own --plugin-dir, as ptyCommand does, and nothing without one (#803, #924)', () => {
+  const base = { ptyId: 'R1', mcpPath: '/h/prompts/R1.mcp.json', hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: ['--model', 'opus'], session: { id: 'S1', resume: false } };
+  assert.deepEqual(runners.claude.launch({ ...base, lspPluginDir: '/h/lsp/hive', protocolPath: '/h/protocol/session.md' }).flat(), [
     '--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--plugin-dir', '/h/lsp/hive',
-    AGENTS.claude.protocolFlag, '/h/protocol/session.md', '--model', 'opus', '--session-id', 'S1',
+    '--append-system-prompt-file', '/h/protocol/session.md', '--model', 'opus', '--session-id', 'S1',
   ]);
-  assert.deepEqual(capturedArgs(base), ['--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--model', 'opus', '--session-id', 'S1']);
+  assert.deepEqual(runners.claude.launch(base).flat(), ['--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--model', 'opus', '--session-id', 'S1']);
 });
 
 test('--resume, -p, --version and a subcommand pass straight through, unregistered (#696)', async (t) => {
@@ -113,11 +114,12 @@ test('a refused register runs the user\'s command as typed, with no exit report 
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session']);
 });
 
-test('renderShim writes claude\'s subcommands as the passthrough pattern; installShim writes <home>/bin/claude executable (#696)', async (t) => {
-  assert.equal(renderShim('case "$1" in __HIVE_SUBCOMMANDS__) ;; esac'), `case "$1" in ${AGENTS.claude.subcommands.join('|')}) ;; esac`);
+test('renderShim writes the agent\'s subcommands as the passthrough pattern; installShim writes <home>/bin/<command> executable; shimPath follows the command (#696, #924)', async (t) => {
+  assert.equal(renderShim('case "$1" in __HIVE_SUBCOMMANDS__) ;; esac', AGENTS.claude), `case "$1" in ${AGENTS.claude.subcommands.join('|')}) ;; esac`);
   const home = await tempDir(t, 'home-');
-  const path = await installShim(home);
-  assert.equal(path, shimPath(home));
+  const path = await installShim(home, AGENTS.claude);
+  assert.equal(path, shimPath(home, AGENTS.claude));
   assert.equal((await stat(path)).mode & 0o777, 0o755);
   assert.equal((await readFile(path, 'utf8')).includes('__HIVE_SUBCOMMANDS__'), false);
+  assert.equal(shimPath('/h', { command: 'other' }), join('/h', 'bin', 'other'), 'one file per agent, named after its command');
 });

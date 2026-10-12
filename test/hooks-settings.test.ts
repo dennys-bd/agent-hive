@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { excludeFromGit, HOOK_EVENTS, hookCommand, PLUGIN_DIR, PROTOCOL_DIR, prepareHome, renderHooksSettings, renderMcpConfig, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
+import { runners } from '../src/agents/registry.js';
+import { HOOK_EVENTS, renderHooksSettings, renderMcpConfig } from '../src/agents/claude-home.js';
+import { excludeFromGit, hookCommand, PLUGIN_DIR, PROTOCOL_DIR, prepareHome, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
 import { SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -60,7 +62,7 @@ test('statusCommand posts the status line JSON to /hooks/status, prints the repl
 test('prepareHome writes hooks.json and prompts/ into the home, creating it for this user only, and nothing anywhere else', async (t) => {
   const parent = await tempDir(t, '');
   const home = join(parent, 'agent-hive'); // does not exist yet: a first boot creates it
-  const paths = await prepareHome(home, 4242);
+  const paths = await prepareHome(home, 4242, [runners.claude]);
   assert.deepEqual(paths, {
     hooksPath: join(home, 'hooks.json'), promptsDir: join(home, 'prompts'), pluginDir: join(home, 'plugin'),
     protocol: { stage: join(home, 'protocol', 'stage.md'), session: join(home, 'protocol', 'session.md') },
@@ -69,13 +71,13 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   assert.deepEqual(await readdir(paths.promptsDir), []);
   assert.equal((await stat(home)).mode & 0o777, 0o700, 'the home holds the log and the prompts');
   assert.deepEqual(await readdir(parent), ['agent-hive']);
-  await prepareHome(home, 4343);
+  await prepareHome(home, 4343, [runners.claude]);
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4343), 'rewritten for the port in use');
 });
 
 test('prepareHome copies the Hive plugin into <home>/plugin on every boot, wiping what a previous version left there', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
-  const { pluginDir } = await prepareHome(home, 4242);
+  const { pluginDir } = await prepareHome(home, 4242, [runners.claude]);
   assert.equal(pluginDir, join(home, PLUGIN_DIR));
   const manifest = JSON.parse(await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string };
   assert.equal(manifest.name, 'hive', 'the namespace /hive:new-spec and hive:tdd are built from it');
@@ -84,20 +86,26 @@ test('prepareHome copies the Hive plugin into <home>/plugin on every boot, wipin
   const stale = join(pluginDir, 'skills', 'gone', 'SKILL.md');
   await mkdir(join(pluginDir, 'skills', 'gone'), { recursive: true });
   await writeFile(stale, 'from a previous version');
-  await prepareHome(home, 4242);
+  await prepareHome(home, 4242, [runners.claude]);
   await assert.rejects(stat(stale), 'the copy is a wipe, not a merge');
   assert.ok(await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'), 'and the fresh copy is back');
 });
 
+test('prepareHome with no runner writes the shared files only: no hooks.json and no shim for an agent boot did not find (#924)', async (t) => {
+  const home = join(await tempDir(t, ''), 'agent-hive');
+  await prepareHome(home, 4242, []);
+  assert.deepEqual((await readdir(home)).sort(), ['plugin', 'prompts', 'protocol']);
+});
+
 test('prepareHome writes the stage and the session protocol into <home>/protocol, for this user only, returns their paths, and a later boot rewrites them (#167)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
-  const { protocol } = await prepareHome(home, 4242);
+  const { protocol } = await prepareHome(home, 4242, [runners.claude]);
   assert.deepEqual(protocol, { stage: join(home, PROTOCOL_DIR, 'stage.md'), session: join(home, PROTOCOL_DIR, 'session.md') });
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL);
   assert.equal(await readFile(protocol.session, 'utf8'), SESSION_PROTOCOL);
   assert.equal((await stat(join(home, PROTOCOL_DIR))).mode & 0o777, 0o700, 'created with the home\'s mode');
   await writeFile(protocol.stage, 'from a previous version');
-  await prepareHome(home, 4242);
+  await prepareHome(home, 4242, [runners.claude]);
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL, 'upgrading the Hive refreshes what every worker is told');
 });
 
@@ -117,7 +125,7 @@ test('renderMcpConfig points the hive server at /hooks/mcp with the worker id an
     mcpServers: { hive: { type: 'http', url: 'http://127.0.0.1:4242/hooks/mcp', headers: { 'x-hive-pty': 'W1', 'x-hive-secret': SECRET } } },
   });
   const dir = await tempDir(t, '');
-  const path = await writeMcpConfig(dir, 'W1', 4242, SECRET);
+  const path = await writeMcpConfig(dir, 'W1', runners.claude.mcpConfig({ port: 4242, ptyId: 'W1', secret: SECRET, withHive: true }));
   assert.equal(path, join(dir, 'W1.mcp.json'), 'the path carries the worker id: pkill / pgrep find claude by it');
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), renderMcpConfig(4242, 'W1', SECRET));
   assert.equal((await stat(path)).mode & 0o777, 0o600, 'it holds the secret: this user only');
@@ -138,7 +146,7 @@ test('every hook and the status line send the secret as curl\'s header file, nev
 test('writeMcpConfig with withHive false writes a config that lists no server, still named after the worker and 0600 (#587)', async (t) => {
   const dir = await tempDir(t, 'prompts-');
   const worker = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-  const path = await writeMcpConfig(dir, worker, 47821, SECRET, false);
+  const path = await writeMcpConfig(dir, worker, runners.claude.mcpConfig({ port: 47821, ptyId: worker, secret: SECRET, withHive: false }));
   assert.equal(path, join(dir, `${worker}.mcp.json`));
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { mcpServers: {} });
   assert.equal((await stat(path)).mode & 0o777, 0o600);
@@ -148,7 +156,7 @@ test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/,
   const home = await tempDir(t, 'home-');
   const paths = workspaceProtocolPaths(home, 'stage.md'); // a workspace named after a global file: its own folder, no collision
   assert.deepEqual(paths, { stage: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'stage.md'), session: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'session.md') });
-  await prepareHome(home, 4242);
+  await prepareHome(home, 4242, [runners.claude]);
   assert.deepEqual(await writeWorkspaceProtocol(home, 'stage.md', ''), paths);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [STAGE_PROTOCOL, SESSION_PROTOCOL]);
   assert.equal((await stat(join(home, PROTOCOL_DIR, 'workspaces', 'stage.md'))).mode & 0o777, 0o700, 'the home\'s mode');

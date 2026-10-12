@@ -1,5 +1,5 @@
 // The Hive's protocol (#167): what a session is told about the Hive's MCP tools. It is handed to the agent at launch, through the agent's
-// protocol flag (AgentSpec.protocolFlag), instead of riding at the end of every prompt: a stage prompt describes the work and nothing else.
+// runner and its protocol flag (src/agents/claude.ts), instead of riding at the end of every prompt: a stage prompt describes the work and nothing else.
 // Agent-neutral: the tools are the same MCP tools whatever agent runs the session; only the flag differs.
 
 const FROM_THE_HIVE = 'This text comes from the Hive, the app that runs this session. Its tools `hive_done`, `hive_ask` and `hive_stop` report to it.';

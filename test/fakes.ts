@@ -16,6 +16,9 @@ import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
 import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { AGENTS } from '../src/agents.js';
+import { runners } from '../src/agents/registry.js';
+import type { AgentRun } from '../src/agents/runner.js';
 
 export interface FakeWorker {
   launch: PtyLaunch;
@@ -62,11 +65,27 @@ export function fakeSpawn(options: FakeSpawnOptions = {}): { spawn: LaunchPty; w
   return { spawn, workers };
 }
 
-export const LAUNCH: PtyLaunch = {
-  ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242,
-  hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json', promptPath: '/repo/.hive/prompts/hive-1-task.md',
-  args: ['--session-id', 'a1b2c3d4-0000-4000-8000-000000000001'],
+// The run LAUNCH's agent renders (#924): ptyCommand's expected strings were written against these paths
+const LAUNCH_RUN: AgentRun = {
+  ptyId: 'W1', hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
+  session: { id: 'a1b2c3d4-0000-4000-8000-000000000001', resume: false }, extraArgs: [],
 };
+
+/** A launch's agent as Claude's runner renders `run` over LAUNCH's own (#924). */
+export const claudeLaunch = (run: Partial<AgentRun> = {}): NonNullable<PtyLaunch['agent']> =>
+  ({ command: AGENTS.claude.command, argv: runners.claude.launch({ ...LAUNCH_RUN, ...run }) });
+
+export const LAUNCH: PtyLaunch = {
+  ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, promptPath: '/repo/.hive/prompts/hive-1-task.md', agent: claudeLaunch(),
+};
+
+/** The plain words of a launch's argv (#924): the agent's own args, the model and the session, what PtyLaunch.args held before. */
+export const plainArgs = (launch: Pick<PtyLaunch, 'agent'> | undefined): string[] =>
+  (launch?.agent?.argv ?? []).filter((arg): arg is string => typeof arg === 'string');
+
+/** The value behind the `at`-th of one of the Hive's own flags in a launch's argv (#924); undefined when it has none. */
+export const launchFlag = (launch: Pick<PtyLaunch, 'agent'> | undefined, flag: string, at = 0): string | undefined =>
+  (launch?.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' || arg[0] !== flag ? [] : [arg[1]]))[at];
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 
@@ -190,13 +209,13 @@ export function onOwnStages<T extends { sources?: SourceConfig[]; stages?: reado
  * `shutdownIdleMinutes: undefined` one from before #233; `theme: undefined` one from before #296; `terminalFont: undefined` one from before #376;
  * `trustedDomains: undefined` one from before #404; `consoleLines: undefined` one from before #353; `shortcuts: undefined` one from before #449; `closeSessionTab: undefined` one from before #614);
  * Every GitHub entry gets EPICS' keys it lacks, switchAt on the first of `stages` (#30).
- * `commands` is comb.commands ([] unless given, #511). `transitions` is comb.transitions, the migration's over `stages` unless given (#134). A workspace without env is a file from before #348. `editor` is EDITOR_DEFAULTS (#780); `editor: undefined` writes a file without it. `sidebarsPerView: undefined` writes a file from before #821. `signals: undefined` writes a file from before #727. `notifications: undefined` writes a file from before #199.
+ * `commands` is comb.commands ([] unless given, #511). `transitions` is comb.transitions, the migration's over `stages` unless given (#134). A workspace without env is a file from before #348. `editor` is EDITOR_DEFAULTS (#780); `editor: undefined` writes a file without it. `sidebarsPerView: undefined` writes a file from before #821. `signals: undefined` writes a file from before #727. `notifications: undefined` writes a file from before #199. `agentArgs` is { claude: [] } (#924); `agentArgs: undefined` writes a file from before the key.
  */
 export function combConfig({
   source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, prefix = 'HIVE', path = '/repo',
   workspaces = [{ name: WORKSPACE, path, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], commands = [], hiveSource = true, createIn = 'hive', ...rest
 }: Record<string, unknown> = {}): Record<string, unknown> {
-  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
+  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', agentArgs: { claude: [] }, theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
 }
 
 /** A pre-#134 stage list, onFinish and all, as the flow its migration makes (#134): what a reducer fixture spreads where it set `stages`. */

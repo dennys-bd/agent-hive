@@ -1,5 +1,5 @@
 // Every load-time migration a hive.config.json may need: #511 (each workspace's run commands and its setup timeout in minutes), #513 (the
-// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
+// menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
 import { END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
@@ -84,6 +84,14 @@ const LEGACY_AGENT = 'claude';
 /** A pre-#516 file gains defaultAgent: claude; anything else comes back as the same reference. Stages keep no agent: absent = the default. */
 export const migrateDefaultAgent = (raw: unknown): unknown => (isRecord(raw) && raw.defaultAgent === undefined ? { ...raw, defaultAgent: LEGACY_AGENT } : raw);
 
+/** A pre-#924 file's claudeArgs becomes agentArgs.claude; a file with neither gets an empty list; claudeArgs goes either way. Today's shape
+ * comes back as the same reference; a malformed value passes through for the parser to name. */
+export function migrateAgentArgs(raw: unknown): unknown {
+  if (!isRecord(raw) || (raw.agentArgs !== undefined && !Object.hasOwn(raw, 'claudeArgs'))) return raw;
+  const { claudeArgs, ...rest } = raw;
+  return rest.agentArgs !== undefined ? rest : { ...rest, agentArgs: { [LEGACY_AGENT]: claudeArgs ?? [] } };
+}
+
 /** A pre-#754 file gains fileIcons with the form's defaults; a present key, a wrong one included, comes back as the same reference for the parser. */
 export const migrateFileIcons = (raw: unknown): unknown => (isRecord(raw) && raw.fileIcons === undefined ? { ...raw, fileIcons: FILE_ICONS_DEFAULTS } : raw);
 
@@ -153,4 +161,4 @@ export function migrateCreateIn(raw: unknown): unknown {
 }
 
 /** Every load-time migration, oldest first: readConfig's one entry point. */
-export const migrateConfig = (raw: unknown): unknown => migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw))))))));
+export const migrateConfig = (raw: unknown): unknown => migrateCreateIn(migrateRetiredKeys(migrateTransitions(migrateFileIcons(migrateAgentArgs(migrateDefaultAgent(migrateStageActions(migrateOnClose(migrateWorkspaces(raw)))))))));

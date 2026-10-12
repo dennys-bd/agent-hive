@@ -77,7 +77,7 @@ export function createStageCommandRunner(deps: StageCommandDeps): StageCommandRu
     pool.start({
       ptyId,
       launch: {
-        ptyId, slug: activity.slug ?? slugFor(task.item), cwd, env, port: runtime.port, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, args: [], terminal: true,
+        ptyId, slug: activity.slug ?? slugFor(task.item), cwd, env, port: runtime.port, terminal: true,
         run: { command: command.command, env: command.env },
       },
       onExit: () => undefined, // the end and its code come from the pty host's subscription below; the pool's exit carries no code

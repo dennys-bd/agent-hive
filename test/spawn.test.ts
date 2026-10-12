@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createPtyHost } from '../src/pty-host.js';
-import { copyArgs, HANDOFF_PROMPT, isStrayAlive, killStray, renderPrompt, runTmpDir, shellQuote, runArgs, ptyCommand, ptyEnv, terminalEnv, verdictsLine, withHandoff, writePrompt } from '../src/spawn.js';
+import { HANDOFF_PROMPT, isStrayAlive, killStray, renderPrompt, runSession, runTmpDir, shellQuote, ptyCommand, ptyEnv, terminalEnv, verdictsLine, withHandoff, writePrompt } from '../src/spawn.js';
+import { runners } from '../src/agents/registry.js';
 import { launchInternalPty } from '../src/spawn-internal.js';
-import { fakePtys, LAUNCH } from './fakes.js';
+import { claudeLaunch, fakePtys, LAUNCH, plainArgs } from './fakes.js';
 import { SECRET } from './secret-client.js';
 
 const SECRET_FILE_PATH = '/home/agent-hive/hive.secret';
@@ -93,6 +94,12 @@ test('ptyEnv copies the base env without CLAUDECODE, CLAUDE_CODE_CHILD_SESSION, 
   assert.equal(base.TMPDIR, '/shared/tmp/');
 });
 
+test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924)', () => {
+  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_HOME: '/h', HOME: '/Users/x' };
+  assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
+  assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
+});
+
 test('runTmpDir is <base>/hive-runs/<ptyId>, under os.tmpdir() by default (#428)', () => {
   assert.equal(runTmpDir('W1', '/base'), join('/base', 'hive-runs', 'W1'));
   assert.equal(runTmpDir('W1'), join(tmpdir(), 'hive-runs', 'W1'));
@@ -110,10 +117,12 @@ test('shellQuote single-quotes and escapes embedded quotes', () => {
 
 test('ptyCommand runs claude interactively in the task worktree with hive env, the MCP config, hooks, the Hive plugin and the prompt file, then reports exit', () => {
   const cmd = ptyCommand({
-    ...LAUNCH, cwd: '/Users/x/my repo/.hive/worktrees/hive-1-task', hooksPath: '/Users/x/my repo/.hive/hooks.json',
-    pluginDir: '/Users/x/Library/agent hive/plugin', // a space: the flag is quoted like every other path
-    mcpPath: '/Users/x/my repo/.hive/prompts/W1.mcp.json', promptPath: '/Users/x/my repo/.hive/prompts/hive-1-task.md',
-    args: ['--model', 'sonnet', '--session-id', 'S1'],
+    ...LAUNCH, cwd: '/Users/x/my repo/.hive/worktrees/hive-1-task', promptPath: '/Users/x/my repo/.hive/prompts/hive-1-task.md',
+    agent: claudeLaunch({
+      hooksPath: '/Users/x/my repo/.hive/hooks.json',
+      pluginDir: '/Users/x/Library/agent hive/plugin', // a space: the flag is quoted like every other path
+      mcpPath: '/Users/x/my repo/.hive/prompts/W1.mcp.json', model: 'sonnet', session: { id: 'S1', resume: false },
+    }),
   });
   assert.equal(
     cmd,
@@ -127,38 +136,40 @@ test('ptyCommand runs claude interactively in the task worktree with hive env, t
 });
 
 test('ptyCommand puts the protocol file behind the agent\'s protocol flag, right after --plugin-dir and quoted; no protocolPath, a terminal or a run command get no such flag (#167)', () => {
-  const cmd = ptyCommand({ ...LAUNCH, protocolPath: "/Users/x/it's hive/protocol/stage.md" });
+  const cmd = ptyCommand({ ...LAUNCH, agent: claudeLaunch({ protocolPath: "/Users/x/it's hive/protocol/stage.md" }) });
   assert.ok(
     cmd.includes("--plugin-dir '/home/agent-hive/plugin' --append-system-prompt-file '/Users/x/it'\\''s hive/protocol/stage.md' '--session-id'"),
     cmd,
   );
   assert.equal(ptyCommand(LAUNCH).includes('--append-system-prompt-file'), false, 'absent: the agent is told nothing of the Hive');
-  const shell = { ...LAUNCH, terminal: true as const, protocolPath: '/home/agent-hive/protocol/stage.md' };
+  const shell = { ...LAUNCH, terminal: true as const, agent: claudeLaunch({ protocolPath: '/home/agent-hive/protocol/stage.md' }) };
   assert.equal(ptyCommand(shell).includes('--append-system-prompt-file'), false, 'a terminal runs no agent');
   assert.equal(ptyCommand({ ...shell, run: { command: 'make', env: {} } }).includes('--append-system-prompt-file'), false, 'nor does a command');
 });
 
 test('ptyCommand loads the workspace\'s language-server plugin as a second --plugin-dir right after the Hive\'s own, quoted; none without lspPluginDir, and never in a terminal (#803)', () => {
-  const cmd = ptyCommand({ ...LAUNCH, lspPluginDir: "/home/agent-hive/lsp/it's hive", protocolPath: '/home/agent-hive/protocol/stage.md' });
+  const cmd = ptyCommand({ ...LAUNCH, agent: claudeLaunch({ lspPluginDir: "/home/agent-hive/lsp/it's hive", protocolPath: '/home/agent-hive/protocol/stage.md' }) });
   assert.ok(cmd.includes("--plugin-dir '/home/agent-hive/plugin' --plugin-dir '/home/agent-hive/lsp/it'\\''s hive' --append-system-prompt-file '/home/agent-hive/protocol/stage.md'"), cmd);
   assert.equal(ptyCommand(LAUNCH).match(/--plugin-dir/g)?.length, 1, 'a workspace with no plugin');
-  assert.equal(ptyCommand({ ...LAUNCH, terminal: true, lspPluginDir: '/home/agent-hive/lsp/hive' }).includes('--plugin-dir'), false, 'a terminal runs no agent');
+  assert.equal(ptyCommand({ ...LAUNCH, terminal: true, agent: claudeLaunch({ lspPluginDir: '/home/agent-hive/lsp/hive' }) }).includes('--plugin-dir'), false, 'a terminal runs no agent');
 });
 
-test('runArgs is the global claudeArgs, the stage model and the session flag the reducer resolved — no worktree flag', () => {
+const words = (run: Parameters<typeof claudeLaunch>[0]): string[] => plainArgs({ agent: claudeLaunch({ session: undefined, ...run }) });
+
+test('a run\'s plain words are the agent\'s own args, the stage model and the session flag the reducer resolved — no worktree flag (#924)', () => {
   const task = { sessionId: '3f2a9c1e-5b7d-4e8f-9a0b-1c2d3e4f5a6b' };
-  assert.deepEqual(runArgs(task, {}, 'new', [], 'claude'), ['--session-id', task.sessionId]);
-  assert.deepEqual(runArgs(task, { model: 'opus' }, 'continue', ['--permission-mode', 'acceptEdits'], 'claude'),
+  assert.deepEqual(words({ session: runSession(task.sessionId, 'new') }), ['--session-id', task.sessionId]);
+  assert.deepEqual(words({ model: 'opus', session: runSession(task.sessionId, 'continue'), extraArgs: ['--permission-mode', 'acceptEdits'] }),
     ['--permission-mode', 'acceptEdits', '--model', 'opus', '--resume', task.sessionId]);
-  assert.deepEqual(runArgs({}, {}, 'continue', [], 'claude'), [], 'no id at all: claude picks its own');
+  assert.deepEqual(words({ session: runSession(undefined, 'continue') }), [], 'no id at all: claude picks its own');
 });
 
-test("runArgs passes modelo as typed behind the agent's model flag (#516)", () => {
-  assert.deepEqual(runArgs({}, { model: 'opus[1m]' }, 'new', ['--verbose'], 'claude'), ['--verbose', '--model', 'opus[1m]']);
+test("a run passes modelo as typed behind the agent's model flag (#516)", () => {
+  assert.deepEqual(words({ model: 'opus[1m]', extraArgs: ['--verbose'] }), ['--verbose', '--model', 'opus[1m]']);
 });
 
 test('ptyCommand quotes every arg so a model or id with a quote cannot break out of the shell string', () => {
-  const cmd = ptyCommand({ ...LAUNCH, args: ['--model', "o'ps"] });
+  const cmd = ptyCommand({ ...LAUNCH, agent: claudeLaunch({ session: undefined, extraArgs: ['--model', "o'ps"] }) });
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
@@ -187,16 +198,16 @@ test('ptyCommand for a run command: its env exported and quoted, the command thr
   assert.equal(ptyCommand(shell), `cd '/wt' && "\${SHELL:-sh}"; ${trailer}`);
 });
 
-test('ptyCommand without promptPath starts claude with no prompt argument and still ends with the exit trailer; a manual session\'s argv is runArgs with no model (#164)', () => {
-  const { promptPath: _none, mcpPath: _noMcp, ...manual } = LAUNCH; // a manual session has neither a prompt nor the MCP (#99)
+test('ptyCommand without promptPath starts claude with no prompt argument and still ends with the exit trailer; a manual session\'s argv has no model (#164)', () => {
+  const { promptPath: _none, ...manual } = LAUNCH; // a manual session has neither a prompt nor the MCP (#99)
   assert.equal(
-    ptyCommand({ ...manual, args: ['--resume', 'S1'] }),
+    ptyCommand({ ...manual, agent: claudeLaunch({ mcpPath: undefined, session: { id: 'S1', resume: true } }) }),
     "cd '/repo/.hive/worktrees/hive-1-task' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude --settings '/repo/.hive/hooks.json' " +
       "--plugin-dir '/home/agent-hive/plugin' '--resume' 'S1'; " +
       "curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @\"$HIVE_SECRET_FILE\" --noproxy '*' >/dev/null",
   );
-  assert.deepEqual(runArgs({ sessionId: 'S1' }, {}, 'continue', ['--permission-mode', 'acceptEdits'], 'claude'), ['--permission-mode', 'acceptEdits', '--resume', 'S1']);
-  assert.deepEqual(runArgs({ sessionId: 'S2' }, {}, 'new', [], 'claude'), ['--session-id', 'S2']);
+  assert.deepEqual(words({ session: runSession('S1', 'continue'), extraArgs: ['--permission-mode', 'acceptEdits'] }), ['--permission-mode', 'acceptEdits', '--resume', 'S1']);
+  assert.deepEqual(words({ session: runSession('S2', 'new') }), ['--session-id', 'S2']);
 });
 
 test('launchInternalPty runs ptyCommand through /bin/sh in the pty host, in the worktree with the worker env; started resolves once the pty exists (#251)', async (t) => {
@@ -318,15 +329,17 @@ test('launchInternalPty rejects started with pty: when the run\'s TMPDIR cannot 
   assert.deepEqual([ptys.length, h.exits(), h.errors], [0, 0, []], 'no run on the shared temp dir, and no removal of a path never made');
 });
 
-test('copyArgs resumes the source as a new session under the reducer\'s id, after claudeArgs (#587)', () => {
+test('a copy resumes the source as a new session under the reducer\'s id, after the agent\'s own args (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  assert.deepEqual(copyArgs({ from, notice: 'ignored here' }, id, ['--model', 'sonnet']), ['--model', 'sonnet', '--resume', from, '--fork-session', '--session-id', id]);
+  const copy = runners.claude.copy({ ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: ['--model', 'sonnet'] }, from);
+  assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: copy ?? [] } }), ['--model', 'sonnet', '--resume', from, '--fork-session', '--session-id', id]);
 });
 
-test('copyArgs gives the fork the dialog\'s name as its Claude Code title, in the --name= form a leading - cannot turn into an option, and the command quotes it (#587)', () => {
+test('a copy gives the fork the dialog\'s name as its Claude Code title, in the --name= form a leading - cannot turn into an option, and the command quotes it (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  assert.deepEqual(copyArgs({ from, name: "-x it's mine" }, id, []), ['--resume', from, '--fork-session', '--session-id', id, "--name=-x it's mine"]);
-  const command = ptyCommand({ ...LAUNCH, args: copyArgs({ from, name: "-x it's $HOME" }, id, []) });
+  const run = { ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: [] };
+  assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's mine") ?? [] } }), ['--resume', from, '--fork-session', '--session-id', id, "--name=-x it's mine"]);
+  const command = ptyCommand({ ...LAUNCH, agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's $HOME") ?? [] } });
   assert.ok(command.includes(shellQuote("--name=-x it's $HOME")), command);
 });
 

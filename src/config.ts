@@ -8,6 +8,7 @@ import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
+import { parseAgentArgs } from './config-agent-args.js';
 import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { parseConventions } from './conventions.js';
 import { parseFork } from './fork.js';
@@ -25,7 +26,7 @@ export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
-  claudeArgs: [],
+  agentArgs: { claude: [] },
   budget: {},
   usageRules: [],
 };
@@ -578,10 +579,6 @@ function parseFields(raw: unknown): Config {
     ...parseBranch(raw),
     // '' is how a cleared form field says "automatic": the key is dropped, not refused. Resolved per repo at spawn time, so no default.
     ...(raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, 'baseBranch') }),
-    claudeArgs: optional(raw.claudeArgs, DEFAULT_CONFIG.claudeArgs, (v) => {
-      if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) throw new Error(`${CONFIG_FILE}: "claudeArgs" must be an array of strings`);
-      return v as string[];
-    }),
     budget: optional(raw.budget, DEFAULT_CONFIG.budget, parseBudget),
     usageRules: requireRuleStages(optional(raw.usageRules, DEFAULT_CONFIG.usageRules, parseUsageRules), comb.stages),
     // Required, no default (#513, #236, #258, #233, #268, #296, #376, #404, #353, #449, #516, #614, #573, #696, #805, #821, #727, #199): last, so any other problem in a file is named first. A file from before the keys boots
@@ -604,6 +601,7 @@ function parseFields(raw: unknown): Config {
     closeTerminalTab: requireCloseTabAction(raw.closeTerminalTab, 'closeTerminalTab'), // #696
     closeTerminalTabNotice: requireBoolean(raw.closeTerminalTabNotice, 'closeTerminalTabNotice'),
     defaultAgent: requireAgent(raw.defaultAgent, 'defaultAgent'), // #516: a file from before the key is migrated to claude
+    agentArgs: parseAgentArgs(raw.agentArgs), // #924: a file from before the key is migrated from claudeArgs
     theme: requireTheme(raw.theme),
     terminalFont: requireTerminalFont(raw.terminalFont),
     trustedDomains: requireTrustedDomains(raw.trustedDomains),

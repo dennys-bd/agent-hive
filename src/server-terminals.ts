@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
-import { capturedArgs, capturedReply, shimPath } from './claude-shim.js';
+import { capturedReply, shimPath } from './shim.js';
+import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
+import { runners } from './agents/registry.js';
+import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { Runtime } from './server.js';
@@ -14,8 +17,8 @@ import { liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import type { Activity, Effect, Exec, HiveEvent, State, Task } from './types.js';
 
-// The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the claude
-// shim's register, which captures a claude typed in it as a free session.
+// The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
+// shim's register, which captures an agent typed in it as a free session.
 
 export const HTTP_NOT_FOUND = 404;
 export const HTTP_CONFLICT = 409;
@@ -39,7 +42,7 @@ export interface TerminalRouteDeps {
   pid(ptyId: string): number | undefined; // the pty host's
   home: string; // where the shim is, which the agents walk skips
   recordStart(runtime: Runtime, activity: Activity, task: Task, stage: string): Promise<void>; // #812: the spawner's, for a captured session
-  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's claude loads as any run does
+  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -86,7 +89,7 @@ function registerForget(app: Express, deps: TerminalRouteDeps): void {
   });
 }
 
-// The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv claude gets before the user's
+// The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv the agent gets before the user's
 // own, one arg per line, which the shim reads as data (capturedReply); an arg holding a line break refuses the register. Under /hooks/:
 // secret-authenticated as a hook is, with no UI header (server.ts' gate).
 function registerCapture(app: Express, deps: TerminalRouteDeps): void {
@@ -101,28 +104,31 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const { runtime } = after;
     const activity = after.state.activities.find((a) => a.id === worker.activityId);
     const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
-    // A refusal ends the run it just made: the shim runs claude unregistered, and no run is left behind
+    // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
       await deps.dispatch({ type: 'exit', ptyId: runId });
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
+    const agent = ranAgent(worker); // #925 records SHIM_AGENT on a captured run
     let mcpPath: string;
     try {
-      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runtime.port, deps.secret, onTask);
+      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
     } catch (err) {
       return unregister(errorMessage(err));
     }
     const task = onTask ? taskOfWorker(after.state, worker) : undefined; // #797: its workspace's protocol, the memory under it
-    // #812: before the shim starts claude, as an open's spawn does; never in a checkout task's own checkout (#444)
+    // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
     if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
-    // #803: a captured claude is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
+    // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
     const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
     const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
-    const reply = capturedReply(runId, capturedArgs({
-      sessionId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, claudeArgs: runtime.config.claudeArgs,
-      ...(lspPluginDir === undefined ? {} : { lspPluginDir }),
+    // #924: the capture through its worker's runner: the Hive's flags, the agent's own args and the session id the Hive chose
+    const run: AgentRun = {
+      ptyId: runId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, lspPluginDir,
       ...(onTask ? { protocolPath: task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session } : {}),
-    }));
+      extraArgs: runtime.config.agentArgs[agent], session: { id: sessionId, resume: false },
+    };
+    const reply = capturedReply(runId, runners[agent].launch(run).flat());
     if (reply === undefined) return unregister(SPLIT_ARG_MESSAGE);
     res.type('text/plain').send(reply);
   });
@@ -136,7 +142,7 @@ function registerAgents(app: Express, deps: TerminalRouteDeps): void {
     const terminalId = terminalParam(req);
     if (!liveShell(current.state, terminalId)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TERMINAL_MESSAGE });
     const captured = current.state.workers.flatMap((w) => (w.terminalId === terminalId && w.sessionId !== undefined ? [w.sessionId] : []));
-    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shim: shimPath(deps.home) }, deps.exec) });
+    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shim: shimPath(deps.home, AGENTS[SHIM_AGENT]) }, deps.exec) });
   });
 }
 

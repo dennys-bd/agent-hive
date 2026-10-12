@@ -1,4 +1,3 @@
-import { readFile, stat } from 'node:fs/promises';
 import { activityOf, activityOfWorker, localWorkspaceOf, taskOfWorker } from './activities.js';
 import { keptTarget, liveTarget, UNKNOWN_ACTIVITY_MESSAGE } from './activity-routes.js';
 import { taskWorkspace, workspaceByName } from './config.js';
@@ -6,7 +5,8 @@ import { hasDirectory } from './local-sessions.js';
 import { openTask, workspaceOf, type Refusal } from './server-tasks.js';
 import { sameOwner } from './session-copy.js';
 import type { Session, Config, Exec, SessionRef, SessionTarget, Worker, State } from './types.js';
-import { transcriptDir } from './usage.js';
+import { ranAgent } from './agents.js';
+import { runners } from './agents/registry.js';
 import { taskDir, workDir } from './worktree.js';
 
 // What a copy (#587) reads of its two ends: where each one runs, where its transcript may be, and the notice the new run is told.
@@ -91,30 +91,6 @@ export async function uncommitted(cwd: string, exec: Exec): Promise<number> {
   }
 }
 
-const messageId = (line: string): { user: boolean; assistant?: string } => {
-  try {
-    const { type, message } = JSON.parse(line) as { type?: unknown; message?: { id?: unknown; content?: unknown } };
-    if (type === 'user') return { user: typeof message?.content === 'string' };
-    return { user: false, ...(type === 'assistant' && typeof message?.id === 'string' ? { assistant: message.id } : {}) };
-  } catch {
-    return { user: false }; // a half-written last line
-  }
-};
-
-/** The user's prompts plus each assistant message once, not tool results nor metadata. */
-// ponytail: reads the whole transcript once per dialog open; stream it as readTranscript does if transcripts ever weigh
-export async function countMessages(path: string): Promise<number> {
-  if (!(await stat(path)).isFile()) throw new Error(`${path}: not a regular file`);
-  const seen = new Set<string>();
-  let users = 0;
-  for (const line of (await readFile(path, 'utf8')).split('\n')) {
-    const { user, assistant } = messageId(line);
-    if (user) users += 1;
-    if (assistant !== undefined) seen.add(assistant);
-  }
-  return users + seen.size;
-}
-
 export const noticeSide = (side: CopySide, branch: string | null): string => `${side.label}, branch ${branch ?? '(detached)'}, directory ${side.cwd}`;
 
 export const copyNotice = (from: string, to: string): string => `Hive: this conversation was copied from ${from}. It now continues in ${to}.\n\n${NOTICE_TAIL}`;
@@ -136,7 +112,7 @@ export function trustedCopies(state: State, config: Pick<Config, 'comb'>): State
   const trusted = (worker: Worker): Worker => {
     const cwd = worker.copyOf === undefined ? undefined : workerCwd(state, config, worker);
     // never the worker's own session: the mark names the source's id, so a from equal to it can only be forged
-    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === transcriptDir(cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
+    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === runners[ranAgent(worker)].transcriptDir(cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
     const { copyOf: _copyOf, ...unmarked } = worker;
     return unmarked;
   };

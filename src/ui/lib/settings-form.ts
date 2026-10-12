@@ -17,6 +17,7 @@ import type { SettingsSection } from './settings-sections.js';
 import { isMac } from './shortcut-bindings.js';
 import { type SourceTaskPropsDraft, emptyTaskProps, sourceTaskPropsProblem, taskPropsDraft, taskPropsFrom } from './setup-source-task-props.js';
 import { type CommandDraft, commandDraft, commandFrom, commandsProblem, type EnvRowDraft, envFrom, envRows } from './settings-commands.js';
+import { agentArgsDraft, agentArgsFrom } from './settings-agent-args.js';
 import { type RuleDraft, renamedRuleDrafts, ruleDrafts, rulesFrom, rulesProblem } from './settings-rules.js';
 import { limitFrom, numberField, optional, type StageDraft, stageDraft, stageFrom, stageRenamesFrom } from './settings-stages.js';
 import { draftTitle, type TransitionDraft, transitionDraft, transitionFrom, transitionsProblem } from './settings-transitions.js';
@@ -54,6 +55,7 @@ export interface SettingsDraft {
   approvalMinutes: string;
   rateLimitWaitMinutes: string; // #805
   defaultAgent: AgentId; // #516
+  agentArgs: Record<AgentId, string>; // #924: each agent's arguments as typed, one per line
   theme: Theme;
   fileIcons: FileIcons; // #754: the files tree's icons, edited on app › appearance
   sidebarsPerView: SidebarsPerView; // #821: which sidebar state each view keeps, edited on app
@@ -150,6 +152,7 @@ export function draftFrom(info?: SettingsInfo): SettingsDraft {
     sleepIdleNotice: config?.sleepIdleNotice ?? SLEEP_NOTICE_DEFAULTS.sleepIdleNotice,
     sleepAllNotice: config?.sleepAllNotice ?? SLEEP_NOTICE_DEFAULTS.sleepAllNotice,
     defaultAgent: config?.defaultAgent ?? DEFAULT_AGENT, // #516: the parser still requires the key
+    agentArgs: agentArgsDraft(config?.agentArgs), // #924: the parser requires every agent's list
     theme: config?.theme ?? 'system', // a new form follows macOS (#296); the parser still requires the key
     fileIcons: config?.fileIcons ?? FILE_ICONS_DEFAULTS, // Material on a new form (#754); the parser still requires the key
     terminalFont: config?.terminalFont ?? '', // a new form uses the system monospace (#376); the parser still requires the key
@@ -353,6 +356,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     sleepIdleNotice: draft.sleepIdleNotice,
     sleepAllNotice: draft.sleepAllNotice,
     defaultAgent: draft.defaultAgent, // always sent (#516)
+    agentArgs: agentArgsFrom(draft.agentArgs), // always sent (#924)
     theme: draft.theme, // always sent (#296)
     fileIcons: draft.fileIcons, // always sent (#754)
     sidebarsPerView: draft.sidebarsPerView, // always sent (#821)
