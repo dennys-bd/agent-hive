@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { createJsonStore, type JsonStore } from './json-store.js';
 import { chipText } from './review-message.js';
-import type { DiffScope, FileDiff, HiveEvent, ReviewDraft, ReviewedMark, ReviewFile, ReviewMessage, ReviewThread, State } from './types.js';
+import { type DesignAnchor, type DiffScope, type FileDiff, type HiveEvent, isDesignAnchor, type ReviewAnchor, type ReviewDraft, type ReviewedMark, type ReviewFile, type ReviewMessage, type ReviewThread, type State, type ThreadAnchor, type UnpinnedDesignAnchor } from './types.js';
 
 // A task's review (#591): one JSON file per task under <home>/reviews/, outside State, so the reducer gains no rule and state.json does not
 // grow. The edits are pure and answer a new file; the store queues each task's reads-for-write and writes them atomically.
@@ -57,9 +57,9 @@ export const startThread = (file: ReviewFile, thread: ReviewThread): ReviewFile 
 const withThread = (file: ReviewFile, id: string, change: (thread: ReviewThread) => ReviewThread): ReviewFile =>
   ({ ...file, threads: file.threads.map((thread) => (thread.id === id ? change(thread) : thread)) });
 
-/** A message at the end of a conversation (#591); a new message reopens a resolved one. */
+/** A new message reopens a conversation (#591) and withdraws the agent's proposed resolve (#111). */
 export const appendMessage = (file: ReviewFile, threadId: string, message: ReviewMessage): ReviewFile =>
-  withThread(file, threadId, ({ resolved: _was, ...thread }) => ({ ...thread, messages: [...thread.messages, message] }));
+  withThread(file, threadId, ({ resolved: _was, agentResolved: _mark, ...thread }) => ({ ...thread, messages: [...thread.messages, message] }));
 
 /** What a delivery did (#591): per recipient asked (a session id or NEW_SESSION), the session it reached, or its failure. */
 export interface Outcome { delivered: { asked: string; session: string }[]; failed: string[] }
@@ -92,8 +92,24 @@ export function settleMessage(file: ReviewFile, threadId: string, messageId: str
   });
 }
 
+/** The user's resolve (#591): a confirm keeps the agent's mark (#111), so the thread reads "resolved by the agent · you confirmed"; reopen drops both. */
 export const resolve = (file: ReviewFile, threadId: string, resolved: boolean): ReviewFile =>
-  withThread(file, threadId, ({ resolved: _was, ...thread }) => (resolved ? { ...thread, resolved: true } : thread));
+  withThread(file, threadId, ({ resolved: _was, agentResolved, ...thread }) =>
+    (resolved ? { ...thread, resolved: true, ...(agentResolved ? { agentResolved } : {}) } : thread));
+
+/** hive_reply's resolve: true (#111): the agent proposes, the thread stays open; a later call replaces the mark, a resolved thread keeps its state. */
+export const markAgentResolved = (file: ReviewFile, threadId: string, session: string, at: string): ReviewFile =>
+  withThread(file, threadId, (thread) => (thread.resolved ? thread : { ...thread, agentResolved: { session, at } }));
+
+/** A design's next pin (#111): the highest among the path's design drafts and threads, plus one; a deleted pin is never reused unless it was the highest. */
+export function nextPin(file: ReviewFile, path: string): number {
+  const pins = [...file.drafts, ...file.threads].map((item) => item.anchor).filter((a): a is DesignAnchor => isDesignAnchor(a) && a.path === path).map((a) => a.pin);
+  return Math.max(0, ...pins) + 1;
+}
+
+/** An anchor as stored (#111): a design anchor gets its pin here, inside the store's queued edit, so two comments at once never share one. */
+export const pinned = (file: ReviewFile, anchor: ReviewAnchor | UnpinnedDesignAnchor): ThreadAnchor =>
+  ('kind' in anchor ? { ...anchor, pin: nextPin(file, anchor.path) } : anchor);
 
 /** Where a reply with no mention goes (#591): the last session that replied, else the one the conversation was first delivered to. */
 export function replyTarget(thread: ReviewThread): string | undefined {

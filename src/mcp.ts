@@ -16,7 +16,7 @@ import { stageOf, taskId } from './tasks.js';
 import { verdictProblem, withVerdict } from './transit.js';
 import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
-import { appendMessage, type ReviewStore } from './review-store.js';
+import { appendMessage, markAgentResolved, type ReviewStore } from './review-store.js';
 import { createTask } from './create-task.js';
 import { gitOrWords } from './worktree.js';
 import { remoteHead } from './worktree-base.js';
@@ -43,6 +43,7 @@ export const NO_SESSION_MESSAGE = 'your session id is not known yet';
 export const REPLY_TEXT_MESSAGE = `text must be 1 to ${REVIEW_TEXT_MAX} characters`;
 export const UNKNOWN_THREAD_MESSAGE = 'unknown conversation for this task';
 export const NOT_PARTICIPANT_MESSAGE = 'this conversation was not sent to your session';
+export const THREAD_RESOLVED_MESSAGE = 'the user already resolved this conversation';
 
 /** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. */
 export interface McpDeps {
@@ -224,9 +225,9 @@ function registerStopTool(server: McpServer, deps: McpDeps, header: string | und
 // up only in that task's file, and only a session the conversation was delivered to may answer.
 function registerReplyTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_reply', {
-    description: 'Answer a review conversation the user opened on your diff: pass the thread id the review message named and your answer. The user reads it beside the lines.',
-    inputSchema: { thread: z.string(), text: z.string() },
-  }, async ({ thread, text }) => recorded(deps, header, 'hive_reply', async () => {
+    description: 'Answer a review conversation the user opened on your diff or design: pass the thread id the review message named and your answer. Pass resolve: true when the comment is done: the conversation reads resolved by you and stays open until the user confirms it.',
+    inputSchema: { thread: z.string(), text: z.string(), resolve: z.boolean().optional() },
+  }, async ({ thread, text, resolve }) => recorded(deps, header, 'hive_reply', async () => {
     const ptyId = livePtyId(deps, header);
     const worker = ptyId === undefined ? undefined : deps.live()?.state.workers.find((s) => s.runId === ptyId);
     const owner = ptyId === undefined ? undefined : workerTaskId(deps, ptyId);
@@ -237,8 +238,17 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
     const found = (await deps.reviews.read(owner)).threads.find((t) => t.id === thread);
     if (!found) return refuse('unknown_thread', UNKNOWN_THREAD_MESSAGE);
     if (!found.participants.includes(worker.sessionId)) return refuse('not_participant', NOT_PARTICIPANT_MESSAGE);
-    const message: ReviewMessage = { id: randomUUID(), author: { session: worker.sessionId }, at: new Date().toISOString(), text: body };
-    await deps.reviews.update(owner, (file) => appendMessage(file, thread, message));
+    const session = worker.sessionId;
+    const message: ReviewMessage = { id: randomUUID(), author: { session }, at: new Date().toISOString(), text: body };
+    // One edit: the answer, then the proposal (#111), a later call replacing the mark. The user's resolve wins: appending would reopen it
+    let late = false;
+    await deps.reviews.update(owner, (file) => {
+      late = resolve === true && file.threads.some((t) => t.id === thread && t.resolved);
+      if (late) return file;
+      const replied = appendMessage(file, thread, message);
+      return resolve === true ? markAgentResolved(replied, thread, session, message.at) : replied;
+    });
+    if (late) return refuse('thread_resolved', THREAD_RESOLVED_MESSAGE);
     deps.notifyReview(owner);
     return reply(OK);
   }));

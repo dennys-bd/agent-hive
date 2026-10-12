@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ReviewDraft, ReviewFile } from '../../types';
+import { isDesignAnchor, type ReviewDraft, type ReviewFile } from '../../types';
 import { submitReview } from '@/components/review-actions';
 
 /** What the review's footer shows and does (#591). */
@@ -13,7 +13,8 @@ export function useReviewSubmit(taskId: string, review: ReviewFile | undefined, 
   const [failed, setFailed] = useState<string[]>([]);
   const [held, setHeld] = useState<{ session: string; drafts: string }[]>([]);
   const [isSubmitting, setSubmitting] = useState(false);
-  const drafts = review?.drafts ?? [];
+  // Line drafts only (#111): a design draft is sent from the design pane, and a submit without kind sends none of them
+  const drafts = (review?.drafts ?? []).filter((d) => !isDesignAnchor(d.anchor));
   const unsaved = held.filter((h) => draftsOf(drafts, h.session) === h.drafts).map((h) => h.session);
   const canSubmit = !isSubmitting && drafts.some((d) => !unsaved.includes(d.session));
   const submit = (): void => {

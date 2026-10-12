@@ -1,5 +1,5 @@
 // The review as the diff pane reads it (#591). Pure.
-import { type Session, type DiffLine, type DiffScope, type FileDiff, type LineAnchor, NEW_SESSION, type ReviewAnchor, type ReviewFile, type ReviewThread, type Status } from '../../types.js';
+import { type Session, type DiffLine, type DiffScope, type FileDiff, isDesignAnchor, type LineAnchor, NEW_SESSION, type ReviewAnchor, type ReviewFile, type ReviewThread, type Status, type ThreadAnchor } from '../../types.js';
 
 export const EMPTY_REVIEW: ReviewFile = { reviewed: [], drafts: [], threads: [] };
 
@@ -71,7 +71,9 @@ export function isOutdated(file: FileDiff, anchor: ReviewAnchor): boolean {
   return lines.length !== anchor.excerpt.length || lines.some((l, i) => l.text !== anchor.excerpt[i]);
 }
 
-export const onFile = (scope: DiffScope, path: string) => (item: { anchor: ReviewAnchor }): boolean => item.anchor.scope === scope && item.anchor.path === path;
+/** A scope's line comments on a file (#591): a design comment (#111) is never one. */
+export const onFile = (scope: DiffScope, path: string) => <T extends { anchor: ThreadAnchor }>(item: T): item is T & { anchor: ReviewAnchor } =>
+  !isDesignAnchor(item.anchor) && item.anchor.scope === scope && item.anchor.path === path;
 
 /** A file's comments in the scope (#591): its drafts and conversations, what its pill shows. */
 export const commentCount = (review: ReviewFile, scope: DiffScope, path: string): number =>

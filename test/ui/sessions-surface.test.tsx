@@ -52,3 +52,13 @@ test('its writes go through the review routes with the pane\'s scope; an edited 
   ]);
   expect(pane.refresh).toHaveBeenCalledTimes(2);
 });
+
+const DESIGN = { path: 'src/a.ts', viewport: 1280 as const, theme: 'dark' as const, pin: 1, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } };
+
+test('design comments stay out of the diff pane: its conversations, drafts and counts take only line anchors (#111)', () => {
+  const review = { ...EMPTY_REVIEW, threads: [THREAD, { ...THREAD, id: 'T2', anchor: DESIGN }], drafts: [DRAFT, { ...DRAFT, id: 'D2', anchor: DESIGN }] };
+  const surface = sessionsSurface({ ...paneOf(), review }, VIEW);
+  expect(surface.conversations(FILE).map((c) => c.id)).toEqual(['T1']);
+  expect(surface.drafts('src/a.ts')).toEqual([DRAFT]);
+  expect(surface.counts).toEqual({ drafts: 1, open: 1 });
+});

@@ -257,3 +257,40 @@ test('a batch marks each new conversation received by its session, so a reply af
   assert.match(h.delivered.at(-1)?.text ?? '', /not sent to you yet:\n\[@claude bbbbbbbb, [^\]]+\]\nfrom b\nNew message:\nand\?\n/);
   assert.doesNotMatch(h.delivered.at(-1)?.text ?? '', /\none\n/);
 });
+
+const DESIGN = { kind: 'area', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', rect: { x: 40, y: 120, width: 320, height: 180 } } as const;
+const pinOf = (anchor: object): number | undefined => ('pin' in anchor ? (anchor.pin as number) : undefined);
+
+test('submit kind design sends only the design drafts, one message numbered by pins; no kind sends only line drafts (#111)', async (t) => {
+  const h = await start(t);
+  const draft = (anchor: unknown, text: string) => send(h.base, 'POST', '/tasks/local%3A1/review/drafts', { anchor, text, session: SESSION_A });
+  await draft(DESIGN, 'one');
+  await draft({ ...DESIGN, kind: 'element', selector: 'h1', text: 'Hi' }, 'two');
+  await draft(ANCHOR, 'line');
+  assert.equal((await send(h.base, 'POST', '/tasks/local%3A1/review/submit', { kind: 'pixels' })).status, 400);
+  const res = await send(h.base, 'POST', '/tasks/local%3A1/review/submit', { kind: 'design' });
+  assert.deepEqual([res.status, await res.json(), h.delivered.length], [200, { failed: [] }, 1]);
+  assert.deepEqual(h.delivered[0].text.match(/^Design comment \d+ on \S+/gm), [`Design comment 1 on ${DESIGN.path}`, `Design comment 2 on ${DESIGN.path}`]);
+  const file = await h.file();
+  assert.deepEqual([file.drafts.map((d) => d.text), file.threads.map((th) => pinOf(th.anchor))], [['line'], [1, 2]]);
+  const none = await send(h.base, 'POST', '/tasks/local%3A1/review/submit', { kind: 'design' });
+  assert.deepEqual([none.status, await none.json()], [409, { error: 'nenhum rascunho para enviar' }]);
+  await draft(DESIGN, 'three');
+  assert.equal(pinOf((await h.file()).drafts.at(-1)!.anchor), 3, 'the sent comments keep their pins');
+  assert.equal((await send(h.base, 'POST', '/tasks/local%3A1/review/submit')).status, 200);
+  assert.match(h.delivered[1].text, /^Review comment on a\.txt/);
+  assert.deepEqual((await h.file()).drafts.map((d) => d.text), ['three'], 'a submit without kind leaves the design drafts');
+});
+
+test('a design comment sent now is pinned in the store edit and delivers the pin it stored (#111)', async (t) => {
+  const h = await start(t);
+  await send(h.base, 'POST', '/tasks/local%3A1/review/drafts', { anchor: DESIGN, text: 'later', session: SESSION_A });
+  const res = await send(h.base, 'POST', '/tasks/local%3A1/review/threads', { anchor: { ...DESIGN, pin: 9 }, text: 'now', to: [SESSION_A] });
+  const { thread } = await res.json() as { thread: string };
+  assert.equal(res.status, 200);
+  const [stored] = (await h.file()).threads;
+  assert.deepEqual(stored.anchor, { ...DESIGN, pin: 2 });
+  assert.equal(h.delivered[0].text, commentText(stored.anchor, thread, { text: 'now' }, SESSION_A));
+  assert.match(h.delivered[0].text, /^Design comment 2 on /);
+  assert.equal((await send(h.base, 'POST', '/tasks/local%3A1/review/threads', { anchor: { ...DESIGN, theme: 'sepia' }, text: 'x', to: [SESSION_A] })).status, 400);
+});

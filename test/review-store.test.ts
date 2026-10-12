@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { addDraft, appendMessage, convertDrafts, createReviewStore, droppedReviews, dropStaleMarks, EMPTY_REVIEW, markReviewed, removeDraft, replyTarget, resolve, reviewPath, setDefaultSession, settleMessage, startThread, updateDraft } from '../src/review-store.js';
+import { addDraft, appendMessage, convertDrafts, createReviewStore, droppedReviews, dropStaleMarks, EMPTY_REVIEW, markAgentResolved, markReviewed, nextPin, pinned, removeDraft, replyTarget, resolve, reviewPath, setDefaultSession, settleMessage, startThread, updateDraft } from '../src/review-store.js';
 import { chipText } from '../src/review-message.js';
 import { initialState } from '../src/orchestrator.js';
 import type { Task, ReviewFile } from '../src/types.js';
@@ -135,4 +135,45 @@ test('convertDrafts marks each conversation\'s first message received by the ses
   const draft = { id: 'D1', anchor: ANCHOR, session: 'new', text: 'a' };
   const converted = convertDrafts(frozen(addDraft(EMPTY_REVIEW, draft)), [{ draft, threadId: 'T1', messageId: 'M1' }], 's9', 'AT');
   assert.deepEqual(converted.threads[0].received, { s9: 'M1' });
+});
+
+const design = (pin: number, path = 'd/home.hv.html') => ({ path, viewport: 1280 as const, theme: 'dark' as const, pin, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } });
+
+test('nextPin is the highest pin among the path\'s design drafts and threads plus one: gaps kept, other paths and line anchors apart (#111)', () => {
+  assert.equal(nextPin(EMPTY_REVIEW, 'd/home.hv.html'), 1);
+  const file: ReviewFile = {
+    ...EMPTY_REVIEW,
+    drafts: [{ id: 'D1', anchor: design(1), session: 's1', text: 'a' }, { id: 'D2', anchor: ANCHOR, session: 's1', text: 'b' }],
+    threads: [{ id: 'T1', anchor: design(4), participants: [], messages: [] }, { id: 'T2', anchor: design(9, 'd/other.hv.html'), participants: [], messages: [] }],
+  };
+  assert.equal(nextPin(file, 'd/home.hv.html'), 5, 'pins 2 and 3 are gaps, never reused');
+  assert.equal(nextPin(file, 'd/other.hv.html'), 10);
+  assert.equal(nextPin(file, 'a.ts'), 1, 'a line anchor has no pin');
+});
+
+test('pinned gives a design anchor its path\'s next pin and leaves a line anchor as it is (#111)', () => {
+  const { pin: _pin, ...unpinned } = design(0);
+  const file = addDraft(EMPTY_REVIEW, { id: 'D1', anchor: design(2), session: 's1', text: 'a' });
+  assert.deepEqual(pinned(frozen(file), unpinned), design(3));
+  assert.equal(pinned(frozen(file), ANCHOR), ANCHOR);
+});
+
+test('the agent-resolved mark: set on an open thread and replaced, kept by resolve(true), dropped by resolve(false) and by a new message (#111)', () => {
+  const thread = { id: 'T1', anchor: design(1), participants: ['s1'], messages: [user('M1', [])] };
+  const marked = markAgentResolved(frozen(startThread(EMPTY_REVIEW, thread)), 'T1', 's1', 'AT1');
+  assert.deepEqual([marked.threads[0].agentResolved, marked.threads[0].resolved], [{ session: 's1', at: 'AT1' }, undefined]);
+  assert.deepEqual(markAgentResolved(frozen(marked), 'T1', 's2', 'AT2').threads[0].agentResolved, { session: 's2', at: 'AT2' });
+  const confirmed = resolve(frozen(marked), 'T1', true);
+  assert.deepEqual([confirmed.threads[0].resolved, confirmed.threads[0].agentResolved], [true, { session: 's1', at: 'AT1' }]);
+  assert.deepEqual(markAgentResolved(frozen(confirmed), 'T1', 's2', 'AT2').threads, confirmed.threads, 'a resolved thread is not marked');
+  const reopened = resolve(frozen(confirmed), 'T1', false).threads[0];
+  assert.deepEqual([reopened.resolved, reopened.agentResolved], [undefined, undefined]);
+  const replied = appendMessage(frozen(marked), 'T1', { id: 'M2', author: 'user', at: 'T', text: 'not yet' }).threads[0];
+  assert.deepEqual([replied.agentResolved, replied.messages.length], [undefined, 2]);
+});
+
+test('convertDrafts carries a design draft\'s anchor, pin included (#111)', () => {
+  const draft = { id: 'D1', anchor: design(3), session: 's1', text: 'a' };
+  const converted = convertDrafts(frozen(addDraft(EMPTY_REVIEW, draft)), [{ draft, threadId: 'T1', messageId: 'M1' }], 's1', 'AT');
+  assert.deepEqual(converted.threads[0].anchor, design(3));
 });
