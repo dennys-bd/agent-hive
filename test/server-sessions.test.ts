@@ -274,6 +274,6 @@ test('a new local codex session runs codex with no id; its first SessionStart re
   await server.dispatch({ type: 'hook', ptyId: worker.runId, payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, source: 'startup' } });
   assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).map((s) => [s.id, s.agent]), [[CODEX_ID, 'codex']]);
   await server.dispatch({ type: 'exit', ptyId: worker.runId });
-  assert.equal((await postJson(`${url}/${CODEX_ID}/open`)).status, 200, 'Codex keeps its rollouts by date, not by folder: nothing to find until #929');
+  assert.equal((await postJson(`${url}/${CODEX_ID}/open`)).status, 200, 'Codex keeps its rollouts by date, not by folder (#929): the route looks for no transcript');
   assert.deepEqual(workers[1].launch.agent?.argv.slice(0, 2), ['resume', CODEX_ID]);
 });

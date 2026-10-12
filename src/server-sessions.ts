@@ -135,8 +135,8 @@ async function openLocal(deps: OpenDeps, current: LiveView, activityId: string, 
   if (!session) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
   const dir = runners[session.agent].transcriptDir(found.path);
   if (copyPending(current.state.workers, sessionId, dir)) return refuse(res, { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE });
-  // #931: no dir is an agent whose transcripts the Hive does not read yet (Codex keeps its rollouts by date, #929): codex resume finds its own
-  if (dir !== '' && (await findTranscript([found.path], sessionId, session.agent)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
+  // #931: no dir is an agent that keeps no transcript per cwd (Codex keeps its rollouts by date, #929): codex resume finds its own
+  if (dir !== undefined && (await findTranscript([found.path], sessionId, session.agent)) === undefined) return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT_MESSAGE });
   await answerOpen(deps, await deps.dispatch({ type: 'openLocalSession', activityId, sessionId }, size), res);
 }
 
