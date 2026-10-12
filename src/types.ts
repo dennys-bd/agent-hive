@@ -805,14 +805,29 @@ export const NEW_SESSION = 'new';
 export interface LineAnchor { path: string; side: 'old' | 'new'; start: number; end: number }
 /** Where a comment sits (#591): the new side unless every line was a deleted one; excerpt is those lines' text, what tells an outdated anchor. */
 export type ReviewAnchor = LineAnchor & { scope: DiffScope; excerpt: string[] };
+/** A rectangle of a design (#111), in CSS pixels of the screen at its viewport. */
+export interface DesignRect { x: number; y: number; width: number; height: number }
+/** The design pane's viewport widths (#110). */
+export const DESIGN_VIEWPORTS = [1280, 768, 390] as const;
+export type DesignViewport = (typeof DESIGN_VIEWPORTS)[number];
+/** What a design comment points at (#111): an element, with its selector and text, or an area. */
+export type DesignTarget = { kind: 'element'; selector: string; text: string; rect: DesignRect } | { kind: 'area'; rect: DesignRect };
+/** A design comment's place as a request carries it (#111): everything but the pin, which only the server sets. */
+export type UnpinnedDesignAnchor = { path: string; viewport: DesignViewport; theme: 'dark' | 'light' } & DesignTarget;
+/** Where a design comment sits (#111): an element or an area of a .hv.html screen; pin is set by the server. */
+export type DesignAnchor = UnpinnedDesignAnchor & { pin: number };
+/** What a review conversation anchors at (#111): lines of a diff, or a design. Only a design anchor has a kind. */
+export type ThreadAnchor = ReviewAnchor | DesignAnchor;
+export const isDesignAnchor = (anchor: ThreadAnchor): anchor is DesignAnchor => 'kind' in anchor;
 /** One message of a conversation (#591). to: the sessions a user message reached; pending: the ones a failed delivery still owes (reenviar). */
 // mentions: the sessions its chips name, each chip kept in the text as chipText writes it (review-message.ts)
 export interface ReviewMessage { id: string; author: 'user' | { session: string }; at: string; text: string; to?: string[]; failed?: true; pending?: string[]; mentions?: string[] }
 /** A conversation anchored at lines (#591); participants: the sessions it was delivered to, the only ones hive_reply accepts. */
 // received: per session, the id of the last message a delivery to it carried (review-message.ts's missed reads it)
-export interface ReviewThread { id: string; anchor: ReviewAnchor; participants: string[]; messages: ReviewMessage[]; resolved?: true; received?: Record<string, string> }
+// agentResolved: set by hive_reply resolve: true (#111); the thread stays open until the user confirms
+export interface ReviewThread { id: string; anchor: ThreadAnchor; participants: string[]; messages: ReviewMessage[]; resolved?: true; agentResolved?: { session: string; at: string }; received?: Record<string, string> }
 /** A comment added to the review, sent with the batch (#591); session: a session id of the task, or NEW_SESSION. */
-export interface ReviewDraft { id: string; anchor: ReviewAnchor; session: string; text: string }
+export interface ReviewDraft { id: string; anchor: ThreadAnchor; session: string; text: string }
 /** A file marked reviewed in a scope (#591), with its fileHash then: a different hash now drops it. */
 export interface ReviewedMark { scope: DiffScope; path: string; hash: string }
 /** A task's review file (#591), <home>/reviews/<itemId>.json: outside State and the reducer. */

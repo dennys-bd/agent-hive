@@ -1,6 +1,6 @@
 // What a review pane draws, whoever is on the other side (#592): the diff pane's sessions (#591) or GitHub. Pure: each pane's conversations
 // normalized to one shape the shared components read.
-import type { FileDiff, LineAnchor, PrThread, ReviewThread } from '../../types.js';
+import type { FileDiff, LineAnchor, PrThread, ReviewAnchor, ReviewThread } from '../../types.js';
 import { isOutdated, type ReviewSession, replyingSessions } from './review-view.js';
 
 /** A comment's anchor in either pane (#592): lines on one side, and their text. */
@@ -18,7 +18,7 @@ export interface SurfaceConversation {
 export interface SurfaceDraft { id: string; anchor: SurfaceAnchor; text: string; session?: string }
 
 /** A task's conversation as the diff pane shows it (#591): outdated when its lines no longer read as its excerpt. */
-export function sessionConversation(thread: ReviewThread, file: FileDiff, sessions: ReviewSession[]): SurfaceConversation {
+export function sessionConversation(thread: ReviewThread & { anchor: ReviewAnchor }, file: FileDiff, sessions: ReviewSession[]): SurfaceConversation {
   return {
     id: thread.id, anchor: thread.anchor, outdated: isOutdated(file, thread.anchor), resolved: thread.resolved === true,
     participants: thread.participants, replying: replyingSessions(thread, sessions),

@@ -1,5 +1,5 @@
 // The diff pane's surface (#591, #592): the task's review file and sessions, through the review routes.
-import type { FileDiff, ReviewAnchor } from '../../types';
+import { type FileDiff, isDesignAnchor, type ReviewAnchor, type ThreadAnchor } from '../../types';
 import { chooseDefaultSession, dropDraft, editDraft, replyTo, resolveThread, retryMessage, saveDraft, sendComment } from '@/components/review-actions';
 import { type ReviewPane, sessionName } from '@/components/review-context';
 import type { ReviewSurface } from '@/components/review-surface';
@@ -16,6 +16,8 @@ const errorsOf = ({ failed, unsaved }: SessionsView['submit']): string[] => [
   ...failed.map((s) => t('review.notDeliveredTo', { session: sessionName(s) })), ...unsaved.map((s) => t('review.notSavedTo', { session: sessionName(s) })),
 ];
 
+const isLine = (item: { anchor: ThreadAnchor }): boolean => !isDesignAnchor(item.anchor);
+
 /** The diff pane's surface (#592): what #591's components did through the pane, now behind the shared shape. */
 export function sessionsSurface(pane: ReviewPane, view: SessionsView): ReviewSurface {
   const { taskId, scope, review } = pane;
@@ -25,7 +27,7 @@ export function sessionsSurface(pane: ReviewPane, view: SessionsView): ReviewSur
     footer: t('review.footer'), readOnly: false,
     conversations: (file) => review.threads.filter(onFile(scope, file.path)).map((thread) => sessionConversation(thread, file, pane.sessions)),
     drafts: (path) => review.drafts.filter(onFile(scope, path)),
-    counts: { drafts: review.drafts.length, open: review.threads.filter((thread) => !thread.resolved).length },
+    counts: { drafts: review.drafts.filter(isLine).length, open: review.threads.filter((thread) => isLine(thread) && !thread.resolved).length },
     reviewed: view.reviewed, mark: view.mark, edit: pane.edit,
     comment: (anchor, text, { to, mentions, replaces } = {}) => pane.track(sendComment(taskId, { anchor: withScope(anchor), text, ...(mentions === undefined ? { to } : { mentions }) }))
       .then(() => (replaces === undefined ? undefined : dropDraft(taskId, replaces))) // an edited draft sent now leaves the review

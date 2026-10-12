@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { batchText, chipText, commentText, missed } from '../src/review-message.js';
-import type { ReviewAnchor, ReviewMessage, ReviewThread } from '../src/types.js';
+import type { DesignAnchor, ReviewAnchor, ReviewMessage, ReviewThread } from '../src/types.js';
 
 const ANCHOR: ReviewAnchor = { scope: 'worktree', path: 'src/a.ts', side: 'new', start: 3, end: 4, excerpt: ['const a = 1;', 'return a;'] };
 
@@ -65,4 +65,33 @@ test('commentText puts the missed messages before the new one, each with its aut
     'Earlier in this conversation, not sent to you yet:', '[user, 2026-09-29T10:03:00.000Z]', 'text M3', '[@claude bbbbbbbb, 2026-09-29T10:04:00.000Z]', 'text M4',
     'New message:', 'and now?', 'Answer with the hive_reply tool, thread "T1".',
   ].join('\n'));
+});
+
+const PATH = 'agent/hive/designs/2026-10-11-x/home.hv.html';
+const ELEMENT = { path: PATH, viewport: 1280, theme: 'dark', pin: 2, kind: 'element', selector: 'hero > h1', text: 'Welcome back', rect: { x: 40, y: 120, width: 320, height: 48 } } satisfies DesignAnchor;
+const AREA = { path: PATH, viewport: 390, theme: 'light', pin: 1, kind: 'area', rect: { x: 40, y: 120, width: 320, height: 180 } } satisfies DesignAnchor;
+const RESOLVE_LINE = 'Answer with the hive_reply tool, thread "T1". Pass resolve: true when the comment is done; the user confirms it.';
+
+test('a design comment names its pin, path, target, viewport, theme and text, and offers resolve (#111)', () => {
+  assert.equal(commentText(ELEMENT, 'T1', { text: 'too big' }, 's1'), [
+    `Design comment 2 on ${PATH} (conversation T1):`, 'Target: element `hero > h1` ("Welcome back")', 'Viewport: 1280 px, theme: dark', 'too big', RESOLVE_LINE,
+  ].join('\n'));
+  assert.equal(commentText(AREA, 'T1', { text: 'empty here' }, 's1'), [
+    `Design comment 1 on ${PATH} (conversation T1):`, 'Target: area at 40,120, 320×180', 'Viewport: 390 px, theme: light', 'empty here', RESOLVE_LINE,
+  ].join('\n'));
+  assert.match(commentText({ ...ELEMENT, text: '' }, 'T1', { text: 'x' }, 's1'), /\nTarget: element `hero > h1`\n/, 'no text, no parenthesis');
+});
+
+test('a reply in a design thread repeats the header, target and viewport, then mentions, catch-up and the resolve line (#111)', () => {
+  const text = commentText(ELEMENT, 'T1', { text: `${chipText(B)} and?`, mentions: [B] }, B, [said('M1', 'user'), said('M2', { session: A })]);
+  assert.equal(text.split('\n').slice(0, 4).join('\n'), [
+    `Design comment 2 on ${PATH} (conversation T1):`, 'Target: element `hero > h1` ("Welcome back")', 'Viewport: 1280 px, theme: dark', 'Mentions: @claude bbbbbbbb (you)',
+  ].join('\n'));
+  assert.match(text, /\nEarlier in this conversation, not sent to you yet:\n/);
+  assert.ok(text.endsWith(RESOLVE_LINE));
+});
+
+test('batchText numbers each design block by its own pin (#111)', () => {
+  const text = batchText([{ anchor: AREA, threadId: 'T1', text: 'one' }, { anchor: ELEMENT, threadId: 'T2', text: 'two' }], 's1');
+  assert.deepEqual(text.match(/^Design comment \d+/gm), ['Design comment 1', 'Design comment 2']);
 });
