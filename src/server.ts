@@ -21,8 +21,8 @@ import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { excludeFromGit, mcpConfigPattern, prepareHome, type ProtocolPaths } from './hooks-settings.js';
-import { ALL_AGENTS } from './agents.js';
-import { availableRunners } from './agents/registry.js';
+import { ALL_AGENTS, ranAgent } from './agents.js';
+import { availableRunners, runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createEventLog, type EventLog } from './events.js';
 import { createServerEvents, HOOKS_PREFIX, UI_HEADER, WRITE_METHODS } from './server-events.js';
@@ -34,7 +34,6 @@ import { createPtyHost, NO_PTY, type SpawnPty } from './pty-host.js';
 import { bracketedPaste } from './pty-paste.js';
 import { createBackoffTimers } from './backoff-timers.js';
 import { syncsFor, effectiveLimits, isChildSession, reduce, SIGNALS } from './orchestrator.js';
-import { parseRateLimits } from './agents/claude-limits.js'; // temporary (#924): Task 7 reads the worker's runner
 import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
@@ -77,7 +76,6 @@ import type { TerminalSize } from './terminal-wire.js';
 import { loadState, saveState } from './state-store.js';
 import { dropCopiedTranscript } from './transcript.js';
 import { trustedCopies } from './copy-sides.js';
-import { readTranscript } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the worker's runner
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
@@ -675,8 +673,9 @@ export function createServer(deps: ServerDeps): HiveServer {
     // a local session (#587) has no task: it runs in its workspace's checkout
     const activity = worker && live ? activityOfWorker(live.state, worker) : undefined;
     const local = task === undefined && activity?.kind === 'local' && live !== undefined ? workspaceByName(live.runtime.config, activity.workspace) : undefined;
-    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity)) // taskDir's folder (#444)
-      || (local !== undefined && isTranscriptIn(payload.transcript_path, local.path) && basename(payload.transcript_path) === `${worker?.sessionId}.jsonl`); // its own session only, not the checkout's other transcripts (#590)
+    const agent = ranAgent(worker ?? {}); // #924: its own agent's transcript dir; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
+    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent)) // taskDir's folder (#444)
+      || (local !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent) && basename(payload.transcript_path) === `${worker?.sessionId}.jsonl`); // its own session only, not the checkout's other transcripts (#590)
     return payload.transcript_path === undefined || own ? payload : { ...payload, transcript_path: undefined };
   }
 
@@ -686,7 +685,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (!TURN_END_EVENTS.includes(payload.hook_event_name) || !isTranscriptPath(payload.transcript_path)) return undefined;
     const worker = workerOf(ptyId);
     if (!worker || worker.status === 'empty') return undefined;
-    return readTranscript(payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
+    return runners[ranAgent(worker)].readTurn(payload.transcript_path, wiring.usageSince(ptyId)).catch(() => undefined); // unreadable: the hook goes through without tokens or a title; usage from the open stage run's start (#742)
   }
 
   // Builds a Runtime for `config` on the port listen() bound (#466): hooks.json and every worker target the daemon actually listening.
@@ -838,7 +837,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   app.post('/hooks/status', async (req: Request, res: Response) => {
     res.type('text/plain');
     const ptyId = req.header('x-hive-pty');
-    const rateLimits = parseRateLimits(req.body, new Date());
+    // #924: the reporting worker's agent reads its own status line; an unknown pty reads as LEGACY_RUN_AGENT, and the reducer ignores its reading
+    const rateLimits = runners[ranAgent((ptyId === undefined ? undefined : workerOf(ptyId)) ?? {})].statusLimits(req.body, Date.now());
     if (!ptyId || !rateLimits) {
       res.send('');
       return;

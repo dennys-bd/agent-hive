@@ -5,7 +5,8 @@ import { hasDirectory } from './local-sessions.js';
 import { openTask, workspaceOf, type Refusal } from './server-tasks.js';
 import { sameOwner } from './session-copy.js';
 import type { Session, Config, Exec, SessionRef, SessionTarget, Worker, State } from './types.js';
-import { transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads each worker's runner
+import { ranAgent } from './agents.js';
+import { runners } from './agents/registry.js';
 import { taskDir, workDir } from './worktree.js';
 
 // What a copy (#587) reads of its two ends: where each one runs, where its transcript may be, and the notice the new run is told.
@@ -111,7 +112,7 @@ export function trustedCopies(state: State, config: Pick<Config, 'comb'>): State
   const trusted = (worker: Worker): Worker => {
     const cwd = worker.copyOf === undefined ? undefined : workerCwd(state, config, worker);
     // never the worker's own session: the mark names the source's id, so a from equal to it can only be forged
-    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === transcriptDir(cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
+    if (worker.copyOf === undefined || (cwd !== undefined && worker.copyOf.dir === runners[ranAgent(worker)].transcriptDir(cwd) && worker.copyOf.from !== worker.sessionId)) return worker;
     const { copyOf: _copyOf, ...unmarked } = worker;
     return unmarked;
   };

@@ -29,14 +29,14 @@ test('adoptTranscript moves a session\'s <id>.jsonl and <id>/ from the worktree\
   const [id, bare, lost] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002', 'c1b2c3d4-0000-4000-8000-000000000003'];
   await mkdir(join(from, id, 'subagents'), { recursive: true });
   for (const file of [`${id}.jsonl`, join(id, 'subagents', 'agent-1.jsonl'), `${bare}.jsonl`, 'bad id.jsonl']) await writeFile(join(from, file), '{}\n');
-  assert.equal(await adoptTranscript(worktree, repo, id, env), true);
+  assert.equal(await adoptTranscript(worktree, repo, id, 'claude', env), true);
   assert.deepEqual((await readdir(to)).sort(), [id, `${id}.jsonl`].sort());
   assert.deepEqual(await readdir(join(to, id, 'subagents')), ['agent-1.jsonl']);
   assert.deepEqual((await readdir(from)).sort(), [`${bare}.jsonl`, 'bad id.jsonl'].sort(), 'moved, never copied');
-  assert.equal(await adoptTranscript(worktree, repo, id, env), true, 'already in the main repo: opened before');
-  assert.equal(await adoptTranscript(worktree, repo, bare, env), true, 'a session with no subagents: only the file');
-  assert.equal(await adoptTranscript(worktree, repo, lost, env), false, 'in neither: nothing to resume');
-  assert.equal(await adoptTranscript(worktree, repo, 'bad id', env), false, 'not a session id: never a path');
+  assert.equal(await adoptTranscript(worktree, repo, id, 'claude', env), true, 'already in the main repo: opened before');
+  assert.equal(await adoptTranscript(worktree, repo, bare, 'claude', env), true, 'a session with no subagents: only the file');
+  assert.equal(await adoptTranscript(worktree, repo, lost, 'claude', env), false, 'in neither: nothing to resume');
+  assert.equal(await adoptTranscript(worktree, repo, 'bad id', 'claude', env), false, 'not a session id: never a path');
   assert.deepEqual(await readdir(from), ['bad id.jsonl']);
 });
 
@@ -61,17 +61,17 @@ test('copyTranscript copies <id>.jsonl from the first cwd whose transcript dir h
   const from = transcriptDir(worktree, env);
   await mkdir(join(from, id, 'subagents'), { recursive: true });
   await writeFile(join(from, `${id}.jsonl`), '{"a":1}\n');
-  assert.equal(await copyTranscript([worktree, repo], other, id, env), 'copied', 'a repo session looks in the worktree\'s dir first (A13)');
+  assert.equal(await copyTranscript([worktree, repo], other, id, 'claude', env), 'copied', 'a repo session looks in the worktree\'s dir first (A13)');
   const to = transcriptDir(other, env);
   assert.deepEqual(await readdir(to), [`${id}.jsonl`], 'the conversation only: subagents stay');
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"a":1}\n');
   assert.deepEqual((await readdir(from)).sort(), [id, `${id}.jsonl`].sort(), 'copied, never moved');
   await writeFile(join(from, `${id}.jsonl`), '{"a":2}\n');
-  assert.equal(await copyTranscript([worktree], other, id, env), 'same', 'one is there already: never overwritten');
+  assert.equal(await copyTranscript([worktree], other, id, 'claude', env), 'same', 'one is there already: never overwritten');
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"a":1}\n');
-  assert.equal(await copyTranscript([worktree], worktree, id, env), 'same', 'one dir: nothing to copy');
-  assert.equal(await copyTranscript([repo], other, 'b1b2c3d4-0000-4000-8000-000000000002', env), 'missing');
-  assert.equal(await copyTranscript([worktree], other, 'bad id', env), 'missing');
+  assert.equal(await copyTranscript([worktree], worktree, id, 'claude', env), 'same', 'one dir: nothing to copy');
+  assert.equal(await copyTranscript([repo], other, 'b1b2c3d4-0000-4000-8000-000000000002', 'claude', env), 'missing');
+  assert.equal(await copyTranscript([worktree], other, 'bad id', 'claude', env), 'missing');
 });
 
 test('copyTranscript that fails to read its source leaves a transcript already in the destination untouched, and no staged file (#587)', async (t) => {
@@ -85,7 +85,7 @@ test('copyTranscript that fails to read its source leaves a transcript already i
   await writeFile(join(to, `${id}.jsonl`), '{"real":1}\n');
   await chmod(join(from, `${id}.jsonl`), 0o000);
   t.after(() => chmod(join(from, `${id}.jsonl`), 0o600));
-  await assert.rejects(copyTranscript([worktree], other, id, env));
+  await assert.rejects(copyTranscript([worktree], other, id, 'claude', env));
   assert.equal(await readFile(join(to, `${id}.jsonl`), 'utf8'), '{"real":1}\n');
   assert.deepEqual(await readdir(to), [`${id}.jsonl`]);
 });

@@ -1,7 +1,7 @@
 import { dirname, isAbsolute } from 'node:path';
-import { transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the run's runner
+import { runners } from './agents/registry.js';
 import type { Tokens } from './events.js';
-import type { Activity, Budget, UsageSample } from './types.js';
+import type { Activity, AgentId, Budget, UsageSample } from './types.js';
 import { taskDir } from './worktree.js';
 
 export const HOUR_MS = 3_600_000;
@@ -57,11 +57,11 @@ export function isTranscriptPath(value: unknown): value is string {
  * The worker's own transcript: an absolute `.jsonl` directly under the transcript dir of the folder it runs in (taskDir: its worktree at
  * `<repo>/.hive/worktrees/<slug>`, or the workspace's checkout for a local task, #444). A forged hook cannot point the excerpt at any other file.
  */
-export function isWorkerTranscript(value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, env: NodeJS.ProcessEnv = process.env): value is string {
-  return isTranscriptIn(value, taskDir(repo, activity), env);
+export function isWorkerTranscript(value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, env: NodeJS.ProcessEnv = process.env): value is string {
+  return isTranscriptIn(value, taskDir(repo, activity), agent, env);
 }
 
-/** An absolute `.jsonl` directly under the transcript dir of `cwd`: a local session's (#587) is its workspace's checkout. */
-export function isTranscriptIn(value: unknown, cwd: string, env: NodeJS.ProcessEnv = process.env): value is string {
-  return isTranscriptPath(value) && dirname(value) === transcriptDir(cwd, env);
+/** An absolute `.jsonl` directly under `agent`'s transcript dir of `cwd` (#924): a local session's (#587) is its workspace's checkout. */
+export function isTranscriptIn(value: unknown, cwd: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env): value is string {
+  return isTranscriptPath(value) && dirname(value) === runners[agent].transcriptDir(cwd, env);
 }

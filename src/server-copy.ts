@@ -7,7 +7,7 @@ import { COPY_PENDING_MESSAGE } from './server-sessions.js';
 import { copyTranscript, dropCopiedTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import type { Session, CopySummary, Exec, SessionRef, SessionTarget } from './types.js';
-import { countMessages, transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the session's runner
+import { runners } from './agents/registry.js';
 import { cleanTitle } from './usage.js';
 
 type Deps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'exec' | 'log'>;
@@ -43,16 +43,16 @@ function plan(current: NonNullable<ReturnType<Deps['requireLive']>>, from: Sessi
   if ('status' in found) return found;
   const target = targetSide(current.state, current.runtime.config, to, from);
   if ('status' in target) return target;
-  if (copyPending(current.state.workers, from.sessionId, transcriptDir(target.cwd))) return { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE };
+  if (copyPending(current.state.workers, from.sessionId, runners[found.session.agent].transcriptDir(target.cwd))) return { status: HTTP_CONFLICT, message: COPY_PENDING_MESSAGE };
   return { from, to, source: found.side, target, session: found.session };
 }
 
 async function summarize({ source, target, session }: Planned, exec: Exec): Promise<CopySummary | undefined> {
-  const transcript = await findTranscript(source.transcriptCwds, session.id);
+  const transcript = await findTranscript(source.transcriptCwds, session.id, session.agent);
   if (transcript === undefined) return undefined;
   const [fromBranch, toBranch, changes, messages] = await Promise.all([
     source.onDisk ? readBranch(source.cwd, exec) : null, readBranch(target.cwd, exec),
-    source.onDisk ? uncommitted(source.cwd, exec) : 0, countMessages(transcript),
+    source.onDisk ? uncommitted(source.cwd, exec) : 0, runners[session.agent].countMessages(transcript),
   ]);
   return { from: { path: source.cwd, branch: fromBranch }, to: { path: target.cwd, branch: toBranch }, messages, tokens: session.tokens ?? 0, uncommitted: changes };
 }
@@ -66,12 +66,12 @@ async function noticeFor({ source, target }: Planned, exec: Exec): Promise<strin
 async function runCopy(deps: Deps, planned: Planned, body: { name?: unknown; notice: boolean; size?: TerminalSize }, res: Response): Promise<void> {
   let copied: Awaited<ReturnType<typeof copyTranscript>>;
   try {
-    copied = await copyTranscript(planned.source.transcriptCwds, planned.target.cwd, planned.session.id);
+    copied = await copyTranscript(planned.source.transcriptCwds, planned.target.cwd, planned.session.id, planned.session.agent);
   } catch (err) {
     return failed(deps, res, COPY_FAILED, err);
   }
   if (copied === 'missing') return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT });
-  const dir = transcriptDir(planned.target.cwd);
+  const dir = runners[planned.session.agent].transcriptDir(planned.target.cwd);
   const name = cleanTitle(body.name);
   const notice = body.notice ? await noticeFor(planned, deps.exec) : undefined;
   const effects = await deps.dispatch({
