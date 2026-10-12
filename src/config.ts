@@ -8,7 +8,7 @@ import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
-import { parseAgentArgs } from './config-agent-args.js';
+import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
 import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { parseConventions } from './conventions.js';
 import { parseFork } from './fork.js';
@@ -617,6 +617,7 @@ function parseFields(raw: unknown): Config {
 export function parseConfig(raw: unknown): Config {
   const config = parseFields(raw);
   checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
+  checkStageModels(config.comb.stages, config.defaultAgent); // #927: the same
   return config;
 }
 

@@ -1,4 +1,5 @@
-import { AGENT_IDS, type AgentId } from './types.js';
+import { agentOf } from './agents.js';
+import { AGENT_IDS, type AgentId, type Stage } from './types.js';
 
 // agentArgs in hive.config.json (#924), out of config.ts, which is over 400 lines. The prefix is config.ts's CONFIG_FILE, repeated here as
 // config-epics.ts does, since config.ts imports this file.
@@ -19,4 +20,16 @@ export function parseAgentArgs(value: unknown): Record<AgentId, string[]> {
     return [...list];
   };
   return Object.fromEntries(AGENT_IDS.map((id) => [id, listOf(id)])) as Record<AgentId, string[]>;
+}
+
+// A Claude alias, with or without its 1M context, or a claude- id (#927): Codex maps none of them, and its API answers a 400 with no Stop (finding §4, §11)
+const CLAUDE_MODEL = /^(?:(?:opus|sonnet|haiku)(?:\[1m\])?|claude-.*)$/;
+
+/** #927: a stage whose agent (its own, else the default) is codex and whose model is Claude's is refused by field. The Hive has no list of
+ * Codex models to check against otherwise. parseConfig runs it once defaultAgent is parsed, as checkResumedAgents. */
+export function checkStageModels(stages: readonly Stage[], defaultAgent: AgentId): void {
+  stages.forEach((stage, i) => {
+    if (stage.model === undefined || agentOf(stage, { defaultAgent }) !== 'codex' || !CLAUDE_MODEL.test(stage.model)) return;
+    throw new Error(`${FILE}: "comb.stages[${i}].model" "${stage.model}" is a Claude model; a codex stage needs a Codex model name`);
+  });
 }

@@ -1148,3 +1148,14 @@ test('a workspace\'s memoryCap is a required integer from 300 to 20000, refused 
   const message = 'hive.config.json: "comb.workspaces[0].memoryCap" must be an integer from 300 to 20000';
   for (const bad of [299, 20001, 4000.5, '4000', undefined]) assert.throws(() => parseConfig(at(bad)), { message }, String(bad));
 });
+
+test('a codex stage, by its own agent or the default, refuses a Claude model naming the field; a Codex model passes and a claude stage keeps its aliases (#927)', () => {
+  const withStage = (extra: Record<string, unknown>, top: Record<string, unknown> = {}) => github({ stages: [{ ...STAGES[0], ...extra }], ...top });
+  for (const model of ['opus', 'sonnet', 'haiku', 'sonnet[1m]', 'claude-sonnet-4']) {
+    const message = `hive.config.json: "comb.stages[0].model" "${model}" is a Claude model; a codex stage needs a Codex model name`;
+    assert.throws(() => parseConfig(withStage({ agent: 'codex', model })), { message }, model);
+  }
+  assert.throws(() => parseConfig(withStage({ model: 'opus' }, { defaultAgent: 'codex' })), /"comb\.stages\[0\]\.model" "opus" is a Claude model/, 'the default agent counts');
+  assert.equal(parseConfig(withStage({ agent: 'codex', model: 'gpt-5.6-terra' })).comb.stages[0].model, 'gpt-5.6-terra');
+  assert.equal(parseConfig(withStage({ model: 'opus' })).comb.stages[0].model, 'opus', 'a claude stage keeps its aliases');
+});
