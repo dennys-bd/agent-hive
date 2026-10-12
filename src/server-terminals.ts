@@ -3,7 +3,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
 import { capturedReply, shimPath } from './shim.js';
-import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
+import { AGENTS, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
@@ -15,7 +15,7 @@ import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import type { Activity, Effect, Exec, HiveEvent, State, Task } from './types.js';
+import { AGENT_IDS, type Activity, type Effect, type Exec, type HiveEvent, type State, type Task } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -144,7 +144,8 @@ function registerAgents(app: Express, deps: TerminalRouteDeps): void {
     const terminalId = terminalParam(req);
     if (!liveShell(current.state, terminalId)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TERMINAL_MESSAGE });
     const captured = current.state.workers.flatMap((w) => (w.terminalId === terminalId && w.sessionId !== undefined ? [w.sessionId] : []));
-    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shim: shimPath(deps.home, AGENTS[SHIM_AGENT]) }, deps.exec) });
+    const shims = AGENT_IDS.map((id) => shimPath(deps.home, AGENTS[id])); // #932: every agent's shim, first on the terminal's PATH
+    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shims }, deps.exec) });
   });
 }
 
