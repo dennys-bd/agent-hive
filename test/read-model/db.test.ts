@@ -188,3 +188,10 @@ test('a scope reads back as written, per source; a transaction that throws write
   }), { message: 'boom' });
   assert.equal(db.issue(SOURCE, REPO, 12), undefined);
 });
+
+test('the reconcile scope reads back as written, apart from the two sync scopes (#180)', async () => {
+  const db = await memory();
+  db.setScope(SOURCE, REPO, 'reconcile', { cursor: null, etag: null, syncedAt: T1 });
+  assert.deepEqual(db.scope(SOURCE, REPO, 'reconcile'), { cursor: null, etag: null, syncedAt: T1 });
+  assert.equal(db.scope(SOURCE, REPO, 'issues'), undefined);
+});
