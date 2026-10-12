@@ -1,6 +1,6 @@
 import { sessionsOf } from './tasks.js';
 import { isScope } from './diff.js';
-import { type LineAnchor, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor } from './types.js';
+import { DESIGN_VIEWPORTS, type DesignRect, type DesignTarget, type DesignViewport, type LineAnchor, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor, type UnpinnedDesignAnchor } from './types.js';
 
 // What the review routes and hive_reply take from a request (#591): checked here, stored as data, never passed to git or the disk.
 
@@ -46,3 +46,37 @@ export function parseAnchor(raw: unknown): ReviewAnchor | undefined {
   const lines = parseLineAnchor(raw);
   return isScope(scope) && lines !== undefined ? { scope, ...lines } : undefined;
 }
+
+const SELECTOR_MAX = 1000; // characters
+const ELEMENT_TEXT_MAX = 500; // characters, stored as sent
+const isCoord = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isViewport = (value: unknown): value is DesignViewport => DESIGN_VIEWPORTS.includes(value as DesignViewport);
+
+function rectOf(raw: unknown): DesignRect | undefined {
+  const { x, y, width, height } = (raw ?? {}) as Record<string, unknown>;
+  if (!isCoord(x) || !isCoord(y) || !isCoord(width) || !isCoord(height) || width < 0 || height < 0) return undefined;
+  return { x, y, width, height };
+}
+
+// An element (selector and text, data the agent reads, never run) or an area, each with its rect
+function targetOf(raw: Record<string, unknown>): DesignTarget | undefined {
+  const rect = rectOf(raw.rect);
+  if (rect === undefined) return undefined;
+  if (raw.kind === 'area') return { kind: 'area', rect };
+  const { selector, text } = raw;
+  if (raw.kind !== 'element' || typeof selector !== 'string' || selector === '' || selector.length > SELECTOR_MAX) return undefined;
+  return typeof text === 'string' && text.length <= ELEMENT_TEXT_MAX ? { kind: 'element', selector, text, rect } : undefined;
+}
+
+/** Where a design comment sits (#111), without its pin: a pin in the body is ignored, the server sets it. */
+export function parseDesignAnchor(raw: unknown): UnpinnedDesignAnchor | undefined {
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const { path, viewport, theme } = body;
+  const target = targetOf(body);
+  if (!isPath(path) || !isViewport(viewport) || (theme !== 'dark' && theme !== 'light') || target === undefined) return undefined;
+  return { path, viewport, theme, ...target };
+}
+
+/** A conversation's anchor (#111): a design one when the body carries a kind, else #591's lines. */
+export const parseThreadAnchor = (raw: unknown): ReviewAnchor | UnpinnedDesignAnchor | undefined =>
+  (typeof raw === 'object' && raw !== null && 'kind' in raw ? parseDesignAnchor(raw) : parseAnchor(raw));

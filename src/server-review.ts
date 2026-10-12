@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { isScope } from './diff.js';
-import { isHash, isPath, isTaskSession, parseAnchor, textOf } from './review-bodies.js';
-import { addDraft, markReviewed, removeDraft, setDefaultSession, updateDraft } from './review-store.js';
+import { isHash, isPath, isTaskSession, parseThreadAnchor, textOf } from './review-bodies.js';
+import { addDraft, markReviewed, pinned, removeDraft, setDefaultSession, updateDraft } from './review-store.js';
 import { type TaskRouteDeps, type Refusal, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import type { Task, ReviewFile, State } from './types.js';
 
@@ -31,16 +31,17 @@ export function liveTaskIn(deps: Pick<TaskRouteDeps, 'requireLive'>, req: Reques
 
 export const liveTask = (deps: Pick<TaskRouteDeps, 'requireLive'>, req: Request, res: Response): Task | undefined => liveTaskIn(deps, req, res)?.task;
 
-/** An edit of the task's file then its review event (#591); false once a store failure answered 500. */
-export async function storeEdit(deps: ReviewRouteDeps, res: Response, itemId: string, edit: (file: ReviewFile) => ReviewFile): Promise<boolean> {
+/** An edit of the task's file then its review event (#591); the file as written, or undefined once a store failure answered 500. */
+export async function storeEdit(deps: ReviewRouteDeps, res: Response, itemId: string, edit: (file: ReviewFile) => ReviewFile): Promise<ReviewFile | undefined> {
+  let file: ReviewFile;
   try {
-    await deps.reviews.update(itemId, edit);
+    file = await deps.reviews.update(itemId, edit);
   } catch (err) {
     refuse(res, { status: HTTP_SERVER_ERROR, message: errorMessage(err) });
-    return false;
+    return undefined;
   }
   deps.notifyReview(itemId);
-  return true;
+  return file;
 }
 
 /** storeEdit, then `answer`. */
@@ -96,12 +97,12 @@ function registerDraftRoutes(app: Express, deps: ReviewRouteDeps): void {
     if (!found) return;
     const { task, state } = found;
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const anchor = parseAnchor(body.anchor);
+    const anchor = parseThreadAnchor(body.anchor);
     const text = textOf(body.text);
     const session = body.session;
     if (!anchor || text === undefined || !isTaskSession(state, task.item.itemId, session)) return badRequest(res, DRAFT_MESSAGE);
-    const draft = { id: randomUUID(), anchor, session, text };
-    await writeReview(deps, res, task.item.itemId, (file) => addDraft(file, draft), { id: draft.id });
+    const id = randomUUID();
+    await writeReview(deps, res, task.item.itemId, (file) => addDraft(file, { id, anchor: pinned(file, anchor), session, text }), { id });
   });
   app.put('/tasks/:id/review/drafts/:draft', async (req: Request, res: Response) => {
     const found = liveTaskIn(deps, req, res);

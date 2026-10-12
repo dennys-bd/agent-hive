@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
-import { isTaskSession, parseAnchor, recipientsOf, textOf } from './review-bodies.js';
+import { isTaskSession, parseThreadAnchor, recipientsOf, textOf } from './review-bodies.js';
 import type { Deliver } from './review-deliver.js';
 import { batchText, commentText, missed } from './review-message.js';
-import { appendMessage, convertDrafts, draftMentions, type Outcome, replyTarget, resolve, settleMessage, startThread } from './review-store.js';
+import { appendMessage, convertDrafts, draftMentions, type Outcome, pinned, replyTarget, resolve, settleMessage, startThread } from './review-store.js';
 import type { TaskRouteDeps } from './server-tasks.js';
 import { badRequest, errorMessage, liveTaskIn, readReview, refuse, type ReviewRouteDeps, storeEdit, writeReview } from './server-review.js';
-import type { Task, ReviewDraft, ReviewFile, ReviewMessage, ReviewThread, State } from './types.js';
+import { isDesignAnchor, type ReviewDraft, type ReviewFile, type ReviewMessage, type ReviewThread, type State, type Task } from './types.js';
 
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
@@ -21,6 +21,7 @@ const NOTHING_TO_RETRY_MESSAGE = 'nada para reenviar';
 const SUBMITTING_MESSAGE = 'a revisão já está sendo enviada';
 const DELIVERING_MESSAGE = 'a mensagem já está sendo entregue';
 const SKIP_MESSAGE = 'skip, quando vem, lista sessões da tarefa, ou "new"';
+const KIND_MESSAGE = 'kind, quando vem, é lines ou design';
 
 export type ThreadRouteDeps = ReviewRouteDeps & Pick<TaskRouteDeps, 'log'> & { deliver: Deliver };
 
@@ -97,14 +98,17 @@ function registerThreadRoute(app: Express, deps: ThreadRouteDeps): void {
     if (!live) return;
     const { task, state } = live;
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const anchor = parseAnchor(body.anchor);
+    const anchor = parseThreadAnchor(body.anchor);
     const text = textOf(body.text);
     const mentions = mentionsOf(state, task, body.mentions);
     const to = mentions ?? recipientsOf(state, task.item.itemId, body.to);
     if (!anchor || text === undefined || !to || mentions === null) return badRequest(res, COMMENT_MESSAGE);
     const message = userMessage(text, to, mentions);
-    const thread: ReviewThread = { id: randomUUID(), anchor, participants: [], messages: [message] };
-    if (await storeEdit(deps, res, task.item.itemId, (file) => startThread(file, thread))) await deliverAndSettle(deps, res, task, thread, message);
+    const id = randomUUID();
+    // Pinned inside the store's edit (#111); the stored thread is the one delivered, so the text and the file carry the same pin
+    const stored = await storeEdit(deps, res, task.item.itemId, (file) => startThread(file, { id, anchor: pinned(file, anchor), participants: [], messages: [message] }));
+    const thread = stored?.threads.find((candidate) => candidate.id === id);
+    if (thread) await deliverAndSettle(deps, res, task, thread, message);
   });
 }
 
@@ -178,11 +182,11 @@ async function submitGroup(deps: ThreadRouteDeps, taskId: string, session: strin
   return 'sent';
 }
 
-// skip: the sessions whose last batch arrived but was not saved; their drafts would paste it again (#591)
-async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, skip: string[]): Promise<void> {
+// skip: the sessions whose last batch arrived but was not saved; their drafts would paste it again (#591). kind: the pane's own drafts (#111)
+async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, skip: string[], kind: 'lines' | 'design'): Promise<void> {
   const file = await readReview(deps, res, taskId);
   if (!file) return;
-  const drafts = file.drafts.filter((d) => !skip.includes(d.session));
+  const drafts = file.drafts.filter((d) => !skip.includes(d.session) && isDesignAnchor(d.anchor) === (kind === 'design'));
   if (drafts.length === 0) return refuse(res, { status: HTTP_CONFLICT, message: NO_DRAFT_MESSAGE });
   const sessions = [...new Set(drafts.map((d) => d.session))];
   try {
@@ -200,13 +204,14 @@ function registerSubmitRoute(app: Express, deps: ThreadRouteDeps): void {
     const live = liveTaskIn(deps, req, res);
     if (!live) return;
     const { task, state } = live;
-    const { skip = [] } = (req.body ?? {}) as { skip?: unknown };
+    const { skip = [], kind = 'lines' } = (req.body ?? {}) as { skip?: unknown; kind?: unknown };
     if (!Array.isArray(skip) || !skip.every((id) => isTaskSession(state, task.item.itemId, id))) return badRequest(res, SKIP_MESSAGE);
+    if (kind !== 'lines' && kind !== 'design') return badRequest(res, KIND_MESSAGE);
     const taskId = task.item.itemId;
     if (submitting.has(taskId)) return refuse(res, { status: HTTP_CONFLICT, message: SUBMITTING_MESSAGE });
     submitting.add(taskId);
     try {
-      await submitAll(deps, res, taskId, skip);
+      await submitAll(deps, res, taskId, skip, kind);
     } finally {
       submitting.delete(taskId);
     }
