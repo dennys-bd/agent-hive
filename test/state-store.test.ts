@@ -110,12 +110,13 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   assert.deepEqual(kept.budget, { maxTokensPerHour: 10 });
   const rule = { source: 'hour', percent: 80, signal: 'yellow' };
   const staged = { source: 'week', percent: 70, maxWorkers: 1, stage: 'build' }; // #475
+  const codexMonth = { source: 'month', percent: 40, signal: 'yellow', agent: 'codex' };
   const usageRules = [
-    rule, staged, { ...staged, stage: 3 }, { percent: 80, signal: 'yellow' }, { source: 'x', percent: 80, signal: 'yellow' }, { source: 'hour', percent: 'x', signal: 'red' },
+    rule, staged, codexMonth, { ...codexMonth, agent: 'gemini' }, { ...staged, stage: 3 }, { percent: 80, signal: 'yellow' }, { source: 'x', percent: 80, signal: 'yellow' }, { source: 'hour', percent: 'x', signal: 'red' },
     { source: 'hour', percent: 50 }, { source: 'hour', percent: 50, signal: 'blue' }, { source: 'hour', percent: 50, signal: 'green' }, null, 7,
   ];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usageRules }));
-  assert.deepEqual((await loadState(dir)).usageRules, [rule, staged], 'malformed rules are dropped: no source, unknown source, no consequence, green, a stage that is not a string');
+  assert.deepEqual((await loadState(dir)).usageRules, [rule, staged, codexMonth], 'malformed rules are dropped: no source, unknown source, no consequence, green, a stage that is not a string, an unknown agent');
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
   assert.deepEqual((await loadState(dir)).usage, []);
 });
@@ -666,7 +667,7 @@ test('loadState keeps disabledRules in the shapes the route accepts, a past at i
   await saveState(dir, { ...initialState(1), disabledRules });
   assert.deepEqual((await loadState(dir)).disabledRules, disabledRules, 'a save and a load keep them');
   const bad = [
-    { source: 'month', percent: 80, until: { kind: 'reset' } }, { source: 'hour', percent: '80', until: { kind: 'reset' } },
+    { source: 'year', percent: 80, until: { kind: 'reset' } }, { source: 'hour', percent: '80', until: { kind: 'reset' } },
     { source: 'hour', percent: 80, until: { kind: 'later' } }, { source: 'hour', percent: 80, until: { kind: 'at', at: 'soon' } },
     { source: 'hour', percent: 80 }, null, 'x',
   ];

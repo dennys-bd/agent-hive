@@ -1,10 +1,10 @@
-import { type Budget, type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
+import { type Budget, type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, type PlanSource, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
 import { DAY_MS, HOUR_MS, usageTotals } from './usage.js';
 
 export const SIGNAL_RANK: Record<Signal, number> = { green: 0, yellow: 1, red: 2 };
 const PERCENT = 100;
 /** The plan window each plan source reads; per-model weekly windows (seven_day_<model>) stay display-only. */
-export const PLAN_WINDOW: Record<'session' | 'week', string> = { session: 'five_hour', week: 'seven_day' };
+export const PLAN_WINDOW: Record<PlanSource, string> = { session: 'five_hour', week: 'seven_day', month: 'thirty_day' }; // month: #929, Codex's free plan
 
 export function worstSignal(a: Signal, b: Signal): Signal {
   return SIGNAL_RANK[b] > SIGNAL_RANK[a] ? b : a;
@@ -29,6 +29,7 @@ export function sourcePercents(usage: UsageSample[], budget: Budget, rateLimits:
     day: share(day, budget.maxTokensPerDay),
     session: windowPercent(rateLimits, PLAN_WINDOW.session, now),
     week: windowPercent(rateLimits, PLAN_WINDOW.week, now),
+    month: windowPercent(rateLimits, PLAN_WINDOW.month, now),
   };
 }
 
@@ -105,7 +106,8 @@ export function rollingBackAt(usage: UsageSample[], windowMs: number, limit: num
 export function ruleBackAt(rule: Pick<UsageRule, 'source' | 'percent'>, state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, now: number): string | undefined {
   switch (rule.source) {
     case 'session':
-    case 'week': {
+    case 'week':
+    case 'month': {
       const reading = state.rateLimits?.windows[PLAN_WINDOW[rule.source]];
       return reading?.resetsAt;
     }

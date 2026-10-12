@@ -589,7 +589,7 @@ test('POST /settings with an invalid usage rule answers 400 naming the rule and 
   assert.match((await json<{ error: string }>(noEffect)).error, /"usageRules\[0\]" must set "maxWorkers" or "signal"/);
   const noSource = await postSettings(base, { ...BODY, usageRules: [{ percent: 50, signal: 'red' }] });
   assert.equal(noSource.status, 400);
-  assert.match((await json<{ error: string }>(noSource)).error, /"usageRules\[0\]\.source" must be one of: hour, day, session, week/);
+  assert.match((await json<{ error: string }>(noSource)).error, /"usageRules\[0\]\.source" must be one of: hour, day, session, week, month/);
   // both rejected before the write: the file and the State still carry the valid rule
   assert.deepEqual((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).usageRules, usageRules);
   assert.deepEqual(server.getState()?.usageRules, usageRules);

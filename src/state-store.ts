@@ -9,7 +9,7 @@ import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord,
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
 import { copyDisabledRule, isDisabledRule } from './usage-rules.js';
-import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
+import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -21,10 +21,11 @@ const isSample = (value: unknown): value is UsageSample =>
 // Config validates the rules; here only the shape is checked, so a hand-edited state.json cannot feed the reducer garbage.
 const isRule = (value: unknown): value is UsageRule => {
   if (typeof value !== 'object' || value === null) return false;
-  const { source, percent, maxWorkers, signal, stage } = value as UsageRule;
+  const { source, percent, maxWorkers, signal, stage, agent } = value as UsageRule;
   return RULE_SOURCES.includes(source) && Number.isFinite(percent) && (maxWorkers === undefined || Number.isFinite(maxWorkers))
     && (signal === undefined || RULE_SIGNALS.includes(signal)) && (maxWorkers !== undefined || signal !== undefined)
-    && (stage === undefined || typeof stage === 'string'); // #475
+    && (stage === undefined || typeof stage === 'string') // #475
+    && (agent === undefined || AGENT_IDS.includes(agent)); // #929
 };
 
 // Files written before the status keys were neutral carry the Portuguese words and a lastEvent sentence.

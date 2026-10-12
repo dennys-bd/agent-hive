@@ -1,5 +1,5 @@
 // Settings › regras' signal rules (#512): one row per consequence, each on its own measure (#526). Pure, so node:test checks it.
-import { RULE_SIGNALS, type RuleSignal, type RuleSource, type UsageRule } from '../../types.js';
+import { PLAN_SOURCES, RULE_SIGNALS, type RuleSignal, type RuleSource, type UsageRule } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
 import type { SettingsProblem } from './settings-form.js';
 import { PERCENT_MAX } from './usage.js';
@@ -11,11 +11,10 @@ export interface RuleDraft { id: string; source: RuleSource; percent: string; st
 export interface Consequence { kind: EffectKind; stage: string }
 
 export const MEASURE_LABEL: Record<RuleSource, MessageKey> = {
-  session: 'settings.rules.measure.session', week: 'settings.rules.measure.week', hour: 'settings.rules.measure.hour', day: 'settings.rules.measure.day',
+  session: 'settings.rules.measure.session', week: 'settings.rules.measure.week', month: 'settings.rules.measure.month', hour: 'settings.rules.measure.hour', day: 'settings.rules.measure.day',
 };
-const PLAN_SOURCES: readonly RuleSource[] = ['session', 'week'];
 const BUDGET_SOURCES: readonly RuleSource[] = ['hour', 'day'];
-/** The four measures in ruler order (#526). */
+/** The five measures in ruler order (#526, #929). */
 export const MEASURES: readonly RuleSource[] = [...PLAN_SOURCES, ...BUDGET_SOURCES];
 /** The measures at least one row uses, in ruler order; an empty row counts so its bar appears with the row. */
 export const measuresInUse = (rules: readonly RuleDraft[]): RuleSource[] => MEASURES.filter((s) => rules.some((r) => r.source === s));

@@ -83,9 +83,14 @@ export const SIGNALS_DEFAULTS: SignalSettings = {
 export const MAX_CONCURRENT_DEFAULT = 2;
 /** The highest worker cap (#727): setMax allocates that many workers, and a cap kept only in state.json would re-crash every boot. */
 export const MAX_CONCURRENT_MAX = 64;
-/** What a rule reads: the token budget (hour / day) or a plan window the Hive already reads (session = five_hour, week = seven_day). */
-export type RuleSource = 'hour' | 'day' | 'session' | 'week';
-export const RULE_SOURCES: readonly RuleSource[] = ['hour', 'day', 'session', 'week'];
+/** What a rule reads: the token budget (hour / day) or a plan window the Hive already reads (session = five_hour, week = seven_day,
+ * month = thirty_day, #929). */
+export type RuleSource = 'hour' | 'day' | 'session' | 'week' | 'month';
+export const RULE_SOURCES: readonly RuleSource[] = ['hour', 'day', 'session', 'week', 'month'];
+/** The sources that read an agent's plan window (#929); hour and day sum every agent's tokens. */
+export type PlanSource = Exclude<RuleSource, 'hour' | 'day'>;
+export const PLAN_SOURCES: readonly PlanSource[] = ['session', 'week', 'month'];
+export const isPlanSource = (source: RuleSource): source is PlanSource => (PLAN_SOURCES as readonly RuleSource[]).includes(source);
 
 export interface Budget {
   maxTokensPerHour?: number; // absent or 0 = no limit
@@ -105,6 +110,7 @@ export interface UsageRule {
   maxWorkers?: number;
   signal?: RuleSignal;
   stage?: string; // #475: a name in comb.stages; absent = the rule caps the total
+  agent?: AgentId; // #929: whose plan a session / week / month rule reads; absent = the config's defaultAgent
 }
 
 /** How long a disable holds (#297): until the source drops below the percent (the default), until a fixed time, or until religar. */

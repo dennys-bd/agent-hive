@@ -56,8 +56,8 @@ test('isRuleValid and rulesProblem: a row must have a percent 0-100, a kind and 
   assert.deepEqual(rulesProblem([week70dev, week70deploy], ['dev']), { section: 'rules', message: t('settings.rules.stageUnknown', { n: 2, source: t('settings.rules.measure.week'), stage: 'deploy' }) });
 });
 
-test('MEASURES lists the four measures in ruler order; measuresInUse keeps those at least one row uses, empty rows included (#526)', () => {
-  assert.deepEqual(MEASURES, ['session', 'week', 'hour', 'day']);
+test('MEASURES lists the five measures in ruler order; measuresInUse keeps those at least one row uses, empty rows included (#526)', () => {
+  assert.deepEqual(MEASURES, ['session', 'week', 'month', 'hour', 'day']);
   assert.deepEqual(measuresInUse([]), []);
   assert.deepEqual(measuresInUse([row({ source: 'day' }), row({ source: 'session' }), row({ source: 'session' })]), ['session', 'day']);
   assert.deepEqual(measuresInUse([emptyRule('week')]), ['week']);

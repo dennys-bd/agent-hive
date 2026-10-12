@@ -1,5 +1,5 @@
 // Pure meter math for the header and the tasks. No DOM, no React: node:test imports it from dist/src/ui/lib.
-import type { SourceQuota, SourceSync, DisableUntil, RuleSource, State, UsageRule } from '../../types.js';
+import { isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
 import { type MessageKey, statusText, t } from '../i18n.js';
 
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
@@ -15,10 +15,10 @@ export const RED_AT = 90;
 // Mirrors src/polling.ts (pulls the orchestrator into the browser).
 export const QUOTA_RESERVE = 500;
 // Mirrors src/rate-limits.ts; the text comes from the dictionary.
-const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week' };
+const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week', thirty_day: 'window.thirtyDay' };
 const WEEKLY_PREFIX = 'seven_day_';
 // The strip and the header name a rule by its source and floor; the source names are the meter labels.
-const SOURCE_LABEL: Record<RuleSource, MessageKey> = { hour: 'usage.hour', day: 'usage.day', session: 'window.session', week: 'window.week' };
+const SOURCE_LABEL: Record<RuleSource, MessageKey> = { hour: 'usage.hour', day: 'usage.day', session: 'window.session', week: 'window.week', month: 'window.thirtyDay' };
 
 export function usageTotals(usage: { at: string; tokens: number }[], now: number): { hour: number; day: number } {
   return usage.reduce((totals, { at, tokens }) => {
@@ -114,16 +114,16 @@ export function timeLeft(iso: string, now: number): string {
 }
 
 // Mirrors PLAN_WINDOW in src/usage-rules.ts.
-const PLAN_WINDOW: Record<'session' | 'week', string> = { session: 'five_hour', week: 'seven_day' };
+const PLAN_WINDOW: Record<PlanSource, string> = { session: 'five_hour', week: 'seven_day', month: 'thirty_day' };
 
 /** When a plan source's window resets, for até resetar; undefined for a rolling budget source or before the first reading. */
 export const windowResetsAt = (state: Pick<State, 'rateLimits'>, source: RuleSource): string | undefined =>
-  source === 'session' || source === 'week' ? state.rateLimits?.windows[PLAN_WINDOW[source]]?.resetsAt : undefined;
+  (isPlanSource(source) ? state.rateLimits?.windows[PLAN_WINDOW[source]]?.resetsAt : undefined);
 
 /** What the ruler marks as now (#512), mirroring sourcePercents in src/usage-rules.ts (src/usage.ts pulls node:fs into the browser).
  * Undefined when there is nothing to measure: no plan reading yet, or a budget source with no limit. A window past its reset reads 0. */
 export function sourcePercent(state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, source: RuleSource, now: number): number | undefined {
-  if (source === 'session' || source === 'week') {
+  if (isPlanSource(source)) {
     const reading = state.rateLimits?.windows[PLAN_WINDOW[source]];
     if (reading === undefined) return undefined;
     return Date.parse(reading.resetsAt) <= now ? 0 : Math.round(reading.usedPercent);

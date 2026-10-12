@@ -2700,7 +2700,7 @@ test('POST /rules/disable and /rules/enable (#297): a bad source, percent or unt
   await server.dispatch({ type: 'rateLimits', rateLimits: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 85, resetsAt: new Date(Date.now() + HOUR_MS).toISOString() } } } });
   const past = new Date(Date.now() - 60_000).toISOString();
   const bad = [
-    { source: 'month', percent: 80, until: { kind: 'reset' } },
+    { source: 'year', percent: 80, until: { kind: 'reset' } },
     { source: 'session', percent: '80', until: { kind: 'reset' } },
     { source: 'session', until: { kind: 'reset' } },
     { source: 'session', percent: 80 },
@@ -2714,7 +2714,7 @@ test('POST /rules/disable and /rules/enable (#297): a bad source, percent or unt
     assert.ok((await json<{ error: string }>(res)).error.length > 0, JSON.stringify(body));
   }
   assert.deepEqual(server.getState()?.disabledRules, []);
-  assert.equal((await postJson(`${base}/rules/enable`, { source: 'month', percent: 80 })).status, 400);
+  assert.equal((await postJson(`${base}/rules/enable`, { source: 'year', percent: 80 })).status, 400);
   assert.equal((await postJson(`${base}/rules/enable`, { source: 'session', percent: null })).status, 400);
   const ok = await postJson(`${base}/rules/disable`, { source: 'session', percent: 80, until: { kind: 'reset' } });
   assert.deepEqual([ok.status, await json(ok)], [200, { ok: true }]);

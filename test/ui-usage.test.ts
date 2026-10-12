@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setLanguage } from '../src/ui/i18n.js';
+import { setLanguage, t } from '../src/ui/i18n.js';
 import { countdown, describeRules, duration, elapsed, fmt, HOUR_MS, inBackoff, latestQuota, meterBand, nextMorning, pauseUntil, percent, sourcePercent, timeLeft, usageTotals, windowLabel, windowResetsAt, withinLimit } from '../src/ui/lib/usage.js';
 import type { SourceQuota, SourceSync, State, UsageRule } from '../src/types.js';
 
@@ -141,4 +141,12 @@ test('latestQuota: the freshest reading among the sources; a source without one 
   };
   assert.deepEqual(latestQuota(syncs), syncs.fresh.quota);
   assert.equal(latestQuota({}), undefined);
+});
+
+test('a month source reads thirty_day: its percent, its reset and its labels (#929)', () => {
+  const rateLimits = { at: at(0), windows: { thirty_day: { usedPercent: 39.6, resetsAt: at(-60) } } };
+  assert.equal(sourcePercent({ usage: [], budget: {}, rateLimits }, 'month', NOW), 40);
+  assert.equal(windowResetsAt({ rateLimits }, 'month'), at(-60));
+  assert.equal(windowLabel('thirty_day'), t('window.thirtyDay'));
+  assert.equal(describeRules([{ source: 'month', percent: 40, signal: 'yellow' }]), `${t('window.thirtyDay')} ≥ 40%`);
 });

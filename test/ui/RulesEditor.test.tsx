@@ -31,13 +31,13 @@ test('every rule shows in one table under medida, a partir de, consequência, va
   expect(within(rows[2]).getByText('11%')).toBeInTheDocument();
 });
 
-test('a row\'s medida lists the four measures, and a pick changes only that row\'s source (#526)', async () => {
+test('a row\'s medida lists the five measures, and a pick changes only that row\'s source (#526)', async () => {
   const onChange = vi.fn();
   render(<RulesEditor rules={[session40cap4, week70cap1]} stages={[]} now={NOW} onChange={onChange} />);
   const [first] = screen.getAllByTestId('rule-row');
   fireEvent.click(within(first).getByLabelText('medida'));
   expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(
-    ['janela da sessão (5h)', 'janela da semana', 'orçamento por hora', 'orçamento por dia'],
+    ['janela da sessão (5h)', 'janela da semana', 'janela de 30 dias', 'orçamento por hora', 'orçamento por dia'],
   );
   fireEvent.click(screen.getByRole('option', { name: 'janela da semana' }));
   expect(onChange).toHaveBeenLastCalledWith([{ ...session40cap4, source: 'week' }, week70cap1]);

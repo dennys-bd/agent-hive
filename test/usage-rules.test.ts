@@ -16,7 +16,7 @@ const RULES: UsageRule[] = [
   { source: 'session', percent: 80, maxWorkers: 1, signal: 'yellow' },
   { source: 'week', percent: 90, signal: 'red' },
 ];
-const NONE: Record<RuleSource, number> = { hour: 0, day: 0, session: 0, week: 0 };
+const NONE: Record<RuleSource, number> = { hour: 0, day: 0, session: 0, week: 0, month: 0 };
 // one sample `ageMs` before NOW
 const sample = (tokens: number, ageMs = 0): UsageSample => ({ at: new Date(NOW - ageMs).toISOString(), tokens });
 const hourAt = (percent: number): UsageSample[] => [sample((HOUR / 100) * percent)];
@@ -51,7 +51,9 @@ test('sourcePercents keeps hour and day apart, each over its own limit, and read
 });
 
 test('sourcePercents reads session and week from the plan windows; absent rateLimits, absent window or a reset already passed read 0; other windows are ignored', () => {
-  assert.deepEqual(PLAN_WINDOW, { session: 'five_hour', week: 'seven_day' });
+  assert.deepEqual(PLAN_WINDOW, { session: 'five_hour', week: 'seven_day', month: 'thirty_day' });
+  const thirty: RateLimits = { at: FUTURE, windows: { thirty_day: { usedPercent: 40, resetsAt: FUTURE } } };
+  assert.deepEqual(sourcePercents([], BUDGET, thirty, NOW), { ...NONE, month: 40 }, 'month reads thirty_day (#929)');
   assert.deepEqual(sourcePercents([], BUDGET, windows(85, 41), NOW), { ...NONE, session: 85, week: 41 });
   assert.deepEqual(sourcePercents([], BUDGET, windows(85), NOW), { ...NONE, session: 85 }, 'no seven_day: week reads 0');
   assert.deepEqual(sourcePercents([], BUDGET, windows(85, 41, '2026-09-16T12:00:00.000Z'), NOW), NONE, 'resetsAt == now: the window has reset even if the reader has not caught up');
@@ -117,6 +119,7 @@ test('ruleBackAt: a plan rule at its window\'s reset, a budget rule at its rolli
   const state = { usage: [sample(1_800_000, 50 * MINUTE)], budget: BUDGET, rateLimits: windows(85, 95) };
   assert.equal(ruleBackAt({ source: 'session', percent: 80 }, state, NOW), FUTURE);
   assert.equal(ruleBackAt({ source: 'week', percent: 90 }, state, NOW), FUTURE);
+  assert.equal(ruleBackAt({ source: 'month', percent: 40 }, { ...state, rateLimits: { at: FUTURE, windows: { thirty_day: { usedPercent: 40, resetsAt: FUTURE } } } }, NOW), FUTURE);
   assert.equal(ruleBackAt({ source: 'session', percent: 80 }, { ...state, rateLimits: undefined }, NOW), undefined, 'no reading: no reset to show');
   assert.equal(ruleBackAt({ source: 'hour', percent: 80 }, state, NOW), new Date(NOW - 50 * MINUTE + HOUR_MS).toISOString());
   assert.equal(ruleBackAt({ source: 'day', percent: 5 }, state, NOW), new Date(NOW - 50 * MINUTE + DAY_MS).toISOString(), '1.8M of 20M: 9%');
@@ -156,7 +159,7 @@ test('isDisabledRule accepts the three untils with a known source and a finite p
     assert.equal(isDisabledRule({ source: 'hour', percent: 80, until }), true, JSON.stringify(until));
   }
   const bad: unknown[] = [
-    null, 'x', [], { source: 'month', percent: 80, until: { kind: 'reset' } }, { source: 'constructor', percent: 80, until: { kind: 'reset' } },
+    null, 'x', [], { source: 'year', percent: 80, until: { kind: 'reset' } }, { source: 'constructor', percent: 80, until: { kind: 'reset' } },
     { source: 'hour', percent: '80', until: { kind: 'reset' } }, { source: 'hour', percent: Number.NaN, until: { kind: 'reset' } }, { source: 'hour', percent: 80 },
     { source: 'hour', percent: 80, until: { kind: 'later' } }, { source: 'hour', percent: 80, until: { kind: 'at', at: 'soon' } },
     { source: 'hour', percent: 80, until: { kind: 'at', at: '2026-09-16' } }, { source: 'hour', percent: 80, until: { kind: 'at' } },
