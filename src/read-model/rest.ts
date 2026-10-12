@@ -18,11 +18,13 @@ export type RestAnswer =
 /** One GET of an API path (`repos/{o}/{r}/issues?…`, no leading slash), sending `etag` as If-None-Match when given. */
 export type RestGet = (path: string, etag?: string) => Promise<RestAnswer>;
 
-/** `gh` with argv → stdout; a run that failed on an HTTP status still resolves with what -i printed. */
-export type GhRun = (args: string[]) => Promise<string>;
+/** `gh` with argv → stdout; a run that failed on an HTTP status still resolves with what -i printed. `env` reaches gh's environment only
+ * (the api transport's GH_TOKEN, #180): never its argv. */
+export type GhRun = (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
 
-export const ghRun: GhRun = (args) => new Promise((resolve, reject) => {
-  execFile('gh', args, { maxBuffer: GH_MAX_BUFFER }, (err, stdout, stderr) => {
+export const ghRun: GhRun = (args, env) => new Promise((resolve, reject) => {
+  const options = { maxBuffer: GH_MAX_BUFFER, ...(env === undefined ? {} : { env: { ...process.env, ...env } }) };
+  execFile('gh', args, options, (err, stdout, stderr) => {
     // gh exits 1 on a 304 or a 4xx, yet -i has already printed the status line and the headers: that output is the answer
     if (stdout.startsWith('HTTP/')) resolve(stdout);
     else reject(new Error(`gh api: ${stderr.trim() || (err?.message ?? 'no answer')}`));
@@ -94,7 +96,7 @@ function answerOf(raw: RawHttp, path: string): RestAnswer {
   return { status: 200, body: parseBody(raw.body), ...(etag === undefined ? {} : { etag }), ...(next === undefined ? {} : { next }), ...extra };
 }
 
-/** The read transport over `gh api -i`: gh holds the login, so no token passes through the Hive. */
-export function ghRest(run: GhRun = ghRun): RestGet {
-  return async (path, etag) => answerOf(parseHttp(await run(['api', '-i', ...(etag === undefined ? [] : ['-H', `If-None-Match: ${etag}`]), path])), path);
+/** The read transport over `gh api -i`: gh holds the login, so no token passes through the Hive's argv; `env` is handed to every run. */
+export function ghRest(run: GhRun = ghRun, env?: NodeJS.ProcessEnv): RestGet {
+  return async (path, etag) => answerOf(parseHttp(await run(['api', '-i', ...(etag === undefined ? [] : ['-H', `If-None-Match: ${etag}`]), path], env)), path);
 }

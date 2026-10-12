@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ghRest, nextOf, parseHttp } from '../../src/read-model/rest.js';
@@ -61,4 +62,20 @@ test('an unexpected status, a body that is no JSON and output with no status lin
   await assert.rejects(ghRest(async () => http('500 Internal Server Error', [], 'body text'))('p'), { message: 'github rest: HTTP 500' });
   await assert.rejects(ghRest(async () => http('200 OK', [], 'not json'))('p'), { message: 'github rest: invalid JSON body' });
   await assert.rejects(ghRest(async () => 'garbage')('p'), { message: 'github rest: no HTTP status line' });
+});
+
+test('ghRest hands its env to every gh run and never puts it in the argv: the api transport\'s token rides GH_TOKEN (#180)', async () => {
+  const token = `test-${randomUUID()}`; // built at runtime: no token in a fixture
+  const seen: { args: string[]; env?: NodeJS.ProcessEnv }[] = [];
+  const rest = ghRest(async (args, env) => {
+    seen.push({ args, env });
+    return http('304 Not Modified', []);
+  }, { GH_TOKEN: token });
+  await rest(PATH, 'W/"e"');
+  assert.equal(seen[0]?.env?.GH_TOKEN, token);
+  assert.ok(!seen[0]?.args.some((arg) => arg.includes(token)));
+  await ghRest(async (_args, env) => {
+    assert.equal(env, undefined, 'no env given: gh runs as today');
+    return http('304 Not Modified', []);
+  })(PATH);
 });
