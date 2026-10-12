@@ -52,9 +52,10 @@ EOF
 fi
 i=0
 while [ "$i" -lt "$user_count" ]; do set -- "$@" "$1"; shift; i=$((i + 1)); done
-# Codex reads its MCP secret header from HIVE_MCP_SECRET (#927): the value from the secret file, in the real codex's env only, never an argv
-case "$cli" in
-  codex) HIVE_PTY_ID=$run_id HIVE_MCP_SECRET=$(sed -n 's/^x-hive-secret: *//p' "$HIVE_SECRET_FILE") "$real" "$@" ;;
+# Codex reads its MCP secret header from HIVE_MCP_SECRET (#927): the value from the secret file, in the real codex's env only, never an argv,
+# and only when the reply gave it the Hive's MCP server (a task's terminal), as the runner's runEnv does
+case "$cli:$hive_args" in
+  codex:*mcp_servers.hive.*) HIVE_PTY_ID=$run_id HIVE_MCP_SECRET=$(sed -n 's/^x-hive-secret: *//p' "$HIVE_SECRET_FILE") "$real" "$@" ;;
   *) HIVE_PTY_ID=$run_id "$real" "$@" ;;
 esac
 code=$?

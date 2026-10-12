@@ -176,11 +176,11 @@ test('a codex register answers codex\'s launch argv with the posted folder trust
   assert.equal(reply.includes(SECRET), false);
 });
 
-test('a register whose folder is missing, relative or split trusts the terminal\'s own; an unknown or missing agent is refused and captures nothing (#932)', async (t) => {
+test('a register whose folder is missing, relative, split or outside the terminal\'s trusts the terminal\'s own; an unknown or missing agent is refused and captures nothing (#932)', async (t) => {
   const { base, server, repo } = await start(t);
   const id = await openShell(base);
   const trusted = `projects={${JSON.stringify(repo)}={trust_level="trusted"}}`;
-  const forms: Record<string, string>[] = [{ agent: 'codex' }, { agent: 'codex', cwd: 'src' }, { agent: 'codex', cwd: `${repo}/a\nb` }];
+  const forms: Record<string, string>[] = [{ agent: 'codex' }, { agent: 'codex', cwd: 'src' }, { agent: 'codex', cwd: `${repo}/a\nb` }, { agent: 'codex', cwd: '/elsewhere' }];
   for (const form of forms) {
     const [, ...argv] = (await (await register(base, id, form)).text()).split('\n');
     assert.ok(argv.includes(trusted), JSON.stringify(form));

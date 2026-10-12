@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
+import { capturedCwd, capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS } from '../src/types.js';
@@ -93,6 +93,14 @@ test('a proxy in the env never sees the register nor the exit report: both go st
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit']);
 });
 
+test('capturedCwd keeps an absolute folder on one line inside the terminal\'s own, and nothing else (#932)', () => {
+  assert.deepEqual(
+    ['/r', '/r/src', '/r/..x', '/elsewhere', '/r/../x', 'src', '/r/a\nb', 42].map((value) => capturedCwd(value, '/r')),
+    ['/r', '/r/src', '/r/..x', undefined, undefined, undefined, undefined, undefined],
+  );
+  assert.equal(capturedCwd('/r', undefined), undefined);
+});
+
 test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {
   assert.equal(capturedReply(RUN_ID, ['--settings', '/h/a b.json']), `${RUN_ID}\n--settings\n/h/a b.json`);
   assert.equal(capturedReply(RUN_ID, ['--x', 'two\nlines']), undefined);
@@ -146,8 +154,15 @@ test('every codex subcommand, resume and fork included, and every codex passthro
   assert.deepEqual(hive.seen, []);
 });
 
+test('a codex whose reply has no Hive MCP server (a local terminal) gets no MCP secret in its env (#932)', async (t) => {
+  const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}'];
+  const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
+  const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
+  assert.deepEqual(await codex(), [`pty=${RUN_ID}`, ...hiveArgs]);
+});
+
 test('a plain codex and codex "a prompt" register with agent=codex and the shim\'s folder, then run the real codex with the Hive\'s args first and the MCP secret in its env only (#932)', async (t) => {
-  const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}', '--dangerously-bypass-hook-trust'];
+  const hiveArgs = ['-c', 'projects={"/w"={trust_level="trusted"}}', '-c', 'mcp_servers.hive.url="http://127.0.0.1:1/mcp"', '--dangerously-bypass-hook-trust'];
   const hive = await fakeHive(t, { status: 200, body: [RUN_ID, ...hiveArgs].join('\n') });
   const work = await tempDir(t, 'work-');
   const codex = await shimmed(t, hive.port, { PWD: work }, AGENTS.codex);

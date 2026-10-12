@@ -135,9 +135,9 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
       await deps.dispatch({ type: 'exit', ptyId: runId });
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
-    // #927, #932: Codex trusts the run's folder up front; after a cd, the terminal's starting folder would bring back its folder-trust screen
+    // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
     const terminal = after.state.terminals.find((x) => x.terminalId === terminalParam(req));
-    const cwd = capturedCwd(form.cwd) ?? terminal?.cwd ?? '';
+    const cwd = capturedCwd(form.cwd, terminal?.cwd) ?? terminal?.cwd ?? '';
     let run: AgentRun;
     try {
       run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
