@@ -20,8 +20,8 @@ interface GhUpdated { nodes: { updatedAt: string }[] }
 export interface GhRepoSummary { url: string; pushedAt?: string | null; isFork?: boolean; parent?: { nameWithOwner: string } | null; viewerPermission?: string | null; hasIssuesEnabled?: boolean; pullRequests: GhCount; open: GhCount; closed: GhCount; lastIssue: GhUpdated; lastPr: GhUpdated }
 
 export const REPO_ISSUE_PAGE_SIZE = 100; // GitHub's cap per page
-const LABEL_LIMIT = 50; // ponytail: an issue with more labels shows its first 50
-const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-read
+export const LABEL_LIMIT = 50; // ponytail: an issue with more labels shows its first 50
+export const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-read
 const PR_LIMIT = 10; // ponytail: an issue closed by more PRs shows its first 10, as in the native view (#756)
 export const ISSUE_FIELDS = `number title url updatedAt labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } `
   + `closedByPullRequestsReferences(first: ${PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged isDraft statusCheckRollup { state } } }`;
