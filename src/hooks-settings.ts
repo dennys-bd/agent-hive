@@ -54,7 +54,7 @@ export function statusCommand(port: number): string {
   return `${postStdin(port, '/hooks/status', STATUS_TIMEOUT_S)}; exit 0`;
 }
 
-/** The pkill pattern for the claude holding `ptyId`'s MCP config (#696): its file name in claude's argv, dots escaped, as pkill reads a regex. */
+/** The pkill pattern for the agent holding `ptyId`'s MCP config (#696): its file name in the agent's argv, dots escaped, as pkill reads a regex. */
 export const mcpConfigPattern = (ptyId: string): string => `${ptyId}\\.mcp\\.json`;
 
 /** One file per worker next to the prompts, named after the pty id: its path in the agent's argv is what killStray / isStrayAlive match

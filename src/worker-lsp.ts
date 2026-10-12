@@ -1,6 +1,6 @@
-// The language servers for the workers (#803): the servers the Hive installs for the editor pane (#780), handed to every claude run through a
-// plugin per workspace, <home>/lsp/<workspace>/, whose .lsp.json Claude Code's own LSP tool reads at launch. Each worker starts its own
-// processes; nothing is shared with the LSP host.
+// The language servers for the workers (#803): the servers the Hive installs for the editor pane (#780), handed to every agent run through a
+// plugin per workspace, <home>/lsp/<workspace>/, in which each runner writes its own files (#924: Claude's LSP tool reads its .lsp.json at
+// launch). Each worker starts its own processes; nothing is shared with the LSP host.
 import { mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { activityOfWorker, taskOfWorker } from './activities.js';
@@ -112,7 +112,7 @@ async function put(path: string, content: string): Promise<void> {
 const errorName = (err: unknown): string => (err instanceof Error ? err.name : typeof err);
 
 /** The workers' language-server plugins (#803): written on boot, on every Settings save and when a server's install settles; read by every
- * claude launch through dir(). */
+ * agent launch through dir(). */
 export function createWorkerLsp(deps: WorkerLspDeps): WorkerLsp {
   const { home, log } = deps;
   const launchesOn = deps.launches ?? ((path: string) => workerLaunches(home, path, deps.arch ?? hostArch()));

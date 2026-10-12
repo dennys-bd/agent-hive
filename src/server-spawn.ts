@@ -64,7 +64,7 @@ export interface SpawnerDeps {
   secret: string; // this boot's secret (#467): the MCP config's header
   home: string; // #696: where a terminal's history and ring live
   events?: Pick<EventLog, 'write'>; // #742: the worktree setup's worktree.step
-  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every claude launch loads it
+  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every agent launch loads it
 }
 
 type SpawnEffect = Extract<Effect, { type: 'spawn' }>;
@@ -199,7 +199,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     });
   }
 
-  // The user's own claude session (#164, #283), a task's or a workspace's local one (#587). Its cwd exists (the reducer checked it), so no
+  // The user's own agent session (#164, #283), a task's or a workspace's local one (#587). Its cwd exists (the reducer checked it), so no
   // worktree step. A task's run has the MCP on; a local one an MCP config with no server (hive_done has no task there). A copy's first run
   // (#587) forks the source, and its notice is the first prompt; the open route's prompt (#758) is one too. Either goes in a file of its own:
   // the task's <slug>.md is its stage prompt.
@@ -212,7 +212,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: place.refusal });
       return;
     }
-    // #812: a free session on a task records the stage start when the stage has none, before claude runs, so Restart can undo its work. A
+    // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
@@ -247,7 +247,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
 
   // A plain terminal's launch (#696): where it wakes (the cwd it held while on disk, else its start dir), its own history, and its ring:
   // written to its log as it ends, the old one replayed first after a sleep. Its env is the workspace's (#738) under its own HISTFILE, and
-  // the shim dir goes first on the workspace's PATH when it sets one, so a `claude` typed there is still the shim's.
+  // the shim dir goes first on the workspace's PATH when it sets one, so an agent typed there is still its shim's.
   async function keptLaunch(terminal: Terminal, startDir: string, env: Record<string, string>): Promise<Pick<PtyLaunch, 'cwd' | 'env' | 'keep'>> {
     await ensureTerminalsDir(home);
     const [cwd, seed] = await Promise.all([wakeDir(terminal.cwd, startDir), readScrollback(home, terminal.terminalId)]);
@@ -256,7 +256,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     return { cwd, env: { ...env, ...own }, keep: seed === undefined ? { log } : { log, seed } };
   }
 
-  // A terminal (#283): the pool runs it in a pty (#251) like any run, with no claude, no MCP and no prompt. A run command (#300) is looked up
+  // A terminal (#283): the pool runs it in a pty (#251) like any run, with no agent, no MCP and no prompt. A run command (#300) is looked up
   // by name only now, and its output to the console (#353): a click the config changed since fails in the bar instead of running something
   // else. No task: a workspace's shell (#292). Its env is the workspace's (#348, #738); a command's own is exported over it. A plain one is kept (#696).
   async function spawnTerminal(runtime: Runtime, { terminal, activity, task }: Extract<Effect, { type: 'spawnTerminal' }>, size?: TerminalSize): Promise<void> {

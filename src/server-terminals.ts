@@ -17,8 +17,8 @@ import { liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import type { Activity, Effect, Exec, HiveEvent, State, Task } from './types.js';
 
-// The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the claude
-// shim's register, which captures a claude typed in it as a free session.
+// The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
+// shim's register, which captures an agent typed in it as a free session.
 
 export const HTTP_NOT_FOUND = 404;
 export const HTTP_CONFLICT = 409;
@@ -42,7 +42,7 @@ export interface TerminalRouteDeps {
   pid(ptyId: string): number | undefined; // the pty host's
   home: string; // where the shim is, which the agents walk skips
   recordStart(runtime: Runtime, activity: Activity, task: Task, stage: string): Promise<void>; // #812: the spawner's, for a captured session
-  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's claude loads as any run does
+  lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -89,7 +89,7 @@ function registerForget(app: Express, deps: TerminalRouteDeps): void {
   });
 }
 
-// The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv claude gets before the user's
+// The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv the agent gets before the user's
 // own, one arg per line, which the shim reads as data (capturedReply); an arg holding a line break refuses the register. Under /hooks/:
 // secret-authenticated as a hook is, with no UI header (server.ts' gate).
 function registerCapture(app: Express, deps: TerminalRouteDeps): void {
@@ -104,7 +104,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const { runtime } = after;
     const activity = after.state.activities.find((a) => a.id === worker.activityId);
     const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
-    // A refusal ends the run it just made: the shim runs claude unregistered, and no run is left behind
+    // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
       await deps.dispatch({ type: 'exit', ptyId: runId });
       refuse(res, { status: HTTP_SERVER_ERROR, message });
@@ -117,9 +117,9 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
       return unregister(errorMessage(err));
     }
     const task = onTask ? taskOfWorker(after.state, worker) : undefined; // #797: its workspace's protocol, the memory under it
-    // #812: before the shim starts claude, as an open's spawn does; never in a checkout task's own checkout (#444)
+    // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
     if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
-    // #803: a captured claude is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
+    // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
     const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
     const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
     // #924: the capture through its worker's runner: the Hive's flags, the agent's own args and the session id the Hive chose

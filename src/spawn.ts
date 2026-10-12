@@ -58,7 +58,7 @@ export function withHandoff(prompt: string, stage: Pick<Stage, 'handoff'>, resul
   return `Handoff from the previous stage:\n\n${handoff}\n\n---\n\n${prompt}`;
 }
 
-// Every prompt claude reads is this file's content as its last argv word ("$(cat file)"), so one starting with a dash (a transition's prompt
+// Every prompt an agent reads is this file's content as its last argv word ("$(cat file)"), so one starting with a dash (a transition's prompt
 // opening on {verdict}, an agent's evidence) would be parsed as a flag: a neutral line goes first
 const PROMPT_LEAD = 'Your instructions follow.';
 const argvSafe = (text: string): string => (text.trimStart().startsWith('-') ? `${PROMPT_LEAD}\n\n${text}` : text);
@@ -91,9 +91,9 @@ export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
- * The env the worker gets: the Hive's own minus CLAUDECODE (a Hive
- * launched from inside Claude Code would stop the child from starting), CLAUDE_CODE_CHILD_SESSION (inherited, it turns the worker's
- * transcript saving off) and NODE_PATH (Electron points it at the Hive's
+ * The env the worker gets: the Hive's own minus every runner's host env (Claude's CLAUDECODE: a Hive
+ * launched from inside Claude Code would stop the child from starting; CLAUDE_CODE_CHILD_SESSION: inherited, it turns the worker's
+ * transcript saving off), NODE_PATH (Electron points it at the Hive's
  * node_modules; inherited, a worker running `pnpm test` would resolve the Hive's electron and open a window that never
  * exits), plus the pty id, the port and the path of hive.secret, whose header line curl sends with -H @file (#467: the value in a
  * variable would be expanded into curl's argv, which every account reads through ps; a stray HIVE_SECRET is dropped too), and TMPDIR
@@ -105,7 +105,7 @@ export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmp
 }
 
 /** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, and the Hive's bin
- * dir first on PATH, so a `claude` typed there is the shim's. `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
+ * dir first on PATH, so an agent typed there is its shim's (#924). `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
 export function terminalEnv(home: string, terminalId: string, path = process.env.PATH ?? ''): Record<string, string> {
   return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}:${path}` };
 }
@@ -160,7 +160,7 @@ async function matchProcess(tool: 'pkill' | 'pgrep', pattern: string, exec: Exec
 }
 
 /** Boot-only orphan defense (and the tab's kill): kills a worker still holding a worktree. The pattern is the pty id — a uuid,
- * unique per run and free of regex metacharacters, carried in claude's own argv (the per-worker --mcp-config path, <ptyId>.mcp.json). Resolves true when pkill matched. */
+ * unique per run and free of regex metacharacters, carried in the agent's own argv (the per-worker MCP config path, <ptyId>.mcp.json). Resolves true when pkill matched. */
 export const killStray = (pattern: string, exec: Exec = execFileAsync): Promise<boolean> => matchProcess('pkill', pattern, exec);
 
 /** Whether a process matching the pattern is still running: the tab's kill polls the pty id, dropDeadSessions polls the slug
