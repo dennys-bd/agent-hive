@@ -238,11 +238,17 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
     const found = (await deps.reviews.read(owner)).threads.find((t) => t.id === thread);
     if (!found) return refuse('unknown_thread', UNKNOWN_THREAD_MESSAGE);
     if (!found.participants.includes(worker.sessionId)) return refuse('not_participant', NOT_PARTICIPANT_MESSAGE);
-    if (resolve === true && found.resolved) return refuse('thread_resolved', THREAD_RESOLVED_MESSAGE);
     const session = worker.sessionId;
     const message: ReviewMessage = { id: randomUUID(), author: { session }, at: new Date().toISOString(), text: body };
-    // One edit: the answer, then the proposal it carries (#111); a later call replaces the mark
-    await deps.reviews.update(owner, (file) => (resolve === true ? markAgentResolved(appendMessage(file, thread, message), thread, session, message.at) : appendMessage(file, thread, message)));
+    // One edit: the answer, then the proposal (#111), a later call replacing the mark. The user's resolve wins: appending would reopen it
+    let late = false;
+    await deps.reviews.update(owner, (file) => {
+      late = resolve === true && file.threads.some((t) => t.id === thread && t.resolved);
+      if (late) return file;
+      const replied = appendMessage(file, thread, message);
+      return resolve === true ? markAgentResolved(replied, thread, session, message.at) : replied;
+    });
+    if (late) return refuse('thread_resolved', THREAD_RESOLVED_MESSAGE);
     deps.notifyReview(owner);
     return reply(OK);
   }));

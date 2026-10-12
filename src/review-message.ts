@@ -60,17 +60,22 @@ function catchUp(earlier: readonly ReviewMessage[]): string[] {
   return ['Earlier in this conversation, not sent to you yet:', ...lines, 'New message:'];
 }
 
+// The page's DOM writes the selector and the text, and the path comes from the request: each stays on its one line, so none can close its
+// quotes or code span and add lines that read as the Hive's own
+const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
 // What a design comment points at, as the agent reads it
 function targetOf(anchor: DesignAnchor): string {
   const { x, y, width, height } = anchor.rect;
   if (anchor.kind === 'area') return `area at ${x},${y}, ${width}×${height}`;
-  return `element \`${anchor.selector}\`${anchor.text === '' ? '' : ` ("${anchor.text}")`}`;
+  const text = oneLine(anchor.text);
+  return `element \`${oneLine(anchor.selector).replaceAll('`', "'")}\`${text === '' ? '' : ` (${JSON.stringify(text)})`}`;
 }
 
 // A design comment (#111): numbered by its pin, so a batch reads as the canvas does; the agent may propose a resolve, the user confirms it
 function designText(anchor: DesignAnchor, threadId: string, message: Outgoing, recipient: string, earlier: readonly ReviewMessage[]): string {
   return [
-    `Design comment ${anchor.pin} on ${anchor.path} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, `Viewport: ${anchor.viewport} px, theme: ${anchor.theme}`,
+    `Design comment ${anchor.pin} on ${oneLine(anchor.path)} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, `Viewport: ${anchor.viewport} px, theme: ${anchor.theme}`,
     ...mentionsLine(message.mentions, recipient), ...catchUp(earlier), withMentionNames(message.text, message.mentions),
     `Answer with the hive_reply tool, thread "${threadId}". Pass resolve: true when the comment is done; the user confirms it.`,
   ].join('\n');
