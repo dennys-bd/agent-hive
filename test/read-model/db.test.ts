@@ -69,9 +69,16 @@ test('a file of random bytes, or one newer than the code, is deleted with its -w
   }
 });
 
-test('a second failure to open throws (#178)', async (t) => {
+test('a second failure to open throws, keeping both causes (#178)', async (t) => {
   const path = join(await tempDir(t, 'read-model-'), READ_MODEL_FILE);
-  await assert.rejects(openReadModel(path, { migrations: ['NOT SQL'] }), /syntax error/);
+  await assert.rejects(openReadModel(path, { migrations: ['NOT SQL'] }), (err: unknown) => {
+    assert.ok(err instanceof Error);
+    assert.match(err.message, /cannot open/);
+    const { first, second } = err.cause as { first: Error; second: Error };
+    assert.match(first.message, /syntax error/);
+    assert.match(second.message, /syntax error/);
+    return true;
+  });
 });
 
 test('an upsert with an older updated_at returns false and changes nothing, from either origin (#178)', async () => {

@@ -202,7 +202,12 @@ function restrict(path: string): void {
   for (const suffix of SIDE_FILES) if (existsSync(`${path}${suffix}`)) chmodSync(`${path}${suffix}`, FILE_MODE);
 }
 
-function handleOf(Database: Sqlite, path: string, migrations: readonly string[]): DatabaseSync {
+function modelOf(db: DatabaseSync, now: () => number): ReadModel {
+  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
+}
+
+// The handle is closed on any failure, statement preparation included, so the files can be deleted after it (Windows refuses an open one)
+function modelAt(Database: Sqlite, path: string, migrations: readonly string[], now: () => number): ReadModel {
   // created owner-only before sqlite creates it, so no other account can open it in between
   if (path !== MEMORY) closeSync(openSync(path, 'a', FILE_MODE));
   const db = new Database(path);
@@ -210,15 +215,11 @@ function handleOf(Database: Sqlite, path: string, migrations: readonly string[])
     db.exec('PRAGMA journal_mode = WAL'); // a reader outside the daemon (the sqlite3 CLI) never blocks its writes
     migrate(db, migrations);
     if (path !== MEMORY) restrict(path);
-    return db;
+    return modelOf(db, now);
   } catch (err) {
     db.close();
     throw err;
   }
-}
-
-function modelOf(db: DatabaseSync, now: () => number): ReadModel {
-  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
 }
 
 /** Opens, and creates on first use, the read model at `path`; `:memory:` keeps it in memory. node:sqlite is imported here, so only the
@@ -226,11 +227,16 @@ function modelOf(db: DatabaseSync, now: () => number): ReadModel {
  * is deleted with its -wal and -shm and opened again once, answering `resync: true`: the model is a cache. A second failure throws. */
 export async function openReadModel(path: string, options: OpenOptions = {}): Promise<{ db: ReadModel; resync: boolean }> {
   const { DatabaseSync: Database } = await import('node:sqlite');
-  const open = (): ReadModel => modelOf(handleOf(Database, path, options.migrations ?? MIGRATIONS), options.now ?? Date.now);
+  const open = (): ReadModel => modelAt(Database, path, options.migrations ?? MIGRATIONS, options.now ?? Date.now);
   try {
     return { db: open(), resync: false };
-  } catch {
+  } catch (first) {
     if (path !== MEMORY) for (const suffix of SIDE_FILES) rmSync(`${path}${suffix}`, { force: true });
-    return { db: open(), resync: true };
+    try {
+      return { db: open(), resync: true };
+    } catch (second) {
+      // the first error is why the file was dropped: kept, so a failure that is not corruption (EACCES, a full disk) shows its cause
+      throw new Error(`read model: cannot open ${path}`, { cause: { first, second } });
+    }
   }
 }
