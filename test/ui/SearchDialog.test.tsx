@@ -3,12 +3,13 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { SearchDialog } from '@/components/SearchDialog';
+import { FileOpenerContext } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
 import { activitiesOf } from '@/lib/activities';
 import { onPanelKey } from '@/lib/dock-layout';
 import type { OperationContext } from '@/lib/operations';
 import type { Scope } from '@/lib/search';
-import type { Task, State } from '../../src/types';
+import type { Task, State, TaskTree } from '../../src/types';
 import { ctxOf, recordFor, stateOf, task } from './search-fixtures';
 import { activityIdOf } from '../fixtures/work';
 
@@ -25,6 +26,27 @@ function renderSearch(scope: Scope = 'all', ctx: OperationContext = ctxOf(STATE)
 const field = (): HTMLElement => screen.getByRole('combobox', { name: 'busca' });
 const scopeShown = (): HTMLElement => screen.getByRole('button', { pressed: true });
 
+// #133: DAEMON's activity (a-I466) and its tree; a deleted path is in marks only (#903)
+const TREE: TaskTree = {
+  root: '/w/466', files: ['docs/daemon/notes.md', 'src/daemon.ts', 'src/port.ts'], marks: { 'src/port.ts': 'M', 'src/gone.ts': 'D' }, folders: [], ignored: { files: [], folders: [] },
+};
+const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+// The search on arquivos with DAEMON's activity open, its tree answered by `answer`, inside a dock's file opener
+function renderFiles(answer: () => Response) {
+  vi.stubGlobal('fetch', vi.fn(async () => answer()));
+  const activities = activitiesOf(STATE);
+  const activity = activities.find((a) => a.kind === 'task' && a.task.item.itemId === 'I466');
+  const openFile = vi.fn(() => true);
+  const onClose = vi.fn();
+  render(
+    <FileOpenerContext.Provider value={openFile}>
+      <SearchDialog scope="files" ctx={ctxOf(STATE, { activity })} activities={activities} onClose={onClose} />
+    </FileOpenerContext.Provider>,
+  );
+  return { onClose, openFile };
+}
+
 beforeEach(() => {
   setLanguage('pt');
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } })));
@@ -36,7 +58,7 @@ test('opens on its scope with the field focused; Tab and Shift+Tab cycle the sco
   renderSearch('commands');
   expect(scopeShown()).toHaveTextContent('comandos');
   expect(field()).toHaveFocus();
-  expect(field()).toHaveAttribute('placeholder', 'buscar atividades, tarefas e comandos');
+  expect(field()).toHaveAttribute('placeholder', 'buscar atividades, tarefas, comandos e arquivos');
   await user.keyboard('{Tab}');
   expect(scopeShown()).toHaveTextContent('arquivos /');
   await user.keyboard('{Tab}');
@@ -184,4 +206,20 @@ test('a stopped task\'s auto badge is struck through in tarefas (#735)', async (
   const badge = (title: string): HTMLElement => within(screen.getByRole('option', { name: new RegExp(title) })).getByText('auto');
   expect(badge('restarts')).toHaveClass('opacity-50', 'line-through');
   expect(badge('logs')).not.toHaveClass('line-through');
+});
+
+test('with an activity open, arquivos lists its changed files on an empty field; a typed name lists the file, a name hit first, drawn; ↵ opens it with the activity\'s key (#133)', async () => {
+  const user = userEvent.setup();
+  const { onClose, openFile } = renderFiles(() => json(TREE));
+  const changed = await screen.findByRole('option', { name: /src\/port\.ts/ });
+  expect(within(changed).getByText('M')).toHaveClass('text-git-modified');
+  expect(screen.getAllByRole('option')).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledWith('/activities/a-I466/tree');
+  await user.keyboard('daemon');
+  const group = screen.getByRole('group', { name: 'arquivos' });
+  expect(within(group).getAllByRole('option').map((o) => o.textContent)).toEqual([expect.stringContaining('src/daemon.ts'), expect.stringContaining('docs/daemon/notes.md')]);
+  expect(within(group).getAllByText('daemon', { selector: 'b' })[0]).toHaveClass('font-medium');
+  await user.keyboard('{Enter}');
+  expect(onClose).toHaveBeenCalled();
+  expect(openFile).toHaveBeenCalledWith('I466', 'src/daemon.ts');
 });
