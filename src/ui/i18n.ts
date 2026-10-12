@@ -450,6 +450,8 @@ const en = {
   'search.op.settings': 'settings',
   'search.op.runCommand': 'run {command}',
   'search.op.closeTab': 'close tab',
+  // #133: the search finds the open activity's files
+  'search.scope.files': 'files',
   'dock.close': 'Close panel',
   'dock.moveLeft': 'Move to the left',
   'dock.moveRight': 'Move to the right',
@@ -2271,6 +2273,8 @@ const pt: Record<MessageKey, string> = {
   'search.op.settings': 'configurações',
   'search.op.runCommand': 'executar {command}',
   'search.op.closeTab': 'fechar tab',
+  // #133: the search finds the open activity's files
+  'search.scope.files': 'arquivos',
   'dock.close': 'Fechar painel',
   'dock.moveLeft': 'Mover para a esquerda',
   'dock.moveRight': 'Mover para a direita',

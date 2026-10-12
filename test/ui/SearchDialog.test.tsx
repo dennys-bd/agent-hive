@@ -31,16 +31,18 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('opens on its scope with the field focused; Tab and Shift+Tab cycle the scopes; a # typed first switches to tarefas and leaves the field (#584)', async () => {
+test('opens on its scope with the field focused; Tab and Shift+Tab cycle the scopes, arquivos last; a # typed first switches to tarefas and leaves the field (#584, #133)', async () => {
   const user = userEvent.setup();
   renderSearch('commands');
   expect(scopeShown()).toHaveTextContent('comandos');
   expect(field()).toHaveFocus();
   expect(field()).toHaveAttribute('placeholder', 'buscar atividades, tarefas e comandos');
   await user.keyboard('{Tab}');
+  expect(scopeShown()).toHaveTextContent('arquivos /');
+  await user.keyboard('{Tab}');
   expect(scopeShown()).toHaveTextContent('tudo');
   await user.keyboard('{Shift>}{Tab}{/Shift}');
-  expect(scopeShown()).toHaveTextContent('comandos');
+  expect(scopeShown()).toHaveTextContent('arquivos');
   await user.keyboard('#');
   expect(scopeShown()).toHaveTextContent('tarefas');
   expect(field()).toHaveValue('');

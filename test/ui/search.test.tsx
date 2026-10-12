@@ -21,11 +21,12 @@ const inputOf = (tasks: Task[], workers: Worker[] = [], extra: Partial<SearchInp
   return { scope: 'all', query: '', tasks: state.tasks, workers, liveActivities: state.activities, activityRecords: state.activityRecords, activities: activitiesOf(state), operations: [], ...extra };
 };
 
-test('a # or > typed first picks tarefas or comandos and leaves the field; nextScope cycles both ways (#584)', () => {
+test('a #, > or / typed first picks tarefas, comandos or arquivos and leaves the field; nextScope cycles both ways, arquivos last (#584, #133)', () => {
   expect(parseQuery('#466', 'all')).toEqual({ scope: 'tasks', query: '466' });
   expect(parseQuery('>sinal', 'activities')).toEqual({ scope: 'commands', query: 'sinal' });
+  expect(parseQuery('/search.ts', 'tasks')).toEqual({ scope: 'files', query: 'search.ts' });
   expect(parseQuery('daemon #2', 'all')).toEqual({ scope: 'all', query: 'daemon #2' });
-  expect([nextScope('all', 1), nextScope('commands', 1), nextScope('all', -1)]).toEqual(['activities', 'all', 'commands']);
+  expect([nextScope('all', 1), nextScope('commands', 1), nextScope('files', 1), nextScope('all', -1)]).toEqual(['activities', 'files', 'all', 'files']);
 });
 
 test('fuzzyRanges: one range for a substring, one per run of a subsequence, none for a blank query, undefined for no match (#584)', () => {
@@ -75,4 +76,5 @@ test('an empty field shows recentes and precisam de você, one row per activity;
   expect(ids(searchGroups(inputOf([live, idle], workers, { scope: 'tasks', activityRecords })))).toEqual([['recent', ['t:2']]]);
   expect(ids(searchGroups(inputOf([live, idle], workers, { scope: 'activities', activityRecords })))).toEqual([['recent', ['a:1']], ['pending', ['a:1']]]);
   expect(ids(searchGroups(inputOf([], [], { scope: 'commands', operations: [view('sinal'), view('configurações')] })))).toEqual([['commands', ['o:sinal', 'o:configurações']]]);
+  expect(searchGroups(inputOf([live, idle], workers, { scope: 'files', activityRecords }))).toEqual([]); // #133: no recent task leaks into arquivos
 });

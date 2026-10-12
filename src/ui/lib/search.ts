@@ -7,10 +7,10 @@ import { type Activity, isTask, type TaskActivity } from './activities.js';
 import { pendingSessions, recentActivities } from './home.js';
 import type { OperationView } from './operations.js';
 
-export type Scope = 'all' | 'activities' | 'tasks' | 'commands';
-export const SCOPES: readonly Scope[] = ['all', 'activities', 'tasks', 'commands'];
-/** What typed first switches the scope (the handoff): # tarefas, > comandos. */
-export const SCOPE_PREFIX: Partial<Record<Scope, string>> = { tasks: '#', commands: '>' };
+export type Scope = 'all' | 'activities' | 'tasks' | 'commands' | 'files';
+export const SCOPES: readonly Scope[] = ['all', 'activities', 'tasks', 'commands', 'files'];
+/** What typed first switches the scope (the handoff): # tarefas, > comandos, / arquivos (#133). */
+export const SCOPE_PREFIX: Partial<Record<Scope, string>> = { tasks: '#', commands: '>', files: '/' };
 export const GROUP_LIMIT = 3; // each group in tudo
 export const SCOPE_LIMIT = 20; // a filtered scope
 const HIDDEN_FIELD_SCORE = 100; // a hit only in the branch or a session id ranks after every hit the row draws
@@ -23,7 +23,7 @@ export type SearchRow =
   | { kind: 'activity'; activity: TaskActivity; ranges: Range[] }
   | { kind: 'task'; task: Task; ranges: Range[] }
   | { kind: 'operation'; view: OperationView; ranges: Range[] };
-export type GroupId = 'recent' | 'pending' | 'activities' | 'tasks' | 'commands';
+export type GroupId = 'recent' | 'pending' | 'activities' | 'tasks' | 'commands' | 'files';
 export interface SearchGroup { id: GroupId; rows: SearchRow[] }
 export interface SearchInput { scope: Scope; query: string; tasks: Task[]; workers: Worker[]; liveActivities: LiveActivity[]; activityRecords: ActivityRecord[]; activities: Activity[]; operations: OperationView[] }
 
@@ -125,6 +125,7 @@ export function searchGroups(input: SearchInput): SearchGroup[] {
 function emptyGroups({ scope, tasks, workers, liveActivities, activityRecords, activities: all, operations }: SearchInput): SearchGroup[] {
   const activities = taskActivities(all);
   if (scope === 'commands') return operations.length === 0 ? [] : [{ id: 'commands', rows: operationRows(operations, '') }];
+  if (scope === 'files') return []; // #133: arquivos lists files only, never a recent task
   const rowOf = (task: Task): SearchRow => {
     const activity = activityOf(activities, task);
     return activity === undefined ? { kind: 'task', task, ranges: [] } : { kind: 'activity', activity, ranges: [] };

@@ -16,6 +16,7 @@ export interface SearchDialogProps { scope: Scope; ctx: OperationContext; activi
 
 const GROUP_KEY: Record<GroupId, MessageKey> = {
   recent: 'home.recent', pending: 'search.group.pending', activities: 'search.scope.activities', tasks: 'search.scope.tasks', commands: 'search.scope.commands',
+  files: 'search.scope.files',
 };
 
 const itemIdOf = (row: SearchRow): string | undefined => {
