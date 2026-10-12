@@ -3341,7 +3341,9 @@ test('delete activity removes the Activity, keeps its record and the task in its
 test('closing a task that left the source prunes its activity and its records (#629)', () => {
   const missing = polled(ranOnce(), []).state;
   const closed = reduce(missing, { type: 'closeTask', taskId: 'board:item1' }).state;
-  assert.deepEqual([closed.activities, closed.activityRecords], [[], []]);
+  assert.equal(closed.activities.length, 1, 'kept while its worktree is on disk (#861)');
+  const gone = reduce(closed, { type: 'worktreeGone', activityId: closed.activities[0].id }).state;
+  assert.deepEqual([gone.activities, gone.activityRecords], [[], []]);
 });
 
 test('renaming a source carries its tasks\' ids in the records, so nothing is pruned (#629)', () => {
@@ -3539,4 +3541,12 @@ test('one save that renames a stage and deletes another: the deletion\'s destina
   const renamed = reduce(parked, { type: 'renameStages', renames: { spec: 'Spec' } }).state;
   const saved = reduce(renamed, { type: 'setStages', ...chained([{ ...STAGES[0], name: 'Spec' }, STAGES[2]]) }).state;
   assert.equal(task(saved, 1)?.stage, 'Spec', 'dev went: the stage before it, under its new name');
+});
+
+test('a task that leaves with its worktree keeps its activity, and the same item coming back finds it (#861)', () => {
+  const seen = ranOnce(1); // stopped in spec, its worktree from SessionStart
+  const id = ACT(seen, 1);
+  const gone = reduce(polled(seen, []).state, { type: 'closeTask', taskId: 'board:item1' }).state;
+  assert.deepEqual([gone.tasks.length, gone.activities.some((a) => a.id === id)], [0, true], 'kept while its worktree is on disk');
+  assert.equal(ACT(polled(gone, [listed(1)]).state, 1), id, 'the returning task finds it through its record');
 });

@@ -159,7 +159,8 @@ test('a terminal whose activity went (its workspace removed, its task gone) leav
   assert.deepEqual(removed.effects.filter((e) => e.type === 'kill' || e.type === 'dropTerminalFiles'), [
     { type: 'kill', slug: 'workspace', ptyId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: SHELL_ID },
   ]);
-  const orphaned = { ...withShell({ asleep: true }), tasks: [] };
+  const shell = withShell({ asleep: true });
+  const orphaned = { ...shell, tasks: [], activities: shell.activities.map((a) => ({ ...a, worktreeGone: true as const })) }; // #861: a task activity with a worktree on disk is kept, so this one's is gone
   const gone = reduce(orphaned, { type: 'setMax', max: 1 });
   assert.deepEqual([gone.state.activities, gone.state.terminals, gone.effects], [[], [], [{ type: 'dropTerminalFiles', terminalId: SHELL_ID }]]);
 });

@@ -475,7 +475,7 @@ export function createServer(deps: ServerDeps): HiveServer {
         const { activity, task, scope } = effect;
         const activityId = activity.id;
         // In the task's own workspace (#179); none, or one gone, is a failure a manual start retries, like a git refusal. What goes is the scope's (#236).
-        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, events: wiring.events });
+        const clean = async (): Promise<void> => deleteActivityOnDisk({ workspace: requireWorkspace(runtime.config, task), activity, task, sessions: live ? sessionsOf(live.state, task.item.itemId) : [], branch: branchFor(runtime.config, task.item), scope }, { exec, log, ptys, consoleStore, dispatch, events: wiring.events });
         // Awaited, like kill: the answer is reduced inside this batch, so the next tick sees the task moved or errored, never mid-deletion.
         await clean().then(
           () => dispatch({ type: 'activityDeleted', activityId }),
@@ -1047,7 +1047,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const taskDeps = { exec, log, requireLive, dispatch, poll, latest: () => live?.state, started: pool.started, language: effectiveLanguage, reviews, notifyReview, ptys, consoleStore, events: wiring.events };
   // GET /worktrees, GET /activities/worktrees and POST /worktrees/:workspace/:slug/remove (#181): the Settings tab's worktrees, behind the same
   // host/origin middleware; before every /activities/:id/* route (#629), so `worktrees` is never read as an activity id
-  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, events: wiring.events });
+  registerWorktreeRoutes(app, { exec, log, requireLive, ptys, consoleStore, dispatch, events: wiring.events });
   registerTaskRoutes(app, taskDeps);
   registerDesignFrameMint(app, { requireLive, tokens: designFrames }); // GET /activities/:id/design-frame (#108): behind the gate, like the editor's file routes
   // The review's conversations (#591): delivered into a session's pty, or into one openSession starts for them. A pty whose fd closed since

@@ -21,8 +21,8 @@ interface Outcome { removed: string[]; refused: { slug: string; reason: string }
 const removalUrl = (row: WorktreeRow): string =>
   row.task ? activityDeletionUrl(row.task.activityId) : `/worktrees/${encodeURIComponent(row.workspace)}/${encodeURIComponent(row.slug)}/remove`;
 
-/** What `apagar todos` posts: every noTask row, and a deleteActivityFailed row whose task allows the removal (canDeleteActivity). */
-const isCleanable = (row: WorktreeRow): boolean => row.orphan === 'noTask' || (row.orphan === 'deleteActivityFailed' && row.task?.removable === true);
+/** What `apagar todos` posts: every noTask or kept row, and a deleteActivityFailed row whose task allows the removal (canDeleteActivity). */
+const isCleanable = (row: WorktreeRow): boolean => row.orphan === 'noTask' || row.orphan === 'kept' || (row.orphan === 'deleteActivityFailed' && row.task?.removable === true);
 
 const workspacesOf = (rows: WorktreeRow[]): string[] => [...new Set(rows.map((r) => r.workspace))]; // #179: in the order the server lists them
 
@@ -65,6 +65,7 @@ function OrphanStatus({ label, title }: { label: string; title?: string }) {
 
 // An active row's stage, its most urgent run and an open session, read from the State the page already holds; nothing when it has none yet.
 function RowStatus({ row, state }: { row: WorktreeRow; state?: Slice }) {
+  if (row.orphan === 'kept') return <OrphanStatus label={t('worktrees.kept')} />; // #861
   if (row.orphan === 'noTask') return <OrphanStatus label={t('worktrees.orphan')} />;
   if (row.orphan === 'deleteActivityFailed') return <OrphanStatus label={t('worktrees.deleteActivityFailed')} title={row.task?.error === undefined ? undefined : taskError(row.task.error)} />;
   const task = state?.tasks.find((c) => taskId(c) === row.task?.id);

@@ -26,7 +26,7 @@ import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { renderPrompt } from '../src/spawn.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment } from '../src/types.js';
+import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
 import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -2736,4 +2736,17 @@ test('a boot whose config lost a stage the saved state uses places its task in t
   t.after(() => server.close());
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(BODY) })).status, 200);
   assert.equal(server.getState()!.tasks.find((c) => c.item.itemId === 'board:I7')?.stage, 'fila', 'gone was last: fila comes before it');
+});
+
+test('a task that leaves with its worktree keeps its activity: GET /worktrees lists it as kept, and removing it lets the activity go (#861)', async (t) => {
+  const git = listedGit();
+  const { base, repo, server } = await ranOnce(t, { exec: git.exec });
+  await server.dispatch({ type: 'poll', source: 'board', items: [] });
+  await server.dispatch({ type: 'closeTask', taskId: 'board:I1' });
+  assert.deepEqual([server.getState()!.tasks.length, server.getState()!.activities.filter((a) => a.kind === 'task').length], [0, 1]);
+  const rows = await json<WorktreeRow[]>(hiveFetch(`${base}/worktrees`));
+  assert.deepEqual(rows.find((r) => r.slug === TASK_SLUG), { workspace: 'hive', slug: TASK_SLUG, path: worktreePath(repo, TASK_SLUG), branch: TASK_BRANCH, orphan: 'kept' });
+  await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
+  assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${TASK_SLUG}/remove`)), { removed: true });
+  assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');
 });

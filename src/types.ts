@@ -1402,7 +1402,7 @@ export interface WorktreeRow {
   path: string;
   branch: string | null; // what git lists checked out there; null = detached
   task?: { id: string; activityId: string; title: string; error?: string; removable: boolean }; // the owning task and its live activity, what its removal posts to (#629); removable = canDeleteActivity(task, workers)
-  orphan?: 'noTask' | 'deleteActivityFailed';
+  orphan?: 'noTask' | 'deleteActivityFailed' | 'kept'; // kept (#861): a task activity that outlived its tasks, kept while its worktree exists
 }
 
 /** How a copy's first run starts (#587): the source session resumed as a new one (--fork-session) and the notice as its first prompt when asked. */

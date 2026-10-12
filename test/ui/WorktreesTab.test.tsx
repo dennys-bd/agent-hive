@@ -159,3 +159,15 @@ test('a failed start reads as its short message in the confirm and on hover, nev
   expect(dialog()).toHaveTextContent(short);
   expect(dialog()).not.toHaveTextContent('not committed');
 });
+
+test('a kept worktree (its activity outlived its task, #861) reads as kept and its × posts the workspace route', async () => {
+  const user = userEvent.setup();
+  const KEPT: WorktreeRow = { ...ORPHAN, slug: 'hive-5-kept', path: '/repo/.hive/worktrees/hive-5-kept', branch: 'hive/5-kept', orphan: 'kept' };
+  rows = [KEPT];
+  render(<WorktreesTab />);
+  await screen.findByText('hive/5-kept');
+  expect(within(findRow(KEPT)).getByText(t('worktrees.kept'))).toBeInTheDocument();
+  await user.click(trashOf(KEPT));
+  await user.click(within(dialog()).getByRole('button', { name: t('detail.deleteActivity') }));
+  await waitFor(() => expect(posts()).toEqual([['/worktrees/hive/hive-5-kept/remove', undefined]]));
+});

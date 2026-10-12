@@ -1,4 +1,4 @@
-import { activityOf, holdsSlug, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
+import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
 import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
@@ -649,7 +649,7 @@ export function worktreeRows(
 ): WorktreeRow[] {
   return listed.map((worktree): WorktreeRow => {
     const task = worktreeOwner(state, workspace, worktree.slug);
-    if (!task) return { ...worktree, workspace, orphan: 'noTask' };
+    if (!task) return { ...worktree, workspace, orphan: keptActivity(state, workspace, worktree.slug) ? 'kept' : 'noTask' }; // #861
     const live = activityOf(state, taskId(task));
     const error = live?.error;
     const owner = { id: taskId(task), activityId: live?.id ?? '', title: taskLabel(task), removable: canDeleteActivity(task, state), ...(error === undefined ? {} : { error }) };

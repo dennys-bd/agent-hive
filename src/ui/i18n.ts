@@ -587,6 +587,7 @@ const en = {
   'worktrees.orphanCount.one': '1 orphan',
   'worktrees.orphanCount.other': '{n} orphans',
   'worktrees.orphan': 'orphan · no task in the flow',
+  'worktrees.kept': 'kept · no task in the flow', // #861: its activity waits for its task to return
   'worktrees.stopped': 'stopped',
   'worktrees.sessionOpen': 'session open',
   'worktrees.sessionBlocks': "close the task's session first",
@@ -2375,6 +2376,7 @@ const pt: Record<MessageKey, string> = {
   'worktrees.orphanCount.one': '1 órfã',
   'worktrees.orphanCount.other': '{n} órfãs',
   'worktrees.orphan': 'órfã · sem tarefa no fluxo',
+  'worktrees.kept': 'mantida · sem tarefa no fluxo',
   'worktrees.stopped': 'parado',
   'worktrees.sessionOpen': 'sessão aberta',
   'worktrees.sessionBlocks': 'feche a sessão da tarefa antes',
