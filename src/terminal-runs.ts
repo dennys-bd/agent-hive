@@ -1,14 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { isLocalActivityId, taskOfActivity } from './activities.js';
+import { SHIM_AGENT } from './agents.js';
 import { localSessionsOf } from './local-sessions.js';
 import { touchFreeSession } from './record-kit.js';
 import { none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
 import { withLocal } from './session-copy.js';
 import { canOpenSession, LOCAL_SLUG } from './tasks.js';
-import type { Activity, AgentId, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
-
-// #925: the shim wraps the claude CLI only (claude-shim.ts), so what it captures is Claude's
-const SHIM_AGENT: AgentId = 'claude';
+import type { Activity, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
 
 // Kept terminals (#696), out of runs.ts: a terminal sleeps with no pty, keeps its cwd and wakes in the same id until it is forgotten. A
 // command's run (#300) is the console's, never kept. Pure: every function returns new objects.

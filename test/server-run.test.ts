@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf, localActivityId, taskOfActivity } from '../src/activities.js';
-import { shimDir } from '../src/claude-shim.js';
+import { shimDir } from '../src/shim.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Exec, OpenResult, Command, SettingsBody, WorkspaceFork } from '../src/types.js';

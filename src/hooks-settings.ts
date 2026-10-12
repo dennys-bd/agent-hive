@@ -1,7 +1,8 @@
 import { appendFile, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installShim } from './claude-shim.js';
+import { AGENTS } from './agents.js'; // temporary (#924): Task 6 moves the shim's install into Claude's runner
+import { installShim } from './shim.js';
 import { SESSION_PROTOCOL, STAGE_PROTOCOL } from './protocol.js';
 import { SECRET_HEADER } from './secret.js';
 import { APPROVAL_HOLD_MAX_MIN } from './types.js';
@@ -167,6 +168,6 @@ export async function prepareHome(home: string, port: number): Promise<{ hooksPa
   await writeFile(hooksPath, `${JSON.stringify(renderHooksSettings(port), null, 2)}\n`);
   const pluginDir = await copyPlugin(home);
   const protocol = await writeProtocol(home);
-  await installShim(home); // #696: the claude every terminal finds first on its PATH
+  await installShim(home, AGENTS.claude); // #696: the claude every terminal finds first on its PATH
   return { hooksPath, promptsDir, pluginDir, protocol };
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from './agents.js';
-import { shimDir } from './claude-shim.js';
+import { shimDir } from './shim.js';
 import { historyPath } from './terminal-files.js';
 import type { Activity, AgentId, Stage, Exec, SessionCopy, SessionPolicy, Item, PtyLaunch } from './types.js';
 

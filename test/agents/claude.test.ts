@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { capturedArgs } from '../../src/claude-shim.js';
+import { capturedArgs } from '../../src/shim.js';
 import { copyArgs, ptyCommand, runArgs, shellQuote } from '../../src/spawn.js';
 
 // Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed, checked here against

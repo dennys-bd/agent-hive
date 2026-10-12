@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
-import { capturedArgs, capturedReply, shimPath } from './claude-shim.js';
+import { capturedArgs, capturedReply, shimPath } from './shim.js';
+import { AGENTS, SHIM_AGENT } from './agents.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { Runtime } from './server.js';
@@ -136,7 +137,7 @@ function registerAgents(app: Express, deps: TerminalRouteDeps): void {
     const terminalId = terminalParam(req);
     if (!liveShell(current.state, terminalId)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_TERMINAL_MESSAGE });
     const captured = current.state.workers.flatMap((w) => (w.terminalId === terminalId && w.sessionId !== undefined ? [w.sessionId] : []));
-    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shim: shimPath(deps.home) }, deps.exec) });
+    res.json({ agents: await strayAgents(deps.pid(terminalId), { captured, shim: shimPath(deps.home, AGENTS[SHIM_AGENT]) }, deps.exec) });
   });
 }
 
