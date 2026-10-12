@@ -1,7 +1,9 @@
 import { MessageCircleIcon } from 'lucide-react';
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
-import { DesignPins } from '@/components/DesignPins';
+import type { DesignTarget, UnpinnedDesignAnchor } from '../../types';
+import { DesignComposer, saveComment } from '@/components/DesignComposer';
+import { composerStyle, DesignPins } from '@/components/DesignPins';
 import { DesignComments, TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { Button } from '@/components/ui/button';
@@ -13,7 +15,7 @@ import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX,
 import { t } from '@/i18n';
 import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
-import { clockOf, type DesignTheme } from '@/lib/design-comments';
+import { clockOf, type DesignTheme, nextPin } from '@/lib/design-comments';
 import { isMac, isTextField } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
@@ -226,12 +228,30 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
-interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; scale: number; theme: DesignTheme }
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: number; theme: DesignTheme }
 
-// The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them
-function CommentOverlay({ model, canvas, rects, scale, theme }: OverlayProps) {
+// The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
+function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: OverlayProps) {
+  const { target } = canvas;
+  const scale = percent / FULL;
+  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme });
   const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
-  return <DesignPins items={items} rects={rects} scale={scale} theme={theme} selected={canvas.selection?.id} onSelect={canvas.selectPin} />;
+  const pin = nextPin(model);
+  // The composer closes once the server took the comment; a refusal keeps it open with its text
+  const save = (isSend: boolean) => (text: string): void => {
+    if (target !== undefined) void saveComment(model, anchorOf(target), text, isSend).then((isTaken) => { if (isTaken) canvas.close(); });
+  };
+  return (
+    <>
+      <DesignPins items={items} rects={rects} scale={scale} theme={theme} selected={canvas.selection?.id} editing={target && { target, pin }} onSelect={canvas.selectPin} />
+      {target !== undefined && (
+        <DesignComposer
+          target={target} pin={pin} theme={theme} isBusy={model.isBusy} style={composerStyle(target.rect, scale, width * scale)}
+          onAdd={save(false)} onSend={save(true)} onCancel={canvas.close}
+        />
+      )}
+    </>
+  );
 }
 
 // The pane itself (#109, #113): comments only on a task's
@@ -258,8 +278,7 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
     postTheme(frame.current, next);
   };
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
-    if (takeCommentKey(event, marks)) return;
-    if (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown)) zoom.onKeyDown(event);
+    if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
   };
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
@@ -272,7 +291,7 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
             <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
-              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} scale={zoom.zoom / FULL} theme={theme} />}
+              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} width={width} theme={theme} />}
             </DesignCanvas>
           )}
         {comments !== undefined && marks.isPanelShown && (
