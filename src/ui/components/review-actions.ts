@@ -1,5 +1,5 @@
 // The review routes as the pane calls them (#591): act's toast on a refusal.
-import type { DiffScope, ReviewAnchor } from '../../types';
+import type { DiffScope, ReviewAnchor, ThreadAnchor } from '../../types';
 import { act } from '@/components/actions';
 
 export const reviewRoute = (taskId: string, rest = ''): string => `/tasks/${encodeURIComponent(taskId)}/review${rest}`;
@@ -7,7 +7,7 @@ export const reviewRoute = (taskId: string, rest = ''): string => `/tasks/${enco
 export const markFile = (taskId: string, body: { scope: DiffScope; path: string; hash: string; reviewed: boolean }): Promise<unknown> =>
   act(reviewRoute(taskId, '/reviewed'), body);
 
-export const sendComment = (taskId: string, body: { anchor: ReviewAnchor; text: string; to?: string[]; mentions?: string[] }): Promise<{ failed: string[] } | undefined> =>
+export const sendComment = (taskId: string, body: { anchor: ThreadAnchor; text: string; to?: string[]; mentions?: string[] }): Promise<{ failed: string[] } | undefined> =>
   act<{ failed: string[] }>(reviewRoute(taskId, '/threads'), body);
 
 export const segment = (value: string): string => encodeURIComponent(value);
