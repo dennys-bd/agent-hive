@@ -799,19 +799,19 @@ function firstFreeSession(state: State, worker: Worker, id: string): State {
   return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker))) ?? state;
 }
 
-// #933: a copy of an agent that picks its own id (Codex) opened under the Hive's placeholder; the run's first SessionStart names the fork.
-// seenAt is the pre-event worker's, so only the run's first hook renames: a later SessionStart (a subagent's) never does, and a resume
-// reports the id it already runs under. A free run with no id at all is #932's capture below, not a copy
-const namedFork = (worker: Worker, id: string | undefined): id is string =>
-  worker.freeSession === true && worker.sessionId !== undefined && !AGENTS[ranAgent(worker)].canChooseSessionId && worker.seenAt === undefined
-  && isUuid(id) && id !== worker.sessionId;
+// #933: a copy of an agent that picks its own id (Codex) opened under the Hive's placeholder; the fork's SessionStart (source=fork, finding
+// §3) names it, whatever hook came before. A subagent's or a resume's SessionStart is never a fork. A free run with no id at all is #932's
+// capture below, not a copy
+const namedFork = (worker: Worker, p: HookPayload): p is HookPayload & { session_id: string } =>
+  p.source === 'fork' && worker.freeSession === true && worker.sessionId !== undefined && !AGENTS[ranAgent(worker)].canChooseSessionId
+  && isUuid(p.session_id) && p.session_id !== worker.sessionId;
 
 // The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
 // conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927), and so does a free run with none (#932).
 // Only a uuid can replace or record one: it reaches --resume / codex resume, and SESSION_ID admits a leading '-'.
 function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
-  if (namedFork(worker, id)) return renameSession(state, worker, id);
+  if (namedFork(worker, p)) return renameSession(state, worker, p.session_id);
   if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;

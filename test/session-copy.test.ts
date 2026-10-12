@@ -184,6 +184,14 @@ test('a copy of a codex session runs codex under a placeholder; its first Sessio
   assert.deepEqual([again.workers.at(-1)!.sessionId, entriesOf(again, 'local:2')], [FORK, entriesOf(forked, 'local:2')]);
 });
 
+test('a codex copy whose first hook is not its SessionStart still takes the fork\'s id from SessionStart source=fork (#933)', () => {
+  const copied = copyTo(codexHive(), { activityId: activityIdOf('local:2') }, { copied: undefined }).state;
+  const ptyId = copied.workers.at(-1)!.runId!;
+  const prompted = reduce(copied, { type: 'hook', ptyId, payload: { hook_event_name: 'UserPromptSubmit', session_id: FORK } }).state;
+  const forked = sessionStart(prompted, FORK, 'fork');
+  assert.deepEqual(entriesOf(forked, 'local:2'), [[FORK, 'no dois', 1200, 'codex']]);
+});
+
 test('a local copy of a codex session takes the fork\'s id in its workspace\'s local record, name and tokens kept (#933)', () => {
   const copied = copyTo(codexHive(), { activityId: localActivityId('hive') }, { copied: undefined }).state;
   const forked = sessionStart(copied, FORK, 'fork');

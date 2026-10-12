@@ -289,6 +289,6 @@ test('a Codex session copies with codex fork <id>: its rollout found by id, noth
   assert.equal(server.getState()!.workers.at(-1)!.copyOf, undefined, 'nothing placed, nothing to drop');
   assert.deepEqual(await readdir(transcriptDir(two.two)).catch(() => []), []);
   const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
-  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'startup' } });
+  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
   assert.deepEqual(sessionsOf(server.getState()!, 'local:2').map((s) => [s.id, s.name, s.agent]), [[FORK, 'no dois', 'codex']]);
 });
