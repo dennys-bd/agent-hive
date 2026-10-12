@@ -100,7 +100,7 @@ test('nestedRepoOf answers the nearest folder holding .git from the read folder 
 test('GET /activities/:id/tree lists the worktree the slug names without the deleted paths or a nested repo, with the marks, and never takes the index lock', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const res = await hiveFetch(`${f.base}${workPath(f.server, 'local:1')}/tree`);
-  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
+  assert.deepEqual([res.status, await res.json()], [200, { root: worktreePath(f.repo, 'hive-1-task'), checkout: '.hive/worktrees/hive-1-task', files: ['a.txt', 'src/b.ts', 'new.txt'], marks: { 'src/b.ts': 'M', 'gone.txt': 'D', 'new.txt': 'A', 'moved.ts': 'A' }, folders: ['empty'], ignored: IGNORED_ENTRIES }]);
   for (const [file, args] of f.calls) {
     assert.equal(file, 'git');
     assert.deepEqual(args.slice(0, 3), ['--no-optional-locks', '-C', worktreePath(f.repo, 'hive-1-task')]);
@@ -151,6 +151,15 @@ test('treeRoot resolves a local activity to its frozen workspace\'s checkout, an
   const state = withLocal(withLocal({ ...initialState(0), workspaces: ['hive', 'site'] }, 'hive'), 'site');
   assert.equal(treeRoot(state, config, localActivityId('hive')), '/repo');
   assert.deepEqual(treeRoot(state, config, localActivityId('site')), { status: 404, message: UNKNOWN_WORKSPACE_MESSAGE });
+});
+
+test('GET /activities/:id/tree answers a task\'s root relative to its workspace\'s checkout, and no checkout for a local run or a local activity, whose root is the checkout itself (#131)', async (t) => {
+  const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') }), task(2, { worktree: repo, local: true })]);
+  const checkoutAt = async (path: string): Promise<string | undefined> => ((await (await hiveFetch(`${f.base}${path}/tree`)).json()) as TaskTree).checkout;
+  assert.deepEqual(
+    [await checkoutAt(workPath(f.server, 'local:1')), await checkoutAt(workPath(f.server, 'local:2')), await checkoutAt(LOCAL)],
+    ['.hive/worktrees/hive-1-task', undefined, undefined],
+  );
 });
 
 test('GET /activities/:id/tree lists as folders the --directory entries no listed file sits under, moves a nested repository to the ignored folders, and answers its root (#818, HIVE-22)', async (t) => {

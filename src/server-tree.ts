@@ -149,6 +149,17 @@ export function treeRoot(state: State, config: Parameters<typeof taskWorkspace>[
   return taskDir(workspace.path, activity);
 }
 
+// #131: the tree's root as a session or a terminal at the main checkout reaches it (`.hive/worktrees/<slug>`), resolved as treeRoot resolves
+// a task's. Undefined when the root is the checkout itself: a local activity (#633) or a task's local run (#444), whose copy would be the
+// relative path again
+export function treeCheckout(state: State, config: Parameters<typeof taskWorkspace>[0], id: string, root: string): string | undefined {
+  const target = liveTarget(state, id);
+  if ('status' in target || !target.task) return undefined;
+  const workspace = taskWorkspace(config, target.task);
+  const checkout = workspace === undefined ? '' : relative(workspace.path, root);
+  return checkout === '' ? undefined : checkout;
+}
+
 // POST /activities/:id/reveal (#658): the tree's root in the file manager, or with { path } that item of the tree (#818), checked as the
 // tree's other routes check theirs
 function registerRevealRoute(app: Express, { exec, requireLive }: Pick<TaskRouteDeps, 'exec' | 'requireLive'>): void {
@@ -224,7 +235,9 @@ export function registerTreeRoutes(app: Express, deps: Pick<TaskRouteDeps, 'exec
     const root = treeRoot(current.state, current.runtime.config, req.params.id as string);
     if (typeof root !== 'string') return refuse(res, root);
     try {
-      res.json(await taskTree(root, deps.exec));
+      const tree = await taskTree(root, deps.exec);
+      const checkout = treeCheckout(current.state, current.runtime.config, req.params.id as string, root);
+      res.json(checkout === undefined ? tree : { ...tree, checkout });
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: err instanceof Error ? err.message : String(err) });
     }

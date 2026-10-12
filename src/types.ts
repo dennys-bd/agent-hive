@@ -763,9 +763,11 @@ export type GitMark = 'M' | 'A' | 'D';
 /** A task's worktree as the files sidebar lists it (redesign 07): every path git does not ignore, relative to the worktree, and the marks;
  * its empty folders (#818), relative; and its root, absolute (#818): copy path, the clipboard and the untitled save need it, and a local
  * activity has no worktree on the page; and what git ignores, with the nested repositories (HIVE-22), outermost. A `D` path is in `marks`
- * only, never in `files`: its folders take the mark (#903). */
+ * only, never in `files`: its folders take the mark (#903). `checkout` (#131) is the root relative to the workspace's main checkout, absent
+ * when the root is that checkout. */
 export interface TaskTree {
   root: string;
+  checkout?: string;
   files: string[];
   marks: Record<string, GitMark>;
   folders: string[];
