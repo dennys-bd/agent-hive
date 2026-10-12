@@ -6,7 +6,7 @@ import { pluginSource } from '../src/hooks-settings.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
 
 const frontmatter = (text: string): Record<string, string> => {
   const block = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -17,12 +17,12 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the eight agents and the conventions reference, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the ten agents and the two references, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'skills']);
-  assert.deepEqual(await readdir(join(PLUGIN, 'reference')), ['conventions.md'], 'reference/ holds the one text every new-* skill reads first');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md'], 'reference/ holds the conventions every new-* skill reads first and the design rules the designer and its reviewer read');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
   for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md'], `skills/${skill} is one file`);
@@ -43,13 +43,14 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
     assert.ok((front.tools ?? '').includes('Read'), `agents/${agent} declares its tools`);
     if (front.model === 'opus') opus.push(agent);
   }
-  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner');
+  assert.deepEqual(opus, ['architect', 'designer', 'planner'], 'the model table: sonnet everywhere, opus for the architect, the designer and the planner');
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere in it', async () => {
   const files = [
     join(PLUGIN, 'CREDITS.md'),
     join(PLUGIN, 'reference', 'conventions.md'),
+    join(PLUGIN, 'reference', 'design.md'),
     ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md')),
     ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
   ];
@@ -95,4 +96,53 @@ test('every gh call /hive:new-pr makes for the docs PR names the docs repository
   const calls = text.match(/gh pr \w+[^`\n]*<docs (?:PR|head|base)>[^`\n]*/g) ?? [];
   assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the docs PR');
   for (const call of calls) assert.match(call, /-R <docs repo>/, `${call} does not pass -R <docs repo>`);
+});
+
+test('hive:design-reviewer reports and never edits: its tools hold no Write or Edit', async () => {
+  const front = frontmatter(await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8'));
+  const tools = (front.tools ?? '').split(',').map((tool) => tool.trim());
+  assert.ok(tools.includes('Read'), 'it reads the screens');
+  for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
+});
+
+test('hive:designer tells the calling session how comments and the review reach it, and answers through hive_reply', async () => {
+  const text = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  const { description = '' } = frontmatter(text);
+  for (const name of ['SendMessage', 'hive_done', 'hive:design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
+  const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const name of ['hive_reply', 'resolve', 'designsDir', 'handoff.md', 'hive:design-reviewer']) assert.ok(body.includes(name), `its text does not name ${name}`);
+});
+
+test('every section the design agents quote by name is a heading of reference/design.md or reference/conventions.md', async () => {
+  const headings = new Set<string>();
+  for (const file of ['design.md', 'conventions.md']) {
+    const text = await readFile(join(PLUGIN, 'reference', file), 'utf8');
+    for (const [, heading] of text.matchAll(/^#{2,3} (.+)$/gm)) headings.add(heading.trim());
+  }
+  for (const agent of ['designer', 'design-reviewer']) {
+    const text = await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8');
+    for (const [, name] of text.matchAll(/"([A-Z][^"]*)"/g)) assert.ok(headings.has(name), `agents/${agent} quotes "${name}", which no reference heading carries`);
+  }
+});
+
+test('no agent description holds ": ", which strict YAML reads as a nested mapping', async () => {
+  for (const agent of AGENTS) {
+    const { description = '' } = frontmatter(await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8'));
+    assert.ok(!description.includes(': '), `agents/${agent}'s description holds ": "`);
+  }
+});
+
+test('CREDITS.md credits Impeccable and ecc\'s frontend-design-direction for reference/design.md', async () => {
+  const text = await readFile(join(PLUGIN, 'CREDITS.md'), 'utf8');
+  for (const source of ['Impeccable', 'frontend-design-direction', 'reference/design.md']) assert.ok(text.includes(source), `CREDITS.md does not name ${source}`);
+});
+
+// Claude Code expands this in an agent's text; the Hive's PLUGIN path is where it points at run time
+const PLUGIN_ROOT = '$' + '{CLAUDE_PLUGIN_ROOT}';
+
+test('the design agents read the references through the plugin root variable, since an agent is not told its plugin\'s directory', async () => {
+  for (const agent of ['designer', 'design-reviewer']) {
+    const text = await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8');
+    assert.ok(text.includes(`${PLUGIN_ROOT}/reference/design.md`), `agents/${agent} does not read the design rules from the plugin root`);
+  }
 });
