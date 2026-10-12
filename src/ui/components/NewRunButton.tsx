@@ -68,17 +68,18 @@ export function useNewRunKeys(target: RunTarget): void {
 
 // POST /activities/:id/open with no resume and no base (#491): the task already has its worktree or runs in the checkout, since it has a live
 // run, so Abrir sessão's questions never apply. A refusal is act's toast; a spawn failure answers no run and opens nothing (#292). onRun
-// hears the run once it is opened, so the split menu can land its tab (#536). A local activity's opens in its workspace's checkout (#590).
-export function openNew(target: RunTarget, kind: NewRunKind, openRun?: OpenRun, onRun?: (ptyId: string) => void): void {
+// hears the run once it is opened, so the split menu can land its tab (#536); onNoRun hears neither came, so a waking tab lets go (#931). A
+// local activity's opens in its workspace's checkout (#590).
+export function openNew(target: RunTarget, kind: NewRunKind, openRun?: OpenRun, onRun?: (ptyId: string) => void, onNoRun?: () => void): void {
   if (target.kind === 'local') {
-    openLocalRun(target.workspace, kind, openRun, { onRun });
+    openLocalRun(target.workspace, kind, openRun, { onRun, onNoRun });
     return;
   }
   const { task } = target;
   void act<OpenResult>(`/activities/${encodeURIComponent(target.activity.id)}/open`, { kind, size: shownSize() }).then((result) => {
-    if (result === undefined) return;
+    if (!result?.ptyId) return void onNoRun?.();
     attachRun(result, task, kind === 'terminal' ? 'terminal' : 'session', openRun);
-    if (result.ptyId) onRun?.(result.ptyId);
+    onRun?.(result.ptyId);
   });
 }
 

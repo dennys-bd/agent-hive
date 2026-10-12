@@ -9,7 +9,7 @@ import { isLive, taskState } from '@/lib/task-state';
 
 /** A run that ended with its session kept (#672): its tab stays, sleeping, until it closes or the session continues. `run` names it as its
  * live run was named. A sleeping terminal is one too (#696), with no session. */
-export interface SleepingRun { run: LiveRun; sessionId?: string; cause?: SleepCause } // sessionId absent: a sleeping terminal (#696), which wakes in its own id
+export interface SleepingRun { run: LiveRun; sessionId?: string; cause?: SleepCause } // no sessionId: a sleeping terminal (#696), which wakes in its own id; or, with run.agent set, a session slept before its first prompt (#931), which wakes into a new one
 
 /** A terminal an activity keeps (#696), live or sleeping: its label (Terminal, Terminal N, as its tab reads), its number once there are
  * several (what its line reads), and whether it sleeps. */
