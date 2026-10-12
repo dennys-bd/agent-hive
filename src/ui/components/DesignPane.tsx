@@ -1,11 +1,18 @@
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { MessageCircleIcon } from 'lucide-react';
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { matches } from '../../shortcuts';
+import { DesignComments, TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
+import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX, VIEWPORTS } from '@/hooks/use-design-zoom';
 import { t } from '@/i18n';
-import type { Activity } from '@/lib/activities';
+import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
+import { clockOf } from '@/lib/design-comments';
+import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
 // The design pane (#109): one Hive design (.hv.html) of an activity, served by the design frame route (#108) into a sandboxed frame on the
@@ -25,15 +32,13 @@ const SHOWN: CSSProperties = { flex: '1 1 0%', opacity: 1, pointerEvents: 'auto'
 const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'none' }; // mounted: a tab switch never reloads the frame
 const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' };
 const FRAME_SHADOW = '0 0 0 1px var(--border), 0 4px 12px rgb(0 0 0 / .45)';
-const TRACK = 'shrink-0 rounded-md bg-card p-0.5';
-const ITEM = 'h-5 px-1.5 text-xs data-[state=on]:bg-accent data-[state=on]:text-foreground';
+const WITH_PANEL = 'minmax(0,1fr) 300px'; // the handoff's §2: the canvas, then the 300 px comments panel
+const CANVAS_ONLY = 'minmax(0,1fr)';
 
 const baseName = (path: string): string => path.split('/').at(-1) ?? path;
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 // The Hive's theme as the pane mounts (lib/theme.ts writes it on <html>): the design starts in it, and a toggle never writes it back
 const pageTheme = (): DesignTheme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
-// HH:MM in the viewer's locale, 24 h as the handoff writes it
-const clockOf = (at: Date): string => at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 /** The mint route of an activity's design (#108). */
 export const designFrameRoute = (activityId: string, path: string): string =>
@@ -131,21 +136,32 @@ function ZoomControl({ zoom }: { zoom: DesignZoom }) {
   );
 }
 
-interface BarProps { path: string; name: string; reloadedAt?: Date; viewport: Viewport; theme: DesignTheme; zoom: DesignZoom; onViewport(next: Viewport): void; onTheme(next: DesignTheme): void }
+interface CommentsToggle { count: number; isShown: boolean; onToggle(): void }
+interface BarProps { path: string; name: string; reloadedAt?: Date; viewport: Viewport; theme: DesignTheme; zoom: DesignZoom; comments?: CommentsToggle; onViewport(next: Viewport): void; onTheme(next: DesignTheme): void }
 
-// The handoff's preview bar, items 1–5 (#109): 26 px, one line that hides what does not fit. Comments and their toggle are 3.3's
-function DesignBar({ path, name, reloadedAt, viewport, theme, zoom, onViewport, onTheme }: BarProps) {
+// The bar's item 8 (#113): message-circle and the open count; --accent with --foreground while the panel shows, muted while hidden
+function CommentsButton({ count, isShown, onToggle }: CommentsToggle) {
+  return (
+    <Button type="button" size="xs" variant="ghost" aria-label={t('design.comments')} aria-pressed={isShown} title={t('design.comments.toggle')} onClick={onToggle} className={`shrink-0 tabular-nums ${isShown ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>
+      <MessageCircleIcon className="size-3" />{count}
+    </Button>
+  );
+}
+
+// The handoff's preview bar (#109), items 1–5 and, on a task's pane, 8 (#113): 26 px, one line that hides what does not fit
+function DesignBar({ path, name, reloadedAt, viewport, theme, zoom, comments, onViewport, onTheme }: BarProps) {
   return (
     <div className="flex h-[26px] shrink-0 items-center gap-3 overflow-hidden border-b px-2.5 text-muted-foreground text-xs">
       <span title={path} className="min-w-0 flex-1 truncate font-mono">{path}</span>
       {reloadedAt && <ReloadedMark name={name} at={reloadedAt} />}
-      <ToggleGroup type="single" size="xs" aria-label={t('design.viewport')} value={viewport} onValueChange={(next) => { if (isViewport(next)) onViewport(next); }} className={TRACK}>
-        {VIEWPORTS.map((item) => <ToggleGroupItem key={item} value={item} className={ITEM}>{t(`design.viewport.${item}`)}</ToggleGroupItem>)}
+      <ToggleGroup type="single" size="xs" aria-label={t('design.viewport')} value={viewport} onValueChange={(next) => { if (isViewport(next)) onViewport(next); }} className={TOGGLE_TRACK}>
+        {VIEWPORTS.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.viewport.${item}`)}</ToggleGroupItem>)}
       </ToggleGroup>
       <ZoomControl zoom={zoom} />
-      <ToggleGroup type="single" size="xs" aria-label={t('design.theme')} value={theme} onValueChange={(next) => { if (next === 'dark' || next === 'light') onTheme(next); }} className={TRACK}>
-        {THEMES.map((item) => <ToggleGroupItem key={item} value={item} className={ITEM}>{t(`design.theme.${item}`)}</ToggleGroupItem>)}
+      <ToggleGroup type="single" size="xs" aria-label={t('design.theme')} value={theme} onValueChange={(next) => { if (next === 'dark' || next === 'light') onTheme(next); }} className={TOGGLE_TRACK}>
+        {THEMES.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.theme.${item}`)}</ToggleGroupItem>)}
       </ToggleGroup>
+      {comments && <><span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" /><CommentsButton {...comments} /></>}
     </div>
   );
 }
@@ -175,9 +191,17 @@ const focusPane = (event: ReactPointerEvent<HTMLElement>): void => {
   if (!event.currentTarget.contains(document.activeElement)) event.currentTarget.focus({ preventScroll: true });
 };
 
-/** The design pane (#109): the preview bar over the canvas. No PaneHeader above it: the bar names the path. Collapsed like PreviewPane
- *  while another tab shows. */
-export function DesignPane({ activity, path, label, active }: DesignPaneProps) {
+// ⌘⇧↵ sends every draft (#113), only while the focus is in the pane: its section takes it, as ⌘0. The panel itself has no key: ⌘⌥C is openDiff on
+// macOS. True: taken
+function takeSendKey(event: ReactKeyboardEvent<HTMLElement>, comments: DesignCommentsModel): boolean {
+  if (!matches(event.nativeEvent, SUBMIT_KEY, isMac())) return false;
+  comments.sendAll();
+  event.preventDefault();
+  return true;
+}
+
+// The pane itself (#109, #113): comments only on a task's
+function DesignView({ activity, path, label, active, comments }: DesignPaneProps & { comments?: DesignCommentsModel }) {
   const name = baseName(path);
   const canvas = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -196,12 +220,36 @@ export function DesignPane({ activity, path, label, active }: DesignPaneProps) {
     setTheme(next);
     postTheme(frame.current, next);
   };
+  const [isPanelShown, setPanelShown] = useState(true); // shown at mount; the mounted pane's own, never stored (#113)
+  const togglePanel = (): void => setPanelShown((shown) => !shown);
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
+    if (comments === undefined || !takeSendKey(event, comments)) zoom.onKeyDown(event);
+  };
   return (
-    <section aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={zoom.onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
-      <DesignBar path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={setViewport} onTheme={pickTheme} />
-      {mint.status === 'error'
-        ? <p role="alert" className="p-3 text-destructive text-xs">{mint.message}</p>
-        : <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} />}
+    <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
+      <DesignBar
+        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={setViewport} onTheme={pickTheme}
+        comments={comments && { count: comments.open.length, isShown: isPanelShown, onToggle: togglePanel }}
+      />
+      <div style={{ gridTemplateColumns: comments !== undefined && isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
+        {mint.status === 'error'
+          ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
+          : <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} />}
+        {comments !== undefined && isPanelShown && <DesignComments model={comments} onHide={() => setPanelShown(false)} />}
+      </div>
     </section>
   );
+}
+
+// A task's pane (#113): its review holds the comments. A local activity has none, so its pane has no panel, button nor send key
+function TaskDesignPane(props: DesignPaneProps & { activity: TaskActivity }) {
+  const comments = useDesignComments(props.activity, props.path);
+  return <DesignView {...props} comments={comments} />;
+}
+
+/** The design pane (#109): the preview bar over the canvas, and on a task's pane the comments panel beside it (#113). No PaneHeader above
+ *  it: the bar names the path. Collapsed like PreviewPane while another tab shows. */
+export function DesignPane(props: DesignPaneProps) {
+  const { activity } = props;
+  return activity.kind === 'task' ? <TaskDesignPane {...props} activity={activity} /> : <DesignView {...props} />;
 }
