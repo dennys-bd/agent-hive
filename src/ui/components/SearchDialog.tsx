@@ -12,6 +12,7 @@ import { type Activity, activityKey } from '@/lib/activities';
 import { itemPage, type Operation, type OperationContext, operationsFor, viewOf } from '@/lib/operations';
 import { taskRef } from '@/lib/operations-activity';
 import { type GroupId, nextScope, parseQuery, operationRows, type Scope, type SearchFiles, type SearchGroup, type SearchRow, searchGroups } from '@/lib/search';
+import { selectInTree } from '@/lib/tree-place';
 
 // returnTo: what held the focus before the search opened, when a reopen (a key pressed while open) keeps the first one; default, what holds it now
 // page: a › page the search opens on (#585), the run-command key's commands of a task
@@ -52,12 +53,24 @@ function openRow(row: SearchRow, ctx: OperationContext, onClose: () => void, pus
   else if (ctx.activity !== undefined) openFile?.(activityKey(ctx.activity), row.path); // a file (#133): the editor pane, a Hive design the design pane
 }
 
-// ⌘↵: an activity's or a task's details in the flow; nothing on an operation
+// ⌘↵: an activity's or a task's details in the flow; a file selected in the files sidebar (#133); nothing on an operation
 function showRow(row: SearchRow, ctx: OperationContext, onClose: () => void): void {
+  if (row.kind === 'file') {
+    if (ctx.activity === undefined) return;
+    onClose();
+    selectInTree(ctx.activity.activity.id, row.path);
+    return;
+  }
   const itemId = itemIdOf(row);
   if (itemId === undefined) return;
   onClose();
   ctx.nav.showFlow(itemId);
+}
+
+// ⌘↵'s label in the footer: ver no fluxo on an activity or a task, revelar na árvore on a file (#133), none on an operation
+function secondaryOf(row: SearchRow | undefined): string | undefined {
+  if (row === undefined || row.kind === 'operation') return undefined;
+  return t(row.kind === 'file' ? 'search.key.reveal' : 'detail.showFlow');
 }
 
 // The field, the scope and the page stack. A prefix typed first switches the scope and leaves the field (the handoff); a page has no scope
@@ -187,7 +200,7 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
             ))}
             {groups.length === 0 && term !== '' && <NoResult term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
           </CommandList>
-          <SearchFooter secondary={current && itemIdOf(current) !== undefined ? t('detail.showFlow') : undefined} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
+          <SearchFooter secondary={secondaryOf(current)} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
         </Command>
       </DialogContent>
     </Dialog>

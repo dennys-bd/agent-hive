@@ -58,7 +58,7 @@ export const resetExpanded = (): void => {
   expandedFolders.clear();
 };
 
-/** Selects `path` in the activity's tree (#818): the file an untitled tab was just saved as. */
+/** Selects `path` in the activity's tree (#818): the file an untitled tab was just saved as, or the search's ⌘↵ on a file (#133). */
 export const selectInTree = (activityId: string, path: string): void => {
   events.dispatchEvent(new CustomEvent('select', { detail: { activityId, path } }));
 };

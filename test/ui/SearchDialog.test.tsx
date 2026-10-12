@@ -6,6 +6,7 @@ import { SearchDialog } from '@/components/SearchDialog';
 import { FileOpenerContext } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
 import { activitiesOf } from '@/lib/activities';
+import { onTreeSelect } from '@/lib/tree-place';
 import { onPanelKey } from '@/lib/dock-layout';
 import type { OperationContext } from '@/lib/operations';
 import type { Scope } from '@/lib/search';
@@ -222,4 +223,20 @@ test('with an activity open, arquivos lists its changed files on an empty field;
   await user.keyboard('{Enter}');
   expect(onClose).toHaveBeenCalled();
   expect(openFile).toHaveBeenCalledWith('I466', 'src/daemon.ts');
+});
+
+test('⌘↵ on a file closes the search and selects it in the files sidebar; the footer names it revelar na árvore; → opens no page (#133)', async () => {
+  const user = userEvent.setup();
+  const select = vi.fn();
+  const stop = onTreeSelect('a-I466', select);
+  const { onClose } = renderFiles(() => json(TREE));
+  await user.keyboard('port');
+  await screen.findByRole('option', { name: /src\/port\.ts/ });
+  expect(screen.getByText('revelar na árvore')).toBeInTheDocument();
+  await user.keyboard('{ArrowRight}');
+  expect(screen.queryByRole('group', { name: /→/ })).not.toBeInTheDocument();
+  await user.keyboard('{Control>}{Enter}{/Control}');
+  stop();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(select).toHaveBeenCalledWith('src/port.ts');
 });

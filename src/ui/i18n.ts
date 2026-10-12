@@ -452,6 +452,7 @@ const en = {
   'search.op.closeTab': 'close tab',
   // #133: the search finds the open activity's files
   'search.scope.files': 'files',
+  'search.key.reveal': 'reveal in tree',
   'dock.close': 'Close panel',
   'dock.moveLeft': 'Move to the left',
   'dock.moveRight': 'Move to the right',
@@ -2275,6 +2276,7 @@ const pt: Record<MessageKey, string> = {
   'search.op.closeTab': 'fechar tab',
   // #133: the search finds the open activity's files
   'search.scope.files': 'arquivos',
+  'search.key.reveal': 'revelar na árvore',
   'dock.close': 'Fechar painel',
   'dock.moveLeft': 'Mover para a esquerda',
   'dock.moveRight': 'Mover para a direita',
