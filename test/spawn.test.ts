@@ -331,13 +331,13 @@ test('launchInternalPty rejects started with pty: when the run\'s TMPDIR cannot 
 
 test('a copy resumes the source as a new session under the reducer\'s id, after the agent\'s own args (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  const copy = runners.claude.copy({ ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: ['--model', 'sonnet'] }, from);
+  const copy = runners.claude.copy({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: ['--model', 'sonnet'] }, from);
   assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: copy ?? [] } }), ['--model', 'sonnet', '--resume', from, '--fork-session', '--session-id', id]);
 });
 
 test('a copy gives the fork the dialog\'s name as its Claude Code title, in the --name= form a leading - cannot turn into an option, and the command quotes it (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  const run = { ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: [] };
+  const run = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: [] };
   assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's mine") ?? [] } }), ['--resume', from, '--fork-session', '--session-id', id, "--name=-x it's mine"]);
   const command = ptyCommand({ ...LAUNCH, agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's $HOME") ?? [] } });
   assert.ok(command.includes(shellQuote("--name=-x it's $HOME")), command);

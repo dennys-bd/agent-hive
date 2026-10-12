@@ -5,6 +5,7 @@ import { runners } from '../../src/agents/registry.js';
 import type { AgentRun } from '../../src/agents/runner.js';
 import { ptyCommand, shellQuote } from '../../src/spawn.js';
 import type { LaunchArg } from '../../src/types.js';
+import { mcpConfigPattern } from '../../src/hooks-settings.js';
 
 // Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed (Task 1 checked them
 // against that code); the runner must keep them. The Hive's own flags are [flag, value] pairs, which the command line renders bare with the
@@ -48,7 +49,7 @@ const commandOf = ({ flags, words }: Expected, prompt?: string): string => {
   return `cd '/wt' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude ${parts.join(' ')}; ${TRAILER}`;
 };
 
-const RUN: AgentRun = { ptyId: 'W1', hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
+const RUN: AgentRun = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
 // ptyCommand over the runner's argv, as the spawner builds the launch
 const commandFor = (argv: LaunchArg[], prompt?: string): string =>
   ptyCommand({ ptyId: 'W1', slug: 'hive-1-task', cwd: '/wt', port: 4242, ...(prompt === undefined ? {} : { promptPath: prompt }), agent: { command: AGENTS.claude.command, argv } });
@@ -87,4 +88,12 @@ test('a copy, with and without a name: the pinned argv and command line; no sess
   assert.equal(commandFor(named ?? []), commandOf(NAMED_COPY));
   assert.equal(runners.claude.copy({ ...run, session: undefined }, FROM), undefined);
   assert.equal(runners.claude.clear(run), undefined);
+});
+
+test('Claude\'s stray pattern is its MCP config path, its run needs no env of its own, and it keeps the protocol as a path (#927)', () => {
+  assert.equal(runners.claude.strayPattern('W1'), mcpConfigPattern('W1'));
+  assert.deepEqual(runners.claude.runEnv({ port: 4242, ptyId: 'W1', secret: 'not-in-argv', withHive: true }), {});
+  const argv = runners.claude.launch({ ...RUN, protocolPath: STAGE_MD, protocolText: 'PROTOCOL-TEXT', session: { id: ID, resume: false } });
+  assert.equal(JSON.stringify(argv).includes('PROTOCOL-TEXT'), false, 'the text is for an agent that takes it so');
+  assert.deepEqual(argv.flat(), [...flat({ flags: [['--settings', HOOKS], ['--plugin-dir', PLUGIN], ['--append-system-prompt-file', STAGE_MD]], words: [] }), '--session-id', ID]);
 });

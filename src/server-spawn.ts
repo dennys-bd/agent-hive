@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
 import { AGENTS, agentOf, agentRefusal, ranAgent } from './agents.js';
@@ -186,15 +187,18 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig({ port, ptyId, secret, withHive: true })); // the tools' channel (#99); its path puts the pty id in the agent's argv
+    const server = { port, ptyId, secret, withHive: true };
+    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
+    const protocolPath = taskProtocol(home, runtime, task).stage; // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
     const run: AgentRun = {
-      ptyId, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), model: stage.model, session: runSession(activity.sessionId, session),
-      protocolPath: taskProtocol(home, runtime, task).stage, // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
+      ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), model: stage.model, session: runSession(activity.sessionId, session),
+      protocolPath, protocolText: await readFile(protocolPath, 'utf8'), // #927: Codex takes the protocol as text; Claude keeps the path
       extraArgs: config.agentArgs[agent], // #924: the stage's agent's own
     };
     pool.start({
       ptyId,
-      launch: { ptyId, slug, cwd, env, port, promptPath, ...sized(size), agent: { command: AGENTS[agent].command, argv: runner.launch(run) } },
+      // #927: the runner's env over the workspace's, so no workspace variable can stand in for the MCP secret
+      launch: { ptyId, slug, cwd, env: { ...env, ...runner.runEnv(server) }, port, promptPath, ...sized(size), agent: { command: AGENTS[agent].command, argv: runner.launch(run) } },
       ...handlers(ptyId, slug),
     });
   }
@@ -220,18 +224,20 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
     const agent = ranAgent(effect.worker);
     const runner = runners[agent];
+    const server = { port, ptyId, secret, withHive: task !== undefined };
+    // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
+    const protocolPath = task === undefined ? undefined : taskProtocol(home, runtime, task).session; // #797: the task's workspace's
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
     const files = await Promise.all([
-      writeMcpConfig(promptsDir, ptyId, runner.mcpConfig({ port, ptyId, secret, withHive: task !== undefined })),
+      writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)),
       first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
+      protocolPath === undefined ? undefined : readFile(protocolPath, 'utf8'), // #927: its text, for an agent that takes it so
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
-    const [mcpPath, promptPath] = files;
-    // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
+    const [mcpPath, promptPath, protocolText] = files;
     const run: AgentRun = {
-      ptyId, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), extraArgs: config.agentArgs[agent],
-      session: runSession(sessionId, continues ? 'continue' : 'new'),
-      ...(task === undefined ? {} : { protocolPath: taskProtocol(home, runtime, task).session }), // #797: the task's workspace's
+      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), extraArgs: config.agentArgs[agent],
+      session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);
     if (argv === undefined) {
@@ -240,7 +246,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: place.slug, cwd: place.cwd, env, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: AGENTS[agent].command, argv } },
+      launch: { ptyId, slug: place.slug, cwd: place.cwd, env: { ...env, ...runner.runEnv(server) }, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: AGENTS[agent].command, argv } },
       ...handlers(ptyId, place.slug),
     });
   }
