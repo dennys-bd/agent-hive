@@ -1,7 +1,7 @@
 // The contract every coding agent's runner meets (#924): a plain object of pure functions, one per agent in registry.ts. Shared code reads an
 // agent's flags, files and formats only through it; the agent's facts (label, command, subcommands, planLimits) stay in agents.ts, which the
 // page reads too.
-import type { LaunchArg, RateLimits } from '../types.js';
+import type { HookPayload, LaunchArg, RateLimits } from '../types.js';
 import type { TranscriptTurn } from '../usage.js';
 import type { PlanLimitsDeps } from './claude-limits.js';
 
@@ -39,6 +39,8 @@ export interface AgentRunner {
   clear(run: AgentRun): LaunchArg[] | undefined;
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
   runEnv(server: McpServer): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex)
+  // #928: the agent's hook as the reducer reads it, before anything else reads it; undefined drops it. The body is any local process's
+  hookPayload(raw: HookPayload): HookPayload | undefined;
   prepareHome(home: string, port: number): Promise<void>;
   mcpConfig(server: McpServer): string;
   lspPlugin(servers: LspServers): { path: string; content: string }[];

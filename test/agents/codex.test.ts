@@ -4,8 +4,9 @@ import { codexRunner, tomlString } from '../../src/agents/codex.js';
 import type { AgentRun } from '../../src/agents/runner.js';
 import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { ptyCommand } from '../../src/spawn.js';
-import type { LaunchArg } from '../../src/types.js';
+import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
+import { codexHook, CODEX_TURN, QUESTION, SUBAGENT } from '../fixtures/codex-hooks.js';
 
 // Codex's argv, word for word (#927, finding.codex-surface §1, §5, §6, §7, §13): every Hive setting is a `-c key=value` pair, the trust
 // bypass, the agent's own args, the model; the prompt is ptyCommand's last word, as Claude's.
@@ -75,4 +76,48 @@ test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; it wri
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits(), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
   await codexRunner.prepareHome('/h', 4242);
+});
+
+test('a PermissionRequest becomes the permission_prompt Notification the reducer reads, its description the question (#928, finding §4)', () => {
+  const request = CODEX_TURN.PermissionRequest;
+  assert.deepEqual(codexRunner.hookPayload(request), { ...request, hook_event_name: 'Notification', notification_type: 'permission_prompt', message: QUESTION });
+});
+
+test('a PermissionRequest with no usable description asks with its tool name, and with neither with permission_prompt (#928)', () => {
+  const asked = (fields: object): string | undefined => codexRunner.hookPayload(codexHook('PermissionRequest', fields))?.message;
+  for (const input of [{ command: 'gh pr create' }, { description: '' }, { description: 42 }, 'gh pr create', null, [QUESTION]]) {
+    assert.equal(asked({ tool_name: 'Bash', tool_input: input }), 'Bash', JSON.stringify(input));
+  }
+  for (const name of [undefined, '', 7]) assert.equal(asked({ tool_name: name, tool_input: {} }), 'permission_prompt', String(name));
+});
+
+test('a subagent\'s hook is dropped whatever its event, but its PermissionRequest still asks the user (#928, finding §11)', () => {
+  for (const payload of Object.values(CODEX_TURN).filter((p) => p.hook_event_name !== 'PermissionRequest')) {
+    assert.equal(codexRunner.hookPayload(codexHook(payload.hook_event_name, { ...payload, ...SUBAGENT })), undefined, payload.hook_event_name);
+  }
+  const subagentAsks = codexRunner.hookPayload(codexHook('PermissionRequest', { ...CODEX_TURN.PermissionRequest, ...SUBAGENT }));
+  assert.deepEqual([subagentAsks?.hook_event_name, subagentAsks?.message], ['Notification', QUESTION]);
+  for (const agentId of ['', 42, null]) {
+    assert.equal(codexRunner.hookPayload(codexHook('Stop', { agent_id: agentId }))?.hook_event_name, 'Stop', `${String(agentId)}: not a subagent's id`);
+  }
+});
+
+test('SessionEnd is dropped: the pty\'s exit ends the run, and Codex sends one with reason=other on /clear (#928, finding §8)', () => {
+  for (const reason of ['other', 'clear', 'logout']) assert.equal(codexRunner.hookPayload(codexHook('SessionEnd', { reason })), undefined, reason);
+});
+
+test('SessionStart, UserPromptSubmit, PreToolUse, PostToolUse and Stop reach the reducer as Codex sent them (#928, finding §1)', () => {
+  for (const event of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'] as const) {
+    assert.equal(codexRunner.hookPayload(CODEX_TURN[event]), CODEX_TURN[event], event);
+  }
+});
+
+test('a forged body never throws: odd event names, tool inputs, tool names and agent ids are read as unknown (#928)', () => {
+  const forged: HookPayload[] = [
+    codexHook('Stop', { hook_event_name: 42 }),
+    codexHook('PermissionRequest', { tool_input: { description: { toString: null } } }),
+    codexHook('PermissionRequest', { tool_name: ['x'], tool_input: 'y' }),
+    codexHook('Stop', { agent_id: { id: 'x' } }),
+  ];
+  for (const body of forged) assert.doesNotThrow(() => codexRunner.hookPayload(body), JSON.stringify(body));
 });

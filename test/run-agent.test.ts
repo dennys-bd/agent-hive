@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, localActivityId } from '../src/activities.js';
+import { activityOf, localActivityId, prsOf } from '../src/activities.js';
+import { codexRunner } from '../src/agents/codex.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { describeEvent } from '../src/log.js';
-import { initialState, reduce } from '../src/orchestrator.js';
+import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { sessionsOf } from '../src/tasks.js';
-import type { AgentId, Effect, Session, Stage, State } from '../src/types.js';
+import type { AgentId, Effect, HookPayload, Session, Stage, State, Worker } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
+import { CODEX_SESSION, CODEX_TURN, codexHook, PR_URL, QUESTION, SUBAGENT } from './fixtures/codex-hooks.js';
 
 // #925: every run records its agent; #927: the second agent is codex, which picks its own session id
 const OTHER: AgentId = 'codex';
@@ -123,4 +125,55 @@ test('a claude stage run keeps the id the Hive chose on its activity, whatever i
   const seen = hookStart(started.state, ptyId, S3);
   assert.equal(activityOf(seen, ITEM.itemId)?.sessionId, chosen);
   assert.equal(sessionsOf(seen, ITEM.itemId).some((s) => s.id === S3), false);
+});
+
+// What the hook route does for a Codex worker (#928): its runner's payload goes to the reducer; a dropped one goes nowhere
+const codexHooked = (state: State, ptyId: string, body: HookPayload): Reduced => {
+  const payload = codexRunner.hookPayload(body);
+  return payload === undefined ? { state, effects: [] } : reduce(state, { type: 'hook', ptyId, payload });
+};
+const runOf = (state: State, ptyId: string): Worker | undefined => state.workers.find((w) => w.runId === ptyId);
+// A codex stage run past its first SessionStart
+function codexRun(): { state: State; ptyId: string } {
+  const started = start(onDev({ agent: OTHER }));
+  const ptyId = spawnOf(started.effects)?.worker.runId ?? '';
+  return { state: codexHooked(started.state, ptyId, CODEX_TURN.SessionStart).state, ptyId };
+}
+
+test('a codex turn through its runner and the reducer: working on the prompt and the tool, waiting with the approval\'s question, the PR marked, waiting at its Stop (#928)', () => {
+  const { state: opened, ptyId } = codexRun();
+  assert.equal(runOf(opened, ptyId)?.sessionId, CODEX_SESSION);
+  const prompted = codexHooked(opened, ptyId, CODEX_TURN.UserPromptSubmit).state;
+  assert.equal(runOf(prompted, ptyId)?.status, 'working');
+  const tooled = codexHooked(prompted, ptyId, CODEX_TURN.PreToolUse).state;
+  assert.equal(runOf(tooled, ptyId)?.status, 'working');
+  const asked = runOf(codexHooked(tooled, ptyId, CODEX_TURN.PermissionRequest).state, ptyId);
+  assert.deepEqual([asked?.status, asked?.question, asked?.lastEvent], ['waiting', QUESTION, { kind: 'waiting', detail: 'permission_prompt' }]);
+  const approved = codexHooked(codexHooked(tooled, ptyId, CODEX_TURN.PermissionRequest).state, ptyId, CODEX_TURN.PostToolUse).state;
+  assert.deepEqual(prsOf(approved, ITEM.itemId).map((pr) => pr.url), [PR_URL], 'the safety net under hive_pr reads Codex\'s Bash call');
+  assert.equal(runOf(approved, ptyId)?.status, 'waiting', 'the approval fires no hook: the next PreToolUse or Stop moves the worker (spec)');
+  const ended = runOf(codexHooked(approved, ptyId, CODEX_TURN.Stop).state, ptyId);
+  assert.deepEqual([ended?.status, ended?.lastEvent], ['waiting', { kind: 'turn' }], 'no background_tasks on a Codex Stop: nothing in flight');
+});
+
+test('a codex Stop after hive_done ends its stage: the run is killed (#928)', () => {
+  const { state: opened, ptyId } = codexRun();
+  const { effects } = codexHooked(reduce(opened, { type: 'done', ptyId }).state, ptyId, CODEX_TURN.Stop);
+  assert.ok(effects.some((e) => e.type === 'kill' && e.ptyId === ptyId), JSON.stringify(effects));
+});
+
+test('a codex Stop after hive_ask keeps the worker\'s own question with the worker waiting; an approval meanwhile does not replace it (#928)', () => {
+  const { state: opened, ptyId } = codexRun();
+  const asked = reduce(codexHooked(opened, ptyId, CODEX_TURN.UserPromptSubmit).state, { type: 'ask', ptyId, question: 'Which base?' }).state;
+  const approval = codexHooked(asked, ptyId, CODEX_TURN.PermissionRequest).state;
+  const parked = runOf(codexHooked(approval, ptyId, CODEX_TURN.Stop).state, ptyId);
+  assert.deepEqual([parked?.status, parked?.question, parked?.lastEvent], ['waiting', 'Which base?', { kind: 'ask' }]);
+});
+
+test('a codex subagent\'s prompt while the worker waits changes nothing; the same body straight to the reducer would turn it working (#928, finding §11)', () => {
+  const { state: opened, ptyId } = codexRun();
+  const waiting = codexHooked(opened, ptyId, CODEX_TURN.Stop).state;
+  const subagent = codexHook('UserPromptSubmit', { ...SUBAGENT, prompt: 'say hello' }); // the parent's session_id
+  assert.equal(codexHooked(waiting, ptyId, subagent).state, waiting);
+  assert.equal(runOf(reduce(waiting, { type: 'hook', ptyId, payload: subagent }).state, ptyId)?.status, 'working', 'isChildSession cannot tell it: the same session_id');
 });
