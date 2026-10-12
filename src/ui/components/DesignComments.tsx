@@ -1,15 +1,20 @@
 import { XIcon } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { matches } from '../../shortcuts';
+import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import { agentName } from '../../agents';
+import { displayBinding, matches } from '../../shortcuts';
 import { taskLabel } from '../../tasks';
-import { type DesignAnchor, NEW_SESSION, type ReviewMessage } from '../../types';
+import { type AgentId, type DesignAnchor, NEW_SESSION, type ReviewMessage } from '../../types';
+import { SUBMIT_KEY } from '@/components/DiffFooter';
+import { DefaultAgentContext } from '@/components/NewRunButton';
 import { dropDraft, replyTo, resolveThread, retryMessage, sendComment } from '@/components/review-actions';
 import { ReviewContext, type ReviewPane, sessionName } from '@/components/review-context';
+import { SessionPicker } from '@/components/SessionPicker';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
-import { type MessageKey, t } from '@/i18n';
+import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment } from '@/lib/design-comments';
+import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
@@ -189,6 +194,27 @@ function PanelHeader({ tab, open, resolved, onTab, onHide }: { tab: Tab; open: n
   );
 }
 
+// The recipient line (#113): the session in focus, the user's pick, or the new session enviar opens, of the default agent
+function recipientLine({ recipient, sessions, activity }: DesignCommentsModel, agent: AgentId): string {
+  if (recipient.how === 'new') return t('design.send.new', { agent: agentName(agent), activity: taskRef(activity.task) });
+  return t(recipient.how === 'picked' ? 'design.send.picked' : 'design.send.to', { session: sessionName(recipient.session, sessions) });
+}
+
+// The footer (#113): enviar {n} rascunhos ⌘⇧↵ across its width, over the recipient line, which opens the task's sessions to pick another
+function SendFooter({ model }: { model: DesignCommentsModel }) {
+  const agent = useContext(DefaultAgentContext);
+  return (
+    <div className="shrink-0 border-t bg-card p-2.5">
+      <Button type="button" size="sm" className="w-full" disabled={model.isSending} onClick={model.sendAll}>
+        {tPlural('design.send.all', model.drafts, { n: model.drafts })}<span aria-hidden="true" className="opacity-70">{displayBinding(SUBMIT_KEY, isMac())}</span>
+      </Button>
+      <div className="mt-1.5 flex justify-center">
+        <SessionPicker value={model.recipient.session} onChange={model.pick}><span className="text-muted-foreground">{recipientLine(model, agent)}</span></SessionPicker>
+      </div>
+    </div>
+  );
+}
+
 /** The comments panel (#113): its tabs and ×, the list, one inline box open at a time. SessionPicker and SessionLabel read the task's
  *  sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert here. */
 export function DesignComments({ model, onHide }: { model: DesignCommentsModel; onHide(): void }) {
@@ -212,6 +238,7 @@ export function DesignComments({ model, onHide }: { model: DesignCommentsModel; 
             />
           ))}
         </ol>
+        {tab === 'open' && model.drafts > 0 && <SendFooter model={model} />}
       </aside>
     </ReviewContext.Provider>
   );

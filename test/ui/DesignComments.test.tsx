@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignComments } from '@/components/DesignComments';
@@ -6,8 +6,9 @@ import { useDesignComments } from '@/hooks/use-design-comments';
 import { setLanguage } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
 import { clockOf } from '@/lib/design-comments';
+import { rememberFocus } from '@/lib/session-focus';
 import { area, AT, PATH, REVIEW } from './design-review';
-import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, withSessions } from './diff-harness';
+import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, SESSIONS, withSessions } from './diff-harness';
 
 let hive: FakeHive;
 beforeEach(() => { setLanguage('pt'); hive = fakeHive(); hive.review = REVIEW; });
@@ -102,4 +103,22 @@ test('an undelivered message shows não entregue with reenviar, which retries it
   expect(await within(await screen.findByText('with the agent').then((t) => t.closest('li') as HTMLElement)).findByText('não entregue')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'reenviar' }));
   expect(callsTo(hive, 'POST', '/tasks/I1/review/threads/T4/messages/m4/retry')).toHaveLength(1);
+});
+
+test('the footer sends every draft of the file with kind, path and the recipient; its line names a new session, the session in focus, or the pick (#113)', async () => {
+  const user = userEvent.setup();
+  const OTHER = 'bbbbbbbb-0000-4000-8000-000000000000';
+  panel(activityOf({ records: [{ id: 'a-I1', taskIds: ['I1'], sessions: [...SESSIONS, { ...SESSIONS[0], id: OTHER }] }] }));
+  const send = await screen.findByRole('button', { name: 'enviar 1 rascunho' });
+  expect(screen.getByText('nenhuma sessão em foco · abre uma sessão nova de claude em #1')).toBeInTheDocument();
+  act(() => rememberFocus('I1', SESSION)); // last in the file: the store outlives each test
+  expect(screen.getByText('para claude abcdef12 · a sessão em foco')).toBeInTheDocument();
+  await user.click(send);
+  expect(posted('/submit')).toEqual([{ skip: [], kind: 'design', path: PATH, to: SESSION }]);
+  screen.getByRole('button', { name: 'sessão' }).focus();
+  await user.keyboard('{Enter}');
+  await user.click(await screen.findByRole('menuitem', { name: /bbbbbbbb/ }));
+  expect(screen.getByText('para claude bbbbbbbb · escolhida')).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: 'resolvidos · 2' }));
+  expect(screen.queryByRole('button', { name: 'enviar 1 rascunho' })).toBeNull();
 });

@@ -23,5 +23,8 @@ export const editDraft = (taskId: string, draft: string, body: { text: string; s
   act(reviewRoute(taskId, `/drafts/${segment(draft)}`), body, 'PUT');
 export const dropDraft = (taskId: string, draft: string): Promise<unknown> => act(reviewRoute(taskId, `/drafts/${segment(draft)}`), undefined, 'DELETE');
 export const chooseDefaultSession = (taskId: string, session: string): Promise<unknown> => act(reviewRoute(taskId, '/default-session'), { session }, 'PUT');
-export const submitReview = (taskId: string, skip: string[]): Promise<{ failed: string[]; unsaved?: string[] } | undefined> =>
-  act<{ failed: string[]; unsaved?: string[] }>(reviewRoute(taskId, '/submit'), { skip });
+/** What a submit sends beyond skip (#111, #113): kind's drafts, path's design file only, every one to `to`. Absent: the line drafts, each
+ *  to its own session. */
+export interface SubmitPick { kind?: 'lines' | 'design'; path?: string; to?: string }
+export const submitReview = (taskId: string, skip: string[], pick: SubmitPick = {}): Promise<{ failed: string[]; unsaved?: string[] } | undefined> =>
+  act<{ failed: string[]; unsaved?: string[] }>(reviewRoute(taskId, '/submit'), { skip, ...pick });
