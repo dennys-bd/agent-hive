@@ -349,8 +349,8 @@ test('a message with line breaks stays one log line, and an oversized one is cut
 });
 
 test('describeEvent names the workspaces events and the workspace a start carries (#179)', () => {
-  assert.equal(describeEvent({ type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { work: 'site', notes: 'hive' }, commands: {} }), 'setWorkspaces hive,site defaults=work:site,notes:hive');
-  assert.equal(describeEvent({ type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {} }), 'setWorkspaces hive');
+  assert.equal(describeEvent({ type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { work: 'site', notes: 'hive' }, commands: {}, workspaceColors: {} }), 'setWorkspaces hive,site defaults=work:site,notes:hive');
+  assert.equal(describeEvent({ type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }), 'setWorkspaces hive');
   assert.equal(describeEvent({ type: 'setWorkspace', taskId: 'I1', workspace: 'site' }), 'setWorkspace #I1 site');
   assert.equal(describeEvent({ type: 'start', itemId: 'I1', workspace: 'site' }), 'start #I1 workspace=site');
   assert.equal(describeEvent({ type: 'start', itemId: 'I1' }), 'start #I1');

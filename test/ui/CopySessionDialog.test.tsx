@@ -18,7 +18,7 @@ const ONE_RECORD = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, 
 const TWO = task('local:2', 'HIVE-2');
 const state: State = movedWork({ // #629: each task's live activity, a-<itemId>, a copy's target
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], tasks: [ONE, TWO], sourceOrder: [], localCount: 0, activities: [], activityRecords: [ONE_RECORD], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
-  workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 let summary: CopySummary = { from: { path: '/w/HIVE-1', branch: 'hive/HIVE-1' }, to: { path: '/repo', branch: 'main' }, messages: 142, tokens: 22400, uncommitted: 5 };
 let answer: { status: number; body: unknown } = { status: 200, body: { ok: true, ptyId: 'W9' } };

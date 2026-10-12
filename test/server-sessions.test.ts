@@ -74,7 +74,7 @@ test('POST /activities/local:<name>/shell opens a terminal in the workspace\'s c
 
 test('a workspace the config no longer holds ends the shell in spawnFailed with the reason in the bar: a first open that never ran goes, and nothing runs (#292, #696)', async (t) => {
   const { server, workers } = await start(t);
-  await server.dispatch({ type: 'setWorkspaces', workspaces: [WORKSPACE, 'gone'], sourceWorkspaces: {}, commands: {} }); // a save raced the click
+  await server.dispatch({ type: 'setWorkspaces', workspaces: [WORKSPACE, 'gone'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }); // a save raced the click
   await server.dispatch({ type: 'openProjectShell', project: 'gone', cwd: '/gone' });
   await waitFor(() => server.getState()?.error !== undefined);
   assert.deepEqual([server.getState()?.error, server.getState()?.terminals.map((t) => t.asleep), workers.length], ['workspace "gone" não existe mais', [], 0]);
@@ -133,7 +133,7 @@ test('a new local claude session runs claude in the workspace\'s checkout with i
 
 test('a local claude session whose workspace a save removed ends in spawnFailed with the reason in the bar; its worker leaves (#590)', async (t) => {
   const { server, workers } = await start(t);
-  await server.dispatch({ type: 'setWorkspaces', workspaces: [WORKSPACE, 'gone'], sourceWorkspaces: {}, commands: {} }); // a save raced the click
+  await server.dispatch({ type: 'setWorkspaces', workspaces: [WORKSPACE, 'gone'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }); // a save raced the click
   await server.dispatch({ type: 'newLocalSession', activityId: localActivityId('gone') });
   await waitFor(() => server.getState()?.error !== undefined);
   assert.deepEqual([server.getState()?.error, server.getState()?.workers.some((s) => s.activityId === localActivityId('gone')), workers.length], ['workspace "gone" não existe mais', false, 0]);

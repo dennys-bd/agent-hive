@@ -18,7 +18,7 @@ const session: Worker = { id: 'm1', status: 'working', activityId: activityIdOf(
 const state = (c: Task, workers: Worker[] = [session]): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [c], sourceOrder: [], localCount: 0, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], // #629: the record's
   usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
-  workspaces: ['hive'], sourceWorkspaces: {}, commands: { hive: ['Run API'] }, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: { hive: ['Run API'] }, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const menu = (): HTMLElement => screen.getByRole('menu');
 const items = (): string[] => [...menu().querySelectorAll('[role^="menuitem"]')].map((el) => el.textContent ?? ''); // menuitem and the switch's menuitemcheckbox

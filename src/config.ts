@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
+import { WORKSPACE_HEX_COLOR, WORKSPACE_PRESET_COLORS } from './types.js';
 import { LOG_LEVELS, type LogLevel } from './log.js';
 import { LANGUAGES } from './language.js';
 import { branchProblem, COMB_PREFIX, DURATION, onSource, WORKSPACE_NAME, RESERVED_SOURCE, HIVE_SOURCE, isReservedSource, type BranchProblem, type WorkspaceNames, resolveWorkspace } from './tasks.js';
@@ -314,6 +315,12 @@ function requireName(value: unknown, field: string): string {
   return value;
 }
 
+// #78: the picker can only write a preset or the system picker's hex; a hand edit is held to the same two shapes
+function requireColor(value: unknown, field: string): string {
+  if (typeof value === 'string' && (WORKSPACE_PRESET_COLORS.includes(value) || WORKSPACE_HEX_COLOR.test(value))) return value;
+  throw new Error(`${CONFIG_FILE}: "${field}" must be one of the preset colours or a #rrggbb colour`);
+}
+
 function parseWorkspace(raw: unknown, field: string): Workspace {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
   const name = requireName(raw.name, `${field}.name`);
@@ -324,6 +331,7 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
     name, path: raw.path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
     ...workspaceConventions(raw.conventions, name),
     memoryCap: requireIntFrom(raw.memoryCap, `${field}.memoryCap`, MEMORY_CAP_MIN, MEMORY_CAP_MAX), // #73: required, no migration; read last, so an older key's problem keeps its own message
+    color: requireColor(raw.color, `${field}.color`), // #78: required, read last
   };
 }
 
@@ -660,10 +668,11 @@ export function unnamedWorkspacePath(raw: unknown): string | undefined {
 }
 
 /** What the reducer resolves a task's workspace against (#179): the Comb's workspace names and each source's default workspace (#180, #688); the names of the commands the task menu offers in each workspace (#300, #511, #755). */
-export const workspaceScope = ({ comb }: Pick<Config, 'comb'>): WorkspaceNames & Pick<State, 'commands'> => ({
+export const workspaceScope = ({ comb }: Pick<Config, 'comb'>): WorkspaceNames & Pick<State, 'commands' | 'workspaceColors'> => ({
   workspaces: comb.workspaces.map((p) => p.name),
   sourceWorkspaces: Object.fromEntries(comb.sources.flatMap((b) => (b.taskProps.defaults.workspace === undefined ? [] : [[b.name, b.taskProps.defaults.workspace]]))),
   commands: Object.fromEntries(comb.workspaces.map((p) => [p.name, commandsIn(comb.commands, p.name).map((c) => c.name)])),
+  workspaceColors: Object.fromEntries(comb.workspaces.map((p) => [p.name, p.color])), // #78
 });
 
 /** The task's workspace in `config` (#179): resolveWorkspace against the Comb's names and the sources' defaults, and the parent's when `tasks`

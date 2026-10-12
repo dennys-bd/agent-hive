@@ -189,6 +189,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
     workspaces: isStringArray(parsed.workspaces) ? parsed.workspaces : [], // overwritten by the config on boot (#179)
     sourceWorkspaces: {}, // overwritten by the config on boot (#179, #180)
     commands: {}, // overwritten by the config on boot (#300)
+    workspaceColors: {}, // idem (#78)
     syncs: isJsonObject(parsed.syncs) ? Object.fromEntries(Object.entries(parsed.syncs).map(([name, sync]) => [name, syncOf(sync)])) : {}, // the keys are overwritten by the config on boot (#180)
     tasks,
     ...work,

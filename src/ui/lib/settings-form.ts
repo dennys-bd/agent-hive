@@ -11,6 +11,7 @@ import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
 import { type ConventionRowDraft, conventionRows, conventionsFrom, conventionsProblem } from './settings-conventions.js';
+import { nextWorkspaceColor } from './workspace-color.js';
 import { switchAtId, switchAtName } from './settings-epics.js';
 import type { SettingsSection } from './settings-sections.js';
 import { isMac } from './shortcut-bindings.js';
@@ -26,8 +27,8 @@ export type { TransitionDraft } from './settings-transitions.js';
 // Every row's id is a React key, generated once when the draft row is created and never sent to the server (toSettingsBody never spreads the
 // draft, only picks named fields), so move/remove never leaves a surviving row showing another row's stale text. Stages: settings-stages.ts (#515).
 // A workspace row of Settings › workspaces (#179, #511); id is its React key and what a command's workspaces hold, never sent. Its env
-// (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. Its conventions (#692) are rows, one per key set. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number.
-export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; conventions: ConventionRowDraft[]; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string }
+// (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. Its conventions (#692) are rows, one per key set. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number. color (#78) as the config holds it, sent as is.
+export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; conventions: ConventionRowDraft[]; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string }
 /** A row of Settings › flow's sources list (#180); id is its React key and the key the stage drafts use, never sent. */
 export interface SourceDraft {
   id: string; name: string; qualifyId: boolean; prefix: string; type: SourceConfig['type'];
@@ -65,11 +66,11 @@ export interface SettingsDraft {
 export interface SettingsProblem { section: SettingsSection; message: string; transition?: string } // transition (#918): the draft id Settings selects on the chart
 
 const DEFAULT_OWNER = '@me';
-export const emptyWorkspace = (): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT) });
+export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows) });
 const workspaceDraft = (p: Workspace): WorkspaceDraft => ({
   ...emptyWorkspace(), name: p.name, path: p.path, env: envRows(p.env),
   setup: p.setup ?? '', setupTimeout: p.setupTimeout ?? '', teardown: p.teardown ?? '', teardownTimeout: p.teardownTimeout ?? '',
-  conventions: conventionRows(p.conventions), fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap),
+  conventions: conventionRows(p.conventions), fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap), color: p.color,
 });
 // A first setup's one row: the folder the Hive started in, named after it (#202, #179), else empty.
 const proposedRow = (path?: string): WorkspaceDraft => ({ ...emptyWorkspace(), ...(path === undefined ? {} : { name: workspaceNameFor(path), path }) });
@@ -306,6 +307,7 @@ const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
   name: p.name.trim(), path: p.path.trim(), env: envFrom(p.env), // env always sent (#348)
   fork: p.fork, // #854: always sent, null included: the parser requires it
   memoryCap: Number(p.memoryCap.trim()), // #73: always sent; only the memory dialog changes it, through a route that checks it (#115)
+  color: p.color, // #78: always sent; the parser requires it
   ...(p.baseBranch.trim() === '' ? {} : { baseBranch: p.baseBranch.trim() }),
   ...(p.setup.trim() === '' ? {} : { setup: p.setup }),
   ...(p.setupTimeout.trim() === '' ? {} : { setupTimeout: p.setupTimeout.trim() }),

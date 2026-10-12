@@ -20,7 +20,7 @@ const info: SettingsInfo = {
     auth: { github: 'cli' },
     comb: {
       prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], transitions: [], stages: [{ name: 'fila', from: {} }], commands: [DEV],
-      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, memoryCap: 4000 }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, memoryCap: 4000 }],
+      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }],
     },
     logLevel: 'info', claudeArgs: [], budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS,
@@ -74,7 +74,7 @@ test('the workspace env is sent with the workspace, a blank row dropped and the 
   await user.type(env.getByLabelText('valor da variável 2'), ' /api ');
   await user.click(env.getByRole('button', { name: '+ variável' })); // left blank: dropped on save
   await save(user, onSaved);
-  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null, memoryCap: 4000 });
+  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' });
 });
 
 test('commands table (#755): the column headers, a line per workspace with its own select, where the command is missing, and the note', async () => {

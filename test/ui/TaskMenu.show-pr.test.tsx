@@ -17,7 +17,7 @@ const workers: Worker[] = [{ id: 's1', status: 'empty' }];
 // live: the task runs a plain shell, which makes it an activity; mostrar PR no longer needs one (#758)
 const state = (c: Task, live = true, activityRecords: ActivityRecord[] = []): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: live ? [{ terminalId: 'W1', activityId: activityIdOf('I1'), startedAt: '2026-01-01T00:00:00Z', cwd: '/repo' }] : [], stages, tasks: [c], sourceOrder: [], localCount: 0, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
-  sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const prs = [{ url: 'https://github.com/acme/app/pull/7', state: 'merged' as const }, { url: 'https://github.com/acme/app/pull/8', state: 'open' as const }];
 beforeEach(() => { setLanguage('pt'); });

@@ -154,7 +154,7 @@ test('a terminal whose activity went (its workspace removed, its task gone) leav
   const local = red();
   const live: Terminal = { terminalId: LIVE_ID, activityId: localActivityId('hive'), startedAt: PAST, cwd: '/repo' };
   const asleep: Terminal = { ...live, terminalId: SHELL_ID, asleep: true };
-  const removed = reduce({ ...local, terminals: [live, asleep] }, { type: 'setWorkspaces', workspaces: [], sourceWorkspaces: {}, commands: {} });
+  const removed = reduce({ ...local, terminals: [live, asleep] }, { type: 'setWorkspaces', workspaces: [], sourceWorkspaces: {}, commands: {}, workspaceColors: {} });
   assert.deepEqual(removed.state.terminals, []);
   assert.deepEqual(removed.effects.filter((e) => e.type === 'kill' || e.type === 'dropTerminalFiles'), [
     { type: 'kill', slug: 'workspace', ptyId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: LIVE_ID }, { type: 'dropTerminalFiles', terminalId: SHELL_ID },

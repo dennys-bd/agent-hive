@@ -12,7 +12,7 @@ import { tempDir } from './temp-dir.js';
 import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
 
 const ID = 'a1b2c3d4-0000-4000-8000-000000000001';
-const config: Pick<Config, 'comb'> = { comb: { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' } };
+const config: Pick<Config, 'comb'> = { comb: { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' } };
 const task = (n: number, extra: Partial<Task> = {}): Task => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `task ${n}`, body: '', url: '' }, stage: 'dev', boardColumn: 'dev', auto: true, workspace: 'hive', created: true, ...extra,
 });
