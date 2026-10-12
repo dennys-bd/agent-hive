@@ -1,10 +1,9 @@
-import { createReadStream } from 'node:fs';
-import { lstat, readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join } from 'node:path';
-import { createInterface } from 'node:readline';
-import { ZERO_TOKENS, type Tokens } from '../events.js';
+import type { Tokens } from '../events.js';
 import { cleanTitle, type TranscriptTurn } from '../usage.js';
+import { eachLine, finite, isRealDir, newTally, tally, turnUsage, type UsageEntry, writtenSince } from './jsonl.js';
 
 // Claude Code's transcripts (#924, out of usage.ts and copy-sides.ts): where it keeps them, the JSONL lines the Hive reads (usage, /rename
 // titles, subagents) and the message count a copy's dialog shows.
@@ -17,9 +16,7 @@ interface TranscriptLine {
 
 // One assistant message's usage, by type with its model and time (#742). The four fields sum to ccusage's "Total Tokens", so the number the
 // user sees here matches the one they know
-interface AssistantUsage { id: string; tokens: number; byType: Tokens; model?: string; at: number }
-
-const finite = (value: unknown): number => (Number.isFinite(value) ? (value as number) : 0); // 1e400 parses to Infinity and would jam every budget check
+interface AssistantUsage extends UsageEntry { tokens: number }
 
 function parseAssistant(line: string): AssistantUsage | undefined {
   let parsed: TranscriptLine | null;
@@ -46,9 +43,6 @@ export function parseUsageLine(line: string): { id: string; tokens: number } | u
   return usage === undefined ? undefined : { id: usage.id, tokens: usage.tokens };
 }
 
-const addTokens = (a: Tokens, b: Tokens): Tokens =>
-  ({ input: a.input + b.input, output: a.output + b.output, cache_write: a.cache_write + b.cache_write, cache_read: a.cache_read + b.cache_read });
-
 // One transcript line → its /rename title (#489), or nothing: Claude Code appends {"type":"custom-title","customTitle":"…"} at every rename.
 function parseTitleLine(line: string): string | undefined {
   let parsed: { type?: unknown; customTitle?: unknown } | null;
@@ -59,23 +53,6 @@ function parseTitleLine(line: string): string | undefined {
   }
   return parsed?.type === 'custom-title' ? cleanTitle(parsed.customTitle) : undefined;
 }
-
-// Calls onLine for every line of a regular file. A FIFO or a device never reaches EOF and would hold the read (and a threadpool worker) forever
-async function eachLine(path: string, onLine: (line: string) => void): Promise<void> {
-  if (!(await stat(path)).isFile()) throw new Error(`${path}: not a regular file`);
-  return new Promise((resolve, reject) => {
-    const input = createReadStream(path);
-    input.on('error', reject);
-    const lines = createInterface({ input, crlfDelay: Infinity });
-    // readline.Interface re-emits the input stream's error as its own; without a listener here it throws unhandled.
-    lines.on('error', reject);
-    lines.on('line', onLine);
-    lines.on('close', resolve);
-  });
-}
-
-const isRealDir = async (path: string): Promise<boolean> => (await lstat(path).catch(() => undefined))?.isDirectory() === true;
-const writtenSince = async (path: string, since: number): Promise<boolean> => ((await lstat(path).catch(() => undefined))?.mtimeMs ?? -1) >= since;
 
 // Claude Code writes each subagent's transcript to <transcript dir>/<session_id>/subagents/agent-<id>.jsonl, beside the main one. Only the
 // .jsonl regular files directly in that folder, through no linked folder: anything else is not this session's. No folder: none. A file
@@ -91,18 +68,6 @@ async function subagentTranscripts(path: string, since: number): Promise<string[
   return files.filter((_, i) => fresh[i]);
 }
 
-// One stage run's usage as it adds up: each message.id once across the main transcript and its subagents'
-interface StageTally { seen: Set<string>; models: Set<string>; tokens: Tokens; subagentTokens: Tokens }
-
-function tally(t: StageTally, usage: AssistantUsage | undefined, since: number, subagent: boolean): void {
-  if (!usage || t.seen.has(usage.id)) return;
-  t.seen.add(usage.id);
-  if (!(usage.at >= since)) return; // before the stage run, or with no time: not its own
-  t.tokens = addTokens(t.tokens, usage.byType);
-  if (subagent) t.subagentTokens = addTokens(t.subagentTokens, usage.byType);
-  if (usage.model !== undefined) t.models.add(usage.model);
-}
-
 /**
  * Sums the tokens of every assistant message in a Claude Code transcript, counting each `message.id` once, and keeps the last /rename
  * title, in one pass. With `since`, the messages at or after it also add up by type with their models (#742), the session's subagent
@@ -111,7 +76,7 @@ function tally(t: StageTally, usage: AssistantUsage | undefined, since: number, 
  * ponytail: reads the whole file at every turn end; if transcripts ever weigh, keep a byte offset per worker and tail from it.
  */
 export async function readTranscript(path: string, since?: number): Promise<TranscriptTurn> {
-  const stage: StageTally = { seen: new Set(), models: new Set(), tokens: ZERO_TOKENS, subagentTokens: ZERO_TOKENS };
+  const stage = newTally();
   const seen = new Set<string>();
   let total = 0;
   let title: string | undefined;
@@ -137,7 +102,7 @@ export async function readTranscript(path: string, since?: number): Promise<Tran
   for (const sub of await subagentTranscripts(path, since)) {
     await eachLine(sub, (line) => tally(stage, parseAssistant(line), since, true)).catch(() => undefined);
   }
-  return { ...base, usage: { tokens: stage.tokens, models: [...stage.models], subagentTokens: stage.subagentTokens } };
+  return { ...base, usage: turnUsage(stage) };
 }
 
 /** Where Claude Code keeps the transcripts of a cwd: `<config dir>/projects/<cwd with every non-alphanumeric as '-'>`. An empty or relative
