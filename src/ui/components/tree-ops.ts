@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import type { OpenResult } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { copyFiles, cutFiles, pasteInto } from '@/components/tree-paste';
-import { localRunTab, type OpenRun, useOpenChanges, useOpenRun } from '@/components/terminal-tabs';
+import { localRunTab, type OpenFileHow, type OpenRun, useOpenChanges, useOpenFile, useOpenRun } from '@/components/terminal-tabs';
 import { t } from '@/i18n';
 import { activityKey, type RunTarget } from '@/lib/activities';
 import { treeChanged } from '@/lib/tree-place';
@@ -25,9 +25,11 @@ export interface TreeActions {
   reveal(path: string): void; // '' = the root
   openTerminal(folder: string): void; // '' = the root
   openChanges(path: string): void;
+  openInEditor(path: string): void; // #109: a Hive design's text, in the editor pane
 }
 
 const route = (activityId: string, name: string): string => `/activities/${encodeURIComponent(activityId)}/${name}`; // #629
+const EDITOR: OpenFileHow = { editor: true }; // #109: past the design pane a click opens
 
 // Copy path and copy relative path: text on the clipboard
 function copyText(text: string): void {
@@ -52,6 +54,7 @@ export interface TreeOps { actions: TreeActions; trashing?: string[]; confirmTra
 export function useTreeActions(target: RunTarget, root: string | undefined, edits: Pick<TreeActions, 'newItem' | 'rename'>): TreeOps {
   const openRun = useOpenRun();
   const openChanges = useOpenChanges(activityKey(target));
+  const openFile = useOpenFile();
   const [trashing, setTrashing] = useState<string[]>();
   const id = target.activity.id;
   const withRoot = (run: (known: string) => void): void => {
@@ -68,6 +71,7 @@ export function useTreeActions(target: RunTarget, root: string | undefined, edit
     reveal: (path) => void act(route(id, 'reveal'), path === '' ? undefined : { path }),
     openTerminal: (folder) => openTerminalIn(target, folder, openRun),
     openChanges: (path) => openChanges?.(path),
+    openInEditor: (path) => { openFile?.(activityKey(target), path, undefined, EDITOR); },
   };
   const confirmTrash = (): void => {
     if (trashing !== undefined) void act(route(id, 'tree/trash'), { paths: trashing }).then(() => treeChanged(id));
