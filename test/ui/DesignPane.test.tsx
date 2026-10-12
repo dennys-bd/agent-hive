@@ -120,3 +120,32 @@ test('Space held in the pane turns the canvas to grab and lets a drag pass over 
   fireEvent.keyUp(region, { key: ' ' });
   expect([canvas?.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
 });
+
+// One poll answered: a window focus asks at once (use-file-version.ts), and a macrotask lets its promise chain settle
+async function poll(): Promise<void> {
+  await act(async () => {
+    fireEvent.focus(window);
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+}
+
+test('the first version is remembered and a repeat or a gone file changes nothing; a new one reloads the frame, and the ready after it shows the reloaded mark (#109)', async () => {
+  render(pane());
+  const first = await screen.findByTitle(NAME);
+  await poll();
+  await poll();
+  version = null;
+  await poll();
+  fromFrame({ hive: 'design', type: 'ready' });
+  expect(frame()).toBe(first);
+  expect(screen.queryByTitle(/^recarregado/)).toBeNull();
+  version = 'v2';
+  await poll();
+  const second = frame();
+  expect(second).not.toBe(first);
+  expect(second).toHaveAttribute('src', FRAME_URL);
+  expect(screen.queryByTitle(/^recarregado/)).toBeNull(); // not before the new frame is ready
+  fromFrame({ hive: 'design', type: 'ready' }, second.contentWindow);
+  const mark = screen.getByTitle(/^recarregado · o agente alterou Landing\.hv\.html às \d{2}:\d{2}$/);
+  expect(mark).toHaveTextContent(/^\d{2}:\d{2}$/);
+});
