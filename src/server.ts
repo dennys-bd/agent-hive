@@ -816,17 +816,19 @@ export function createServer(deps: ServerDeps): HiveServer {
     // #928: the worker's own agent's runner makes its hook the reducer's before anything reads it; an unknown pty reads as
     // LEGACY_RUN_AGENT (Claude), whose payload goes through unchanged
     const agent = ranAgent((ptyId === undefined ? undefined : workerOf(ptyId)) ?? {});
-    const raw = ptyId && body?.hook_event_name ? runners[agent].hookPayload(body) : body;
-    if (raw === undefined && body?.hook_event_name) { // dropped by the runner: a subagent's hook, Codex's SessionEnd
-      log.debug(`hook ignored: ${agent} ${body.hook_event_name}`);
+    // only a string event is a hook: a forged object name would throw in a template literal down the line, so it reads as no event name
+    const event = typeof body?.hook_event_name === 'string' && body.hook_event_name !== '' ? body.hook_event_name : undefined;
+    const raw = ptyId && event && body ? runners[agent].hookPayload(body) : undefined;
+    if (ptyId && event && raw === undefined) { // dropped by the runner: a subagent's hook, Codex's SessionEnd
+      log.debug(`hook ignored: ${agent} ${event}`);
       res.status(HTTP_NO_CONTENT).end();
       return;
     }
-    const payload = ptyId && raw?.hook_event_name ? scopeTranscript(ptyId, raw) : raw;
+    const payload = ptyId && raw ? scopeTranscript(ptyId, raw) : undefined;
     // Computed once against the worker as it stands: a subagent/teammate Stop, StopFailure or SessionEnd must not read the transcript, same as the reducer ignores it (#24, #805)
     const isChild = ptyId !== undefined && payload !== undefined && isChildSession(workerOf(ptyId), payload);
     let effects: Effect[] = [];
-    if (ptyId && payload?.hook_event_name) {
+    if (ptyId && payload) {
       const branch = payload.hook_event_name === 'SessionStart' && payload.cwd ? await resolveBranch(payload.cwd) : undefined;
       const turn = isChild ? undefined : await readTurn(ptyId, payload);
       if (!isChild) wiring.beforeHook(live?.state, ptyId, payload, turn?.usage); // #742: the human signals read the worker before this hook moves it

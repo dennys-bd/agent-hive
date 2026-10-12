@@ -145,3 +145,13 @@ test('a codex worker\'s SessionEnd is dropped at the route: 204, a debug line, a
   assert.deepEqual([worker0(server).runId, worker0(server).status === 'empty', workers.length], [ptyId, false, 1]);
   assert.ok(lines.includes('DEBUG hook ignored: codex SessionEnd'), lines.join('\n'));
 });
+
+test('a forged hook whose event name is not a string never reaches the runner or the log line, and never errors (#928)', async (t) => {
+  const { base, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' as const }] });
+  await waitFor(() => workers.length === 1);
+  const ptyId = worker0(server).runId!;
+  for (const name of [{ toString: 'x' }, ['Stop'], 7]) {
+    assert.equal((await hookEvent(base, ptyId, { hook_event_name: name, agent_id: 'a' })).status, 204, JSON.stringify(name));
+  }
+  assert.deepEqual([worker0(server).runId, workers.length], [ptyId, 1]);
+});
