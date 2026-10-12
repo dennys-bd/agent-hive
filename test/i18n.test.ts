@@ -422,3 +422,24 @@ test('the workspace colour picker\'s copy (#78): both languages', () => {
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['color', 'workspace color', 'colors', 'custom color', 'color {n}']);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['cor', 'cor do workspace', 'cores', 'outra cor', 'cor {n}']);
 });
+
+test('the design comments\' copy reads as the handoff writes it, in both languages (#113)', () => {
+  const keys = [
+    'design.comments', 'design.comments.toggle', 'design.comments.hide', 'design.tab.open', 'design.tab.resolved', 'design.area', 'design.composer.cancel',
+    'design.status.draft', 'design.status.agent', 'design.status.replied', 'design.status.agentDone', 'design.status.you', 'design.status.confirmed',
+    'design.action.delete', 'design.action.send', 'design.action.resolve', 'design.action.reply', 'design.action.reopen', 'design.action.confirm',
+    'design.send.all.one', 'design.send.all.other', 'design.send.to', 'design.send.picked', 'design.send.new',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'comments', 'show or hide the comments', 'hide', 'open · {n}', 'resolved · {n}', 'area · {w}×{h}', 'esc cancels',
+    'draft', 'with the agent · {session}', 'the agent replied', 'the agent marked it resolved', 'resolved by you', 'resolved by the agent · you confirmed',
+    'delete', 'send', 'resolve', 'reply', 'reopen', 'confirm',
+    'send {n} draft', 'send {n} drafts', 'to {session} · the session in focus', 'to {session} · picked', 'no session in focus · opens a new {agent} session in {activity}',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'comentários', 'mostrar ou esconder os comentários', 'esconder', 'abertos · {n}', 'resolvidos · {n}', 'área · {w}×{h}', 'esc cancela',
+    'rascunho', 'com o agente · {session}', 'o agente respondeu', 'o agente marcou como resolvido', 'resolvido por você', 'resolvido pelo agente · você confirmou',
+    'excluir', 'enviar', 'resolver', 'responder', 'reabrir', 'confirmar',
+    'enviar {n} rascunho', 'enviar {n} rascunhos', 'para {session} · a sessão em foco', 'para {session} · escolhida', 'nenhuma sessão em foco · abre uma sessão nova de {agent} em {activity}',
+  ]);
+});

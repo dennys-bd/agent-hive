@@ -1,12 +1,13 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignPane } from '@/components/DesignPane';
 import { setLanguage } from '@/i18n';
 import type { Activity } from '@/lib/activities';
-import type { Task } from '../../src/types';
+import type { ReviewFile, Task } from '../../src/types';
 import { jsonResponse } from '../fakes';
-import { taskPairOf } from '../fixtures/work';
+import { localPairOf, taskPairOf } from '../fixtures/work';
+import { PATH as REVIEW_PATH, REVIEW } from './design-review';
 
 const PATH = 'design/Landing.hv.html';
 const NAME = 'Landing.hv.html';
@@ -15,10 +16,13 @@ const LABEL = '#1 Task 1 · Design Landing.hv.html';
 const CANVAS_PX = 672; // (672 − 32) / 1280: a 50% fit at desktop
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const activity: Activity = { kind: 'task', ...taskPairOf('I1', { worktree: '/w/hive-1' }), task, runs: [], sessions: [], status: 'working', worker: true };
-// What the routes answer: the mint, and the file's version (null: the file is gone)
+// What the routes answer: the review (#113), a write's ok, the mint, and the file's version (null: the file is gone)
 let mint: () => Response = () => jsonResponse({ url: FRAME_URL });
 let version: string | null = 'v1';
-const fetchMock = vi.fn(async (url: string) => {
+let review: ReviewFile = { reviewed: [], drafts: [], threads: [] };
+const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  if (url === '/tasks/I1/review') return jsonResponse(review);
+  if ((init?.method ?? 'GET') !== 'GET') return jsonResponse({ failed: [] });
   if (!url.includes('/file-version')) return mint();
   return version === null ? jsonResponse({ error: 'file not found' }, 404) : jsonResponse({ version });
 });
@@ -40,6 +44,7 @@ beforeEach(() => {
   document.documentElement.dataset.theme = 'dark';
   mint = () => jsonResponse({ url: FRAME_URL });
   version = 'v1';
+  review = { reviewed: [], drafts: [], threads: [] };
   fetchMock.mockClear();
   vi.stubGlobal('fetch', fetchMock);
   // jsdom lays nothing out: the canvas alone gets a width, so the fit has something to measure
@@ -173,4 +178,54 @@ test('a pointer down on the canvas puts the focus in the pane, so ⌘0 and Space
   if (canvas === null) throw new Error('no canvas');
   fireEvent.pointerDown(canvas);
   expect(document.activeElement).toBe(screen.getByRole('region', { name: LABEL }));
+});
+
+const local: Activity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
+const region = (): HTMLElement => screen.getByRole('region', { name: LABEL });
+const panel = (): HTMLElement | null => screen.queryByRole('complementary', { name: 'comentários' });
+// Off macOS (jsdom's platform): ⌘⇧↵ is Ctrl+Shift+Enter
+const SEND_KEYS = { key: 'Enter', code: 'Enter', ctrlKey: true, shiftKey: true };
+
+test('a task\'s pane shows the comments beside the canvas; the bar\'s button and the panel\'s × hide and show them; the button counts the open ones (#113)', async () => {
+  const user = userEvent.setup();
+  expect(REVIEW_PATH).toBe(PATH);
+  review = REVIEW;
+  render(pane());
+  const button = screen.getByRole('button', { name: 'comentários' });
+  await waitFor(() => expect(button).toHaveTextContent('4'));
+  expect(button).toHaveAttribute('title', 'mostrar ou esconder os comentários');
+  expect([button.getAttribute('aria-pressed'), panel() !== null]).toEqual(['true', true]);
+  await user.click(button);
+  expect([button.getAttribute('aria-pressed'), panel()]).toEqual(['false', null]);
+  await user.click(button);
+  expect(panel()).not.toBeNull();
+  await user.click(within(panel() as HTMLElement).getByRole('button', { name: 'esconder' }));
+  expect(panel()).toBeNull();
+});
+
+test('⌘⇧↵ in the pane sends this file\'s drafts to the recipient in one submit (#113)', async () => {
+  review = REVIEW;
+  render(pane());
+  await screen.findByText('a draft');
+  fireEvent.keyDown(region(), SEND_KEYS);
+  const submits = fetchMock.mock.calls.filter(([url]) => url === '/tasks/I1/review/submit');
+  expect(submits.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ skip: [], kind: 'design', path: PATH, to: 'new' }]);
+});
+
+test('⌘⇧↵ sends nothing while the comments panel is hidden (#113)', async () => {
+  const user = userEvent.setup();
+  review = REVIEW;
+  render(pane());
+  await screen.findByText('a draft');
+  await user.click(screen.getByRole('button', { name: 'comentários' }));
+  fireEvent.keyDown(region(), SEND_KEYS);
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/tasks/I1/review/submit')).toEqual([]);
+});
+
+test('a local activity\'s pane has no comments button nor panel, and reads no review (#113)', async () => {
+  render(<DesignPane activity={local} path={PATH} label={LABEL} active />);
+  await screen.findByTitle(NAME);
+  expect(screen.queryByRole('button', { name: 'comentários' })).toBeNull();
+  expect(screen.queryByRole('complementary')).toBeNull();
+  expect(fetchMock.mock.calls.some(([url]) => url.includes('/review'))).toBe(false);
 });

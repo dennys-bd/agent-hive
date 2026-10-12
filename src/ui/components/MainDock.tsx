@@ -28,6 +28,7 @@ import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
 import { shownRun } from '@/lib/center-layout';
+import { useRememberFocus } from '@/lib/session-focus';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, shownBySide } from '@/lib/dock-layout';
 
 /** What MainDock hands the detail's body (#452): whether Detalhes is the shown tab of an open panel, how to close the panel holding it,
@@ -278,6 +279,7 @@ export function MainDock(props: MainDockProps) {
   // ver saída (#755): the task's activity picked with its commands stage's locked console tab, as abrir como aba opens a tab
   const openStageOutput: OpenStageOutput = useCallback((taskId, channel, run) => openConsoleTab(taskId, channel, true, run), [openConsoleTab]);
   const layouts = useCenterLayouts(activities, current, request); // the picked activity's tabs and splits (#458)
+  useRememberFocus(current, shownRun(layouts.layout)); // #113: the design pane's recipient, the last session in focus
   const openActivityFile = useFileOpener(activities, openFile); // a click on a file: its editor pane tab (#717)
   // A run the user opened (#457): a task's becomes its activity, a workspace's its local activity (#590), the center showing it
   const openUserRun: OpenRun = useCallback((tab) => {

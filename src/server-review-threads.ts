@@ -22,6 +22,8 @@ const SUBMITTING_MESSAGE = 'a revisão já está sendo enviada';
 const DELIVERING_MESSAGE = 'a mensagem já está sendo entregue';
 const SKIP_MESSAGE = 'skip, quando vem, lista sessões da tarefa, ou "new"';
 const KIND_MESSAGE = 'kind, quando vem, é lines ou design';
+const PATH_MESSAGE = 'path, quando vem, é texto e só com kind design';
+const TO_MESSAGE = 'to, quando vem, é uma sessão da tarefa, ou "new"';
 
 export type ThreadRouteDeps = ReviewRouteDeps & Pick<TaskRouteDeps, 'log'> & { deliver: Deliver };
 
@@ -183,15 +185,35 @@ async function submitGroup(deps: ThreadRouteDeps, taskId: string, session: strin
   return 'sent';
 }
 
-// skip: the sessions whose last batch arrived but was not saved; their drafts would paste it again (#591). kind: the pane's own drafts (#111)
-async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, skip: string[], kind: 'lines' | 'design', agentOf: AgentOf): Promise<void> {
+/** What a submit sends (#591, #111, #113): skip's sessions left out, kind's drafts, path's design file only, and every one to `to` when it comes. */
+interface SubmitPick { skip: string[]; kind: 'lines' | 'design'; path?: string; to?: string }
+
+// The submit's body read (#113: path and to): the pick, or the refusal's message when it does not hold
+function submitPick(state: State, taskId: string, body: Record<string, unknown>): SubmitPick | string {
+  const { skip = [], kind = 'lines', path, to } = body;
+  if (!Array.isArray(skip) || !skip.every((id) => isTaskSession(state, taskId, id))) return SKIP_MESSAGE;
+  if (kind !== 'lines' && kind !== 'design') return KIND_MESSAGE;
+  if (path !== undefined && (typeof path !== 'string' || kind !== 'design')) return PATH_MESSAGE;
+  if (to !== undefined && !isTaskSession(state, taskId, to)) return TO_MESSAGE;
+  return { skip, kind, ...(typeof path === 'string' ? { path } : {}), ...(typeof to === 'string' ? { to } : {}) };
+}
+
+// A draft the pick sends: kind's, on path's file when it names one; skip applies to the session it would go to, `to` when it comes
+const isPicked = (pick: SubmitPick) => (draft: ReviewDraft): boolean =>
+  !pick.skip.includes(pick.to ?? draft.session) && isDesignAnchor(draft.anchor) === (pick.kind === 'design')
+  && (pick.path === undefined || (isDesignAnchor(draft.anchor) && draft.anchor.path === pick.path));
+
+// skip: the sessions whose last batch arrived but was not saved; their drafts would paste it again (#591). kind: the pane's own drafts (#111).
+// to (#113): the design pane's recipient, every picked draft in one message to it, whatever session each was saved for
+async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, pick: SubmitPick, agentOf: AgentOf): Promise<void> {
   const file = await readReview(deps, res, taskId);
   if (!file) return;
-  const drafts = file.drafts.filter((d) => !skip.includes(d.session) && isDesignAnchor(d.anchor) === (kind === 'design'));
+  const drafts = file.drafts.filter(isPicked(pick));
   if (drafts.length === 0) return refuse(res, { status: HTTP_CONFLICT, message: NO_DRAFT_MESSAGE });
-  const sessions = [...new Set(drafts.map((d) => d.session))];
+  const sessions = pick.to === undefined ? [...new Set(drafts.map((d) => d.session))] : [pick.to];
+  const groupOf = (session: string): ReviewDraft[] => (pick.to === undefined ? drafts.filter((d) => d.session === session) : drafts);
   try {
-    const results = await Promise.all(sessions.map((s) => submitGroup(deps, taskId, s, drafts.filter((d) => d.session === s), agentOf)));
+    const results = await Promise.all(sessions.map((s) => submitGroup(deps, taskId, s, groupOf(s), agentOf)));
     const having = (result: GroupResult): string[] => sessions.filter((_s, i) => results[i] === result);
     res.json({ failed: having('failed'), ...(having('unsaved').length > 0 ? { unsaved: having('unsaved') } : {}) });
   } catch (err) {
@@ -199,20 +221,19 @@ async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, s
   }
 }
 
-// enviar revisão (#591): the drafts grouped by session, drafts for nova sessão opening one new session together; one submit per task at a time
+// enviar revisão (#591): the drafts grouped by session, or all to the design pane's recipient (#113); drafts for nova sessão opening one new session together; one submit per task at a time
 function registerSubmitRoute(app: Express, deps: ThreadRouteDeps): void {
   app.post('/tasks/:id/review/submit', async (req: Request, res: Response) => {
     const live = liveTaskIn(deps, req, res);
     if (!live) return;
     const { task, state } = live;
-    const { skip = [], kind = 'lines' } = (req.body ?? {}) as { skip?: unknown; kind?: unknown };
-    if (!Array.isArray(skip) || !skip.every((id) => isTaskSession(state, task.item.itemId, id))) return badRequest(res, SKIP_MESSAGE);
-    if (kind !== 'lines' && kind !== 'design') return badRequest(res, KIND_MESSAGE);
     const taskId = task.item.itemId;
+    const pick = submitPick(state, taskId, (req.body ?? {}) as Record<string, unknown>);
+    if (typeof pick === 'string') return badRequest(res, pick);
     if (submitting.has(taskId)) return refuse(res, { status: HTTP_CONFLICT, message: SUBMITTING_MESSAGE });
     submitting.add(taskId);
     try {
-      await submitAll(deps, res, taskId, skip, kind, agentsOf(state, taskId));
+      await submitAll(deps, res, taskId, pick, agentsOf(state, taskId));
     } finally {
       submitting.delete(taskId);
     }
