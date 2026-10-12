@@ -132,7 +132,7 @@ export const hooksPath = (home: string): string => join(home, HOOKS_FILE);
 
 /** The home's runtime files for `port`: prompts/ (the spawn's prompt files), plugin/ (the Hive's own skills and agents, what every run's
  * plugin flag points at), protocol/ (what the agent's protocol flag points at, #167), and each runner's own (#924): Claude's hooks.json and
- * shim. `runners` are the agents boot found. */
+ * shim, Codex's plugin cache copy and role files (#934). `runners` are the agents boot found. */
 export async function prepareHome(
   home: string, port: number, runners: readonly Pick<AgentRunner, 'prepareHome'>[],
 ): Promise<{ hooksPath: string; promptsDir: string; pluginDir: string; protocol: ProtocolPaths }> {

@@ -1,12 +1,13 @@
 // Codex behind the runner contract (#927). Every Hive setting reaches it as a `-c key=value` override on the argv (finding.codex-surface §1,
 // §5, §6, §13), so a run needs no file in the user's CODEX_HOME. Its session id is its own, learned from the first SessionStart (§3).
-import { hookCommand, MCP_ROUTE, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
+import { dirname } from 'node:path';
 import { AGENTS } from '../agents.js';
-import { installShim } from '../shim.js';
+import { hookCommand, MCP_ROUTE, pluginSource, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
 import { isRecord } from '../rate-limits.js';
 import { SECRET_HEADER } from '../secret.js';
+import { installShim } from '../shim.js';
 import type { HookPayload } from '../types.js';
-import { tomlString } from './codex-home.js';
+import { type AgentRole, agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexHome, roleFile, tomlString } from './codex-home.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
@@ -35,10 +36,26 @@ const mcpOverrides = ({ port, ptyId }: AgentRun): LaunchArg[] => [
   override('mcp_servers.hive.default_tools_approval_mode', tomlString('approve')),
 ];
 
+// Read on the first launch, not at import: a missing assets/plugin fails that launch loudly instead of every import of this module
+let roles: readonly AgentRole[] | undefined;
+const hiveRoles = (): readonly AgentRole[] => {
+  roles ??= agentRoles(pluginSource());
+  return roles;
+};
+
+// #934: the skills as the plugin prepareHome copied into Codex's cache, by a dotted key that merges with the user's enabled plugins (a whole
+// `plugins=` table would replace them); then each agent as a role whose file prepareHome wrote, under the name the skills dispatch, hive:<name>
+const pluginOverrides = (home: string): LaunchArg[] => [
+  override(`plugins.${CODEX_PLUGIN}@${marketplaceName(home)}.enabled`, 'true'),
+  ...hiveRoles().map((role) =>
+    override(`agents.${CODEX_PLUGIN}:${role.name}`, `{description=${tomlString(role.description)},config_file=${tomlString(roleFile(home, role.name))}}`)),
+];
+
 /** Every -c override of a run, in launch's order. */
 export const overrides = (run: AgentRun): LaunchArg[] => [
   ...CODEX_HOOK_EVENTS.map((event) => hookOverride(event, run.port)),
   ...(run.withHive ? mcpOverrides(run) : []),
+  ...pluginOverrides(dirname(run.pluginDir)), // every run, local or not, as Claude's --plugin-dir; the home is <home>/plugin's parent (#100)
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
   ...(run.protocolText === undefined ? [] : [override('developer_instructions', tomlString(run.protocolText))]),
   override('check_for_update_on_startup', 'false'), // the update screen takes the first keys: an Enter runs npm install -g (§13)
@@ -75,7 +92,8 @@ export const codexRunner: AgentRunner = {
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
   copy: () => undefined, // #933
   clear: () => undefined, // #933
-  prepareHome: async (home) => { await installShim(home, AGENTS.codex); }, // #932: its shim, as prepareClaudeHome writes Claude's; the plugin is #934
+  // its shim (#932), then the plugin and the roles (#934). The run inherits the Hive's CODEX_HOME, so it reads this copy
+  prepareHome: async (home) => { await installShim(home, AGENTS.codex); await prepareCodexHome(home, process.env); },
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file
   lspPlugin: () => [],
   // #929: inert until usage is read. No dirname is '', so the transcript guard drops every Codex path, and the server records no tokens
