@@ -2,8 +2,10 @@
 // override; each agent goes as a role file in the Hive's home, named by another. Neither the user's config.toml nor their skills are written.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pluginSource } from '../hooks-settings.js';
 
 /** The plugin's name in Codex, and the prefix the skills dispatch every agent under (hive:<name>), as for Claude. */
 export const CODEX_PLUGIN = 'hive';
@@ -76,4 +78,16 @@ export function agentRoles(source: string): AgentRole[] {
     .filter((file) => file.endsWith(AGENT_SUFFIX))
     .sort()
     .map((file) => readAgent(file, readFileSync(join(dir, file), 'utf8')));
+}
+
+/** Codex's copy of the Hive's plugin and the roles' files, for `home`. Wiped and rewritten on every boot, as <home>/plugin is: upgrading the
+ * Hive refreshes them, and a skill or agent deleted upstream stops existing. Nothing else under CODEX_HOME is touched. */
+export async function prepareCodexHome(home: string, env: NodeJS.ProcessEnv): Promise<void> {
+  const cache = pluginCacheDir(codexHome(env), home);
+  await rm(cache, { recursive: true, force: true });
+  await cp(pluginSource(), cache, { recursive: true }); // creates plugins/cache/<marketplace>/hive on the way
+  const roles = join(home, ROLES_DIR);
+  await rm(roles, { recursive: true, force: true });
+  await mkdir(roles, { recursive: true });
+  await Promise.all(agentRoles(pluginSource()).map((role) => writeFile(roleFile(home, role.name), renderRole(role))));
 }
