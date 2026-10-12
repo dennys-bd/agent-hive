@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Confirm } from '@/components/Confirm';
 import { FixedKeyHint, KeyHint } from '@/components/KeyHint';
 import { focusName } from '@/components/tree-name-input';
+import { isHiveDesign } from '@/components/terminal-tabs';
 import type { TreeActions } from '@/components/tree-ops';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { t } from '@/i18n';
@@ -67,14 +68,15 @@ function DeleteItem({ actions, selected }: { actions: TreeActions; selected: str
   return <ContextMenuItem onSelect={() => actions.trash(selected)}>{t('files.delete')}<KeyHint id="treeDelete" /></ContextMenuItem>;
 }
 
-/** A file's menu: Open Changes (the changes pane of that file, #668), the terminal in its folder, reveal; cut, copy, paste into its folder; the
- *  copy paths; rename, delete. */
+/** A file's menu: for a Hive design, open in the editor pane first (#109: a click opens its design pane); Open Changes (the changes pane of
+ *  that file, #668), the terminal in its folder, reveal; cut, copy, paste into its folder; the copy paths; rename, delete. */
 export function FileMenu({ actions, path, selected, children }: MenuProps) {
   const folder = parentOf(path);
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-64" onCloseAutoFocus={keepInputFocus}>
+        {isHiveDesign(path) && <ContextMenuItem onSelect={() => actions.openInEditor(path)}>{t('files.openInEditor')}</ContextMenuItem>}
         <ContextMenuItem onSelect={() => actions.openChanges(path)}>{t('files.openChanges')}</ContextMenuItem>
         <PlaceItems actions={actions} folder={folder} path={path} />
         <ContextMenuSeparator />

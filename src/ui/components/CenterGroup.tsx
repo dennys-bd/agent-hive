@@ -7,6 +7,7 @@ import { CopyToSub } from '@/components/CopySession';
 import { CONTEXT_KIT } from '@/components/menu-kit';
 import type { LiveRun } from '../../task-runs';
 import { taskLabel } from '../../tasks';
+import { DesignPane } from '@/components/DesignPane';
 import { EditorPane } from '@/components/EditorPane';
 import { UntitledPane } from '@/components/UntitledPane';
 import { PreviewPane } from '@/components/PreviewPane';
@@ -48,7 +49,7 @@ const activityTitle = (activity: Activity): string => (activity.kind === 'task' 
 export function refText(item: CenterTabRef, activity: Activity): string {
   if (item.kind === 'diff') return t(DIFF_SCOPE_KEY[item.scope], { n: item.checkpoint ?? '' });
   if (item.kind === 'untitled') return t('editor.untitled', { n: item.n }); // #818
-  if (item.kind === 'file') return baseName(item.path);
+  if (item.kind === 'file' || item.kind === 'design') return baseName(item.path); // #109: a design's tab reads its file's name
   if (item.kind === 'preview') return `${t('preview.title')} ${baseName(item.path)}`;
   if (item.kind === 'changes') return `${t('changes.title')} ${baseName(item.path)}`;
   if (item.kind === 'console') return t('console.title');
@@ -241,7 +242,7 @@ function ConsoleTab({ item, active, fontFamily, ops }: { item: ConsoleRef; activ
 }
 
 // A tab's view (#457, #458): a run's terminal or its split's panes (#641), kept mounted while another tab shows, a task's diff (#270), a file's
-// editor pane (#717) or the console (redesign 05)
+// editor pane (#717), a Hive design's design pane (#109) or the console (redesign 05)
 function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, onWake }: TabBodyProps) {
   if (item.kind === 'console') return <ConsoleTab item={item} active={active} fontFamily={fontFamily} ops={ops} />;
   if (item.kind === 'diff') {
@@ -252,6 +253,7 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, o
   if (item.kind === 'file') {
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;
   }
+  if (item.kind === 'design') return <DesignPane activity={activity} path={item.path} label={t('design.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   if (item.kind === 'preview') {
     return <PreviewPane activity={activity} path={item.path} label={t('preview.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   }
@@ -272,8 +274,10 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
   const isEnd = drag.landing?.kind === 'strip' && drag.landing.group === group.id && drag.landing.target === 'end';
   const shown = group.tabs[group.active];
   // The header describes what the keys act on (#641): a split tab's focused pane
-  // a console tab has none: its panel's own line is its header (#755); nor a file tab: the editor's bar names its path (#850)
-  const headed: CenterTabRef | undefined = shown?.kind === 'run' && shown.panes !== undefined ? { kind: 'run', ptyId: shown.panes.focused } : shown?.kind === 'console' || shown?.kind === 'file' ? undefined : shown;
+  // a console tab has none: its panel's own line is its header (#755); nor a file tab: the editor's bar names its path (#850); nor a design
+  // tab: its preview bar does (#109)
+  const isUnheaded = shown?.kind === 'console' || shown?.kind === 'file' || shown?.kind === 'design';
+  const headed: CenterTabRef | undefined = shown?.kind === 'run' && shown.panes !== undefined ? { kind: 'run', ptyId: shown.panes.focused } : isUnheaded ? undefined : shown;
   const focus = (): void => {
     if (focused !== group.id) ops.select(group.id, group.active);
   };

@@ -213,7 +213,7 @@ test('the shortcut map\'s copy (#639): its title and its link to settings, in bo
 });
 
 test('the editor pane\'s copy (#717, #818, #850): the IDE\'s keys and the retired abrir no editor are gone, and the pane\'s name is gone with its header', () => {
-  for (const key of ['files.openInEditor', 'files.openInIde', 'editor.openInIde', 'editor.noIde', 'settings.ide']) assert.equal(key in MESSAGES.en, false, key);
+  for (const key of ['files.openInIde', 'editor.openInIde', 'editor.noIde', 'settings.ide']) assert.equal(key in MESSAGES.en, false, key);
   assert.equal('editor.title' in MESSAGES.en || 'editor.title' in MESSAGES.pt, false);
   for (const language of ['en', 'pt'] as const) assert.equal(Object.values(MESSAGES[language]).some((text) => /abrir no editor|open in editor|abrir na IDE|open in IDE/.test(text)), false, language);
 });
@@ -400,4 +400,19 @@ test('the this PR block\'s copy reads as the spec writes it, in both languages, 
   assert.deepEqual([MESSAGES.pt['pr.block.base.merged.one'], MESSAGES.pt['pr.block.base.merged.other']], ['{list} mergeado', '{list} mergeados']);
   assert.deepEqual([MESSAGES.en['pr.block.base.merged.one'], MESSAGES.en['pr.block.base.merged.other']], ['{list} merged', '{list} merged']);
   assert.deepEqual([MESSAGES.en['pr.others'], MESSAGES.pt['pr.others']], ['other PRs of the task', 'outros PRs da tarefa']);
+});
+
+test('the design pane\'s copy reads as the spec writes it, in both languages; the editor is named the editor pane (#109)', () => {
+  const keys = [
+    'design.tab', 'design.reloaded', 'design.viewport', 'design.viewport.desktop', 'design.viewport.tablet', 'design.viewport.mobile',
+    'design.zoomIn', 'design.zoomOut', 'design.fit', 'design.theme', 'design.theme.dark', 'design.theme.light', 'files.openInEditor',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    '{label} · Design {name}', 'reloaded · the agent changed {file} at {time}', 'viewport', 'desktop', 'tablet', 'mobile',
+    'zoom in', 'zoom out', '⌘0 fits to screen', 'design theme', 'dark', 'light', 'open in the editor pane',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    '{label} · Design {name}', 'recarregado · o agente alterou {file} às {time}', 'viewport', 'desktop', 'tablet', 'mobile',
+    'aumentar zoom', 'diminuir zoom', '⌘0 ajusta à tela', 'tema do design', 'escuro', 'claro', 'abrir no painel do editor',
+  ]);
 });

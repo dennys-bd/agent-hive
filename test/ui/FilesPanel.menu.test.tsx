@@ -14,7 +14,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
 const local: LocalActivity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
-const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
+const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md', 'Landing.hv.html'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url.endsWith('/tree')) return json(TREE);
@@ -100,4 +100,12 @@ test('excluir with two rows selected keeps the selection, asks about both, and c
   expect(screen.getByRole('alertdialog')).toHaveTextContent('Mover 2 itens para a lixeira?');
   await user.click(screen.getByRole('button', { name: 'mover para a lixeira' }));
   expect(posted()).toEqual(['/activities/a-I1/tree/trash {"paths":["README.md","src"]}']);
+});
+
+test('a Hive design\'s menu starts with abrir no painel do editor, which opens it in the editor pane; other files never show it (#109)', async () => {
+  const user = userEvent.setup();
+  render(side());
+  expect(await menuOf(user, await screen.findByRole('button', { name: 'Landing.hv.html' }))).toEqual(['abrir no painel do editor', ...FILE_ITEMS]);
+  await user.click(screen.getByRole('menuitem', { name: 'abrir no painel do editor' }));
+  expect(openFile).toHaveBeenCalledWith('I1', 'Landing.hv.html', undefined, { editor: true });
 });

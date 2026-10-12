@@ -11,7 +11,7 @@ import type { PanelId, ViewId } from '@/lib/dock-layout';
 export interface TabRequest { tab?: CenterTabRef }
 
 /** The tab a file opens in (#717, #697, #668): its editor pane, its preview pane or its changes pane. */
-export type FileTabKind = 'file' | 'preview' | 'changes';
+export type FileTabKind = 'file' | 'preview' | 'changes' | 'design';
 
 /** Which view the center shows (#458, #533): Automação the flow, Atividades the picked activity or Home. The dock holds it (#821). */
 export type CenterMode = ViewId;
