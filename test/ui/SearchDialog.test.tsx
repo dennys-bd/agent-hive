@@ -253,6 +253,16 @@ test('with no activity open arquivos says to open one, reads no tree and never s
   expect(fetch).not.toHaveBeenCalled();
 });
 
+test('while the tree is read, arquivos never says nothing found (#133)', async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+  const activities = activitiesOf(STATE);
+  const activity = activities.find((a) => a.kind === 'task' && a.task.item.itemId === 'I466');
+  render(<SearchDialog scope="files" ctx={ctxOf(STATE, { activity })} activities={activities} onClose={vi.fn()} />);
+  await user.keyboard('daemon');
+  expect(screen.queryByText('nada encontrado para "daemon"')).not.toBeInTheDocument();
+});
+
 test('a tree that cannot be read: arquivos says so; tudo lists no files (#133)', async () => {
   const user = userEvent.setup();
   renderFiles(() => json({ error: 'git failed' }, 500));

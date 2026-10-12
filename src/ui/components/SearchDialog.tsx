@@ -215,7 +215,7 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
                 })}
               </CommandGroup>
             ))}
-            {groups.length === 0 && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
+            {groups.length === 0 && !(scope === 'files' && tree?.status === 'loading') && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
           </CommandList>
           <SearchFooter secondary={secondaryOf(current)} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
         </Command>
