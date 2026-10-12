@@ -22,6 +22,7 @@ export interface TreeActions {
   paste(into: string): void;
   copyPath(path: string): void;
   copyRelativePath(path: string): void;
+  copyCheckoutPath?(path: string): void; // #131: present only while the tree has a checkout (a task's worktree)
   reveal(path: string): void; // '' = the root
   openTerminal(folder: string): void; // '' = the root
   openChanges(path: string): void;
@@ -31,7 +32,7 @@ export interface TreeActions {
 const route = (activityId: string, name: string): string => `/activities/${encodeURIComponent(activityId)}/${name}`; // #629
 const EDITOR: OpenFileHow = { editor: true }; // #109: past the design pane a click opens
 
-// Copy path and copy relative path: text on the clipboard
+// Copy path, copy relative path and copy path from checkout: text on the clipboard
 function copyText(text: string): void {
   navigator.clipboard.writeText(text).then(() => toast.success(t('detail.copied')), (err: Error) => toast.error(err.message));
 }
@@ -50,8 +51,9 @@ export function openTerminalIn(target: RunTarget, folder: string, openRun?: Open
 export interface TreeOps { actions: TreeActions; trashing?: string[]; confirmTrash(): void; cancelTrash(): void }
 
 /** The tree's actions over the activity and its root (undefined until the tree answers: what needs it does nothing), the inline input's two
- *  from `edits`. Delete waits for its dialog: `trashing` holds what it asks about. */
-export function useTreeActions(target: RunTarget, root: string | undefined, edits: Pick<TreeActions, 'newItem' | 'rename'>): TreeOps {
+ *  from `edits`. Copy path from checkout exists only while the tree has a checkout (#131): a local activity's root is the checkout itself.
+ *  Delete waits for its dialog: `trashing` holds what it asks about. */
+export function useTreeActions(target: RunTarget, root: string | undefined, checkout: string | undefined, edits: Pick<TreeActions, 'newItem' | 'rename'>): TreeOps {
   const openRun = useOpenRun();
   const openChanges = useOpenChanges(activityKey(target));
   const openFile = useOpenFile();
@@ -68,6 +70,7 @@ export function useTreeActions(target: RunTarget, root: string | undefined, edit
     paste: (into) => pasteInto(id, into),
     copyPath: (path) => withRoot((known) => copyText(`${known}/${path}`)),
     copyRelativePath: copyText,
+    ...(checkout === undefined ? {} : { copyCheckoutPath: (path: string) => copyText(`${checkout}/${path}`) }),
     reveal: (path) => void act(route(id, 'reveal'), path === '' ? undefined : { path }),
     openTerminal: (folder) => openTerminalIn(target, folder, openRun),
     openChanges: (path) => openChanges?.(path),

@@ -6,6 +6,7 @@ import { FileOpenerContext, type OpenFile, RunOpenerContext } from '@/components
 import { setLanguage } from '@/i18n';
 import type { Task, TaskTree } from '../../src/types';
 import type { LocalActivity, TaskActivity } from '@/lib/activities';
+import { runShortcut } from '@/lib/dock-layout';
 import { localPairOf, taskPairOf } from '../fixtures/work';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -15,9 +16,10 @@ const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', u
 const target: TaskActivity = { kind: 'task', ...taskPairOf('I1', { slug: 'hive-1-task-1', branch: 'hive/1-task-1' }), task, runs: [], sessions: [], status: 'empty', worker: false };
 const local: LocalActivity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
 const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'README.md', 'Landing.hv.html'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
+const TASK_TREE: TaskTree = { ...TREE, checkout: '.hive/worktrees/hive-1-task-1' }; // #131: a local activity's tree has none
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-  if (url.endsWith('/tree')) return json(TREE);
+  if (url.endsWith('/tree')) return json(url.includes('/a-I1/') ? TASK_TREE : TREE);
   return url.endsWith('/shell') ? json({ ok: true, ptyId: 'T1' }) : new Response(null, { status: 204 });
 });
 const openFile = vi.fn<OpenFile>(() => true);
@@ -32,7 +34,9 @@ const menuOf = async (user: ReturnType<typeof userEvent.setup>, el: Element): Pr
   await user.pointer({ keys: '[MouseRight]', target: el });
   return (await screen.findAllByRole('menuitem')).map((item) => item.textContent ?? '');
 };
-const FILE_ITEMS = ['abrir alterações', 'abrir no terminal integrado', 'revelar no FinderCtrl+Alt+R', 'recortarCtrl+X', 'copiarCtrl+C', 'colarCtrl+V', 'copiar caminho', 'copiar caminho relativo', 'renomearF2', 'excluirDelete'];
+const CHECKOUT_ITEM = 'copiar caminho a partir do checkout';
+const FILE_ITEMS = ['abrir alterações', 'abrir no terminal integrado', 'revelar no FinderCtrl+Alt+R', 'recortarCtrl+X', 'copiarCtrl+C', 'colarCtrl+V', 'copiar caminho', 'copiar caminho relativo', CHECKOUT_ITEM, 'renomearF2', 'excluirDelete'];
+const LOCAL_FILE_ITEMS = FILE_ITEMS.filter((item) => item !== CHECKOUT_ITEM);
 const FOLDER_ITEMS = ['novo arquivo', 'nova pasta', ...FILE_ITEMS.slice(1)];
 const ROOT_ITEMS = ['novo arquivo', 'nova pasta', 'abrir no terminal integrado', 'revelar no FinderCtrl+Alt+R', 'colarCtrl+V'];
 
@@ -47,10 +51,10 @@ test('a file\'s menu: abrir alterações, the terminal and reveal, cut, copy and
   expect(openFile).toHaveBeenCalledWith('I1', 'README.md', undefined, { changes: true });
 });
 
-test('a local activity\'s file has the same menu, Open Changes included (#818, #633)', async () => {
+test('a local activity\'s file has the same menu, Open Changes included, without copiar caminho a partir do checkout: its root is the checkout (#818, #633, #131)', async () => {
   const user = userEvent.setup();
   render(side(local));
-  expect(await menuOf(user, await screen.findByRole('button', { name: 'README.md' }))).toEqual(FILE_ITEMS);
+  expect(await menuOf(user, await screen.findByRole('button', { name: 'README.md' }))).toEqual(LOCAL_FILE_ITEMS);
 });
 
 test('a folder\'s menu has no abrir alterações; its terminal opens in that folder through the shell route and lands as the task\'s terminal (#818)', async () => {
@@ -85,6 +89,32 @@ test('copiar caminho relativo puts the path alone on the clipboard (#818)', asyn
   await menuOf(user, await screen.findByRole('button', { name: 'README.md' }));
   await user.click(screen.getByRole('menuitem', { name: 'copiar caminho relativo' }));
   await waitFor(async () => expect(await navigator.clipboard.readText()).toBe('README.md'));
+});
+
+test('copiar caminho a partir do checkout puts the checkout and the path on the clipboard, from a file\'s and a folder\'s menu (#131)', async () => {
+  const user = userEvent.setup();
+  render(side());
+  await menuOf(user, await screen.findByRole('button', { name: 'README.md' }));
+  await user.click(screen.getByRole('menuitem', { name: CHECKOUT_ITEM }));
+  await waitFor(async () => expect(await navigator.clipboard.readText()).toBe('.hive/worktrees/hive-1-task-1/README.md'));
+  await menuOf(user, screen.getByRole('button', { name: 'src' }));
+  await user.click(screen.getByRole('menuitem', { name: CHECKOUT_ITEM }));
+  await waitFor(async () => expect(await navigator.clipboard.readText()).toBe('.hive/worktrees/hive-1-task-1/src'));
+});
+
+test('the treeCopyCheckoutPath shortcut copies the focused row from the checkout in a task\'s tree, and does nothing in a local activity\'s (#131)', async () => {
+  userEvent.setup(); // installs the clipboard stub readText reads
+  const { unmount } = render(side());
+  (await screen.findByRole('button', { name: 'README.md' })).focus();
+  runShortcut('treeCopyCheckoutPath');
+  await waitFor(async () => expect(await navigator.clipboard.readText()).toBe('.hive/worktrees/hive-1-task-1/README.md'));
+  unmount();
+  await navigator.clipboard.writeText('untouched'); // the stub cannot read back an empty string
+  render(side(local));
+  (await screen.findByRole('button', { name: 'README.md' })).focus();
+  runShortcut('treeCopyCheckoutPath');
+  await new Promise((resolve) => setTimeout(resolve, 0)); // let a stray async write land before reading
+  expect(await navigator.clipboard.readText()).toBe('untouched');
 });
 
 test('excluir with two rows selected keeps the selection, asks about both, and confirming posts them to the trash (#818)', async () => {

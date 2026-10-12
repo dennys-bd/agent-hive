@@ -90,6 +90,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('treeOpenTerminal', UNBOUND, 'files'),
   row('treeCopyPath', UNBOUND, 'files'),
   row('treeCopyRelativePath', UNBOUND, 'files'),
+  row('treeCopyCheckoutPath', UNBOUND, 'files'), // #131: the path from the main checkout
   fixed('treeCut', 'files', same(['CmdOrCtrl+X'])),
   fixed('treeCopy', 'files', same(['CmdOrCtrl+C'])),
   fixed('treePaste', 'files', same(['CmdOrCtrl+V'])),

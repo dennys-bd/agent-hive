@@ -7,13 +7,14 @@ import { onShortcutKey } from '@/lib/dock-layout';
 // dialog takes the focus out of the tree, so its Enter confirms it and never renames. Cut, copy and paste are the DOM's own events
 // (tree-paste.ts), not these.
 
-export type TreeKey = 'newFile' | 'newFolder' | 'rename' | 'trash' | 'reveal' | 'terminal' | 'copyPath' | 'copyRelativePath';
+export type TreeKey = 'newFile' | 'newFolder' | 'rename' | 'trash' | 'reveal' | 'terminal' | 'copyPath' | 'copyRelativePath' | 'copyCheckoutPath';
 
 const TREE_KEYS: ReadonlyArray<[TreeKey, OperationId]> = [
   ['newFile', 'treeNewFile'], ['newFolder', 'treeNewFolder'], ['rename', 'treeRename'], ['trash', 'treeDelete'], ['reveal', 'treeReveal'],
   ['terminal', 'treeOpenTerminal'], ['copyPath', 'treeCopyPath'], ['copyRelativePath', 'treeCopyRelativePath'],
+  ['copyCheckoutPath', 'treeCopyCheckoutPath'],
 ];
-const NEEDS_ROW: readonly TreeKey[] = ['rename', 'trash', 'copyPath', 'copyRelativePath'];
+const NEEDS_ROW: readonly TreeKey[] = ['rename', 'trash', 'copyPath', 'copyRelativePath', 'copyCheckoutPath'];
 
 const isInTree = (target: EventTarget | null, tree: HTMLElement | null): boolean =>
   tree !== null && target instanceof Element && tree.contains(target) && target.closest('[data-tree-input]') === null;
@@ -39,6 +40,7 @@ export function runTreeKey(key: TreeKey, actions: TreeActions, selectedOf: (path
     terminal: () => actions.openTerminal(folder),
     copyPath: () => actions.copyPath(path),
     copyRelativePath: () => actions.copyRelativePath(path),
+    copyCheckoutPath: () => actions.copyCheckoutPath?.(path), // #131: nothing on a local activity's tree
   };
   run[key]();
 }
