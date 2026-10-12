@@ -556,6 +556,7 @@ const en = {
   // #113: the design comments panel
   'design.comments': 'comments', 'design.comments.toggle': 'show or hide the comments', 'design.comments.hide': 'hide',
   'design.tab.open': 'open · {n}', 'design.tab.resolved': 'resolved · {n}', 'design.area': 'area · {w}×{h}', 'design.composer.cancel': 'esc cancels',
+  'design.comment': 'comment', 'design.comment.toggle': 'comment · C',
   'design.status.draft': 'draft', 'design.status.agent': 'with the agent · {session}', 'design.status.replied': 'the agent replied',
   'design.status.agentDone': 'the agent marked it resolved', 'design.status.you': 'resolved by you', 'design.status.confirmed': 'resolved by the agent · you confirmed',
   'design.action.delete': 'delete', 'design.action.send': 'send', 'design.action.resolve': 'resolve', 'design.action.reply': 'reply', 'design.action.reopen': 'reopen', 'design.action.confirm': 'confirm',
@@ -2365,6 +2366,7 @@ const pt: Record<MessageKey, string> = {
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
   'design.comments': 'comentários', 'design.comments.toggle': 'mostrar ou esconder os comentários', 'design.comments.hide': 'esconder',
   'design.tab.open': 'abertos · {n}', 'design.tab.resolved': 'resolvidos · {n}', 'design.area': 'área · {w}×{h}', 'design.composer.cancel': 'esc cancela',
+  'design.comment': 'comentar', 'design.comment.toggle': 'comentar · C',
   'design.status.draft': 'rascunho', 'design.status.agent': 'com o agente · {session}', 'design.status.replied': 'o agente respondeu',
   'design.status.agentDone': 'o agente marcou como resolvido', 'design.status.you': 'resolvido por você', 'design.status.confirmed': 'resolvido pelo agente · você confirmou',
   'design.action.delete': 'excluir', 'design.action.send': 'enviar', 'design.action.resolve': 'resolver', 'design.action.reply': 'responder', 'design.action.reopen': 'reabrir', 'design.action.confirm': 'confirmar',
