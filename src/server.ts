@@ -68,7 +68,7 @@ import { registerRuleRoutes } from './server-rules.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
-import { configFrom, hiveSourceRefusal, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
+import { configFrom, hiveSourceRefusal, movedStages, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
 import { killStray, writePrompt } from './spawn.js';
 import { launchInternalPty } from './spawn-internal.js';
 import { createPtyPool } from './ptys.js';
@@ -706,21 +706,26 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live) throw new Error('Hive já configurado: use reconfigure()');
     const runtime = await activate(config, sources);
     const saved = await loadState(home, workspaceScope(config));
-    // stages come from the config; tasks from the saved state are re-listed by the poll() below, which is the source of truth
-    // #727: signals on the state before boot, which opens on onOpen
-    live = { runtime, state: withWorkspaces({ ...saved, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals }, config) };
+    // #861: the saved stages first, so a stage a hand edit removed while the Hive was down is a deletion setStages places, never a stranded
+    // task; a home with none saved takes the config's. #727: signals on the state before boot, which opens on onOpen
+    const flow = saved.stages.length > 0 ? { stages: saved.stages, transitions: saved.transitions } : { stages: config.comb.stages, transitions: config.comb.transitions };
+    live = { runtime, state: withWorkspaces({ ...saved, ...flow, signals: config.signals }, config) };
     await boot(saved);
+    if (!isDeepStrictEqual(flow.stages, config.comb.stages) || !isDeepStrictEqual(flow.transitions, config.comb.transitions)) {
+      await dispatch({ type: 'setStages', stages: config.comb.stages, transitions: config.comb.transitions });
+    }
     if (!isDeepStrictEqual(saved.budget, config.budget)) await dispatch({ type: 'setBudget', budget: config.budget });
     if (!isDeepStrictEqual(saved.usageRules, config.usageRules)) await dispatch({ type: 'setUsageRules', usageRules: config.usageRules });
     pollInBackground(refreshPlanLimits);
   }
 
-  async function reconfigure(config: Config, sources: Map<string, Source>, renames: Record<string, string>): Promise<void> {
+  async function reconfigure(config: Config, sources: Map<string, Source>, renames: Record<string, string>, stageRenames: Record<string, string>): Promise<void> {
     if (!live) throw new Error('Hive não configurado: use configure()');
     const runtime = await activate(config, sources);
     live = { runtime, state: live.state };
     // First (#278): every fill below, setSources and the poll see the tasks under the names the new runtime has
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
+    if (Object.keys(stageRenames).length > 0) await dispatch({ type: 'renameStages', renames: stageRenames }); // #861: before setStages, so no renamed stage reads as deleted
     // setBudget, setUsageRules, setStages and setWorkspaces run fill, whose effects (deleteActivity, sourceAction, spawn) can take a
     // while: POST /settings answers once the config is written and reduced, not after those effects settle (#476). renameSources,
     // setDeleteActivity, setShutdownIdle, setApprovalMinutes, setRateLimitWait, setDefaultAgent and setSources emit no effects, so they stay awaited. queueSave only
@@ -981,7 +986,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     try {
       await writeConfigFile(config);
       log.info('settings saved');
-      await (live ? reconfigure(config, sources, body.renames ?? {}) : configure(config, sources)); // a first setup has no tasks to carry (#278)
+      await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
       return;

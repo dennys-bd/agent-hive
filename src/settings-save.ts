@@ -4,7 +4,7 @@ import { migrateTransitions } from './config-migrate.js';
 import { taskWorkspace, loadConfigIfPresent, parseConfig } from './config.js';
 import type { Refusal } from './server-tasks.js';
 import { parseSetup } from './setup-script.js';
-import type { Config, Language, Workspace, SettingsBody, State } from './types.js';
+import type { Config, Language, Workspace, SettingsBody, SourceConfig, Stage, State, UsageRule } from './types.js';
 import { workspacePathProblem } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -24,11 +24,13 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
   // #134: a body that sends stages without transitions (an API caller) gets them from those stages, as a file from before #134 does; one that
   // sends neither keeps the saved ones
   const transitions = body.transitions ?? (body.stages === undefined ? current?.comb.transitions : undefined);
+  // #861: the stage renames, checked against the saved and the sent stages; what the saved file names by a stage follows them
+  const stageRenames = stageRenamesOf(body.stageRenames, current?.comb.stages ?? [], body.stages ?? current?.comb.stages ?? []);
   return parseConfig(migrateTransitions({
     comb: {
       prefix: body.prefix,
       workspaces: body.workspaces ?? current?.comb.workspaces, // the form's workspaces list (#179)
-      sources: body.sources ?? current?.comb.sources, // the form's sources list (#180); [] = no source
+      sources: body.sources ?? renamedSwitchAt(current?.comb.sources, stageRenames), // the form's sources list (#180); [] = no source
       stages: body.stages ?? current?.comb.stages,
       transitions,
       commands: body.commands ?? current?.comb.commands, // the form always sends it (#511), [] included
@@ -40,7 +42,7 @@ export async function configFrom(home: string, body: Partial<SettingsBody>): Pro
     branch: body.branch ?? current?.branch, // the form always sends it (empty field = key absent); an API caller that omits it keeps the current template
     logLevel: current?.logLevel, // never in the body: the file is the switch
     budget: body.budget ?? current?.budget,
-    usageRules: body.usageRules ?? current?.usageRules,
+    usageRules: body.usageRules ?? renamedRules(current?.usageRules, stageRenames),
     language: body.language ?? current?.language, // the form always sends it; an API caller that omits it keeps the saved one
     theme: body.theme ?? current?.theme, // the form always sends it (#296); an API caller that omits it keeps the saved one
     terminalFont: body.terminalFont ?? current?.terminalFont, // the form always sends it (#376), "" included; an API caller that omits it keeps the saved one
@@ -181,3 +183,36 @@ export function hiveSourceRefusal(next: Config, state: State | undefined, langua
   const n = state.tasks.filter((c) => c.created).length;
   return n === 0 ? undefined : { status: HTTP_CONFLICT, message: HIVE_BUSY[language](n) };
 }
+
+const STAGE_RENAMES_SHAPE = 'stageRenames must map stage names to stage names';
+
+/** A stage rename map with the stages renamed to themselves dropped (#861); anything else renames nothing (configFrom already refused it). */
+export const movedStages = (raw: unknown): Record<string, string> =>
+  (isNameMap(raw) ? Object.fromEntries(Object.entries(raw).filter(([from, to]) => from !== to)) : {});
+
+/** A save's stage renames (#861), checked: each key a stage of the saved config, each value a stage the save sends, no two onto one. Throws the
+ * refusal's words, which saveSettings answers as a 400, as it does every configFrom failure. */
+export function stageRenamesOf(raw: unknown, saved: readonly Stage[], next: readonly Stage[]): Record<string, string> {
+  if (raw === undefined) return {};
+  if (!isNameMap(raw)) throw new Error(STAGE_RENAMES_SHAPE);
+  const moved = Object.entries(movedStages(raw));
+  const unknown = moved.find(([from]) => !saved.some((s) => s.name === from));
+  if (unknown) throw new Error(`Unknown stage to rename: "${unknown[0]}"`);
+  const stray = moved.find(([, to]) => !next.some((s) => s.name === to));
+  if (stray) throw new Error(`Renamed stage "${stray[1]}" is not in the new stages`);
+  const twice = moved.find(([, to], i) => moved.findIndex(([, other]) => other === to) !== i);
+  if (twice) throw new Error(`Two stages renamed to "${twice[1]}"`);
+  return Object.fromEntries(moved);
+}
+
+const renamedStage = (name: string, renames: Record<string, string>): string => (Object.hasOwn(renames, name) ? renames[name] : name);
+
+/** The saved usage rules with each stage cap under its stage's new name (#861): what a body that omits usageRules keeps. The form sends its own,
+ * already under the new names. */
+export const renamedRules = (rules: UsageRule[] | undefined, renames: Record<string, string>): UsageRule[] | undefined =>
+  rules?.map((r) => (r.stage === undefined ? r : { ...r, stage: renamedStage(r.stage, renames) }));
+
+/** The saved sources with each switchAt under its stage's new name (#861): what a body that omits sources keeps. The form sends switchAt by its
+ * stage draft, already under the new name. */
+export const renamedSwitchAt = (sources: SourceConfig[] | undefined, renames: Record<string, string>): SourceConfig[] | undefined =>
+  sources?.map((s) => ({ ...s, switchAt: renamedStage(s.switchAt, renames) }));

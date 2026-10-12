@@ -47,6 +47,6 @@ export function placeVanished(state: State, stages: Stage[]): Placed {
     if (to === undefined) return acc;
     const live = activityOf(acc.state, taskId(task));
     const isHeld = live?.workerId !== undefined || inAction(live);
-    return isHeld ? placeHeld(acc, task, to) : { ...acc, state: withTask(acc.state, enter(task, to)) };
+    return isHeld ? placeHeld(acc, task, to) : { state: withTask(acc.state, enter(task, to)), before: acc.before, effects: acc.effects };
   }, { state, before: state.tasks, effects: [] });
 }

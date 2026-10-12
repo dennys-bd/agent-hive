@@ -1537,6 +1537,9 @@ export interface SettingsBody {
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */
   renames?: Record<string, string>;
+  /** Saved stage name → new name (#861). The form sends it only when a stage was renamed; an API caller that omits it renames nothing. Never
+   * written to hive.config.json. */
+  stageRenames?: Record<string, string>;
 }
 
 export interface SettingsResult {

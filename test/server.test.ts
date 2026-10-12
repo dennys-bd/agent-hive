@@ -18,6 +18,7 @@ import { activityOf, prsOf, recordWithSession, resultOf, taskOfWorker } from '..
 import { activityIdOf, readyOn, withWork, workId, workPath } from './fixtures/work.js';
 import { sessionsOf, slugFor } from '../src/tasks.js';
 import { deleteActivityOnDisk, openTask } from '../src/server-tasks.js';
+import { saveState } from '../src/state-store.js';
 import { createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import { CONTINUE_PROMPT } from '../src/server-spawn.js';
@@ -2710,4 +2711,29 @@ test('POST /rules/disable and /rules/enable (#297): a bad source, percent or unt
   const on = await postJson(`${base}/rules/enable`, { source: 'session', percent: 80 });
   assert.deepEqual([on.status, await json(on)], [200, { ok: true }]);
   assert.deepEqual(server.getState()?.disabledRules, []);
+});
+
+test('a save that renames a stage carries its tasks: the running one stays in it under the new name and its Stop ends the renamed stage through its transition (#861)', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, repo, server, workers } = await start(t, BODY, log);
+  const ptyId = worker0(server).runId!;
+  const renamed = { ...BODY, workspaces: workspacesAt(repo), stages: [{ ...STAGES[0], name: 'Spec' }], stageRenames: { fila: 'Spec' } };
+  assert.equal((await postJson(`${base}/settings`, onOwnStages(renamed))).status, 200);
+  assert.deepEqual([task0(server).stage, worker0(server).runId, work0(server)?.stageGone], ['Spec', ptyId, undefined]);
+  await markDone(server, ptyId);
+  assert.equal((await hookEvent(base, ptyId, { hook_event_name: 'Stop' })).status, 204);
+  assert.deepEqual(server.getState()?.tasks, [], 'the renamed stage ended and its transition took the task out');
+  assert.ok(lines.includes('INFO setColumn #board:I1 → In review ok'), lines.join('\n'));
+  assert.equal(workers.length, 1);
+});
+
+test('a boot whose config lost a stage the saved state uses places its task in the destination instead of stranding it (#861)', async (t) => {
+  const { home, repo } = await tempHive(t);
+  const parked: Task = { item: { itemId: 'board:I7', source: 'board', id: '7', title: 'Task 7', body: '', url: 'https://github.com/acme/r/issues/7' }, stage: 'gone', boardColumn: 'Nowhere', auto: false };
+  await saveState(home, { ...initialState(0), ...chained([...STAGES, { name: 'gone', from: {} }]), tasks: [parked] });
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { workspaces: workspacesAt(repo), ...onOwnStages(BODY) })).status, 200);
+  assert.equal(server.getState()!.tasks.find((c) => c.item.itemId === 'board:I7')?.stage, 'fila', 'gone was last: fila comes before it');
 });
