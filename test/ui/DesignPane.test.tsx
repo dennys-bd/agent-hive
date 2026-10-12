@@ -149,3 +149,28 @@ test('the first version is remembered and a repeat or a gone file changes nothin
   const mark = screen.getByTitle(/^recarregado · o agente alterou Landing\.hv\.html às \d{2}:\d{2}$/);
   expect(mark).toHaveTextContent(/^\d{2}:\d{2}$/);
 });
+
+test('the first version is read at once, so a change before the poll\'s first tick still reloads the frame (#109)', async () => {
+  render(pane());
+  const first = await screen.findByTitle(NAME);
+  await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); }); // the immediate read settles: v1 is the baseline
+  version = 'v2';
+  await poll();
+  expect(frame()).not.toBe(first);
+});
+
+test('a size past the cap is held to 100 000 px, so a design cannot choke the canvas (#109)', async () => {
+  render(pane());
+  await screen.findByTitle(NAME);
+  fromFrame({ hive: 'design', type: 'size', height: 1e9 });
+  expect(frame()).toHaveAttribute('height', '100000');
+});
+
+test('a pointer down on the canvas puts the focus in the pane, so ⌘0 and Space reach it (#109)', async () => {
+  render(pane());
+  await screen.findByTitle(NAME);
+  const canvas = document.querySelector<HTMLElement>('[data-design-canvas]');
+  if (canvas === null) throw new Error('no canvas');
+  fireEvent.pointerDown(canvas);
+  expect(document.activeElement).toBe(screen.getByRole('region', { name: LABEL }));
+});

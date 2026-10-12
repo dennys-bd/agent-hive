@@ -1,7 +1,7 @@
-import { type CSSProperties, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { useFileVersion } from '@/hooks/use-file-version';
+import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX, VIEWPORTS } from '@/hooks/use-design-zoom';
 import { t } from '@/i18n';
 import type { Activity } from '@/lib/activities';
@@ -20,6 +20,7 @@ export interface DesignPaneProps { activity: Activity; path: string; label: stri
 
 const FRAME_ASPECT = 0.625; // the frame's height before the bridge's first size: 800 px at desktop
 const FULL = 100;
+const MAX_FRAME_HEIGHT = 100_000; // a design may post any size: past this, the canvas's layout would choke
 const SHOWN: CSSProperties = { flex: '1 1 0%', opacity: 1, pointerEvents: 'auto' };
 const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'none' }; // mounted: a tab switch never reloads the frame
 const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' };
@@ -61,6 +62,14 @@ function useReloads(activityId: string, path: string, isShown: boolean): Reloads
   const [count, setCount] = useState(0);
   const seen = useRef<string | undefined>(undefined);
   const isPending = useRef(false);
+  // The first version read at once, not at the poll's first tick 2 s later: a change in between would become the baseline and never reload.
+  // ponytail: a pane mounted behind another tab takes its baseline when first shown; re-key the frame on first show if that ever bites
+  useEffect(() => {
+    if (!isShown || seen.current !== undefined) return undefined;
+    let live = true;
+    readVersion(activityId, path).then((version) => { if (live && seen.current === undefined && typeof version === 'string') seen.current = version; }, () => undefined);
+    return () => { live = false; };
+  }, [activityId, path, isShown]);
   useFileVersion(activityId, path, isShown, (version) => {
     if (version === null || version === seen.current) return;
     if (seen.current !== undefined) {
@@ -99,7 +108,7 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
       const { hive, type, height: next } = data as Record<string, unknown>;
       if (hive !== 'design') return;
       if (type === 'ready') ready();
-      else if (type === 'size' && typeof next === 'number' && Number.isFinite(next) && next >= 0) setHeight(next);
+      else if (type === 'size' && typeof next === 'number' && Number.isFinite(next) && next >= 0) setHeight(Math.min(next, MAX_FRAME_HEIGHT));
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -161,6 +170,11 @@ function DesignCanvas({ canvas, frame, url, name, width, height, zoom, reloads }
   );
 }
 
+// A click on the bar or the canvas's margin puts the focus in the pane, so ⌘0 and Space reach it; a control still takes its own focus after
+const focusPane = (event: ReactPointerEvent<HTMLElement>): void => {
+  if (!event.currentTarget.contains(document.activeElement)) event.currentTarget.focus({ preventScroll: true });
+};
+
 /** The design pane (#109): the preview bar over the canvas. No PaneHeader above it: the bar names the path. Collapsed like PreviewPane
  *  while another tab shows. */
 export function DesignPane({ activity, path, label, active }: DesignPaneProps) {
@@ -183,7 +197,7 @@ export function DesignPane({ activity, path, label, active }: DesignPaneProps) {
     postTheme(frame.current, next);
   };
   return (
-    <section aria-label={label} tabIndex={-1} onKeyDown={zoom.onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
+    <section aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={zoom.onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
       <DesignBar path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={setViewport} onTheme={pickTheme} />
       {mint.status === 'error'
         ? <p role="alert" className="p-3 text-destructive text-xs">{mint.message}</p>
