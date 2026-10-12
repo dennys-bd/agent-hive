@@ -376,16 +376,19 @@ test('reducer never mutates its input', () => {
   assert.equal(JSON.stringify(gone), goneSnapshot);
 });
 
-test('setStages replaces the stages, drops stopped tasks whose stage vanished and keeps running ones until they finish', () => {
-  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state;
-  const renamed: LegacyStage[] = [{ name: 'triage', from: { board: ['Backlog'] }, prompt: 'x' }];
-  const { state, effects } = reduce(first, { type: 'setStages', ...chained(renamed) });
-  assert.deepEqual(state.stages, renamed);
-  assert.deepEqual(state.tasks.map((c) => c.item.id), ['1'], 'the running one stays');
+test('setStages moves the tasks of a deleted stage instead of dropping them: a stopped one enters its destination, a running one is placed with stageGone and halts at its Stop (#861)', () => {
+  const first = signaled(polled(base(1), [listed(1), listed(2)]).state, 'yellow').state; // 1 runs spec, 2 waits there
+  const triage: LegacyStage[] = [{ name: 'triage', from: { board: ['Backlog'] }, prompt: 'x' }];
+  const { state, effects } = reduce(first, { type: 'setStages', ...chained(triage) });
+  assert.deepEqual(state.stages, triage);
+  assert.deepEqual(state.tasks.map((c) => [c.item.id, c.stage]), [['1', 'triage'], ['2', 'triage']], 'the stage that pulls their column');
+  assert.equal(work(state, 1)?.stageGone, 'spec');
   assert.equal(effects.length, 0);
   const done = stopped(state, state.workers[0].runId!);
-  assert.deepEqual(done.effects.map((e) => e.type), ['kill', 'forgetScrollback'], 'unknown stage: no write, no next');
-  assert.deepEqual([done.state.tasks.map((c) => c.item.id), work(done.state, 1)?.error], [['1'], `${STAGE_GONE}spec`], '#861: halted, never removed');
+  assert.equal(done.effects.some((e) => e.type === 'setColumn' || e.type === 'sourceAction'), false, 'no transition, no source action');
+  assert.deepEqual([task(done.state, 1)?.stage, work(done.state, 1)?.error, holds(done.state, 1, 'stageGone')], ['triage', `${STAGE_GONE}spec`, false]);
+  const again = started(done.state, 'board:item1');
+  assert.deepEqual(again.effects.flatMap((e) => (e.type === 'spawn' ? [e.stage.name] : [])), ['triage'], 'a start runs it in its new stage');
 });
 
 test('setMax up adds empty workers and fills them; down marks extra occupied workers draining and drops surplus empty ones', () => {
@@ -2000,11 +2003,11 @@ test('an open hive blocker stops its task\'s start; closing the blocker leaves a
   assert.equal(reduce(freed, { type: 'start', itemId: 'local:1' }).effects.some((e) => e.type === 'spawn'), true, 'freed: it starts');
 });
 
-test('a settings save that removes the stage of a stopped local task moves it to the first Comb stage instead of dropping it', () => {
+test('a settings save that removes the stage of a stopped local task moves it to the nearest surviving stage before it (#861)', () => {
   const made = created(signaled(base(1), 'yellow').state, 'review').state; // yellow: nothing spawns, the task stays stopped
   const stages = made.stages.filter((c) => c.name !== 'review');
   const saved = reduce(made, { type: 'setStages', ...chained(stages) }).state;
-  assert.deepEqual(saved.tasks.map((c) => [c.item.id, c.stage]), [['HIVE-1', stages[0].name]], 'a board task would come back through its from; a local one has nowhere else to come from');
+  assert.deepEqual(saved.tasks.map((c) => [c.item.id, c.stage]), [['HIVE-1', 'dev']], 'review was last: dev comes before it');
 });
 
 // A stopped task in spec, marked manual and with its worktree, under yellow so nothing fills on its own (#164)
@@ -3506,4 +3509,34 @@ test('a restart after the halt carries no stageGone into the new run (#861)', ()
   const spawn = effects.at(-1);
   assert.ok(spawn?.type === 'spawn');
   assert.equal('stageGone' in spawn.activity, false);
+});
+
+test('setStages sends a stopped task of a deleted stage to the stage that pulls its column, else the nearest surviving one before it, else the first after it; its activity stays (#861)', () => {
+  const red = signaled(base(1), 'red').state;
+  const parked = withLive(polled(red, [listed(1, 'Ready')]).state, 1, { worktree: WORKTREE }); // stopped in dev
+  const id = ACT(parked, 1);
+  const saved = (stages: LegacyStage[]): State => reduce(parked, { type: 'setStages', ...chained(stages) }).state;
+  const pulled = saved([STAGES[0], { name: 'build', from: { board: ['Ready'] }, prompt: 'x' }, STAGES[2]]);
+  assert.deepEqual([task(pulled, 1)?.stage, ACT(pulled, 1)], ['build', id], 'the stage that pulls Ready, the same activity');
+  assert.equal(task(saved([STAGES[0], STAGES[2]]), 1)?.stage, 'spec', 'none pulls Ready: the nearest surviving stage before dev');
+  const first = polled(red, [listed(2)]).state; // stopped in spec
+  assert.equal(task(reduce(first, { type: 'setStages', ...chained([STAGES[1], STAGES[2]]) }).state, 2)?.stage, 'dev', 'spec was first: the first surviving stage after it');
+});
+
+test('a running task moved into an action or a gate stage by a deletion fires no entry, gate or action while its worker runs (#861)', () => {
+  const running = withLive(polled(base(1), [listed(1)]).state, 1, { worktree: WORKTREE }); // 1 runs spec, with something to clean
+  const intos: LegacyStage[] = [{ name: 'clean', from: { board: ['Backlog'] }, action: 'deleteActivity' }, { name: 'gate', from: { board: ['Backlog'] }, approval: true }];
+  for (const into of intos) {
+    const { state, effects } = reduce(running, { type: 'setStages', ...chained([into]) });
+    assert.deepEqual([task(state, 1)?.stage, work(state, 1)?.stageGone], [into.name, 'spec'], into.name);
+    assert.deepEqual(effects, [], `${into.name}: no deleteActivity, no source write`);
+    assert.deepEqual([work(state, 1)?.approval, work(state, 1)?.deleting], [undefined, undefined], into.name);
+  }
+});
+
+test('one save that renames a stage and deletes another: the deletion\'s destination is read under the new names (#861)', () => {
+  const parked = polled(signaled(base(1), 'red').state, [listed(1, 'Ready')]).state; // stopped in dev
+  const renamed = reduce(parked, { type: 'renameStages', renames: { spec: 'Spec' } }).state;
+  const saved = reduce(renamed, { type: 'setStages', ...chained([{ ...STAGES[0], name: 'Spec' }, STAGES[2]]) }).state;
+  assert.equal(task(saved, 1)?.stage, 'Spec', 'dev went: the stage before it, under its new name');
 });

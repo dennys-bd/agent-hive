@@ -196,11 +196,13 @@ test('a start by hand runs a commands stage past red and over a full cap, in a d
   assert.deepEqual(r.state.workers.map((w) => [w.status, w.draining]), [['working', undefined], ['working', true]]);
 });
 
-test('a save that removes a running commands stage frees the run\'s worker with its task and activity (#755, #727)', () => {
+test('a save that deletes a running commands stage moves its task with the run marked stageGone; the run\'s end halts the task and frees its worker (#755, #727, #861)', () => {
   const { state } = filled(hive('green', [waiting(1, 'checks')], { stages: CHECKS }));
   assert.equal(state.workers[0].status, 'working');
-  const removed = reduce(state, { type: 'setStages', ...chained([{ name: 'review', from: { board: ['In review'] } }]) }).state;
-  assert.deepEqual([removed.tasks.length, removed.activities.length, removed.workers[0].status], [0, 0, 'empty']);
+  const moved = reduce(state, { type: 'setStages', ...chained([{ name: 'review', from: { board: ['In review'] } }]) }).state;
+  assert.deepEqual([moved.tasks[0].stage, activityOf(moved, 'board:item1')?.stageGone, moved.workers[0].status], ['review', 'checks', 'working']);
+  const r = ended(moved, 0);
+  assert.deepEqual([activityOf(r.state, 'board:item1')?.error, r.state.workers[0].status], [`${STAGE_GONE}checks`, 'empty']);
 });
 
 test('a commands run\'s start, verdict and stop never mutate the state they are given (#727)', () => {

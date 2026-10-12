@@ -26,6 +26,7 @@ import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
 import { renameStages } from './stage-rename.js';
+import { placeVanished } from './vanished-stages.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
 
@@ -384,17 +385,13 @@ function awaitGate(state: State, task: Task): State {
   const born = ensureActivity(state, task);
   return born ? withActivity(born.state, { ...born.activity, approval: { since: new Date().toISOString() } }) : state;
 }
-// A stopped task whose stage vanished has nowhere to be shown or run: a polled one is dropped and the next poll re-enters it through a
-// `from` if the source still has it; a local one (#132) has no source to come back from, so it enters the first stage instead. A running
-// one keeps its worker and leaves at its Stop (unknown stage: no write, no next). A stage turned into deleteActivity acts now.
+// The tasks of a stage the save removed go where destinationOf says (#861, vanished-stages.ts): a stopped one enters its destination through
+// settleEntries and the gates, keeping its activity; one a run holds is placed with no entry and halts at its run's end. A stage turned into
+// deleteActivity acts now.
 function setStages(state: State, stages: Stage[], transitions: Transition[]): Reduced {
-  const [first] = stages;
-  const tasks = state.tasks.flatMap((c) => {
-    if (activityOf(state, taskId(c))?.workerId !== undefined || stageOf(stages, c.stage) !== undefined) return [c];
-    return c.created && first ? [enter(c, first)] : [];
-  });
-  const staged = settleEntries(state.tasks, { ...state, stages, transitions, tasks });
-  return runActions(staged.tasks.reduce(awaitGate, staged));
+  const placed = placeVanished(state, stages);
+  const staged = settleEntries(placed.before, { ...placed.state, stages, transitions });
+  return runActions(staged.tasks.reduce(awaitGate, staged), placed.effects);
 }
 
 // The Comb's workspaces, each source's default and each workspace's command names, from the config on every save (#179, #180, #300).

@@ -9,8 +9,7 @@ import { CHECKS_FAILED, type Activity, type CommandFailure, type Effect, type Hi
 
 // A stage that runs a list of the workspace's commands instead of a prompt (#755), out of orchestrator.ts, which is over 800 lines. Pure:
 // every function returns new objects. The server runs each command in a pty of its own (server-stage-commands.ts) and answers with
-// stageCommandEnded or stageCommandsRefused. Known ceiling: a save that removes the stage while it runs drops the stopped task with it
-// (setStages); its pty runs to its end and its answer finds no activity; its worker frees as the activity goes (freedLostRuns). The run holds a worker for its life, freed before its verdict is
+// stageCommandEnded or stageCommandsRefused. A save that deletes the stage while it runs moves the task and marks the run stageGone (#861): its end routes no verdict and the task halts. The run holds a worker for its life, freed before its verdict is
 // routed (#727).
 
 // The effect that runs command `run.at` of the stage
