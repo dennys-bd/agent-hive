@@ -25,6 +25,7 @@ import { captureSession, dropOrphanTerminals, forgetTerminal, sleepTerminal, wak
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
+import { renameStages } from './stage-rename.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
 
@@ -160,6 +161,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
     case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks go missing at the next poll
     case 'renameSources': return none(renameSources(state, event.renames)); // a save that renamed sources (#278): no fill; setSources and the poll follow
+    case 'renameStages': return none(renameStages(state, event.renames)); // #861: no fill; setStages follows, and a running task reads its renamed stage at once
     case 'start': return start(state, event.itemId, event.base, event.workspace, event.local); // no fill: nothing loosened, so nothing else could open
     case 'continue': return continueStage(state, recordTaskId(state, event.activityId)); // no fill: nothing loosened (#283); a deleted activity's record too (#629)
     case 'restarting': return restarting(state, liveTaskId(state, event.activityId)); // no fill: a mark only (#283)

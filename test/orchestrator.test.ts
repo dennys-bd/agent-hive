@@ -3472,3 +3472,14 @@ test('a poll that moves the children moves their show epic in the same reduction
   assert.equal(task(state, 1)?.boardColumn, 'Ready');
   assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]);
 });
+
+test('renameStages renames every task and the flow in one reduction, with no fill; the renamed run ends through its renamed stage (#861)', () => {
+  const running = polled(base(1), [listed(1), listed(2)]).state; // 1 runs spec, 2 waits there
+  const { state, effects } = reduce(running, { type: 'renameStages', renames: { spec: 'Spec' } });
+  assert.deepEqual(effects, []);
+  assert.deepEqual([state.tasks.map((c) => c.stage), state.stages[0].name], [['Spec', 'Spec'], 'Spec']);
+  assert.equal(reduce(running, { type: 'renameStages', renames: {} }).state, running, 'an empty map: the same state');
+  const ended = stopped(state, state.workers[0].runId!);
+  assert.ok(ended.effects.some((e) => e.type === 'setColumn'), 'the renamed stage\'s transition wrote the source');
+  assert.equal(task(ended.state, 1)?.stage, 'dev');
+});
