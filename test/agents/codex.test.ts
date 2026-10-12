@@ -42,6 +42,7 @@ const ROLES: LaunchArg[] = agentRoles(pluginSource()).map((role) => ['-c', `agen
 const HIVE_PLUGIN: LaunchArg[] = [PLUGIN, ...ROLES];
 const TAIL = ['--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write', '-m', 'gpt-5.6-terra'];
 const STAGE_RUN: AgentRun = { ...RUN, protocolText: PROTOCOL, model: 'gpt-5.6-terra', extraArgs: ['--sandbox', 'workspace-write'] };
+const FROM = '01a12d45-1dff-7000-8000-000000000002'; // the source session a copy forks (#933)
 
 test('a new stage run: the hooks, the MCP server, the protocol, the startup switches, the trust bypass, the agent\'s args, the model; never the Hive\'s id (#927)', () => {
   const argv = codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: false } });
@@ -80,9 +81,22 @@ test('the command line runs codex bare with every override quoted whole and the 
   assert.ok(line.includes(` '--dangerously-bypass-hook-trust' '--sandbox' 'workspace-write' '-m' 'gpt-5.6-terra' "$(cat '${PROMPT}')"; curl `), line);
 });
 
-test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; its rollouts are no per-cwd dir (#927, #929)', async (t) => {
+test('a copy is `fork <from>` followed by the same overrides, the trust bypass and the agent\'s args: no -m, no name, never the Hive\'s placeholder id (#933)', () => {
+  const argv = codexRunner.copy({ ...STAGE_RUN, session: { id: ID, resume: false } }, FROM, 'no dois');
+  assert.deepEqual(argv, ['fork', FROM, ...HOOKS, ...MCP, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, '--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write']);
+  assert.equal(JSON.stringify(argv).includes(ID), false, 'Codex picks the fork\'s id (finding §7)');
+  assert.equal(JSON.stringify(argv).includes('no dois'), false, 'codex fork has no name flag: the Hive\'s entry carries it');
+});
+
+test('a local copy (no Hive server) forks with no mcp_servers.hive key (#933)', () => {
+  const argv = codexRunner.copy({ ...RUN, withHive: false }, FROM);
+  assert.deepEqual(argv, ['fork', FROM, ...HOOKS, ...HIVE_PLUGIN, ...STARTUP, '--dangerously-bypass-hook-trust']);
+  assert.equal(argv?.flat().some((word) => word.startsWith('mcp_servers.hive')), false);
+});
+
+test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear typed in the session); its rollouts are no per-cwd dir (#927, #929, #933)', async (t) => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
-  assert.deepEqual([codexRunner.copy(RUN, ID), codexRunner.clear(RUN)], [undefined, undefined]);
+  assert.equal(codexRunner.clear(RUN), undefined);
   assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
   assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
