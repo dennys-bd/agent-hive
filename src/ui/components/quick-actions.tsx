@@ -1,14 +1,14 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { commandsOf } from '../../task-runs';
 import { runCommand } from '@/components/actions';
 import { openLocalRun } from '@/components/local-runs';
-import { openNew } from '@/components/NewRunButton';
+import { AgentsContext, openNew } from '@/components/NewRunButton';
 import { rememberWorkspace, WorkspacePicker } from '@/components/QuickDialogs';
 import { OperationDialogs } from '@/components/OperationDialogs';
 import { SearchDialog } from '@/components/SearchDialog';
 import { ShortcutMapDialog } from '@/components/ShortcutMapDialog';
 import type { OpenRun } from '@/components/terminal-tabs';
-import type { EffectiveLimits, State, Task } from '../../types';
+import type { AgentAvailability, EffectiveLimits, State, Task } from '../../types';
 import type { Activity } from '@/lib/activities';
 import { onQuickKey, type QuickAction } from '@/lib/dock-layout';
 import { readFocusTarget } from '@/lib/focus-target';
@@ -33,9 +33,9 @@ function useOperationDialog(search?: SearchHost): { open(dialog: OperationDialog
   return { open, element };
 }
 
-// `shown` is the activity the center shows: the one the activity operations act on
-const searchContext = (host: SearchHost, focus: FocusTarget | undefined, dialog: (next: OperationDialog) => void): OperationContext => ({
-  state: host.state, effective: host.effective, focus, activity: host.shown, isShown: host.shown !== undefined, shownRun: host.shownRun, nav: { ...host.nav, dialog },
+// `shown` is the activity the center shows: the one the activity operations act on. agents: the ones boot found (#931)
+const searchContext = (host: SearchHost, focus: FocusTarget | undefined, dialog: (next: OperationDialog) => void, agents: readonly AgentAvailability[]): OperationContext => ({
+  state: host.state, effective: host.effective, focus, activity: host.shown, isShown: host.shown !== undefined, shownRun: host.shownRun, agents, nav: { ...host.nav, dialog },
 });
 
 interface QuickArgs {
@@ -63,9 +63,9 @@ function runCommandKey(host: SearchHost, openCommands: (task: Task, focus?: Focu
 }
 
 // The search while open (#584), on the run-command key's page when it opened it (#585)
-function searchDialog(open: Open | undefined, search: SearchHost | undefined, onOperation: (dialog: OperationDialog) => void, onClose: () => void): ReactNode {
+function searchDialog(open: Open | undefined, search: SearchHost | undefined, agents: readonly AgentAvailability[], onOperation: (dialog: OperationDialog) => void, onClose: () => void): ReactNode {
   if (open?.kind !== 'search' || search === undefined) return null;
-  const ctx = searchContext(search, open.focus, onOperation);
+  const ctx = searchContext(search, open.focus, onOperation, agents);
   return <SearchDialog key={open.scope} scope={open.scope} returnTo={open.returnTo} ctx={ctx} page={open.commands && commandsPage(open.commands, ctx)} activities={search.activities} onClose={onClose} />;
 }
 
@@ -91,6 +91,7 @@ const editShortcuts = (close: () => void, openShortcuts?: () => void): (() => vo
 export function useQuickActions({ workspaces, current, openRun, newActivity, hasKeys, search }: QuickArgs): QuickActions {
   const [open, setOpen] = useState<Open>();
   const operation = useOperationDialog(search);
+  const agents = useContext(AgentsContext);
   const close = useCallback(() => setOpen(undefined), []);
   const onPick = useCallback((workspace: string) => {
     rememberWorkspace(workspace);
@@ -127,7 +128,7 @@ export function useQuickActions({ workspaces, current, openRun, newActivity, has
   useEffect(() => (hasKeys ? onQuickKey((action) => latest.current[action]()) : undefined), [hasKeys]);
   const dialogs = (
     <>
-      {searchDialog(open, search, operation.open, close)}
+      {searchDialog(open, search, agents, operation.open, close)}
       <WorkspacePicker open={open?.kind === 'picker'} workspaces={workspaces} onPick={onPick} onClose={close} />
       <ShortcutMapDialog open={open?.kind === 'shortcutMap'} onClose={close} onEditShortcuts={editShortcuts(close, search?.openShortcuts)} />
       {operation.element}

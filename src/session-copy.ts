@@ -4,7 +4,7 @@ import { touchFreeSession } from './record-kit.js';
 import { canOpenSession, taskId, runningFirst, titled } from './tasks.js';
 import { hasDirectory, localSessionsOf, continuableLocal } from './local-sessions.js';
 import { ensureActivity, none, type Reduced } from './reducer-kit.js';
-import { liveDefaultAgent } from './agents.js';
+import { AGENTS, liveDefaultAgent } from './agents.js';
 import type { Activity, AgentId, Session, Effect, HiveEvent, SessionCopy, SessionRef, SessionTarget, Worker, State } from './types.js';
 
 // Copy (#587) and the local session, out of orchestrator.ts and runs.ts, both past 400 lines. Pure: every function returns new objects.
@@ -118,17 +118,20 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
 }
 
 /** A new session in a workspace's local activity (#590): a free session of its own, past the signal, the cap and the budget, as a copy
- * into the local is (#587), minus the fork. Its entry is appended at the start; forgetFailedLocal and forgetUnopenedLocal drop it if it never opens. */
+ * into the local is (#587), minus the fork. Its entry is appended at the start, or at its first SessionStart for an agent that picks its own
+ * id (#931, recordCapturedSession); forgetFailedLocal and forgetUnopenedLocal drop it if it never opens. */
 export function newLocalSession(state: State, { activityId, agent: asked }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
   const workspace = localWorkspaceOf(activityId) ?? '';
   if (!state.workspaces.includes(workspace)) return none(state);
-  const sessionId = randomUUID();
-  const startedAt = new Date().toISOString();
   const agent = asked ?? liveDefaultAgent(state); // #925: the local route's kind, else the default
-  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true };
-  const created: Session = { id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent };
-  const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...localSessionsOf(state, workspace), created]);
-  return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), sessionId, continues: false }] };
+  const sessionId = AGENTS[agent].canChooseSessionId ? randomUUID() : undefined; // #931: Codex's comes with its first SessionStart
+  const startedAt = new Date().toISOString();
+  const held = sessionId === undefined ? {} : { sessionId };
+  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, ...held, freeSession: true };
+  const sessions = localSessionsOf(state, workspace);
+  const created: Session[] = sessionId === undefined ? [] : [{ id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent }];
+  const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...sessions, ...created]);
+  return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), ...held, continues: false }] };
 }
 
 /** A local session's limpar (#587): one no run holds is forgotten; the route removes its transcript when the deleteActivity scope says so. */

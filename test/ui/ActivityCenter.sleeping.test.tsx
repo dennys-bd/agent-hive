@@ -95,3 +95,11 @@ test('after a restart a tab naming a kept session no run holds stays as a sleepi
   await user.click(screen.getByRole('button', { name: 'continuar' }));
   await waitFor(() => expect(sent('POST')).toEqual([expect.stringMatching(new RegExp(`/sessions/${S}/open$`))]));
 });
+
+test('closing the tab of a session slept before its first prompt forgets its record too (#931)', async () => {
+  const user = userEvent.setup();
+  seed(BOTH);
+  render(<Center runs={[STAGE]} slept={[{ run: { ...SESSION, agent: 'codex' } }]} />);
+  await user.click(screen.getByRole('button', { name: 'Fechar Claude · abcdef12' }));
+  expect(sent('DELETE')).toEqual(['/ptys/W2/scrollback']);
+});

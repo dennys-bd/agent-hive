@@ -6,7 +6,7 @@ import { CloseTabContext, type NoticeKey, type CloseTabSettings } from '@/compon
 import { EditorLanguagesContext, type EditorLanguages } from '@/components/editor-languages';
 import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
-import { DefaultAgentContext } from '@/components/NewRunButton';
+import { AgentsContext, DefaultAgentContext } from '@/components/NewRunButton';
 import { TaskRefContext, type TaskRefs } from '@/components/PtyTab';
 import { Settings } from '@/components/settings/Settings';
 import { FileIconsContext } from '@/hooks/use-file-icons';
@@ -139,16 +139,19 @@ export function App() {
       <div className="contents" inert={settingsOpen}>
         {/* the panel's tabs take a saved terminal font at once (#376): a save reloads info and re-renders them */}
         <DefaultAgentContext.Provider value={info.config?.defaultAgent ?? DEFAULT_AGENT}>
-          {/* the files tree's icons (#754): the saved choice, and the theme applyTheme painted for Material's light overrides */}
-          <FileIconsContext.Provider value={{ ...(info.config?.fileIcons ?? FILE_ICONS_DEFAULTS), theme: resolvedTheme }}>
-            <CloseTabContext.Provider value={closeTab}>
-              <TaskRefContext.Provider value={taskRefs}>
-                <EditorLanguagesContext.Provider value={editorLanguages}>
-                  <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} sidebarsPerView={info.config?.sidebarsPerView} />
-                </EditorLanguagesContext.Provider>
-              </TaskRefContext.Provider>
-            </CloseTabContext.Provider>
-          </FileIconsContext.Provider>
+          {/* #931: the agents boot found, which every menu that opens a session disables by */}
+          <AgentsContext.Provider value={info.agents}>
+            {/* the files tree's icons (#754): the saved choice, and the theme applyTheme painted for Material's light overrides */}
+            <FileIconsContext.Provider value={{ ...(info.config?.fileIcons ?? FILE_ICONS_DEFAULTS), theme: resolvedTheme }}>
+              <CloseTabContext.Provider value={closeTab}>
+                <TaskRefContext.Provider value={taskRefs}>
+                  <EditorLanguagesContext.Provider value={editorLanguages}>
+                    <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} sidebarsPerView={info.config?.sidebarsPerView} />
+                  </EditorLanguagesContext.Provider>
+                </TaskRefContext.Provider>
+              </CloseTabContext.Provider>
+            </FileIconsContext.Provider>
+          </AgentsContext.Provider>
         </DefaultAgentContext.Provider>
       </div>
       {settingsOpen && <Settings info={info} state={state} view={settingsView} onSaved={onSaved} onCancel={() => { setSettingsOpen(false); setSettingsView(undefined); }} />}

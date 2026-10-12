@@ -3,7 +3,7 @@
 import { activityOf } from '../../activities';
 import type { LiveRun } from '../../task-runs';
 import { shortcutDef } from '../../shortcut-registry';
-import type { Task, EffectiveLimits, OperationId, State } from '../../types';
+import type { AgentAvailability, Task, EffectiveLimits, OperationId, State } from '../../types';
 import { act } from '@/components/actions';
 import type { OpenDiff, OpenPr, OpenRun, OpenStarted } from '@/components/terminal-tabs';
 import type { OpenConsole } from '@/hooks/use-console';
@@ -51,6 +51,7 @@ export interface OperationContext {
   focus?: FocusTarget; // read when the search opened
   isShown?: boolean; // that activity is the one the center shows: dividir splits its focused group
   shownRun?: string; // the run its focused group shows, a split tab's focused pane (#641): the split-terminal keys act on it
+  agents?: readonly AgentAvailability[]; // #931: the agents boot found, which nova sessão › disables by; absent reads as every one
   nav: SearchNav;
 }
 

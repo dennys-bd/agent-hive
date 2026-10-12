@@ -444,11 +444,3 @@ test('the design comments\' copy reads as the handoff writes it, in both languag
   ]);
 });
 
-test('a new session of an agent that cannot open one reads in both languages, named from AGENTS, and says executar, never rodar (#927)', (ctx) => {
-  ctx.after(() => setLanguage('en'));
-  setLanguage('en');
-  assert.equal(t('open.agentUnavailable', { agent: 'codex' }), 'codex sessions are not available yet: run codex in a flow stage');
-  setLanguage('pt');
-  assert.equal(t('open.agentUnavailable', { agent: 'codex' }), 'sessões do codex ainda não estão disponíveis: execute o codex em uma etapa do fluxo');
-  assert.doesNotMatch(MESSAGES.pt['open.agentUnavailable'], /\brod(ar|ando)\b/);
-});

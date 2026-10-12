@@ -8,7 +8,7 @@ export interface AgentSpec {
   subcommands: readonly string[]; // the shim's first-arg passthrough (#696, #932): the CLI's own commands and any that open a session the user chose
   shimFlags: readonly string[]; // #932: sh case patterns that pass the shim through in any position: a session the user chose, or no conversation
   planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the header offers their refresh
-  canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from SessionStart and opens no free session until #931
+  canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from its first SessionStart, its free and local sessions too (#931)
 }
 
 // A Record, so a new id in AGENT_IDS fails tsc until its entry exists; its runner joins agents/registry.ts the same way (#924).
@@ -71,7 +71,10 @@ export const stageAgentIn = (state: Pick<State, 'defaultAgent'>, stage: Pick<Sta
 /** An agent as the UI and a review mention name it (#536, #925): its own label, lowercase as every label is. The one agent-to-label map. */
 export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLowerCase();
 
+/** Whether boot found `agent` on PATH (#516); one it never checked is not. The menus that open a session disable the others (#931). */
+export const isAvailable = (agent: AgentId, agents: readonly AgentAvailability[]): boolean => agents.some((a) => a.agent === agent && a.available);
+
 /** Why a run of `agent` cannot start, or undefined: an agent boot did not find (or never checked) is refused before any worktree. */
 export function agentRefusal(agent: AgentId, agents: readonly AgentAvailability[]): string | undefined {
-  return agents.some((a) => a.agent === agent && a.available) ? undefined : `agent ${agent} is not on PATH: install it, then restart the Hive`;
+  return isAvailable(agent, agents) ? undefined : `agent ${agent} is not on PATH: install it, then restart the Hive`;
 }

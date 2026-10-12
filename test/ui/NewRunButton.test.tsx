@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { NewRunButton, newRunEntries, openNew, useNewRunKeys } from '@/components/NewRunButton';
+import { AgentsContext, NewRunButton, newRunEntries, openNew, useNewRunKeys } from '@/components/NewRunButton';
 import { DiffOpenerContext, PrOpenerContext, RunOpenerContext } from '@/components/terminal-tabs';
 import { setLanguage } from '@/i18n';
+import { ALL_AGENTS } from '../../src/agents';
 import type { ActivityRecord } from '../../src/types';
 import { bareTask, liveOf, localPairOf, taskPairOf, type WithWork } from '../fixtures/work';
 
@@ -23,7 +24,7 @@ async function pick(user: ReturnType<typeof userEvent.setup>, item: string): Pro
   plus().focus();
   await user.keyboard('{Enter}');
   const names = (await screen.findAllByRole('menuitem')).map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''));
-  expect(names).toEqual(['terminal', 'claude', 'diff', 'mostrar PR', 'arquivo']);
+  expect(names).toEqual(['terminal', 'claude', 'codex', 'diff', 'mostrar PR', 'arquivo']);
   await user.click(screen.getByRole('menuitem', { name: new RegExp(`^${item}`) }));
 }
 
@@ -192,7 +193,7 @@ test('the + of a local activity is titled with its workspace and offers terminal
   plus().focus();
   await user.keyboard('{Enter}');
   expect(await screen.findByText('nova sessão em hive')).toBeInTheDocument();
-  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'claude', 'arquivo']);
+  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'claude', 'codex', 'arquivo']);
   await user.click(screen.getByRole('menuitem', { name: /^claude/ }));
   expect(fetchMock).toHaveBeenCalledWith('/activities/local%3Ahive/sessions', expect.objectContaining({ method: 'POST' }));
   await waitFor(() => expect(openRun).toHaveBeenCalledWith({ ptyId: 'L3', kind: 'session', project: 'hive', title: 'hive' }));
@@ -213,19 +214,20 @@ test('mostrar PR opens the page of the task\'s next PR, and is disabled while it
   expect(await screen.findByRole('menuitem', { name: 'mostrar PR' })).toHaveAttribute('data-disabled');
 });
 
-test('newRunEntries lists terminal, each agent (the default one with newSession\'s key) and the diff on a task\'s activity only, all disabled where the + is (#759)', () => {
-  expect(newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'claude')).toEqual([
+test('newRunEntries lists terminal, each agent (the default one with newSession\'s key) and the diff on a task\'s activity only, all disabled where the + is (#759, #931)', () => {
+  expect(newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'claude', ALL_AGENTS)).toEqual([
     { kind: 'terminal', label: 'terminal', key: 'newTerminal', disabled: false },
     { kind: 'claude', label: 'claude', key: 'newSession', disabled: false },
+    { kind: 'codex', label: 'codex', key: undefined, disabled: false },
     { kind: 'diff', label: 'diff', key: 'openDiff', disabled: false },
   ]);
   const noWorktree = task({ worktree: undefined });
-  expect(newRunEntries({ kind: 'task', task: bareTask(noWorktree), activity: liveIn(noWorktree) }, 'claude').map((e) => [e.kind, e.disabled])).toEqual([
-    ['terminal', false], ['claude', false], ['diff', true],
+  expect(newRunEntries({ kind: 'task', task: bareTask(noWorktree), activity: liveIn(noWorktree) }, 'claude', ALL_AGENTS).map((e) => [e.kind, e.disabled])).toEqual([
+    ['terminal', false], ['claude', false], ['codex', false], ['diff', true],
   ]);
-  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude').map((e) => e.kind)).toEqual(['terminal', 'claude']);
+  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude', ALL_AGENTS).map((e) => e.kind)).toEqual(['terminal', 'claude', 'codex']);
   const settingUp = task({ setup: { consoleId: 'C1' } });
-  expect(newRunEntries({ kind: 'task', task: bareTask(settingUp), activity: liveIn(settingUp) }, 'claude').every((e) => e.disabled)).toBe(true);
+  expect(newRunEntries({ kind: 'task', task: bareTask(settingUp), activity: liveIn(settingUp) }, 'claude', ALL_AGENTS).every((e) => e.disabled)).toBe(true);
 });
 
 test('the +\'s arquivo is enabled where onNewFile is given, and its pick calls it (#818)', async () => {
@@ -238,6 +240,25 @@ test('the +\'s arquivo is enabled where onNewFile is given, and its pick calls i
   expect(onNewFile).toHaveBeenCalledTimes(1);
 });
 
-test('the + lists no agent that cannot open a free session, the default one included: codex waits for #931 (#927)', () => {
-  expect(newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'codex').map((e) => e.kind)).toEqual(['terminal', 'claude', 'diff']);
+test('the + lists codex when boot found it, and its pick posts a codex session to the task\'s /open (#931)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockResolvedValueOnce(answer({ ok: true, ptyId: 'W6' }));
+  render(wrapped(task()));
+  await pick(user, 'codex');
+  expect(fetchMock).toHaveBeenCalledWith('/activities/a-I1/open', expect.objectContaining({ method: 'POST', body: JSON.stringify({ kind: 'codex' }) }));
+  await waitFor(() => expect(openRun).toHaveBeenCalledWith({ ptyId: 'W6', kind: 'session', task: 'I1', title: '#1 Task 1' }));
+});
+
+test('an agent boot did not find is listed disabled and named off PATH, claude as codex (#931)', async () => {
+  const user = userEvent.setup();
+  render(<AgentsContext.Provider value={[{ agent: 'claude', available: false }, { agent: 'codex', available: false }]}>{wrapped(task())}</AgentsContext.Provider>);
+  plus().focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByRole('menuitem', { name: /^claude · fora do PATH/ })).toHaveAttribute('data-disabled');
+  expect(screen.getByRole('menuitem', { name: 'codex · fora do PATH' })).toHaveAttribute('data-disabled');
+  const target = { kind: 'task' as const, task: bareTask(task()), activity: liveIn(task()) };
+  expect(newRunEntries(target, 'claude', [{ agent: 'claude', available: true }, { agent: 'codex', available: false }]).filter((e) => e.kind === 'claude' || e.kind === 'codex')).toEqual([
+    { kind: 'claude', label: 'claude', key: 'newSession', disabled: false },
+    { kind: 'codex', label: 'codex · fora do PATH', key: undefined, disabled: true },
+  ]);
 });

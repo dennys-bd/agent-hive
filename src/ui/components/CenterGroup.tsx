@@ -124,7 +124,8 @@ function closeTerminalRun(run: LiveRun, activity: Activity, settings: CloseTabSe
 function closeRun(ptyId: string, activity: Activity, settings: CloseTabSettings, confirmLoss: ConfirmLoss, openRun?: OpenRun): void {
   const run = activity.runs.find((r) => r.ptyId === ptyId);
   if (run === undefined) { // a run already gone has nothing
-    if (sleepingOf(activity, ptyId)?.sessionId !== undefined) forgetRun(ptyId);
+    const sleeping = sleepingOf(activity, ptyId);
+    if (sleeping !== undefined && sleeping.run.kind !== 'terminal') forgetRun(ptyId); // #931: a session slept before its first prompt holds no id
     return;
   }
   if (run.kind === 'terminal') {

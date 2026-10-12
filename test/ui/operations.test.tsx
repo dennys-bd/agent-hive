@@ -84,7 +84,7 @@ test('with an activity open its group comes before the global one, each labelled
   expect(ops.map((op) => op.group).indexOf('global')).toBeGreaterThan(ops.map((op) => op.group).lastIndexOf('activity'));
   expect(ops.filter((op) => op.group === 'activity').map((op) => text(op, ctx))).toEqual(['nova sessão · #11', 'diff · #11', 'mostrar PR · #11', 'dividir com o mesmo tipo · #11']);
   expect(ops.find((op) => op.id === 'activity.diff')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['diff da worktree']);
-  expect(ops.find((op) => op.id === 'activity.newSession')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['claude']);
+  expect(ops.find((op) => op.id === 'activity.newSession')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['claude', 'codex']);
   expect(operationsFor(ctxOf(state)).some((op) => op.group === 'activity')).toBe(false);
 });
 
@@ -248,4 +248,12 @@ test('a focused editor offers Git: Abrir Alterações on any file and Markdown: 
   expect(ctx.nav.openChanges).toHaveBeenCalledWith('a-I11', 'docs/plan.md');
   const bare = ctxOf(state, { focus: { kind: 'file', activityId: 'a-I11', path: 'src/a.ts' }, nav: { ...navOf(), openChanges: undefined } });
   expect(focusOf(bare)).toEqual([]);
+});
+
+test('nova sessão › lists every agent; one boot did not find is disabled and named off PATH (#931)', () => {
+  const build = task('11', 'Build', { worktree: '/w/11' });
+  const state = stateOf([build], { workers: [{ id: 's1', activityId: activityIdOf('I11'), status: 'working', runId: 'W1' }] });
+  const ctx = ctxOf(state, { activity: taskActivity(state), isShown: true, agents: [{ agent: 'claude', available: true }, { agent: 'codex', available: false }] });
+  const picks = operationsFor(ctx).find((op) => op.id === 'activity.newSession')?.children?.(ctx) ?? [];
+  expect(picks.map((op) => [op.label(ctx), op.disabled?.(ctx) ?? false])).toEqual([['claude', false], ['codex · fora do PATH', true]]);
 });

@@ -4,7 +4,7 @@
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import type { Reduced } from './reducer-kit.js';
 import { taskId } from './tasks.js';
-import { ranAgent } from './agents.js';
+import { AGENTS, ranAgent } from './agents.js';
 import { type Effect, type HiveEvent, type SleepCause, type SleptRun, SLEPT_MAX, type State, type Worker } from './types.js';
 
 const isLiveRun = (state: State, ptyId: string): boolean => state.workers.some((s) => s.runId === ptyId && s.status !== 'empty');
@@ -20,19 +20,26 @@ function causeOf(worker: Worker, runId: string, effects: Effect[]): SleepCause |
   return effects.some((e) => e.type === 'kill' && e.ptyId === runId) ? 'auto' : undefined;
 }
 
-// The record of a run this reduction ended with its session kept: it saw a hook (a run that never opened has no transcript, #587), it held a
-// session, and its task, when it has one, is still in the Hive (a closed task takes its runs with it)
+// #931: a free run of an agent that picks its own id (Codex), put to sleep by the Hive before its first prompt: it saw no hook and holds no
+// session, yet its tab sleeps, and its wake opens a new session of that agent. A /exit or a crash (no cause) leaves nothing, as before
+const isFresh = (worker: Worker, sessionId: string | undefined, cause: SleepCause | undefined): boolean =>
+  sessionId === undefined && cause !== undefined && worker.freeSession === true && !AGENTS[ranAgent(worker)].canChooseSessionId;
+
+// The record of a run this reduction ended with its session kept: it saw a hook (a run that never opened has no transcript, #587) and held a
+// session, or it is a fresh one (#931); and its task, when it has one, is still in the Hive (a closed task takes its runs with it)
 function sleptOf(before: State, { state: after, effects }: Reduced, worker: Worker, now: number): SleptRun | undefined {
   const { runId } = worker;
   // #696: a captured run had no tab of its own (its terminal's showed it): it records no sleeping tab
-  if (runId === undefined || worker.status === 'empty' || worker.seenAt === undefined || worker.forgotten || worker.terminalId !== undefined || isLiveRun(after, runId)) return undefined;
+  if (runId === undefined || worker.status === 'empty' || worker.forgotten || worker.terminalId !== undefined || isLiveRun(after, runId)) return undefined;
   const sessionId = heldSession(before, worker);
-  const task = taskOfWorker(before, worker);
-  if (sessionId === undefined || (task !== undefined && !after.tasks.some((c) => taskId(c) === taskId(task)))) return undefined;
-  const activity = activityOfWorker(before, worker);
   const cause = causeOf(worker, runId, effects);
+  const isKept = (worker.seenAt !== undefined && sessionId !== undefined) || isFresh(worker, sessionId, cause);
+  const task = taskOfWorker(before, worker);
+  if (!isKept || (task !== undefined && !after.tasks.some((c) => taskId(c) === taskId(task)))) return undefined;
+  const activity = activityOfWorker(before, worker);
   return {
-    ptyId: runId, sessionId, agent: ranAgent(worker), kind: worker.freeSession ? 'session' : 'stage', at: now,
+    ptyId: runId, agent: ranAgent(worker), kind: worker.freeSession ? 'session' : 'stage', at: now,
+    ...(sessionId === undefined ? {} : { sessionId }),
     ...(task === undefined ? {} : { taskId: taskId(task) }),
     ...(task !== undefined && !worker.freeSession ? { stage: task.stage } : {}),
     ...(activity?.kind === 'local' ? { workspace: activity.workspace } : {}),
@@ -43,7 +50,7 @@ function sleptOf(before: State, { state: after, effects }: Reduced, worker: Work
 // The sessions this reduction continues in a new run: a continued session's spawn, or a stage run that resumes its activity's session
 function resumed(effects: Effect[]): Set<string> {
   return new Set(effects.flatMap((e) => {
-    if (e.type === 'spawnSession') return e.continues ? [e.sessionId] : [];
+    if (e.type === 'spawnSession') return e.continues && e.sessionId !== undefined ? [e.sessionId] : [];
     if (e.type === 'spawn' && e.session === 'continue' && e.activity.sessionId !== undefined) return [e.activity.sessionId];
     return [];
   }));
@@ -79,7 +86,7 @@ export function withSlept(before: State, event: HiveEvent, reduced: Reduced, now
   const woken = resumed(reduced.effects);
   const named = event.type === 'forgetSlept' ? [event.ptyId] : [];
   const all = [...(after.slept ?? []), ...added];
-  const kept = all.filter((s) => !woken.has(s.sessionId) && !named.includes(s.ptyId) && stillHeld(after, s));
+  const kept = all.filter((s) => (s.sessionId === undefined || !woken.has(s.sessionId)) && !named.includes(s.ptyId) && stillHeld(after, s));
   const slept = kept.slice(Math.max(0, kept.length - SLEPT_MAX));
   const held = new Set(slept.map((s) => s.ptyId));
   const gone = [...all.map((s) => s.ptyId), ...named, ...endedRuns(before, after)].filter((id) => !held.has(id));

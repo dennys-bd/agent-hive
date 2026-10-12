@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { ActivityMenu, ActivityMenuButton } from '@/components/ActivityMenu';
+import { AgentsContext } from '@/components/NewRunButton';
 import { setLanguage } from '@/i18n';
 import type { Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -74,13 +75,17 @@ test('executar etapas… opens the Start dialog on executar etapas for the activ
   vi.unstubAllGlobals();
 });
 
-test('nova sessão lists the agents that can open a free session, then terminal: no codex until #931 (#927)', async () => {
+test('nova sessão lists every agent; one boot did not find is disabled and named off PATH (#931)', async () => {
   const user = userEvent.setup();
-  render(<ActivityMenuButton task={task()} state={state(task())} onShowFlow={vi.fn()} />);
+  render(
+    <AgentsContext.Provider value={[{ agent: 'claude', available: true }, { agent: 'codex', available: false }]}>
+      <ActivityMenuButton task={task()} state={state(task())} onShowFlow={vi.fn()} />
+    </AgentsContext.Provider>,
+  );
   screen.getByRole('button', { name: 'mais ações' }).focus();
   await user.keyboard('{Enter}');
   (await screen.findByRole('menuitem', { name: 'nova sessão' })).focus();
   await user.keyboard('{ArrowRight}');
-  expect(await screen.findByRole('menuitem', { name: 'claude' })).toBeInTheDocument();
-  expect(screen.queryByRole('menuitem', { name: 'codex' })).not.toBeInTheDocument();
+  expect(await screen.findByRole('menuitem', { name: 'claude' })).not.toHaveAttribute('data-disabled');
+  expect(screen.getByRole('menuitem', { name: 'codex · fora do PATH' })).toHaveAttribute('data-disabled');
 });

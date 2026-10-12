@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { liveDefaultAgent } from './agents.js';
+import { AGENTS, liveDefaultAgent } from './agents.js';
 import { withoutHold } from './approval.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
-import { sessionBaseline, touchFreeSession, withoutSession, withResult } from './record-kit.js';
+import { markFreeRun, sessionBaseline, touchFreeSession, withoutSession, withResult } from './record-kit.js';
 import { canOpenSession, inAction, sessionsOf, taskId, runningFirst, stageOf, continuable } from './tasks.js';
 import { forgetTerminals, slept, terminalSlug } from './terminal-runs.js';
 import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
@@ -286,20 +286,24 @@ export function openSession(state: State, { activityId, continueId, prompt, agen
   if (!session?.repo && (live?.worktree === undefined || live.worktreeGone)) return none(state); // #208
   const born = ensureActivity(state, task);
   if (!born) return none(state);
-  const sessionId = continueId ?? randomUUID();
   const agent = session?.agent ?? asked ?? liveDefaultAgent(state); // #925: a resume runs its session's own agent, a new session the one asked for
+  // #931: a new session runs under the Hive's id only for an agent that takes one; Codex's comes with its first SessionStart
+  const sessionId = continueId ?? (AGENTS[agent].canChooseSessionId ? randomUUID() : undefined);
   const startedAt = new Date().toISOString();
   // Appended, never a free worker (#459): a free worker is the fill's, so taking one would still cost the automation a worker; releaseWorker drops it
   const worker: Worker = {
-    id: randomUUID(), runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
+    id: randomUUID(), runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' },
+    ...(sessionId === undefined ? {} : { sessionId }), freeSession: true,
     ...sessionBaseline(born.state, task, sessionId), // a resume counts only what it adds (#248)
   };
-  const touched = touchFreeSession({ ...born.state, workers: [...born.state.workers, worker] }, task, sessionId, startedAt, agent); // a new session is appended free, a resumed one only used again (#236, #812)
+  const added: State = { ...born.state, workers: [...born.state.workers, worker] };
+  // a new session is appended free, a resumed one only used again (#236, #812); one with no id yet only marks the stage (#931)
+  const touched = sessionId === undefined ? markFreeRun(added, task) : touchFreeSession(added, task, sessionId, startedAt, agent);
   return onTop({
     state: touched,
     effects: [{
       // #812: the activity as stored, its free run's mark included
-      type: 'spawnSession', worker, activity: activityOf(touched, id) ?? born.activity, task, sessionId, continues: continueId !== undefined, ...(session?.repo ? { repo: true } : {}),
+      type: 'spawnSession', worker, activity: activityOf(touched, id) ?? born.activity, task, ...(sessionId === undefined ? {} : { sessionId }), continues: continueId !== undefined, ...(session?.repo ? { repo: true } : {}),
       ...(prompt === undefined ? {} : { prompt }), // #758: no rule, the event's prompt rides along
     }],
   }, id);

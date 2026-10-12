@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import type { Express, Request, Response } from 'express';
 import { activityOf } from './activities.js';
-import { AGENTS, agentName, knownAgent } from './agents.js';
+import { knownAgent } from './agents.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
@@ -12,12 +12,11 @@ import { branchFor, slugFor, slugOwner, slugTakenMessage, worktreeSessions } fro
 import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE } from './server-tasks.js';
 import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Effect, type Language, type Task, type HiveEvent, type Workspace } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Effect, type Task, type HiveEvent, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
 import { isBranchName, MERGE_BASE_PROMPT, mergeBasePrompt } from './merge-prompt.js';
-import { MESSAGES } from './ui/i18n.js';
 
 // Abrir sessão (#164, #237, #283), out of server-tasks.ts, which was over its size, when a first open's worktree setup became a state of
 // the task with a console run (#351).
@@ -28,13 +27,6 @@ const HTTP_SERVER_ERROR = 500;
 const KIND_MESSAGE = `kind precisa ser terminal ou ${AGENT_IDS.join(', ')}`; // #925: every agent AGENT_IDS has
 const NOT_CONTINUABLE_MESSAGE = 'sessão já aberta ou desconhecida';
 const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new agent session';
-
-/** #927: a new session of an agent that picks its own session id (Codex) is refused until #931: an open names its id up front, so sleep, wake
- * and continue would break. In the Hive's effective language: the daemon never sets the page's. A resume is not a new session. */
-export function newSessionRefusal(agent: AgentId, language: Language): Refusal | undefined {
-  if (AGENTS[agent].canChooseSessionId) return undefined;
-  return { status: HTTP_BAD_REQUEST, message: MESSAGES[language]['open.agentUnavailable'].replaceAll('{agent}', agentName(agent)) };
-}
 
 /** The open route's deps (#351): the task routes' own, and what a worktree setup's console run needs. */
 export type OpenRouteDeps = TaskRouteDeps; // ptys and consoleStore came with the delete's teardown (#654)
@@ -201,8 +193,6 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   const { task, activity } = opened;
   const agent = knownAgent(kind); // #925: the kind names the session's agent
   if (kind !== 'terminal' && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
-  const unavailable = agent === undefined || continueId !== undefined ? undefined : newSessionRefusal(agent, deps.language());
-  if (unavailable) return refuse(res, unavailable);
   const asked = promptOf(body, workspaceBase(current.runtime.config, taskWorkspace(current.runtime.config, task)).remote);
   if ('status' in asked) return refuse(res, asked);
   const offered = typeof continueId === 'string' && worktreeSessions(task, current.state).some((s) => s.id === continueId); // a repo session opens from the sidebar (#208)

@@ -4,7 +4,7 @@ import { ButtonKeyHint } from '@/components/KeyHint';
 import { openLocalSession } from '@/components/local-runs';
 import { agentName } from '../../agents';
 import { AgentIcon } from '@/components/SessionLabel';
-import { DefaultAgentContext, newRunEntries, referenceOf, startEntry } from '@/components/NewRunButton';
+import { AgentsContext, DefaultAgentContext, newRunEntries, referenceOf, startEntry } from '@/components/NewRunButton';
 import { StatusWord } from '@/components/StatusWord';
 import { useOpenDiff, useOpenRun } from '@/components/terminal-tabs';
 import { openTerminal, terminalName } from '@/components/TerminalLines';
@@ -110,12 +110,13 @@ function NewRunRow({ activity }: { activity: Activity }) {
   const openRun = useOpenRun();
   const openDiff = useOpenDiff();
   const defaultAgent = useContext(DefaultAgentContext);
+  const agents = useContext(AgentsContext);
   const label = t('center.empty.new', { activity: referenceOf(activity) });
   return (
     <section aria-label={label} className="flex flex-col gap-1.5">
       <h3 className={MUTED}>{label}</h3>
       <div className="flex flex-wrap gap-2">
-        {newRunEntries(activity, defaultAgent).map((entry) => (
+        {newRunEntries(activity, defaultAgent, agents).map((entry) => (
           <Button
             key={entry.kind} type="button" variant="outline" disabled={entry.disabled} className="h-auto gap-2 px-3 py-1.5 text-[13px]"
             onClick={() => startEntry(activity, entry.kind, openRun, openDiff)}

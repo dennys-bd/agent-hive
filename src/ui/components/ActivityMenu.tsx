@@ -1,14 +1,13 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { activityOf } from '../../activities';
-import { AGENTS } from '../../agents';
 import { openFeedbackSession, startMode } from '../../task-runs';
 import { canOpenSession, stageOf } from '../../tasks';
-import { type Activity, AGENT_IDS, type Task, type State } from '../../types';
+import type { Activity, Task, State } from '../../types';
 import { FeedbackDialog } from '@/components/ApprovalActions';
 import { ApprovalItems, DiffItems, useDeleteActivity, useRunMenu } from '@/components/TaskMenu';
 import { CONTEXT_KIT, DROPDOWN_KIT, type MenuKit } from '@/components/menu-kit';
-import { agentName, openNew } from '@/components/NewRunButton';
+import { openNew, useAgentPicks } from '@/components/NewRunButton';
 import { StartDialog } from '@/components/StartDialog';
 import { useSleepMenu } from '@/components/SleepMenu';
 import { useOpenRun, useOpenStarted } from '@/components/terminal-tabs';
@@ -39,13 +38,14 @@ function useRunStages(task: Task, state: State, { Item }: MenuKit): { item: Reac
 // activity (#491); a run target is a live activity (#629), so a task whose activity is gone has none to offer
 function NewSessionSub({ task, activity, kit }: { task: Task; activity?: Activity; kit: MenuKit }) {
   const openRun = useOpenRun();
+  const picks = useAgentPicks();
   const { Item, Sub, SubTrigger, SubContent } = kit;
   return (
     <Sub>
       <SubTrigger disabled={!activity || !canOpenSession(task, activity)}>{t('activities.menu.newSession')}</SubTrigger>
       <SubContent>
-        {/* #927: only an agent that can open a free session (Codex picks its own id; until #931) */}
-        {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <Item key={agent} onSelect={() => activity && openNew({ kind: 'task', task, activity }, agent, openRun)}>{agentName(agent)}</Item>)}
+        {/* #931: every agent; one boot did not find is disabled and named off PATH */}
+        {picks.map(({ agent, label, disabled }) => <Item key={agent} disabled={disabled} onSelect={() => activity && openNew({ kind: 'task', task, activity }, agent, openRun)}>{label}</Item>)}
         <Item onSelect={() => activity && openNew({ kind: 'task', task, activity }, 'terminal', openRun)}>{t('activities.menu.terminal')}</Item>
       </SubContent>
     </Sub>

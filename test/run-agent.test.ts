@@ -30,6 +30,8 @@ const onDev = (dev: Partial<Stage>, agent: AgentId = 'claude', extra: Partial<St
 const spawnOf = (effects: Effect[]) => effects.find((e): e is Extract<Effect, { type: 'spawn' }> => e.type === 'spawn');
 const start = (state: State) => reduce(state, { type: 'start', itemId: ITEM.itemId });
 const localWorker = (state: State) => state.workers.find((w) => w.activityId === localActivityId('hive'));
+const hookStart = (state: State, ptyId: string, id: string): State =>
+  reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: '/wt', source: 'startup' } }).state;
 
 test('setDefaultAgent puts the config\'s default agent on the live state with no effect, and the log names it (#925)', () => {
   const { state, effects } = reduce(initialState(1), { type: 'setDefaultAgent', agent: OTHER });
@@ -44,13 +46,14 @@ test('a stage run\'s worker and the session it records carry the stage\'s agent,
   assert.equal(spawnOf(start(onDev({}, 'claude', { defaultAgent: OTHER })).effects)?.worker.agent, OTHER);
 });
 
-test('openSession records the agent asked for on a new session; a resumed session runs its own agent, whatever was asked (#925)', () => {
+test('openSession records the agent asked for on a new session; a resumed session runs its own agent, whatever was asked (#925, #931)', () => {
   const state = onDev({});
   const activityId = workId(state, ITEM.itemId);
   const opened = reduce(state, { type: 'openSession', activityId, agent: OTHER }).state;
   const fresh = opened.workers.find((w) => w.freeSession);
   assert.equal(fresh?.agent, OTHER);
-  assert.equal(sessionsOf(opened, ITEM.itemId).find((s) => s.id === fresh?.sessionId)?.agent, OTHER);
+  const seen = hookStart(opened, fresh?.runId ?? '', S2); // #931: codex's session is recorded at its first SessionStart
+  assert.equal(sessionsOf(seen, ITEM.itemId).find((s) => s.id === S2)?.agent, OTHER);
   const resumed = reduce(state, { type: 'openSession', activityId, continueId: S1, agent: OTHER }).state;
   assert.equal(resumed.workers.find((w) => w.freeSession)?.agent, 'claude', 'S1 is claude\'s');
 });
@@ -59,7 +62,8 @@ test('a copy runs and records its source\'s agent; a new local session the one a
   const source = onDev({}, OTHER);
   const copied = reduce(source, { type: 'copySession', from: { activityId: workId(source, ITEM.itemId), sessionId: S1 }, to: { activityId: localActivityId('hive') } }).state;
   assert.deepEqual([localSessionsOf(copied, 'hive').at(-1)?.agent, localWorker(copied)?.agent], [OTHER, OTHER]);
-  const fresh = reduce(onDev({}), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: OTHER }).state;
+  const local = reduce(onDev({}), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: OTHER }).state;
+  const fresh = hookStart(local, localWorker(local)?.runId ?? '', S2); // #931: its entry comes with its first SessionStart
   assert.deepEqual([localSessionsOf(fresh, 'hive').at(-1)?.agent, localWorker(fresh)?.agent], [OTHER, OTHER]);
   const shell = { ...onDev({}, 'claude', { defaultAgent: OTHER }), terminals: [{ terminalId: SHELL, activityId: localActivityId('hive'), startedAt: AT, cwd: '/repo' }] };
   const captured = reduce(shell, { type: 'captureSession', terminalId: SHELL, runId: RUN, agent: 'claude', sessionId: S2 }).state;
@@ -85,9 +89,6 @@ test('the same continue stage resumes a session of its own agent (#925)', () => 
   const spawn = spawnOf(start(onDev({ session: 'continue', agent: OTHER }, OTHER)).effects);
   assert.deepEqual([spawn?.session, spawn?.activity.sessionId], ['continue', S1]);
 });
-
-const hookStart = (state: State, ptyId: string, id: string): State =>
-  reduce(state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: id, cwd: '/wt', source: 'startup' } }).state;
 
 test('a codex stage run starts with no session id: not on its worker, not on its activity, and no session is recorded (#927)', () => {
   const { state, effects } = start(onDev({ agent: OTHER }));

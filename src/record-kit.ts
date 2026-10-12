@@ -39,8 +39,14 @@ export function touchFreeSession(state: State, task: Task, id: string, now: stri
   const used = recordWithSession(state, taskId(task), id)
     ? withSession(state, task, id, (s) => ({ ...s, lastUsedAt: now }))
     : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true, agent }] }));
-  const live = activityOf(used, taskId(task));
-  return live ? withActivity(used, { ...live, freeSessionStage: task.stage }) : used;
+  return markFreeRun(used, task);
+}
+
+/** The free run's mark on the live activity (#812): the task offers no continue on its stage until a stage run spawns. A Codex open sets it
+ * alone; its session is recorded at its first SessionStart (#931). */
+export function markFreeRun(state: State, task: Task): State {
+  const live = activityOf(state, taskId(task));
+  return live ? withActivity(state, { ...live, freeSessionStage: task.stage }) : state;
 }
 
 const addRun = (usage: TaskUsage, run: Pick<TaskUsage, 'ms' | 'waitingMs'>): TaskUsage =>
@@ -123,7 +129,8 @@ function otherFreeRun(state: State, task: Task, worker: Worker): boolean {
 /** A free run that never opened (#812), as forgetFailedSession: its entry goes, and unless another free run happened in this visit, the free
  * run's mark too, so a stage no free run touched keeps its continue. */
 export function forgetFailedFreeRun(state: State, task: Task, worker: Worker): State {
-  const forgotten = forgetFailedSession(state, task, worker, worker.sessionId);
+  // a run that never learned its id (#931) has no entry to drop: never let the default read the stage run's id
+  const forgotten = worker.sessionId === undefined ? state : forgetFailedSession(state, task, worker, worker.sessionId);
   const live = activityOf(forgotten, taskId(task));
   if (live?.freeSessionStage === undefined || otherFreeRun(forgotten, task, worker)) return forgotten;
   const { freeSessionStage: _free, ...rest } = live;
