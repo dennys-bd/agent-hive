@@ -26,29 +26,49 @@ function reconcileDue(deps: SyncDeps, repository: string): boolean {
   return !(deps.now().getTime() - Date.parse(at ?? '') <= RECONCILE_EVERY_MS);
 }
 
-/** One repository's round (#180): issues, then comments (whose issues the first scope stored), then the repo and labels scopes, then the full listing when due. A first round
- * that read both scopes from null to their end already read everything: it counts as the listing. A scope that throws ends the round
- * there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
+interface Independent { report: SyncReport; error?: unknown }
+
+// The repo and labels scopes (#181) run first and each on its own: a fork with issues disabled answers 410 on the issues scope, and a failing
+// repo scope must not keep the others from running. Only a stop ends the round here
+async function repoScopes(deps: SyncDeps, repository: string): Promise<Independent> {
+  let report = EMPTY_REPORT;
+  let error: unknown;
+  for (const scope of [syncRepo, syncLabels]) {
+    try {
+      report = mergeReports(report, await scope(deps, repository));
+    } catch (caught) {
+      if (caught instanceof SyncStopped) throw caught;
+      error ??= caught;
+    }
+  }
+  return { report, ...(error === undefined ? {} : { error }) };
+}
+
+/** One repository's round (#180): the repo and labels scopes (#181, each independent of the rest), then issues, then comments (whose issues the first scope stored), then the full
+ * listing when due. A first round that read both issue scopes from null to their end already read everything: it counts as the listing. An issue scope that throws ends
+ * the round there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
 export async function syncRepository(deps: SyncDeps, repository: string): Promise<RoundResult> {
   let report = EMPTY_REPORT;
   let commentsBlocked = false;
+  let scopesError: unknown;
   try {
+    const scopes = await repoScopes(deps, repository);
+    report = scopes.report;
+    scopesError = scopes.error;
     const issues = await syncScope(deps, repository, 'issues');
     report = mergeReports(report, issues);
     const comments = await syncScope(deps, repository, 'comments');
     report = mergeReports(report, comments);
     commentsBlocked = comments.blocked === true;
-    // #181: after the issue scopes, which the views need most; a failure here ends the round as any scope's does
-    report = mergeReports(report, await syncRepo(deps, repository));
-    report = mergeReports(report, await syncLabels(deps, repository));
     if (issues.full && comments.full) stampReconcile(deps, repository);
     else if (reconcileDue(deps, repository)) report = mergeReports(report, await reconcile(deps, repository));
-    return { report, ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
+    return { report, ...(scopesError === undefined ? {} : { error: scopesError }), ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
   } catch (caught) {
     const partial = caught instanceof PartialSyncError;
     if (partial) report = mergeReports(report, caught.report);
     const error = partial ? caught.original : caught;
-    return { report, ...(error instanceof SyncStopped ? {} : { error }) }; // a stop is not a failure
+    if (error instanceof SyncStopped) return { report }; // a stop is not a failure
+    return { report, error };
   }
 }
 

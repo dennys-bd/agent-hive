@@ -129,13 +129,20 @@ export function closingPrsFromGql(json: unknown): ProjectPr[] {
 
 const optionalObject = (value: unknown, what: string): Json | undefined => (value === null || value === undefined ? undefined : objectOf(value, what));
 
+// html_url is served as a link: only a github.com page may be one
+function githubUrlOf(obj: Json, key: string): string {
+  const url = textOf(obj, key);
+  if (!url.startsWith('https://github.com/')) throw new WireError(key);
+  return url;
+}
+
 /** `GET /repos/{o}/{r}` as its row (#181): no `permissions` (a read without push rights shown) cannot push; only a fork has `parent`. */
 export function repoFromRest(source: string, repository: string, json: unknown): RepoRow {
   const repo = objectOf(json, 'repository');
   const permissions = optionalObject(repo.permissions, 'permissions');
   const parent = optionalObject(repo.parent, 'parent');
   return {
-    source, repository, url: textOf(repo, 'html_url'), canPush: permissions === undefined ? false : flagOf(permissions, 'push'),
+    source, repository, url: githubUrlOf(repo, 'html_url'), canPush: permissions === undefined ? false : flagOf(permissions, 'push'),
     issuesEnabled: flagOf(repo, 'has_issues'), forkParent: parent === undefined ? null : textOf(parent, 'full_name'), pushedAt: nullableText(repo, 'pushed_at'),
   };
 }

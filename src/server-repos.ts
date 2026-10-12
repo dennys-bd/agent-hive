@@ -175,7 +175,12 @@ interface Reading { model: RepoReadModel; source: string }
 async function readingOf(ctx: RepoContext, res: Response): Promise<Reading | undefined> {
   const model = ctx.deps.readModel;
   if (model === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: MODEL_CLOSED_MESSAGE });
-  const source = await model.source();
+  let source: string | undefined;
+  try {
+    source = await model.source();
+  } catch (err) {
+    ctx.deps.log.error(`repositories: the read model's source could not be read: ${err instanceof Error ? err.message : String(err)}`); // the text stays in the log: a store error may name a path
+  }
   if (source === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: NO_LOGIN_MESSAGE });
   return { model, source };
 }

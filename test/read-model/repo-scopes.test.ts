@@ -52,13 +52,13 @@ test('a malformed answer throws and leaves the stored row and its ETag as they w
   ]);
 });
 
-test('syncRepository runs the repo and labels scopes after comments; the round names them only when they changed (#181)', async (t) => {
+test('syncRepository runs the repo and labels scopes before issues; the round names them only when they changed (#181)', async (t) => {
   const db = await tempModel(t);
-  const { rest, calls } = fakeRest([ok([restIssue(1, T1)]), ok([]), ok(REST_REPO, { etag: 'ER' }), ok([restLabel('bug')], { etag: 'EL' })]);
+  const { rest, calls } = fakeRest([ok(REST_REPO, { etag: 'ER' }), ok([restLabel('bug')], { etag: 'EL' }), ok([restIssue(1, T1)]), ok([])]);
   const first = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
-  assert.deepEqual(calls.map(([path]) => path), [scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null), repoPath(REPO), labelsPath(REPO)]);
+  assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
   assert.deepEqual(first.report.kinds, ['issues', 'repo', 'labels']);
-  const quiet = fakeRest([{ status: 304 }, { status: 304 }, ok(REST_REPO), ok([restLabel('bug')])]);
+  const quiet = fakeRest([ok(REST_REPO), ok([restLabel('bug')]), { status: 304 }, { status: 304 }]);
   const second = await syncRepository({ db, rest: quiet.rest, source: SOURCE, now: NOW }, REPO);
   assert.deepEqual(second.report, { kinds: [], requests: { 200: 2, 304: 2 } }, 'an identical 200 names no kind');
 });

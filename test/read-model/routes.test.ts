@@ -19,17 +19,21 @@ const exec: Exec = async (_file, args) => ({ stdout: `git@github.com:acme/${args
 const READS = ['/repositories', '/repositories/acme/hive/issues?state=open', '/repositories/acme/hive/issues/12', '/repositories/acme/hive/labels'];
 
 type Refetch = (db: ReadModel, repository: string, number: number) => Promise<RefetchOutcome>;
-interface Options { model?: boolean; source?: string | undefined; refetch?: Refetch }
-interface Harness { base: string; db: ReadModel; gqlCalls(): number; refetched: string[] }
+interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch }
+interface Harness { base: string; db: ReadModel; gqlCalls(): number; refetched: string[]; errors: string[] }
 
 // The repository routes over a real read model in a temporary home; GraphQL throws on any call and counts it
 async function routesOn(t: TestContext, options: Options = {}): Promise<Harness> {
   const db = await tempModel(t);
   const refetched: string[] = [];
+  const errors: string[] = [];
   let gqlCalls = 0;
   const readModel: RepoReadModel = {
     db,
-    source: async () => ('source' in options ? options.source : SOURCE),
+    source: async () => {
+      if (options.sourceFails) throw new Error('credential store corrupt');
+      return 'source' in options ? options.source : SOURCE;
+    },
     refetch: (repository, number) => {
       refetched.push(`${repository}#${number}`);
       return options.refetch?.(db, repository, number) ?? Promise.resolve('unchanged');
@@ -41,14 +45,14 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
       gqlCalls += 1;
       throw new Error('a read route called GraphQL');
     },
-    poll: async () => undefined, log: { error: () => undefined },
+    poll: async () => undefined, log: { error: (message: string) => { errors.push(message); } },
     ...(options.model === false ? {} : { readModel }),
   };
   const app = express();
   registerRepoRoutes(app, deps);
   const server = app.listen(0);
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, db, gqlCalls: () => gqlCalls, refetched };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, db, gqlCalls: () => gqlCalls, refetched, errors };
 }
 
 async function get(url: string): Promise<[number, unknown]> {
@@ -180,4 +184,11 @@ test('with no read model, or no login, the read routes answer 503 and none calls
     for (const path of READS) assert.deepEqual(await get(`${base}${path}`), [503, { error }], `${error}: ${path}`);
     assert.equal(gqlCalls(), 0);
   }
+});
+
+test('a source lookup that rejects answers 503 with the fixed message, logs the cause and never leaks it (#181)', async (t) => {
+  const { base, errors } = await routesOn(t, { sourceFails: true });
+  for (const path of READS) assert.deepEqual(await get(`${base}${path}`), [503, { error: 'no GitHub login' }], path);
+  assert.equal(errors.length, READS.length);
+  assert.match(errors[0] as string, /credential store corrupt/);
 });

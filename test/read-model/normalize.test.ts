@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closingPrsFromGql, commentFromGql, commentFromRest, issueFromGql, issueFromRest, WireError } from '../../src/read-model/normalize.js';
+import { closingPrsFromGql, commentFromGql, commentFromRest, issueFromGql, issueFromRest, repoFromRest, WireError } from '../../src/read-model/normalize.js';
 import { sourceOf } from '../../src/read-model/rows.js';
-import { CLOSING_PRS, COMMENT_ROW, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, REPO, REST_COMMENT, REST_ISSUE, SOURCE } from './fixtures.js';
+import { CLOSING_PRS, COMMENT_ROW, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, REPO, REST_COMMENT, REST_ISSUE, REST_REPO, SOURCE } from './fixtures.js';
 
 test('the REST and the GraphQL normalizer map one issue to the same row, assignees included (#178)', () => {
   assert.deepEqual(issueFromRest(SOURCE, REPO, REST_ISSUE), ISSUE_ROW);
@@ -41,4 +41,11 @@ test('malformed wire input throws WireError instead of storing half a row (#178)
 
 test('sourceOf names a login on a host (#178)', () => {
   assert.equal(sourceOf('github.com', 'octo'), 'github:github.com:octo');
+});
+
+test('a repository whose html_url is not a github.com page is a malformed answer, as it is served as a link (#181)', () => {
+  assert.equal(repoFromRest(SOURCE, REPO, REST_REPO).url, 'https://github.com/acme/hive');
+  for (const html_url of ['javascript:alert(1)', 'http://github.com/acme/hive', 'https://evil.example/acme/hive', 'https://github.com.evil.example/x', null]) {
+    assert.throws(() => repoFromRest(SOURCE, REPO, { ...REST_REPO, html_url }), WireError, String(html_url));
+  }
 });
