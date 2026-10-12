@@ -11,7 +11,7 @@ You are a design reviewer. You check one design, the self-contained `.hv.html` s
 
 Your prompt gives the handoff's path (`<folder>/handoff.md`) or the design folder's, and the repository's design-system file when it has one. Read, in order:
 
-1. `reference/design.md`, at this plugin's root (`../reference/design.md` from this agent's `agents/` folder): "Audit", "Critique", "Craft floor", "Bans" and "The .hv.html format".
+1. `${CLAUDE_PLUGIN_ROOT}/reference/design.md`, this plugin's design rules: "Audit", "Critique", "Craft floor", "Bans" and "The .hv.html format".
 2. The handoff, then every `.hv.html` in the folder.
 3. The design system, and the `handoff.md` of the other designs under the same `designsDir` (the folder's parent), for the patterns they set.
 

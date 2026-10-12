@@ -136,3 +136,13 @@ test('CREDITS.md credits Impeccable and ecc\'s frontend-design-direction for ref
   const text = await readFile(join(PLUGIN, 'CREDITS.md'), 'utf8');
   for (const source of ['Impeccable', 'frontend-design-direction', 'reference/design.md']) assert.ok(text.includes(source), `CREDITS.md does not name ${source}`);
 });
+
+// Claude Code expands this in an agent's text; the Hive's PLUGIN path is where it points at run time
+const PLUGIN_ROOT = '$' + '{CLAUDE_PLUGIN_ROOT}';
+
+test('the design agents read the references through the plugin root variable, since an agent is not told its plugin\'s directory', async () => {
+  for (const agent of ['designer', 'design-reviewer']) {
+    const text = await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8');
+    assert.ok(text.includes(`${PLUGIN_ROOT}/reference/design.md`), `agents/${agent} does not read the design rules from the plugin root`);
+  }
+});

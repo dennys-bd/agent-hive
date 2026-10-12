@@ -23,14 +23,14 @@ A prompt may name more than one mode; run them in the table's order. With none n
 
 ## First, read
 
-1. `reference/conventions.md` and `reference/design.md`, at this plugin's root (`../reference/` from this agent's `agents/` folder). Resolve `docsRepo`, `designsDir`, `docsLanguage` and `chatLanguage` as "Resolve" in the conventions says, and state the one line it asks for.
+1. `${CLAUDE_PLUGIN_ROOT}/reference/conventions.md` and `${CLAUDE_PLUGIN_ROOT}/reference/design.md`, this plugin's references. Resolve `docsRepo`, `designsDir`, `docsLanguage` and `chatLanguage` as "Resolve" in the conventions says, and state the one line it asks for.
 2. The repository's design system, when it has one: the file `CLAUDE.md` (else `AGENTS.md`) or the docs name. None found means none, never a stop.
 3. The designs already under `designsDir`, their `handoff.md` first, for the patterns earlier designs set: layout, density, components, copy, states.
 4. Per mode: the spec (create, update); the screens to change (update, normalize, refine); the UI code the screens show, meaning components, tokens and copy, read only (sync, and create when the screen already exists in the code).
 
 ## Where the screens go
 
-`<designsDir>/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository, `<screen>` in kebab-case. With a spec, take the date and slug of the spec's file name, so the folder sits beside it by name. Without one, use today's date and a slug of the task. Update, sync, normalize and refine write into the existing folder and keep its date. `<slug>` and `<screen>` match `^[a-z0-9-]+$`, the folder stays under `designsDir`, and every path is quoted in a command.
+`<designsDir>/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository, `<screen>` in kebab-case. With a spec, take the date and slug of the spec's file name without its `-design` suffix, so the folder sits beside it by name. Without one, use today's date and a slug of the task. Update, sync, normalize and refine write into the existing folder and keep its date. `<slug>` and `<screen>` match `^[a-z0-9-]+$`, the folder stays under `designsDir`, and every path is quoted in a command.
 
 - One file per screen. Its states (empty, loading, error, filled…) are sections of that file, one after another, each headed by its state's name.
 - An alternative direction the user asked for is its own file, `<screen>.<variant>.hv.html` (`a`, `b`…).
