@@ -14,4 +14,8 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX comments_by_issue ON comments (source, issue_node_id, created_at);
   CREATE TABLE sync_scopes (source TEXT NOT NULL, repository TEXT NOT NULL, kind TEXT NOT NULL, cursor TEXT, etag TEXT, synced_at TEXT,
     PRIMARY KEY (source, repository, kind));`,
+  // #181: the repository summaries' and the labels popover's own data, each replaced whole by its conditional REST scope
+  `CREATE TABLE repos (source TEXT NOT NULL, repository TEXT NOT NULL, url TEXT NOT NULL, can_push INTEGER NOT NULL, issues_enabled INTEGER NOT NULL,
+    fork_parent TEXT, pushed_at TEXT, PRIMARY KEY (source, repository));
+  CREATE TABLE labels (source TEXT NOT NULL, repository TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (source, repository, name));`,
 ];

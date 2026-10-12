@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closingPrsFromGql, commentFromGql, commentFromRest, issueFromGql, issueFromRest, WireError } from '../../src/read-model/normalize.js';
+import { closingPrsFromGql, commentFromGql, commentFromRest, issueFromGql, issueFromRest, repoFromRest, WireError } from '../../src/read-model/normalize.js';
 import { sourceOf } from '../../src/read-model/rows.js';
-import { repoIssue } from '../../src/repos/github-repos.js';
-import { COMMENT_ROW, GQL_CLOSING_PRS, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, REPO, REST_COMMENT, REST_ISSUE, SOURCE, T1 } from './fixtures.js';
+import { CLOSING_PRS, COMMENT_ROW, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, REPO, REST_COMMENT, REST_ISSUE, REST_REPO, SOURCE } from './fixtures.js';
 
 test('the REST and the GraphQL normalizer map one issue to the same row, assignees included (#178)', () => {
   assert.deepEqual(issueFromRest(SOURCE, REPO, REST_ISSUE), ISSUE_ROW);
@@ -23,9 +22,8 @@ test('the REST and the GraphQL normalizer map one comment to the same row, url i
   assert.equal(commentFromRest(SOURCE, REPO, REST_COMMENT, () => undefined), undefined);
 });
 
-test('closingPrsFromGql gives the ProjectPrs the repository views give for the same nodes (#178)', () => {
-  const views = repoIssue({ number: 12, title: 'T12', url: 'https://github.com/acme/hive/issues/12', updatedAt: T1, closedByPullRequestsReferences: { nodes: GQL_CLOSING_PRS } });
-  assert.deepEqual(closingPrsFromGql(GQL_ISSUE), views.pullRequests);
+test('closingPrsFromGql shapes GitHub\'s nodes as the views\' ProjectPrs, in GitHub\'s order (#178)', () => {
+  assert.deepEqual(closingPrsFromGql(GQL_ISSUE), [CLOSING_PRS[1], CLOSING_PRS[0]]);
 });
 
 test('malformed wire input throws WireError instead of storing half a row (#178)', () => {
@@ -43,4 +41,11 @@ test('malformed wire input throws WireError instead of storing half a row (#178)
 
 test('sourceOf names a login on a host (#178)', () => {
   assert.equal(sourceOf('github.com', 'octo'), 'github:github.com:octo');
+});
+
+test('a repository whose html_url is not a github.com page is a malformed answer, as it is served as a link (#181)', () => {
+  assert.equal(repoFromRest(SOURCE, REPO, REST_REPO).url, 'https://github.com/acme/hive');
+  for (const html_url of ['javascript:alert(1)', 'http://github.com/acme/hive', 'https://evil.example/acme/hive', 'https://github.com.evil.example/x', null]) {
+    assert.throws(() => repoFromRest(SOURCE, REPO, { ...REST_REPO, html_url }), WireError, String(html_url));
+  }
 });

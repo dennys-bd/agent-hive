@@ -26,3 +26,6 @@ export type UpsertOrigin = 'sync' | 'write';
 
 /** The origin of a row: a login on a host. The caller reads the login, so where it comes from stays open (#178). */
 export const sourceOf = (host: string, login: string): string => `github:${host}:${login}`;
+
+/** A repository's own data (#181): one row per source and owner/name, replaced whole on a 200 of GET /repos/{o}/{r}. */
+export interface RepoRow { source: string; repository: string; url: string; canPush: boolean; issuesEnabled: boolean; forkParent: string | null; pushedAt: string | null }

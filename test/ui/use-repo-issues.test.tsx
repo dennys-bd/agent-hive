@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { resetRepoIssues, useRepoIssues } from '@/hooks/use-repo-issues';
 import type { RepoIssues } from '../../src/types';
 
-const answerOf = (state: RepoIssues['state']): RepoIssues => ({ state, total: 0, truncated: false, issues: [] });
+const answerOf = (state: RepoIssues['state']): RepoIssues => ({ state, total: 0, truncated: false, syncedAt: null, issues: [] });
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(answerOf(String(input).endsWith('closed') ? 'closed' : 'open')), { status: 200, headers: { 'content-type': 'application/json' } }));
 
 beforeEach(() => {

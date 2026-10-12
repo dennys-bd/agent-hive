@@ -1112,14 +1112,17 @@ export function createServer(deps: ServerDeps): HiveServer {
   });
   registerProjectRoutes(app, { requireLive, dispatch, log }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
-  registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log }); // GET /repositories and a repository's issues, read and written with the Hive's own login (#757)
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
+  const readAccess = () => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log });
   const readLoop = deps.readModel && createReadModelLoop({
-    db: deps.readModel, log, notify: notifyReadModel,
-    access: () => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }),
+    db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
     repositories: async () => (live ? (await listRepositories(live.runtime.config, live.state, exec)).map((ref) => ref.repository) : []),
   });
+  // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
+  // go to GitHub with the Hive's own login (#757)
+  const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : { readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch } };
+  registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 
   // The header's refresh button: read the plan limits now and replace the held reading, e.g. after a plan upgrade lowered the percent

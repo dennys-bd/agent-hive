@@ -11,17 +11,17 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, R
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true };
+const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 1, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: null };
 const issue = (n: number, extra: Partial<RepoIssue> = {}): RepoIssue => ({
   number: n, title: `Issue ${n}`, url: `https://github.com/acme/site/issues/${n}`, labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [], ...extra,
 });
 const OPEN: RepoIssues = {
-  state: 'open', total: 2, truncated: false,
+  state: 'open', total: 2, truncated: false, syncedAt: null,
   issues: [issue(12, { labels: ['bug'], assignees: ['ana'] }), issue(30, { pullRequests: [{ number: 7, url: 'https://github.com/acme/site/pull/7', state: 'open', draft: true }] })],
 };
-const CLOSED: RepoIssues = { state: 'closed', total: 1, truncated: false, issues: [issue(4)] };
+const CLOSED: RepoIssues = { state: 'closed', total: 1, truncated: false, syncedAt: null, issues: [issue(4)] };
 const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://github.com/acme/other' };
-const EMPTY: RepoIssues = { state: 'open', total: 0, truncated: false, issues: [] };
+const EMPTY: RepoIssues = { state: 'open', total: 0, truncated: false, syncedAt: null, issues: [] };
 // #12 is a task of roadmap, sitting in dev
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const state: State = {

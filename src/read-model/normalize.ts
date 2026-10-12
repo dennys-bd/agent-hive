@@ -2,7 +2,7 @@ import { ASSIGNEE_LIMIT, LABEL_LIMIT } from '../repos/github-repo-queries.js';
 import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
 import type { ProjectPr } from '../types.js';
-import type { CommentRow, IssueRow } from './rows.js';
+import type { CommentRow, IssueRow, RepoRow } from './rows.js';
 
 // The wire is untrusted (#178): every field read is checked, and anything that is not GitHub's shape throws instead of storing half a row
 type Json = Record<string, unknown>;
@@ -126,3 +126,26 @@ export function closingPrsFromGql(json: unknown): ProjectPr[] {
   if (!Array.isArray(refs.nodes)) throw new WireError('closedByPullRequestsReferences');
   return refs.nodes.map((node) => pullRequest(ghPullRequestOf(node)));
 }
+
+const optionalObject = (value: unknown, what: string): Json | undefined => (value === null || value === undefined ? undefined : objectOf(value, what));
+
+// html_url is served as a link: only a github.com page may be one
+function githubUrlOf(obj: Json, key: string): string {
+  const url = textOf(obj, key);
+  if (!url.startsWith('https://github.com/')) throw new WireError(key);
+  return url;
+}
+
+/** `GET /repos/{o}/{r}` as its row (#181): no `permissions` (a read without push rights shown) cannot push; only a fork has `parent`. */
+export function repoFromRest(source: string, repository: string, json: unknown): RepoRow {
+  const repo = objectOf(json, 'repository');
+  const permissions = optionalObject(repo.permissions, 'permissions');
+  const parent = optionalObject(repo.parent, 'parent');
+  return {
+    source, repository, url: githubUrlOf(repo, 'html_url'), canPush: permissions === undefined ? false : flagOf(permissions, 'push'),
+    issuesEnabled: flagOf(repo, 'has_issues'), forkParent: parent === undefined ? null : textOf(parent, 'full_name'), pushedAt: nullableText(repo, 'pushed_at'),
+  };
+}
+
+/** A page of `GET /repos/{o}/{r}/labels` as names (#181). */
+export const labelNamesFromRest = (json: unknown): string[] => listOf(json, 'labels', 'name');

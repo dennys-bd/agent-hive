@@ -9,7 +9,7 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-m
 import { issueFromRest } from '../../src/read-model/normalize.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { tempDir } from '../temp-dir.js';
-import { CLOSING_PRS, COMMENT_ROW, commentRow, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REST_ISSUE, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { CLOSING_PRS, COMMENT_ROW, commentRow, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, REST_ISSUE, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const STALE = 'stale side file';
 const memory = async (now: () => number = () => 0): Promise<ReadModel> => (await openReadModel(':memory:', { now })).db;
@@ -194,4 +194,47 @@ test('the reconcile scope reads back as written, apart from the two sync scopes 
   db.setScope(SOURCE, REPO, 'reconcile', { cursor: null, etag: null, syncedAt: T1 });
   assert.deepEqual(db.scope(SOURCE, REPO, 'reconcile'), { cursor: null, etag: null, syncedAt: T1 });
   assert.equal(db.scope(SOURCE, REPO, 'issues'), undefined);
+});
+
+test('a file at #180\'s schema version runs the repos and labels migration and keeps what it stored (#181)', async (t) => {
+  const path = join(await tempDir(t, 'read-model-'), READ_MODEL_FILE);
+  // by hand: the model prepares every table's statements at open, so one opened at version 1 could not prepare the repos queries
+  const raw = new DatabaseSync(path);
+  raw.exec(`${MIGRATIONS[0]} PRAGMA user_version = 1;`);
+  raw.prepare('INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES (?, ?, ?, ?, ?, ?)').run(SOURCE, REPO, 'issues', T1, 'E', T2);
+  raw.close();
+  const { db, resync } = await openReadModel(path);
+  t.after(() => db.close());
+  assert.deepEqual([resync, peek(path, 'PRAGMA user_version')], [false, MIGRATIONS.length]);
+  assert.deepEqual(db.scope(SOURCE, REPO, 'issues'), { cursor: T1, etag: 'E', syncedAt: T2 });
+  assert.equal(db.setRepo(REPO_ROW), true);
+});
+
+test('setRepo writes a changed row only, per source; setLabels replaces the set and says whether it changed (#181)', async () => {
+  const db = await memory();
+  assert.equal(db.repo(SOURCE, REPO), undefined);
+  assert.equal(db.setRepo(REPO_ROW), true);
+  assert.equal(db.setRepo(REPO_ROW), false, 'an identical row writes nothing');
+  assert.equal(db.setRepo({ ...REPO_ROW, canPush: false, forkParent: 'up/hive' }), true);
+  assert.deepEqual(db.repo(SOURCE, REPO), { ...REPO_ROW, canPush: false, forkParent: 'up/hive' });
+  assert.equal(db.repo(OTHER_SOURCE, REPO), undefined);
+  assert.equal(db.setLabels(SOURCE, REPO, ['docs', 'bug']), true);
+  assert.equal(db.setLabels(SOURCE, REPO, ['bug', 'docs']), false, 'the same set in another order');
+  assert.deepEqual(db.labels(SOURCE, REPO), ['bug', 'docs']);
+  assert.equal(db.setLabels(SOURCE, REPO, ['bug']), true);
+  assert.deepEqual([db.labels(SOURCE, REPO), db.labels(OTHER_SOURCE, REPO)], [['bug'], []]);
+});
+
+test('counts counts issue and PR rows by state and kind with the newest updated_at of either; issues stops at its limit (#181)', async () => {
+  const db = await memory();
+  assert.deepEqual(db.counts(SOURCE, REPO), { openIssues: 0, closedIssues: 0, openPrs: 0 });
+  db.upsertIssue(issueRow(1, T1, { state: 'open' }), 'sync');
+  db.upsertIssue(issueRow(2, T2, { state: 'open' }), 'sync');
+  db.upsertIssue(issueRow(3, T1), 'sync');
+  db.upsertIssue(issueRow(4, T3, { kind: 'pr', state: 'open' }), 'sync');
+  db.upsertIssue(issueRow(5, T1, { kind: 'pr' }), 'sync'); // a closed PR counts nowhere
+  db.upsertIssue(issueRow(6, T3, { state: 'open', source: OTHER_SOURCE }), 'sync');
+  assert.deepEqual(db.counts(SOURCE, REPO), { openIssues: 2, closedIssues: 1, openPrs: 1, lastUpdatedAt: T3 });
+  assert.deepEqual(db.issues(SOURCE, REPO, 'open', 1).map((i) => i.number), [2]);
+  assert.equal(db.issues(SOURCE, REPO, 'open').length, 2, 'no limit: every row');
 });

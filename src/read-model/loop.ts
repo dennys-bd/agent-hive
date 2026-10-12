@@ -3,6 +3,7 @@ import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
+import { syncLabels, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 
@@ -25,13 +26,41 @@ function reconcileDue(deps: SyncDeps, repository: string): boolean {
   return !(deps.now().getTime() - Date.parse(at ?? '') <= RECONCILE_EVERY_MS);
 }
 
-/** One repository's round (#180): issues, then comments (whose issues the first scope stored), then the full listing when due. A first round
- * that read both scopes from null to their end already read everything: it counts as the listing. A scope that throws ends the round
- * there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
+interface Independent { report: SyncReport; errors: unknown[] }
+
+// Every failure of a round reaches the log: two at once travel as one AggregateError whose message names each
+function joined(errors: unknown[]): unknown {
+  if (errors.length <= 1) return errors[0];
+  return new AggregateError(errors, errors.map((err) => (err instanceof Error ? err.message : String(err))).join('; '));
+}
+
+// The repo and labels scopes (#181) run first and each on its own: a fork with issues disabled answers 410 on the issues scope, and a failing
+// repo scope must not keep the others from running. Only a stop ends the round here
+async function repoScopes(deps: SyncDeps, repository: string): Promise<Independent> {
+  let report = EMPTY_REPORT;
+  const errors: unknown[] = [];
+  for (const scope of [syncRepo, syncLabels]) {
+    try {
+      report = mergeReports(report, await scope(deps, repository));
+    } catch (caught) {
+      if (caught instanceof SyncStopped) throw caught;
+      errors.push(caught);
+    }
+  }
+  return { report, errors };
+}
+
+/** One repository's round (#180): the repo and labels scopes (#181, each independent of the rest), then issues, then comments (whose issues the first scope stored), then the full
+ * listing when due. A first round that read both issue scopes from null to their end already read everything: it counts as the listing. An issue scope that throws ends
+ * the round there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
 export async function syncRepository(deps: SyncDeps, repository: string): Promise<RoundResult> {
   let report = EMPTY_REPORT;
   let commentsBlocked = false;
+  let scopesErrors: unknown[] = [];
   try {
+    const scopes = await repoScopes(deps, repository);
+    report = scopes.report;
+    scopesErrors = scopes.errors;
     const issues = await syncScope(deps, repository, 'issues');
     report = mergeReports(report, issues);
     const comments = await syncScope(deps, repository, 'comments');
@@ -39,12 +68,16 @@ export async function syncRepository(deps: SyncDeps, repository: string): Promis
     commentsBlocked = comments.blocked === true;
     if (issues.full && comments.full) stampReconcile(deps, repository);
     else if (reconcileDue(deps, repository)) report = mergeReports(report, await reconcile(deps, repository));
-    return { report, ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
+    const error = joined(scopesErrors);
+    return { report, ...(error === undefined ? {} : { error }), ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
   } catch (caught) {
     const partial = caught instanceof PartialSyncError;
     if (partial) report = mergeReports(report, caught.report);
     const error = partial ? caught.original : caught;
-    return { report, ...(error instanceof SyncStopped ? {} : { error }) }; // a stop is not a failure
+    // a stop is not a failure, but a repo or labels scope that failed before it still is
+    const failures = error instanceof SyncStopped ? scopesErrors : [...scopesErrors, error];
+    const failed = joined(failures);
+    return { report, ...(failed === undefined ? {} : { error: failed }) };
   }
 }
 
