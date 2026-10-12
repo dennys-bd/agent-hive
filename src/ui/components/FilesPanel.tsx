@@ -266,7 +266,7 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const selectedOf = (path: string): string[] => actedOn(selection, path);
   const folders = folderOps(onView);
   const edit = useTreeEditing({ activityId: activity.id, expand: folders.expand, select: (path) => setSelection(single(path)), onOpen });
-  const ops = useTreeActions(target, root, {
+  const ops = useTreeActions(target, root, ready?.checkout, {
     newItem: (type, folder) => edit.start({ kind: 'new', type, folder }),
     rename: (path) => edit.start({ kind: 'rename', path }),
   });

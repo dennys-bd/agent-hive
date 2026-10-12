@@ -55,11 +55,14 @@ function ClipboardItems({ actions, selected, into }: { actions: TreeActions; sel
   );
 }
 
+// #131: copy path from checkout only where the tree has one; a local activity's root is the checkout, so it would repeat copy relative path
 function PathItems({ actions, path }: { actions: TreeActions; path: string }) {
+  const copyCheckoutPath = actions.copyCheckoutPath;
   return (
     <>
       <ContextMenuItem onSelect={() => actions.copyPath(path)}>{t('files.copyPath')}<KeyHint id="treeCopyPath" /></ContextMenuItem>
       <ContextMenuItem onSelect={() => actions.copyRelativePath(path)}>{t('files.copyRelativePath')}<KeyHint id="treeCopyRelativePath" /></ContextMenuItem>
+      {copyCheckoutPath && <ContextMenuItem onSelect={() => copyCheckoutPath(path)}>{t('files.copyCheckoutPath')}<KeyHint id="treeCopyCheckoutPath" /></ContextMenuItem>}
     </>
   );
 }
