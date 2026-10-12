@@ -1,9 +1,10 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowRepositories } from '@/components/FlowRepositories';
 import { resetRepositories } from '@/hooks/use-repositories';
 import { setLanguage } from '@/i18n';
+import { emitReadModelEvent } from '@/lib/review-events';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { RepoSummary } from '../../src/types';
 
@@ -144,4 +145,12 @@ test('a fork whose original is another pair\'s fork still shows: each row is pla
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/p');
   expect(rowNames()).toEqual(['up/p', 'me/b', 'me/c']);
+});
+
+test('any readModel event reads the repositories again, whatever its repository or kinds (#182)', async () => {
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/g');
+  listed = [...LIST, repo('h', 8)];
+  act(() => emitReadModelEvent({ repository: 'acme/elsewhere', kinds: ['labels'] }));
+  expect(await screen.findByTitle('acme/h')).toBeInTheDocument();
 });

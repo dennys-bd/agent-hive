@@ -5,6 +5,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import type { RepoSummary } from '../../types';
 import { readQuotaJson } from '@/hooks/use-project';
+import { onReadModelEvent } from '@/lib/review-events';
 import { readView, writeView } from '@/lib/view-state';
 
 export const RECENT_SHOWN = 5; // handoff 02: the recent rows before +N
@@ -35,6 +36,10 @@ export const useRepositories = (): RepoSummary[] => useSyncExternalStore(subscri
 export function resetRepositories(): void {
   repositories = [];
 }
+
+// #182: a summary's counts and last activity derive from the issue rows and its PR count from the repo rows, so any change reads the list
+// again. Subscribed once at load and never dropped: it lives as long as the page, as the list it fills; resetRepositories leaves it
+onReadModelEvent(() => { void reloadRepositories(); });
 
 const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every((name) => typeof name === 'string');
 
