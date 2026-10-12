@@ -95,7 +95,7 @@ test('ptyEnv copies the base env without CLAUDECODE, CLAUDE_CODE_CHILD_SESSION, 
 });
 
 test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924)', () => {
-  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_HOME: '/h', HOME: '/Users/x' };
+  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_HOME: '/h', HOME: '/Users/x' };
   assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
 });

@@ -106,7 +106,7 @@ test('a codex stage starts codex with its overrides, the trust bypass and the st
   assert.deepEqual(plainArgs(launch), ['--dangerously-bypass-hook-trust', '-m', 'gpt-5.6-terra']);
   assert.ok(pairs.includes(`mcp_servers.hive.http_headers={"x-hive-pty"="${launch.ptyId}"}`));
   assert.ok(pairs.some((pair) => pair.startsWith('developer_instructions=')), 'the stage protocol, as text');
-  assert.ok(pairs.includes(`projects.${JSON.stringify(launch.cwd)}.trust_level="trusted"`), 'the worktree it starts in');
+  assert.ok(pairs.includes(`projects={${JSON.stringify(launch.cwd)}={trust_level="trusted"}}`), 'the worktree it starts in');
   assert.equal(launch.env?.HIVE_MCP_SECRET, SECRET);
   assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
 });

@@ -40,14 +40,16 @@ export const overrides = (run: AgentRun): LaunchArg[] => [
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
   ...(run.protocolText === undefined ? [] : [override('developer_instructions', tomlString(run.protocolText))]),
   override('check_for_update_on_startup', 'false'), // the update screen takes the first keys: an Enter runs npm install -g (§13)
-  override(`projects.${tomlString(run.cwd)}.trust_level`, tomlString('trusted')), // nor the folder-trust screen, for a worktree Codex never saw
+  // nor the folder-trust screen, for a worktree Codex never saw. The path goes in the value: Codex splits a -c key on every '.', quoted or
+  // not, and every worktree path holds .hive
+  override('projects', `{${tomlString(run.cwd)}={trust_level=${tomlString('trusted')}}}`),
 ];
 
 // resume continues Codex's own id (§7); a new run never passes the Hive's, since Codex has no --session-id (§3)
 const resumeWords = (session: AgentRun['session']): string[] => (session?.resume ? ['resume', session.id] : []);
 
 export const codexRunner: AgentRunner = {
-  hostEnv: [],
+  hostEnv: [MCP_SECRET_ENV], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
   copy: () => undefined, // #933
   clear: () => undefined, // #933

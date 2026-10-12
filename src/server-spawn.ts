@@ -174,11 +174,14 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     let cwd: string;
     let env: Record<string, string>;
     let workspace: string;
+    let protocolText: string;
+    const protocolPath = taskProtocol(home, runtime, task).stage; // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
     try {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
       env = await runEnv(exec, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
+      protocolText = await readFile(protocolPath, 'utf8'); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
     } catch (err) {
       await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) });
       return;
@@ -189,10 +192,9 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
     const server = { port, ptyId, secret, withHive: true };
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
-    const protocolPath = taskProtocol(home, runtime, task).stage; // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
     const run: AgentRun = {
       ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), model: stage.model, session: runSession(activity.sessionId, session),
-      protocolPath, protocolText: await readFile(protocolPath, 'utf8'), // #927: Codex takes the protocol as text; Claude keeps the path
+      protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path
       extraArgs: config.agentArgs[agent], // #924: the stage's agent's own
     };
     pool.start({

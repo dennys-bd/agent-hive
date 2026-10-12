@@ -26,7 +26,7 @@ const MCP: LaunchArg[] = [
   ['-c', 'mcp_servers.hive.default_tools_approval_mode="approve"'],
 ];
 const PROTOCOL_ARG: LaunchArg = ['-c', `developer_instructions=${JSON.stringify(PROTOCOL)}`];
-const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', `projects."${CWD}".trust_level="trusted"`]];
+const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', `projects={"${CWD}"={trust_level="trusted"}}`]];
 const TAIL = ['--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write', '-m', 'gpt-5.6-terra'];
 const STAGE_RUN: AgentRun = { ...RUN, protocolText: PROTOCOL, model: 'gpt-5.6-terra', extraArgs: ['--sandbox', 'workspace-write'] };
 
@@ -70,7 +70,7 @@ test('the command line runs codex bare with every override quoted whole and the 
 test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; it writes and reads nothing of its own yet (#927)', async () => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.deepEqual([codexRunner.copy(RUN, ID), codexRunner.clear(RUN)], [undefined, undefined]);
-  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [[], '', []]);
+  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), '', 'no dirname is empty: the transcript guard drops every Codex path (#929)');
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits(), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
