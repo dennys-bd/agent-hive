@@ -618,7 +618,8 @@ export const SLEPT_MAX = 20;
 /** A run that ended with its session kept (#672): its tab stays open on its transcript until the tab closes, the session continues, or it
  * falls out of the last SLEPT_MAX. taskId: a task's run; workspace: a local session's. cause: absent when the run ended on its own (a /exit). */
 export interface SleptRun {
-  ptyId: string; sessionId: string; agent: AgentId; kind: 'session' | 'stage'; stage?: string; taskId?: string; workspace?: string; cause?: SleepCause;
+  ptyId: string; agent: AgentId; kind: 'session' | 'stage'; stage?: string; taskId?: string; workspace?: string; cause?: SleepCause;
+  sessionId?: string; // #931: absent only on a session run the Hive put to sleep before its first SessionStart (Codex): it wakes into a new session
   at: number; // epoch ms of the end
 }
 

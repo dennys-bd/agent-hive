@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, localActivityId } from '../src/activities.js';
+import type { AgentRun } from '../src/agents/runner.js';
 import { codexRunner } from '../src/agents/codex.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { initialState, reduce } from '../src/orchestrator.js';
+import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
+import { runSession } from '../src/spawn.js';
 import { sessionsOf } from '../src/tasks.js';
-import type { Effect, HookPayload, Session, State, Worker } from '../src/types.js';
+import type { Effect, HookPayload, Session, SleepCause, SleptRun, State, Worker } from '../src/types.js';
 import { withLocal, withWork, workId } from './fixtures/work.js';
 import { CODEX_SESSION, CODEX_TURN } from './fixtures/codex-hooks.js';
 
@@ -87,4 +89,42 @@ test('a new local codex session has no entry until its first SessionStart, then 
   assert.deepEqual(['sessionId' in spawn, 'sessionId' in spawn.worker, localSessionsOf(state, 'hive')], [false, false, []]);
   const at = spawn.worker.startedAt;
   assert.deepEqual(localSessionsOf(hooked(state, ptyId, CODEX_TURN.SessionStart), 'hive'), [{ id: CODEX_SESSION, startedAt: at, stages: [], lastUsedAt: at, agent: 'codex' }]);
+});
+
+type StopCause = Extract<SleepCause, 'manual' | 'all'>;
+const without = ({ at: _at, ...rest }: SleptRun) => rest;
+// A run ended: by the Hive with a cause (the stop marks it, the exit records it), or on its own with none (a /exit, a crash). An idle sleep
+// is the shutdown drain's stop, which marks the run the same way
+const ended = (state: State, ptyId: string, cause?: StopCause): Reduced =>
+  reduce(cause === undefined ? state : reduce(state, { type: 'stop', ptyId, cause }).state, { type: 'exit', ptyId });
+
+test('a codex session with its id, put to sleep, keeps a record of codex with that id; its continue resumes it with codex resume <id> and drops the record (#931)', () => {
+  const { state, ptyId } = opened();
+  const slept = ended(hooked(state, ptyId, CODEX_TURN.SessionStart), ptyId, 'manual').state;
+  assert.deepEqual(slept.slept?.map(without), [{ ptyId, sessionId: CODEX_SESSION, agent: 'codex', kind: 'session', taskId: ITEM.itemId, cause: 'manual' }]);
+  const { state: woken, effects } = reduce(slept, { type: 'openSession', activityId: workId(slept, ITEM.itemId), continueId: CODEX_SESSION });
+  const spawn = spawnOf(effects);
+  assert.deepEqual([spawn?.continues, spawn?.sessionId, spawn?.worker.agent, woken.slept], [true, CODEX_SESSION, 'codex', []]);
+  const run: AgentRun = { ptyId: 'W2', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: [], session: runSession(spawn?.sessionId, 'continue') };
+  assert.deepEqual(codexRunner.launch(run).slice(0, 2), ['resume', CODEX_SESSION]);
+});
+
+test('a codex session the Hive puts to sleep before its first prompt keeps a record of codex with no id; a /exit, a crash or a failed spawn keeps none (#931)', () => {
+  const { state, ptyId } = opened();
+  for (const cause of ['manual', 'all'] as const) {
+    const { state: slept, effects } = ended(state, ptyId, cause);
+    assert.deepEqual(slept.slept?.map(without), [{ ptyId, agent: 'codex', kind: 'session', taskId: ITEM.itemId, cause }], cause);
+    assert.equal(effects.some((e) => e.type === 'forgetScrollback'), false, 'its tab keeps the pty\'s ring');
+  }
+  assert.deepEqual(ended(state, ptyId).state.slept ?? [], []);
+  assert.deepEqual(reduce(state, { type: 'spawnFailed', ptyId, message: 'pty: boom' }).state.slept ?? [], []);
+});
+
+test('a local codex session slept before its first prompt keeps a record of its workspace and no id, and adds no entry; forgetSlept drops it (#931)', () => {
+  const { state, ptyId } = opened('local');
+  const slept = ended(state, ptyId, 'manual').state;
+  assert.deepEqual(slept.slept?.map(without), [{ ptyId, agent: 'codex', kind: 'session', workspace: 'hive', cause: 'manual' }]);
+  assert.deepEqual(localSessionsOf(slept, 'hive'), []);
+  const { state: forgot, effects } = reduce(slept, { type: 'forgetSlept', ptyId });
+  assert.deepEqual([forgot.slept, effects], [[], [{ type: 'forgetScrollback', ptyId }]]);
 });
