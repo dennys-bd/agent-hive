@@ -78,7 +78,7 @@ test('the conversation routes refuse an unknown task or conversation, a bad anch
   const missing = await post('/threads/T9/messages', { text: 'x' });
   assert.deepEqual([missing.status, await missing.json()], [404, { error: 'conversa desconhecida' }]);
   assert.equal((await post('/threads/T9/resolve', { resolved: true })).status, 404);
-  assert.deepEqual(h.delivered, []);
+  assert.equal(h.delivered.length, 0); // not deepEqual: it would narrow delivered to never[]
 });
 
 test('submit sends each session its drafts in one message, turns them into conversations, keeps a failed session\'s drafts, and refuses with none (#591)', async (t) => {
@@ -293,4 +293,29 @@ test('a design comment sent now is pinned in the store edit and delivers the pin
   assert.equal(h.delivered[0].text, commentText(stored.anchor, thread, { text: 'now' }, SESSION_A, () => 'claude'));
   assert.match(h.delivered[0].text, /^Design comment 2 on /);
   assert.equal((await send(h.base, 'POST', '/tasks/local%3A1/review/threads', { anchor: { ...DESIGN, theme: 'sepia' }, text: 'x', to: [SESSION_A] })).status, 400);
+});
+
+test('submit with path sends only that design file\'s drafts; with to, every one goes to it in one message; a bad path or to is refused (#113)', async (t) => {
+  const h = await start(t);
+  const OTHER = { ...DESIGN, path: 'agent/hive/designs/x/other.hv.html' };
+  const draft = (anchor: unknown, text: string, session: string) => send(h.base, 'POST', '/tasks/local%3A1/review/drafts', { anchor, text, session });
+  const submit = (body: unknown) => send(h.base, 'POST', '/tasks/local%3A1/review/submit', body);
+  await draft(DESIGN, 'one', SESSION_A);
+  await draft(DESIGN, 'two', SESSION_B);
+  await draft(OTHER, 'elsewhere', SESSION_A);
+  for (const body of [{ path: DESIGN.path }, { kind: 'design', path: 5 }, { kind: 'design', to: SESSION_OTHER }, { kind: 'design', to: 'x' }]) {
+    assert.equal((await submit(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal(h.delivered.length, 0); // not deepEqual: it would narrow delivered to never[]
+  const res = await submit({ kind: 'design', path: DESIGN.path, to: SESSION_B });
+  assert.deepEqual([res.status, await res.json()], [200, { failed: [] }]);
+  assert.deepEqual(h.delivered.map((d) => d.to), [SESSION_B], 'the drafts of two sessions in one message to to');
+  assert.deepEqual(h.delivered[0].text.match(/^Design comment \d+ on \S+/gm), [`Design comment 1 on ${DESIGN.path}`, `Design comment 2 on ${DESIGN.path}`]);
+  const file = await h.file();
+  assert.deepEqual(file.threads.map((th) => [th.messages[0].text, th.participants]), [['one', [SESSION_B]], ['two', [SESSION_B]]]);
+  assert.deepEqual(file.drafts.map((d) => d.text), ['elsewhere'], 'another design\'s draft stays');
+  assert.equal((await submit({ kind: 'design', path: DESIGN.path })).status, 409);
+  assert.equal((await submit({ kind: 'design', path: OTHER.path, to: SESSION_A, skip: [SESSION_A] })).status, 409, 'skip applies to the to group');
+  assert.equal((await submit({ kind: 'design', path: OTHER.path })).status, 200, 'without to: by each draft\'s session, as before');
+  assert.deepEqual(h.delivered.at(-1)?.to, SESSION_A);
 });
