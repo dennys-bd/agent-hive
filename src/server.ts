@@ -33,11 +33,11 @@ import { createPtyHost, NO_PTY, type SpawnPty } from './pty-host.js';
 import { bracketedPaste } from './pty-paste.js';
 import { createBackoffTimers } from './backoff-timers.js';
 import { syncsFor, effectiveLimits, isChildSession, reduce, SIGNALS } from './orchestrator.js';
-import { PLAN_LIMITS_INTERVAL_MS } from './plan-limits.js';
+import { parseRateLimits } from './agents/claude-limits.js'; // temporary (#924): Task 7 reads the worker's runner
 import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
 import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-requests.js';
-import { formatRateLimits, parseRateLimits } from './rate-limits.js';
+import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
 import { createCiReader } from './server-ci.js';

@@ -3,7 +3,7 @@ import { bootHive } from './hive.js';
 import { hiveHome } from './home.js';
 import { homeLog } from './home-log.js';
 import { localeEnv, readSystemLang, SYSTEM_READS } from './locale-env.js';
-import { readPlanLimits } from './plan-limits.js';
+import { readPlanLimits } from './agents/claude-limits.js'; // temporary (#924): Task 7 reads planLimitsReading from the registry
 import pty from 'node-pty';
 import type { SpawnPty } from './pty-host.js';
 

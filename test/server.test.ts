@@ -9,7 +9,7 @@ import { parseConfig } from '../src/config.js';
 import { PROTOCOL_DIR, renderMcpConfig } from '../src/hooks-settings.js';
 import { type Logger, shortId } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { PLAN_LIMITS_INTERVAL_MS } from '../src/plan-limits.js';
+import { PLAN_LIMITS_INTERVAL_MS } from '../src/rate-limits.js';
 import { shutdownCommand } from '../src/platform-commands.js';
 import { HOUR_MS, transcriptDir } from '../src/usage.js';
 import { prStatesQuery } from '../src/pull-requests.js';

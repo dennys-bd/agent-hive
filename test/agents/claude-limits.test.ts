@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { PLAN_LIMITS_INTERVAL_MS, readOAuthToken, readPlanLimits, USAGE_URL, type PlanLimitsDeps } from '../src/plan-limits.js';
-import type { Exec } from '../src/types.js';
-import { tempDir, type AfterHost } from './temp-dir.js';
+import { readOAuthToken, readPlanLimits, USAGE_URL, type PlanLimitsDeps } from '../../src/agents/claude-limits.js';
+import { PLAN_LIMITS_INTERVAL_MS } from '../../src/rate-limits.js';
+import type { Exec } from '../../src/types.js';
+import { tempDir, type AfterHost } from '../temp-dir.js';
 
 const NOW = new Date('2026-09-17T12:00:00.000Z');
 const TOKEN = 'sk-ant-oat01-secret-token';
