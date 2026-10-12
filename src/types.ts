@@ -439,6 +439,9 @@ export const CHECKS_FAILED = 'checks failed: ';
 /** How a failed start begins on its activity's error (#945), the spawn's raw message after it: the page shows its spawnFailureCode's short
  * message in the viewer's language, the raw text only behind details. State.error keeps the raw message. */
 export const SPAWN_FAILED = 'start failed: ';
+/** The code POST /tasks/:id/start answers with when git refuses to discard a task's orphan worktree or branch (#861): the dialog heads git's words
+ * with its own line. */
+export const DISCARD_FAILED = 'discard_failed';
 /** One CI check on a PR's last commit as a wait for CI reads it (#834): #758's PrCheck (success, failure or pending; url: its page), with the
  * PR it was read on and, for a check run, the Actions run behind it: what a re-run and the log fetch name. */
 export interface CiCheck extends PrCheck { pr: string; runId?: number }
@@ -1392,6 +1395,7 @@ export interface BaseOptions {
   tasks: { ref: string; id: string; title: string }[]; // other tasks' branches, only those with a worktree
   local: string[]; // other local branches, minus the default's and the tasks' branches
   remote: string[]; // `origin/*`, minus `origin/HEAD` and the default
+  orphan?: { worktree: boolean; branch: boolean }; // #861: only for a task with no activity whose slug git holds a worktree or a branch for: the dialog offers reuse or discard, and the lists are filled for a discard's base
   needsWorkspace?: true; // the task resolves to no workspace: the popup asks for one first, the lists are empty (#179)
 }
 

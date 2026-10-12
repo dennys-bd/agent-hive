@@ -5,6 +5,7 @@ import { createTask, UNKNOWN_STAGE_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from './
 import { branchFor, slugFor, canCloseMissing, canOpenSession, canMoveToStage, canRemoveCreated, canSetWorkspace, inAction, stageOf, isBlocked, nothingToDelete, type RemovalBlocker, removalBlocker, sessionsOf, spawnedRun } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
+import { discardOrphan } from './server-orphan.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
 import { LOCAL_BASES, LOCAL_MESSAGE, startLocal } from './server-local.js';
 import type { ReviewStore } from './review-store.js';
@@ -273,6 +274,8 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
       res.status(event.status).json({ error: event.message });
       return;
     }
+    const discarded = await discardOrphan(deps, current, itemId, req.body); // #861: before the start, so its worktree is made from the base
+    if (discarded) return void res.status(discarded.status).json({ error: discarded.error, code: discarded.code });
     const found = current.state.tasks.find((c) => c.item.itemId === itemId);
     await dispatch({ ...event, ...(found ? startLocal(req.body, activityOf(current.state, itemId)) : {}) }, sizeIn(req.body)); // the popup's switch (#444): the reducer writes it next to the base, a delete activity stage ignores it; #808: the page's grid
     res.json({ ok: true });
@@ -433,7 +436,8 @@ function registerBaseRoute(app: Express, { exec, requireLive }: TaskRouteDeps): 
     if ('status' in workspace) return refuse(res, workspace);
     const others = otherSlugs(current.state, activity);
     try {
-      res.json(await baseOptions(workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), exec));
+      const orphanBranch = activity === undefined ? branchFor(current.runtime.config, task.item) : undefined; // #861: no activity: git's leftovers are an orphan
+      res.json(await baseOptions(workspace.path, activity?.slug ?? slugFor(task.item), others, workspaceBase(current.runtime.config, workspace), exec, orphanBranch));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) }); // git's own words: not a repo, a broken worktree list
     }

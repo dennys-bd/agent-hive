@@ -27,7 +27,7 @@ import { renderPrompt } from '../src/spawn.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
 import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
@@ -1416,7 +1416,12 @@ test('GET /tasks/:id/bases lists the default, the other tasks that have a worktr
   const own = slugFor(task0(server).item); // #629: with no activity yet, the slug its title gives (the poll above renamed it)
   await mkdir(worktreePath(repo, own), { recursive: true });
   git.answers.listing = [main, at(own, 'hive/1-task-1'), at('hive-2-task-2', 'hive/2-task-2')].join('\n');
-  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] });
+  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), {
+    hasWorktree: false, defaultRef: 'origin/main', tasks: [{ ref: 'hive/2-task-2', id: '2', title: 'Task 2' }], local: ['feature-x'], remote: ['origin/feature-y'],
+    orphan: { worktree: true, branch: false },
+  }, '#861: no activity owns it: an orphan, with the lists a discard picks its base from');
+  await server.dispatch({ type: 'createActivity', taskId: 'board:I1' });
+  assert.deepEqual(await json(hiveFetch(`${base}/tasks/board:I1/bases`)), { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] }, 'its activity adopts it');
   const unknown = await hiveFetch(`${base}/tasks/nope/bases`);
   assert.equal(unknown.status, 404);
   assert.deepEqual(await unknown.json(), { error: 'tarefa desconhecida' });
@@ -2749,4 +2754,22 @@ test('a task that leaves with its worktree keeps its activity: GET /worktrees li
   await mkdir(worktreePath(repo, TASK_SLUG), { recursive: true });
   assert.deepEqual(await json(postJson(`${base}/worktrees/hive/${TASK_SLUG}/remove`)), { removed: true });
   assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');
+});
+
+test('POST /tasks/:id/start with discardOrphan removes what git holds for a task with no activity before it starts from the base; a refusal is a 409 with git\'s words and starts nothing (#861)', async (t) => {
+  const refs = ['refs/heads/feature-x', `refs/heads/${TASK_BRANCH}`]; // the task's branch is there, no worktree
+  const git = refsGit({ refs });
+  const { base, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true })), { ok: true });
+  const deleted = git.calls.findIndex((c) => c[0] === 'branch' && c[1] === '-d');
+  const added = git.calls.findIndex((c) => c[0] === 'worktree' && c[1] === 'add');
+  assert.ok(deleted >= 0 && deleted < added, 'the branch goes before the worktree is made');
+  assert.equal(workers.length, 1);
+  const refusing = refsGit({ refs });
+  const unmerged: Exec = async (file, args) => (args.includes('merge-base') ? Promise.reject(Object.assign(new Error('Command failed: git merge-base'), { code: 1 })) : refusing.exec(file, args));
+  const again = await start(t, idle(), undefined, {}, { exec: unmerged });
+  const res = await postJson(`${again.base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true });
+  assert.equal(res.status, 409);
+  assert.deepEqual(await res.json(), { error: `the branch '${TASK_BRANCH}' is not fully merged into HEAD`, code: DISCARD_FAILED });
+  assert.equal(again.workers.length, 0, 'nothing started');
 });

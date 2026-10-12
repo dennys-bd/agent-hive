@@ -287,6 +287,12 @@ async function refsOf(git: Git, remote: string): Promise<{ local: string[]; remo
   return { local, remote: remotes };
 }
 
+// #861: the worktree and the branch git holds for a task with no activity; undefined with neither
+async function orphanOf(repo: string, branch: string, worktree: boolean, exec: Exec): Promise<BaseOptions['orphan']> {
+  const branched = await hasBranch(repo, branch, exec);
+  return worktree || branched ? { worktree, branch: branched } : undefined;
+}
+
 /**
  * The popup's lists (#131). Read-only: never fetches, never writes, so the popup opens at once (a branch pushed after the last fetch
  * is missing; the spawn fetches the chosen one anyway). `hasWorktree` is the adoption check of ensureWorktree; with one there is nothing
@@ -296,10 +302,11 @@ async function refsOf(git: Git, remote: string): Promise<{ local: string[]; remo
  * The three reads depend on nothing but `repo` (#408), so they run together with `Promise.all`: `worktree list`, the remote's default
  * branch's symref (skipped, via a resolved base, when a base branch is configured), and every local and <base remote>/* ref in the one
  * for-each-ref of refsOf. The ref read still runs when the task already has a worktree; its result, or its failure, is then thrown
- * away, which costs nothing since it ran alongside the others anyway.
+ * away, which costs nothing since it ran alongside the others anyway. With orphanBranch (the task has no activity, #861) what git holds for
+ * the slug is an orphan: reported, never adopted, and the lists are read.
  */
 export async function baseOptions(
-  repo: string, slug: string, others: { slug: string; id: string; title: string }[], base: Pick<WorkspaceBase, 'remote' | 'branch'>, exec: Exec = execFileAsync,
+  repo: string, slug: string, others: { slug: string; id: string; title: string }[], base: Pick<WorkspaceBase, 'remote' | 'branch'>, exec: Exec = execFileAsync, orphanBranch?: string,
 ): Promise<BaseOptions> {
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   // Started with the others but awaited only past the adoption check: a failed ref read must not block a task that has its worktree.
@@ -311,7 +318,9 @@ export async function baseOptions(
   ]);
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
-  if (branchAt(porcelain, own) !== undefined && (await exists(own))) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
+  const adoptable = branchAt(porcelain, own) !== undefined && (await exists(own));
+  const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, exec);
+  if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {
     const ref = branchAt(porcelain, worktreePath(repo, other));
@@ -320,7 +329,7 @@ export async function baseOptions(
   const taken = new Set([branch, ...tasks.map((c) => c.ref)]);
   const local = refs.local.filter((name) => !taken.has(name));
   const remote = refs.remote.filter((name) => name !== `${base.remote}/HEAD` && name !== defaultRef);
-  return { hasWorktree: false, defaultRef, tasks, local, remote };
+  return { hasWorktree: false, defaultRef, tasks, local, remote, ...(orphan === undefined ? {} : { orphan }) };
 }
 
 /**
