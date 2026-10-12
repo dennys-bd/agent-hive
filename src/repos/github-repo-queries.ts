@@ -23,8 +23,14 @@ export const REPO_ISSUE_PAGE_SIZE = 100; // GitHub's cap per page
 export const LABEL_LIMIT = 50; // ponytail: an issue with more labels shows its first 50
 export const ASSIGNEE_LIMIT = 10; // GitHub's own cap on assignees per issue: never under-read
 const PR_LIMIT = 10; // ponytail: an issue closed by more PRs shows its first 10, as in the native view (#756)
-export const ISSUE_FIELDS = `number title url updatedAt labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } `
-  + `closedByPullRequestsReferences(first: ${PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged isDraft statusCheckRollup { state } } }`;
+const CLOSING_PRS = `closedByPullRequestsReferences(first: ${PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged isDraft statusCheckRollup { state } } }`;
+export const ISSUE_FIELDS = `number title url updatedAt labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } } ${CLOSING_PRS}`;
+
+/** An issue's closing PRs alone (#180): the read model's refetch, whose REST reads carry none. */
+export const ISSUE_CLOSING_PRS = `query($owner: String!, $name: String!, $number: Int!) {
+  ${RATE}
+  repository(owner: $owner, name: $name) { issue(number: $number) { ${CLOSING_PRS} } }
+}`;
 
 /** A repository's issues in one state (#757), most recently updated first, a page at a time. */
 export const REPO_ISSUES = `query($owner: String!, $name: String!, $states: [IssueState!], $after: String) {

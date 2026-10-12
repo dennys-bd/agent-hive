@@ -19,6 +19,8 @@ const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor,
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
 export type SyncKind = 'issues' | 'comments';
+/** A row of sync_scopes (#180): the two incremental scopes, and the full listing's, whose synced_at spaces it. kind is TEXT: no migration. */
+export type ScopeKind = SyncKind | 'reconcile';
 /** A scope's place in its sync: the `since` cursor, the first page's ETag, and the time of the last complete round. */
 export interface SyncScope { cursor: string | null; etag: string | null; syncedAt: string | null }
 
@@ -29,8 +31,8 @@ export interface ReadModel {
   setClosingPrs(source: string, issueNodeId: string, prs: ProjectPr[]): void; // replaces the set
   removeIssue(source: string, nodeId: string): void; // its comments and links with it
   removeComment(source: string, nodeId: string): void;
-  scope(source: string, repository: string, kind: SyncKind): SyncScope | undefined;
-  setScope(source: string, repository: string, kind: SyncKind, scope: SyncScope): void;
+  scope(source: string, repository: string, kind: ScopeKind): SyncScope | undefined;
+  setScope(source: string, repository: string, kind: ScopeKind, scope: SyncScope): void;
   issues(source: string, repository: string, state: IssueRow['state']): IssueView[]; // issues only, newest update first
   issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
   nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's

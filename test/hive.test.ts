@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { readDaemonSecret } from '../src/daemon-files.js';
 import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
+import { READ_MODEL_FILE } from '../src/read-model/db.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceSpec } from '../src/types.js';
@@ -439,7 +441,9 @@ test('bootHive keeps its own files in the home: the repo gets only the exclude l
   t.after(() => server.close());
   assert.equal((await settingsInfo(home, port)).config?.comb.prefix, 'HIVE', 'the home\'s config, not the repo\'s');
   assert.equal(server.getState()?.signal, 'yellow', 'the repo\'s state.json (red) was not read');
-  assert.deepEqual((await readdir(home)).sort(), ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugin', 'prompts', 'protocol', 'state.json']);
+  // WAL keeps a -wal and a -shm beside the read model while it is open (#180): its side files, not files of their own
+  const own = (await readdir(home)).filter((name) => !/^read-model\.sqlite-(wal|shm)$/.test(name)).sort();
+  assert.deepEqual(own, ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugin', 'prompts', 'protocol', 'read-model.sqlite', 'state.json']);
   assert.deepEqual((await readdir(repo)).sort(), ['.git', '.hive', 'hive.config.json']);
   assert.deepEqual(await readdir(join(repo, '.hive')), ['state.json'], 'nothing new under the repo\'s .hive/: no log, no hooks, no prompts');
   assert.equal(await readFile(join(repo, 'hive.config.json'), 'utf8'), leftover, 'never rewritten, never deleted');
@@ -517,4 +521,24 @@ test('a hive.config.json without the four sleep notice keys opens setup mode wit
   assert.equal(info.error, 'hive.config.json: "sleepNotice" must be true or false');
   const config = info.config;
   assert.deepEqual([config?.comb.prefix, config?.sleepNotice, config?.sleepAutoNotice, config?.sleepIdleNotice, config?.sleepAllNotice], ['OLD', true, true, true, true]);
+});
+
+test('hive mode opens the read model in the home, and setup mode opens none (#180)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  const hive = await bootHive(home);
+  t.after(() => hive.server.close());
+  assert.equal(existsSync(join(home, READ_MODEL_FILE)), true);
+  const empty = await tempDir(t, 'home-');
+  const setup = await bootHive(empty);
+  t.after(() => setup.server.close());
+  assert.equal(existsSync(join(empty, READ_MODEL_FILE)), false);
+});
+
+test('a read model that cannot be opened is logged, and the daemon boots without its sync (#180)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  await mkdir(join(home, READ_MODEL_FILE)); // a directory: no database opens there, and the rebuild cannot delete it
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  assert.equal((await settingsInfo(home, port)).configured, true);
+  assert.ok((await logLines(home)).some((line) => line.includes('read model: not opened')));
 });

@@ -1,6 +1,11 @@
+import { join } from 'node:path';
+import type { TestContext } from 'node:test';
+import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
+import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
-import type { ProjectPr } from '../../src/types.js';
+import type { Gql, ProjectPr } from '../../src/types.js';
+import { tempDir } from '../temp-dir.js';
 
 // Shaped after the answers the spike's probe recorded (#765), trimmed to the fields read and with every name replaced (#178)
 export const SOURCE = 'github:github.com:bia';
@@ -49,3 +54,50 @@ export const COMMENT_ROW: CommentRow = {
 
 export const issueRow = (n: number, updatedAt: string, extra: Partial<IssueRow> = {}): IssueRow => ({ ...ISSUE_ROW, nodeId: `I_${n}`, number: n, title: `T${n}`, updatedAt, ...extra });
 export const commentRow = (id: string, issueNodeId: string, updatedAt = T1): CommentRow => ({ ...COMMENT_ROW, nodeId: id, issueNodeId, createdAt: updatedAt, updatedAt });
+
+export const NOW = (): Date => new Date('2026-10-12T12:00:00Z');
+export const SYNCED = NOW().toISOString();
+export const ok = (body: unknown, extra: { next?: string; etag?: string; quota?: RestQuota } = {}): RestAnswer => ({ status: 200, body, ...extra });
+export const restIssue = (n: number, updatedAt: string): Record<string, unknown> => ({ ...REST_ISSUE, node_id: `I_${n}`, number: n, title: `T${n}`, updated_at: updatedAt });
+export const restComment = (id: string, issue: number, updatedAt: string): Record<string, unknown> => ({
+  ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,
+});
+
+/** A RestGet answering `answers` in order, recording every [path, etag] it was asked. */
+export function fakeRest(answers: RestAnswer[]): { rest: RestGet; calls: [string, string | undefined][] } {
+  const queue = [...answers];
+  const calls: [string, string | undefined][] = [];
+  const rest: RestGet = async (path, etag) => {
+    calls.push([path, etag]);
+    const answer = queue.shift();
+    if (answer === undefined) throw new Error(`no answer left for ${path}`);
+    return answer;
+  };
+  return { rest, calls };
+}
+
+/** A promise the test settles by hand: a slow gh, or the moment one was called. */
+export function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve = (): void => undefined;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/** A read model in a temporary file, closed after the test. */
+export async function tempModel(t: TestContext): Promise<ReadModel> {
+  const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE));
+  t.after(() => db.close());
+  return db;
+}
+
+/** A Gql answering ISSUE_CLOSING_PRS with these closing PRs, recording the variables of every call. */
+export function fakeLinks(nodes: GhPullRequest[] = []): { gql: Gql; calls: unknown[] } {
+  const calls: unknown[] = [];
+  const gql: Gql = async (_query, variables) => {
+    calls.push(variables);
+    return { repository: { issue: { closedByPullRequestsReferences: { nodes } } } };
+  };
+  return { gql, calls };
+}
