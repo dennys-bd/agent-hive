@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ASK_REPLY, canCloseTask, conventionsAnswer, forkConventions, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_MESSAGE, REPLY_TEXT_MESSAGE, UNKNOWN_THREAD_MESSAGE, UNKNOWN_WORKER_MESSAGE } from '../src/mcp.js';
+import { ASK_REPLY, canCloseTask, conventionsAnswer, forkConventions, mountMcp, NO_SESSION_MESSAGE, NOT_PARTICIPANT_MESSAGE, REPLY_TEXT_MESSAGE, THREAD_RESOLVED_MESSAGE, UNKNOWN_THREAD_MESSAGE, UNKNOWN_WORKER_MESSAGE } from '../src/mcp.js';
 import { noCreateMessage } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE, memoryPath, memoryUsed, WHY_MESSAGE } from '../src/memory.js';
@@ -24,7 +24,7 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { AUTH, STAGES, fakeEvents, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import type { RecordInput } from '../src/events.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { reviewEventDuring } from './review-server.js';
+import { reviewEventDuring, send } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // One worker: the fake source's task runs in it, so its worker is the live one. `later` is a second Comb stage without a prompt.
@@ -220,6 +220,23 @@ test('hive_reply refuses a non-participant, another task\'s or an unknown conver
   assert.deepEqual(await call(client, 'hive_reply', { thread: 'T9', text: 'x' }), { text: UNKNOWN_THREAD_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_reply', { thread: 'T2', text: ' ' }), { text: REPLY_TEXT_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_reply', { thread: 'T2', text: 'x'.repeat(10_001) }), { text: REPLY_TEXT_MESSAGE, isError: true });
+});
+
+test('hive_reply resolve: true marks the thread agent-resolved and leaves it open; confirm keeps the mark, reopen drops it, a resolved one refuses (#111)', async (t) => {
+  const h = await withSession(t);
+  await seed(h.home, h.itemId, [threadFor('T1', [h.sessionId]), { ...threadFor('T2', [h.sessionId]), resolved: true }]);
+  const client = await connect(t, h.base, h.ptyId);
+  const onDisk = async (): Promise<ReviewFile> => JSON.parse(await readFile(reviewPath(h.home, h.itemId), 'utf8')) as ReviewFile;
+  assert.deepEqual(await call(client, 'hive_reply', { thread: 'T1', text: 'done', resolve: true }), { text: 'ok', isError: false });
+  const [marked] = (await onDisk()).threads;
+  assert.deepEqual([marked.messages.at(-1)?.text, marked.agentResolved?.session, marked.agentResolved?.at, marked.resolved], ['done', h.sessionId, marked.messages.at(-1)?.at, undefined]);
+  const resolveRoute = (resolved: boolean) => send(h.base, 'POST', `/tasks/${encodeURIComponent(h.itemId)}/review/threads/T1/resolve`, { resolved });
+  assert.equal((await resolveRoute(true)).status, 200);
+  assert.deepEqual([(await onDisk()).threads[0].resolved, (await onDisk()).threads[0].agentResolved?.session], [true, h.sessionId]);
+  assert.equal((await resolveRoute(false)).status, 200);
+  assert.deepEqual([(await onDisk()).threads[0].resolved, (await onDisk()).threads[0].agentResolved], [undefined, undefined]);
+  assert.deepEqual(await call(client, 'hive_reply', { thread: 'T2', text: 'done', resolve: true }), { text: THREAD_RESOLVED_MESSAGE, isError: true });
+  assert.equal((await onDisk()).threads[1].messages.length, 1, 'the refused call wrote nothing');
 });
 
 test('hive_done and hive_pr from a worker land in its activity\'s record (#629)', async (t) => {
