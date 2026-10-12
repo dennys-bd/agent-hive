@@ -22,12 +22,22 @@ export type RestGet = (path: string, etag?: string) => Promise<RestAnswer>;
  * (the api transport's GH_TOKEN, #180): never its argv. */
 export type GhRun = (args: string[], env?: NodeJS.ProcessEnv) => Promise<string>;
 
+const MAX_STDERR_CHARS = 200;
+
+/** The child's environment: the parent's, then `env` over it; a key set to undefined is removed, not passed on. */
+export function childEnv(base: NodeJS.ProcessEnv, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries({ ...base, ...env }).filter(([, value]) => value !== undefined));
+}
+
+// gh's stderr can echo a request: its first line, cut short, is all an error message carries
+export const firstLineOf = (stderr: string): string => (stderr.trim().split(/\r?\n/)[0] ?? '').slice(0, MAX_STDERR_CHARS);
+
 export const ghRun: GhRun = (args, env) => new Promise((resolve, reject) => {
-  const options = { maxBuffer: GH_MAX_BUFFER, ...(env === undefined ? {} : { env: { ...process.env, ...env } }) };
+  const options = { maxBuffer: GH_MAX_BUFFER, ...(env === undefined ? {} : { env: childEnv(process.env, env) }) };
   execFile('gh', args, options, (err, stdout, stderr) => {
     // gh exits 1 on a 304 or a 4xx, yet -i has already printed the status line and the headers: that output is the answer
     if (stdout.startsWith('HTTP/')) resolve(stdout);
-    else reject(new Error(`gh api: ${stderr.trim() || (err?.message ?? 'no answer')}`));
+    else reject(new Error(`gh api: ${firstLineOf(stderr) || (err?.message ?? 'no answer')}`));
   });
 });
 

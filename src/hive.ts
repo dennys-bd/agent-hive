@@ -88,7 +88,7 @@ async function openModel(home: string, log: Logger): Promise<ReadModel | undefin
     if (resync) log.info('read model: the file could not be read and was rebuilt empty; a full sync follows');
     return db;
   } catch (err) {
-    log.error(`read model: not opened, so nothing syncs: ${(err as Error).message}`);
+    log.error(`read model: not opened, so nothing syncs: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
 }

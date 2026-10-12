@@ -4,7 +4,7 @@ import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
 import type { RestGet, RestQuota } from './rest.js';
-import { EMPTY_REPORT, mergeReports, syncScope, type SyncDeps, type SyncReport } from './sync.js';
+import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 
 export const RECONCILE_EVERY_MS = 24 * 60 * 60 * 1000; // the full listing's spacing (#180): every page of it is a 200, so once a day bounds its cost
 export const REFETCH_COOLDOWN_MS = 10_000; // an issue page opened again within it reads the model, not GitHub
@@ -13,7 +13,7 @@ export const REFETCH_COOLDOWN_MS = 10_000; // an issue page opened again within 
 export type RefetchOutcome = 'changed' | 'unchanged' | 'gone' | 'failed' | 'skipped';
 
 /** A repository's round: what it stored, and the error that ended it early, if one did. */
-export interface RoundResult { report: SyncReport; error?: unknown }
+export interface RoundResult { report: SyncReport; error?: unknown; commentsBlocked?: true }
 
 /** The readModel frame of /events (#180): a named event as review's, so no State reader takes it for one; the kinds let a view reload only for its own. */
 export const readModelEvent = (repository: string, kinds: SyncKind[]): string =>
@@ -30,16 +30,21 @@ function reconcileDue(deps: SyncDeps, repository: string): boolean {
  * there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
 export async function syncRepository(deps: SyncDeps, repository: string): Promise<RoundResult> {
   let report = EMPTY_REPORT;
+  let commentsBlocked = false;
   try {
     const issues = await syncScope(deps, repository, 'issues');
     report = mergeReports(report, issues);
     const comments = await syncScope(deps, repository, 'comments');
     report = mergeReports(report, comments);
+    commentsBlocked = comments.blocked === true;
     if (issues.full && comments.full) stampReconcile(deps, repository);
     else if (reconcileDue(deps, repository)) report = mergeReports(report, await reconcile(deps, repository));
-    return { report };
-  } catch (error) {
-    return { report, error };
+    return { report, ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
+  } catch (caught) {
+    const partial = caught instanceof PartialSyncError;
+    if (partial) report = mergeReports(report, caught.report);
+    const error = partial ? caught.original : caught;
+    return { report, ...(error instanceof SyncStopped ? {} : { error }) }; // a stop is not a failure
   }
 }
 
@@ -95,8 +100,9 @@ function coreOf(deps: ReadModelLoopDeps): LoopCore {
 function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; running(): Promise<void> | undefined } {
   let round: Promise<void> | undefined;
   async function syncOne(sync: SyncDeps, repository: string): Promise<void> {
-    const { report, error } = await syncRepository(sync, repository);
+    const { report, error, commentsBlocked } = await syncRepository({ ...sync, isStopped }, repository);
     deps.log.debug(`read model: ${repository} 200=${report.requests[200]} 304=${report.requests[304]} kinds=${report.kinds.join(',') || '-'}`);
+    if (commentsBlocked === true) deps.log.debug(`read model: the comments of ${repository} wait for an issue not stored yet`); // a wedged scope shows here
     if (error !== undefined) deps.log.error(`read model: the sync of ${repository} failed: ${reasonOf(error)}`);
     if (report.kinds.length > 0) deps.notify(repository, report.kinds); // a partial round too: what it stored is in the model
   }

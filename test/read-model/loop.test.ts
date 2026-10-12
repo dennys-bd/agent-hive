@@ -292,3 +292,51 @@ test('stop() resolves only after the running round and every refetch in flight s
   assert.equal(await loop.refetch(REPO, 13), 'skipped');
   assert.equal(paths.length, after, 'nothing runs once stopped');
 });
+
+test('a round whose second page fails still emits the kinds the first page stored, and the cursor stays (#180)', async (t) => {
+  const db = await tempModel(t);
+  db.setScope(SOURCE, REPO, 'issues', { cursor: T1, etag: 'EI', syncedAt: T1 });
+  let pages = 0;
+  const rest: RestGet = async () => {
+    pages += 1;
+    if (pages === 2) throw new Error('github rest: HTTP 500'); // what the transport throws for a 500
+    return ok([restIssue(1, T2)], { next: 'repos/acme/hive/issues?page=2' });
+  };
+  const { loop, notified } = loopOn(db, rest);
+  await loop.runOnce();
+  assert.deepEqual(notified, [[REPO, ['issues']]]);
+  assert.deepEqual(db.scope(SOURCE, REPO, 'issues'), { cursor: T1, etag: 'EI', syncedAt: T1 });
+});
+
+test('stop() ends a scope between pages: the pages left are not requested, the place stands and nothing is logged as a failure (#180)', async (t) => {
+  const db = await tempModel(t);
+  db.setScope(SOURCE, REPO, 'issues', { cursor: T1, etag: 'EI', syncedAt: T1 });
+  const gate = deferred();
+  const errors: string[] = [];
+  let pages = 0;
+  const rest: RestGet = async () => {
+    pages += 1;
+    if (pages === 2) await gate.promise;
+    return ok([restIssue(pages, T2)], { next: `repos/acme/hive/issues?page=${pages + 1}` });
+  };
+  const log = { ...quiet, error: (message: string): void => { errors.push(message); } };
+  const { loop } = loopOn(db, rest, { log });
+  const round = loop.runOnce();
+  await setImmediate();
+  const stopped = loop.stop();
+  gate.resolve();
+  await Promise.all([round, stopped]);
+  assert.equal(pages, 2);
+  assert.deepEqual(db.scope(SOURCE, REPO, 'issues'), { cursor: T1, etag: 'EI', syncedAt: T1 });
+  assert.deepEqual(errors, []);
+});
+
+test('a comments scope that ends blocked logs one debug line naming the repository (#180)', async (t) => {
+  const db = await tempModel(t);
+  const debugs: string[] = [];
+  const { rest } = fakeRest([ok([restIssue(1, T1)]), ok([restComment('C9', 9, T1)]), ok([restIssue(1, T1)]), ok([])]);
+  const log = { ...quiet, debug: (message: string): void => { debugs.push(message); } };
+  const { loop } = loopOn(db, rest, { log });
+  await loop.runOnce();
+  assert.equal(debugs.filter((line) => line.includes('comments of acme/hive wait')).length, 1);
+});

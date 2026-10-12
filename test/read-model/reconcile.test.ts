@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { SyncStopped } from '../../src/read-model/sync.js';
 import { reconcile, refetchIssue } from '../../src/read-model/reconcile.js';
 import { ghRest } from '../../src/read-model/rest.js';
 import type { Gql } from '../../src/types.js';
@@ -104,4 +105,20 @@ test('a PR read through the issues endpoint asks GraphQL nothing: it has no clos
   await refetchIssue({ db, rest, gql: links.gql, source: SOURCE, now: NOW }, REPO, 14);
   assert.equal(links.calls.length, 0);
   assert.equal(db.nodeIdOf(SOURCE, REPO, 14), 'I_14');
+});
+
+test('a stop between the listing\'s pages ends it before anything is removed or stamped (#180)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(issueRow(1, T1), 'sync');
+  let stopped = false;
+  let requests = 0;
+  const rest = async (): Promise<ReturnType<typeof ok>> => {
+    requests += 1;
+    stopped = true;
+    return ok([], { next: 'repos/acme/hive/issues?page=2' });
+  };
+  await assert.rejects(reconcile({ db, rest, source: SOURCE, now: NOW, isStopped: () => stopped }, REPO), SyncStopped);
+  assert.equal(requests, 1);
+  assert.deepEqual(db.nodeIds(SOURCE, REPO, 'issues'), ['I_1']);
+  assert.equal(db.scope(SOURCE, REPO, 'reconcile'), undefined);
 });

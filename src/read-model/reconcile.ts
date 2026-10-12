@@ -4,7 +4,7 @@ import type { Gql, ProjectPr } from '../types.js';
 import type { SyncKind } from './db.js';
 import { closingPrsFromGql, commentFromRest, issueFromRest, WireError } from './normalize.js';
 import type { CommentRow, IssueRow, IssueView } from './rows.js';
-import { EMPTY_REPORT, mergeReports, type SyncDeps, type SyncReport } from './sync.js';
+import { EMPTY_REPORT, mergeReports, throwIfStopped, type SyncDeps, type SyncReport } from './sync.js';
 
 // since never reports what was deleted or transferred (#180): the full listing and the refetch are the only ways a row leaves the model
 
@@ -25,13 +25,14 @@ export function stampReconcile(deps: SyncDeps, repository: string): void {
 // Every item of a list, page after page. A full listing is never conditional, so no ETag; a Link outside the repository throws in the transport
 async function allItems(deps: SyncDeps, path: string): Promise<{ items: unknown[]; report: SyncReport }> {
   let next: string | undefined = path;
-  let items: unknown[] = [];
+  const items: unknown[] = [];
   let report = EMPTY_REPORT;
   while (next !== undefined) {
+    throwIfStopped(deps); // before anything is deleted: a listing cut short would look like a repository that lost its rows
     const answer = await deps.rest(next);
     if (answer.status !== 200) throw new Error(`read model: ${next} answered HTTP ${answer.status}`);
     if (!Array.isArray(answer.body)) throw new Error('read model: a list answered no array');
-    items = [...items, ...answer.body];
+    items.push(...answer.body);
     report = mergeReports(report, { kinds: [], requests: { 200: 1, 304: 0 } });
     next = answer.next;
   }

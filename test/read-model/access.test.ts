@@ -27,7 +27,8 @@ test('cli: the source is gh\'s github.com login, read from its config with no re
   assert.equal(access?.source, SOURCE);
   assert.deepEqual(calls, [['gh', 'config', 'get', 'user', '--host', 'github.com']]);
   await access?.rest(PATH, 'W/"e"');
-  assert.deepEqual(envs, [undefined]);
+  assert.deepEqual(envs, [{ GH_HOST: 'github.com', GH_TOKEN: undefined, GITHUB_TOKEN: undefined, GH_ENTERPRISE_TOKEN: undefined }],
+    'gh reads as its own login: the inherited tokens are dropped and the host is github.com');
 });
 
 test('cli: gh with no login, or no gh at all, is no access (#180)', async () => {
@@ -46,6 +47,7 @@ test('api: the source is the stored login, and gh gets the stored token as GH_TO
   assert.equal(access?.source, SOURCE);
   await access?.rest(PATH, 'W/"e"');
   assert.equal(seen[0]?.env?.GH_TOKEN, token);
+  assert.equal(seen[0]?.env?.GH_HOST, 'github.com', 'an inherited GH_HOST never receives the token');
   assert.ok(!seen[0]?.args.some((arg) => arg.includes(token)));
 });
 

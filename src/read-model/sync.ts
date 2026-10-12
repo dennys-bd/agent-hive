@@ -6,13 +6,32 @@ import type { CommentRow, IssueRow } from './rows.js';
 const KINDS: readonly SyncKind[] = ['issues', 'comments'];
 
 /** What a sync needs (#180): the database, the read transport, whose rows these are, and the clock its scopes are stamped with. */
-export interface SyncDeps { db: ReadModel; rest: RestGet; source: string; now(): Date }
+export interface SyncDeps { db: ReadModel; rest: RestGet; source: string; now(): Date; isStopped?: () => boolean }
+
+/** A sync given up between pages because the loop stopped (#180): not a failure. Nothing was written for the scope that met it. */
+export class SyncStopped extends Error {
+  constructor() {
+    super('read model: stopped');
+  }
+}
+
+/** A scope that failed after storing pages: carries what those pages changed, so the round still reports it. Its message is the cause's. */
+export class PartialSyncError extends Error {
+  constructor(readonly original: unknown, readonly report: SyncReport) {
+    super(original instanceof Error ? original.message : String(original));
+  }
+}
+
+/** Between pages only: each page is its own transaction and the scope's place is written once at its end, so stopping here loses nothing. */
+export function throwIfStopped(deps: SyncDeps): void {
+  if (deps.isStopped?.() === true) throw new SyncStopped();
+}
 
 /** What a sync did (#180): the kinds whose stored rows changed, which the readModel event carries, and its 200s and 304s. */
 export interface SyncReport { kinds: SyncKind[]; requests: { 200: number; 304: number } }
 
 /** One scope's report; `full` when it read everything: from a null cursor to the last page, no page cut short. */
-export interface ScopeReport extends SyncReport { full: boolean }
+export interface ScopeReport extends SyncReport { full: boolean; blocked?: true }
 
 export const EMPTY_REPORT: SyncReport = { kinds: [], requests: { 200: 0, 304: 0 } };
 
@@ -68,17 +87,23 @@ async function readPages(deps: SyncDeps, repository: string, kind: SyncKind, sav
   let path: string | undefined = scopePath(repository, kind, saved?.cursor ?? null);
   let read: PagesRead = { report: EMPTY_REPORT, last: saved?.cursor ?? null, firstEtag: null, blocked: false };
   let first = true;
-  while (path !== undefined) {
-    const answer = await deps.rest(path, first ? (saved?.etag ?? undefined) : undefined);
-    if (answer.status === 304) return undefined;
-    if (answer.status !== 200) throw new Error(`read model: the ${kind} of ${repository} answered HTTP ${answer.status}`);
-    const page = storePage(deps, repository, kind, itemsOf(answer.body));
-    read = {
-      report: mergeReports(read.report, { kinds: page.wrote ? [kind] : [], requests: { 200: 1, 304: 0 } }),
-      last: page.last ?? read.last, firstEtag: first ? (answer.etag ?? null) : read.firstEtag, blocked: page.blocked,
-    };
-    path = page.blocked ? undefined : answer.next;
-    first = false;
+  try {
+    while (path !== undefined) {
+      throwIfStopped(deps);
+      const answer = await deps.rest(path, first ? (saved?.etag ?? undefined) : undefined);
+      if (answer.status === 304) return undefined;
+      if (answer.status !== 200) throw new Error(`read model: the ${kind} of ${repository} answered HTTP ${answer.status}`);
+      const page = storePage(deps, repository, kind, itemsOf(answer.body));
+      read = {
+        report: mergeReports(read.report, { kinds: page.wrote ? [kind] : [], requests: { 200: 1, 304: 0 } }),
+        last: page.last ?? read.last, firstEtag: first ? (answer.etag ?? null) : read.firstEtag, blocked: page.blocked,
+      };
+      path = page.blocked ? undefined : answer.next;
+      first = false;
+    }
+  } catch (error) {
+    // the pages already stored are in the model: the round reports their kinds though this scope's place stays
+    throw read.report.kinds.length > 0 ? new PartialSyncError(error, read.report) : error;
   }
   return read;
 }
@@ -100,5 +125,5 @@ export async function syncScope(deps: SyncDeps, repository: string, kind: SyncKi
   // so a 304 never hides a comment still to be read
   const etag = read.last === from && !read.blocked ? read.firstEtag : null;
   db.setScope(source, repository, kind, { cursor: read.last, etag, syncedAt: read.blocked ? (saved?.syncedAt ?? null) : syncedAt });
-  return { ...read.report, full: from === null && !read.blocked };
+  return { ...read.report, full: from === null && !read.blocked, ...(read.blocked ? { blocked: true as const } : {}) };
 }
