@@ -414,7 +414,7 @@ test('the workspaces list opens the general tab with the saved rows, or one name
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
   const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { workspaces: unknown };
-  expect(body.workspaces).toEqual([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }]);
+  expect(body.workspaces).toEqual([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 70)' }]);
   await user.click(screen.getByRole('button', { name: t('settings.workspaces.remove', { n: 1 }) }));
   expect(screen.getByLabelText(`${t('settings.workspaces.name')} 1`)).toHaveValue('site');
 });
@@ -441,7 +441,7 @@ test('each workspace row has its worktree setup and timeout per step: the saved 
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/settings', expect.objectContaining({ method: 'POST' })));
   const body = JSON.parse(String((fetchMock.mock.calls.at(-1)![1] as RequestInit).body)) as { workspaces: unknown };
-  expect(body.workspaces).toEqual([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'COPY .env\nRUN pnpm install', setupTimeout: '7m' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }]);
+  expect(body.workspaces).toEqual([{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup: 'COPY .env\nRUN pnpm install', setupTimeout: '7m' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 70)' }]);
 });
 
 test('Settings › workspaces lists the saved commands, their env folded behind a count; a new row with no name, then a variable name export cannot take, stops the save on workspaces; the commands are sent parsed (#300, #348, #511)', async () => {

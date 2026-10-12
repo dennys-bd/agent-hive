@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { ConventionsEditor } from '@/components/settings/ConventionsEditor';
 import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
+import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
 import { WorkspaceFork } from '@/components/settings/WorkspaceFork';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -85,7 +86,11 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
   const remove = t('settings.workspaces.remove', { n });
   return (
     <section aria-label={name} className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
-      <div className="grid grid-cols-[12.5rem_minmax(0,1fr)_auto_auto] items-end gap-3">
+      <div className="grid grid-cols-[auto_12.5rem_minmax(0,1fr)_auto_auto] items-end gap-3">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor={`${id}-color`}>{t('settings.workspaces.color')}</Label>
+          <WorkspaceColorPicker id={`${id}-color`} value={row.color} onChange={(color) => onChange({ color })} />
+        </div>
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-name`}>{t('settings.workspaces.name')}</Label>
           <Input id={`${id}-name`} aria-label={`${t('settings.workspaces.name')} ${n}`} value={row.name} onChange={(e) => onChange({ name: e.target.value })} />
@@ -126,7 +131,7 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
   );
 }
 
-/** Settings › workspaces (#179, #510, #511): one card per workspace, at least one, each with a name, a folder, its worktree setup (#299), teardown (#654),
+/** Settings › workspaces (#179, #510, #511): one card per workspace, at least one, each with a colour (#78), a name, a folder, its worktree setup (#299), teardown (#654),
  * its env (#348), its conventions (#692) and its memory (#797), whose total limit the memory dialog saves (#115); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
 export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCapSaved }: WorkspacesEditorProps) {
   const update = (id: string, patch: Partial<WorkspaceDraft>): void => onChange(workspaces.map((p) => (p.id === id ? { ...p, ...patch } : p)));
