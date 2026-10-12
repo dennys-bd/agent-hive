@@ -48,7 +48,7 @@ const activityTitle = (activity: Activity): string => (activity.kind === 'task' 
 export function refText(item: CenterTabRef, activity: Activity): string {
   if (item.kind === 'diff') return t(DIFF_SCOPE_KEY[item.scope], { n: item.checkpoint ?? '' });
   if (item.kind === 'untitled') return t('editor.untitled', { n: item.n }); // #818
-  if (item.kind === 'file') return baseName(item.path);
+  if (item.kind === 'file' || item.kind === 'design') return baseName(item.path); // #109: a design's tab reads its file's name
   if (item.kind === 'preview') return `${t('preview.title')} ${baseName(item.path)}`;
   if (item.kind === 'changes') return `${t('changes.title')} ${baseName(item.path)}`;
   if (item.kind === 'console') return t('console.title');
@@ -252,6 +252,7 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, o
   if (item.kind === 'file') {
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;
   }
+  if (item.kind === 'design') return null; // #109: the design pane is wired in once it exists
   if (item.kind === 'preview') {
     return <PreviewPane activity={activity} path={item.path} label={t('preview.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   }

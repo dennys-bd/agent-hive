@@ -12,7 +12,7 @@ export type { PaneNode, Panes } from './pane-split.js';
 /** What a layout stores of a tab: enough to rebuild it from the activity's live runs and its task. A run's tab split into panes (#641) keeps
  * one of its runs, the anchor, as its ptyId and its key; the anchor is always one of its panes. A run tab whose anchor holds a session names
  * it (#696): after a restart the tab still knows the session to continue. */
-export type CenterTabRef = { kind: 'run'; ptyId: string; panes?: Panes; sessionId?: string } | { kind: 'diff'; scope: DiffScope; checkpoint?: number } | { kind: 'console'; channel?: string; locked?: true; run?: string } | { kind: 'file'; path: string } | { kind: 'preview'; path: string } | { kind: 'changes'; path: string } | { kind: 'untitled'; n: number };
+export type CenterTabRef = { kind: 'run'; ptyId: string; panes?: Panes; sessionId?: string } | { kind: 'diff'; scope: DiffScope; checkpoint?: number } | { kind: 'console'; channel?: string; locked?: true; run?: string } | { kind: 'file'; path: string } | { kind: 'preview'; path: string } | { kind: 'design'; path: string } | { kind: 'changes'; path: string } | { kind: 'untitled'; n: number };
 export type RunRef = Extract<CenterTabRef, { kind: 'run' }>;
 /** A console tab (#755): the channel it shows, its own and saved with the layout; locked on a commands stage's channel, with no channel select.
  * No channel: the newest one, as a tab stored before #755 reads. */
@@ -30,11 +30,12 @@ const HALF = 50;
 const EDGE_AXIS: Record<Edge, Axis> = { left: 'row', right: 'row', top: 'column', bottom: 'column' };
 
 /** A tab's identity in its layout (#458), as the Terminal panel's tabKey (#270): the run's pty id, its diff's scope, its file's
- * path (#717), its preview's (#697) or its changes' (#668), or an untitled tab's number (#818: a buffer with no file, never stored, center-files.ts), or the console's channel (#755: one tab per channel, and per stage execution for a stage's; `console` for one with none). */
+ * path (#717), its preview's (#697), its design's (#109) or its changes' (#668), or an untitled tab's number (#818: a buffer with no file, never stored, center-files.ts), or the console's channel (#755: one tab per channel, and per stage execution for a stage's; `console` for one with none). */
 export function refKey(ref: CenterTabRef): string {
   if (ref.kind === 'run') return ref.ptyId;
   if (ref.kind === 'file') return `file:${ref.path}`;
   if (ref.kind === 'preview') return `preview:${ref.path}`;
+  if (ref.kind === 'design') return `design:${ref.path}`; // #109: one tab per file, beside its editor tab
   if (ref.kind === 'changes') return `changes:${ref.path}`;
   if (ref.kind === 'untitled') return `untitled:${ref.n}`; // #818
   if (ref.kind === 'console') return ref.channel === undefined ? 'console' : `console:${ref.channel}${ref.run === undefined ? '' : `#${ref.run}`}`; // a channel is encoded, never holding a #
@@ -333,6 +334,7 @@ function parseRef(value: unknown): CenterTabRef | undefined {
   }
   if (value.kind === 'file' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'file', path: value.path }; // #717
   if (value.kind === 'preview' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'preview', path: value.path }; // #697
+  if (value.kind === 'design' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'design', path: value.path }; // #109
   if (value.kind === 'changes' && typeof value.path === 'string' && isFilePath(value.path)) return { kind: 'changes', path: value.path }; // #668
   if (value.kind === 'console') return parseConsole(value); // #755
   return undefined;

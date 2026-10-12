@@ -427,3 +427,15 @@ test('a diff tab on the checkpoint scope is keyed by its checkpoint, retargets b
   expect(groupsOf(read.a.root)[0].tabs).toEqual([{ kind: 'diff', scope: 'checkpoint', checkpoint: 2 }]);
   expect(groupsOf(read.b.root)[0].tabs).toEqual([{ kind: 'diff', scope: 'checkpoint' }]);
 });
+
+test('a design tab is keyed design:<path>, apart from its file\'s editor tab, opens once and round-trips; a stored one with a .. path or no string path drops its layout (#109)', () => {
+  const PATH = 'design/Landing.hv.html';
+  const design: CenterTabRef = { kind: 'design', path: PATH };
+  expect(refKey(design)).toBe('design:design/Landing.hv.html');
+  const opened = deepFreeze(openRef(openRef(openRef(ONE, { kind: 'file', path: PATH }), design), { kind: 'design', path: PATH }));
+  expect(tabsOf(opened)).toEqual([['W1', 'W2', 'file:design/Landing.hv.html', 'design:design/Landing.hv.html']]);
+  writeCenterLayouts({ I1: opened });
+  expect(readCenterLayouts()).toEqual({ I1: opened });
+  expect(readStored({ I1: initialLayout({ kind: 'design', path: '../x.hv.html' }) })).toEqual({});
+  expect(readStored({ I1: { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'design', path: 5 }], active: 0 }, focused: 'g1' } })).toEqual({});
+});
