@@ -19,7 +19,7 @@ import { groupActivities, workspaceSummary } from '@/lib/activity-groups';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { compact } from '@/lib/usage';
 import { useWorktreeStates, type WorktreeState, worktreeText } from '@/lib/worktree-states';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 /** What the sidebar reaches beyond its list (redesign 03): the Start dialog (in a workspace from its +), Settings on workspaces, and each
  * activity's right-click menu, a task's and a local activity's (#590) (absent in the terminal's harness: the row alone). */
@@ -162,7 +162,7 @@ function WorkspaceHeader({ name, isOpen, summary, onToggle, nav, view, onView }:
     <div className="flex items-center gap-1 px-1.5 py-1 font-medium text-xs">
       <button type="button" aria-expanded={isOpen} onClick={onToggle} className="flex min-w-0 cursor-pointer items-center gap-1.5 text-left">
         <ChevronDownIcon className={`size-3 shrink-0 text-muted-foreground ${isOpen ? '' : '-rotate-90'}`} />
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={{ background: workspaceColor(name) }} />
+        <WorkspaceSquare name={name} />
         <span className="truncate">{name}</span>
       </button>
       <span className="min-w-0 flex-1 truncate text-right font-normal text-muted-foreground">{isOpen ? '' : summary}</span>

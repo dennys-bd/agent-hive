@@ -4,7 +4,7 @@ import type { Activity, ActivityRecord, Task, Worker } from '../src/types.js';
 import { setLanguage } from '../src/ui/i18n.js';
 import { pendingSessions, recentActivities, relativeTime } from '../src/ui/lib/home.js';
 import { WORKSPACE_PRESET_COLORS as PRESETS } from '../src/types.js';
-import { nextWorkspaceColor, workspaceColor } from '../src/ui/lib/workspace-color.js';
+import { nextWorkspaceColor } from '../src/ui/lib/workspace-color.js';
 
 const task = (id: string): Task => ({
   item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true,
@@ -54,11 +54,6 @@ test('relativeTime reads now, minutes, hours of today, yesterday and days (redes
   assert.equal(relativeTime(new Date(2026, 8, 25, 12, 0).toISOString(), now), 'há 3 dias');
   setLanguage('en');
   assert.equal(relativeTime(at(2 * 60_000), now), '2 min ago');
-});
-
-test('workspaceColor gives a workspace the same oklch colour every time, at the lightness and chroma of the palette (redesign 08)', () => {
-  assert.equal(workspaceColor('agent-hive'), workspaceColor('agent-hive'));
-  assert.match(workspaceColor('site'), /^oklch\(0\.72 0\.12 \d+\)$/);
 });
 
 test('nextWorkspaceColor gives a new row the first preset no other row uses, a custom colour taking no slot, and restarts the list once all 7 are used (#78)', () => {

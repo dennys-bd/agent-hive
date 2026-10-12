@@ -27,7 +27,7 @@ import { viaTries } from '@/lib/tries';
 import { STATUS_BORDER, STATUS_TEXT } from '@/lib/status';
 import { answerableActivity, backoffUntil, isExhausted, taskState } from '@/lib/task-state';
 import { backoffLabel } from '@/lib/usage';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { titleIfCut } from '@/lib/cut-title';
 import { shownSize } from '@/lib/xterm-setup';
 
@@ -135,7 +135,7 @@ function TaskTitle({ task, state }: { task: Task; state: State }) {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the hover only sets a native title on cut text (#91), no interaction
     <span className="line-clamp-2 font-medium text-xs leading-4" onMouseEnter={titleIfCut(taskLabel(task))}>
-      {workspace !== undefined && <span aria-hidden="true" title={workspace} className="mr-1.5 inline-block size-2 rounded-[2px] align-middle" style={{ background: workspaceColor(workspace) }} />}
+      {workspace !== undefined && <WorkspaceSquare name={workspace} title={workspace} className="mr-1.5 inline-block size-2 rounded-[2px] align-middle" />}
       {isChild && <span aria-hidden="true" className="mr-1 font-mono font-normal text-muted-foreground">↳</span>}
       {taskLabel(task)}
     </span>

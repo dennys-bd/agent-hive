@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { RECENT_SHOWN, reloadRepositories, repoGroups, usePinned, useRepositories } from '@/hooks/use-repositories';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 const ROW = 'group flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-accent/50 data-[selected]:bg-muted';
 const GROUP = 'px-2 py-0.5 text-[11px] text-muted-foreground';
@@ -50,7 +50,7 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
     >
       <span className="flex items-center gap-2">
         {isFork && <span aria-hidden="true" className="-mr-0.5 w-2.5 text-muted-foreground text-xs">↳</span>}
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={{ background: workspaceColor(repo.workspace) }} />
+        <WorkspaceSquare name={repo.workspace} />
         <span className="min-w-0 flex-1 truncate">{repo.role === undefined ? repoName(repo.repository) : repo.repository}</span>
         <span className="w-6 text-right text-muted-foreground text-xs tabular-nums">{repo.openPrs}</span>
         <RepoMenu repo={repo} isPinned={isPinned} onPin={onPin} />

@@ -12,7 +12,7 @@ import { useBackKeys } from '@/hooks/use-back-stack';
 import { t } from '@/i18n';
 import { onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 // The header toggles' two looks, ↺ loops (#909) and ⑂ tree (#34): the dark twins beat the outline variant's dark:bg-input/30, which would
@@ -145,7 +145,7 @@ function RepoTitle({ header }: { header: RepoHeader }) {
   );
   return (
     <>
-      <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={{ background: workspaceColor(summary.workspace) }} />
+      <WorkspaceSquare name={summary.workspace} />
       <span title={summary.repository} className="flex-none whitespace-nowrap font-semibold text-[13px] text-foreground">{summary.role === undefined ? repoName(summary.repository) : summary.repository}</span>
       <RepoContext summary={summary} onRepository={header.onRepository} />
       <span aria-hidden="true" className="mx-0.5 h-3.5 w-px bg-border" />
@@ -162,7 +162,7 @@ function FlowTitle({ state, source, tasks }: { state: State; source?: string; ta
       <span>{source ?? t('flow.allSources')}</span>
       {shownWorkspaces(tasks, state).map((name) => (
         <span key={name} className="flex items-center gap-1.5 rounded-[4px] border px-1.5 py-0.5">
-          <span aria-hidden="true" className="size-2 rounded-[2px]" style={{ background: workspaceColor(name) }} />
+          <WorkspaceSquare name={name} />
           {name}
         </span>
       ))}
