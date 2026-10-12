@@ -22,7 +22,7 @@ import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, fo
 import { clearSession } from './session-clear.js';
 import { canContinue, continueIntoCommands, fill, gateOf } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
-import { captureSession, dropOrphanTerminals, forgetTerminal, sleepTerminal, wakeTerminal } from './terminal-runs.js';
+import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
@@ -789,13 +789,23 @@ function firstSession(state: State, worker: Worker, id: string): State {
   return touchSession(withActivity(state, { ...activity, sessionId: id }), task, id, task.stage, worker.startedAt ?? new Date().toISOString(), ranAgent(worker));
 }
 
+// #932: a free run that started with no id (a captured Codex) records its first SessionStart's where captureSession records Claude's, with its
+// agent. The activity's own sessionId stays the stage run's: a free session never takes its place
+function firstFreeSession(state: State, worker: Worker, id: string): State {
+  const activity = activityOfWorker(state, worker);
+  return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker))) ?? state;
+}
+
 // The first session id wins (#24): a subagent's or a teammate's SessionStart never replaces it. A /clear's does (#655): it is the run's own new
-// conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927); a free session always has one.
+// conversation, so the old one's entry takes the new id. A stage run with none takes the first it hears (#927), and so does a free run with none (#932).
 // Only a uuid can replace or record one: it reaches --resume / codex resume, and SESSION_ID admits a leading '-'.
 function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayload): State {
   const id = p.session_id;
   if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
-  if (worker.sessionId === undefined && worker.freeSession !== true && isUuid(id)) return firstSession(patch(state, ptyId, { sessionId: id }).state, worker, id);
+  if (worker.sessionId === undefined && isUuid(id)) {
+    const named = patch(state, ptyId, { sessionId: id }).state;
+    return worker.freeSession === true ? firstFreeSession(named, worker, id) : firstSession(named, worker, id);
+  }
   return patch(state, ptyId, { sessionId: worker.sessionId ?? (isSessionId(id) ? id : undefined) }).state;
 }
 

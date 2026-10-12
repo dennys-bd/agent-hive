@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { isLocalActivityId, taskOfActivity } from './activities.js';
-import { SHIM_AGENT } from './agents.js';
+import { ranAgent } from './agents.js';
 import { localSessionsOf } from './local-sessions.js';
 import { touchFreeSession } from './record-kit.js';
 import { none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
 import { withLocal } from './session-copy.js';
 import { canOpenSession, LOCAL_SLUG } from './tasks.js';
-import type { Activity, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
+import type { Activity, AgentId, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
 
 // Kept terminals (#696), out of runs.ts: a terminal sleeps with no pty, keeps its cwd and wakes in the same id until it is forgotten. A
 // command's run (#300) is the console's, never kept. Pure: every function returns new objects.
@@ -91,26 +91,39 @@ export function forgetTerminal(state: State, { terminalId }: Extract<HiveEvent, 
   return { state: { ...state, terminals: state.terminals.filter((t) => t !== terminal) }, effects: [{ type: 'dropTerminalFiles', terminalId }] };
 }
 
-// The captured session's place in its activity's record: the task's sessions, free as openSession's (#812), or the workspace's local ones (#590)
-function withCapturedSession(state: State, activity: Activity, worker: Worker, sessionId: string, at: string): State | undefined {
-  const workers = [...state.workers, worker];
+/** Where a captured session is recorded (#590, #812): the task's sessions, free as openSession's, or the workspace's local ones, with its agent.
+ * Undefined when that place is gone: a local activity's workspace out of the Comb, a task activity with no task. A free run that starts with
+ * no id (a captured Codex, #932) is recorded here at its first SessionStart. */
+export function recordCapturedSession(state: State, activity: Activity, sessionId: string, at: string, agent: AgentId): State | undefined {
   if (activity.kind === 'local') {
     if (!state.workspaces.includes(activity.workspace)) return undefined;
-    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent: SHIM_AGENT };
-    return withLocal({ ...state, workers }, activity.workspace, [...localSessionsOf(state, activity.workspace), created]);
+    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent };
+    return withLocal(state, activity.workspace, [...localSessionsOf(state, activity.workspace), created]);
   }
   const task = taskOfActivity(state, activity.id);
-  return task && touchFreeSession({ ...state, workers }, task, sessionId, at, SHIM_AGENT);
+  return task && touchFreeSession(state, task, sessionId, at, agent);
+}
+
+// The captured worker in its activity, its session recorded; one with no id yet (#932) waits for its SessionStart, still refused where
+// recordCapturedSession would find no place
+function withCapturedSession(state: State, activity: Activity, worker: Worker, at: string): State | undefined {
+  const held: State = { ...state, workers: [...state.workers, worker] };
+  if (worker.sessionId !== undefined) return recordCapturedSession(held, activity, worker.sessionId, at, ranAgent(worker));
+  const hasPlace = activity.kind === 'local' ? state.workspaces.includes(activity.workspace) : taskOfActivity(state, activity.id) !== undefined;
+  return hasPlace ? held : undefined;
 }
 
 /** The shim's register (#696): a free session of the terminal's activity, appended outside the cap like any free session (#459), with the
- * run id and the session id the route drew. Its run lives in the terminal's pty, so nothing spawns. A sleeping or unknown terminal, a command's
- * run or an activity gone: the same state. */
-export function captureSession(state: State, { terminalId, runId, sessionId }: Extract<HiveEvent, { type: 'captureSession' }>): Reduced {
+ * run id the route drew, the agent the shim named and the session id the route drew for it, if any (#932). Its run lives in the terminal's
+ * pty, so nothing spawns. A sleeping or unknown terminal, a command's run or an activity gone: the same state. */
+export function captureSession(state: State, { terminalId, runId, agent, sessionId }: Extract<HiveEvent, { type: 'captureSession' }>): Reduced {
   const terminal = liveShell(state, terminalId);
   const activity = terminal && state.activities.find((a) => a.id === terminal.activityId);
   if (!activity) return none(state);
   const startedAt = new Date().toISOString();
-  const worker: Worker = { id: randomUUID(), runId, activityId: activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true, terminalId, agent: SHIM_AGENT };
-  return none(withCapturedSession(state, activity, worker, sessionId, startedAt) ?? state);
+  const worker: Worker = {
+    id: randomUUID(), runId, activityId: activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' },
+    ...(sessionId === undefined ? {} : { sessionId }), freeSession: true, terminalId, agent,
+  };
+  return none(withCapturedSession(state, activity, worker, startedAt) ?? state);
 }

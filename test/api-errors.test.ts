@@ -45,7 +45,7 @@ const freeSession = (): { state: State; ptyId: string } => {
 const captured = (): State => {
   const start = withWork({ ...initialState(1), signal: 'red', workspaces: ['hive'], tasks: [{ item, stage: 'dev', boardColumn: 'Backlog', auto: true }] }, ID, { slug: SLUG, worktree: WORKTREE });
   const terminal: Terminal = { terminalId: SHELL_ID, activityId: workId(start, ID), startedAt: iso(Date.now()), cwd: WORKTREE };
-  return reduce({ ...start, terminals: [terminal] }, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, sessionId: SESSION }).state;
+  return reduce({ ...start, terminals: [terminal] }, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, agent: 'claude', sessionId: SESSION }).state;
 };
 
 test('overloaded backs off 1, 2 and 4 minutes, counting each failure across the retries\' own prompt and tool; the fourth stops the stage run with the error and keeps the task out of the fill (#805)', () => {

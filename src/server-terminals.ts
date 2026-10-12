@@ -3,7 +3,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
 import { capturedReply, shimPath } from './shim.js';
-import { AGENTS, ranAgent } from './agents.js';
+import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
@@ -97,7 +97,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     if (!deps.requireLive(res)) return;
     const runId = randomUUID();
     const sessionId = randomUUID();
-    await deps.dispatch({ type: 'captureSession', terminalId: terminalParam(req), runId, sessionId });
+    await deps.dispatch({ type: 'captureSession', terminalId: terminalParam(req), runId, agent: SHIM_AGENT, sessionId });
     const after = deps.live(); // never requireLive again: on a Hive gone meanwhile it would answer, and the refusal below a second time
     const worker = after?.state.workers.find((w) => w.runId === runId);
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });

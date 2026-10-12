@@ -139,7 +139,7 @@ test('captureSession adds a free session holding the terminal and a new session 
   const start = withShell();
   const RUN = 'eeeeeeee-0000-4000-8000-000000000001';
   const SESSION_ID = 'ffffffff-0000-4000-8000-000000000001';
-  const { state, effects } = reduce(start, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, sessionId: SESSION_ID });
+  const { state, effects } = reduce(start, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, agent: 'claude', sessionId: SESSION_ID });
   const worker = state.workers.find((w) => w.runId === RUN);
   assert.deepEqual([worker?.terminalId, worker?.freeSession, worker?.sessionId, worker?.activityId, effects], [SHELL_ID, true, SESSION_ID, workId(start, ITEM.itemId), []]);
   assert.ok(sessionsOf(state, ITEM.itemId).some((s) => s.id === SESSION_ID), 'the task keeps the session');
@@ -147,7 +147,7 @@ test('captureSession adds a free session holding the terminal and a new session 
   assert.equal(reduce(state, { type: 'sleepTerminal', terminalId: SHELL_ID }).state.workers.some((w) => w.runId === RUN), false, 'its claude died with the shell');
   assert.equal(closeTerminals(state, state.tasks[0]).state.workers.some((w) => w.runId === RUN), false, 'and with a deleted activity');
   const refused = withShell({ asleep: true });
-  assert.equal(reduce(refused, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, sessionId: SESSION_ID }).state, refused, 'a sleeping terminal captures nothing');
+  assert.equal(reduce(refused, { type: 'captureSession', terminalId: SHELL_ID, runId: RUN, agent: 'claude', sessionId: SESSION_ID }).state, refused, 'a sleeping terminal captures nothing');
 });
 
 test('a terminal whose activity went (its workspace removed, its task gone) leaves with it: a live one killed, every plain one\'s files dropped (#696)', () => {
@@ -239,7 +239,7 @@ test('captureSession on a task appends a free session with no stage: the task st
   const start = ranSpec('plan');
   const shell: Terminal = { terminalId: SHELL_ID, activityId: workId(start, ITEM.itemId), startedAt: PAST, cwd: WORKTREE };
   const SESSION_ID = 'ffffffff-0000-4000-8000-000000000002';
-  const captured = reduce({ ...start, terminals: [shell] }, { type: 'captureSession', terminalId: SHELL_ID, runId: 'eeeeeeee-0000-4000-8000-000000000002', sessionId: SESSION_ID }).state;
+  const captured = reduce({ ...start, terminals: [shell] }, { type: 'captureSession', terminalId: SHELL_ID, runId: 'eeeeeeee-0000-4000-8000-000000000002', agent: 'claude', sessionId: SESSION_ID }).state;
   const at = freeRun(captured).startedAt;
   assert.deepEqual(sessionsOf(captured, ITEM.itemId).at(-1), { id: SESSION_ID, startedAt: at, stages: [], agent: 'claude', lastUsedAt: at, free: true });
   assert.equal(startMode(captured.tasks[0], captured), 'start', 'its run holds no stage session either');
