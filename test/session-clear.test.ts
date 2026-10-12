@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { initialState } from '../src/orchestrator.js';
 import { activityOf, localActivityId, recordOf } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { clearSession } from '../src/session-clear.js';
+import { clearSession, renameSession } from '../src/session-clear.js';
 import type { Task, Session, Worker, State } from '../src/types.js';
 import { activityIdOf, withKeptRecord, withLocal, withWork } from './fixtures/work.js';
 
@@ -78,4 +78,17 @@ test('clearSession on a run with no recorded session patches the worker only (#6
   assert.deepEqual([state.workers[0].sessionId, 'tokens' in state.workers[0]], [NEW, false]);
   assert.equal(state.activityRecords, before.activityRecords);
   assert.equal(state.activities, before.activities);
+});
+
+test('renameSession moves a copy\'s placeholder to the fork\'s id keeping the entry\'s tokens and name and the worker\'s baseline, on a task and on a local; the activity\'s sessionId stays the stage run\'s; the input is untouched (#933)', () => {
+  const onTask = worker({ activityId: ACTIVITY, freeSession: true });
+  const state = renameSession(hive([onTask], [entry(OTHER), entry(OLD)], OTHER), onTask, NEW);
+  assert.deepEqual(sessionsIn(state, ACTIVITY), [entry(OTHER), entry(NEW)]);
+  assert.deepEqual([state.workers[0].sessionId, state.workers[0].tokens, activityOf(state, ITEM)?.sessionId], [NEW, 1200, OTHER]);
+  const local = worker({ activityId: localActivityId('hive'), freeSession: true });
+  const before = withLocal(hive([local], [], OTHER), 'hive', [entry(OLD, { stages: [] })]);
+  const frozen = structuredClone(before);
+  const renamedLocal = renameSession(before, local, NEW);
+  assert.deepEqual(before, frozen, 'the input is not mutated');
+  assert.deepEqual(localSessionsOf(renamedLocal, 'hive'), [entry(NEW, { stages: [] })]);
 });
