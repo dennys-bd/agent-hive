@@ -72,5 +72,7 @@ test('codex runs as `codex`, reports no plan limits until #929 and cannot choose
   assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', false, false]);
   assert.equal(AGENTS.claude.canChooseSessionId, true);
   assert.ok(AGENTS.codex.subcommands.includes('exec'));
-  assert.equal(AGENTS.codex.subcommands.some((c) => c === 'resume' || c === 'fork'), false, 'both open a conversation (finding §12)');
+  assert.ok(['resume', 'fork'].every((c) => AGENTS.codex.subcommands.includes(c)), 'both open a session the user chose: the shim runs them as typed (#932)');
+  assert.deepEqual(AGENTS.codex.shimFlags, ['-h', '--help', '-V', '--version'], 'no -c: Codex\'s is a config override, not continue (#932)');
+  assert.ok(AGENTS.claude.shimFlags.includes('-c') && AGENTS.claude.shimFlags.includes('--resume=*'));
 });

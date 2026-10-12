@@ -1,0 +1,62 @@
+#!/bin/sh
+# The Hive's agent shim (#696, #932), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A new conversation
+# typed here registers as a free session of the terminal's activity, with the Hive's hooks, MCP and protocol; anything else runs the real
+# CLI as typed. A register the Hive refuses, or that gets no answer, never blocks the user's command.
+cli=__HIVE_COMMAND__
+self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+# The real CLI: the first one on PATH outside this directory that is not this file under another name (a link to the shim elsewhere on
+# PATH would exec itself forever). A subshell, so IFS and set -f stay its own.
+real_cli() (
+  IFS=:
+  set -f
+  for dir in $PATH; do
+    [ "$dir" = "$self_dir" ] && continue
+    [ "$dir/$cli" -ef "$0" ] && continue
+    [ -x "$dir/$cli" ] && { printf '%s\n' "$dir/$cli"; exit 0; }
+  done
+  exit 1
+)
+
+real=$(real_cli) || { echo "$cli: not found on PATH" >&2; exit 127; }
+
+# Not in a Hive terminal, a subcommand (the CLI's own, or one that opens a session the user chose), or a flag anywhere that picks a session
+# or runs no conversation (each agent's own list, from AGENTS): as typed
+passthrough() {
+  [ -n "${HIVE_PTY_ID:-}" ] && [ -n "${HIVE_PORT:-}" ] && [ -n "${HIVE_SECRET_FILE:-}" ] || return 0
+  case "${1:-}" in __HIVE_SUBCOMMANDS__) return 0 ;; esac
+  for arg in "$@"; do
+    case "$arg" in __HIVE_FLAGS__) return 0 ;; esac
+  done
+  return 1
+}
+
+if passthrough "$@"; then exec "$real" "$@"; fi
+
+# The secret goes as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. 5 s, since a
+# register the server took but the shim gave up on leaves a run that never reports its exit. The agent and this folder go as a form (#932): sh
+# cannot JSON-escape a path, and curl url-encodes each value whole.
+reply=$(curl -sf --noproxy '*' -m 5 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/terminals/$HIVE_PTY_ID/session" -H @"$HIVE_SECRET_FILE" \
+  --data-urlencode "agent=$cli" --data-urlencode "cwd=$PWD") || exec "$real" "$@"
+run_id=$(printf '%s\n' "$reply" | sed -n 1p)
+hive_args=$(printf '%s\n' "$reply" | sed -n '2,$p')
+case "$run_id" in ''|*[!0-9a-f-]*) exec "$real" "$@" ;; esac
+
+# The Hive's args, one per line (the server refuses an arg holding a line break), read as data and never evaluated: appended after the
+# user's, then the user's rotated to the end, so the CLI gets the Hive's first
+user_count=$#
+if [ -n "$hive_args" ]; then
+  while IFS= read -r arg; do set -- "$@" "$arg"; done <<EOF
+$hive_args
+EOF
+fi
+i=0
+while [ "$i" -lt "$user_count" ]; do set -- "$@" "$1"; shift; i=$((i + 1)); done
+# Codex reads its MCP secret header from HIVE_MCP_SECRET (#927): the value from the secret file, in the real codex's env only, never an argv
+case "$cli" in
+  codex) HIVE_PTY_ID=$run_id HIVE_MCP_SECRET=$(sed -n 's/^x-hive-secret: *//p' "$HIVE_SECRET_FILE") "$real" "$@" ;;
+  *) HIVE_PTY_ID=$run_id "$real" "$@" ;;
+esac
+code=$?
+curl -s --noproxy '*' -m 2 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/exit" -H "x-hive-pty: $run_id" -H @"$HIVE_SECRET_FILE" >/dev/null
+exit $code

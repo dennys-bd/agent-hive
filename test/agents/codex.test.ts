@@ -1,12 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile, stat } from 'node:fs/promises';
+import { AGENTS } from '../../src/agents.js';
 import { codexRunner, tomlString } from '../../src/agents/codex.js';
 import type { AgentRun } from '../../src/agents/runner.js';
 import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
+import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { SECRET } from '../secret-client.js';
 import { codexHook, CODEX_TURN, QUESTION, SUBAGENT } from '../fixtures/codex-hooks.js';
+import { tempDir } from '../temp-dir.js';
 
 // Codex's argv, word for word (#927, finding.codex-surface §1, §5, §6, §7, §13): every Hive setting is a `-c key=value` pair, the trust
 // bypass, the agent's own args, the model; the prompt is ptyCommand's last word, as Claude's.
@@ -68,14 +72,21 @@ test('the command line runs codex bare with every override quoted whole and the 
   assert.ok(line.includes(` '--dangerously-bypass-hook-trust' '--sandbox' 'workspace-write' '-m' 'gpt-5.6-terra' "$(cat '${PROMPT}')"; curl `), line);
 });
 
-test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; it writes and reads nothing of its own yet (#927)', async () => {
+test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; it reads no transcript or limits yet (#927)', async () => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.deepEqual([codexRunner.copy(RUN, ID), codexRunner.clear(RUN)], [undefined, undefined]);
   assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), '', 'no dirname is empty: the transcript guard drops every Codex path (#929)');
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits(), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
-  await codexRunner.prepareHome('/h', 4242);
+});
+
+test('prepareHome writes an executable <home>/bin/codex: the codex shim, which registers as codex (#932)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  await codexRunner.prepareHome(home, 4242);
+  const path = shimPath(home, AGENTS.codex);
+  assert.equal((await stat(path)).mode & 0o777, 0o755);
+  assert.match(await readFile(path, 'utf8'), /^cli=codex$/m);
 });
 
 test('a PermissionRequest becomes the permission_prompt Notification the reducer reads, its description the question (#928, finding §4)', () => {
