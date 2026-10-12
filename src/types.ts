@@ -1756,6 +1756,9 @@ export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number;
 export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least one full lesson (MEMORY_TEXT_MAX)
 export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
 export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default
+// #78: the colours Settings offers a workspace, in the picker's order. One lightness and chroma, so no preset stands out on the dark theme
+export const WORKSPACE_PRESET_COLORS: readonly string[] = [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`);
+export const WORKSPACE_HEX_COLOR = /^#[0-9a-f]{6}$/; // #78: a custom colour as the system picker gives it; the parser refuses any other shape
 export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;
 export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];
