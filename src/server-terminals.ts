@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { Express, NextFunction, Request, Response } from 'express';
+import { readFile } from 'node:fs/promises';
+import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
-import { capturedReply, shimPath } from './shim.js';
-import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
+import { capturedCwd, capturedReply, shimPath } from './shim.js';
+import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
@@ -15,7 +16,7 @@ import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type Effect, type Exec, type HiveEvent, type State, type Task } from './types.js';
+import { AGENT_IDS, type Activity, type Effect, type Exec, type HiveEvent, type State, type Task, type Worker } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -29,6 +30,8 @@ const NO_CAPTURE_MESSAGE = 'nenhum terminal vivo com esse id';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_UNPROCESSABLE = 422; // not 409: the page reads a 409 on a wake as a harmless race and shows nothing, and this one has a reason to show
 const SPLIT_ARG_MESSAGE = 'um argumento do claude tem quebra de linha';
+const HTTP_BAD_REQUEST = 400;
+const UNKNOWN_AGENT_MESSAGE = `agent precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`; // #932: the shim names its own
 const NO_WAKE_MESSAGE = 'o terminal não pode acordar: a atividade, a worktree ou o workspace não existe mais';
 
 export interface TerminalRouteDeps {
@@ -89,47 +92,58 @@ function registerForget(app: Express, deps: TerminalRouteDeps): void {
   });
 }
 
+// #924, #932: the capture through its worker's runner: the Hive's flags, the agent's own args, the session id the route drew (none for an agent
+// that picks its own), the folder the shim ran in, and on a task the Hive's tools and session protocol, as a path and as text (Codex's)
+async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime: Runtime }, worker: Worker, o: { runId: string; cwd: string; sessionId?: string }): Promise<AgentRun> {
+  const { state, runtime } = live;
+  const agent = ranAgent(worker);
+  const activity = state.activities.find((a) => a.id === worker.activityId);
+  const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
+  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask }));
+  const task = onTask ? taskOfWorker(state, worker) : undefined; // #797: its workspace's protocol, the memory under it
+  // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
+  if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
+  // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
+  const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
+  const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : undefined;
+  return {
+    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir,
+    lspPluginDir: workspace === undefined ? undefined : deps.lspDir(workspace),
+    ...(protocolPath === undefined ? {} : { protocolPath, protocolText: await readFile(protocolPath, 'utf8') }),
+    extraArgs: runtime.config.agentArgs[agent],
+    ...(o.sessionId === undefined ? {} : { session: { id: o.sessionId, resume: false } }),
+  };
+}
+
 // The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv the agent gets before the user's
 // own, one arg per line, which the shim reads as data (capturedReply); an arg holding a line break refuses the register. Under /hooks/:
-// secret-authenticated as a hook is, with no UI header (server.ts' gate).
+// secret-authenticated as a hook is, with no UI header (server.ts' gate). Its body is a form (#932): the agent the shim wraps and its $PWD.
 function registerCapture(app: Express, deps: TerminalRouteDeps): void {
-  app.post('/hooks/terminals/:id/session', uuidParam, async (req: Request, res: Response) => {
+  app.post('/hooks/terminals/:id/session', uuidParam, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
     if (!deps.requireLive(res)) return;
+    const form = (req.body ?? {}) as Record<string, unknown>; // no body: Express 5 leaves it undefined
+    const agent = knownAgent(form.agent);
+    if (agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: UNKNOWN_AGENT_MESSAGE });
     const runId = randomUUID();
-    const sessionId = randomUUID();
-    await deps.dispatch({ type: 'captureSession', terminalId: terminalParam(req), runId, agent: SHIM_AGENT, sessionId });
+    const sessionId = AGENTS[agent].canChooseSessionId ? randomUUID() : undefined; // #932: Codex picks its own, recorded at its SessionStart
+    await deps.dispatch({ type: 'captureSession', terminalId: terminalParam(req), runId, agent, ...(sessionId === undefined ? {} : { sessionId }) });
     const after = deps.live(); // never requireLive again: on a Hive gone meanwhile it would answer, and the refusal below a second time
     const worker = after?.state.workers.find((w) => w.runId === runId);
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
-    const { runtime } = after;
-    const activity = after.state.activities.find((a) => a.id === worker.activityId);
-    const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
     // A refusal ends the run it just made: the shim runs the agent unregistered, and no run is left behind
     const unregister = async (message: string): Promise<void> => {
       await deps.dispatch({ type: 'exit', ptyId: runId });
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
-    const agent = ranAgent(worker); // #925 records SHIM_AGENT on a captured run
-    let mcpPath: string | undefined;
+    // #927, #932: Codex trusts the run's folder up front; after a cd, the terminal's starting folder would bring back its folder-trust screen
+    const terminal = after.state.terminals.find((x) => x.terminalId === terminalParam(req));
+    const cwd = capturedCwd(form.cwd) ?? terminal?.cwd ?? '';
+    let run: AgentRun;
     try {
-      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
+      run = await captureRun(deps, after, worker, { runId, cwd, sessionId });
     } catch (err) {
       return unregister(errorMessage(err));
     }
-    const task = onTask ? taskOfWorker(after.state, worker) : undefined; // #797: its workspace's protocol, the memory under it
-    // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
-    if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
-    // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
-    const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
-    const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
-    // #924: the capture through its worker's runner: the Hive's flags, the agent's own args and the session id the Hive chose
-    // the shim captures SHIM_AGENT, whose launch reads no cwd; the terminal's own folder is the closest the Hive knows (#927)
-    const terminal = after.state.terminals.find((x) => x.terminalId === terminalParam(req));
-    const run: AgentRun = {
-      ptyId: runId, cwd: terminal?.cwd ?? '', port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, lspPluginDir,
-      ...(onTask ? { protocolPath: task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session } : {}),
-      extraArgs: runtime.config.agentArgs[agent], session: { id: sessionId, resume: false },
-    };
     const reply = capturedReply(runId, runners[agent].launch(run).flat());
     if (reply === undefined) return unregister(SPLIT_ARG_MESSAGE);
     res.type('text/plain').send(reply);

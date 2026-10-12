@@ -51,10 +51,6 @@ export const agentOf = (stage: Pick<Stage, 'agent'>, config: Pick<Config, 'defau
  * relabels old runs (config-migrate.ts freezes its own for the same reason). */
 export const LEGACY_RUN_AGENT: AgentId = 'claude';
 
-/** The agent whose CLI the terminals' shim wraps (#696, #925): what a capture records. Each runner installs its own agent's shim (#924); only
- * this one is first on a terminal's PATH. */
-export const SHIM_AGENT: AgentId = 'claude';
-
 /** `value` when AGENT_IDS has it (#925): what an open route's kind and a saved run's agent are checked against. */
 export const knownAgent = (value: unknown): AgentId | undefined => AGENT_IDS.find((id) => id === value);
 

@@ -67,7 +67,7 @@ test('every claude run in the workspace gets its plugin as a second --plugin-dir
   assert.equal(launchFlag(launchOf(workers, session.ptyId), '--plugin-dir', 1), dir, 'a local session');
   const shell = (await (await postJson(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult;
   assert.equal(launchFlag(launchOf(workers, shell.ptyId), '--plugin-dir', 1), undefined, 'a shell runs no claude');
-  const [, ...argv] = (await (await hiveFetch(`${base}/hooks/terminals/${shell.ptyId}/session`, { method: 'POST' })).text()).split('\n');
+  const [, ...argv] = (await (await hiveFetch(`${base}/hooks/terminals/${shell.ptyId}/session`, { method: 'POST', body: new URLSearchParams({ agent: 'claude' }) })).text()).split('\n');
   assert.deepEqual(argv.slice(4, 8), ['--plugin-dir', join(home, 'plugin'), '--plugin-dir', dir], 'a terminal\'s claude, after the Hive\'s own');
   const spawned = records.filter((r) => r.event === 'run.spawned').at(-1) as Record<string, unknown> | undefined;
   assert.deepEqual(spawned?.lsp_servers, ['gopls'], 'a local session\'s run.spawned, through its activity\'s workspace');

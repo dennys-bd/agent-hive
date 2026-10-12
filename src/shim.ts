@@ -1,5 +1,5 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The agents' shim (#696, #924, #932): one template, assets/bin/shim, rendered per agent with its command, its first-arg passthrough words and
@@ -43,3 +43,8 @@ const LINE_BREAK = /[\r\n]/;
  * and never evaluates. Undefined when an arg holds a line break: the route refuses the register rather than send a split arg. */
 export const capturedReply = (runId: string, args: string[]): string | undefined =>
   (args.some((arg) => LINE_BREAK.test(arg)) ? undefined : [runId, ...args].join('\n'));
+
+/** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line, else undefined and the register falls back to the
+ * terminal's cwd. */
+export const capturedCwd = (value: unknown): string | undefined =>
+  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) ? value : undefined);
