@@ -3,7 +3,8 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
 import { capturedArgs, capturedReply, shimPath } from './shim.js';
-import { AGENTS, SHIM_AGENT } from './agents.js';
+import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
+import { runners } from './agents/registry.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { Runtime } from './server.js';
@@ -109,7 +110,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     };
     let mcpPath: string;
     try {
-      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runtime.port, deps.secret, onTask);
+      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[ranAgent(worker)].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
     } catch (err) {
       return unregister(errorMessage(err));
     }

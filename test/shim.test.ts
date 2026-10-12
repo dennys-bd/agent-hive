@@ -92,7 +92,7 @@ test('capturedArgs puts the workspace\'s language-server plugin right after the 
   const base = { sessionId: 'S1', mcpPath: '/h/prompts/R1.mcp.json', hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', claudeArgs: ['--model', 'opus'] };
   assert.deepEqual(capturedArgs({ ...base, lspPluginDir: '/h/lsp/hive', protocolPath: '/h/protocol/session.md' }), [
     '--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--plugin-dir', '/h/lsp/hive',
-    AGENTS.claude.protocolFlag, '/h/protocol/session.md', '--model', 'opus', '--session-id', 'S1',
+    '--append-system-prompt-file', '/h/protocol/session.md', '--model', 'opus', '--session-id', 'S1',
   ]);
   assert.deepEqual(capturedArgs(base), ['--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--model', 'opus', '--session-id', 'S1']);
 });

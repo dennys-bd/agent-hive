@@ -1,6 +1,7 @@
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { agentOf, agentRefusal } from './agents.js';
+import { agentOf, agentRefusal, ranAgent } from './agents.js';
+import { runners } from './agents/registry.js';
 import { taskBranch } from './task-runs.js';
 import { runTaskSetup } from './task-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
@@ -186,7 +187,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const mcpPath = await writeMcpConfig(promptsDir, ptyId, port, secret); // the tools' channel (#99); its path puts the pty id in claude's argv
+    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runners[agent].mcpConfig({ port, ptyId, secret, withHive: true })); // the tools' channel (#99); its path puts the pty id in the agent's argv
     pool.start({
       ptyId,
       launch: {
@@ -218,7 +219,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const first = copy?.notice ?? prompt;
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
     const files = await Promise.all([
-      writeMcpConfig(promptsDir, ptyId, port, secret, task !== undefined),
+      writeMcpConfig(promptsDir, ptyId, runners[ranAgent(effect.worker)].mcpConfig({ port, ptyId, secret, withHive: task !== undefined })),
       first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;

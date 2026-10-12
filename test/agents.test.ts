@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AGENTS, agentOf, agentRefusal, detectAgents, knownAgent, liveDefaultAgent, ranAgent, savedAgent, stageAgentIn } from '../src/agents.js';
+import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
@@ -32,14 +33,14 @@ test('agentRefusal passes an available agent and names one that is unavailable o
   assert.equal(agentRefusal('claude', []), REFUSAL);
 });
 
-test('every agent has a probe command, a model flag and a protocol flag (#516, #167)', () => {
+test('every agent has a probe command, a label and its subcommands; Claude\'s protocol file rides --append-system-prompt-file (#516, #167, #924)', () => {
   for (const id of AGENT_IDS) {
     assert.ok(AGENTS[id].command.length > 0, id);
     assert.ok(AGENTS[id].label.length > 0, id);
-    assert.match(AGENTS[id].modelFlag, /^-/, id);
-    assert.match(AGENTS[id].protocolFlag, /^-/, id);
+    assert.ok(AGENTS[id].subcommands.length > 0, id);
   }
-  assert.equal(AGENTS.claude.protocolFlag, '--append-system-prompt-file', 'appends to Claude Code\'s own system prompt, in interactive runs and with --resume');
+  const argv = runners.claude.launch({ ptyId: 'W1', hooksPath: '/h', pluginDir: '/p', protocolPath: '/s.md', extraArgs: [] });
+  assert.deepEqual(argv.at(-1), ['--append-system-prompt-file', '/s.md'], 'appends to Claude Code\'s own system prompt, in interactive runs and with --resume');
 });
 
 // #925: AGENT_IDS holds only claude until 3.1; these helpers only pass ids through, so a second one is a cast

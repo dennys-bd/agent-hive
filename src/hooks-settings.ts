@@ -1,16 +1,15 @@
 import { appendFile, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENTS } from './agents.js'; // temporary (#924): Task 6 moves the shim's install into Claude's runner
-import { installShim } from './shim.js';
+import type { AgentRunner } from './agents/runner.js';
 import { SESSION_PROTOCOL, STAGE_PROTOCOL } from './protocol.js';
-import { SECRET_HEADER } from './secret.js';
 import { APPROVAL_HOLD_MAX_MIN } from './types.js';
 
 export const HIVE_DIR = '.hive'; // the workspace's folder for the Hive: only worktrees/ lives there (#202)
 export const PROMPTS_DIR = 'prompts';
 export const PLUGIN_DIR = 'plugin'; // <home>/plugin: what --plugin-dir points every worker at (#100)
 export const PROTOCOL_DIR = 'protocol'; // <home>/protocol: the files behind every agent's protocol flag (#167)
+const HOOKS_FILE = 'hooks.json'; // what every run's hooks settings flag points at
 
 const WORKSPACES_DIR = 'workspaces'; // <home>/protocol/workspaces/<workspace> (#797): apart from the global stage.md / session.md, which a workspace could be named after
 
@@ -22,15 +21,7 @@ export interface ProtocolPaths {
 const HOME_MODE = 0o700; // the home holds the log, the prompts and the credentials: this user only
 const MCP_MODE = 0o600; // the MCP config holds the secret (#467)
 const PROTOCOL_FILE_MODE = 0o600; // a workspace's protocol files hold its lessons (#797)
-export const HOOK_EVENTS: readonly string[] = [
-  'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure', 'SessionEnd', // StopFailure: #805, fire-and-forget
-];
 export const MCP_ROUTE = '/hooks/mcp'; // the Hive's MCP server for its workers (#99): under /hooks/ for the host guard and the UI-header exemption
-export const MCP_TOOLS_ALLOW = 'mcp__hive__*'; // Claude Code names the tools mcp__<server>__<tool>; allowed so no call stops at a permission prompt
-
-export interface McpConfig {
-  mcpServers: { hive: { type: 'http'; url: string; headers: Record<string, string> } };
-}
 
 const HOOK_TIMEOUT_S = 30; // a Stop is answered after the source writes of its dispatch (gh takes seconds); the reply is the continuation
 const STATUS_TIMEOUT_S = 2;
@@ -63,39 +54,15 @@ export function statusCommand(port: number): string {
   return `${postStdin(port, '/hooks/status', STATUS_TIMEOUT_S)}; exit 0`;
 }
 
-export function renderHooksSettings(port: number): {
-  hooks: Record<string, unknown[]>; statusLine: { type: 'command'; command: string }; permissions: { allow: string[] };
-} {
-  const command = hookCommand(port);
-  const stop = { type: 'command', command: hookCommand(port, STOP_HOOK_TIMEOUT_S), timeout: STOP_HOOK_TIMEOUT_S }; // #268
-  const hooks = Object.fromEntries(
-    HOOK_EVENTS.map((event) => [
-      event,
-      [{ ...(event === 'PostToolUse' ? { matcher: 'Bash' } : {}), hooks: [event === 'Stop' ? stop : { type: 'command', command }] }],
-    ]),
-  );
-  // --settings precedence replaces the user's own status line inside the workers; the reply keeps the tab useful
-  return { hooks, statusLine: { type: 'command', command: statusCommand(port) }, permissions: { allow: [MCP_TOOLS_ALLOW] } };
-}
-
-/** The worker's MCP config: the Hive's own server over HTTP, the pty id (the identity the hooks use too) and this boot's secret as
- *  literal headers (#99, #467). Claude Code documents ${VAR} expansion in .mcp.json headers, but nothing for a file passed with
- *  --mcp-config, so the value itself goes in. */
-export function renderMcpConfig(port: number, ptyId: string, secret: string): McpConfig {
-  return { mcpServers: { hive: { type: 'http', url: `http://127.0.0.1:${port}${MCP_ROUTE}`, headers: { 'x-hive-pty': ptyId, [SECRET_HEADER]: secret } } } };
-}
-
 /** The pkill pattern for the claude holding `ptyId`'s MCP config (#696): its file name in claude's argv, dots escaped, as pkill reads a regex. */
 export const mcpConfigPattern = (ptyId: string): string => `${ptyId}\\.mcp\\.json`;
 
-/** One file per worker next to the prompts, named after the pty id: its path in claude's argv is what killStray / isStrayAlive match
+/** One file per worker next to the prompts, named after the pty id: its path in the agent's argv is what killStray / isStrayAlive match
  * now that the prompt no longer carries the id. 0600 in the 0700 home (#467): a new run is a new pty id, so the mode is set at
- * creation. A stale file from an earlier boot holds a secret that no longer opens anything. */
-export async function writeMcpConfig(promptsDir: string, ptyId: string, port: number, secret: string, withHive = true): Promise<string> {
+ * creation. A stale file from an earlier boot holds a secret that no longer opens anything. `content` is the run's runner's (#924). */
+export async function writeMcpConfig(promptsDir: string, ptyId: string, content: string): Promise<string> {
   const path = join(promptsDir, `${ptyId}.mcp.json`);
-  // a local session (#587): no Hive tools (no task for hive_done), but the path still puts the pty id in claude's argv for killStray
-  const config = withHive ? renderMcpConfig(port, ptyId, secret) : { mcpServers: {} };
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, { mode: MCP_MODE });
+  await writeFile(path, content, { mode: MCP_MODE });
   return path; // ponytail: one small file per spawn, never removed; delete it on exit if the home's prompts/ ever gets crowded
 }
 
@@ -158,16 +125,19 @@ export async function writeWorkspaceProtocol(home: string, workspace: string, me
   return paths;
 }
 
-/** The home's runtime files for `port`: hooks.json (what --settings points every worker at), prompts/ (the spawn's prompt files),
- * plugin/ (the Hive's own skills and agents, what --plugin-dir points at), protocol/ (what the agent's protocol flag points at, #167), and
- * bin/claude (the shim every terminal's PATH starts with, #696). */
-export async function prepareHome(home: string, port: number): Promise<{ hooksPath: string; promptsDir: string; pluginDir: string; protocol: ProtocolPaths }> {
+/** hooks.json in `home`: what every run's hooks settings flag points at; the runner writes it (#924). No I/O. */
+export const hooksPath = (home: string): string => join(home, HOOKS_FILE);
+
+/** The home's runtime files for `port`: prompts/ (the spawn's prompt files), plugin/ (the Hive's own skills and agents, what every run's
+ * plugin flag points at), protocol/ (what the agent's protocol flag points at, #167), and each runner's own (#924): Claude's hooks.json and
+ * shim. `runners` are the agents boot found. */
+export async function prepareHome(
+  home: string, port: number, runners: readonly Pick<AgentRunner, 'prepareHome'>[],
+): Promise<{ hooksPath: string; promptsDir: string; pluginDir: string; protocol: ProtocolPaths }> {
   const promptsDir = join(home, PROMPTS_DIR);
-  const hooksPath = join(home, 'hooks.json');
   await mkdir(promptsDir, { recursive: true, mode: HOME_MODE });
-  await writeFile(hooksPath, `${JSON.stringify(renderHooksSettings(port), null, 2)}\n`);
+  for (const runner of runners) await runner.prepareHome(home, port);
   const pluginDir = await copyPlugin(home);
   const protocol = await writeProtocol(home);
-  await installShim(home, AGENTS.claude); // #696: the claude every terminal finds first on its PATH
-  return { hooksPath, promptsDir, pluginDir, protocol };
+  return { hooksPath: hooksPath(home), promptsDir, pluginDir, protocol };
 }

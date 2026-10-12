@@ -1720,6 +1720,10 @@ export interface PtyHandle {
   kill(): Promise<void>; // resolves when the process no longer exists; one kill per handle
 }
 
+/** One word of an agent's argv (#924): a plain word, or one of the Hive's own flags with its value, which ptyCommand renders bare with the
+ * value quoted. Here, not in agents/runner.ts, so the page's type check never follows a runner's imports. */
+export type LaunchArg = string | readonly [flag: string, value: string];
+
 /** Everything a spawner needs to start one run or terminal in a pty of the daemon's (#251, #647). */
 export interface PtyLaunch {
   ptyId: string;

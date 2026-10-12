@@ -3,13 +3,15 @@ import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { AGENTS } from './agents.js';
 import { shimDir } from './shim.js';
 import { historyPath } from './terminal-files.js';
 import type { Activity, AgentId, Stage, Exec, SessionCopy, SessionPolicy, Item, PtyLaunch } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const NO_MATCH_EXIT = 1;
+// temporary (#924): Claude's model and protocol flags until Task 8 renders every argv through the runner's launch
+const MODEL_FLAG = '--model';
+const PROTOCOL_FLAG = '--append-system-prompt-file';
 
 // {id} {number} {title} {body} {url}, {verdict} {feedback} (#134), or {result.<dotted path>} into the task's result (#99). One pass: text a
 // substitution brings in (a task body that says `{result.spec}`, an evidence that says `{id}`) is never read as a placeholder.
@@ -71,8 +73,8 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
 /** The argv the reducer decided: the global claudeArgs, the stage model behind the agent's flag, as typed (#516), then the session id as
  * `--session-id` (new: the Hive generated it) or `--resume` (continue: the activity's own). No id at all leaves the choice to claude. The
  * worktree is not here: the Hive created it and the worker is started inside it (PtyLaunch.cwd). */
-export function runArgs(activity: Pick<Activity, 'sessionId'>, stage: Pick<Stage, 'model'>, session: SessionPolicy, claudeArgs: string[], agent: AgentId): string[] {
-  const model = stage.model === undefined ? [] : [AGENTS[agent].modelFlag, stage.model];
+export function runArgs(activity: Pick<Activity, 'sessionId'>, stage: Pick<Stage, 'model'>, session: SessionPolicy, claudeArgs: string[], _agent: AgentId): string[] {
+  const model = stage.model === undefined ? [] : [MODEL_FLAG, stage.model];
   const id = activity.sessionId === undefined ? [] : [session === 'continue' ? '--resume' : '--session-id', activity.sessionId];
   return [...claudeArgs, ...model, ...id];
 }
@@ -149,7 +151,7 @@ export function ptyCommand(o: PtyLaunch): string {
     // the workspace's language servers (#803), a plugin of their own: Claude Code's LSP tool reads its .lsp.json at launch
     ...(o.lspPluginDir === undefined ? [] : [`--plugin-dir ${shellQuote(o.lspPluginDir)}`]),
     // the Hive's protocol (#167): how to end a stage, ask and give up, beside the tools it names instead of inside every prompt
-    ...(o.protocolPath === undefined ? [] : [`${AGENTS.claude.protocolFlag} ${shellQuote(o.protocolPath)}`]),
+    ...(o.protocolPath === undefined ? [] : [`${PROTOCOL_FLAG} ${shellQuote(o.protocolPath)}`]),
     ...o.args.map(shellQuote),
     ...(o.promptPath === undefined ? [] : [`"$(cat ${shellQuote(o.promptPath)})"`]), // a session starts with no prompt (#164)
   ].join(' ');

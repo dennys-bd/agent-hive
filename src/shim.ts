@@ -1,7 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENTS } from './agents.js';
 
 // An agent's shim (#696, #924): assets/bin/<command>, with the agent's subcommands in its passthrough pattern, written into <home>/bin on every
 // boot, as the plugin is: upgrading the Hive changes what every terminal's agent does.
@@ -40,7 +39,7 @@ export interface CapturedLaunch { sessionId: string; mcpPath: string; hooksPath:
 export const capturedArgs = (o: CapturedLaunch): string[] => [
   '--mcp-config', o.mcpPath, '--settings', o.hooksPath, '--plugin-dir', o.pluginDir,
   ...(o.lspPluginDir === undefined ? [] : ['--plugin-dir', o.lspPluginDir]),
-  ...(o.protocolPath === undefined ? [] : [AGENTS.claude.protocolFlag, o.protocolPath]),
+  ...(o.protocolPath === undefined ? [] : ['--append-system-prompt-file' /* temporary (#924): Task 8 removes capturedArgs */, o.protocolPath]),
   ...o.claudeArgs, '--session-id', o.sessionId,
 ];
 

@@ -1,20 +1,18 @@
 // The coding agents a stage can run (#516): each one's facts, which of them this machine has, and which one a stage runs.
-// Only claude exists; #101 adds an entry here and a spawn path in ptyCommand.
+// Page-safe facts only (#924): the page imports this file. Each agent's runner, which reads files and runs processes, is in agents/registry.ts.
 import { AGENT_IDS, DEFAULT_AGENT, type AgentAvailability, type AgentId, type Config, type Exec, type Stage, type State } from './types.js';
 
 export interface AgentSpec {
   label: string; // how a run tab names it
-  command: string; // the CLI on PATH, probed with --version
-  modelFlag: string; // what `modelo` is passed behind, as typed
-  protocolFlag: string; // what the Hive's protocol file is passed behind (#167): appended to the agent's own system prompt, never replacing it
-  subcommands: readonly string[]; // the CLI's own commands (#696): the claude shim runs them straight through, never as a conversation
-  planLimits: boolean; // #925: the Hive reads this agent's plan limits (plan-limits.ts), so the header offers their refresh
+  command: string; // the CLI on PATH, probed with --version, which a run's command line starts with and its shim is named after
+  subcommands: readonly string[]; // the CLI's own commands (#696): the shim runs them straight through, never as a conversation
+  planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the header offers their refresh
 }
 
-// A Record, so a new id in AGENT_IDS fails tsc until its entry exists, protocol flag included.
+// A Record, so a new id in AGENT_IDS fails tsc until its entry exists; its runner joins agents/registry.ts the same way (#924).
 export const AGENTS: Record<AgentId, AgentSpec> = {
   claude: {
-    label: 'Claude', command: 'claude', modelFlag: '--model', protocolFlag: '--append-system-prompt-file', planLimits: true,
+    label: 'Claude', command: 'claude', planLimits: true,
     // as `claude --help` lists them, aliases included
     subcommands: [
       'agents', 'attach', 'auth', 'auto-mode', 'doctor', 'gateway', 'import', 'install', 'kill', 'logs', 'mcp', 'plugin', 'plugins', 'purge',

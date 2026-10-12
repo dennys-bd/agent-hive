@@ -22,6 +22,7 @@ import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { excludeFromGit, mcpConfigPattern, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { ALL_AGENTS } from './agents.js';
+import { availableRunners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createEventLog, type EventLog } from './events.js';
 import { createServerEvents, HOOKS_PREFIX, UI_HEADER, WRITE_METHODS } from './server-events.js';
@@ -693,7 +694,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function activate(config: Config, sources: Map<string, Source>): Promise<Runtime> {
     if (boundPort === undefined) throw new Error('listen() precisa executar antes de configure()');
     const port = boundPort;
-    const { hooksPath, promptsDir, pluginDir, protocol } = await prepareHome(home, port);
+    const { hooksPath, promptsDir, pluginDir, protocol } = await prepareHome(home, port, availableRunners(agents)); // #924: each found agent's own files
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     for (const { path } of config.comb.workspaces) await excludeFromGit(path); // each workspace keeps its worktrees in <path>/.hive/ (#179)

@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { runners } from '../../src/agents/registry.js';
+import type { AgentRun } from '../../src/agents/runner.js';
 import { capturedArgs } from '../../src/shim.js';
 import { copyArgs, ptyCommand, runArgs, shellQuote } from '../../src/spawn.js';
+import type { LaunchArg } from '../../src/types.js';
 
 // Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed, checked here against
 // the code that built them then; the runner must keep them. The Hive's own flags are [flag, value] pairs, which the command line renders
@@ -76,4 +79,34 @@ test('today: a copy, with and without a name, renders the pinned argv (#924)', (
   const named = copyArgs({ from: FROM, name: NAME }, ID, EXTRA);
   assert.deepEqual(named, NAMED_COPY.words);
   assert.equal(ptyCommand({ ...BASE, mcpPath: MCP, args: named }), commandOf(NAMED_COPY));
+});
+
+const RUN: AgentRun = { ptyId: 'W1', hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
+const argvOf = ({ flags, words }: Expected): LaunchArg[] => [...flags, ...words];
+
+test('the runner launches a new stage run as the pinned argv: the Hive\'s flags as pairs, the rest plain (#924)', () => {
+  const argv = runners.claude.launch({ ...RUN, mcpPath: MCP, lspPluginDir: LSP, protocolPath: STAGE_MD, model: 'sonnet', session: { id: ID, resume: false }, extraArgs: EXTRA });
+  assert.deepEqual(argv, argvOf(NEW_STAGE_RUN));
+  assert.deepEqual(argv.flat(), flat(NEW_STAGE_RUN));
+});
+
+test('the runner launches a new run without the MCP, the protocol, the plugin, a model or extra args as the pinned argv (#924)', () => {
+  assert.deepEqual(runners.claude.launch({ ...RUN, session: { id: ID, resume: false } }).flat(), flat(BARE_RUN));
+});
+
+test('the runner launches a resume as the pinned argv (#924)', () => {
+  assert.deepEqual(runners.claude.launch({ ...RUN, mcpPath: MCP, session: { id: ID, resume: true }, extraArgs: EXTRA }).flat(), flat(RESUME));
+});
+
+test("the runner launches the shim's capture as the pinned argv (#924)", () => {
+  const argv = runners.claude.launch({ ...RUN, mcpPath: MCP, lspPluginDir: LSP, protocolPath: SESSION_MD, session: { id: ID, resume: false }, extraArgs: EXTRA });
+  assert.deepEqual(argv.flat(), flat(CAPTURE));
+});
+
+test('the runner copies as the pinned argv, with and without a name; no session, no copy; clear has no argv (#924)', () => {
+  const run: AgentRun = { ...RUN, mcpPath: MCP, session: { id: ID, resume: true }, extraArgs: EXTRA };
+  assert.deepEqual(runners.claude.copy(run, FROM), argvOf(COPY), 'resume is ignored: the copy always starts under the new id');
+  assert.deepEqual(runners.claude.copy(run, FROM, NAME)?.flat(), flat(NAMED_COPY));
+  assert.equal(runners.claude.copy({ ...run, session: undefined }, FROM), undefined);
+  assert.equal(runners.claude.clear(run), undefined);
 });

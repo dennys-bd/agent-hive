@@ -9,7 +9,9 @@ import { editorDir, readInstalled } from './editor-install.js';
 import { findOnPath } from './formatter-detect.js';
 import { type Arch, inScope, LANGUAGES, type Launch, lspLanguageId, runtimeTools, type ServerDef, serverDef, serverFor } from './languages.js';
 import type { Logger } from './log.js';
-import type { Config, EditorInstallEvent, State, Worker, Workspace } from './types.js';
+import { AGENT_IDS, type Config, type EditorInstallEvent, type State, type Worker, type Workspace } from './types.js';
+import { runners } from './agents/registry.js';
+import type { LspServerEntry } from './agents/runner.js';
 
 /** This Mac's arch as the installs name it (#780). */
 export const hostArch = (): Arch => (process.arch === 'arm64' ? 'arm64' : 'x64');
@@ -25,10 +27,8 @@ export async function hiveLaunch(home: string, server: ServerDef, binary: string
   return server.launch({ dir: editorDir(home, target), arch, version: installed?.version ?? '' }, binary);
 }
 
-/** One server of a workspace's .lsp.json (#803), in Claude Code's plugin LSP format. */
-export interface LspEntry { command: string; args: string[]; extensionToLanguage: Record<string, string> }
-/** A workspace's .lsp.json (#803): one entry per server binary, named after it. */
-export type LspFile = Record<string, LspEntry>;
+/** A workspace's servers (#803): one entry per server binary, named after it; each runner writes them as its plugin's files (#924). */
+export type LspFile = Record<string, LspServerEntry>;
 
 // Each catalog language's own server. The checkers' servers (#782) are no language's: Claude Code takes the first server that claims an
 // extension, so a checker on .ts would shadow the language's server or be shadowed by it
@@ -64,7 +64,7 @@ export function renderWorkerLsp(config: Pick<Config, 'editor'>, workspace: strin
   }));
   if (pairs.length === 0) return undefined;
   // a local accumulator: spreading one in a reduce is quadratic
-  const entries = new Map<string, LspEntry>();
+  const entries = new Map<string, LspServerEntry>();
   for (const { binary, launch, ext } of pairs) {
     const entry = entries.get(binary) ?? { command: launch.command, args: [...launch.args], extensionToLanguage: {} };
     entry.extensionToLanguage[ext] = lspLanguageId(`x${ext}`);
@@ -79,7 +79,6 @@ export const settles = (event: EditorInstallEvent): boolean => event.kind === 's
 
 export const LSP_DIR = 'lsp'; // <home>/lsp/<workspace>: the workers' language-server plugins (#803)
 const DIR_MODE = 0o700; // under the home, this user's only
-const MANIFEST = { name: 'hive-lsp', description: 'The language servers the Hive installed, for this workspace (#803)', version: '1.0.0' };
 
 /** A workspace's plugin folder (#803), its name encoded as its protocol folder's is. No I/O. Throws for a name that would leave <home>/lsp:
  * the config's name rule already refuses those, but this path is also what a write removes. */
@@ -103,9 +102,9 @@ export interface WorkerLsp {
 }
 
 // temp + rename, as the protocol files are: a run starting mid-write reads the old file or the new one, never half
-async function put(path: string, value: unknown): Promise<void> {
+async function put(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
-  await writeFile(`${path}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
+  await writeFile(`${path}.tmp`, content);
   await rename(`${path}.tmp`, path);
 }
 
@@ -125,15 +124,15 @@ export function createWorkerLsp(deps: WorkerLspDeps): WorkerLsp {
     try {
       const dir = workerLspPath(home, workspace.name);
       const path = workspace.env.PATH ?? (deps.env ?? process.env).PATH ?? '';
-      const file = renderWorkerLsp(config, workspace.name, await launchesOn(path));
-      if (file === undefined) {
+      const servers = renderWorkerLsp(config, workspace.name, await launchesOn(path));
+      if (servers === undefined) {
         written.delete(workspace.name); // before the folder goes: a launch in between must not name a folder that is gone
         await rm(dir, { recursive: true, force: true });
         return;
       }
-      await put(join(dir, '.claude-plugin', 'plugin.json'), MANIFEST);
-      await put(join(dir, '.lsp.json'), file);
-      written.set(workspace.name, Object.keys(file));
+      // #924: every agent's plugin files, each in its own format, so a run of any agent finds its own in the folder
+      for (const id of AGENT_IDS) for (const file of runners[id].lspPlugin(servers)) await put(join(dir, file.path), file.content);
+      written.set(workspace.name, Object.keys(servers));
     } catch (err) {
       log.error(`worker lsp ${workspace.name}: not written (${errorName(err)})`);
     }
