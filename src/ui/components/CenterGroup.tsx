@@ -7,6 +7,7 @@ import { CopyToSub } from '@/components/CopySession';
 import { CONTEXT_KIT } from '@/components/menu-kit';
 import type { LiveRun } from '../../task-runs';
 import { taskLabel } from '../../tasks';
+import { DesignPane } from '@/components/DesignPane';
 import { EditorPane } from '@/components/EditorPane';
 import { UntitledPane } from '@/components/UntitledPane';
 import { PreviewPane } from '@/components/PreviewPane';
@@ -252,7 +253,7 @@ function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, o
   if (item.kind === 'file') {
     return <EditorPane activityId={activity.activity.id} path={item.path} label={`${activityTitle(activity)} · ${baseName(item.path)}`} active={active} fontFamily={fontFamily} workspace={activity.activity.workspace} openKey={activityKey(activity)} />;
   }
-  if (item.kind === 'design') return null; // #109: the design pane is wired in once it exists
+  if (item.kind === 'design') return <DesignPane activity={activity} path={item.path} label={t('design.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   if (item.kind === 'preview') {
     return <PreviewPane activity={activity} path={item.path} label={t('preview.tab', { label: activityTitle(activity), name: baseName(item.path) })} active={active} />;
   }
