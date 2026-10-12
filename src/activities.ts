@@ -63,7 +63,8 @@ export function pruneRecords<S extends WorkState & Pick<State, 'tasks'>>(state: 
 // #861: a task activity whose tasks all left stays while its worktree is on disk and nothing runs, deletes or checks out there: a returning task
 // finds it through recordsOf, and Settings › worktrees lists it until its removal marks it worktreeGone
 const isKept = (a: Activity): boolean =>
-  a.worktree !== undefined && a.worktreeGone === undefined && a.workerId === undefined && a.deleting === undefined && a.local === undefined;
+  a.worktree !== undefined && a.worktreeGone === undefined && a.workerId === undefined && a.deleting === undefined && a.local === undefined
+  && a.setup === undefined && a.ci === undefined;
 
 /** A task's activity outlives none of its tasks (#629): once every task its record lists has left the Hive (dropTask, closeTask, closeMissing,
  * the last stage, a stage that vanished), it goes, and then pruneRecords, unless isKept holds it (#861). Local activities stay. The same object when nothing goes. */

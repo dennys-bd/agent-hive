@@ -16,9 +16,10 @@ export interface DiscardRefusal { status: number; error: string; code: typeof DI
  * (cleanWorktree, never forced); with no worktree, the branch alone. Undefined when not asked, with no workspace (startEvent answered that) or
  * once git removed them. */
 export async function discardOrphan(deps: Pick<TaskRouteDeps, 'exec'>, current: LiveView, itemId: string, body: unknown): Promise<DiscardRefusal | undefined> {
-  const { discardOrphan: asked, workspace: raw } = (body ?? {}) as { discardOrphan?: unknown; workspace?: unknown };
+  const { discardOrphan: asked, workspace: raw, local } = (body ?? {}) as { discardOrphan?: unknown; workspace?: unknown; local?: unknown };
   const found = current.state.tasks.find((c) => c.item.itemId === itemId);
-  if (asked !== true || found === undefined || activityOf(current.state, itemId) !== undefined) return undefined;
+  // a start in the workspace's checkout makes no worktree, so there is nothing for a discard to clear
+  if (asked !== true || local === true || found === undefined || activityOf(current.state, itemId) !== undefined) return undefined;
   const task = placedTask(current.state, found, raw);
   const workspace = 'status' in task ? task : workspaceOf(current.runtime.config, task, current.state.tasks);
   if ('status' in workspace) return undefined;
