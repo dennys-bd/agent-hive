@@ -51,7 +51,7 @@ export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit }: Ca
     const el = pane.current;
     if (!el || scrolledAt.current === zoom) return;
     const { x, y } = scroll.current;
-    scrollPane(el, scroll, { x: anchoredScroll(x, el.clientWidth, scrolledAt.current, zoom), y: anchoredScroll(y, el.clientHeight, scrolledAt.current, zoom) });
+    scrollPane(el, scroll, { x: anchoredScroll(x, el.clientWidth / 2, scrolledAt.current, zoom), y: anchoredScroll(y, el.clientHeight / 2, scrolledAt.current, zoom) });
     scrolledAt.current = zoom;
   }, [zoom]);
   const applyFit = useEffectEvent((el: HTMLDivElement): void => {

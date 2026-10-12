@@ -514,7 +514,7 @@ test('a zoom keeps the centre of the last scroll, not of the offsets the browser
   fireEvent.scroll(pane);
   pane.scrollLeft = 0; // the clamp a zoom out's smaller sizer makes before the anchor runs
   await user.click(screen.getByRole('button', { name: 'afastar' }));
-  expect(pane.scrollLeft).toBeCloseTo((100 + 200) * 0.9 - 200); // anchoredScroll(100, 400, 1, 0.9)
+  expect(pane.scrollLeft).toBeCloseTo((100 + 200) * 0.9 - 200); // anchoredScroll(100, 200, 1, 0.9)
 });
 
 test('coming back to the flow after Atividades hid it (display: none) puts the last scroll back (#596, #910)', () => {

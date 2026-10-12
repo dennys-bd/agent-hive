@@ -1,4 +1,4 @@
-// The flow canvas's zoom (#910): its bounds and the arithmetic of −, +, fit and the scroll that keeps the view's centre. Pure, no DOM, so
+// The flow canvas's zoom (#910): its bounds and the arithmetic of −, +, fit and the scroll that keeps a point in place. Pure, no DOM, so
 // flowView's parse (#909) and the canvas share one range.
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 1.5;
@@ -24,7 +24,8 @@ export function fitZoom(viewport: { width: number; height: number }, graph: { wi
   return Number.isFinite(ratio) ? clamp(ratio, ZOOM_MIN, 1) : 1; // an empty or unmeasured chart: 0 / 0 is no zoom
 }
 
-/** The scroll offset on one axis that keeps the point at the viewport's centre in place when the zoom goes `from` → `to`; never before 0. */
-export function anchoredScroll(scroll: number, viewport: number, from: number, to: number): number {
-  return Math.max(0, ((scroll + viewport / 2) * to) / from - viewport / 2);
+/** The scroll offset on one axis that keeps the point `anchor` px into the viewport in place when the zoom goes `from` → `to`; never
+ * before 0. The centre is `viewport / 2`. */
+export function anchoredScroll(scroll: number, anchor: number, from: number, to: number): number {
+  return Math.max(0, ((scroll + anchor) * to) / from - anchor);
 }
