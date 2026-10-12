@@ -1,0 +1,51 @@
+import type { CommentRow, IssueRow } from '../../src/read-model/rows.js';
+import type { GhPullRequest } from '../../src/sources/github-queries.js';
+import type { ProjectPr } from '../../src/types.js';
+
+// Shaped after the answers the spike's probe recorded (#765), trimmed to the fields read and with every name replaced (#178)
+export const SOURCE = 'github:github.com:bia';
+export const OTHER_SOURCE = 'github:ghe.example.com:bia';
+export const REPO = 'acme/hive';
+export const T1 = '2026-10-05T09:00:00Z';
+export const T2 = '2026-10-05T10:00:00Z';
+export const T3 = '2026-10-05T11:00:00Z';
+const CREATED = '2026-10-01T09:00:00Z';
+const COMMENTED = '2026-10-02T09:00:00Z';
+const COMMENT_URL = 'https://github.com/acme/hive/issues/12#issuecomment-5';
+
+// GitHub's order, not the number's: the database answers them by number
+export const GQL_CLOSING_PRS: GhPullRequest[] = [
+  { number: 31, url: 'https://github.com/acme/hive/pull/31', state: 'OPEN', merged: false, isDraft: true, statusCheckRollup: null },
+  { number: 30, url: 'https://github.com/acme/hive/pull/30', state: 'MERGED', merged: true, isDraft: false, statusCheckRollup: { state: 'SUCCESS' } },
+];
+export const CLOSING_PRS: ProjectPr[] = [
+  { number: 30, url: 'https://github.com/acme/hive/pull/30', state: 'merged', checks: 'green' },
+  { number: 31, url: 'https://github.com/acme/hive/pull/31', state: 'open', draft: true },
+];
+
+export const REST_ISSUE = {
+  url: 'https://api.github.com/repos/acme/hive/issues/12', repository_url: 'https://api.github.com/repos/acme/hive', html_url: 'https://github.com/acme/hive/issues/12',
+  id: 1012, node_id: 'I_12', number: 12, title: 'T12', user: { login: 'bia', id: 7 }, labels: [{ id: 3, node_id: 'LA_3', name: 'bug', color: 'd73a4a' }],
+  assignees: [{ login: 'bia', id: 7 }, { login: 'caio', id: 8 }],
+  state: 'closed', comments: 1, created_at: CREATED, updated_at: T1, closed_at: T1, body: 'b',
+};
+export const GQL_ISSUE = {
+  id: 'I_12', number: 12, title: 'T12', body: 'b', state: 'CLOSED', createdAt: CREATED, updatedAt: T1, closedAt: T1, author: { login: 'bia' },
+  labels: { nodes: [{ name: 'bug' }] }, assignees: { nodes: [{ login: 'bia' }, { login: 'caio' }] }, comments: { totalCount: 1 },
+  closedByPullRequestsReferences: { nodes: GQL_CLOSING_PRS },
+};
+export const ISSUE_ROW: IssueRow = {
+  source: SOURCE, nodeId: 'I_12', repository: REPO, number: 12, kind: 'issue', state: 'closed', title: 'T12', body: 'b', author: 'bia',
+  labels: ['bug'], assignees: ['bia', 'caio'], createdAt: CREATED, updatedAt: T1, closedAt: T1, comments: 1,
+};
+export const REST_COMMENT = {
+  url: 'https://api.github.com/repos/acme/hive/issues/comments/5', html_url: COMMENT_URL,
+  issue_url: 'https://api.github.com/repos/acme/hive/issues/12', id: 5, node_id: 'IC_5', user: { login: 'bia', id: 7 }, created_at: COMMENTED, updated_at: COMMENTED, body: 'c',
+};
+export const GQL_COMMENT = { id: 'IC_5', url: COMMENT_URL, body: 'c', createdAt: COMMENTED, updatedAt: COMMENTED, author: { login: 'bia' } };
+export const COMMENT_ROW: CommentRow = {
+  source: SOURCE, nodeId: 'IC_5', issueNodeId: 'I_12', repository: REPO, url: COMMENT_URL, author: 'bia', body: 'c', createdAt: COMMENTED, updatedAt: COMMENTED,
+};
+
+export const issueRow = (n: number, updatedAt: string, extra: Partial<IssueRow> = {}): IssueRow => ({ ...ISSUE_ROW, nodeId: `I_${n}`, number: n, title: `T${n}`, updatedAt, ...extra });
+export const commentRow = (id: string, issueNodeId: string, updatedAt = T1): CommentRow => ({ ...COMMENT_ROW, nodeId: id, issueNodeId, createdAt: updatedAt, updatedAt });

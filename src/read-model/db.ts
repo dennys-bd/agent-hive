@@ -1,0 +1,242 @@
+import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
+import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import type { PrState, ProjectPr, Signal } from '../types.js';
+import type { CommentRow, IssueRow, IssueView, UpsertOrigin } from './rows.js';
+import { MIGRATIONS } from './schema.js';
+
+/** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
+export const READ_MODEL_FILE = 'read-model.sqlite';
+const FILE_MODE = 0o600; // as credentials.json: the bodies of private repositories' issues live here
+const MEMORY = ':memory:';
+const WRITE_WINDOW_MS = 30_000;
+const SIDE_FILES = ['', '-wal', '-shm'] as const;
+const KEY: readonly string[] = ['source', 'node_id'];
+const ISSUE_COLUMNS = ['source', 'node_id', 'repository', 'number', 'kind', 'state', 'title', 'body', 'author', 'labels', 'assignees', 'created_at', 'updated_at', 'closed_at', 'comments'];
+const COMMENT_COLUMNS = ['source', 'node_id', 'issue_node_id', 'repository', 'url', 'author', 'body', 'created_at', 'updated_at'];
+const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
+const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
+const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
+  ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
+
+export type SyncKind = 'issues' | 'comments';
+/** A scope's place in its sync: the `since` cursor, the first page's ETag, and the time of the last complete round. */
+export interface SyncScope { cursor: string | null; etag: string | null; syncedAt: string | null }
+
+/** The read model (#178): one upsert per entity, the scopes and the views' queries, every one scoped to a source. */
+export interface ReadModel {
+  upsertIssue(row: IssueRow, origin: UpsertOrigin): boolean; // whether it wrote
+  upsertComment(row: CommentRow, origin: UpsertOrigin): boolean;
+  setClosingPrs(source: string, issueNodeId: string, prs: ProjectPr[]): void; // replaces the set
+  removeIssue(source: string, nodeId: string): void; // its comments and links with it
+  removeComment(source: string, nodeId: string): void;
+  scope(source: string, repository: string, kind: SyncKind): SyncScope | undefined;
+  setScope(source: string, repository: string, kind: SyncKind, scope: SyncScope): void;
+  issues(source: string, repository: string, state: IssueRow['state']): IssueView[]; // issues only, newest update first
+  issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
+  nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's
+  comments(source: string, issueNodeId: string): CommentRow[]; // oldest first
+  nodeIds(source: string, repository: string, table: 'issues' | 'comments'): string[];
+  transaction<T>(run: () => T): T;
+  close(): void;
+}
+
+/** `now` is the clock of the written_at window; `migrations` replaces MIGRATIONS for the tests only. */
+export interface OpenOptions { now?: () => number; migrations?: readonly string[] }
+
+type Row = Record<string, SQLOutputValue>;
+type Sqlite = typeof DatabaseSync;
+const text = (row: Row, key: string): string => String(row[key]);
+const nullable = (row: Row, key: string): string | null => (row[key] === null ? null : String(row[key]));
+const written = (result: { changes: number | bigint }): boolean => Number(result.changes) > 0;
+const paramOf = (column: string): string => column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+// The replace rule (#178): a newer updated_at always wins. On a tie a write wins, and a sync page wins unless the stored row was written
+// less than WRITE_WINDOW_MS ago by the daemon's clock: a page read before a write can carry the write's own second. An identical row
+// (written_at aside) writes nothing, so a quiet page costs no disk write.
+function upsertSql(table: string, columns: readonly string[]): string {
+  const compared = columns.filter((c) => !KEY.includes(c));
+  const set = [...compared, 'written_at'].map((c) => `${c} = excluded.${c}`).join(', ');
+  return `INSERT INTO ${table} (${columns.join(', ')}, written_at) VALUES (${columns.map((c) => `$${paramOf(c)}`).join(', ')}, $writtenAt)
+  ON CONFLICT (source, node_id) DO UPDATE SET ${set}
+  WHERE (${compared.map((c) => `excluded.${c}`).join(', ')}) IS NOT (${compared.map((c) => `${table}.${c}`).join(', ')})
+    AND (excluded.updated_at > ${table}.updated_at OR (excluded.updated_at = ${table}.updated_at
+      AND (excluded.written_at IS NOT NULL OR ${table}.written_at IS NULL OR $now - ${table}.written_at >= ${WRITE_WINDOW_MS})))`;
+}
+
+function issueOf(row: Row): IssueRow {
+  return {
+    source: text(row, 'source'), nodeId: text(row, 'node_id'), repository: text(row, 'repository'), number: Number(row.number),
+    kind: row.kind === 'pr' ? 'pr' : 'issue', state: row.state === 'closed' ? 'closed' : 'open', title: text(row, 'title'), body: text(row, 'body'),
+    author: nullable(row, 'author'), labels: JSON.parse(text(row, 'labels')) as string[], assignees: JSON.parse(text(row, 'assignees')) as string[],
+    createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'), closedAt: nullable(row, 'closed_at'), comments: Number(row.comments),
+  };
+}
+
+function commentOf(row: Row): CommentRow {
+  return {
+    source: text(row, 'source'), nodeId: text(row, 'node_id'), issueNodeId: text(row, 'issue_node_id'), repository: text(row, 'repository'),
+    url: text(row, 'url'), author: nullable(row, 'author'), body: text(row, 'body'), createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'),
+  };
+}
+
+// The stored values are the module's own writes, through pullRequest's shape
+function prOf(row: Row): ProjectPr {
+  const checks = SIGNALS.find((s) => s === row.checks);
+  return {
+    number: Number(row.number), url: text(row, 'url'), state: PR_STATES.find((s) => s === row.state) ?? 'closed',
+    ...(checks === undefined ? {} : { checks }), ...(row.draft === 1 ? { draft: true as const } : {}),
+  };
+}
+
+// A savepoint, not BEGIN: setClosingPrs and removeIssue open their own, and a caller may already hold db.transaction around them
+function inTransaction<T>(db: DatabaseSync, run: () => T): T {
+  db.exec('SAVEPOINT read_model');
+  try {
+    const result = run();
+    db.exec('RELEASE read_model');
+    return result;
+  } catch (err) {
+    db.exec('ROLLBACK TO read_model');
+    db.exec('RELEASE read_model');
+    throw err;
+  }
+}
+
+function upsertsOf(db: DatabaseSync, now: () => number): Pick<ReadModel, 'upsertIssue' | 'upsertComment' | 'setScope'> {
+  const issue = db.prepare(upsertSql('issues', ISSUE_COLUMNS));
+  const comment = db.prepare(upsertSql('comments', COMMENT_COLUMNS));
+  const scope = db.prepare(UPSERT_SCOPE);
+  const stamp = (origin: UpsertOrigin): { now: number; writtenAt: number | null } => {
+    const at = now();
+    return { now: at, writtenAt: origin === 'write' ? at : null };
+  };
+  return {
+    // every key of the row is one named parameter; labels and assignees travel as JSON arrays
+    upsertIssue: (row, origin) => written(issue.run({ ...row, labels: JSON.stringify(row.labels), assignees: JSON.stringify(row.assignees), ...stamp(origin) })),
+    upsertComment: (row, origin) => written(comment.run({ ...row, ...stamp(origin) })),
+    setScope: (source, repository, kind, value) => { scope.run({ source, repository, kind, ...value }); },
+  };
+}
+
+function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'removeIssue' | 'removeComment'> {
+  const dropLinks = db.prepare('DELETE FROM issue_pull_requests WHERE source = ? AND issue_node_id = ?');
+  const link = db.prepare('INSERT INTO issue_pull_requests (source, issue_node_id, number, url, state, draft, checks) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const dropIssue = db.prepare('DELETE FROM issues WHERE source = ? AND node_id = ?');
+  const dropComments = db.prepare('DELETE FROM comments WHERE source = ? AND issue_node_id = ?');
+  const dropComment = db.prepare('DELETE FROM comments WHERE source = ? AND node_id = ?');
+  return {
+    // The links have their own write: a linked PR moving does not bump the issue's updated_at, so they live outside the replace rule
+    setClosingPrs: (source, issueNodeId, prs) => inTransaction(db, () => {
+      dropLinks.run(source, issueNodeId);
+      for (const pr of prs) link.run(source, issueNodeId, pr.number, pr.url, pr.state, pr.draft === true ? 1 : 0, pr.checks ?? null);
+    }),
+    removeIssue: (source, nodeId) => inTransaction(db, () => {
+      dropComments.run(source, nodeId);
+      dropLinks.run(source, nodeId);
+      dropIssue.run(source, nodeId);
+    }),
+    removeComment: (source, nodeId) => { dropComment.run(source, nodeId); },
+  };
+}
+
+// The links of every row read in one query, instead of one per issue
+function viewsOf(db: DatabaseSync): (source: string, rows: Row[]) => IssueView[] {
+  const links = db.prepare('SELECT * FROM issue_pull_requests WHERE source = ? AND issue_node_id IN (SELECT value FROM json_each(?)) ORDER BY number');
+  return (source, rows) => {
+    const issues = rows.map(issueOf);
+    const byIssue = new Map<string, ProjectPr[]>();
+    for (const row of links.all(source, JSON.stringify(issues.map((i) => i.nodeId)))) {
+      const id = text(row, 'issue_node_id');
+      byIssue.set(id, [...(byIssue.get(id) ?? []), prOf(row)]);
+    }
+    return issues.map((issue) => ({ ...issue, pullRequests: byIssue.get(issue.nodeId) ?? [] }));
+  };
+}
+
+function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
+  const scope = db.prepare('SELECT cursor, etag, synced_at FROM sync_scopes WHERE source = ? AND repository = ? AND kind = ?');
+  const issues = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND kind = 'issue' AND state = ? ORDER BY updated_at DESC, number DESC");
+  const issue = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND number = ? AND kind = 'issue'");
+  const nodeId = db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ? AND number = ?');
+  const comments = db.prepare('SELECT * FROM comments WHERE source = ? AND issue_node_id = ? ORDER BY created_at');
+  const ids = {
+    issues: db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ?'),
+    comments: db.prepare('SELECT node_id FROM comments WHERE source = ? AND repository = ?'),
+  };
+  const views = viewsOf(db);
+  return {
+    scope: (source, repository, kind) => {
+      const row = scope.get(source, repository, kind);
+      return row === undefined ? undefined : { cursor: nullable(row, 'cursor'), etag: nullable(row, 'etag'), syncedAt: nullable(row, 'synced_at') };
+    },
+    issues: (source, repository, state) => views(source, issues.all(source, repository, state)),
+    issue: (source, repository, number) => {
+      const row = issue.get(source, repository, number);
+      return row === undefined ? undefined : views(source, [row])[0];
+    },
+    nodeIdOf: (source, repository, number) => {
+      const row = nodeId.get(source, repository, number);
+      return row === undefined ? undefined : text(row, 'node_id');
+    },
+    comments: (source, issueNodeId) => comments.all(source, issueNodeId).map(commentOf),
+    nodeIds: (source, repository, table) => ids[table].all(source, repository).map((row) => text(row, 'node_id')),
+  };
+}
+
+// Each missing migration in its own transaction, with the version it reaches, so a crash between two leaves a file that resumes
+function migrate(db: DatabaseSync, migrations: readonly string[]): void {
+  const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
+  // a file of a newer Hive has tables this code cannot read: treated as corrupt, so it is rebuilt
+  if (!Number.isInteger(version) || version > migrations.length) throw new Error(`read model: schema version ${version} is newer than ${migrations.length}`);
+  for (const [index, sql] of migrations.entries()) {
+    if (index < version) continue;
+    inTransaction(db, () => {
+      db.exec(sql);
+      db.exec(`PRAGMA user_version = ${index + 1}`);
+    });
+  }
+}
+
+// WAL keeps a -wal and a -shm beside the database: all three get the owner-only mode
+function restrict(path: string): void {
+  for (const suffix of SIDE_FILES) if (existsSync(`${path}${suffix}`)) chmodSync(`${path}${suffix}`, FILE_MODE);
+}
+
+function modelOf(db: DatabaseSync, now: () => number): ReadModel {
+  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
+}
+
+// The handle is closed on any failure, statement preparation included, so the files can be deleted after it (Windows refuses an open one)
+function modelAt(Database: Sqlite, path: string, migrations: readonly string[], now: () => number): ReadModel {
+  // created owner-only before sqlite creates it, so no other account can open it in between
+  if (path !== MEMORY) closeSync(openSync(path, 'a', FILE_MODE));
+  const db = new Database(path);
+  try {
+    db.exec('PRAGMA journal_mode = WAL'); // a reader outside the daemon (the sqlite3 CLI) never blocks its writes
+    migrate(db, migrations);
+    if (path !== MEMORY) restrict(path);
+    return modelOf(db, now);
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+}
+
+/** Opens, and creates on first use, the read model at `path`; `:memory:` keeps it in memory. node:sqlite is imported here, so only the
+ * process that opens the model prints its ExperimentalWarning. A file it cannot open (not a database, a failed migration, a newer schema)
+ * is deleted with its -wal and -shm and opened again once, answering `resync: true`: the model is a cache. A second failure throws. */
+export async function openReadModel(path: string, options: OpenOptions = {}): Promise<{ db: ReadModel; resync: boolean }> {
+  const { DatabaseSync: Database } = await import('node:sqlite');
+  const open = (): ReadModel => modelAt(Database, path, options.migrations ?? MIGRATIONS, options.now ?? Date.now);
+  try {
+    return { db: open(), resync: false };
+  } catch (first) {
+    if (path !== MEMORY) for (const suffix of SIDE_FILES) rmSync(`${path}${suffix}`, { force: true });
+    try {
+      return { db: open(), resync: true };
+    } catch (second) {
+      // the first error is why the file was dropped: kept, so a failure that is not corruption (EACCES, a full disk) shows its cause
+      throw new Error(`read model: cannot open ${path}`, { cause: { first, second } });
+    }
+  }
+}
