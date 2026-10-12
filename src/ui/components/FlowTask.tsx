@@ -28,6 +28,7 @@ import { STATUS_BORDER, STATUS_TEXT } from '@/lib/status';
 import { answerableActivity, backoffUntil, isExhausted, taskState } from '@/lib/task-state';
 import { backoffLabel } from '@/lib/usage';
 import { workspaceColor } from '@/lib/workspace-color';
+import { titleIfCut } from '@/lib/cut-title';
 import { shownSize } from '@/lib/xterm-setup';
 
 /** abrir (#542) and the O key (#585): the task's activity, on its agent session; undefined while no agent session runs. The issue page's abrir atividade too (#757). */
@@ -126,12 +127,14 @@ function taskStatus(task: Task, state: State): TaskStatus {
 }
 
 // The title (#134, 1b): the workspace's colour square before the id, its name as the square's title, two lines at most. No square when no rule
-// resolves a workspace (#179). A child's ↳ after the square, whether the tree toggle is on or off; a root has none (#34)
+// resolves a workspace (#179). A child's ↳ after the square, whether the tree toggle is on or off; a root has none (#34). A cut title shows in
+// full on hover (#91), over the card's drag hint while the pointer is on it
 function TaskTitle({ task, state }: { task: Task; state: State }) {
   const workspace = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks);
   const isChild = parentOf(state.tasks, task.item.itemId) !== undefined;
   return (
-    <span className="line-clamp-2 font-medium text-xs leading-4">
+    // biome-ignore lint/a11y/noStaticElementInteractions: the hover only sets a native title on cut text (#91), no interaction
+    <span className="line-clamp-2 font-medium text-xs leading-4" onMouseEnter={titleIfCut(taskLabel(task))}>
       {workspace !== undefined && <span aria-hidden="true" title={workspace} className="mr-1.5 inline-block size-2 rounded-[2px] align-middle" style={{ background: workspaceColor(workspace) }} />}
       {isChild && <span aria-hidden="true" className="mr-1 font-mono font-normal text-muted-foreground">↳</span>}
       {taskLabel(task)}

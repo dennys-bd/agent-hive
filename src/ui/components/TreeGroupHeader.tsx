@@ -1,6 +1,7 @@
 import { taskLabel } from '../../tasks';
 import type { Task } from '../../types';
 import { t } from '@/i18n';
+import { titleIfCut } from '@/lib/cut-title';
 
 interface TreeGroupHeaderProps { root?: Task; count: number; isCollapsed: boolean; isFaded?: boolean; onToggle(): void }
 
@@ -17,7 +18,8 @@ export function TreeGroupHeader({ root, count, isCollapsed, isFaded = false, onT
       >
         {isCollapsed ? '›' : '⌄'}
       </button>
-      <span className="min-w-0 flex-1 truncate font-medium text-foreground">{name}</span>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the hover only sets a native title on cut text (#91), no interaction */}
+      <span className="min-w-0 flex-1 truncate font-medium text-foreground" onMouseEnter={titleIfCut(name)}>{name}</span>
       <span className="shrink-0 text-muted-foreground">{count}</span>
     </li>
   );

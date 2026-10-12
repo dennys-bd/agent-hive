@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowTask, taskAction } from '@/components/FlowTask';
@@ -426,4 +426,18 @@ test('a card out of the focus reads at .3; a dragged one reads at the drag\'s .5
   expect(tile()).not.toHaveClass('opacity-30');
   rerender(face(false, false));
   expect(tile()).not.toHaveClass('opacity-30');
+});
+
+test('a cut title shows in full on hover, over the card\'s drag hint; a title that fits leaves only the hint (#91)', () => {
+  render(<Flow state={state(task())} />);
+  const title = screen.getByText('#1 Task 1');
+  const hint = tile().getAttribute('title');
+  fireEvent.mouseEnter(title);
+  expect(title).not.toHaveAttribute('title');
+  Object.defineProperty(title, 'scrollHeight', { configurable: true, value: 48 });
+  Object.defineProperty(title, 'clientHeight', { configurable: true, value: 32 });
+  fireEvent.mouseEnter(title);
+  expect(title).toHaveAttribute('title', '#1 Task 1');
+  expect(tile()).toHaveAttribute('title', hint ?? '');
+  cleanup();
 });
