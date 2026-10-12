@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { AGENTS } from '../../src/agents.js';
 import { planLimitsReading, runners } from '../../src/agents/registry.js';
 import { transcriptDir } from '../../src/agents/claude-transcript.js';
 import { AGENT_IDS, type RateLimits } from '../../src/types.js';
@@ -32,4 +33,11 @@ test('planLimitsReading reads every agent whose entry has plan limits and lists 
   assert.deepEqual(await planLimitsReading(table(async () => reading)), { readings: [{ agent: 'claude', rateLimits: reading }], failures: [] });
   assert.deepEqual(await planLimitsReading(table(async () => { throw new Error('HTTP 401'); })), { readings: [], failures: [{ agent: 'claude', reason: 'HTTP 401' }] });
   assert.deepEqual(await planLimitsReading(table(async () => undefined)), { readings: [], failures: [] });
+});
+
+test('Codex has plan limits too, and one agent\'s failure never costs another\'s reading (#929)', async () => {
+  assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].planLimits), ['claude', 'codex']);
+  const codex: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-11-01T00:00:00.000Z' } } };
+  const report = await planLimitsReading({ claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex } });
+  assert.deepEqual(report, { readings: [{ agent: 'codex', rateLimits: codex }], failures: [{ agent: 'claude', reason: 'no Claude Code OAuth token' }] });
 });

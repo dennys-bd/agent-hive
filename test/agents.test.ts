@@ -67,9 +67,9 @@ test('claude reports plan limits: the header offers their refresh (#925)', () =>
   assert.equal(AGENTS.claude.planLimits, true);
 });
 
-test('codex runs as `codex`, reports no plan limits until #929 and cannot choose its session id; claude can (#927)', () => {
+test('codex runs as `codex`, reports plan limits (#929) and cannot choose its session id; claude can (#927)', () => {
   assert.deepEqual(AGENT_IDS, ['claude', 'codex']);
-  assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', false, false]);
+  assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', true, false]);
   assert.equal(AGENTS.claude.canChooseSessionId, true);
   assert.ok(AGENTS.codex.subcommands.includes('exec'));
   assert.ok(['resume', 'fork'].every((c) => AGENTS.codex.subcommands.includes(c)), 'both open a session the user chose: the shim runs them as typed (#932)');

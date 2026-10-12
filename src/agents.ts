@@ -23,7 +23,7 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
     shimFlags: ['--resume', '--resume=*', '-r', '--continue', '-c', '--session-id', '--session-id=*', '-p', '--print', '-h', '--help', '-v', '--version'],
   },
   codex: {
-    label: 'Codex', command: 'codex', planLimits: false, canChooseSessionId: false, // planLimits: #929
+    label: 'Codex', command: 'codex', planLimits: true, canChooseSessionId: false, // planLimits: #929, read from its rollouts
     // as `codex --help` lists them (finding §12), aliases included; resume and fork open a session the user chose, which the shim runs as typed,
     // as Claude's --resume (#932)
     subcommands: [

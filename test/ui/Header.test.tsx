@@ -128,6 +128,7 @@ test('each agent with a reading has its group: Codex\'s free plan shows a 30d me
   const group = screen.getByTitle(/^codex · 30 days resets in /);
   expect(group.querySelector('[data-icon="codex"]')).not.toBeNull();
   expect(screen.getAllByRole('progressbar')).toHaveLength(3);
+  expect(screen.getAllByRole('button', { name: t('header.refreshUsage') })).toHaveLength(2); // #929: Codex's group refreshes too
   rerender(<Header state={{ ...base, rateLimits: { claude } }} signal="green" center="automation" onView={noop} />);
   expect(screen.queryByTitle(/^codex/)).not.toBeInTheDocument();
 });

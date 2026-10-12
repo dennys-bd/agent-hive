@@ -8,6 +8,7 @@ import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
 import type { HookPayload } from '../types.js';
 import { type AgentRole, agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexHome, roleFile, tomlString } from './codex-home.js';
+import { readCodexPlanLimits } from './codex-limits.js';
 import { ownsRollout, readRollout, rolloutFiles } from './codex-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
@@ -102,7 +103,7 @@ export const codexRunner: AgentRunner = {
   sessionFiles: (_cwd, id, env) => rolloutFiles(id, env),
   readTurn: (path, since) => readRollout(path, since),
   countMessages: () => Promise.resolve(0),
-  planLimits: () => Promise.resolve(undefined),
+  planLimits: (deps) => readCodexPlanLimits(deps), // #929: from the newest rollout's rate_limits
   statusLimits: () => undefined,
   strayPattern: (ptyId) => ptyId, // in the x-hive-pty header's literal (§12)
   runEnv: ({ secret, withHive }): Record<string, string> => (withHive ? { [MCP_SECRET_ENV]: secret } : {}),
