@@ -12,8 +12,9 @@ import { SessionPicker } from '@/components/SessionPicker';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
+import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
-import { clockOf, type CommentState, type DesignComment } from '@/lib/design-comments';
+import { clockOf, type CommentState, type DesignComment, fileComments } from '@/lib/design-comments';
 import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
@@ -242,4 +243,13 @@ export function DesignComments({ model, onHide }: { model: DesignCommentsModel; 
       </aside>
     </ReviewContext.Provider>
   );
+}
+
+/** The design tab's open count (#113, handoff §1): a pill before its ×, above zero only. Its own read of the review, so the count shows
+ *  with the pane behind another tab too. ponytail: two reads per design tab, this and the pane's; lift the pane's count up to its tab if
+ *  that ever shows */
+export function DesignCountPill({ taskId, path }: { taskId: string; path: string }) {
+  const { review } = useReview(taskId);
+  const count = review === undefined ? 0 : fileComments(review, path).open.length;
+  return count > 0 ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-muted-foreground tabular-nums">{count}</span> : null;
 }

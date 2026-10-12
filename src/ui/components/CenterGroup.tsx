@@ -8,6 +8,7 @@ import { CONTEXT_KIT } from '@/components/menu-kit';
 import type { LiveRun } from '../../task-runs';
 import { taskLabel } from '../../tasks';
 import { DesignPane } from '@/components/DesignPane';
+import { DesignCountPill } from '@/components/DesignComments';
 import { EditorPane } from '@/components/EditorPane';
 import { UntitledPane } from '@/components/UntitledPane';
 import { PreviewPane } from '@/components/PreviewPane';
@@ -212,6 +213,7 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
           <ContextMenuItem onSelect={close}>{t('center.close')}</ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+      {item.kind === 'design' && activity.kind === 'task' && <DesignCountPill taskId={activity.task.item.itemId} path={item.path} />}
       <Button type="button" size="icon-xs" variant="ghost" className="size-4" aria-label={`${t('center.close')} ${text}`} onClick={close}><XIcon /></Button>
     </div>
   );
