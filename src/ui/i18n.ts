@@ -1554,6 +1554,7 @@ const en = {
   'shortcuts.treeOpenTerminal': 'open in the integrated terminal',
   'shortcuts.treeCopyPath': 'copy path',
   'shortcuts.treeCopyRelativePath': 'copy relative path',
+  'shortcuts.treeCopyCheckoutPath': 'copy path from checkout',
   'shortcuts.toggleConsole': 'open or close the console',
   'shortcuts.confirm': 'confirm: run stages, open a session, send and start now', // #585: was feedbackStart (#446)
   'shortcuts.feedbackQueue': 'send in order',
@@ -3367,6 +3368,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.treeOpenTerminal': 'abrir no terminal integrado',
   'shortcuts.treeCopyPath': 'copiar caminho',
   'shortcuts.treeCopyRelativePath': 'copiar caminho relativo',
+  'shortcuts.treeCopyCheckoutPath': 'copiar caminho a partir do checkout',
   'shortcuts.toggleConsole': 'abrir ou fechar o console',
   'shortcuts.confirm': 'confirmar: executar etapas, abrir sessão, enviar e começar agora',
   'shortcuts.feedbackQueue': 'enviar na ordem',

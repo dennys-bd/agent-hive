@@ -125,7 +125,7 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   const rows = (scope: ShortcutScope): string[] => SHORTCUT_MAP.filter((row) => row.scope === scope).map((row) => ('keys' in row ? `fixed:${row.id}` : row.id));
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
-  assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
+  assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
@@ -236,7 +236,7 @@ test('Cmd+, Shift+Enter and Escape are fixed keys: no shortcut, their ids are re
 
 test('the files tree\'s keys (#818): rename ↵ / F2, delete ⌘⌫ / Delete, reveal ⌥⌘R on both tables; new file, new folder, the terminal and the copy paths unbound until bound', () => {
   assert.deepEqual([pair('treeRename'), pair('treeDelete'), pair('treeReveal')], [['Enter', 'F2'], ['CmdOrCtrl+Backspace', 'Delete'], ['CmdOrCtrl+Alt+R', 'CmdOrCtrl+Alt+R']]);
-  for (const id of ['treeNewFile', 'treeNewFolder', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath'] as const) {
+  for (const id of ['treeNewFile', 'treeNewFolder', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath'] as const) {
     assert.deepEqual([effectiveBindings({}, MAC)[id], effectiveBindings({}, OTHER)[id]], [null, null], id);
   }
   assert.deepEqual(parseShortcuts({ treeNewFile: 'CmdOrCtrl+Alt+N' }, MAC), { treeNewFile: 'CmdOrCtrl+Alt+N' });
