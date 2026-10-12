@@ -3,9 +3,10 @@ import userEvent from '@testing-library/user-event';
 import type { UserEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
-import { formatCount, setLanguage, t } from '@/i18n';
+import { setLanguage, t } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
-import type { SettingsInfo } from '../../src/types';
+import type { MemoryView, SettingsInfo } from '../../src/types';
+import { jsonResponse } from '../fakes';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
 const open = (user: UserEvent, s: SettingsSection) => user.click(screen.getByRole('button', { name: t(`settings.section.${s}`) }));
@@ -260,26 +261,41 @@ test('a workspace\'s conventions card shows its saved conventions; a bad slice s
   expect(posted().workspaces.map((w) => w.conventions)).toEqual([{ specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } }, undefined]);
 });
 
-test('each workspace card edits its memory total limit with what a full memory costs per run under it; out of range it marks itself and stops the save on workspaces; the value is posted as a number (#73)', async () => {
+test('the card has no total limit field: a cap the memory dialog saves reaches the draft and its baseline, so the footer shows no change and a later save posts it (#115)', async () => {
+  let cap = 4000;
+  const fetchCap = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/workspaces/hive/memory/cap') {
+      cap = (JSON.parse(String(init?.body)) as { cap: number }).cap;
+      return jsonResponse({ ok: true });
+    }
+    if (url === '/workspaces/hive/memory') return jsonResponse({ entries: [], used: 0, cap, textMax: 300 } satisfies MemoryView);
+    if (url === '/workspaces/hive/memory/stats') return jsonResponse({ runs: 0, cited: 0 });
+    return jsonResponse({});
+  });
+  vi.stubGlobal('fetch', fetchCap); // afterEach unstubs it
   const user = userEvent.setup();
   const onSaved = vi.fn();
   render(<Settings info={info} onSaved={onSaved} />);
   await open(user, 'workspaces');
   const hive = within(screen.getByRole('region', { name: 'hive' }));
-  const cap = hive.getByRole('spinbutton', { name: `${t('settings.memory.cap')} 1` });
-  expect(cap).toHaveValue(4000);
-  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(1100) }))).toBeInTheDocument();
-  await user.clear(cap);
-  await user.type(cap, '20001');
-  expect(cap).toHaveAttribute('aria-invalid', 'true');
-  expect(hive.getByText(t('settings.memory.capRange'))).toBeInTheDocument();
+  expect(await hive.findByText('0 de 4.000 caracteres')).toBeInTheDocument();
+  expect(hive.queryByRole('spinbutton', { name: /limite total/ })).not.toBeInTheDocument();
+  await user.click(hive.getByRole('button', { name: t('settings.memory.open') }));
+  const dialog = within(await screen.findByRole('dialog'));
+  const field = dialog.getByRole('spinbutton', { name: t('settings.memory.totalLimit') });
+  await user.clear(field);
+  await user.type(field, '6000');
+  await user.click(dialog.getByRole('button', { name: t('settings.memory.save') }));
+  expect(await dialog.findByText('0 de 6.000 caracteres')).toBeInTheDocument();
+  await user.click(dialog.getByRole('button', { name: t('settings.memory.close') }));
+  expect(await hive.findByText('0 de 6.000 caracteres')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: t('settings.cancel') })).toBeDisabled(); // no unsaved change: the baseline has it too
+  const env = within(hive.getByRole('group', { name: t('settings.workspaceEnv', { workspace: 'hive' }) }));
+  await user.click(env.getByRole('button', { name: t('settings.env.add') }));
+  await user.type(env.getByLabelText('nome da variável 2'), 'API_BASE');
   await user.click(screen.getByRole('button', { name: t('settings.save') }));
-  expect(await screen.findByText(t('settings.error.memoryCap', { workspace: 'hive' }))).toBeInTheDocument();
-  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
-  await user.clear(cap);
-  await user.type(cap, '8000');
-  expect(cap).toHaveAttribute('aria-invalid', 'false');
-  expect(hive.getByText(t('settings.memory.capEstimate', { n: formatCount(2100) }))).toBeInTheDocument();
-  await save(user, onSaved);
-  expect(posted().workspaces.map((w) => w.memoryCap)).toEqual([8000, 4000]);
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  const [, init] = fetchCap.mock.calls.find(([url]) => url === '/settings')!;
+  expect((JSON.parse(String(init?.body)) as Body).workspaces.map((w) => w.memoryCap)).toEqual([6000, 4000]);
 });

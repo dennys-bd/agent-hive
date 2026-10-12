@@ -1,17 +1,20 @@
+import { execFile } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import type { RecordInput } from '../src/events.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { MEMORY_FULL_MESSAGE, MEMORY_KIND_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE } from '../src/memory.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { createServer } from '../src/server.js';
-import { UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
-import type { MemoryView, SettingsBody } from '../src/types.js';
+import { CAP_MESSAGE, UNKNOWN_WORKSPACE_MESSAGE } from '../src/server-memory.js';
+import type { Config, MemoryView, SettingsBody, Workspace } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MEMORY_TEXT_MAX, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { tempDir } from './temp-dir.js';
 
 // The memory dialog's routes (#797), end to end against a configured Hive with one workspace and no worker
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -29,14 +32,27 @@ const refused = async (res: Promise<Response>, status: number, body: Record<stri
   assert.deepEqual([answer.status, await answer.json()], [status, body], why);
 };
 
-async function start(t: TestContext, memoryCap = 4000): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
+const answer = async (res: Promise<Response>): Promise<[number, unknown]> => {
+  const done = await res;
+  return [done.status, await done.json()];
+};
+const configFile = (home: string): string => join(home, 'hive.config.json');
+const saved = async (home: string): Promise<Config> => JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+// The saved file rewritten compact: every save writes it back indented, so an unchanged text proves nothing was written (#404's helper)
+async function compact(home: string): Promise<string> {
+  const text = JSON.stringify(JSON.parse(await readFile(configFile(home), 'utf8')));
+  await writeFile(configFile(home), text);
+  return text;
+}
+
+async function start(t: TestContext, memoryCap = 4000, more: Workspace[] = []): Promise<{ base: string; url: string; home: string; records: RecordInput[] }> {
   const { home, repo } = await tempHive(t);
   const { events, records } = fakeEvents(); // no events.jsonl of the server's own: the stats test writes it
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, events, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  assert.equal((await send('POST', `${base}/settings`, { ...BODY, workspaces: workspacesAt(repo).map((w) => ({ ...w, memoryCap })) })).status, 200);
+  assert.equal((await send('POST', `${base}/settings`, { ...BODY, workspaces: [...workspacesAt(repo).map((w) => ({ ...w, memoryCap })), ...more] })).status, 200);
   return { base, url: `${base}/workspaces/${WORKSPACE}/memory`, home, records };
 }
 
@@ -94,4 +110,38 @@ test('the routes answer and enforce the workspace\'s own memoryCap: the view car
   await refused(send('PUT', `${url}/m-1`, { kind: 'fact', text: 'd'.repeat(251) }), 409, full, 'an edit that grows the sum past the cap');
   const shrunk = (await (await send('PUT', `${url}/m-1`, { kind: 'fact', text: 'short' })).json()) as MemoryView;
   assert.deepEqual([shrunk.used, shrunk.cap], [255, 500]);
+});
+
+test('PUT …/memory/cap saves the workspace\'s new memoryCap to hive.config.json through the settings save, every other workspace and key as it was, and the view answers it; the same cap answers ok and writes nothing (#115)', async (t) => {
+  const other = await tempDir(t, 'other-');
+  await promisify(execFile)('git', ['init', '--quiet', other]);
+  const web: Workspace = { name: 'web', path: other, env: { PORT: '8' }, fork: null, memoryCap: 9000 };
+  const { url, home } = await start(t, 4000, [web]);
+  const before = await saved(home);
+  assert.deepEqual(await answer(send('PUT', `${url}/cap`, { cap: 6000 })), [200, { ok: true }]);
+  const [hive, rest] = before.comb.workspaces;
+  assert.deepEqual(await saved(home), { ...before, comb: { ...before.comb, workspaces: [{ ...hive, memoryCap: 6000 }, rest] } });
+  assert.equal(((await (await hiveFetch(url)).json()) as MemoryView).cap, 6000, 'the live config has it: the view and the next write use it');
+  const text = await compact(home);
+  assert.deepEqual(await answer(send('PUT', `${url}/cap`, { cap: 6000 })), [200, { ok: true }]);
+  assert.equal(await readFile(configFile(home), 'utf8'), text, 'no write');
+});
+
+test('PUT …/memory/cap refuses a cap that is not an integer from 300 to 20000 with cap_range and an unknown workspace with 404, writing nothing; the lesson edit never reads cap as a lesson id (#115)', async (t) => {
+  const { base, url, home } = await start(t);
+  const text = await compact(home);
+  const range = { error: CAP_MESSAGE, code: 'cap_range' };
+  // {} would be the lesson PUT's bad_memory (MEMORY_KIND_MESSAGE) if Express matched …/:id first
+  for (const cap of [299, 20001, 4000.5, '6000', null, undefined]) await refused(send('PUT', `${url}/cap`, cap === undefined ? {} : { cap }), 400, range, String(cap));
+  await refused(send('PUT', `${base}/workspaces/ghost/memory/cap`, { cap: 6000 }), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'unknown workspace');
+  assert.equal(await readFile(configFile(home), 'utf8'), text, 'no write');
+});
+
+test('PUT …/memory/cap before a setup answers 409 as every memory route does, and writes no file (#115)', async (t) => {
+  const { home } = await tempHive(t);
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, events: fakeEvents().events, exec: async () => ({ stdout: '' }) });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  assert.equal((await send('PUT', `http://127.0.0.1:${port}/workspaces/${WORKSPACE}/memory/cap`, { cap: 6000 })).status, 409);
+  await assert.rejects(readFile(configFile(home)), 'no file');
 });

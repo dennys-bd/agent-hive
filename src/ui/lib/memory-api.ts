@@ -1,7 +1,7 @@
 import type { MemoryKind, MemoryStats, MemoryView } from '../../types.js';
 import { getJson, sendJson } from './api.js'; // relative: the root tsc compiles this file too
 
-// A workspace's memory (#797): the five routes the memory section and dialog call. Each write answers the new view.
+// A workspace's memory (#797): the six routes the memory section and dialog call. Each lesson write answers the new view; the total limit (#115) answers ok.
 
 const memoryPath = (workspace: string, rest = ''): string => `/workspaces/${encodeURIComponent(workspace)}/memory${rest}`;
 const lessonPath = (workspace: string, id: string): string => memoryPath(workspace, `/${encodeURIComponent(id)}`);
@@ -26,6 +26,9 @@ export const addLesson = (workspace: string, kind: MemoryKind, text: string): Pr
 export const editLesson = (workspace: string, id: string, kind: MemoryKind, text: string): Promise<MemoryView> =>
   shaped(sendJson<unknown>('PUT', lessonPath(workspace, id), { kind, text }), isMemoryView);
 export const removeLesson = (workspace: string, id: string): Promise<MemoryView> => shaped(sendJson<unknown>('DELETE', lessonPath(workspace, id)), isMemoryView);
+
+/** The workspace's memory total limit (#115), written into hive.config.json at once; the caller reads the memory again for the new view. */
+export const saveCap = (workspace: string, cap: number): Promise<void> => sendJson<unknown>('PUT', memoryPath(workspace, '/cap'), { cap }).then(() => undefined);
 
 /** The HTTP status a failed call carried (parseJson's), if any (#797). */
 export const statusOf = (err: unknown): number | undefined => {

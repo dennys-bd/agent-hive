@@ -45,8 +45,9 @@ function MemoryStatus({ loaded }: { loaded: Loaded }) {
   return <span />;
 }
 
-/** A workspace's memory in its card (#797): the usage only, asked only for a saved name, never a half-typed one, and `ver memória…` for the dialog. Not part of the Settings draft. */
-export function MemorySection({ workspace, saved }: { workspace: string; saved: boolean }) {
+/** A workspace's memory in its card (#797): the usage only, asked only for a saved name, never a half-typed one, and `ver memória…` for the dialog. Not part of the Settings draft;
+ * onCapSaved hands the dialog's total limit (#115) to the draft that carries it. */
+export function MemorySection({ workspace, saved, onCapSaved }: { workspace: string; saved: boolean; onCapSaved(cap: number): void }) {
   const [loaded, setView] = useMemoryView(workspace, saved);
   const [open, setOpen] = useState(false);
   const view = loaded.kind === 'ready' ? loaded.view : undefined;
@@ -54,7 +55,7 @@ export function MemorySection({ workspace, saved }: { workspace: string; saved: 
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
       <MemoryStatus loaded={loaded} />
       <Button type="button" variant="outline" size="sm" disabled={view === undefined} onClick={() => setOpen(true)}>{t('settings.memory.open')}</Button>
-      {view && <MemoryDialog workspace={workspace} view={view} open={open} onOpenChange={setOpen} onView={setView} />}
+      {view && <MemoryDialog workspace={workspace} view={view} open={open} onOpenChange={setOpen} onView={setView} onCapSaved={onCapSaved} />}
     </div>
   );
 }

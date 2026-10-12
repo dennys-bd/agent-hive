@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import { emptyCommand, emptyEnvRow, emptyImpl, type EnvRowDraft } from '../src/ui/lib/settings-commands.js';
 import { sourceColumnsUrl, draftFrom, emptySource, emptyStage, emptyWorkspace, filterOptionsUrl, isMinutes, projectsUrl, type SourceDraft, type SettingsDraft, toSettingsBody, validateSettings, withHost } from '../src/ui/lib/settings-form.js';
+import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
 import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo } from '../src/types.js';
@@ -646,12 +647,14 @@ test('validateSettings names each createIn rule on the flow section before the s
   assert.deepEqual(validateSettings({ ...draft, sources: [], createIn: 'hive', hiveSource: false }), problem('settings.error.hiveSource.noSource'));
 });
 
-test('a memory total limit that is not a whole number from 300 to 20000 stops the save on workspaces, naming the workspace, after its name and folder (#73)', () => {
-  setLanguage('en');
+test('the form no longer judges a memory total limit; withMemoryCap sets the cap the memory dialog saved on the row named so, the others and the draft given as they were (#115)', () => {
   const valid = { ...draftFrom(info(CONFIG)), transitions: [] };
   const [hive] = valid.workspaces;
-  const problem = { section: 'workspaces', message: t('settings.error.memoryCap', { workspace: 'hive' }) };
-  for (const memoryCap of ['', '299', '20001', '4000.5']) assert.deepEqual(validateSettings({ ...valid, workspaces: [{ ...hive, memoryCap }] }), problem, memoryCap);
-  assert.equal(validateSettings({ ...valid, workspaces: [{ ...hive, memoryCap: '300' }] }), undefined);
-  assert.equal(validateSettings({ ...valid, workspaces: [{ ...hive, path: '', memoryCap: 'x' }] })?.message, t('settings.error.workspaces', { n: 1 }), 'the name and the folder first');
+  assert.equal(validateSettings({ ...valid, workspaces: [{ ...hive, memoryCap: 'x' }] }), undefined, 'only the dialog edits it, and its route checks it');
+  const web = { ...emptyWorkspace(), name: 'web', path: '/web' };
+  const two = { ...valid, workspaces: [{ ...hive, name: ' hive ' }, web] };
+  const next = withMemoryCap(two, 'hive', 6000);
+  assert.deepEqual(next.workspaces.map((w) => w.memoryCap), ['6000', '4000']);
+  assert.equal(next.workspaces[1], web, 'another row is the same object');
+  assert.deepEqual(two.workspaces.map((w) => w.memoryCap), ['4000', '4000'], 'the draft given is not changed');
 });

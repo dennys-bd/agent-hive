@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
 import type { NewSource } from '@/lib/flow-sources';
+import { withMemoryCap } from '@/lib/memory-cap';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
 import { isRecording } from '@/lib/shortcut-bindings';
@@ -49,6 +50,13 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     setDraft((d) => ({ ...d, ...patch }));
     setSaveError(undefined); // the message was about the draft before this edit
     setFocus(undefined);
+  }
+
+  // #115: the memory dialog wrote a workspace's total limit to hive.config.json at once. The baseline takes it with the draft, so the footer
+  // reports no change and a later save sends it instead of undoing it
+  function capSaved(workspace: string, cap: number): void {
+    setSaved((s) => withMemoryCap(s, workspace, cap));
+    setDraft((d) => withMemoryCap(d, workspace, cap));
   }
 
   const changed = unsavedKeys(saved, draft);
@@ -194,7 +202,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 overflow-y-auto px-12 py-8">
             <SectionContent
-              key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit}
+              key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit} onCapSaved={capSaved}
               flow={{
                 options, githubProjects, github, filterOptions, focus,
                 onConnectGithub: () => void connect(), onLoadProjects: (row) => void loadProjects(row), onLoadColumns: (row) => void loadColumns(draft, row),

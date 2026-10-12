@@ -947,7 +947,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // Serializes saves: two concurrent POST /settings would race on hive.config.json.tmp and
   // into configure()/reconfigure(). Chaining queues them in arrival order; each request
   // awaits its own link, and the chain never rejects because saveSettings answers every error.
-  // POST /trusted-domains (#404) queues on the same chain: one writer of the file.
+  // POST /trusted-domains (#404) and PUT /workspaces/:name/memory/cap (#115) queue on the same chain: one writer of the file.
   function queueSave(save: () => Promise<void>): Promise<void> {
     settingsChain = settingsChain.then(save, save);
     return settingsChain;
@@ -1032,8 +1032,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
-  // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once
-  registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home });
+  // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
+  // the same chain and saveSettings as POST /settings
+  registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });
 
   // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
