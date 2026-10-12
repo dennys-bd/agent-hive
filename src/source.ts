@@ -24,7 +24,7 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
       // The log wraps whichever runner is in play, the configured transport or an injected one, so a test sees the same debug lines.
       // parseConfig requires auth next to a github source; a hand-built spec without it fails with that same message.
       const gql = deps.gql ?? gqlFor((auth ?? parseAuth(undefined)).github);
-      return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql);
+      return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql, deps.log);
     }
   }
 }

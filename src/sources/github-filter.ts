@@ -1,4 +1,4 @@
-import { facetOptions, isMe, matchesRules, ME, norm } from '../task-filter.js';
+import { facetOptions, isMe, matchesRules, ME, NO_VALUE, norm } from '../task-filter.js';
 import type { FilterOptions, FilterRule, ItemFacets } from '../types.js';
 import type { GhItemNode, GhSelectField } from './github-queries.js';
 
@@ -45,4 +45,25 @@ export function filterOptionsFrom(items: GhItemNode[], fields: GhSelectField[]):
     assignees: [ME, ...found.assignees],
     projectFields: fields.flatMap((f) => (f.name && f.options && norm(f.name) !== norm(STATUS_FIELD) ? [{ name: f.name, options: f.options.map((o) => o.name) }] : [])),
   };
+}
+
+const QUALIFIER = { assignee: 'assignee', label: 'label', milestone: 'milestone', repository: 'repo' } as const;
+
+/** One rule in the Project's filter syntax (#234), or undefined for a rule the query leaves to matchesFilter: a project field (its name's
+ * quoting is not settled), "nenhum" mixed with values (one qualifier cannot OR emptiness with a value), a value holding a quote. */
+function qualifierOf(rule: FilterRule): string | undefined {
+  if (rule.field === 'blocked' || rule.field === 'projectField' || rule.values.length === 0) return undefined;
+  const key = QUALIFIER[rule.field];
+  if (rule.values.every((v) => v === NO_VALUE)) return rule.op === 'any' ? `no:${key}` : `has:${key}`;
+  if (rule.values.some((v) => v === NO_VALUE || v.includes('"'))) return undefined;
+  const values = rule.values.map((v) => (isMe(v) ? ME : `"${v.trim()}"`)).join(',');
+  return `${rule.op === 'none' ? '-' : ''}${key}:${values}`;
+}
+
+/** The source's filter as the `query` the poll hands GitHub (#234), so a Project past the poll's pages still yields every item the filter
+ * keeps. Never stricter than matchesFilter: an untranslatable rule is left out, and matchesFilter still runs over what comes back, since
+ * GitHub matches more loosely (a milestone's title in any case). Undefined when no rule translates: the whole Project, as before. */
+export function projectQuery(filter: FilterRule[]): string | undefined {
+  const parts = filter.flatMap((rule) => qualifierOf(rule) ?? []);
+  return parts.length === 0 ? undefined : parts.join(' ');
 }

@@ -5,7 +5,8 @@ import type {
   Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
-import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
+import { facetsOf, filterOptionsFrom, matchesFilter, ME, projectQuery, splitBlocked, usesMe } from './github-filter.js';
+import type { Logger } from '../log.js';
 import {
   ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PAGE_SIZE, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo, relationsQuery,
   SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
@@ -78,9 +79,8 @@ function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
   return [...new Set(nodes.filter((n) => n.state === 'OPEN').map((n) => String(n.number)))];
 }
 
-// An epic is any issue GitHub itself counts sub-issues for, whatever their state: the field costs nothing extra on the
-// listing, so this is known before a single relations alias is spent. A fixture (or a field GitHub did not return) with no
-// summary reads as not an epic.
+// An epic is any issue GitHub itself counts sub-issues for, whatever their state: the field costs nothing extra on the listing, so this is known
+// before a single relations alias is spent. A fixture (or a field GitHub did not return) with no summary reads as not an epic.
 export const isEpicItem = (content: GhItemNode['content']): boolean => (content?.subIssuesSummary?.total ?? 0) > 0;
 
 const statusOf = (item: GhItemNode): string | undefined => item.fieldValueByName?.name;
@@ -243,8 +243,8 @@ export async function listFilterOptions(owner: string, number: number, gql: Gql 
   return { ...filterOptionsFrom(nodes, project?.fields?.nodes ?? []), linkedRepositories: (project?.repositories?.nodes ?? []).map((r) => r.nameWithOwner) };
 }
 
-export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql()): Source {
-  const { owner, number, epics } = source;
+export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql(), log?: Logger): Source {
+  const { owner, number, epics } = source, query = projectQuery(source.filter); // #234: GitHub filters first, so the pages count kept items only
   const { blocked, other } = splitBlocked(source.filter); // #441: the blocked rules wait for the relations query
   let resolved: { projectId: string; statusFieldId: string; options: GhOption[]; optionIds: Record<string, string> } | undefined; // options: every Status option, in order (#756)
   let lastQuota: SourceQuota | undefined; // what the last poll read; undefined before the first one
@@ -268,7 +268,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   async function listNodes(): Promise<GhItemNode[]> {
     login ??= await ownerLogin(owner, gql);
-    const { nodes, rateLimit } = await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), ITEM_LIMIT);
+    const { nodes, rateLimit, truncated } = await pageItems(gql, ITEMS, { login, number, ...(query === undefined ? {} : { filter: query }) }, sourceNotFound(owner, number), ITEM_LIMIT); // not `query`: gh api takes that name for the text
+    if (truncated) log?.warn(`source ${owner}/${number}: more than ${ITEM_LIMIT} items pass its filter; the ones past them never reach the flow`);
     lastQuota = quotaFrom(rateLimit);
     return nodes;
   }
