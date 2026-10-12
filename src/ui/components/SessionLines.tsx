@@ -3,14 +3,15 @@ import { type LiveRun, sessionLabel } from '../../task-runs.js';
 import { SESSION_ID_CHARS } from '../../tasks.js';
 import { localWorker } from '../../local-sessions.js';
 import { localActivityId } from '../../activities.js';
-import type { Session, Worker, Status } from '../../types.js';
+import { agentName, ranAgent } from '../../agents.js';
+import type { AgentId, Session, Worker, Status } from '../../types.js';
 import { act, continueTaskSession } from '@/components/actions';
-import { ClaudeIcon } from '@/components/ClaudeIcon';
 import { stopRun, useCloseTab } from '@/components/close-tab-notice';
 import { CopyToSub, useCopyHost } from '@/components/CopySession';
 import { openLocalRun, openLocalSession } from '@/components/local-runs';
 import { CONTEXT_KIT } from '@/components/menu-kit';
 import { RUN_AGENT } from '@/components/NewRunButton';
+import { AgentIcon } from '@/components/SessionLabel';
 import { type SleepNoticeInput, showSleepNotice, useSleep } from '@/components/sleep-notice';
 import { StatusWord } from '@/components/StatusWord';
 import { useOpenRun } from '@/components/terminal-tabs';
@@ -21,18 +22,18 @@ import { type CopySource, keptRef, sessionPath } from '@/lib/copy-targets';
 
 const DESTRUCTIVE = 'text-destructive focus:text-destructive';
 
-interface SessionLineProps extends Omit<ComponentProps<'button'>, 'onClick'> { label: string; status: Status; isShown: boolean; onOpen(): void }
+interface SessionLineProps extends Omit<ComponentProps<'button'>, 'onClick'> { agent: AgentId; label: string; status: Status; isShown: boolean; onOpen(): void }
 
-/** One agent session under its activity or a workspace's local entry: its mark, the agent, the session's name or id and its status, sleeping
+/** One agent session under its activity or a workspace's local entry: its agent's mark and name (#925), the session's name or id and its status, sleeping
  * while no run holds it (#614). Terminals are not listed (redesign 03). The rest of the props reach the button, so a menu's trigger can wrap it. */
-export function SessionLine({ label, status, isShown, onOpen, ...rest }: SessionLineProps) {
+export function SessionLine({ agent, label, status, isShown, onOpen, ...rest }: SessionLineProps) {
   return (
     <button
       type="button" aria-current={isShown ? 'true' : undefined} onClick={onOpen} {...rest}
       className={`flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-[3px] text-left text-xs ${isShown ? 'bg-card text-foreground' : 'text-muted-foreground hover:bg-accent/50'}`}
     >
-      <ClaudeIcon className="size-3.5 shrink-0" />
-      <span className="shrink-0">{t('session.claude')}</span>
+      <AgentIcon agent={agent} className="size-3.5 shrink-0" />
+      <span className="shrink-0">{agentName(agent)}</span>
       <span className="min-w-0 flex-1 truncate font-mono">{label}</span>
       <StatusWord status={status} emptyWord="session.sleeping" />
     </button>
@@ -73,7 +74,7 @@ function SleepingLine({ activity, session }: { activity: TaskActivity; session: 
   const clear = (): void => void act(`${sessionPath(ref)}/clear`);
   return (
     <LineMenu source={ref} last={<ContextMenuItem className={DESTRUCTIVE} onSelect={clear}>{t('detail.clearSession')}</ContextMenuItem>}>
-      <SessionLine label={sessionLabel(session)} status="empty" isShown={false} onOpen={() => continueTaskSession(activity.task, ref, openRun)} />
+      <SessionLine agent={session.agent} label={sessionLabel(session)} status="empty" isShown={false} onOpen={() => continueTaskSession(activity.task, ref, openRun)} />
     </LineMenu>
   );
 }
@@ -88,7 +89,7 @@ export function TaskSessionLine({ activity, entry, shown, onOpenRun }: TaskSessi
     const target = run.terminalId ?? run.ptyId; // #696: a captured session's run lives in its terminal's pty: its line opens the terminal
     return (
       <RunSessionMenu activity={activity} run={run}>
-        <SessionLine label={run.session ?? ''} status={status} isShown={target === shown} onOpen={() => onOpenRun(target)} />
+        <SessionLine agent={ranAgent(run)} label={run.session ?? ''} status={status} isShown={target === shown} onOpen={() => onOpenRun(target)} />
       </RunSessionMenu>
     );
   }
@@ -117,7 +118,7 @@ function LocalLine({ workspace, session, worker, shown }: LocalLineProps) {
     : <ContextMenuItem onSelect={() => sleep(ptyId)}>{t('session.sleep')}</ContextMenuItem>;
   return (
     <LineMenu source={ref} last={last}>
-      <SessionLine label={label} status={worker?.status ?? 'empty'} isShown={target !== undefined && target === shown} onOpen={onOpen} />
+      <SessionLine agent={session.agent} label={label} status={worker?.status ?? 'empty'} isShown={target !== undefined && target === shown} onOpen={onOpen} />
     </LineMenu>
   );
 }

@@ -11,6 +11,12 @@ export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: str
 
 const MARK = 'size-3.5 shrink-0';
 
+/** The agent's icon (#516, #925), or nothing for an agent without one: every place that shows it names the agent beside it. */
+export function AgentIcon({ agent, className = MARK }: { agent: AgentId; className?: string }) {
+  const Icon = AGENT_ICON[agent];
+  return Icon === undefined ? null : <Icon className={className} />;
+}
+
 /** The agent's icon, or its name when it has none; every session is claude's today (#489). */
 export function AgentMark({ agent = RUN_AGENT }: { agent?: AgentId }) {
   const Icon = AGENT_ICON[agent];

@@ -2,7 +2,8 @@ import { ChevronDownIcon, Columns2Icon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AGENT_IDS } from '../../types';
 import { KeyHint } from '@/components/KeyHint';
-import { agentName, type NewRunKind, openNew, RUN_AGENT, SEGMENT, SEGMENT_TRACK } from '@/components/NewRunButton';
+import { ranAgent } from '../../agents';
+import { agentName, type NewRunKind, openNew, SEGMENT, SEGMENT_TRACK } from '@/components/NewRunButton';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,7 +33,7 @@ export function sameKind(activity: Activity, group: TabGroup): NewRunKind | unde
   const ptyId = shown?.kind === 'run' ? (shown.panes?.focused ?? shown.ptyId) : undefined;
   const run = activity.runs.find((r) => r.ptyId === ptyId);
   if (run === undefined) return undefined;
-  return run.kind === 'terminal' ? 'terminal' : RUN_AGENT;
+  return run.kind === 'terminal' ? 'terminal' : ranAgent(run);
 }
 
 /** A split's pick: a new session of `kind`, its pane beside `group`. */

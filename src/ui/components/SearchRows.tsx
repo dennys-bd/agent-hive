@@ -4,7 +4,7 @@ import type { Task, State } from '../../types';
 import { taskAutoBadge } from '@/lib/auto-badge';
 import { Square } from '@/components/Home';
 import { KeyHint } from '@/components/KeyHint';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { agentName } from '../../agents';
 import { StatusWord } from '@/components/StatusWord';
 import { CommandItem } from '@/components/ui/command';
 import { t } from '@/i18n';
@@ -49,8 +49,12 @@ function Title({ text, ranges, meta }: { text: string; ranges: readonly Range[];
 // title · the agent and how long ago it last worked, then its main session's status (the handoff); a terminals-only one has none
 function ActivityBody({ activity, ranges, state }: { activity: TaskActivity; ranges: readonly Range[]; state: State }) {
   const { task } = activity;
-  const last = activity.records.flatMap((r) => r.sessions).map((s) => s.lastUsedAt).filter((at) => at !== '').sort().at(-1) ?? activity.startedAt;
-  const meta = [agentName(RUN_AGENT), ...(last === undefined ? [] : [relativeTime(last)])].join(' · ');
+  const sessions = activity.records.flatMap((r) => r.sessions);
+  const latest = sessions.filter((s) => s.lastUsedAt !== '').sort((a, b) => a.lastUsedAt.localeCompare(b.lastUsedAt)).at(-1);
+  const last = latest?.lastUsedAt ?? activity.startedAt;
+  // #925: the agent of its live run, else of the session it used last; a terminals-only activity names none
+  const agent = activity.runs.find((run) => run.agent !== undefined)?.agent ?? latest?.agent;
+  const meta = [...(agent === undefined ? [] : [agentName(agent)]), ...(last === undefined ? [] : [relativeTime(last)])].join(' · ');
   return (
     <>
       <Square task={task} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} />

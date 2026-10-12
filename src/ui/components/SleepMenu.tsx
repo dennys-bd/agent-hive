@@ -4,7 +4,8 @@ import type { State, Task } from '../../types';
 import { whereOf } from '@/components/close-tab-notice';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { CONTEXT_KIT, type MenuKit } from '@/components/menu-kit';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { ranAgent } from '../../agents';
+import { agentName } from '@/components/NewRunButton';
 import { useSleep, waitsForCi } from '@/components/sleep-notice';
 import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
@@ -37,7 +38,7 @@ function RunRow({ activity, run }: { activity: Activity; run: LiveRun }) {
   if (run.kind === 'terminal') return <li className="flex items-center gap-2"><span className="shrink-0">{run.label}</span></li>;
   return (
     <li className="flex items-center gap-2">
-      <span className="shrink-0">{agentName(RUN_AGENT)}</span>
+      <span className="shrink-0">{agentName(ranAgent(run))}</span>
       <span className="min-w-0 truncate font-mono text-muted-foreground">{run.session ?? ''}</span>
       <span className="ml-auto"><StatusWord status={runStatus(activity, run.ptyId) ?? 'empty'} emptyWord="session.sleeping" /></span>
     </li>
