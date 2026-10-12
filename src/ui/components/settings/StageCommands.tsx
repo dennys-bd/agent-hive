@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { t } from '@/i18n';
 import type { StageDraft } from '@/lib/settings-stages';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { resolveCommand } from '../../../run-commands';
 import type { Command, OnMissing } from '../../../types';
 
@@ -42,7 +42,7 @@ function WorkspaceLines({ option, workspaces, onMissing }: Pick<RowProps, 'optio
         const text = line ?? t(fails ? 'settings.stages.commands.missingFails' : 'settings.stages.commands.missingSkips', { workspace });
         return (
           <span key={workspace} className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={{ background: workspaceColor(workspace) }} />
+            <WorkspaceSquare name={workspace} />
             <span className={`truncate ${line === undefined && fails ? 'text-destructive' : 'text-muted-foreground'}`}>{text}</span>
           </span>
         );

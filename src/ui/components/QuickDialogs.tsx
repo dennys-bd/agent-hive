@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { t } from '@/i18n';
 import { getJson } from '@/lib/api';
 import { readView, writeView } from '@/lib/view-state';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 interface DialogProps { open: boolean; onClose(): void }
 interface WorkspaceBranch { name: string; branch: string | null }
@@ -49,7 +49,7 @@ export function WorkspacePicker({ open, workspaces, onPick, onClose }: Workspace
             <CommandEmpty>{t('picker.empty')}</CommandEmpty>
             {workspaces.map((name) => (
               <CommandItem key={name} value={name} onSelect={() => onPick(name)}>
-                <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ background: workspaceColor(name) }} />
+                <WorkspaceSquare name={name} className="size-2.5 rounded-sm" />
                 <span className="min-w-0 flex-1 truncate">{name}</span>
                 {branches[name] && <span className="truncate font-mono text-muted-foreground text-xs">{branches[name]}</span>}
               </CommandItem>

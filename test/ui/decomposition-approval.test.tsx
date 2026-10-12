@@ -14,7 +14,7 @@ const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', u
 const base: State = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [{ name: 'goal', from: { board: ['Goals'] }, prompt: '/hive:decomposition {url}', approval: true }],
   transitions: [{ from: 'goal', to: 'end', when: 'approved' }], tasks: [task], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], workspaces: ['hive'],
-  sourceWorkspaces: {}, commands: {}, syncs: { board: {} }, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
+  sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: { board: {} }, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT,
   approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 };
 const pending = (): State => withWork(base, 'I1', { approval: { since } }, { result: { decomposition: 'decomposition.md' } });

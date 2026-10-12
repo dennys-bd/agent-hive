@@ -279,7 +279,7 @@ test('conventionsAnswer: a stage run reads its task\'s workspace and its stage\'
   const conventions: Conventions = { specsDir: 'docs/specs', designsDir: 'docs/designs', delivery: 'stacked' };
   const config = {
     language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000 }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, conventions }] },
+    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', conventions }] },
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
@@ -393,7 +393,7 @@ test('hive_remember saves a lesson with its task and stage from a stage run and 
 });
 
 test('hive_remember refuses an unknown worker, a text that is not one line of 1 to 300 characters, a secret and a lesson that would pass the workspace\'s memoryCap, and writes nothing for them (#797, #73)', async (t) => {
-  const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500 });
+  const { base, home, records, ptyId } = await start(t, [GITHUB_ENTRY], { memoryCap: 500, color: 'oklch(0.72 0.12 25)' });
   const client = await connect(t, base, ptyId);
   assert.deepEqual(await call(await connect(t, base, 'ghost'), 'hive_remember', { kind: 'fact', text: 'x' }), { text: UNKNOWN_WORKER_MESSAGE, isError: true });
   assert.deepEqual(await call(client, 'hive_remember', { kind: 'fact', text: 'two\nlines' }), { text: MEMORY_TEXT_MESSAGE, isError: true });
@@ -435,7 +435,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
     if (args.includes('get-url')) return { stdout: urls[args.at(-1) ?? ''] ?? '' };
     return { stdout: args.includes('symbolic-ref') ? 'upstream/master\n' : '' };
   };
-  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, memoryCap: 4000 };
+  const app: Workspace = { name: 'app', path: '/app', env: {}, fork: { remote: 'upstream', pr: 'original' }, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' };
   const original = { pr: 'original', original: 'acme/app', fork: 'me/app', baseRemote: 'upstream', base: 'master' };
   assert.deepEqual(await forkConventions(exec, app, {}), original);
   assert.deepEqual(await forkConventions(exec, { ...app, baseBranch: 'devtest' }, { baseBranch: 'main' }), { ...original, base: 'devtest' });

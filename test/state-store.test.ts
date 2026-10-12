@@ -31,6 +31,12 @@ test('loadState returns initialState when nothing is saved', async (t) => {
   assert.deepEqual([state.tasks, state.stages], [[], []]);
 });
 
+test('loadState never reads a saved workspaceColors: the config seeds it on boot and on every save (#78)', async (t) => {
+  const dir = await tempDir(t, '');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ tasks: [], workspaceColors: { hive: '#a1b2c3' } }));
+  assert.deepEqual((await loadState(dir)).workspaceColors, {});
+});
+
 test('loadState reads the saved maxConcurrent, and a file without one gets MAX_CONCURRENT_DEFAULT free workers (#727)', async (t) => {
   const dir = await tempDir(t, '');
   await writeFile(join(dir, 'state.json'), JSON.stringify({ signal: 'red', tasks: [] }));

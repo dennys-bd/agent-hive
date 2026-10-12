@@ -12,7 +12,7 @@ const task = (id: string, board?: string): Task => ({
   item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '', source: board }, stage: 'dev', boardColumn: 'Ready', auto: true,
 });
 const state = (workers: Worker[], tasks: Task[] = []): State => withPointedWork({
-  signal: 'yellow', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers, stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
+  signal: 'yellow', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers, stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 const taskProps = { defaults: { workspace: 'hive', auto: true }, rules: [] };
 const roadmap: SourceConfig = { name: 'roadmap', type: 'github', owner: 'acme', number: 7, filter: [], taskProps, qualifyId: false, epics: 'show', epicFollows: 'aheadThenBehind', switchAt: 'fila' };

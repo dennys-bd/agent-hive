@@ -15,7 +15,7 @@ import { statusText, t } from '@/i18n';
 import { type DateKey, DATES, type ProjectColumn } from '@/lib/project-columns';
 import { STATUS_TEXT } from '@/lib/status';
 import { taskState } from '@/lib/task-state';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 // A PR's checks as handoff 01 marks them, in the status colours their signal stands for
 const CHECK: Record<Signal, { mark: string; tone: string }> = {
@@ -65,7 +65,7 @@ function IssueCell({ item, task, state }: { item: ProjectItem; task?: Task; stat
   const status = task ? taskState(task, state) : 'empty';
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={workspace === undefined ? undefined : { background: workspaceColor(workspace) }} />
+      <WorkspaceSquare name={workspace} />
       <span className="shrink-0 font-medium">#{item.id}</span>
       <span className="min-w-0 truncate">{item.title}</span>
       {status !== 'empty' && <span className={`shrink-0 text-xs ${STATUS_TEXT[status]}`}>{statusText(status)}</span>}

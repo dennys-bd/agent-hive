@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type { Activity, ActivityRecord, Task, Worker } from '../src/types.js';
 import { setLanguage } from '../src/ui/i18n.js';
 import { pendingSessions, recentActivities, relativeTime } from '../src/ui/lib/home.js';
-import { workspaceColor } from '../src/ui/lib/workspace-color.js';
+import { WORKSPACE_PRESET_COLORS as PRESETS } from '../src/types.js';
+import { nextWorkspaceColor } from '../src/ui/lib/workspace-color.js';
 
 const task = (id: string): Task => ({
   item: { itemId: `I${id}`, id, title: `Task ${id}`, body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true,
@@ -55,7 +56,13 @@ test('relativeTime reads now, minutes, hours of today, yesterday and days (redes
   assert.equal(relativeTime(at(2 * 60_000), now), '2 min ago');
 });
 
-test('workspaceColor gives a workspace the same oklch colour every time, at the lightness and chroma of the palette (redesign 08)', () => {
-  assert.equal(workspaceColor('agent-hive'), workspaceColor('agent-hive'));
-  assert.match(workspaceColor('site'), /^oklch\(0\.72 0\.12 \d+\)$/);
+test('nextWorkspaceColor gives a new row the first preset no other row uses, a custom colour taking no slot, and restarts the list once all 7 are used (#78)', () => {
+  const rows = (...colors: string[]) => colors.map((color) => ({ color }));
+  assert.deepEqual(PRESETS, [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`));
+  assert.equal(nextWorkspaceColor([]), PRESETS[0], 'an empty draft: the first preset');
+  assert.equal(nextWorkspaceColor(rows(PRESETS[0], PRESETS[1])), PRESETS[2]);
+  assert.equal(nextWorkspaceColor(rows(PRESETS[1])), PRESETS[0], 'a gap is filled first');
+  assert.equal(nextWorkspaceColor(rows('#a1b2c3')), PRESETS[0], 'a hex row takes no preset slot');
+  assert.equal(nextWorkspaceColor(rows(...PRESETS)), PRESETS[0], '7 rows using every preset: PRESETS[7 % 7]');
+  assert.equal(nextWorkspaceColor(rows(...PRESETS, PRESETS[3])), PRESETS[1], '8 rows: PRESETS[8 % 7]');
 });

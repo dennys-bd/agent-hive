@@ -2343,11 +2343,11 @@ const twoWorkspaces = (max: number): State => ({ ...base(max), workspaces: ['hiv
 test('setWorkspaces stores the names and the source default, drops a stale default, and fills: a task that resolved to none becomes a candidate (#179)', () => {
   const waiting = polled(twoWorkspaces(1), [listed(1)]);
   assert.deepEqual(waiting.effects, [], 'two workspaces, no rule: no workspace, no spawn');
-  const { state, effects } = reduce(waiting.state, { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: {} });
+  const { state, effects } = reduce(waiting.state, { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: {}, workspaceColors: {} });
   assert.deepEqual([state.workspaces, state.sourceWorkspaces], [['hive', 'site'], { board: 'site' }]);
   assert.deepEqual(effects.map((e) => e.type), ['spawn']);
   assert.equal(task(state, 1)?.workspace, 'site', 'the spawn froze the board default');
-  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {} }).state.sourceWorkspaces, {});
+  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }).state.sourceWorkspaces, {});
 });
 
 test('setWorkspaces leaves every task as it is: an activity\'s workspace is frozen at its birth, so a save never re-resolves a worktree onto another workspace (#179, #629)', () => {
@@ -2355,16 +2355,22 @@ test('setWorkspaces leaves every task as it is: an activity\'s workspace is froz
   const noWorktree: Task = { item: item(2), stage: 'spec', boardColumn: 'Backlog', auto: true };
   const already: Task = { item: item(3), stage: 'dev', boardColumn: 'In progress', auto: true, workspace: 'other' };
   const held = withLive(withLive({ ...base(0), tasks: [legacy, noWorktree, already] }, 1, { worktree: WORKTREE }), 3, { worktree: '/w3', workspace: 'other' });
-  const { state: next } = reduce(held, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {} }); // no free worker: no fill
+  const { state: next } = reduce(held, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, workspaceColors: {} }); // no free worker: no fill
   assert.deepEqual([task(next, 1)?.workspace, work(next, 1)?.workspace], [undefined, 'hive'], 'a worktree: its activity holds the workspace it was born in');
   assert.equal(task(next, 2)?.workspace, undefined, 'no worktree: nothing to freeze');
   assert.deepEqual([task(next, 3)?.workspace, work(next, 3)?.workspace], ['other', 'other'], 'left as it is, even though "other" is not a workspace here');
 });
 
+test('setWorkspaces carries the workspaces\' colours into the state with their names (#78)', () => {
+  const workspaceColors = { hive: 'oklch(0.72 0.12 25)', site: '#a1b2c3' };
+  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: {}, workspaceColors });
+  assert.deepEqual(state.workspaceColors, workspaceColors);
+});
+
 test('setWorkspaces stores each workspace\'s command names and a later save replaces them, with no fill of its own for them (#300)', () => {
-  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: { hive: ['Run Frontend'], site: [] } });
+  const { state } = reduce(base(0), { type: 'setWorkspaces', workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: { hive: ['Run Frontend'], site: [] }, workspaceColors: {} });
   assert.deepEqual(state.commands, { hive: ['Run Frontend'], site: [] });
-  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: { hive: [] } }).state.commands, { hive: [] });
+  assert.deepEqual(reduce(state, { type: 'setWorkspaces', workspaces: ['hive'], sourceWorkspaces: {}, commands: { hive: [] }, workspaceColors: {} }).state.commands, { hive: [] });
   assert.deepEqual(initialState(1).commands, {}, 'until the config sets them');
 });
 

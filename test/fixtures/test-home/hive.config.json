@@ -2,7 +2,7 @@
   "comb": {
     "prefix": "TEST",
     "workspaces": [
-      { "name": "agent-hive", "path": "/path/to/project", "env": {}, "fork": null, "memoryCap": 4000 }
+      { "name": "agent-hive", "path": "/path/to/project", "env": {}, "fork": null, "memoryCap": 4000, "color": "oklch(0.72 0.12 25)" }
     ],
     "sources": [
       {

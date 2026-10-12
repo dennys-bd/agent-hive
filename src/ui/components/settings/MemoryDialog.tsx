@@ -10,7 +10,7 @@ import { formatCount, t } from '@/i18n';
 import { readMemory, readStats, saveCap } from '@/lib/memory-api';
 import { isMemoryCap, memoryCapTokens } from '@/lib/memory-cap';
 import { charactersText, lastText, lessonsText, statNumbers } from '@/lib/memory-view';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryStats, type MemoryView } from '../../../types';
 
 interface MemoryDialogProps { workspace: string; view: MemoryView; open: boolean; onOpenChange(open: boolean): void; onView(view: MemoryView): void; onCapSaved(cap: number): void }
@@ -164,7 +164,7 @@ export function MemoryDialog({ workspace, view, open, onOpenChange, onView, onCa
       <DialogContent size="wide" showCloseButton={false} className="gap-5">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <span aria-hidden="true" className="size-2 rounded-[2px]" style={{ background: workspaceColor(workspace) }} />
+            <WorkspaceSquare name={workspace} />
             {t('settings.memory.title', { workspace })}
           </DialogTitle>
           <DialogDescription className="text-xs">{t('settings.memory.description')}</DialogDescription>

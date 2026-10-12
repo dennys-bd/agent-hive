@@ -17,7 +17,7 @@ const task = (id: string, source: string, extra: Partial<WithWork> = {}): WithWo
 const at = (hours: number, minutes: number): string => new Date(2026, 8, 29, hours, minutes).toISOString(); // local time, whatever the TZ
 const state = (tasks: Task[], extra: Partial<State> = {}): State => movedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
-  workspaces: ['hive', 'site', 'docs'], sourceWorkspaces: { roadmap: 'hive', notes: 'site' }, commands: {},
+  workspaces: ['hive', 'site', 'docs'], sourceWorkspaces: { roadmap: 'hive', notes: 'site' }, workspaceColors: {}, commands: {},
   syncs: { roadmap: { polledAt: at(9, 28) }, notes: { polledAt: at(9, 5) } },
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });

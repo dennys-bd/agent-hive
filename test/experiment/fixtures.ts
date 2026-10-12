@@ -38,7 +38,7 @@ export const SEED: Seed = {
   artboards: [{ id: '4a', file: '4a-padrao.png', title: 'grid padrão', delivery: 1, live: false }, { id: '4c', file: '4c-comandos.png', title: 'comandos do agente', delivery: 6, live: true }],
   screens: [],
   sampleState: {
-    signal: 'green', maxConcurrent: 0, workers: [], terminals: [], stages: [], workspaces: [], sourceWorkspaces: {}, commands: {}, syncs: {},
+    signal: 'green', maxConcurrent: 0, workers: [], terminals: [], stages: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
     sourceOrder: [], localCount: 1, localSessions: {}, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
     deleteActivity: { session: false, transcripts: false, nonAutoTasks: false }, shutdownIdleMinutes: 30, approvalMinutes: 10,
     tasks: [{ item: { itemId: 'local:1', id: 'MON-1', title: 'Sample', body: '', url: '' }, stage: 'Build', boardColumn: '', auto: false, created: true, workspace: 'agent-hive' }],

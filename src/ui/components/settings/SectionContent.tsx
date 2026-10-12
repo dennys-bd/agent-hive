@@ -59,7 +59,7 @@ export function SectionContent({ section, error, source, ...props }: SectionCont
 // + workspace lives on the heading row, as in the design, not under the last card.
 function headingAction(section: SettingsSection, { draft, onChange }: Pick<SectionContentProps, 'draft' | 'onChange'>): ReactNode {
   if (section !== 'workspaces') return undefined;
-  return <Button type="button" variant="outline" size="sm" onClick={() => onChange({ workspaces: [...draft.workspaces, emptyWorkspace()] })}>{t('settings.workspaces.add')}</Button>;
+  return <Button type="button" variant="outline" size="sm" onClick={() => onChange({ workspaces: [...draft.workspaces, emptyWorkspace(draft.workspaces)] })}>{t('settings.workspaces.add')}</Button>;
 }
 
 // One component per section (#510); #511–#516 swap these one by one. flow carries what only the flow section needs (#514).

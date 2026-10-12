@@ -15,7 +15,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 const worker: Worker = { id: 's1', status: 'empty' };
 const two = (c: WithWork): State => movedWork({ // #629: the worktree on the task's activity
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [worker], stages, tasks: [c], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
-  workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
+  workspaces: ['hive', 'site'], sourceWorkspaces: { board: 'site' }, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
 
 const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));

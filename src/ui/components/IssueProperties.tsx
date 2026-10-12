@@ -6,7 +6,7 @@ import { IssueLabelsPopover, writeLabels } from '@/components/IssueLabelsPopover
 import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { type FieldAnswer, useItemFields } from '@/hooks/use-item-fields';
 import { t } from '@/i18n';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 const MUTED = 'text-muted-foreground';
 const CHIP = 'rounded-[4px] border px-1.5 text-muted-foreground text-xs';
@@ -46,7 +46,7 @@ function IssueRows({ issue, task, workspace, create, onChanged }: RowsProps) {
       )}
       {workspace !== undefined && (
         <Prop label={t('issue.props.workspace')}>
-          <span aria-hidden="true" className="size-2 rounded-[2px]" style={{ background: workspaceColor(workspace) }} /><span>{workspace}</span>
+          <WorkspaceSquare name={workspace} /><span>{workspace}</span>
         </Prop>
       )}
     </dl>

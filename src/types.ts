@@ -669,6 +669,7 @@ export interface State {
   transitions: Transition[]; // #134: copied from the config with the stages, on boot and by setStages
   workspaces: string[]; // the Comb's workspace names, from the config on boot and on every save (#179); what resolveWorkspace reads
   sourceWorkspaces: Record<string, string>; // source name → its default workspace (#179, #180), from the config on boot and on every save
+  workspaceColors: Record<string, string>; // #78: the Comb's workspace colours by name, from the config like workspaces; never from state.json
   commands: Record<string, string[]>; // workspace name → the names of the run commands enabled in it (#300, #511), from the config on boot and on every save: what the menu and the panel list; never the lines nor the env
   syncs: Record<string, SourceSync>; // each source's sync by name (#180), keys from the config on boot and on every save (setSources); its poll time, quota and last failure
   tasks: Task[]; // every task the Hive holds, in the Hive's order: the anchored tasks (pinned, running, unlisted) keep their index across polls, the rest follow the source
@@ -1075,6 +1076,7 @@ export interface Workspace {
   path: string; // absolute, a git work tree's top level (POST /settings checks it); unique in the Comb
   env: Record<string, string>; // in the env of every run of this workspace (#348, #738): workers, sessions, terminals, run commands, setup and teardown RUN steps; a command's own env overrides a name; names match ENV_NAME and are not in RESERVED_ENV_NAMES; never logged
   memoryCap: number; // #73: required, no default; the sum of this workspace's lesson texts, MEMORY_CAP_MIN..MEMORY_CAP_MAX
+  color: string; // #78: required; one of WORKSPACE_PRESET_COLORS or a lowercase #rrggbb
   fork: WorkspaceFork | false | null; // #854: required; null = never decided (Settings may suggest one), false = not a fork, never suggested again
   baseBranch?: string; // #854: this workspace's base branch, over config.baseBranch; absent = the general default
   setup?: string; // the worktree setup (#299): COPY / RUN / LOAD lines, run once in each new worktree; absent = none
@@ -1302,7 +1304,7 @@ export type HiveEvent =
   | { type: 'setShutdown'; armed: boolean } // the main window's power toggle (#233)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
   | { type: 'setStages'; stages: Stage[]; transitions: Transition[] } // #134: the transitions travel with the stages
-  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300)
+  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }
@@ -1756,6 +1758,9 @@ export interface MemoryView { entries: MemoryEntry[]; used: number; cap: number;
 export const MEMORY_CAP_MIN = 300; // #73: a workspace's memoryCap holds at least one full lesson (MEMORY_TEXT_MAX)
 export const MEMORY_CAP_MAX = 20000; // #73: a full memory stays around 5k tokens per run
 export const MEMORY_CAP_DEFAULT = 4000; // #73: what a new workspace row shows; the parser has no default
+// #78: the colours Settings offers a workspace, in the picker's order. One lightness and chroma, so no preset stands out on the dark theme
+export const WORKSPACE_PRESET_COLORS: readonly string[] = [25, 70, 130, 190, 240, 295, 340].map((h) => `oklch(0.72 0.12 ${h})`);
+export const WORKSPACE_HEX_COLOR = /^#[0-9a-f]{6}$/; // #78: a custom colour as the system picker gives it; the parser refuses any other shape
 export const MEMORY_TEXT_MAX = 300; // characters per lesson; a candidate setting in docs/agent/settings-candidates.md
 export const MEMORY_REFUSALS = ['bad_memory', 'memory_full', 'memory_secret', 'unknown_memory'] as const;
 export type MemoryRefusalCode = (typeof MEMORY_REFUSALS)[number];

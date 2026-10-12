@@ -19,7 +19,7 @@ const task = (extra: Partial<WithWork> = {}): WithWork => ({
 const activityRecords: ActivityRecord[] = [{ id: 'a-I1', taskIds: ['I1'], sessions: [], usage: { tokens: 12_300, ms: 9_060_000, waitingMs: 0 } }];
 const state = (c: WithWork): State => movedWork({ // #629: the worktree and the branch on the task's activity
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [c], sourceOrder: [], localCount: 0, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
-  sourceWorkspaces: {}, commands: { hive: ['seed', 'hive test'] }, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
+  sourceWorkspaces: {}, workspaceColors: {}, commands: { hive: ['seed', 'hive test'] }, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
 });
 const activity = (c: WithWork): TaskActivity => {
   const s = state(c);

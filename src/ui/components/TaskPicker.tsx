@@ -5,7 +5,7 @@ import type { Task } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command';
 import { t } from '@/i18n';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 export interface TaskPickerProps {
   id: string; tasks: Task[]; workspaces: string[]; sourceWorkspaces?: Record<string, string>;
@@ -22,7 +22,7 @@ function TaskRow({ task, workspaces, sourceWorkspaces }: { task: Task; workspace
   const workspace = resolveWorkspace(task, workspaces, sourceWorkspaces);
   return (
     <>
-      <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px] bg-muted" style={workspace === undefined ? undefined : { background: workspaceColor(workspace) }} />
+      <WorkspaceSquare name={workspace} />
       <span className="min-w-0 flex-1 truncate">{taskLabel(task)}</span>
       <span className="shrink-0 text-muted-foreground text-xs">{task.stage}</span>
     </>

@@ -1,5 +1,5 @@
 import { ArrowLeftIcon } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/Confirm';
 import { SectionContent } from '@/components/settings/SectionContent';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
 import type { NewSource } from '@/lib/flow-sources';
+import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { withMemoryCap } from '@/lib/memory-cap';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
@@ -196,8 +197,13 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
     return () => document.removeEventListener('keydown', onKey);
   });
 
+  // The squares Settings draws (bases, stage commands, scope pickers, memory dialog) show the draft's colour, a row not saved yet included;
+  // Settings also renders before any dashboard on a first run.
+  // An unnamed or duplicate name maps to one key, harmlessly: the save refuses both, and an unnamed row draws no square by name
+  const colors = useMemo(() => Object.fromEntries(draft.workspaces.map((w) => [w.name.trim(), w.color])), [draft.workspaces]);
   // data-settings-page: the page holds the window as a dialog does, so the shortcut map's key leaves it alone (#639)
   return (
+    <WorkspaceColorsContext.Provider value={colors}>
     <div ref={pageRef} data-settings-page="" className="fixed inset-0 z-40 flex flex-col bg-background text-foreground">
       <header className={`flex shrink-0 items-center gap-3 border-b pr-6 ${WINDOW_CHROME}`}>
         {onCancel && <Button type="button" variant="ghost" size="sm" className="[-webkit-app-region:no-drag]" disabled={saving} onClick={requestLeave}><ArrowLeftIcon />{t('settings.back')}</Button>}
@@ -222,5 +228,6 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
       <Confirm open={confirm !== undefined} onOpenChange={(open) => { if (!open) setConfirm(undefined); }} message={t('settings.discard.message')} confirmLabel={t('settings.discard.confirm')} onConfirm={discard} />
       <Confirm open={moves !== undefined} onOpenChange={(open) => { if (!open) setMoves(undefined); }} message={deletionMessage(moves ?? [])} confirmLabel={t('settings.stages.deleteMoves.confirm')} onConfirm={() => void save(true)} />
     </div>
+    </WorkspaceColorsContext.Provider>
   );
 }

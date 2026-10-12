@@ -21,7 +21,7 @@ const ACTIVITY = activityIdOf('I1');
 const state = (task: WithWork, extra: Partial<State> = {}): State => movedWork<State>({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages, tasks: [task], sourceOrder: [], localCount: 0, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],
   activities: [], activityRecords: [{ id: ACTIVITY, taskIds: ['I1'], sessions }],
-  sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
+  sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
 const reply = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>

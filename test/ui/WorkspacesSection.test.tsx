@@ -6,6 +6,7 @@ import { Settings } from '@/components/settings/Settings';
 import { setLanguage, t } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
 import type { MemoryView, SettingsInfo } from '../../src/types';
+import { WORKSPACE_PRESET_COLORS as PRESETS } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
@@ -20,7 +21,7 @@ const info: SettingsInfo = {
     auth: { github: 'cli' },
     comb: {
       prefix: 'HIVE', hiveSource: true, createIn: 'hive', sources: [], transitions: [], stages: [{ name: 'fila', from: {} }], commands: [DEV],
-      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, memoryCap: 4000 }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, memoryCap: 4000 }],
+      workspaces: [{ name: 'hive', path: '/repo', env: { NODE_ENV: 'development' }, fork: null, memoryCap: 4000, color: '#a1b2c3' }, { name: 'web', path: '/web', env: { PORT: '8' }, fork: null, memoryCap: 4000, color: PRESETS[1] }],
     },
     logLevel: 'info', claudeArgs: [], budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS,
@@ -74,7 +75,7 @@ test('the workspace env is sent with the workspace, a blank row dropped and the 
   await user.type(env.getByLabelText('valor da variável 2'), ' /api ');
   await user.click(env.getByRole('button', { name: '+ variável' })); // left blank: dropped on save
   await save(user, onSaved);
-  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null, memoryCap: 4000 });
+  expect(posted().workspaces[0]).toEqual({ name: 'hive', path: '/repo', env: { NODE_ENV: 'development', API_BASE: ' /api ' }, fork: null, memoryCap: 4000, color: '#a1b2c3' });
 });
 
 test('commands table (#755): the column headers, a line per workspace with its own select, where the command is missing, and the note', async () => {
@@ -298,4 +299,42 @@ test('the card has no total limit field: a cap the memory dialog saves reaches t
   await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   const [, init] = fetchCap.mock.calls.find(([url]) => url === '/settings')!;
   expect((JSON.parse(String(init?.body)) as Body).workspaces.map((w) => w.memoryCap)).toEqual([6000, 4000]);
+});
+
+const card = (name: string) => within(screen.getByRole('region', { name }));
+const colorOptions = () => within(screen.getByRole('listbox', { name: t('settings.workspaces.colors') })).getAllByRole('option');
+const selectedColor = () => colorOptions().findIndex((o) => o.getAttribute('aria-selected') === 'true');
+
+test('a workspace card opens on its colour: the field first in its top row, the saved custom colour on the swatch and selected (#78)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={info} onSaved={vi.fn()} />);
+  await open(user, 'workspaces');
+  const swatch = card('hive').getByRole('button', { name: t('settings.workspaces.colorLabel') });
+  expect(card('hive').getByText(t('settings.workspaces.color'))).toBeInTheDocument();
+  expect(swatch.querySelector('span')).toHaveStyle({ backgroundColor: '#a1b2c3' });
+  await user.click(swatch);
+  expect(selectedColor()).toBe(7);
+  await user.keyboard('{Escape}');
+  await user.click(card('web').getByRole('button', { name: t('settings.workspaces.colorLabel') }));
+  expect(selectedColor()).toBe(1);
+});
+
+test('+ workspace gives the new card the first preset no other row uses (#78)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={info} onSaved={vi.fn()} />);
+  await open(user, 'workspaces');
+  await user.click(screen.getByRole('button', { name: t('settings.workspaces.add') }));
+  await user.click(card(t('settings.workspaces.card', { n: 3 })).getByRole('button', { name: t('settings.workspaces.colorLabel') }));
+  expect(selectedColor()).toBe(0); // hive's is custom, web's is PRESETS[1]
+});
+
+test('a picked colour is part of the draft and the save sends it (#78)', async () => {
+  const user = userEvent.setup();
+  const onSaved = vi.fn();
+  render(<Settings info={info} onSaved={onSaved} />);
+  await open(user, 'workspaces');
+  await user.click(card('hive').getByRole('button', { name: t('settings.workspaces.colorLabel') }));
+  await user.click(colorOptions()[3]);
+  await save(user, onSaved);
+  expect(posted().workspaces.map((w) => w.color)).toEqual([PRESETS[3], PRESETS[1]]);
 });

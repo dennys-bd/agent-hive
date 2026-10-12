@@ -5,7 +5,7 @@ import { useRemotes } from '@/hooks/use-remotes';
 import { t } from '@/i18n';
 import type { SettingsDraft, WorkspaceDraft } from '@/lib/settings-form';
 import { repositoryOf } from '@/lib/settings-fork';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
 // One workspace's base (handoff item 5): its colour and name, the field whose placeholder is the effective base, the hint for its fork
 function BaseRow({ row, general, onChange }: { row: WorkspaceDraft; general: string; onChange(baseBranch: string): void }) {
@@ -18,7 +18,7 @@ function BaseRow({ row, general, onChange }: { row: WorkspaceDraft; general: str
   return (
     <div className="grid grid-cols-[10rem_minmax(0,1fr)_2rem] items-start gap-3">
       <span className="flex items-center gap-2 pt-1.5 text-sm">
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px]" style={{ background: workspaceColor(name) }} />{name}
+        <WorkspaceSquare name={name} color={row.color} />{name}
       </span>
       <div className="flex flex-col gap-1">
         <Input

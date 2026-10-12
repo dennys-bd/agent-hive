@@ -14,7 +14,7 @@ import { sessionPath } from '@/lib/copy-targets';
 import { type PendingRow, pendingSessions, type RecentRow, recentActivities, relativeTime } from '@/lib/home';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { STATUS_BORDER } from '@/lib/status';
-import { workspaceColor } from '@/lib/workspace-color';
+import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 import { shownSize } from '@/lib/xterm-setup';
 
 /** What the home reaches beyond the State (redesign 08): the activity to open, whether a task is one now, and the quick actions. */
@@ -41,8 +41,7 @@ const keyOf = (id: OperationId): string | undefined => {
 // The task's workspace colour, or none when it resolves to no workspace
 export function Square({ task, workspaces, sourceWorkspaces }: { task: Task; workspaces: string[]; sourceWorkspaces?: Record<string, string> }) {
   const workspace = resolveWorkspace(task, workspaces, sourceWorkspaces);
-  const style = workspace === undefined ? undefined : { background: workspaceColor(workspace) };
-  return <span aria-hidden="true" className="size-2 shrink-0 rounded-[2px] bg-muted" style={style} />;
+  return <WorkspaceSquare name={workspace} />;
 }
 
 function Header({ title, text, children }: { title: string; text: string; children: ReactNode }) {
