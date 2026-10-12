@@ -240,3 +240,24 @@ test('⌘↵ on a file closes the search and selects it in the files sidebar; th
   expect(onClose).toHaveBeenCalledTimes(1);
   expect(select).toHaveBeenCalledWith('src/port.ts');
 });
+
+test('with no activity open arquivos says to open one, reads no tree and never says nothing found; tudo shows no files group (#133)', async () => {
+  const user = userEvent.setup();
+  renderSearch('files');
+  expect(screen.getByText('abra uma atividade para buscar arquivos')).toBeInTheDocument();
+  await user.keyboard('daemon');
+  expect(screen.queryByText('nada encontrado para "daemon"')).not.toBeInTheDocument();
+  await user.keyboard('{Tab}'); // arquivos → tudo
+  expect(screen.getByRole('group', { name: 'atividades' })).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'arquivos' })).not.toBeInTheDocument();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test('a tree that cannot be read: arquivos says so; tudo lists no files (#133)', async () => {
+  const user = userEvent.setup();
+  renderFiles(() => json({ error: 'git failed' }, 500));
+  expect(await screen.findByText('não foi possível ler os arquivos')).toBeInTheDocument();
+  await user.keyboard('{Tab}daemon'); // arquivos → tudo
+  expect(screen.getByRole('group', { name: 'atividades' })).toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'arquivos' })).not.toBeInTheDocument();
+});

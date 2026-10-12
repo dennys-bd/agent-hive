@@ -453,6 +453,8 @@ const en = {
   // #133: the search finds the open activity's files
   'search.scope.files': 'files',
   'search.key.reveal': 'reveal in tree',
+  'search.files.noActivity': 'open an activity to search files',
+  'search.files.failed': 'could not read the files',
   'dock.close': 'Close panel',
   'dock.moveLeft': 'Move to the left',
   'dock.moveRight': 'Move to the right',
@@ -2277,6 +2279,8 @@ const pt: Record<MessageKey, string> = {
   // #133: the search finds the open activity's files
   'search.scope.files': 'arquivos',
   'search.key.reveal': 'revelar na árvore',
+  'search.files.noActivity': 'abra uma atividade para buscar arquivos',
+  'search.files.failed': 'não foi possível ler os arquivos',
   'dock.close': 'Fechar painel',
   'dock.moveLeft': 'Mover para a esquerda',
   'dock.moveRight': 'Mover para a direita',

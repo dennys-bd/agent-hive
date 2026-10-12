@@ -148,13 +148,30 @@ function searchKeys({ current, search, ctx, root, onClose }: KeyArgs) {
   };
 }
 
+const NOTE = 'px-2.5 py-3 text-[13px] text-muted-foreground';
+
 function NoResult({ term, canCreate, onCreate }: { term: string; canCreate: boolean; onCreate(): void }) {
   return (
     <>
-      <p className="px-2.5 py-3 text-[13px] text-muted-foreground">{t('search.none', { term })}</p>
+      <p className={NOTE}>{t('search.none', { term })}</p>
       {canCreate && <CommandItem value="create" onSelect={onCreate} className={ROW}><PlusIcon />{t('search.createTask', { term })}</CommandItem>}
     </>
   );
+}
+
+// The arquivos scope's note (#133): no activity open, so no tree to search, or its tree could not be read; none on a page or another scope
+function filesNote(search: SearchState, ctx: OperationContext, tree: TreeState | undefined): MessageKey | undefined {
+  if (search.scope !== 'files' || search.page !== undefined) return undefined;
+  if (ctx.activity === undefined) return 'search.files.noActivity';
+  return tree?.status === 'error' ? 'search.files.failed' : undefined;
+}
+
+interface EmptyListProps { note?: MessageKey; term: string; canCreate: boolean; onCreate(): void }
+
+// What the list says with no row: the arquivos scope's note (#133), inline, no toast; else nothing found, with + criar tarefa in tarefas (#584)
+function EmptyList({ note, term, canCreate, onCreate }: EmptyListProps) {
+  if (note !== undefined) return <p className={NOTE}>{t(note)}</p>;
+  return term === '' ? null : <NoResult term={term} canCreate={canCreate} onCreate={onCreate} />;
 }
 
 /** The search (⌘P; ⌘⇧P on comandos; #584): activities, tasks and the Hive's operations in one box, with scopes. Mounted only while open, so
@@ -198,7 +215,7 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
                 })}
               </CommandGroup>
             ))}
-            {groups.length === 0 && term !== '' && <NoResult term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
+            {groups.length === 0 && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
           </CommandList>
           <SearchFooter secondary={secondaryOf(current)} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
         </Command>
