@@ -43,7 +43,7 @@ function sleptOf(before: State, { state: after, effects }: Reduced, worker: Work
 // The sessions this reduction continues in a new run: a continued session's spawn, or a stage run that resumes its activity's session
 function resumed(effects: Effect[]): Set<string> {
   return new Set(effects.flatMap((e) => {
-    if (e.type === 'spawnSession') return e.continues ? [e.sessionId] : [];
+    if (e.type === 'spawnSession') return e.continues && e.sessionId !== undefined ? [e.sessionId] : [];
     if (e.type === 'spawn' && e.session === 'continue' && e.activity.sessionId !== undefined) return [e.activity.sessionId];
     return [];
   }));

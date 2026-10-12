@@ -39,8 +39,14 @@ export function touchFreeSession(state: State, task: Task, id: string, now: stri
   const used = recordWithSession(state, taskId(task), id)
     ? withSession(state, task, id, (s) => ({ ...s, lastUsedAt: now }))
     : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true, agent }] }));
-  const live = activityOf(used, taskId(task));
-  return live ? withActivity(used, { ...live, freeSessionStage: task.stage }) : used;
+  return markFreeRun(used, task);
+}
+
+/** The free run's mark on the live activity (#812): the task offers no continue on its stage until a stage run spawns. A Codex open sets it
+ * alone; its session is recorded at its first SessionStart (#931). */
+export function markFreeRun(state: State, task: Task): State {
+  const live = activityOf(state, taskId(task));
+  return live ? withActivity(state, { ...live, freeSessionStage: task.stage }) : state;
 }
 
 const addRun = (usage: TaskUsage, run: Pick<TaskUsage, 'ms' | 'waitingMs'>): TaskUsage =>

@@ -1436,7 +1436,7 @@ export type Effect =
   | { type: 'ciRead'; activityId: string } // #834: read the activity's CI now, at the stage's start; the timer reads it after
   | { type: 'ciRerun'; activityId: string; runs: CiRerun[] } // #834: gh run rerun --failed, each run once
   | { type: 'ciCollect'; activityId: string; failed: CiCheck[] } // #834: fetch the failed checks' logs, then answer ciFailed
-  | { type: 'spawnSession'; worker: Worker; activity: Activity; task?: Task; sessionId: string; continues: boolean; copy?: SessionCopy; repo?: true /* #208, #629: the session it continues is a repo one: it runs in the workspace's main repo */; prompt?: string /* #758: its first message */ } // the user's own session (#164, #283): task: on a task's activity; none on a local one (#587, #629); copy: a copy's first run
+  | { type: 'spawnSession'; worker: Worker; activity: Activity; task?: Task; sessionId?: string /* #931: absent on a new session of an agent that picks its own id (Codex): the first SessionStart names it */; continues: boolean; copy?: SessionCopy; repo?: true /* #208, #629: the session it continues is a repo one: it runs in the workspace's main repo */; prompt?: string /* #758: its first message */ } // the user's own session (#164, #283): task: on a task's activity; none on a local one (#587, #629); copy: a copy's first run
   | { type: 'dropCopiedTranscript'; dir: string; sessionId: string } // #587: the temporary <sessionId>.jsonl a copy put in `dir`, a transcript dir
   | { type: 'forgetScrollback'; ptyId: string } // #672: the pty host drops a sleeping run's kept transcript, or a live run's at its exit
   | { type: 'readCwd'; terminalId: string } // #696: the server reads the shell's cwd, then dispatches sleepTerminal with it
