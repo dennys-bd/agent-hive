@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { type AgentRole, codexHome, marketplaceName, pluginCacheDir, renderRole, roleFile, tomlString } from '../../src/agents/codex-home.js';
+import { type AgentRole, agentRoles, codexHome, marketplaceName, pluginCacheDir, readAgent, renderRole, roleFile, tomlString } from '../../src/agents/codex-home.js';
+import { pluginSource } from '../../src/hooks-settings.js';
 
 // The Hive's plugin in Codex's shape (#934): where Codex reads it, and the role file each agent becomes.
 const INSTRUCTIONS_KEY = 'developer_instructions = ';
@@ -31,4 +32,45 @@ test('renderRole writes the instructions as one TOML string, and sandbox_mode on
   assert.equal(JSON.parse(lines[0].slice(INSTRUCTIONS_KEY.length)), role.instructions, 'quotes, backslashes, tabs and newlines round-trip');
   assert.deepEqual(lines.slice(1), ['sandbox_mode = "read-only"', '']);
   assert.equal(renderRole({ ...role, readOnly: false }), `${INSTRUCTIONS_KEY}${tomlString(role.instructions)}\n`, 'a writing agent: no sandbox key');
+});
+
+const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+
+test('readAgent keeps name, description and the body verbatim, a --- line in the body included; it stops at the second --- (#934)', () => {
+  const text = ['---', 'name: fixer', 'description: Fixes: the build.', 'tools: Read, Write', 'model: sonnet', '---', '', 'Body.', '', '---', '', 'After the rule.', ''].join('\n');
+  assert.deepEqual(readAgent('fixer.md', text), { name: 'fixer', description: 'Fixes: the build.', readOnly: false, instructions: '\nBody.\n\n---\n\nAfter the rule.\n' });
+});
+
+test('an agent is read-only when its tools have none of Write, Edit, Bash; a tool Codex lacks (Agent) is dropped; no tools list writes (#934)', () => {
+  const agent = (tools: string | undefined): string => ['---', 'name: a', 'description: d.', ...(tools === undefined ? [] : [`tools: ${tools}`]), '---', 'x'].join('\n');
+  assert.equal(readAgent('a.md', agent('Read, Grep, Glob')).readOnly, true);
+  assert.equal(readAgent('a.md', agent('Read, Agent')).readOnly, true);
+  assert.equal(readAgent('a.md', agent('Read, Grep, Glob, Bash')).readOnly, false);
+  assert.equal(readAgent('a.md', agent('Edit')).readOnly, false);
+  assert.equal(readAgent('a.md', agent(undefined)).readOnly, false, 'Claude gives an agent with no tools list every tool');
+});
+
+test('readAgent names the file it cannot read: no frontmatter, an unclosed one, no name or no description (#934)', () => {
+  assert.throws(() => readAgent('x.md', 'no fence\n'), /x\.md/);
+  assert.throws(() => readAgent('x.md', '---\nname: x\n'), /x\.md/);
+  assert.throws(() => readAgent('x.md', '---\ndescription: d.\n---\nbody'), /x\.md/);
+  assert.throws(() => readAgent('x.md', '---\nname: x\n---\nbody'), /x\.md/);
+});
+
+test('agentRoles reads the ten agents of assets/plugin in name order: three read-only, every body whole (#934)', () => {
+  const roles = agentRoles(pluginSource());
+  assert.deepEqual(roles.map((r) => r.name), AGENT_NAMES);
+  assert.deepEqual(roles.filter((r) => r.readOnly).map((r) => r.name), ['architect', 'plan-reviewer', 'spec-reviewer']);
+  for (const name of ['build-fixer', 'security-reviewer']) {
+    assert.ok(roles.find((r) => r.name === name)?.instructions.includes('\n---\n'), `${name} keeps its body's --- line`);
+  }
+  assert.ok(roles.find((r) => r.name === 'build-fixer')?.instructions.trimEnd().endsWith('Speed and precision over perfection.'));
+  assert.equal(roles.some((r) => /^(model|tools|name): /m.test(r.instructions.split('\n---\n')[0] ?? '')), false, 'no frontmatter line leaks into a body');
+});
+
+test('renderRole: architect gets sandbox_mode, tdd none (#934)', () => {
+  const roles = agentRoles(pluginSource());
+  const role = (name: string): AgentRole => roles.find((r) => r.name === name) ?? assert.fail(name);
+  assert.ok(renderRole(role('architect')).endsWith('\nsandbox_mode = "read-only"\n'));
+  assert.equal(renderRole(role('tdd')).includes('sandbox_mode'), false);
 });
