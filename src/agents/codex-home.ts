@@ -18,6 +18,7 @@ const READ_ONLY_ROLE = 'sandbox_mode = "read-only"\n';
 const AGENTS_DIR = 'agents';
 const AGENT_SUFFIX = '.md';
 const FENCE = '---';
+const AGENT_NAME = /^[a-z0-9-]+$/; // it names a file under the home and a -c key, where '.', '/' or '=' would escape or split it
 const WRITING_TOOLS: ReadonlySet<string> = new Set(['Write', 'Edit', 'Bash']); // what Codex's workspace sandbox allows and read-only refuses
 
 /** One agent of assets/plugin/agents, as Codex gets it: no model (a Claude alias has no Codex name), its tools reduced to read-only or not. */
@@ -32,7 +33,7 @@ export interface AgentRole {
 export const tomlString = (text: string): string => JSON.stringify(text).replace(/\u007f/g, '\\u007f');
 
 /** Where Codex reads its plugins; the user's auth and sessions stay there too. */
-export const codexHome = (env: NodeJS.ProcessEnv): string => env.CODEX_HOME ?? join(homedir(), '.codex');
+export const codexHome = (env: NodeJS.ProcessEnv): string => env.CODEX_HOME || join(homedir(), '.codex'); // empty is unset, as Codex reads it: never a cwd-relative tree
 
 /** One name per Hive home, so two Hives sharing a CODEX_HOME never wipe each other's copy. Hex: no '.', which Codex splits -c keys on.
  * Hashed as given, so boot's `home` and launch's dirname(run.pluginDir) name the same marketplace. */
@@ -59,13 +60,14 @@ function frontmatter(lines: readonly string[]): Map<string, string> {
 /** One agent file's role. Only name, description and tools count: model goes (a Claude alias), and a tool Codex has no equivalent for
  * (Agent) only ever counts as not writing. The body after the second --- is kept verbatim, a later --- line included. */
 export function readAgent(file: string, text: string): AgentRole {
-  const lines = text.split('\n');
+  const lines = text.split(/\r?\n/); // a CRLF checkout too
   const end = lines[0] === FENCE ? lines.indexOf(FENCE, 1) : -1;
   if (end < 0) throw new Error(`${file}: no frontmatter between two ${FENCE} lines`);
   const fields = frontmatter(lines.slice(1, end));
   const name = fields.get('name');
   const description = fields.get('description');
   if (!name || !description) throw new Error(`${file}: its frontmatter has no name or no description`);
+  if (!AGENT_NAME.test(name)) throw new Error(`${file}: its name "${name}" is not lowercase letters, digits and hyphens`);
   const tools = fields.get('tools')?.split(',').map((tool) => tool.trim());
   const readOnly = tools !== undefined && !tools.some((tool) => WRITING_TOOLS.has(tool)); // no list: Claude gives every tool
   return { name, description, readOnly, instructions: lines.slice(end + 1).join('\n') };

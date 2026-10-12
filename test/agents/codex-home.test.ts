@@ -14,6 +14,7 @@ const INSTRUCTIONS_KEY = 'developer_instructions = ';
 test('codexHome is CODEX_HOME, else ~/.codex (#934)', () => {
   assert.equal(codexHome({ CODEX_HOME: '/c' }), '/c');
   assert.equal(codexHome({}), join(homedir(), '.codex'));
+  assert.equal(codexHome({ CODEX_HOME: '' }), join(homedir(), '.codex'), 'empty is unset');
 });
 
 test('a home\'s marketplace is agent-hive- and the first 8 hex of sha256(home): one per home, with no dot for a -c key to split on (#934)', () => {
@@ -57,6 +58,11 @@ test('readAgent names the file it cannot read: no frontmatter, an unclosed one, 
   assert.throws(() => readAgent('x.md', '---\nname: x\n'), /x\.md/);
   assert.throws(() => readAgent('x.md', '---\ndescription: d.\n---\nbody'), /x\.md/);
   assert.throws(() => readAgent('x.md', '---\nname: x\n---\nbody'), /x\.md/);
+});
+
+test('readAgent refuses a name that would escape the roles folder or split a -c key, and reads a CRLF file (#934)', () => {
+  for (const name of ['../x', 'a.b', 'a=b', 'A']) assert.throws(() => readAgent('x.md', `---\nname: ${name}\ndescription: d.\n---\nbody`), /x\.md/);
+  assert.equal(readAgent('x.md', '---\r\nname: x\r\ndescription: d.\r\n---\r\nbody').name, 'x');
 });
 
 test('agentRoles reads the ten agents of assets/plugin in name order: three read-only, every body whole (#934)', () => {
