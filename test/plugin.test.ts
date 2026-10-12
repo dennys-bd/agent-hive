@@ -6,7 +6,7 @@ import { pluginSource } from '../src/hooks-settings.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
 
 const frontmatter = (text: string): Record<string, string> => {
   const block = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -17,7 +17,7 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the nine agents and the two references, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the ten agents and the two references, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
@@ -43,7 +43,7 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
     assert.ok((front.tools ?? '').includes('Read'), `agents/${agent} declares its tools`);
     if (front.model === 'opus') opus.push(agent);
   }
-  assert.deepEqual(opus, ['architect', 'planner'], 'the model table: sonnet everywhere, opus for the architect and the planner');
+  assert.deepEqual(opus, ['architect', 'designer', 'planner'], 'the model table: sonnet everywhere, opus for the architect, the designer and the planner');
 });
 
 test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere in it', async () => {
@@ -103,4 +103,12 @@ test('hive:design-reviewer reports and never edits: its tools hold no Write or E
   const tools = (front.tools ?? '').split(',').map((tool) => tool.trim());
   assert.ok(tools.includes('Read'), 'it reads the screens');
   for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
+});
+
+test('hive:designer tells the calling session how comments and the review reach it, and answers through hive_reply', async () => {
+  const text = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  const { description = '' } = frontmatter(text);
+  for (const name of ['SendMessage', 'hive_done', 'hive:design-reviewer']) assert.ok(description.includes(name), `its description does not name ${name}`);
+  const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const name of ['hive_reply', 'resolve', 'designsDir', 'handoff.md', 'hive:design-reviewer']) assert.ok(body.includes(name), `its text does not name ${name}`);
 });
