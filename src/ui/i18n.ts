@@ -301,6 +301,11 @@ const en = {
   'start.noStages': 'no stage to run from {stage}.', // #774: why executar etapas is off for the picked task
   'start.base': 'base',
   'start.local': 'run in the local checkout, no worktree',
+  'start.orphan.worktree': 'A worktree for this task already exists with no activity', // #861
+  'start.orphan.branch': 'A branch for this task already exists with no activity',
+  'start.orphan.reuse': 'Reuse',
+  'start.orphan.discard': 'Discard and start from the base',
+  'start.orphan.failed': 'Could not discard the existing work',
   'start.preparing': 'preparing the worktree', // the Start and open dialogs' submit while the worktree setup runs (#351)
   'start.stacked': 'tell the worker of {id} · stacked PR',
   'start.agent': 'agent',
@@ -2093,6 +2098,11 @@ const pt: Record<MessageKey, string> = {
   'start.noStages': 'nenhuma etapa para executar a partir de {stage}.',
   'start.base': 'base',
   'start.local': 'executar no local, sem worktree',
+  'start.orphan.worktree': 'Já existe uma worktree desta tarefa sem atividade',
+  'start.orphan.branch': 'Já existe um branch desta tarefa sem atividade',
+  'start.orphan.reuse': 'Reaproveitar',
+  'start.orphan.discard': 'Descartar e começar da base',
+  'start.orphan.failed': 'Não foi possível descartar o trabalho existente',
   'start.preparing': 'preparando a worktree',
   'start.stacked': 'avisar o worker de {id} · PR empilhado',
   'start.agent': 'agente',

@@ -100,17 +100,39 @@ export function SwitchRow({ id, label, checked, onChange }: { id: string; label:
   );
 }
 
+// #861: git holds a worktree or a branch for this task and no activity owns it: Reuse adopts it (the default), Discard removes it and the task
+// starts from the base below. Only executar etapas can discard: a free session's open adopts what it finds
+function OrphanChoice({ mode, choice, onChange }: { mode: StartMode; choice: BaseChoice; onChange(choice: BaseChoice): void }) {
+  const orphan = choice.lists?.orphan;
+  if (orphan === undefined) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-xs">{t(orphan.worktree ? 'start.orphan.worktree' : 'start.orphan.branch')}</p>
+      {mode === 'stages' && (
+        <ToggleGroup type="single" variant="outline" value={choice.discard ? 'discard' : 'reuse'} onValueChange={(v) => { if (v) onChange({ ...choice, discard: v === 'discard' }); }} className="w-full">
+          <ToggleGroupItem value="reuse" className="flex-1 text-[13px]">{t('start.orphan.reuse')}</ToggleGroupItem>
+          <ToggleGroupItem value="discard" className="flex-1 text-[13px]">{t('start.orphan.discard')}</ToggleGroupItem>
+        </ToggleGroup>
+      )}
+    </div>
+  );
+}
+
 interface BaseFieldProps { id: string; mode: StartMode; choice: BaseChoice; workspaces: string[]; onChange(choice: BaseChoice): void; onWorkspace(workspace?: string): void }
 
 /** base, the stacked-PR switch and executar no local: only while the task has no worktree yet; a task no rule places asks for its workspace
- * first (#179). The stacked-PR switch shows on a task base in executar etapas alone, since only a stage prompt carries it (#217). */
+ * first (#179). The stacked-PR switch shows on a task base in executar etapas alone, since only a stage prompt carries it (#217). An orphan
+ * (#861) shows its notice and choice first, and the base only once it is discarded. */
 export function BaseField({ id, mode, choice, workspaces, onChange, onWorkspace }: BaseFieldProps) {
   const { lists } = choice;
   if (lists === undefined || lists.hasWorktree) return null;
   if (lists.needsWorkspace) return <WorkspaceSelect id={`${id}-project`} label={t('task.workspace')} workspaces={workspaces} value={choice.workspace} onChange={onWorkspace} />;
+  const orphan = <OrphanChoice mode={mode} choice={choice} onChange={onChange} />;
+  if (lists.orphan !== undefined && !choice.discard) return orphan; // reuse adopts what git holds: no base to choose
   const stacked = mode === 'stages' ? stackedOn(choice) : undefined;
   return (
     <div className="flex flex-col gap-2">
+      {orphan}
       <Label>{t('start.base')}</Label>
       <BaseCombobox options={lists} chosen={choice.chosen} onChoose={(chosen) => onChange({ ...choice, chosen })} />
       {stacked && <SwitchRow id={`${id}-stacked`} label={t('start.stacked', { id: stacked.id })} checked={choice.tellWorker} onChange={(tellWorker) => onChange({ ...choice, tellWorker })} />}

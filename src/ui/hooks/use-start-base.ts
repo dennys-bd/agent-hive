@@ -3,11 +3,11 @@ import type { BaseOptions } from '../../types';
 import { getJson } from '@/lib/api';
 
 /** Where a start puts the task's worktree (#131, #179, #444): the lists GET /tasks/:id/bases answered, the base chosen, the workspace a task no
- * rule places was given, the local-checkout switch, and whether a task base's worker is told of the stacked PR (#217). No lists yet:
- * nothing to ask, as for a task that already has its worktree. */
-export interface BaseChoice { lists?: BaseOptions; chosen: string; workspace?: string; local: boolean; tellWorker: boolean }
+ * rule places was given, the local-checkout switch, whether a task base's worker is told of the stacked PR (#217), and, for an orphan worktree or
+ * branch (#861), whether it is discarded (false: reused, the default). No lists yet: nothing to ask, as for a task that already has its worktree. */
+export interface BaseChoice { lists?: BaseOptions; chosen: string; workspace?: string; local: boolean; tellWorker: boolean; discard: boolean }
 
-const EMPTY: BaseChoice = { chosen: '', local: false, tellWorker: true };
+const EMPTY: BaseChoice = { chosen: '', local: false, tellWorker: true, discard: false };
 const basesUrl = (itemId: string, workspace?: string): string =>
   `/tasks/${encodeURIComponent(itemId)}/bases${workspace === undefined ? '' : `?${new URLSearchParams({ workspace: workspace })}`}`;
 
@@ -15,15 +15,19 @@ const basesUrl = (itemId: string, workspace?: string): string =>
 export const stackedOn = ({ lists, chosen }: BaseChoice): BaseOptions['tasks'][number] | undefined => lists?.tasks.find((c) => c.ref === chosen);
 
 /** The body a start or an open posts for it: nothing once the task has its worktree, else the base (null for the default), the stacked-PR
- * switch on a task base (an open ignores it: a session gets no stage prompt to tell), the local switch and the workspace once chosen. */
+ * switch on a task base (an open ignores it: a session gets no stage prompt to tell), the local switch and the workspace once chosen. An orphan
+ * (#861) reused sends only the workspace: git's leftovers are adopted as they are; discarded, the base and discardOrphan. */
 export function baseBody(choice: BaseChoice): Record<string, unknown> {
-  const { lists, chosen, workspace, local, tellWorker } = choice;
+  const { lists, chosen, workspace, local, tellWorker, discard } = choice;
   if (lists === undefined || lists.hasWorktree) return {};
+  const placed = workspace === undefined ? {} : { workspace };
+  if (lists.orphan !== undefined && !discard) return placed;
   return {
     base: chosen === lists.defaultRef ? null : chosen,
     ...(stackedOn(choice) === undefined ? {} : { tellWorker }),
     local,
-    ...(workspace === undefined ? {} : { workspace: workspace }),
+    ...placed,
+    ...(lists.orphan === undefined ? {} : { discardOrphan: true }),
   };
 }
 

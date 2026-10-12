@@ -7,7 +7,7 @@ import { setLanguage, t } from '@/i18n';
 import { CreateTargetsContext, type CreateTargets } from '@/lib/create-targets';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, Task, Worker, Stage, State } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 
 const stages: Stage[] = [
@@ -448,4 +448,42 @@ test('while a source create is in flight the dialog cannot be closed, by the but
   await waitFor(() => expect(screen.getByRole('button', { name: 'cancelar' })).toBeEnabled());
   await user.click(screen.getByRole('button', { name: 'cancelar' }));
   expect(onClose).toHaveBeenCalled();
+});
+
+test('an orphan worktree: the notice says so, Reuse is the default and sends no base; Discard shows the base and sends discardOrphan (#861)', async () => {
+  const user = userEvent.setup();
+  bases = { ...BASES, orphan: { worktree: true, branch: true } };
+  const onClose = vi.fn();
+  const { unmount } = render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  expect(await screen.findByText(t('start.orphan.worktree'))).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'origin/main' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/start', {}]]);
+  unmount();
+  fetchMock.mockClear();
+  const discarded = vi.fn();
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={discarded} />);
+  await user.click(await screen.findByRole('radio', { name: t('start.orphan.discard') }));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(discarded).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/start', { base: null, local: false, discardOrphan: true }]]);
+});
+
+test('a discard git refuses shows its words under the dialog\'s own heading, and the dialog stays (#861)', async () => {
+  const user = userEvent.setup();
+  bases = { ...BASES, orphan: { worktree: false, branch: true } };
+  const original = fetchMock.getMockImplementation()!;
+  onTestFinished(() => { fetchMock.mockImplementation(original); });
+  fetchMock.mockImplementation(async (input, init) => (String(input).endsWith('/start') ? reply({ error: "the branch 'x' is not fully merged into HEAD", code: DISCARD_FAILED }, 409) : original(input, init)));
+  const onClose = vi.fn();
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  expect(await screen.findByText(t('start.orphan.branch'))).toBeInTheDocument();
+  await user.click(screen.getByRole('radio', { name: t('start.orphan.discard') }));
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(t('start.orphan.failed'));
+  expect(alert).toHaveTextContent("the branch 'x' is not fully merged into HEAD");
+  expect(onClose).not.toHaveBeenCalled();
 });
