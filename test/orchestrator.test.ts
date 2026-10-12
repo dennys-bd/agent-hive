@@ -11,7 +11,7 @@ import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
-import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED } from '../src/types.js';
+import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } from '../src/types.js';
 import { behaviourOf } from '../src/signals.js';
 import { transitionKey } from '../src/transitions.js';
 import { move, chained } from './fakes.js';
@@ -385,7 +385,7 @@ test('setStages replaces the stages, drops stopped tasks whose stage vanished an
   assert.equal(effects.length, 0);
   const done = stopped(state, state.workers[0].runId!);
   assert.deepEqual(done.effects.map((e) => e.type), ['kill', 'forgetScrollback'], 'unknown stage: no write, no next');
-  assert.deepEqual(done.state.tasks, []);
+  assert.deepEqual([done.state.tasks.map((c) => c.item.id), work(done.state, 1)?.error], [['1'], `${STAGE_GONE}spec`], '#861: halted, never removed');
 });
 
 test('setMax up adds empty workers and fills them; down marks extra occupied workers draining and drops surplus empty ones', () => {
@@ -3482,4 +3482,28 @@ test('renameStages renames every task and the flow in one reduction, with no fil
   const ended = stopped(state, state.workers[0].runId!);
   assert.ok(ended.effects.some((e) => e.type === 'setColumn'), 'the renamed stage\'s transition wrote the source');
   assert.equal(task(ended.state, 1)?.stage, 'dev');
+});
+
+test('a run whose stage was deleted (stageGone) ends at its Stop with no transition and no source action: the task halts with STAGE_GONE and the mark goes (#861)', () => {
+  const marked = withLive(polled(base(1), [listed(1)]).state, 1, { stageGone: 'old' }); // 1 runs spec
+  const { state, effects } = stopped(marked, marked.workers[0].runId!);
+  assert.equal(effects.some((e) => e.type === 'setColumn' || e.type === 'sourceAction'), false, 'spec\'s transition would have moved it to Ready');
+  assert.deepEqual([task(state, 1)?.stage, work(state, 1)?.error, work(state, 1)?.stopped, holds(state, 1, 'stageGone')], ['spec', `${STAGE_GONE}old`, true, false]);
+});
+
+test('stageGone never outlives its run: a manual stop clears it, and so does a move by hand (#861)', () => {
+  const running = withLive(polled(base(1), [listed(1)]).state, 1, { stageGone: 'old' });
+  assert.equal(holds(reduce(running, { type: 'stop', ptyId: running.workers[0].runId! }).state, 1, 'stageGone'), false, 'a manual stop');
+  const parked = withLive(polled(base(0), [listed(1)]).state, 1, { stageGone: 'old' });
+  assert.equal(holds(reduce(parked, { type: 'moveToStage', taskId: 'board:item1', stage: 'dev' }).state, 1, 'stageGone'), false, 'a move by hand');
+});
+
+test('a restart after the halt carries no stageGone into the new run (#861)', () => {
+  const marked = withLive(polled(base(1), [listed(1)]).state, 1, { stageGone: 'old' });
+  const halted = stopped(marked, marked.workers[0].runId!).state;
+  const recorded = reduce(halted, { type: 'stageStarted', activityId: ACT(halted, 1), stage: 'spec', commit: 'a1b2c3d' }).state;
+  const { effects } = reduce(recorded, { type: 'restart', activityId: workId(recorded, 'board:item1') });
+  const spawn = effects.at(-1);
+  assert.ok(spawn?.type === 'spawn');
+  assert.equal('stageGone' in spawn.activity, false);
 });

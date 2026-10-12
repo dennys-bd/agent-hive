@@ -1246,6 +1246,7 @@ const en = {
   'tries.sectionOf': 'tries · {trigger} {n}/{max}',
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'no transition for "{trigger}"', // #134: a stage end no transition matches
+  'stage.error.stageGone': 'The stage "{stage}" no longer exists', // #861: its run's stage was deleted in Settings
   'stage.error.triesOut': 'out of tries · {trigger} {n}x', // #134: an automatic transition out of its maxTries
   'start.failed.agent_missing': 'the agent is not installed', // #945: a failed start's short message, by run.spawn_failed's code; the raw text behind details
   'start.failed.no_workspace': 'choose a workspace for the task',
@@ -3027,6 +3028,7 @@ const pt: Record<MessageKey, string> = {
   'tries.sectionOf': 'tentativas · {trigger} {n}/{max}',
   'tries.line': '{n}/{max} ✕ {cause}',
   'stage.error.noTransition': 'nenhuma transição para "{trigger}"',
+  'stage.error.stageGone': 'A etapa "{stage}" não existe mais',
   'stage.error.triesOut': 'esgotou · {trigger} {n}x',
   'start.failed.agent_missing': 'o agente não está instalado',
   'start.failed.no_workspace': 'escolha um workspace para a tarefa',

@@ -3,7 +3,7 @@ import { taskOfActivity, withActivity } from './activities.js';
 import { withResult } from './record-kit.js';
 import { ensureActivity, none, type Reduced, releaseWorker, slugTaken, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { onSource, resolveWorkspace, stageOf } from './tasks.js';
-import { advance } from './transit.js';
+import { advance, haltGone } from './transit.js';
 import { exitOf } from './transitions.js';
 import { CHECKS_FAILED, type Activity, type CommandFailure, type Effect, type HiveEvent, type Stage, type StageCommands, type State, type Task, type Worker, type WorkerEventKind } from './types.js';
 
@@ -83,8 +83,15 @@ function failedCommands(state: State, activity: Activity, task: Task, output: st
   return { state: advanced, effects };
 }
 
+// #861: the stage was deleted under the run: no verdict routes, the run goes and the task halts in the stage it was moved to
+function goneCommands(state: State, activity: Activity, task: Task, gone: string): Reduced {
+  const { commands: _commands, ...rest } = activity;
+  return none(haltGone(withActivity(released(state, activity), rest), task, gone).state);
+}
+
 // The stage's end (runId: the execution, which the verdict keeps so ver saída stays scoped to it): passed merges its verdict and moves the task on, as a deleted activity's stage does; any failure fails it
 function endCommands(state: State, activity: Activity, task: Task, failed: readonly CommandFailure[], runId: string): Reduced {
+  if (activity.stageGone !== undefined) return goneCommands(state, activity, task, activity.stageGone);
   if (failed.length > 0) {
     const output = failed.map((f) => `${f.name} (${f.code})\n${f.output}`).join('\n\n');
     return failedCommands(state, activity, task, output, failed.map((f) => `${f.name} (${f.code})`).join(', '), runId);
@@ -132,7 +139,9 @@ export function stageCommandOutput(state: State, { activityId, ptyId, at }: Extr
 /** The stage could not run (#755): a name not enabled in the task's workspace, or its worktree failed. failed, with the message as its output. */
 export function stageCommandsRefused(state: State, { activityId, ptyId, message }: Extract<HiveEvent, { type: 'stageCommandsRefused' }>): Reduced {
   const found = runOf(state, activityId, ptyId);
-  return found ? failedCommands(state, found.activity, found.task, message, message.split('\n').join(', '), found.run.runId) : none(state);
+  if (!found) return none(state);
+  if (found.activity.stageGone !== undefined) return goneCommands(state, found.activity, found.task, found.activity.stageGone); // #861
+  return failedCommands(state, found.activity, found.task, message, message.split('\n').join(', '), found.run.runId);
 }
 
 /** The activity's commands stage stopped (#755): a Stop, a sleep, a delete or the task leaving. Its pty is killed under the activity's slug, the

@@ -569,8 +569,10 @@ function finish(state: State, ptyId: string, end: EndOf = { trigger: 'done' }): 
 
 // A Stop after hive_done (#268, #692, #134): its verdict when it gave one, else done. An approval stage waits for the user, unless the verdict
 // has a transition of its own or what just ended is the handoff a transition asked for; then the handoff the destination asks for comes first.
+// #861: a run whose stage was deleted under it asks for no approval, handoff or checkpoint: finish's advance halts the task with STAGE_GONE
 function endStage(state: State, ptyId: string, task: Task | undefined): Reduced {
   if (!task) return finish(state, ptyId);
+  if (activityOf(state, taskId(task))?.stageGone !== undefined) return finish(state, ptyId);
   return capturedFirst(state, task, stageEnd(state, ptyId, task)); // #619: whatever the end emits, the checkpoint that ended is captured first
 }
 

@@ -492,6 +492,9 @@ export const FIXED_VERDICTS = ['passed', 'failed'] as const;
 export const NO_TRANSITION = 'no transition: ';
 /** How a transition whose tries ran out starts on its activity's error (#134): `verdict:failed · 3`, the exit and the limit. */
 export const TRIES_OUT = 'tries out: ';
+/** How a task halted because the stage its run started in was deleted, or its stage is unknown, starts on its activity's error (#861), that
+ * stage's name after it: the card shows it in the viewer's language. */
+export const STAGE_GONE = 'stage gone: ';
 /** What a transition tells its destination's next run (#134): the composed, rendered prompt and the session it resumes; none = a new one. */
 export interface Handover { prompt: string; sessionId?: string }
 

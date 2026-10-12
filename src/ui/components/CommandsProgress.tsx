@@ -2,7 +2,7 @@ import { activityOf, resultOf } from '../../activities';
 import { stageChannel } from '../../console';
 import { type SpawnFailureCode, spawnFailureCode } from '../../spawn-failure';
 import { stageOf } from '../../tasks';
-import { CHECKS_FAILED, CI_FAILED, NO_TRANSITION, SPAWN_FAILED, TRIES_OUT, type State, type Task } from '../../types';
+import { CHECKS_FAILED, CI_FAILED, NO_TRANSITION, SPAWN_FAILED, STAGE_GONE, TRIES_OUT, type State, type Task } from '../../types';
 import { ciProgress } from '@/components/CiProgress';
 import { Button } from '@/components/ui/button';
 import { useOpenStageOutput } from '@/hooks/use-console';
@@ -42,12 +42,13 @@ export function taskError(error: string): string {
   if (error.startsWith(SPAWN_FAILED)) return t(START_FAILED[spawnFailureCode(startFailureRaw(error))]); // not isStartFailure: its guard would narrow the rest to never
   if (error.startsWith(CHECKS_FAILED)) return t('stageCommands.failed', { list: error.slice(CHECKS_FAILED.length) });
   if (error.startsWith(CI_FAILED)) return t('stageCi.failed', { list: error.slice(CI_FAILED.length) });
+  if (error.startsWith(STAGE_GONE)) return t('stage.error.stageGone', { stage: error.slice(STAGE_GONE.length) }); // #861
   if (error.startsWith(NO_TRANSITION)) return t('stage.error.noTransition', { trigger: exitLabel(error.slice(NO_TRANSITION.length)) });
   if (!error.startsWith(TRIES_OUT)) return error;
   const [name, max] = error.slice(TRIES_OUT.length).split(' · ');
   return t('stage.error.triesOut', { trigger: exitLabel(name), n: max ?? '' });
 }
-const FAILURES: readonly string[] = [CHECKS_FAILED, CI_FAILED, NO_TRANSITION, TRIES_OUT];
+const FAILURES: readonly string[] = [CHECKS_FAILED, CI_FAILED, NO_TRANSITION, TRIES_OUT, STAGE_GONE];
 const isStageFailure = (error: string | undefined): error is string => error !== undefined && FAILURES.some((prefix) => error.startsWith(prefix));
 
 // The stage whose output ver saída opens: the one running, else the task's own once its commands failed there

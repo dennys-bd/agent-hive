@@ -89,8 +89,9 @@ export function releaseRun(state: State, worker: Worker, end: number): State {
 }
 
 /** A stage run that ended without its stage's end, by Stop or on its own (#283): out of the fill until a start, a continue or a restart, or until
- * the task changes stage; the fill never picks a stopped task. Here and not in runs.ts so stage-commands.ts shares it (#755). */
-export const stoppedWork = (activity: Activity): Activity => ({ ...activity, stopped: true, stoppedAt: new Date().toISOString() }); // #580: when, for the status box
+ * the task changes stage; the fill never picks a stopped task. Here and not in runs.ts so stage-commands.ts shares it (#755). The run it ends is
+ * the one stageGone marked (#861), so the mark goes with it. */
+export const stoppedWork = ({ stageGone: _stageGone, ...activity }: Activity): Activity => ({ ...activity, stopped: true, stoppedAt: new Date().toISOString() }); // #580: when, for the status box
 
 // Whether the source still has the task: a kept orphan, a missing task and a local one (#132) are never written, by a move or an action (#286).
 const onTheSource = (task: Task): boolean => !task.orphan && !task.missing && !task.created;
@@ -210,7 +211,7 @@ export function dropActivity(state: State, task: Task): State {
  * Nothing kept, no activity. */
 export function keptMarks(state: State, task: Task, activity: Activity): State {
   const { id: _id, kind: _kind, workspace: _workspace, slug: _slug, worktree: _worktree, branch: _branch, worktreeGone: _gone, sessionId: _sessionId,
-    deleting: _deleting, setup: _setup, workerId: _workerId, freeSessionStage: _free, checkpoints: _checkpoints, ...kept } = activity; // #812: a free run's mark is its worktree's visit; #619: the checkpoints go with the delete, as their refs do
+    deleting: _deleting, setup: _setup, workerId: _workerId, freeSessionStage: _free, checkpoints: _checkpoints, stageGone: _stageGone, ...kept } = activity; // #812: a free run's mark is its worktree's visit; #619: the checkpoints go with the delete, as their refs do
   if (Object.keys(kept).length === 0) return state;
   const born = ensureActivity(state, task);
   return born ? withActivity(born.state, { ...born.activity, ...kept }) : state;
@@ -251,7 +252,7 @@ function enteredStage(state: State, task: Task): State {
   const born = live ? { state, activity: live } : gate ? ensureActivity(state, task) : undefined;
   if (!born) return state;
   const { stopped: _stopped, stoppedAt: _stoppedAt, approval: _approval, handover: _handover, handoffPending: _handoffPending, handoffFeedback: _handoffFeedback, freeSessionStage: _free,
-    stageStart: _start, ...rest } = born.activity; // #812: each visit records its own start, which recordStart then keeps for the visit
+    stageStart: _start, stageGone: _gone, ...rest } = born.activity; // #812: each visit records its own start; #861: a mark of the stage left behind
   return withActivity(born.state, gate ? { ...rest, approval: { since: task.enteredAt ?? new Date().toISOString() } } : rest);
 }
 

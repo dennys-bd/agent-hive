@@ -6,7 +6,7 @@ import { stageSession } from './task-runs.js';
 import { canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
-  END, FEEDBACK_MAX, NO_TRANSITION, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
+  END, FEEDBACK_MAX, NO_TRANSITION, STAGE_GONE, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
 } from './types.js';
 
 // A stage end taking its transition (#134): the source writes, the move, the arrow the task came through. Out of reducer-kit.ts, which this
@@ -35,6 +35,10 @@ function halted(state: State, task: Task, error: string): Advanced {
 function left(state: State, task: Task, effects: Effect[]): Advanced {
   return { state: settleEntries(state.tasks, { ...state, tasks: state.tasks.filter((c) => taskId(c) !== taskId(task)) }), moved: task, effects };
 }
+
+/** The task stopped where it is with STAGE_GONE naming `gone` (#861): the stage its run started in was deleted, or its stage is unknown. Never
+ * removed, so nothing closes a task because its stage is unknown. */
+export const haltGone = (state: State, task: Task, gone: string): Advanced => halted(state, task, `${STAGE_GONE}${gone}`);
 
 // The arrow the task came through and the tries it took, on its activity: what the card reads. A user's transition drops the tries (#134: a
 // review's feedback earns the loop its tries back); a task with no activity gets one only when there is a try to keep. #915: the log keeps
@@ -169,11 +173,12 @@ export function unrouted(state: State, id: string): State {
   return withActivity(state, rest);
 }
 
-/** A stage end (#134): the transition its trigger fires, taken; none, and the task stops in its stage with NO_TRANSITION. A stage that vanished
- * under a running task lets it leave at its end, as before. */
+/** A stage end (#134): the transition its trigger fires, taken; none, and the task stops in its stage with NO_TRANSITION. A run whose stage was
+ * deleted under it (stageGone), or a stage this state does not have, halts the task with STAGE_GONE (#861): no transition, no source write. */
 export function advance(state: State, task: Task, end: EndOf): Advanced {
   if (task.leaving) return held(state, task);
-  if (stageOf(state.stages, task.stage) === undefined) return left(state, task, []);
+  const gone = activityOf(state, taskId(task))?.stageGone;
+  if (gone !== undefined || stageOf(state.stages, task.stage) === undefined) return haltGone(state, task, gone ?? task.stage);
   const transition = exitOf(state, task.stage, end.trigger, end.verdict);
   return transition ? take(state, task, transition, end) : halted(state, task, `${NO_TRANSITION}${exitName(end.trigger, end.verdict)}`);
 }
