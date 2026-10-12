@@ -164,3 +164,18 @@ test('a row whose repository the model never synced shows sincronizando… in pl
   expect(within(screen.getByTitle('acme/b')).queryByRole('status')).not.toBeInTheDocument();
   expect(within(screen.getByTitle('acme/b')).getByText('2')).toHaveClass('tabular-nums');
 });
+
+test('a read overtaken by a newer one is dropped, so a burst of events never lands an older list (#182)', async () => {
+  let release: (() => void) | undefined;
+  fetchMock.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return new Response(JSON.stringify([repo('old', 1)]), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  render(<FlowRepositories onPick={vi.fn()} />); // the mount's read waits
+  listed = [repo('new', 2)];
+  await act(async () => emitReadModelEvent({ repository: 'acme/new', kinds: ['issues'] }));
+  expect(await screen.findByTitle('acme/new')).toBeInTheDocument();
+  await act(async () => release?.());
+  expect(screen.queryByTitle('acme/old')).not.toBeInTheDocument();
+  expect(screen.getByTitle('acme/new')).toBeInTheDocument();
+});

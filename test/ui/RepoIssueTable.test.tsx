@@ -175,12 +175,12 @@ test('an empty list, or a search that leaves no row, draws no body divider; the 
   expect(screen.getAllByRole('separator')).toHaveLength(5);
 });
 
-test('a list the model never synced shows sincronizando… in the subbar, in place of each count and as the body, never an empty table (#182)', async () => {
+test('a list the model never synced shows sincronizando… in place of each count and as the body, never an empty table (#182)', async () => {
   render(<RepoIssueTable state={state} summary={NEW} onTab={vi.fn()} />);
   const radios = screen.getByRole('radiogroup');
-  await waitFor(() => expect(within(radios).getAllByRole('status', { name: 'sincronizando…' })).toHaveLength(2));
+  await waitFor(() => expect(within(radios).getAllByTitle('sincronizando…')).toHaveLength(2));
   expect(within(radios).queryByText('2')).not.toBeInTheDocument(); // no count that reads as a number of issues
-  expect(screen.getAllByRole('status', { name: 'sincronizando…' })).toHaveLength(4); // the two counts, the subbar, the body
+  expect(screen.getAllByRole('status', { name: 'sincronizando…' })).toHaveLength(1); // announced once, by the body; the counts' marks are silent
   expect(within(screen.getByRole('table')).getByRole('status', { name: 'sincronizando…' })).toHaveClass('text-muted-foreground');
   expect(screen.getAllByRole('row')).toHaveLength(2); // the header and the syncing row
   expect(screen.queryByText('lendo…')).not.toBeInTheDocument();

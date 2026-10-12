@@ -28,7 +28,7 @@ const matches = (issue: RepoIssue, term: string): boolean => term === '' || issu
 interface SubbarProps { summary: RepoSummary; value: IssueState; onChange(state: IssueState): void; issues?: RepoIssues; isLoading: boolean }
 
 // The subbar (handoff 02): abertas N / fechadas N with GitHub's counts from the summary, lendo… only while nothing is cached, the cap when
-// hit. A list the model never synced (#182) shows the syncing mark in place of each N and beside the counts: a 0 would read as no issues
+// hit. A list the model never synced (#182) shows the syncing mark in place of each N, silent there since the body announces it: a 0 would read as no issues
 function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
   const isSyncing = issues?.syncedAt === null;
   const item = (id: IssueState, label: MessageKey, n: number) => (
@@ -37,7 +37,7 @@ function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
       key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)}
       className={`rounded-[5px] px-2.5 py-0.5 font-medium text-xs ${value === id ? 'bg-background text-foreground' : 'text-muted-foreground'}`}
     >
-      {t(label)} <span className="font-normal text-muted-foreground">{isSyncing ? <Syncing /> : n}</span>
+      {t(label)} <span className="font-normal text-muted-foreground">{isSyncing ? <Syncing isRepeat /> : n}</span>
     </button>
   );
   return (
@@ -46,7 +46,6 @@ function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
         {item('open', 'repos.issues.open', summary.openIssues)}{item('closed', 'repos.issues.closed', summary.closedIssues)}
       </div>
       {isLoading && issues === undefined && <span>{t('project.loading')}</span>}
-      {isSyncing && <Syncing />}
       {issues?.truncated && <span>{t('project.truncated', { n: issues.issues.length })}</span>}
     </div>
   );
