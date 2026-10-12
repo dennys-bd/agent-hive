@@ -1,10 +1,10 @@
-import { type RefObject, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
+import { type RefObject, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import type { FlowView } from '@/lib/flow-view';
-import { anchoredScroll, fitZoom } from '@/lib/flow-zoom';
+import { anchoredScroll, fitZoom, stepZoom } from '@/lib/flow-zoom';
 
 export interface Size { width: number; height: number }
 type Pan = FlowView['pan'];
-interface CanvasPaneOptions { zoom: number; pan: Pan; fitRequest: number; graph: Size; onPan(pan: Pan): void; onFit(zoom: number): void }
+interface CanvasPaneOptions { zoom: number; pan: Pan; fitRequest: number; graph: Size; onPan(pan: Pan): void; onFit(zoom: number): void; onZoom(zoom: number): void }
 interface CanvasPane { pane: RefObject<HTMLDivElement | null>; size: Size; onScroll(): void }
 
 // The pane's size, read on mount and on every resize; 0, 0 until then and while the flow is hidden under Atividades (#596)
@@ -29,11 +29,34 @@ function scrollPane(el: HTMLDivElement, scroll: RefObject<Pan>, next: Pan): void
   scroll.current = next;
 }
 
+// ⌘/Ctrl + wheel and a trackpad's pinch (Chromium sends it as a wheel with ctrlKey), as in the design pane (#109): one step per event. A
+// listener of its own: React's wheel is passive and could not keep the page from zooming, which it must even at a bound. The pointer's
+// offset goes to `anchor` only when the zoom moves: at a bound no zoom effect would run to clear it, and the next button zoom would anchor
+// there. ponytail: a pinch sends many small events, each a full step; scale by deltaY if it feels too fast
+function useWheelZoom(pane: RefObject<HTMLDivElement | null>, anchor: RefObject<Pan | undefined>, zoom: number, onZoom: (zoom: number) => void): void {
+  const onWheel = useEffectEvent((event: WheelEvent, el: HTMLDivElement): void => {
+    if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+    event.preventDefault();
+    const next = stepZoom(zoom, event.deltaY < 0 ? 1 : -1);
+    if (next === zoom) return;
+    const rect = el.getBoundingClientRect();
+    anchor.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    onZoom(next);
+  });
+  useEffect(() => {
+    const el = pane.current;
+    if (!el) return undefined;
+    const listener = (event: WheelEvent): void => onWheel(event, el);
+    el.addEventListener('wheel', listener, { passive: false });
+    return () => el.removeEventListener('wheel', listener);
+  }, [pane]);
+}
+
 /** The flow canvas's scrolling pane (#910): its size; the stored pan set the first time the pane has a height (before that the chart is
- * not at its size yet and the scroll would clamp), and the last scroll each time it gets one back; the point at the viewport's centre kept
- * put when the zoom changes; a fit each time `fitRequest` changes (the zoom that shows `graph`, the chart at NODE_MIN, scrolled to 0, 0);
+ * not at its size yet and the scroll would clamp), and the last scroll each time it gets one back; the point under a wheel's pointer, or else at the
+ * viewport's centre, kept put when the zoom changes (⌘/Ctrl + wheel and pinch step the zoom through `onZoom`); a fit each time `fitRequest` changes (the zoom that shows `graph`, the chart at NODE_MIN, scrolled to 0, 0);
  * and every scroll reported, in scaled pixels. */
-export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit }: CanvasPaneOptions): CanvasPane {
+export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit, onZoom }: CanvasPaneOptions): CanvasPane {
   const pane = useRef<HTMLDivElement>(null);
   const size = usePaneSize(pane);
   const hasHeight = size.height > 0;
@@ -47,11 +70,15 @@ export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit }: Ca
     const el = pane.current;
     if (el && hasHeight) scrollPane(el, scroll, scroll.current);
   }, [hasHeight]);
+  const anchor = useRef<Pan | undefined>(undefined); // a wheel's pointer in the pane, for the zoom it asked for only
+  useWheelZoom(pane, anchor, zoom, onZoom);
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el || scrolledAt.current === zoom) return;
+    const at = anchor.current ?? { x: el.clientWidth / 2, y: el.clientHeight / 2 };
+    anchor.current = undefined;
     const { x, y } = scroll.current;
-    scrollPane(el, scroll, { x: anchoredScroll(x, el.clientWidth / 2, scrolledAt.current, zoom), y: anchoredScroll(y, el.clientHeight / 2, scrolledAt.current, zoom) });
+    scrollPane(el, scroll, { x: anchoredScroll(x, at.x, scrolledAt.current, zoom), y: anchoredScroll(y, at.y, scrolledAt.current, zoom) });
     scrolledAt.current = zoom;
   }, [zoom]);
   const applyFit = useEffectEvent((el: HTMLDivElement): void => {

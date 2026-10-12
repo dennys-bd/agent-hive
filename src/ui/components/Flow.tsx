@@ -69,7 +69,7 @@ export function Flow({ state, source, selectedId, onOpen, tabs, stageCaps }: Flo
         <section ref={setCanvas} aria-label={t('flow.chart')} className="relative min-h-0 flex-1 overflow-hidden bg-background">
           <FlowChart
             stages={state.stages} transitions={state.transitions} loops={flow.view.loops} zoom={flow.view.zoom} pan={flow.view.pan}
-            fitRequest={flow.fitRequest} onPan={flow.onPan} onFit={flow.onFit} renderNode={node}
+            fitRequest={flow.fitRequest} onPan={flow.onPan} onFit={flow.onFit} onZoom={flow.zoomTo} renderNode={node}
           />
           <FlowZoom zoom={flow.view.zoom} onZoom={flow.zoomTo} onFit={flow.fit} />
           {focus && focused !== undefined && <FocusTrail trail={focusTrail(state.tasks, focused)} count={shown.filter((c) => focus.has(c.item.itemId)).length} onFocus={focusOn} onLeave={leave} />}
