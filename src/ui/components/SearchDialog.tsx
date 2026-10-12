@@ -40,7 +40,7 @@ function openRow(row: SearchRow, ctx: OperationContext, onClose: () => void, pus
   onClose();
   if (row.kind === 'activity') ctx.nav.openActivity(row.activity.task.item.itemId);
   else if (row.kind === 'task') ctx.nav.startTask({ itemId: row.task.item.itemId });
-  else row.view.operation.run?.(ctx);
+  else if (row.kind === 'operation') row.view.operation.run?.(ctx);
 }
 
 // ⌘↵: an activity's or a task's details in the flow; nothing on an operation
@@ -83,9 +83,9 @@ function groupsOf(search: SearchState, ctx: OperationContext, activities: Activi
   return searchGroups({ scope, query, tasks: ctx.state.tasks, workers: ctx.state.workers, liveActivities: ctx.state.activities, activityRecords: ctx.state.activityRecords, activities, operations });
 }
 
-// → on an activity or a task row (the spec): a page with that item's operations, e.g. #466 → parar todas
+// → on an activity or a task row (the spec): a page with that item's operations, e.g. #466 → parar todas; nothing on an operation or a file
 function itemPageOf(row: SearchRow, ctx: OperationContext): Page | undefined {
-  if (row.kind === 'operation') return undefined;
+  if (row.kind === 'operation' || row.kind === 'file') return undefined; // a file has no operations page (#133)
   const task = row.kind === 'activity' ? row.activity.task : row.task;
   const page = itemPage(ctx, task, row.kind === 'activity' ? row.activity : undefined);
   return { title: `${taskRef(task)} →`, ...page };
