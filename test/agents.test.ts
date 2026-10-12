@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGENTS, agentOf, agentRefusal, detectAgents } from '../src/agents.js';
-import { AGENT_IDS, DEFAULT_AGENT, type Exec } from '../src/types.js';
+import { AGENTS, agentOf, agentRefusal, detectAgents, knownAgent, liveDefaultAgent, ranAgent, savedAgent, stageAgentIn } from '../src/agents.js';
+import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
 
@@ -40,4 +40,28 @@ test('every agent has a probe command, a model flag and a protocol flag (#516, #
     assert.match(AGENTS[id].protocolFlag, /^-/, id);
   }
   assert.equal(AGENTS.claude.protocolFlag, '--append-system-prompt-file', 'appends to Claude Code\'s own system prompt, in interactive runs and with --resume');
+});
+
+// #925: AGENT_IDS holds only claude until 3.1; these helpers only pass ids through, so a second one is a cast
+const OTHER = 'other' as AgentId;
+
+test('knownAgent keeps an id AGENT_IDS has; savedAgent reads anything else as claude, what every run before #925 ran (#925)', () => {
+  assert.equal(knownAgent('claude'), 'claude');
+  for (const value of [undefined, null, 7, '', 'gpt']) {
+    assert.equal(knownAgent(value), undefined, String(value));
+    assert.equal(savedAgent(value), 'claude', String(value));
+  }
+});
+
+test('ranAgent is a run\'s own agent, claude on a literal built without one; the live default is the state\'s; a stage\'s own wins (#925)', () => {
+  assert.equal(ranAgent({ agent: OTHER }), OTHER);
+  assert.equal(ranAgent({}), 'claude');
+  assert.equal(liveDefaultAgent({ defaultAgent: OTHER }), OTHER);
+  assert.equal(liveDefaultAgent({}), DEFAULT_AGENT);
+  assert.equal(stageAgentIn({ defaultAgent: OTHER }, {}), OTHER);
+  assert.equal(stageAgentIn({ defaultAgent: OTHER }, { agent: 'claude' }), 'claude');
+});
+
+test('claude reports plan limits: the header offers their refresh (#925)', () => {
+  assert.equal(AGENTS.claude.planLimits, true);
 });

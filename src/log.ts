@@ -138,6 +138,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'setDeleteActivity': return `setDeleteActivity ${JSON.stringify(event.deleteActivity)}`;
     case 'setShutdownIdle': return `setShutdownIdle ${event.minutes}`;
     case 'setRateLimitWait': return `setRateLimitWait ${event.minutes}`; // #805
+    case 'setDefaultAgent': return `setDefaultAgent ${event.agent}`; // #925
     case 'setApprovalMinutes': return `setApprovalMinutes ${event.minutes}`;
     case 'setShutdown': return `setShutdown ${event.armed ? 'on' : 'off'}`;
     case 'tick': return 'tick';

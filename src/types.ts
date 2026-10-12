@@ -627,6 +627,7 @@ export interface Worker {
   terminalId?: string; // #696: a free session the claude shim captured, whose run lives in this terminal's pty
   backoff?: WorkerBackoff; // #805: set with status backoff while the run waits out an API error
   apiErrors?: number; // #805: consecutive transient failures since the last Stop, 1..BACKOFF_RETRIES; a rate-limit wait adds none
+  agent?: AgentId; // #925: what its run runs, set with the run; absent only on a commands stage's worker, which runs no agent
 }
 
 /** A line of the menu bar's list (#192): what GET /ptys returns per live pty (#570), a worker's run or a terminal (#283). */
@@ -675,6 +676,7 @@ export interface State {
   shutdownIdleMinutes: number; // copied from Config.shutdownIdleMinutes wherever the live state is created and by setShutdownIdle on a save that changes it (#233)
   approvalMinutes: number; // copied from Config.approvalMinutes wherever the live state is created and by setApprovalMinutes on a save that changes it (#268)
   rateLimitWaitMinutes: number; // copied from Config.rateLimitWaitMinutes wherever the live state is created and by setRateLimitWait on a save that changes it (#805)
+  defaultAgent?: AgentId; // #925: copied from Config.defaultAgent wherever the live state is created and by setDefaultAgent on a save that changes it; absent only on a state built by hand (a test's): liveDefaultAgent reads DEFAULT_AGENT then
   shutdown?: { armedAt: string }; // shutdown when done (#233): absent = off; set and cleared by setShutdown, cleared with the shutdown effect and by boot
   cleanStop?: true; // set by quit (#283): the kills of a Quit are not exits, and the next boot resumes the tasks in flight
   crash?: { at: string; tasks: string[] }; // the item ids a boot after a crash stopped (#283): the source lists them until dismissCrash
@@ -1287,6 +1289,7 @@ export type HiveEvent =
   | { type: 'setDeleteActivity'; deleteActivity: DeleteActivityScope } // like setBudget: what deleting an activity forgets, from a save that changed it (#236, #573)
   | { type: 'setShutdownIdle'; minutes: number } // like setDeleteActivity: the shutdown window, from a save that changed it (#233)
   | { type: 'setRateLimitWait'; minutes: number } // like setApprovalMinutes: the rate-limit wait's ceiling, from a save that changed it (#805)
+  | { type: 'setDefaultAgent'; agent: AgentId } // like setRateLimitWait: the config's default agent, from a save that changed it (#925)
   | { type: 'setApprovalMinutes'; minutes: number } // like setShutdownIdle: the approval window, from a save that changed it (#268)
   | { type: 'setShutdown'; armed: boolean } // the main window's power toggle (#233)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
