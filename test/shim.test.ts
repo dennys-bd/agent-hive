@@ -98,7 +98,7 @@ test('capturedCwd keeps an absolute folder on one line inside the terminal\'s ow
     ['/r', '/r/src', '/r/..x', '/elsewhere', '/r/../x', 'src', '/r/a\nb', 42].map((value) => capturedCwd(value, '/r')),
     ['/r', '/r/src', '/r/..x', undefined, undefined, undefined, undefined, undefined],
   );
-  assert.equal(capturedCwd('/r', undefined), undefined);
+  assert.deepEqual([capturedCwd('/r', undefined), capturedCwd('/r', '')], [undefined, undefined]);
 });
 
 test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {

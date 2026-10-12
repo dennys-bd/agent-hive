@@ -48,7 +48,7 @@ export const capturedReply = (runId: string, args: string[]): string | undefined
  * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
  * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. */
 export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
-  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && isWithin(value, root) ? value : undefined);
+  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
 
 const isWithin = (path: string, root: string): boolean => {
   const rel = relative(root, path);
