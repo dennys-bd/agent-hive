@@ -475,6 +475,7 @@ const en = {
   'review.outdated': 'outdated',
   'review.inConversation': 'in this conversation',
   'review.newSessionOf': 'new {agent} session',
+  'open.agentUnavailable': '{agent} sessions are not available yet: run {agent} in a flow stage', // #927: until #931
   'review.mentionHint': '↑↓ choose · tab or ↵ insert · esc close',
   'review.newChip': 'new',
   'review.addToReview': 'add to review',
@@ -2288,6 +2289,7 @@ const pt: Record<MessageKey, string> = {
   'review.outdated': 'desatualizado',
   'review.inConversation': 'nesta conversa',
   'review.newSessionOf': 'nova sessão {agent}',
+  'open.agentUnavailable': 'sessões do {agent} ainda não estão disponíveis: execute o {agent} em uma etapa do fluxo', // #927: até a #931
   'review.mentionHint': '↑↓ escolher · tab ou ↵ inserir · esc fechar',
   'review.newChip': 'nova',
   'review.addToReview': 'adicionar à revisão',
