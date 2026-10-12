@@ -553,6 +553,15 @@ const en = {
   'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
   'design.theme': 'design theme', 'design.theme.dark': 'dark', 'design.theme.light': 'light',
+  // #113: the design comments panel
+  'design.comments': 'comments', 'design.comments.toggle': 'show or hide the comments', 'design.comments.hide': 'hide',
+  'design.tab.open': 'open · {n}', 'design.tab.resolved': 'resolved · {n}', 'design.area': 'area · {w}×{h}', 'design.composer.cancel': 'esc cancels',
+  'design.status.draft': 'draft', 'design.status.agent': 'with the agent · {session}', 'design.status.replied': 'the agent replied',
+  'design.status.agentDone': 'the agent marked it resolved', 'design.status.you': 'resolved by you', 'design.status.confirmed': 'resolved by the agent · you confirmed',
+  'design.action.delete': 'delete', 'design.action.send': 'send', 'design.action.resolve': 'resolve', 'design.action.reply': 'reply', 'design.action.reopen': 'reopen', 'design.action.confirm': 'confirm',
+  'design.send.all.one': 'send {n} draft', 'design.send.all.other': 'send {n} drafts',
+  'design.send.to': 'to {session} · the session in focus', 'design.send.picked': 'to {session} · picked',
+  'design.send.new': 'no session in focus · opens a new {agent} session in {activity}',
   'pr.merge': 'merge', 'pr.merging': 'merging…', 'pr.mergeMethod': 'merge method',
   'pr.method.squash': 'squash', 'pr.method.merge': 'merge commit', 'pr.method.rebase': 'rebase',
   'pr.blocker.conflicts': 'in conflict', 'pr.blocker.blocked': 'blocked by the repository rules', 'pr.blocker.draft': 'draft',
@@ -2352,6 +2361,14 @@ const pt: Record<MessageKey, string> = {
   'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
+  'design.comments': 'comentários', 'design.comments.toggle': 'mostrar ou esconder os comentários', 'design.comments.hide': 'esconder',
+  'design.tab.open': 'abertos · {n}', 'design.tab.resolved': 'resolvidos · {n}', 'design.area': 'área · {w}×{h}', 'design.composer.cancel': 'esc cancela',
+  'design.status.draft': 'rascunho', 'design.status.agent': 'com o agente · {session}', 'design.status.replied': 'o agente respondeu',
+  'design.status.agentDone': 'o agente marcou como resolvido', 'design.status.you': 'resolvido por você', 'design.status.confirmed': 'resolvido pelo agente · você confirmou',
+  'design.action.delete': 'excluir', 'design.action.send': 'enviar', 'design.action.resolve': 'resolver', 'design.action.reply': 'responder', 'design.action.reopen': 'reabrir', 'design.action.confirm': 'confirmar',
+  'design.send.all.one': 'enviar {n} rascunho', 'design.send.all.other': 'enviar {n} rascunhos',
+  'design.send.to': 'para {session} · a sessão em foco', 'design.send.picked': 'para {session} · escolhida',
+  'design.send.new': 'nenhuma sessão em foco · abre uma sessão nova de {agent} em {activity}',
   'pr.merge': 'mergear', 'pr.merging': 'mergeando…', 'pr.mergeMethod': 'método de merge',
   'pr.method.squash': 'squash', 'pr.method.merge': 'merge commit', 'pr.method.rebase': 'rebase',
   'pr.blocker.conflicts': 'em conflito', 'pr.blocker.blocked': 'bloqueado pelas regras do repositório', 'pr.blocker.draft': 'rascunho',
@@ -3627,7 +3644,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
