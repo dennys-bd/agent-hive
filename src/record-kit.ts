@@ -129,7 +129,8 @@ function otherFreeRun(state: State, task: Task, worker: Worker): boolean {
 /** A free run that never opened (#812), as forgetFailedSession: its entry goes, and unless another free run happened in this visit, the free
  * run's mark too, so a stage no free run touched keeps its continue. */
 export function forgetFailedFreeRun(state: State, task: Task, worker: Worker): State {
-  const forgotten = forgetFailedSession(state, task, worker, worker.sessionId);
+  // a run that never learned its id (#931) has no entry to drop: never let the default read the stage run's id
+  const forgotten = worker.sessionId === undefined ? state : forgetFailedSession(state, task, worker, worker.sessionId);
   const live = activityOf(forgotten, taskId(task));
   if (live?.freeSessionStage === undefined || otherFreeRun(forgotten, task, worker)) return forgotten;
   const { freeSessionStage: _free, ...rest } = live;

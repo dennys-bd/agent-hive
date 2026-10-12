@@ -109,8 +109,10 @@ function keptOf(terminals: Terminal[], activityId: string): KeptTerminal[] {
   return kept.map((t, i) => ({ terminalId: t.terminalId, label: terminalLabel(t, kept), asleep: t.asleep === true, ...(kept.length > 1 ? { n: i + 1 } : {}) }));
 }
 
-// Sleeping (#696): derived, never stored: the activity keeps something (a session or a terminal) and no session run nor terminal is live
-const isSleeping = (runs: LiveRun[], sessions: number, terminals: KeptTerminal[]): boolean => runs.length === 0 && (sessions > 0 || terminals.length > 0);
+// Sleeping (#696): derived, never stored: the activity keeps something (a session, a terminal or a sleeping run, #931: one slept before its
+// first prompt keeps no session) and no session run nor terminal is live
+const isSleeping = (runs: LiveRun[], sessions: number, terminals: KeptTerminal[], slept: SleepingRun[]): boolean =>
+  runs.length === 0 && (sessions > 0 || terminals.length > 0 || slept.length > 0);
 
 // A sleeping terminal's tab (#696): a sleeping run with no session, so the center draws and wakes it as #672 does an agent's
 const sleepingTerminals = (terminals: KeptTerminal[]): SleepingRun[] =>
@@ -135,7 +137,7 @@ function taskActivityOf(task: Task, state: Slice): TaskActivity | undefined {
   const starts = workers.flatMap((worker) => (worker.startedAt === undefined ? [] : [worker.startedAt]));
   return {
     kind: 'task', activity, record, records: recordsOf(state, task.item.itemId), task, runs, slept,
-    sessions: taskSessions(activity, runs, workers, kept), terminals, sleeping: isSleeping(runs, kept.length, terminals), status: current === 'new' ? 'empty' : current, // a listed activity's task is never new: it has one
+    sessions: taskSessions(activity, runs, workers, kept), terminals, sleeping: isSleeping(runs, kept.length, terminals, slept), status: current === 'new' ? 'empty' : current, // a listed activity's task is never new: it has one
     startedAt: oldest(starts), lastStartedAt: newest(starts), worker: workers.some((worker) => !worker.freeSession),
   };
 }
@@ -155,7 +157,7 @@ function localActivityOf(workspace: string, state: Slice): LocalActivity | undef
   });
   const terminals = keptOf(state.terminals, id); // #696
   const slept = [...sleepingIn(state.slept, (s) => s.workspace === workspace, record.sessions), ...sleepingTerminals(terminals)]; // #672, #696
-  return { kind: 'local', activity, record, workspace, runs, sessions: agentSessions(runs, workers), kept, slept, terminals, sleeping: isSleeping(runs, record.sessions.length, terminals) };
+  return { kind: 'local', activity, record, workspace, runs, sessions: agentSessions(runs, workers), kept, slept, terminals, sleeping: isSleeping(runs, record.sessions.length, terminals, slept) };
 }
 
 /** One local activity per workspace, in the config's order (#590), then every task's live activity with a live run or a worktree, in the

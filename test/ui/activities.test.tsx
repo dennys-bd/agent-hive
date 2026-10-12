@@ -179,3 +179,13 @@ test('an activity waiting for CI is listed with no run, so the waiting task show
   const listed = activitiesOf(withPointedWork({ tasks: [waiting, task(2)], workers: [], terminals: [], workspaces: [], activities: [], activityRecords: [] })).filter(isTask);
   expect(ids(listed)).toEqual(['I1']);
 });
+
+test('an activity whose only run slept before its first prompt sleeps: the run keeps no session yet (#931)', () => {
+  const sleepy: WithWork = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, worktree: '/wt' };
+  const slept: SleptRun[] = [
+    { ptyId: 'W2', agent: 'codex', kind: 'session', taskId: 'I1', cause: 'manual', at: 1 },
+    { ptyId: 'W5', agent: 'codex', kind: 'session', workspace: 'hive', cause: 'manual', at: 2 },
+  ];
+  const [local, own] = activitiesOf(withPointedWork({ tasks: [sleepy], workers: [], terminals: [], workspaces: ['hive'], ...localPairs(['hive']), slept }));
+  expect([own?.sleeping, local?.sleeping]).toEqual([true, true]);
+});
