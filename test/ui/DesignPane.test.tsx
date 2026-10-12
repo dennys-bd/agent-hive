@@ -212,6 +212,16 @@ test('⌘⇧↵ in the pane sends this file\'s drafts to the recipient in one su
   expect(submits.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ skip: [], kind: 'design', path: PATH, to: 'new' }]);
 });
 
+test('⌘⇧↵ sends nothing while the comments panel is hidden (#113)', async () => {
+  const user = userEvent.setup();
+  review = REVIEW;
+  render(pane());
+  await screen.findByText('a draft');
+  await user.click(screen.getByRole('button', { name: 'comentários' }));
+  fireEvent.keyDown(region(), SEND_KEYS);
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/tasks/I1/review/submit')).toEqual([]);
+});
+
 test('a local activity\'s pane has no comments button nor panel, and reads no review (#113)', async () => {
   render(<DesignPane activity={local} path={PATH} label={LABEL} active />);
   await screen.findByTitle(NAME);

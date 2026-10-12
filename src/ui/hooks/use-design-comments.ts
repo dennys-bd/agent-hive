@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { ReviewFile } from '../../types';
 import { submitReview } from '@/components/review-actions';
@@ -14,7 +14,9 @@ import { useFocusedSession } from '@/lib/session-focus';
 export interface DesignCommentsModel {
   taskId: string; activity: TaskActivity; review: ReviewFile; sessions: ReviewSession[];
   open: DesignComment[]; resolved: DesignComment[];
-  drafts: number; isSending: boolean; sendAll(): void;
+  drafts: number; isBusy: boolean; sendAll(): void;
+  /** The one request in flight (#113): undefined at once while another runs; else its answer, the file read again after */
+  run(start: () => Promise<unknown>): Promise<unknown>;
   recipient: Recipient; pick(session: string): void; refresh(): void;
 }
 
@@ -29,17 +31,30 @@ export function useDesignComments(activity: TaskActivity, path: string): DesignC
   const recipient = recipientOf(focused, picked, sessions);
   const comments = fileComments(review, path);
   const drafts = comments.open.filter((c) => c.kind === 'draft').length;
-  const [isSending, setSending] = useState(false);
-  // ⌘⇧↵ and the footer (#113): this file's drafts, all to the recipient, in one message; one submit at a time, as the server's own guard. A
-  // session that failed, or got the batch unsaved, is named in a toast and its drafts stay. ponytail: the diff pane holds an unsaved
-  // session out of the next submit; here a resend pastes that batch again, hold it the same way if it bites
+  const [isBusy, setBusy] = useState(false);
+  const inFlight = useRef(false); // the state lags a render behind two clicks in one tick
+  // One request of the panel at a time (#113), item actions and the send alike, so a draft is never sent twice
+  const run = async (start: () => Promise<unknown>): Promise<unknown> => {
+    if (inFlight.current) return undefined;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      return await start();
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+      refresh();
+    }
+  };
+  // ⌘⇧↵ and the footer (#113): this file's drafts, all to the recipient, in one message. A session that failed, or got the batch unsaved, is
+  // named in a toast and its drafts stay. ponytail: the diff pane holds an unsaved session out of the next submit; here a resend pastes that
+  // batch again, hold it the same way if it bites
   const sendAll = (): void => {
-    if (isSending || drafts === 0) return;
-    setSending(true);
-    void submitReview(taskId, [], { kind: 'design', path, to: recipient.session }).then((answer) => {
+    if (drafts === 0) return;
+    void run(() => submitReview(taskId, [], { kind: 'design', path, to: recipient.session }).then((answer) => {
       for (const s of answer?.failed ?? []) toast.error(t('review.notDeliveredTo', { session: sessionName(s, sessions) }));
       for (const s of answer?.unsaved ?? []) toast.error(t('review.notSavedTo', { session: sessionName(s, sessions) }));
-    }).finally(() => { setSending(false); refresh(); });
+    }));
   };
-  return { taskId, activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isSending, sendAll, refresh };
+  return { taskId, activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isBusy, sendAll, run, refresh };
 }

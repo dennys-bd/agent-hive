@@ -29,7 +29,7 @@ export const TOGGLE_ITEM = 'h-5 px-1.5 text-xs data-[state=on]:bg-accent data-[s
 type Tab = 'open' | 'resolved';
 type BoxMode = 'reply' | 'reopen';
 interface Action { key: MessageKey; run(): void }
-type Run = (request: Promise<unknown>) => void;
+type Run = DesignCommentsModel['run'];
 
 const SEND_KEY = 'CmdOrCtrl+Enter';
 const STATE_DOT: Record<CommentState, string> = { draft: STATUS_DOT.empty, agent: STATUS_DOT.working, replied: STATUS_DOT.waiting, agentDone: STATUS_DOT.approval, resolved: STATUS_DOT.empty };
@@ -67,9 +67,9 @@ async function reopen(taskId: string, thread: string, note: string): Promise<unk
 // open the item's box
 function actionsOf(item: DesignComment, model: DesignCommentsModel, run: Run, openBox: (mode: BoxMode) => void): Action[] {
   const { taskId } = model;
-  const resolve = (): void => run(resolveThread(taskId, item.id, true));
+  const resolve = (): void => void run(() => resolveThread(taskId, item.id, true));
   if (item.state === 'draft') {
-    return [{ key: 'design.action.delete', run: () => run(dropDraft(taskId, item.id)) }, { key: 'design.action.send', run: () => run(sendDraft(model, item)) }];
+    return [{ key: 'design.action.delete', run: () => void run(() => dropDraft(taskId, item.id)) }, { key: 'design.action.send', run: () => void run(() => sendDraft(model, item)) }];
   }
   if (item.state === 'agent') return [{ key: 'design.action.resolve', run: resolve }];
   if (item.state === 'replied') return [{ key: 'design.action.reply', run: () => openBox('reply') }, { key: 'design.action.resolve', run: resolve }];
@@ -120,12 +120,12 @@ function StatusLine({ item, sessions, isBusy, actions }: { item: DesignComment; 
 }
 
 // The inline box (#113): the composer's look without its popover. ⌘↵ presses its button and esc closes it; responder needs a text, reabrir not
-function InlineBox({ mode, onClose, onSubmit }: { mode: BoxMode; onClose(): void; onSubmit(text: string): void }) {
+function InlineBox({ mode, onClose, onSubmit, isBusy }: { mode: BoxMode; onClose(): void; onSubmit(text: string): void; isBusy: boolean }) {
   const [text, setText] = useState('');
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus(), []); // a ref, not autoFocus: the box opens on a click and the keys are for it
   const label = t(mode === 'reply' ? 'design.action.reply' : 'design.action.reopen');
-  const canSubmit = mode === 'reopen' || text.trim() !== '';
+  const canSubmit = !isBusy && (mode === 'reopen' || text.trim() !== '');
   const submit = (): void => { if (canSubmit) onSubmit(text.trim()); };
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === 'Escape') {
@@ -152,19 +152,16 @@ function InlineBox({ mode, onClose, onSubmit }: { mode: BoxMode; onClose(): void
 
 interface ItemProps { item: DesignComment; model: DesignCommentsModel; isSelected: boolean; box?: BoxMode; onSelect(): void; onBox(mode?: BoxMode): void }
 
-// One comment (#113): pin, target and time; its text; every later message; the status line; the inline box. One request of the item at a
-// time, then the file read again, so a double click never sends a comment twice; the undelivered mark waits for that request too
+// One comment (#113): pin, target and time; its text; every later message; the status line; the inline box. The panel runs one request at a
+// time, then reads the file again, so a double click never sends a comment twice; the undelivered mark waits for that request too
 function CommentItem({ item, model, isSelected, box, onSelect, onBox }: ItemProps) {
-  const [isBusy, setBusy] = useState(false);
-  const run: Run = (request) => {
-    setBusy(true);
-    void request.finally(() => { setBusy(false); model.refresh(); });
-  };
-  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => run(retryMessage(model.taskId, item.id, message.id))} /> : null);
+  const { run, isBusy } = model;
+  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.taskId, item.id, message.id))} /> : null);
   const [first, ...later] = item.messages;
-  const submit = (text: string): void => {
-    onBox(undefined);
-    run(box === 'reply' ? replyTo(model.taskId, item.id, { text }) : reopen(model.taskId, item.id, text));
+  // The box closes only once the server took the request: a refusal (undefined) keeps it open with the typed text
+  const submit = async (text: string): Promise<void> => {
+    const done = await run(() => (box === 'reply' ? replyTo(model.taskId, item.id, { text }) : reopen(model.taskId, item.id, text)));
+    if (done !== undefined) onBox(undefined);
   };
   return (
     <li aria-current={isSelected ? 'true' : undefined} onPointerDownCapture={onSelect} className={`border-b px-3 py-2.5 ${isSelected ? SELECTED : STATE_TINT[item.state] ?? ''}`}>
@@ -177,7 +174,7 @@ function CommentItem({ item, model, isSelected, box, onSelect, onBox }: ItemProp
       {first !== undefined && markOf(first)}
       {later.map((m) => <LaterMessage key={m.id} message={m} sessions={model.sessions} mark={markOf(m)} />)}
       <StatusLine item={item} sessions={model.sessions} isBusy={isBusy} actions={actionsOf(item, model, run, onBox)} />
-      {box !== undefined && <InlineBox mode={box} onClose={() => onBox(undefined)} onSubmit={submit} />}
+      {box !== undefined && <InlineBox mode={box} onClose={() => onBox(undefined)} onSubmit={submit} isBusy={isBusy} />}
     </li>
   );
 }
@@ -206,7 +203,7 @@ function SendFooter({ model }: { model: DesignCommentsModel }) {
   const agent = useContext(DefaultAgentContext);
   return (
     <div className="shrink-0 border-t bg-card p-2.5">
-      <Button type="button" size="sm" className="w-full" disabled={model.isSending} onClick={model.sendAll}>
+      <Button type="button" size="sm" className="w-full" disabled={model.isBusy} onClick={model.sendAll}>
         {tPlural('design.send.all', model.drafts, { n: model.drafts })}<span aria-hidden="true" className="opacity-70">{displayBinding(SUBMIT_KEY, isMac())}</span>
       </Button>
       <div className="mt-1.5 flex justify-center">

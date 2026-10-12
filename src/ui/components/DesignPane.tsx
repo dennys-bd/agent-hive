@@ -192,9 +192,9 @@ const focusPane = (event: ReactPointerEvent<HTMLElement>): void => {
 };
 
 // ⌘⇧↵ sends every draft (#113), only while the focus is in the pane: its section takes it, as ⌘0. The panel itself has no key: ⌘⌥C is openDiff on
-// macOS. True: taken
-function takeSendKey(event: ReactKeyboardEvent<HTMLElement>, comments: DesignCommentsModel): boolean {
-  if (!matches(event.nativeEvent, SUBMIT_KEY, isMac())) return false;
+// macOS. A hidden panel sends nothing: the user cannot see the drafts. True: taken
+function takeSendKey(event: ReactKeyboardEvent<HTMLElement>, comments: DesignCommentsModel, isPanelShown: boolean): boolean {
+  if (!isPanelShown || !matches(event.nativeEvent, SUBMIT_KEY, isMac())) return false;
   comments.sendAll();
   event.preventDefault();
   return true;
@@ -223,7 +223,7 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
   const [isPanelShown, setPanelShown] = useState(true); // shown at mount; the mounted pane's own, never stored (#113)
   const togglePanel = (): void => setPanelShown((shown) => !shown);
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
-    if (comments === undefined || !takeSendKey(event, comments)) zoom.onKeyDown(event);
+    if (comments === undefined || !takeSendKey(event, comments, isPanelShown)) zoom.onKeyDown(event);
   };
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">

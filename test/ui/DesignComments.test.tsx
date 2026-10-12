@@ -8,7 +8,7 @@ import type { TaskActivity } from '@/lib/activities';
 import { clockOf } from '@/lib/design-comments';
 import { rememberFocus } from '@/lib/session-focus';
 import { area, AT, PATH, REVIEW } from './design-review';
-import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, SESSIONS, withSessions } from './diff-harness';
+import { activityOf, callsTo, fakeHive, type FakeHive, holdRoute, SESSION, SESSIONS, withSessions } from './diff-harness';
 
 let hive: FakeHive;
 beforeEach(() => { setLanguage('pt'); hive = fakeHive(); hive.review = REVIEW; });
@@ -121,4 +121,39 @@ test('the footer sends every draft of the file with kind, path and the recipient
   expect(screen.getByText('para claude bbbbbbbb · escolhida')).toBeInTheDocument();
   await user.click(screen.getByRole('radio', { name: 'resolvidos · 2' }));
   expect(screen.queryByRole('button', { name: 'enviar 1 rascunho' })).toBeNull();
+});
+
+test('while an item\'s enviar is in flight the footer and every action are off, so the draft is sent once (#113)', async () => {
+  const user = userEvent.setup();
+  hive.answers['POST /tasks/I1/review/threads'] = { thread: 'T7', failed: [] };
+  const held = holdRoute('POST', '/tasks/I1/review/threads');
+  panel();
+  await screen.findByText('a draft');
+  await user.click(within(item('a draft')).getByRole('button', { name: 'enviar' }));
+  await waitFor(() => expect(held.count()).toBe(1));
+  expect(screen.getByRole('button', { name: 'enviar 1 rascunho' })).toBeDisabled();
+  expect(within(item('a question')).getByRole('button', { name: 'resolver' })).toBeDisabled();
+  await user.click(screen.getByRole('button', { name: 'enviar 1 rascunho' }));
+  expect(posted('/submit')).toEqual([]);
+  held.release();
+  await waitFor(() => expect(callsTo(hive, 'DELETE', '/tasks/I1/review/drafts/D5')).toHaveLength(1));
+  expect(posted('/threads')).toHaveLength(1);
+});
+
+test('a refused reply keeps the box and its text; the box closes once the reply is taken (#113)', async () => {
+  const user = userEvent.setup();
+  const inner = globalThis.fetch;
+  let refuse = true;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    (refuse && String(input) === '/tasks/I1/review/threads/T2/messages' ? new Response(JSON.stringify({ error: 'no' }), { status: 500 }) : inner(input, init))));
+  panel();
+  await screen.findByText('a question');
+  await user.click(within(item('a question')).getByRole('button', { name: 'responder' }));
+  await user.type(screen.getByRole('textbox', { name: 'responder' }), 'blue');
+  await user.click(within(screen.getByRole('group', { name: 'responder' })).getByRole('button', { name: 'responder' }));
+  await waitFor(() => expect(within(item('a question')).getByRole('button', { name: 'resolver' })).toBeEnabled());
+  expect(screen.getByRole('textbox', { name: 'responder' })).toHaveValue('blue');
+  refuse = false;
+  await user.click(within(screen.getByRole('group', { name: 'responder' })).getByRole('button', { name: 'responder' }));
+  await waitFor(() => expect(screen.queryByRole('group', { name: 'responder' })).toBeNull());
 });
