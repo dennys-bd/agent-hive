@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ownsRollout, readRollout, rolloutFiles, sessionsRoot } from '../../src/agents/codex-transcript.js';
 import { ZERO_TOKENS } from '../../src/events.js';
-import { CHILD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, writeRollout } from '../codex-rollouts.js';
+import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, writeRollout } from '../codex-rollouts.js';
 import { tempDir } from '../temp-dir.js';
 
 const START = Date.parse('2026-10-12T10:00:00.000Z');
@@ -56,8 +56,10 @@ test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, 
     [at(`2026/oct/12/rollout-x-${SESSION}.jsonl`), 'not a date folder'],
     [`sessions/2026/10/12/rollout-x-${SESSION}.jsonl`, 'relative'],
     [at(`2026/10/12/rollout-x-${SESSION}.json`), 'not .jsonl'],
+    [at(`2026/10/12/../12/rollout-x-${SESSION}.jsonl`), 'not normalized: the root would be read from the wrong folders'],
   ];
   for (const [path, why] of refused) assert.equal(ownsRollout(path, SESSION, env), false, why);
+  assert.equal(ownsRollout(own, SESSION.slice(9), env), false, 'a tail of the id is no session id');
   assert.equal(ownsRollout(own, undefined, env), false, 'no session id: nothing is owned');
   assert.equal(ownsRollout(own, '', env), false);
 });
@@ -73,6 +75,13 @@ test('rolloutFiles lists the session\'s rollout, then every rollout whose first 
   const child = await writeRollout(home, '2025/01/02', CHILD, subagent(CHILD, SESSION));
   await writeRollout(home, DAY, OTHER, [sessionMeta(OTHER)]);
   await writeRollout(home, DAY, OTHER_CHILD, subagent(OTHER_CHILD, OTHER));
-  assert.deepEqual(await rolloutFiles(SESSION, { CODEX_HOME: home }), [own, child]);
-  assert.deepEqual(await rolloutFiles(SESSION, { CODEX_HOME: join(home, 'none') }), [], 'no sessions folder');
+  assert.deepEqual(await rolloutFiles(SESSION, CWD, { CODEX_HOME: home }), [own, child]);
+  assert.deepEqual(await rolloutFiles(SESSION, CWD, { CODEX_HOME: join(home, 'none') }), [], 'no sessions folder');
+});
+
+test('rolloutFiles takes nothing when the session\'s rollout ran in another folder: a forged id never deletes a session run elsewhere (#929)', async (t) => {
+  const home = await tempDir(t, 'codex-');
+  await writeRollout(home, DAY, SESSION, [sessionMeta(SESSION, undefined, '/elsewhere'), ...TWO_TURNS.slice(1)]);
+  await writeRollout(home, DAY, CHILD, subagent(CHILD, SESSION));
+  assert.deepEqual(await rolloutFiles(SESSION, CWD, { CODEX_HOME: home }), [], 'neither the session nor its subagents');
 });

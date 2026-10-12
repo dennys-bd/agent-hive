@@ -10,14 +10,16 @@ export const STALE = '019a1b2c-0000-7000-8000-000000000004';
 export const OTHER_CHILD = '019a1b2c-0000-7000-8000-000000000005';
 export const NOW = Date.parse('2026-10-12T12:00:00.000Z');
 export const DAY = '2026/10/12';
+/** The worktree every fixture session ran in: deletion only takes a rollout whose session_meta names it. */
+export const CWD = '/repo/.hive/worktrees/hive-1-t';
 
 const pad = (n: number): string => String(n).padStart(2, '0');
 /** A time's local date folder, as Codex names it: YYYY/MM/DD. */
 export const localDay = (at: Date): string => `${at.getFullYear()}/${pad(at.getMonth() + 1)}/${pad(at.getDate())}`;
 
 export const line = (timestamp: string, type: string, payload: unknown): string => JSON.stringify({ timestamp, type, payload });
-export const sessionMeta = (id: string, parent?: string): string => line('2026-10-12T10:00:00.000Z', 'session_meta', {
-  id, cwd: '/repo/.hive/worktrees/hive-1-task',
+export const sessionMeta = (id: string, parent?: string, cwd = CWD): string => line('2026-10-12T10:00:00.000Z', 'session_meta', {
+  id, cwd,
   source: parent === undefined ? 'cli' : { subagent: { thread_spawn: { parent_thread_id: parent, depth: 1, agent_role: 'hive-reviewer' } } },
 });
 export const turnContext = (timestamp: string, turnId: string, model: string): string => line(timestamp, 'turn_context', { turn_id: turnId, model });

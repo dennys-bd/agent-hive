@@ -11,8 +11,8 @@ const MS_PER_SECOND = 1000;
 // ponytail: only the durations seen or assumed: the free plan's 30 days (finding §9), a paid plan's 5 h and week (unverified). Any other is
 // dropped; add its key here once a plan shows one
 const WINDOW_KEYS: ReadonlyMap<number, string> = new Map([[300, 'five_hour'], [10_080, 'seven_day'], [43_200, 'thirty_day']]);
-// ponytail: the newest 20 rollouts; past them every reading is weeks old. Raise it if runs that never reach a model ever pile up
-const PLAN_FILES_MAX = 20;
+// ponytail: the newest 5 rollouts, each read whole every 5 minutes; past them a reading is stale anyway. Tail-read if rollouts ever weigh
+const PLAN_FILES_MAX = 5;
 
 // `used_percent` from 0 (clamped to 100) and `resets_at` as positive integer epoch seconds still ahead: an old rollout never reports a full
 // window that has reset since

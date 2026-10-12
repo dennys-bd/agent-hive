@@ -2,7 +2,7 @@
 // included) and every file deleting a session removes. Layout and records: finding.codex-surface §9, §11.
 import { readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative, sep } from 'node:path';
 import type { Tokens } from '../events.js';
 import { isRecord } from '../rate-limits.js';
 import type { TranscriptTurn } from '../usage.js';
@@ -10,7 +10,10 @@ import { eachLine, finite, finiteTokens, firstLine, isRealDir, newTally, tally, 
 
 const DATE_PARTS: readonly RegExp[] = [/^\d{4}$/, /^\d{2}$/, /^\d{2}$/]; // <root>/YYYY/MM/DD, Codex's local date
 const ROLLOUT_ID = /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/; // rollout-<local time>-<session id>.jsonl
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const MS_PER_DAY = 86_400_000;
+// ponytail: a stage run's subagents are looked for at most this many days back; a run open longer loses its oldest subagents' share
+const SCAN_DAYS_MAX = 31;
 
 /** One rollout line: `{ timestamp, type, payload }`. */
 export interface RolloutLine { timestamp?: unknown; type?: unknown; payload: Record<string, unknown> }
@@ -25,7 +28,9 @@ export function sessionsRoot(env: NodeJS.ProcessEnv = process.env): string {
 /** A rollout the run of `sessionId` owns: absolute, directly in a date folder of the sessions root, named after that session. Without a session
  * id nothing is: a forged hook can only name a rollout of an id it already knows, and gets a token count. */
 export function ownsRollout(path: string, sessionId: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (!sessionId || !isAbsolute(path) || !basename(path).endsWith(`-${sessionId}.jsonl`)) return false;
+  // a full session id only (a tail of one would match), and a normalized path: readRollout derives the root from its folders
+  if (!sessionId || !SESSION_ID.test(sessionId) || !isAbsolute(path) || normalize(path) !== path) return false;
+  if (!basename(path).endsWith(`-${sessionId}.jsonl`)) return false;
   const parts = relative(sessionsRoot(env), dirname(path)).split(sep);
   return parts.length === DATE_PARTS.length && parts.every((part, i) => DATE_PARTS[i].test(part));
 }
@@ -61,15 +66,23 @@ export async function rolloutsIn(folder: string): Promise<string[]> {
   return entries.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => join(folder, e.name)).sort();
 }
 
-// session_meta.payload.source.subagent.thread_spawn.parent_thread_id of a rollout's first line: the session that spawned it, if any (§11)
-function parentThread(text: string | undefined): string | undefined {
+// A rollout's first line, its session_meta: the session's id and cwd and, for a subagent, the session that spawned it
+// (source.subagent.thread_spawn.parent_thread_id, §11)
+interface SessionMeta { id?: string; cwd?: string; parent?: string }
+
+function sessionMetaOf(text: string | undefined): SessionMeta {
   const meta = text === undefined ? undefined : parseRolloutLine(text);
-  const source = meta?.type === 'session_meta' ? meta.payload.source : undefined;
+  if (meta?.type !== 'session_meta') return {};
+  const { id, cwd, source } = meta.payload;
   const spawn = isRecord(source) && isRecord(source.subagent) ? source.subagent.thread_spawn : undefined;
-  return isRecord(spawn) && typeof spawn.parent_thread_id === 'string' ? spawn.parent_thread_id : undefined;
+  return {
+    ...(typeof id === 'string' ? { id } : {}), ...(typeof cwd === 'string' ? { cwd } : {}),
+    ...(isRecord(spawn) && typeof spawn.parent_thread_id === 'string' ? { parent: spawn.parent_thread_id } : {}),
+  };
 }
 
-const parentOf = async (path: string): Promise<string | undefined> => parentThread(await firstLine(path).catch(() => undefined));
+const metaOf = async (path: string): Promise<SessionMeta> => sessionMetaOf(await firstLine(path).catch(() => undefined));
+const parentOf = async (path: string): Promise<string | undefined> => (await metaOf(path)).parent;
 
 // One response's usage (§9): input_tokens includes the cached ones; output_tokens already includes the reasoning, which is not added again
 function usageEntry(payload: Record<string, unknown>, at: number, model: string | undefined): UsageEntry | undefined {
@@ -108,10 +121,17 @@ async function readLines(path: string, onEntry: (entry: UsageEntry) => void): Pr
 const dayFolder = (root: string, day: Date): string =>
   join(root, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0'));
 
-// The folders a stage run's subagents can be in: Codex names them by its local date, from the day before `since` to the day after today.
-// Rounded up: a DST day of 23 hours never drops the last folder, at the cost of one more folder that is not there
-function folderRange(root: string, since: number, now: number): string[] {
-  const from = new Date(since);
+// The local date of a rollout's own folder: no subagent of it is older
+const folderDay = (path: string): number => {
+  const [year, month, day] = relative(dirname(dirname(dirname(dirname(path)))), dirname(path)).split(sep).map(Number);
+  return new Date(year, month - 1, day).getTime();
+};
+
+// The folders a stage run's subagents can be in: Codex names them by its local date, from the day before `since` (never before the parent's
+// own folder, nor SCAN_DAYS_MAX back) to the day after today. Rounded up: a DST day of 23 hours never drops the last folder, at the cost of
+// one more folder that is not there
+function folderRange(root: string, since: number, now: number, floor: number): string[] {
+  const from = new Date(Math.max(since, floor + MS_PER_DAY, now - SCAN_DAYS_MAX * MS_PER_DAY));
   const first = new Date(from.getFullYear(), from.getMonth(), from.getDate() - 1);
   const days = Math.max(0, Math.ceil((now - first.getTime()) / MS_PER_DAY) + 2);
   return Array.from({ length: days }, (_, i) => dayFolder(root, new Date(first.getFullYear(), first.getMonth(), first.getDate() + i)));
@@ -119,8 +139,8 @@ function folderRange(root: string, since: number, now: number): string[] {
 
 // The session's direct subagents written since the stage run, in path order. A file last written before it holds none of its turns and is
 // never opened, so an old session's subagents never slow a Stop. One at a time: a busy folder must not open every file at once
-async function subagentRollouts(root: string, id: string, since: number, now: number): Promise<string[]> {
-  const files = (await Promise.all(folderRange(root, since, now).map(rolloutsIn))).flat();
+async function subagentRollouts(root: string, id: string, since: number, now: number, floor: number): Promise<string[]> {
+  const files = (await Promise.all(folderRange(root, since, now, floor).map(rolloutsIn))).flat();
   const kept: string[] = [];
   for (const file of files) if ((await writtenSince(file, since)) && (await parentOf(file)) === id) kept.push(file);
   return kept;
@@ -141,18 +161,25 @@ export async function readRollout(path: string, since?: number, now = Date.now()
   const id = ROLLOUT_ID.exec(basename(path))?.[1];
   const root = dirname(dirname(dirname(dirname(path)))); // <root>/YYYY/MM/DD/<file>: ownsRollout checked the depth
   // A subagent file that fails to read costs only its own share; one after the other, so the models list in the order they are met
-  for (const sub of id === undefined ? [] : await subagentRollouts(root, id, since, now)) {
+  for (const sub of id === undefined ? [] : await subagentRollouts(root, id, since, now, folderDay(path))) {
     await readLines(sub, (entry) => tally(stage, entry, since, true)).catch(() => undefined);
   }
   if (!finiteTokens(stage.tokens)) throw new Error(`${path}: token total is not finite`);
   return { tokens, usage: turnUsage(stage) };
 }
 
-/** Every file deleting session `id` removes (#236, #929): its rollout and its direct subagents', in any date folder; never a folder, never
- * another session's. ponytail: opens every rollout's first line once per deletion; index the parents if a sessions folder ever holds thousands. */
-export async function rolloutFiles(id: string, env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+/** Every file deleting session `id` of `cwd` removes (#236, #929): its rollout and its direct subagents', in any date folder; never a folder,
+ * never another session's. The id the Hive holds came from a hook, so a rollout goes only when its own session_meta names that id and `cwd`:
+ * a forged id never deletes a session the user ran elsewhere. ponytail: opens every rollout's first line once per deletion; index the
+ * parents if a sessions folder ever holds thousands. */
+export async function rolloutFiles(id: string, cwd: string, env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
   const files = (await Promise.all((await dateFolders(sessionsRoot(env))).map(rolloutsIn))).flat();
+  const own: string[] = [];
   const children: string[] = [];
-  for (const file of files) if ((await parentOf(file)) === id) children.push(file); // one at a time: thousands at once run out of file descriptors
-  return [...files.filter((file) => basename(file).endsWith(`-${id}.jsonl`)), ...children];
+  for (const file of files) { // one at a time: thousands at once run out of file descriptors
+    const meta = await metaOf(file);
+    if (basename(file).endsWith(`-${id}.jsonl`) && meta.id === id && meta.cwd === cwd) own.push(file);
+    else if (meta.parent === id) children.push(file);
+  }
+  return own.length === 0 ? [] : [...own, ...children];
 }
