@@ -74,7 +74,7 @@ test('GET /settings lists the agents found on boot; without detection every agen
   const detected = await start(t, BODY, { agents }, 0);
   assert.deepEqual(((await (await hiveFetch(`${detected.base}/settings`)).json()) as SettingsInfo).agents, agents);
   const plain = await start(t, BODY, {}, 0);
-  assert.deepEqual(((await (await hiveFetch(`${plain.base}/settings`)).json()) as SettingsInfo).agents, [{ agent: 'claude', available: true }]);
+  assert.deepEqual(((await (await hiveFetch(`${plain.base}/settings`)).json()) as SettingsInfo).agents, [{ agent: 'claude', available: true }, { agent: 'codex', available: true }]);
 });
 
 test('the live state holds the config\'s default agent from the first save on (#925)', async (t) => {
@@ -90,8 +90,23 @@ test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
 
 test('agentArgs of the stage\'s agent reaches its launch after the Hive\'s flags and before the model and the session (#924)', async (t) => {
   const stage = { ...STAGES[0], model: 'sonnet' };
-  const { server, workers } = await start(t, { ...BODY, stages: [stage], agentArgs: { claude: ['--permission-mode', 'auto'] } });
+  const { server, workers } = await start(t, { ...BODY, stages: [stage], agentArgs: { claude: ['--permission-mode', 'auto'], codex: [] } });
   await waitFor(() => workers.length === 1);
   assert.deepEqual(plainArgs(workers[0].launch), ['--permission-mode', 'auto', '--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
   assert.match(ptyCommand(workers[0].launch), / '--permission-mode' 'auto' '--model' 'sonnet' '--session-id' /);
+});
+
+test('a codex stage starts codex with its overrides, the trust bypass and the stage\'s model; the MCP secret is in its env and in no argv word (#927)', async (t) => {
+  const stage = { ...STAGES[0], agent: 'codex' as const, model: 'gpt-5.6-terra' };
+  const { workers } = await start(t, { ...BODY, stages: [stage] });
+  await waitFor(() => workers.length === 1);
+  const { launch } = workers[0];
+  const pairs = (launch.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' ? [] : [arg[1]]));
+  assert.equal(launch.agent?.command, 'codex');
+  assert.deepEqual(plainArgs(launch), ['--dangerously-bypass-hook-trust', '-m', 'gpt-5.6-terra']);
+  assert.ok(pairs.includes(`mcp_servers.hive.http_headers={"x-hive-pty"="${launch.ptyId}"}`));
+  assert.ok(pairs.some((pair) => pair.startsWith('developer_instructions=')), 'the stage protocol, as text');
+  assert.ok(pairs.includes(`projects.${JSON.stringify(launch.cwd)}.trust_level="trusted"`), 'the worktree it starts in');
+  assert.equal(launch.env?.HIVE_MCP_SECRET, SECRET);
+  assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
 });

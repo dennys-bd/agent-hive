@@ -708,7 +708,7 @@ export const NEW_SOURCE_EPICS: { epics: EpicsMode; epicFollows: EpicFollows } = 
 export const SWITCH_AT_DEFAULT = 'Build';
 
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
-export const AGENT_IDS = ['claude'] as const;
+export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
 export type AgentId = (typeof AGENT_IDS)[number];
 /** What a new form offers as the default agent and what a file from before #516 reads as. */
 export const DEFAULT_AGENT: AgentId = 'claude';

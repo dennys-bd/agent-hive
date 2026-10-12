@@ -26,7 +26,7 @@ export const SOURCE_TYPES: readonly SourceConfig['type'][] = ['github'];
 export const SESSION_POLICIES: readonly SessionPolicy[] = ['new', 'continue'];
 export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notifications' | 'deleteActivity' | 'shutdownIdleMinutes' | 'approvalMinutes' | 'rateLimitWaitMinutes' | 'showGithubQuota' | 'closeSessionTab' | 'closeStageTab' | 'closeSessionTabNotice' | 'closeStageTabNotice' | 'sleepNotice' | 'sleepAutoNotice' | 'sleepIdleNotice' | 'sleepAllNotice' | 'closeTerminalTab' | 'closeTerminalTabNotice' | 'defaultAgent' | 'theme' | 'terminalFont' | 'trustedDomains' | 'consoleLines' | 'shortcuts' | 'fileIcons' | 'sidebarsPerView' | 'signals' | 'editor'> = {
   logLevel: 'info',
-  agentArgs: { claude: [] },
+  agentArgs: { claude: [], codex: [] },
   budget: {},
   usageRules: [],
 };

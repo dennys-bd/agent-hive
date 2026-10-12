@@ -47,7 +47,7 @@ test('dividir lists terminal, each agent and arquivo… em breve; terminal posts
   render(<Opened runs={[STAGE, SHELL]} />);
   await openSplit(user);
   expect(screen.getByText('novo pane ao lado com')).toBeInTheDocument();
-  expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['terminal', 'claude', 'arquivo…em breve', 'dividir com o mesmo tipoCtrl+Shift+\\']);
+  expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['terminal', 'claude', 'codex', 'arquivo…em breve', 'dividir com o mesmo tipoCtrl+Shift+\\']);
   expect(screen.getByRole('menuitem', { name: /^arquivo…/ })).toHaveAttribute('data-disabled');
   await user.click(screen.getByRole('menuitem', { name: 'terminal' }));
   posted('terminal');

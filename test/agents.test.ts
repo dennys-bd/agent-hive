@@ -66,3 +66,11 @@ test('ranAgent is a run\'s own agent, claude on a literal built without one; the
 test('claude reports plan limits: the header offers their refresh (#925)', () => {
   assert.equal(AGENTS.claude.planLimits, true);
 });
+
+test('codex runs as `codex`, reports no plan limits until #929 and cannot choose its session id; claude can (#927)', () => {
+  assert.deepEqual(AGENT_IDS, ['claude', 'codex']);
+  assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', false, false]);
+  assert.equal(AGENTS.claude.canChooseSessionId, true);
+  assert.ok(AGENTS.codex.subcommands.includes('exec'));
+  assert.equal(AGENTS.codex.subcommands.some((c) => c === 'resume' || c === 'fork'), false, 'both open a conversation (finding §12)');
+});

@@ -122,5 +122,5 @@ test('the default agent card holds one arguments field per agent, named after it
   expect(within(card).getAllByRole('textbox')).toHaveLength(AGENT_IDS.length);
   expect(within(card).getAllByText(t('settings.agentArgs.hint'))).toHaveLength(AGENT_IDS.length);
   fireEvent.change(within(card).getByLabelText(t('settings.agentArgs', { agent: 'claude' })), { target: { value: '--verbose' } });
-  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose' } });
+  expect(onChange).toHaveBeenCalledWith({ agentArgs: { claude: '--verbose', codex: '' } });
 });

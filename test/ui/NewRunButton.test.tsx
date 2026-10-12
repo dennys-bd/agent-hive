@@ -23,7 +23,7 @@ async function pick(user: ReturnType<typeof userEvent.setup>, item: string): Pro
   plus().focus();
   await user.keyboard('{Enter}');
   const names = (await screen.findAllByRole('menuitem')).map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''));
-  expect(names).toEqual(['terminal', 'claude', 'diff', 'mostrar PR', 'arquivo']);
+  expect(names).toEqual(['terminal', 'claude', 'codex', 'diff', 'mostrar PR', 'arquivo']);
   await user.click(screen.getByRole('menuitem', { name: new RegExp(`^${item}`) }));
 }
 
@@ -192,7 +192,7 @@ test('the + of a local activity is titled with its workspace and offers terminal
   plus().focus();
   await user.keyboard('{Enter}');
   expect(await screen.findByText('nova sessão em hive')).toBeInTheDocument();
-  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'claude', 'arquivo']);
+  expect(screen.getAllByRole('menuitem').map((i) => i.textContent?.replace(/(Ctrl\+|Shift\+|Alt\+|⌘|⇧|⌥)+[A-Z]$/, ''))).toEqual(['terminal', 'claude', 'codex', 'arquivo']);
   await user.click(screen.getByRole('menuitem', { name: /^claude/ }));
   expect(fetchMock).toHaveBeenCalledWith('/activities/local%3Ahive/sessions', expect.objectContaining({ method: 'POST' }));
   await waitFor(() => expect(openRun).toHaveBeenCalledWith({ ptyId: 'L3', kind: 'session', project: 'hive', title: 'hive' }));
@@ -217,13 +217,14 @@ test('newRunEntries lists terminal, each agent (the default one with newSession\
   expect(newRunEntries({ kind: 'task', task: bareTask(task()), activity: liveIn(task()) }, 'claude')).toEqual([
     { kind: 'terminal', label: 'terminal', key: 'newTerminal', disabled: false },
     { kind: 'claude', label: 'claude', key: 'newSession', disabled: false },
+    { kind: 'codex', label: 'codex', key: undefined, disabled: false },
     { kind: 'diff', label: 'diff', key: 'openDiff', disabled: false },
   ]);
   const noWorktree = task({ worktree: undefined });
   expect(newRunEntries({ kind: 'task', task: bareTask(noWorktree), activity: liveIn(noWorktree) }, 'claude').map((e) => [e.kind, e.disabled])).toEqual([
-    ['terminal', false], ['claude', false], ['diff', true],
+    ['terminal', false], ['claude', false], ['codex', false], ['diff', true],
   ]);
-  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude').map((e) => e.kind)).toEqual(['terminal', 'claude']);
+  expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude').map((e) => e.kind)).toEqual(['terminal', 'claude', 'codex']);
   const settingUp = task({ setup: { consoleId: 'C1' } });
   expect(newRunEntries({ kind: 'task', task: bareTask(settingUp), activity: liveIn(settingUp) }, 'claude').every((e) => e.disabled)).toBe(true);
 });
