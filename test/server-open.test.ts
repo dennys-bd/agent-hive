@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { activityOf } from '../src/activities.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
-import type { Exec } from '../src/types.js';
+import { AGENT_IDS, type AgentId, type Exec } from '../src/types.js';
 import { fakeSpawn } from './fakes.js';
 import { send, startReviews } from './review-server.js';
 
 // task 1 of startReviews has its worktree on disk: an open starts its session at once
 const OPEN = '/tasks/local%3A1/open';
-const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new claude session';
+const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new agent session';
 
 test('prompt mergeBase opens a claude session whose first prompt is the merge-from-base text, rendered by the server (#758)', async (t) => {
   const { spawn, workers } = fakeSpawn();
@@ -57,4 +57,19 @@ test('a free session opened in a stage with no recorded start records one at its
   git.head = 'b'.repeat(40);
   assert.equal((await send(base, 'POST', OPEN, { kind: 'claude' })).status, 200);
   assert.deepEqual(startOf(), { stage: 'fila', commit: 'a'.repeat(40) }, 'one stage start per stage');
+});
+
+test('the kind an open asks for is the new session\'s agent, over the default agent (#925)', async (t) => {
+  const { spawn } = fakeSpawn();
+  const { base, server } = await startReviews(t, { launchPty: spawn });
+  await server.dispatch({ type: 'setDefaultAgent', agent: 'other' as AgentId }); // #925: no second id until 3.1; the default only has to differ
+  assert.equal((await send(base, 'POST', OPEN, { kind: 'claude' })).status, 200);
+  assert.equal(server.getState()!.workers.find((w) => w.freeSession)?.agent, 'claude');
+});
+
+test('a kind that is neither terminal nor an agent is refused with the accepted kinds and opens nothing (#925)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base } = await startReviews(t, { launchPty: spawn });
+  const res = await send(base, 'POST', OPEN, { kind: 'gpt' });
+  assert.deepEqual([res.status, await res.json(), workers.length], [400, { error: `kind precisa ser terminal ou ${AGENT_IDS.join(', ')}` }, 0]);
 });

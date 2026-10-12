@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import type { Express, Request, Response } from 'express';
 import { activityOf } from './activities.js';
+import { knownAgent } from './agents.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
 import { baseRemote, workspaceBase } from './fork.js';
@@ -11,7 +12,7 @@ import { branchFor, slugFor, slugOwner, slugTakenMessage, worktreeSessions } fro
 import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE } from './server-tasks.js';
 import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import type { Activity, Effect, Task, HiveEvent, Workspace } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Effect, type Task, type HiveEvent, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
@@ -23,27 +24,29 @@ import { isBranchName, MERGE_BASE_PROMPT, mergeBasePrompt } from './merge-prompt
 const HTTP_BAD_REQUEST = 400;
 const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
-const KIND_MESSAGE = 'kind precisa ser terminal ou claude';
+const KIND_MESSAGE = `kind precisa ser terminal ou ${AGENT_IDS.join(', ')}`; // #925: every agent AGENT_IDS has
 const NOT_CONTINUABLE_MESSAGE = 'sessão já aberta ou desconhecida';
-const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new claude session';
+const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new agent session';
 
 /** The open route's deps (#351): the task routes' own, and what a worktree setup's console run needs. */
 export type OpenRouteDeps = TaskRouteDeps; // ptys and consoleStore came with the delete's teardown (#654)
 
 type OpenEvent = Extract<HiveEvent, { type: 'openSession' | 'openTerminal' }>;
 /** What an open asks for, before its activity is known (#629): a first open makes it. #570: a terminal is not a session, so it has its own event.
- * prompt: the rendered first message of a new claude session (#758). */
-interface OpenAsk { taskId: string; terminal: boolean; continueId?: string; prompt?: string; size?: TerminalSize }
+ * prompt: the rendered first message of a new agent session (#758). agent: the session's, the kind asked for (#925). */
+interface OpenAsk { taskId: string; terminal: boolean; agent?: AgentId; continueId?: string; prompt?: string; size?: TerminalSize }
 
-const openEvent = ({ terminal, continueId, prompt }: OpenAsk, activityId: string): OpenEvent =>
-  (terminal ? { type: 'openTerminal', activityId } : { type: 'openSession', activityId, ...(continueId === undefined ? {} : { continueId }), ...(prompt === undefined ? {} : { prompt }) });
+const openEvent = ({ terminal, agent, continueId, prompt }: OpenAsk, activityId: string): OpenEvent =>
+  (terminal ? { type: 'openTerminal', activityId } : {
+    type: 'openSession', activityId, ...(agent === undefined ? {} : { agent }), ...(continueId === undefined ? {} : { continueId }), ...(prompt === undefined ? {} : { prompt }),
+  });
 
 // The first prompt an open asks for (#758): a key, never text, rendered here; none without one; a 400 for anything but mergeBase with a
-// branch name on a new claude session
+// branch name on a new agent session
 function promptOf(body: unknown, remote: string): { prompt?: string } | Refusal {
   const { kind, continueId, prompt, promptBase } = (body ?? {}) as Record<string, unknown>;
   if (prompt === undefined) return {};
-  if (prompt !== MERGE_BASE_PROMPT || kind !== 'claude' || continueId !== undefined || !isBranchName(promptBase)) return { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE };
+  if (prompt !== MERGE_BASE_PROMPT || knownAgent(kind) === undefined || continueId !== undefined || !isBranchName(promptBase)) return { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE };
   return { prompt: mergeBasePrompt(promptBase, remote) }; // #854: the task's workspace's base remote
 }
 
@@ -188,13 +191,17 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   const opened = openTask(current.state, taskId);
   if ('status' in opened) return refuse(res, opened);
   const { task, activity } = opened;
-  if (kind !== 'terminal' && kind !== 'claude') return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
+  const agent = knownAgent(kind); // #925: the kind names the session's agent
+  if (kind !== 'terminal' && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
   const asked = promptOf(body, workspaceBase(current.runtime.config, taskWorkspace(current.runtime.config, task)).remote);
   if ('status' in asked) return refuse(res, asked);
   const offered = typeof continueId === 'string' && worktreeSessions(task, current.state).some((s) => s.id === continueId); // a repo session opens from the sidebar (#208)
-  if (kind === 'claude' && continueId !== undefined && !offered) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
+  if (agent !== undefined && continueId !== undefined && !offered) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
   const size = sizeIn(body);
-  const open: OpenAsk = { taskId, terminal: kind === 'terminal', ...(kind === 'claude' && typeof continueId === 'string' ? { continueId } : {}), ...asked, ...(size === undefined ? {} : { size }) };
+  const open: OpenAsk = {
+    taskId, terminal: agent === undefined, ...(agent === undefined ? {} : { agent }),
+    ...(agent !== undefined && typeof continueId === 'string' ? { continueId } : {}), ...asked, ...(size === undefined ? {} : { size }),
+  };
   if (activity?.worktree !== undefined && !activity.worktreeGone) return openNow(deps, current, task, open, res);
   // A stage spawn is still making this worktree (and its setup, in the same console channel): one maker at a time (#351).
   if (activity?.workerId !== undefined) return refuse(res, { status: HTTP_CONFLICT, message: RUNNING_MESSAGE });
@@ -203,8 +210,8 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   await openFirst(deps, current, task, plan, open, res);
 }
 
-/** Abrir sessão on any task (#164, #237, #283): the worktree first when the task has none or it is gone from disk (#208), then a terminal (openTerminal), or a
- * claude session in a worker of its own (openSession). A continueId is one of worktreeSessions. A worktree it prepares (#351, #576) marks the
+/** Abrir sessão on any task (#164, #237, #283): the worktree first when the task has none or it is gone from disk (#208), then a terminal (openTerminal), or an
+ * agent's session in a worker of its own (openSession, #925). A continueId is one of worktreeSessions. A worktree it prepares (#351, #576) marks the
  * task while its git and setup run; either way the answer is the run the page attaches (#249). A dialog closed meanwhile does not stop the
  * request. /tasks/:id/open is the first open, and on a task with a live activity the same as /activities/:id/open (#629), which a local
  * activity, with no task, refuses. */

@@ -6,8 +6,8 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type HiveServer, killStrays } from '../src/server.js';
-import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import type { AgentId, Exec, OpenResult, SettingsBody } from '../src/types.js';
+import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/usage.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
@@ -251,4 +251,13 @@ test('POST /activities/:id/shell with a folder opens the terminal there, a local
   assert.equal((await postJson(`${base}/activities/${encodeURIComponent(activity.id)}/shell`, { folder: 'src' })).status, 200);
   assert.equal(workers.at(-1)?.launch.cwd, await realpath(join(activity.worktree, 'src')));
   assert.equal(workers.length, 3, 'the checkout\'s terminal, the task\'s first one and the folder\'s: no refusal opened one');
+});
+
+test('POST /activities/local:<name>/sessions runs the agent its kind names, over the default; any other kind is 400 (#925)', async (t) => {
+  const { base, server } = await start(t);
+  const url = `${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
+  await server.dispatch({ type: 'setDefaultAgent', agent: 'other' as AgentId }); // #925: the default only has to differ from the kind
+  assert.equal((await postJson(url, { kind: 'claude' })).status, 200);
+  assert.equal(server.getState()!.workers.find((w) => w.activityId === localActivityId(WORKSPACE))?.agent, 'claude');
+  await refused(postJson(url, { kind: 'gpt' }), 400, `kind precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`, 'not an agent');
 });

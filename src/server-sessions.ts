@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { activityOf, isLocalActivityId, localWorkspaceOf, taskOfActivity } from './activities.js';
 import { activityParam, keptTarget, liveTarget } from './activity-routes.js';
+import { knownAgent } from './agents.js';
 import { canRunCommand } from './task-runs.js';
 import { continuable } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -12,7 +13,7 @@ import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { transcriptDir } from './usage.js';
 import { treeRoot } from './server-tree.js';
 import { treeFolder } from './tree-paths.js';
-import type { ActivityRecord, Task, Session, State } from './types.js';
+import { AGENT_IDS, type ActivityRecord, type Task, type Session, type State } from './types.js';
 import { workDir } from './worktree.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -27,6 +28,7 @@ const NO_TRANSCRIPT_MESSAGE = 'O histórico desta sessão não existe mais';
 const NO_RUN_WORKTREE_MESSAGE = 'tarefa sem worktree'; // #300: a task without one has no work to try
 const UNKNOWN_COMMAND_MESSAGE = 'comando desconhecido';
 const UNKNOWN_WORKSPACE_MESSAGE = 'workspace desconhecido'; // #292, #587
+const AGENT_KIND_MESSAGE = `kind precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`; // #925
 export const FOLDER_BODY_MESSAGE = 'folder must be a non-empty string'; // #818
 export const COPY_PENDING_MESSAGE = 'uma cópia desta sessão ainda está abrindo'; // copyPending (#587)
 
@@ -116,7 +118,10 @@ function registerNewLocalRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireL
     const { activity } = target;
     if (activity.kind !== 'local') return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
     if (!workspaceByName(current.runtime.config, activity.workspace)) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_WORKSPACE_MESSAGE });
-    await answerOpen(deps, await deps.dispatch({ type: 'newLocalSession', activityId: activity.id }, sizeIn(req.body)), res);
+    const { kind } = (req.body ?? {}) as { kind?: unknown };
+    const agent = knownAgent(kind); // #925: absent = the default agent
+    if (kind !== undefined && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: AGENT_KIND_MESSAGE });
+    await answerOpen(deps, await deps.dispatch({ type: 'newLocalSession', activityId: activity.id, ...(agent === undefined ? {} : { agent }) }, sizeIn(req.body)), res);
   });
 }
 
