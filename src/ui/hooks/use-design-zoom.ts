@@ -1,4 +1,5 @@
 import { type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { DesignViewport } from '../../types';
 import { isTextField } from '@/lib/shortcut-bindings';
 
 // The design pane's zoom and pan (#109), apart from DesignPane.tsx: the fit, the steps, ⌘0, ⌘/Ctrl + wheel and pinch, Space-drag. The zoom is
@@ -7,7 +8,7 @@ import { isTextField } from '@/lib/shortcut-bindings';
 export type Viewport = 'desktop' | 'tablet' | 'mobile';
 export const VIEWPORTS: readonly Viewport[] = ['desktop', 'tablet', 'mobile'];
 /** A viewport's frame width in px (#109, handoff §2.3). */
-export const VIEWPORT_PX: Record<Viewport, number> = { desktop: 1280, tablet: 768, mobile: 390 };
+export const VIEWPORT_PX: Record<Viewport, DesignViewport> = { desktop: 1280, tablet: 768, mobile: 390 };
 export const ZOOM_MIN = 10;
 export const ZOOM_MAX = 200;
 const ZOOM_STEP = 10;

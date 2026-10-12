@@ -1,5 +1,7 @@
-import type { DesignAnchor, ReviewAnchor, ReviewFile, ReviewMessage, ReviewThread } from '../../src/types';
-import { SESSION } from './diff-harness';
+import { act, screen } from '@testing-library/react';
+import { type Mock, vi } from 'vitest';
+import type { DesignAnchor, DesignRect, ReviewAnchor, ReviewFile, ReviewMessage, ReviewThread } from '../../src/types';
+import { type FakeHive, SESSION } from './diff-harness';
 
 // A design file's comments in each of the handoff's five states (#113), plus a draft on another design and a line draft, which the panel leaves out
 export const PATH = 'design/Landing.hv.html';
@@ -22,3 +24,24 @@ export const REVIEW: ReviewFile = {
     thread('T6', 6, [you('m6', 1, 'confirmed')], { resolved: true, agentResolved: MARK }),
   ],
 };
+
+// The design pane against a fakeHive (#114): the mint answered, the frame's window as the bridge's source
+export const FRAME_URL = '/design-frame/tok/Landing.hv.html';
+export const FRAME_NAME = 'Landing.hv.html';
+export const RECT: DesignRect = { x: 100, y: 200, width: 50, height: 20 };
+export const mintFrame = (hive: FakeHive): void => {
+  hive.answers[`GET /activities/a-I1/design-frame?${new URLSearchParams({ path: PATH })}`] = { url: FRAME_URL };
+};
+/** A message of the pane's bridge (#112), posted from its frame's window. */
+export function fromBridge(data: Record<string, unknown>): void {
+  const { contentWindow } = screen.getByTitle(FRAME_NAME) as HTMLIFrameElement;
+  act(() => { window.dispatchEvent(new MessageEvent('message', { data: { hive: 'design', ...data }, source: contentWindow })); });
+}
+export const pinsAt = (ids: readonly string[], rect: DesignRect | null = RECT): Record<string, unknown> => ({ type: 'pins', pins: ids.map((id) => ({ id, rect })) });
+/** jsdom has no scrollIntoView: a counting stub on Element, taken off by unstubScrollIntoView in afterEach. */
+export function stubScrollIntoView(): Mock {
+  const scroll = vi.fn();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scroll });
+  return scroll;
+}
+export const unstubScrollIntoView = (): void => { Reflect.deleteProperty(Element.prototype, 'scrollIntoView'); };
