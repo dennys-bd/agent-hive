@@ -961,6 +961,10 @@ const en = {
   'settings.workspaces.card': 'workspace {n}', // #511: an unnamed workspace card's name
   'settings.workspaces.choose': 'choose…',
   'settings.workspaces.name': 'name',
+  'settings.workspaces.color': 'color', // #78: the card's field label
+  'settings.workspaces.colorLabel': 'workspace color',
+  'settings.workspaces.colors': 'colors',
+  'settings.workspaces.customColor': 'custom color',
   'settings.workspaces.path': 'folder',
   'settings.workspaces.remove': 'remove workspace {n}',
   'settings.workspaces.setup': 'worktree setup', // #299
@@ -2755,6 +2759,10 @@ const pt: Record<MessageKey, string> = {
   'settings.workspaces.card': 'workspace {n}',
   'settings.workspaces.choose': 'escolher…',
   'settings.workspaces.name': 'nome',
+  'settings.workspaces.color': 'cor',
+  'settings.workspaces.colorLabel': 'cor do workspace',
+  'settings.workspaces.colors': 'cores',
+  'settings.workspaces.customColor': 'outra cor',
   'settings.workspaces.path': 'pasta',
   'settings.workspaces.remove': 'remover workspace {n}',
   'settings.workspaces.setup': 'preparo da worktree',
