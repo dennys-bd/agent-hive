@@ -63,8 +63,8 @@ export function WorkspaceColorPicker({ id, value, onChange }: WorkspaceColorPick
         <div role="listbox" aria-label={t('settings.workspaces.colors')} className="grid grid-cols-[repeat(8,20px)] gap-2" onKeyDown={onKeyDown}>
           {WORKSPACE_PRESET_COLORS.map((color, i) => (
             <button
-              key={color} ref={(el) => { circles.current[i] = el; }} type="button" role="option" aria-selected={i === selected} aria-label={color}
-              tabIndex={i === focused ? 0 : -1} className={`${CIRCLE} ${i === selected ? SELECTED : ''}`} style={{ backgroundColor: color }} onClick={() => pick(color)}
+              key={color} ref={(el) => { circles.current[i] = el; }} type="button" role="option" aria-selected={i === selected} aria-label={t('settings.workspaces.presetColor', { n: i + 1 })}
+              title={t('settings.workspaces.presetColor', { n: i + 1 })} tabIndex={i === focused ? 0 : -1} className={`${CIRCLE} ${i === selected ? SELECTED : ''}`} style={{ backgroundColor: color }} onClick={() => pick(color)}
             />
           ))}
           <CustomCircle value={value} isSelected={selected === CUSTOM} tabIndex={focused === CUSTOM ? 0 : -1} circleRef={(el) => { circles.current[CUSTOM] = el; }} onOpen={() => system.current?.click()} />

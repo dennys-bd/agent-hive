@@ -318,7 +318,7 @@ function requireName(value: unknown, field: string): string {
 // #78: the picker can only write a preset or the system picker's hex; a hand edit is held to the same two shapes
 function requireColor(value: unknown, field: string): string {
   if (typeof value === 'string' && (WORKSPACE_PRESET_COLORS.includes(value) || WORKSPACE_HEX_COLOR.test(value))) return value;
-  throw new Error(`${CONFIG_FILE}: "${field}" must be one of the preset colours or a #rrggbb colour`);
+  throw new Error(`${CONFIG_FILE}: "${field}" must be one of the preset colours or a lowercase #rrggbb colour`);
 }
 
 function parseWorkspace(raw: unknown, field: string): Workspace {

@@ -1,5 +1,5 @@
 import { ArrowLeftIcon } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/Confirm';
 import { SectionContent } from '@/components/settings/SectionContent';
@@ -199,7 +199,8 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
 
   // The squares Settings draws (bases, stage commands, scope pickers, memory dialog) show the draft's colour, a row not saved yet included;
   // Settings also renders before any dashboard on a first run.
-  const colors = Object.fromEntries(draft.workspaces.map((w) => [w.name.trim(), w.color]));
+  // An unnamed or duplicate name maps to one key, harmlessly: the save refuses both, and an unnamed row draws no square by name
+  const colors = useMemo(() => Object.fromEntries(draft.workspaces.map((w) => [w.name.trim(), w.color])), [draft.workspaces]);
   // data-settings-page: the page holds the window as a dialog does, so the shortcut map's key leaves it alone (#639)
   return (
     <WorkspaceColorsContext.Provider value={colors}>

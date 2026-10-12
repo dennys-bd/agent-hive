@@ -418,7 +418,7 @@ test('the design pane\'s copy reads as the spec writes it, in both languages; th
 });
 
 test('the workspace colour picker\'s copy (#78): both languages', () => {
-  const keys = ['settings.workspaces.color', 'settings.workspaces.colorLabel', 'settings.workspaces.colors', 'settings.workspaces.customColor'] as const;
-  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['color', 'workspace color', 'colors', 'custom color']);
-  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['cor', 'cor do workspace', 'cores', 'outra cor']);
+  const keys = ['settings.workspaces.color', 'settings.workspaces.colorLabel', 'settings.workspaces.colors', 'settings.workspaces.customColor', 'settings.workspaces.presetColor'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['color', 'workspace color', 'colors', 'custom color', 'color {n}']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['cor', 'cor do workspace', 'cores', 'outra cor', 'cor {n}']);
 });

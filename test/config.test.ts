@@ -1126,7 +1126,7 @@ test('parseConfig refuses each comb.createIn rule and a malformed repository, na
 test('a workspace\'s color is required: one of the 7 presets as written or a lowercase #rrggbb; anything else is refused naming the key (#78)', () => {
   const at = (color: unknown) => github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color }] });
   for (const color of [...WORKSPACE_PRESET_COLORS, '#a1b2c3']) assert.equal(parseConfig(at(color)).comb.workspaces[0].color, color, color);
-  const message = 'hive.config.json: "comb.workspaces[0].color" must be one of the preset colours or a #rrggbb colour';
+  const message = 'hive.config.json: "comb.workspaces[0].color" must be one of the preset colours or a lowercase #rrggbb colour';
   for (const bad of [undefined, '#ABC123', '#abc', 'red', 'oklch(0.5 0.1 25)', 7]) assert.throws(() => parseConfig(at(bad)), { message }, String(bad));
 });
 

@@ -26,6 +26,7 @@ test('opening shows the 7 presets and custom color with the current one selected
   expect(trigger()).toHaveAttribute('aria-expanded', 'true');
   expect(options()).toHaveLength(8);
   expect(options().map((o) => o.getAttribute('aria-selected'))).toEqual(['false', 'false', 'true', 'false', 'false', 'false', 'false', 'false']);
+  expect(options()[0]).toHaveAccessibleName(t('settings.workspaces.presetColor', { n: 1 }));
   expect(options()[7]).toHaveAccessibleName(t('settings.workspaces.customColor'));
   expect(options()[7]).toHaveAttribute('title', t('settings.workspaces.customColor'));
   await user.click(options()[4]);

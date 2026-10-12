@@ -1304,7 +1304,7 @@ export type HiveEvent =
   | { type: 'setShutdown'; armed: boolean } // the main window's power toggle (#233)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
   | { type: 'setStages'; stages: Stage[]; transitions: Transition[] } // #134: the transitions travel with the stages
-  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300)
+  | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
   | { type: 'rateLimits'; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }

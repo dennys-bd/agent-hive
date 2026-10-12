@@ -965,6 +965,7 @@ const en = {
   'settings.workspaces.colorLabel': 'workspace color',
   'settings.workspaces.colors': 'colors',
   'settings.workspaces.customColor': 'custom color',
+  'settings.workspaces.presetColor': 'color {n}', // #78: a preset circle's name for a screen reader
   'settings.workspaces.path': 'folder',
   'settings.workspaces.remove': 'remove workspace {n}',
   'settings.workspaces.setup': 'worktree setup', // #299
@@ -2763,6 +2764,7 @@ const pt: Record<MessageKey, string> = {
   'settings.workspaces.colorLabel': 'cor do workspace',
   'settings.workspaces.colors': 'cores',
   'settings.workspaces.customColor': 'outra cor',
+  'settings.workspaces.presetColor': 'cor {n}',
   'settings.workspaces.path': 'pasta',
   'settings.workspaces.remove': 'remover workspace {n}',
   'settings.workspaces.setup': 'preparo da worktree',
