@@ -72,14 +72,15 @@ async function runCopy(deps: Deps, planned: Planned, body: { name?: unknown; not
   }
   if (copied === 'missing') return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT });
   const dir = runners[planned.session.agent].transcriptDir(planned.target.cwd);
+  const placed = copied === 'copied' ? dir : undefined; // #929: an agent without a dir answers missing, so copied always has one
   const name = cleanTitle(body.name);
   const notice = body.notice ? await noticeFor(planned, deps.exec) : undefined;
   const effects = await deps.dispatch({
     type: 'copySession', from: planned.from, to: planned.to,
-    ...(name === undefined ? {} : { name }), ...(notice === undefined ? {} : { notice }), ...(copied === 'copied' ? { copied: dir } : {}),
+    ...(name === undefined ? {} : { name }), ...(notice === undefined ? {} : { notice }), ...(placed === undefined ? {} : { copied: placed }),
   }, body.size); // #808: the grid of the copy's session
   if (effects.some((e) => e.type === 'spawnSession')) return answerOpen(deps, effects, res);
-  if (copied === 'copied') await dropCopiedTranscript(dir, planned.session.id, deps.log);
+  if (placed !== undefined) await dropCopiedTranscript(placed, planned.session.id, deps.log);
   refuse(res, { status: HTTP_CONFLICT, message: TARGET_GONE });
 }
 

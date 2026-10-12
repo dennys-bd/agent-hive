@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { access, rename, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -691,9 +691,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     // a local session (#587) has no task: it runs in its workspace's checkout
     const activity = worker && live ? activityOfWorker(live.state, worker) : undefined;
     const local = task === undefined && activity?.kind === 'local' && live !== undefined ? workspaceByName(live.runtime.config, activity.workspace) : undefined;
-    const agent = ranAgent(worker ?? {}); // #924: its own agent's transcript dir; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
-    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent)) // taskDir's folder (#444)
-      || (local !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent) && basename(payload.transcript_path) === `${worker?.sessionId}.jsonl`); // its own session only, not the checkout's other transcripts (#590)
+    const agent = ranAgent(worker ?? {}); // #924: its own agent's runner; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
+    // #929: the runner owns the path. A task worker's is pinned to the hook's own session id: a /clear gives a new one before the worker
+    // learns it. A local session's is pinned to the worker's, never the checkout's other transcripts (#590), and to none before it is known
+    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent, undefined, payload.session_id)) // taskDir's folder (#444)
+      || (local !== undefined && worker?.sessionId !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent, undefined, worker.sessionId));
     return payload.transcript_path === undefined || own ? payload : { ...payload, transcript_path: undefined };
   }
 

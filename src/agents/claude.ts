@@ -3,7 +3,7 @@
 import { claudeLspPlugin, claudeMcpConfig, prepareClaudeHome } from './claude-home.js';
 import { mcpConfigPattern } from '../hooks-settings.js';
 import { parseRateLimits, readPlanLimits } from './claude-limits.js';
-import { countMessages, readTranscript, transcriptDir } from './claude-transcript.js';
+import { countMessages, ownsTranscript, readTranscript, sessionFiles, transcriptDir } from './claude-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 const MODEL_FLAG = '--model'; // what a stage's modelo is passed behind, as typed (#516)
@@ -41,6 +41,8 @@ export const claudeRunner: AgentRunner = {
   mcpConfig: (server) => claudeMcpConfig(server),
   lspPlugin: (servers) => claudeLspPlugin(servers),
   transcriptDir: (cwd, env) => transcriptDir(cwd, env),
+  ownsTranscript: (path, cwd, sessionId, env) => ownsTranscript(path, cwd, sessionId, env),
+  sessionFiles: (cwd, id, env) => Promise.resolve(sessionFiles(cwd, id, env)),
   readTurn: (path, since) => readTranscript(path, since),
   countMessages: (path) => countMessages(path),
   planLimits: (deps) => readPlanLimits(deps),

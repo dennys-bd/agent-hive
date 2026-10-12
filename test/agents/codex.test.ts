@@ -80,11 +80,12 @@ test('the command line runs codex bare with every override quoted whole and the 
   assert.ok(line.includes(` '--dangerously-bypass-hook-trust' '--sandbox' 'workspace-write' '-m' 'gpt-5.6-terra' "$(cat '${PROMPT}')"; curl `), line);
 });
 
-test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; it reads no transcript or limits yet (#927)', async () => {
+test('Codex\'s stray pattern is the pty id; copy and clear wait for #933; its rollouts are no per-cwd dir (#927, #929)', async () => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.deepEqual([codexRunner.copy(RUN, ID), codexRunner.clear(RUN)], [undefined, undefined]);
   assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET'], '', []]);
-  assert.equal(codexRunner.transcriptDir('/repo'), '', 'no dirname is empty: the transcript guard drops every Codex path (#929)');
+  assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
+  assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits(), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });

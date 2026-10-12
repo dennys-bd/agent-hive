@@ -139,6 +139,7 @@ test('copyPending names only a live copy\'s run whose temporary transcript of th
   assert.equal(copyPending(marked.workers, SOURCE, '/claude/projects/-repo'), false, 'another dir');
   assert.equal(copyPending(marked.workers, 'b1b2c3d4-0000-4000-8000-000000000009', DIR), false, 'another source');
   assert.equal(copyPending(marked.workers.map((s) => ({ ...s, status: 'empty' as const })), SOURCE, DIR), false, 'no live run');
+  assert.equal(copyPending(marked.workers, SOURCE, undefined), false, 'an agent with no transcript dir has no copy pending in one (#929)');
 });
 
 test('boot removes the temporary transcript of every copy whose run it closes, and the marks go (#587)', () => {

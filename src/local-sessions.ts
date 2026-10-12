@@ -19,5 +19,5 @@ export const continuableLocal = (state: Pick<State, 'activityRecords' | 'workers
 
 /** A copy's run still before its SessionStart (#587) holds a temporary <from>.jsonl in `dir`: a second copy there, or a --resume of `from` from
  * there, would share the file its SessionStart removes. */
-export const copyPending = (workers: Worker[], from: string, dir: string): boolean =>
-  workers.some((s) => s.status !== 'empty' && s.copyOf?.from === from && s.copyOf.dir === dir);
+export const copyPending = (workers: Worker[], from: string, dir: string | undefined): boolean =>
+  dir !== undefined && workers.some((s) => s.status !== 'empty' && s.copyOf?.from === from && s.copyOf.dir === dir); // #929: no dir, no copy waits in one

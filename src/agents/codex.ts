@@ -8,6 +8,7 @@ import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
 import type { HookPayload } from '../types.js';
 import { type AgentRole, agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexHome, roleFile, tomlString } from './codex-home.js';
+import { ownsRollout, readRollout, rolloutFiles } from './codex-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
@@ -96,9 +97,10 @@ export const codexRunner: AgentRunner = {
   prepareHome: async (home) => { await installShim(home, AGENTS.codex); await prepareCodexHome(home, process.env); },
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file
   lspPlugin: () => [],
-  // #929: inert until usage is read. No dirname is '', so the transcript guard drops every Codex path, and the server records no tokens
-  transcriptDir: () => '',
-  readTurn: () => Promise.reject(new Error('codex transcripts are read from #929 on')),
+  transcriptDir: () => undefined, // #929: rollouts live under date folders, not per cwd: removal and copy find nothing in a dir
+  ownsTranscript: (path, _cwd, sessionId, env) => ownsRollout(path, sessionId, env),
+  sessionFiles: (_cwd, id, env) => rolloutFiles(id, env),
+  readTurn: (path, since) => readRollout(path, since),
   countMessages: () => Promise.resolve(0),
   planLimits: () => Promise.resolve(undefined),
   statusLimits: () => undefined,

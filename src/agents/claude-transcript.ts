@@ -113,6 +113,18 @@ export function transcriptDir(cwd: string, env: NodeJS.ProcessEnv = process.env)
   return join(root, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
 }
 
+/** A transcript the Claude run of `cwd` owns (#929, out of usage.ts and server.ts): directly in its transcript dir and, with a session id, that
+ * session's own file, never the checkout's other transcripts (#590). */
+export function ownsTranscript(path: string, cwd: string, sessionId: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+  return dirname(path) === transcriptDir(cwd, env) && (sessionId === undefined || basename(path) === `${sessionId}.jsonl`);
+}
+
+/** What deleting a session's transcripts removes (#236): <id>.jsonl and <id>/, its subagents', in the transcript dir of `cwd`. */
+export function sessionFiles(cwd: string, id: string, env: NodeJS.ProcessEnv = process.env): string[] {
+  const dir = transcriptDir(cwd, env);
+  return [join(dir, `${id}.jsonl`), join(dir, id)];
+}
+
 const messageId = (line: string): { user: boolean; assistant?: string } => {
   try {
     const { type, message } = JSON.parse(line) as { type?: unknown; message?: { id?: unknown; content?: unknown } };
