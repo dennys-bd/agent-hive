@@ -52,6 +52,10 @@ async function start(t: TestContext): Promise<Started> {
 // The local activity's new terminal: its pty id
 const openShell = async (base: string): Promise<string> => ((await (await postJson(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult).ptyId ?? '';
 
+// The shim's register (#696, #932): the form its curl posts, url-encoded
+const register = (base: string, id: string, form: Record<string, string> = { agent: 'claude' }): Promise<Response> =>
+  hiveFetch(`${base}/hooks/terminals/${id}/session`, { method: 'POST', body: new URLSearchParams(form) });
+
 test('a terminal stopped sleeps, wakes in its own id where it was, and is forgotten on demand; a live or unknown one is refused (#696)', async (t) => {
   const { base, server, workers, repo } = await start(t);
   const id = await openShell(base);
@@ -106,7 +110,7 @@ test('the shim\'s register refuses without the secret, captures a free session o
   const id = await openShell(base);
   const url = `${base}/hooks/terminals/${id}/session`;
   assert.equal((await fetch(url, { method: 'POST' })).status, 403, 'no secret');
-  const [runId, ...argv] = (await (await hiveFetch(url, { method: 'POST' })).text()).split('\n');
+  const [runId, ...argv] = (await (await register(base, id)).text()).split('\n');
   const worker = server.getState()?.workers.find((w) => w.runId === runId);
   assert.ok(worker?.sessionId);
   assert.deepEqual([worker.terminalId, worker.freeSession, worker.activityId], [id, true, localActivityId(WORKSPACE)]);
@@ -114,7 +118,7 @@ test('the shim\'s register refuses without the secret, captures a free session o
   assert.match(argv[1], /\.mcp\.json$/);
   assert.deepEqual(argv.slice(-2), ['--session-id', worker.sessionId]);
   assert.equal(argv.includes('--append-system-prompt-file'), false, 'no protocol on a local activity');
-  await refused(hiveFetch(`${base}/hooks/terminals/${crypto.randomUUID()}/session`, { method: 'POST' }), 409, 'nenhum terminal vivo com esse id', 'unknown terminal');
+  await refused(register(base, crypto.randomUUID()), 409, 'nenhum terminal vivo com esse id', 'unknown terminal');
   assert.equal((await postJson(`${base}/ptys/${runId}/stop`)).status, 200);
   assert.deepEqual(calls.at(-1), ['pkill', '-f', '--', `${runId}\\.mcp\\.json`], 'the --mcp-config path in its argv, which a /clear keeps and no other process carries');
   assert.equal(server.getState()?.workers.some((w) => w.runId === runId), false, 'its run ended');
@@ -145,7 +149,7 @@ test('a claude typed in a task\'s terminal is told the session protocol of the t
   await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
   assert.ok(opened.ptyId, 'the task\'s terminal runs');
-  const [, ...argv] = (await (await hiveFetch(`${base}/hooks/terminals/${opened.ptyId}/session`, { method: 'POST' })).text()).split('\n');
+  const [, ...argv] = (await (await register(base, opened.ptyId ?? '')).text()).split('\n');
   assert.equal(argv[argv.indexOf('--append-system-prompt-file') + 1], join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'));
 });
 
@@ -154,6 +158,47 @@ test('a claude captured in a task\'s terminal records the stage start first when
   await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
   const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
   const before = calls.length;
-  assert.equal((await hiveFetch(`${base}/hooks/terminals/${opened.ptyId}/session`, { method: 'POST' })).status, 200);
+  assert.equal((await register(base, opened.ptyId ?? '')).status, 200);
   assert.ok(calls.slice(before).some((c) => c.includes('rev-parse') && c.includes('HEAD')), JSON.stringify(calls.slice(before))); // the fake git prints no sha: nothing is kept
+});
+
+test('a codex register answers codex\'s launch argv with the posted folder trusted and no resume; its worker is codex\'s with no session id (#932)', async (t) => {
+  const { base, server, repo } = await start(t);
+  const id = await openShell(base);
+  const cwd = join(repo, 'src');
+  const reply = await (await register(base, id, { agent: 'codex', cwd })).text();
+  const [runId, ...argv] = reply.split('\n');
+  const worker = server.getState()?.workers.find((w) => w.runId === runId);
+  assert.deepEqual([worker?.agent, worker?.sessionId, worker?.freeSession, worker?.terminalId], ['codex', undefined, true, id]);
+  assert.equal(argv[0], '-c', 'a new conversation: no resume');
+  assert.ok(argv.includes(`projects={${JSON.stringify(cwd)}={trust_level="trusted"}}`), argv.join(' '));
+  assert.equal(argv.some((arg) => arg.startsWith('mcp_servers.hive')), false, 'a local activity: no Hive MCP');
+  assert.equal(reply.includes(SECRET), false);
+});
+
+test('a register whose folder is missing, relative, split or outside the terminal\'s trusts the terminal\'s own; an unknown or missing agent is refused and captures nothing (#932)', async (t) => {
+  const { base, server, repo } = await start(t);
+  const id = await openShell(base);
+  const trusted = `projects={${JSON.stringify(repo)}={trust_level="trusted"}}`;
+  const forms: Record<string, string>[] = [{ agent: 'codex' }, { agent: 'codex', cwd: 'src' }, { agent: 'codex', cwd: `${repo}/a\nb` }, { agent: 'codex', cwd: '/elsewhere' }];
+  for (const form of forms) {
+    const [, ...argv] = (await (await register(base, id, form)).text()).split('\n');
+    assert.ok(argv.includes(trusted), JSON.stringify(form));
+  }
+  const before = server.getState()?.workers.length;
+  const message = 'agent precisa ser um destes agentes: claude, codex';
+  await refused(register(base, id, { agent: 'gemini' }), 400, message, 'an unknown agent');
+  await refused(hiveFetch(`${base}/hooks/terminals/${id}/session`, { method: 'POST' }), 400, message, 'no form at all');
+  assert.equal(server.getState()?.workers.length, before);
+});
+
+test('a codex typed in a task\'s terminal gets the Hive\'s MCP server under its run id and the session protocol as text; the secret stays out of the reply (#932)', async (t) => {
+  const { base, server } = await start(t);
+  await server.dispatch({ type: 'createTask', title: 'T', body: '', stage: STAGES[0].name, prefix: 'HIVE', workspace: WORKSPACE, auto: false });
+  const opened = (await (await postJson(`${base}/tasks/local:1/open`, { kind: 'terminal' })).json()) as OpenResult;
+  const reply = await (await register(base, opened.ptyId ?? '', { agent: 'codex', cwd: '/w' })).text();
+  const [runId, ...argv] = reply.split('\n');
+  assert.ok(argv.includes(`mcp_servers.hive.http_headers={"x-hive-pty"="${runId}"}`), 'what Stop\'s pkill matches');
+  assert.ok(argv.some((arg) => arg.startsWith('developer_instructions=')), 'the session protocol, as text');
+  assert.equal(reply.includes(SECRET), false);
 });

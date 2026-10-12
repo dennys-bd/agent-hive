@@ -44,8 +44,17 @@ test('strayAgents names the agents under the shell that no captured session hold
     'pgrep -lf -P 200': '301 /bin/sh /h/bin/claude fix it\n302 claude --resume abc\n303 vim notes\n',
     'pgrep -lf -P 301': '401 /usr/local/bin/claude --mcp-config x --session-id S1 fix it\n',
   });
-  const shim = '/h/bin/claude';
-  assert.deepEqual(await strayAgents(100, { captured: ['S1'], shim }, exec), ['claude'], 'the resumed one only: S1 is captured');
-  assert.deepEqual(await strayAgents(100, { captured: [], shim }, exec), ['claude', 'claude']);
-  assert.deepEqual(await strayAgents(undefined, { captured: [], shim }, exec), []);
+  const shims = ['/h/bin/claude', '/h/bin/codex'];
+  assert.deepEqual(await strayAgents(100, { captured: ['S1'], shims }, exec), ['claude'], 'the resumed one only: S1 is captured');
+  assert.deepEqual(await strayAgents(100, { captured: [], shims }, exec), ['claude'], 'the shim\'s child is captured whatever its argv names (#932)');
+  assert.deepEqual(await strayAgents(undefined, { captured: [], shims }, exec), []);
+});
+
+test('a codex child of the codex shim is captured; a codex the shell runs itself (a passthrough execs) is stray (#932)', async () => {
+  const { exec } = table({
+    'pgrep -P 100': '200\n',
+    'pgrep -lf -P 200': '301 /bin/sh /h/bin/codex\n302 node /usr/local/bin/codex --version\n',
+    'pgrep -lf -P 301': '401 node /usr/local/bin/codex -c hooks.SessionStart=x --dangerously-bypass-hook-trust\n',
+  });
+  assert.deepEqual(await strayAgents(100, { captured: [], shims: ['/h/bin/claude', '/h/bin/codex'] }, exec), ['codex']);
 });

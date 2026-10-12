@@ -1372,7 +1372,7 @@ export type HiveEvent =
   | { type: 'sleepTerminal'; terminalId: string; cwd?: string } // #696: the pty is gone or going; cwd as read, absent = keep the held one
   | { type: 'wakeTerminal'; terminalId: string } // #696: effect: spawnTerminal again, in the same id, with the held cwd and scrollback
   | { type: 'forgetTerminal'; terminalId: string } // #696: a sleeping terminal only; effect: remove its files
-  | { type: 'captureSession'; terminalId: string; runId: string; sessionId: string } // #696: the shim's register: a free session in that terminal
+  | { type: 'captureSession'; terminalId: string; runId: string; agent: AgentId; sessionId?: string } // #696: the shim's register: a free session in that terminal; #932: the agent the shim named, and no id for one that picks its own (Codex)
   | { type: 'worktreeReady'; activityId: string; path: string; branch: string; base: TaskBase | null; local: boolean } // POST /tasks/:id/worktree created it (#164); local = it runs in its workspace's own checkout (#444)
   | { type: 'moveToStage'; taskId: string; stage: string; drop?: { before?: string } } // right-click → move to, or a drag across stages (#164, #366); `drop` pins the task before `before`, or at the end without it
   | { type: 'retry'; taskId: string } // #915: POST /tasks/:id/retry on a task stopped with TRIES_OUT: the spent transition again, its counter back at 0

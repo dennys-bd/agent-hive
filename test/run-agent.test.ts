@@ -55,15 +55,15 @@ test('openSession records the agent asked for on a new session; a resumed sessio
   assert.equal(resumed.workers.find((w) => w.freeSession)?.agent, 'claude', 'S1 is claude\'s');
 });
 
-test('a copy runs and records its source\'s agent; a new local session the one asked for; the shim\'s capture is claude\'s (#925)', () => {
+test('a copy runs and records its source\'s agent; a new local session the one asked for; the shim\'s capture the one it names (#925, #932)', () => {
   const source = onDev({}, OTHER);
   const copied = reduce(source, { type: 'copySession', from: { activityId: workId(source, ITEM.itemId), sessionId: S1 }, to: { activityId: localActivityId('hive') } }).state;
   assert.deepEqual([localSessionsOf(copied, 'hive').at(-1)?.agent, localWorker(copied)?.agent], [OTHER, OTHER]);
   const fresh = reduce(onDev({}), { type: 'newLocalSession', activityId: localActivityId('hive'), agent: OTHER }).state;
   assert.deepEqual([localSessionsOf(fresh, 'hive').at(-1)?.agent, localWorker(fresh)?.agent], [OTHER, OTHER]);
   const shell = { ...onDev({}, 'claude', { defaultAgent: OTHER }), terminals: [{ terminalId: SHELL, activityId: localActivityId('hive'), startedAt: AT, cwd: '/repo' }] };
-  const captured = reduce(shell, { type: 'captureSession', terminalId: SHELL, runId: RUN, sessionId: S2 }).state;
-  assert.deepEqual([localSessionsOf(captured, 'hive').at(-1)?.agent, localWorker(captured)?.agent], ['claude', 'claude'], 'the shim wraps claude only');
+  const captured = reduce(shell, { type: 'captureSession', terminalId: SHELL, runId: RUN, agent: 'claude', sessionId: S2 }).state;
+  assert.deepEqual([localSessionsOf(captured, 'hive').at(-1)?.agent, localWorker(captured)?.agent], ['claude', 'claude'], 'the agent the shim named, not the default');
 });
 
 test('a run that sleeps records its worker\'s agent (#925)', () => {
@@ -176,4 +176,41 @@ test('a codex subagent\'s prompt while the worker waits changes nothing; the sam
   const subagent = codexHook('UserPromptSubmit', { ...SUBAGENT, prompt: 'say hello' }); // the parent's session_id
   assert.equal(codexHooked(waiting, ptyId, subagent).state, waiting);
   assert.equal(runOf(reduce(waiting, { type: 'hook', ptyId, payload: subagent }).state, ptyId)?.status, 'working', 'isChildSession cannot tell it: the same session_id');
+});
+
+const terminalOn = (activityId: string) => ({ terminalId: SHELL, activityId, startedAt: AT, cwd: '/wt' });
+// The shim's register of `agent` in a terminal of `activityId`, with the session id the route drew, or none for an agent that picks its own
+const capture = (state: State, activityId: string, agent: AgentId, sessionId?: string): State =>
+  reduce({ ...state, terminals: [terminalOn(activityId)] }, { type: 'captureSession', terminalId: SHELL, runId: RUN, agent, ...(sessionId === undefined ? {} : { sessionId }) }).state;
+const capturedRun = (state: State) => state.workers.find((w) => w.runId === RUN);
+
+test('a codex capture holds the terminal with no session id and records no session, on a task or a local activity (#932)', () => {
+  const state = onDev({});
+  const onTask = capture(state, workId(state, ITEM.itemId), OTHER);
+  assert.deepEqual([capturedRun(onTask)?.agent, capturedRun(onTask)?.sessionId, capturedRun(onTask)?.freeSession, capturedRun(onTask)?.terminalId], [OTHER, undefined, true, SHELL]);
+  assert.deepEqual(sessionsOf(onTask, ITEM.itemId), sessionsOf(state, ITEM.itemId));
+  const local = capture(state, localActivityId('hive'), OTHER);
+  assert.equal(capturedRun(local)?.agent, OTHER);
+  assert.deepEqual(localSessionsOf(local, 'hive'), localSessionsOf(state, 'hive'));
+});
+
+test('a codex capture\'s first SessionStart records its id on the worker and a free session of the task with codex; a later one changes nothing (#932)', () => {
+  const state = onDev({});
+  const captured = capture(state, workId(state, ITEM.itemId), OTHER);
+  const at = capturedRun(captured)?.startedAt;
+  const seen = hookStart(captured, RUN, S2);
+  assert.equal(capturedRun(seen)?.sessionId, S2);
+  assert.deepEqual(sessionsOf(seen, ITEM.itemId).find((s) => s.id === S2), { id: S2, startedAt: at, stages: [], lastUsedAt: at, free: true, agent: OTHER });
+  assert.equal(activityOf(seen, ITEM.itemId)?.sessionId, S1, 'the activity keeps the stage run\'s');
+  const again = hookStart(seen, RUN, S3);
+  assert.equal(capturedRun(again)?.sessionId, S2, 'the first id wins (#24)');
+  assert.equal(sessionsOf(again, ITEM.itemId).some((s) => s.id === S3), false);
+});
+
+test('a codex capture in a local terminal records a local session of the workspace with codex at its first SessionStart; a claude capture still records at once (#932)', () => {
+  const captured = capture(onDev({}), localActivityId('hive'), OTHER);
+  const at = capturedRun(captured)?.startedAt;
+  assert.deepEqual(localSessionsOf(hookStart(captured, RUN, S2), 'hive').at(-1), { id: S2, startedAt: at, stages: [], lastUsedAt: at, agent: OTHER });
+  const claude = capture(onDev({}), localActivityId('hive'), 'claude', S3);
+  assert.deepEqual([capturedRun(claude)?.sessionId, localSessionsOf(claude, 'hive').at(-1)?.id], [S3, S3]);
 });

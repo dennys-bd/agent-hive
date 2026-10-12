@@ -5,7 +5,8 @@ import { AGENT_IDS, DEFAULT_AGENT, type AgentAvailability, type AgentId, type Co
 export interface AgentSpec {
   label: string; // how a run tab names it
   command: string; // the CLI on PATH, probed with --version, which a run's command line starts with and its shim is named after
-  subcommands: readonly string[]; // the CLI's own commands (#696): the shim runs them straight through, never as a conversation
+  subcommands: readonly string[]; // the shim's first-arg passthrough (#696, #932): the CLI's own commands and any that open a session the user chose
+  shimFlags: readonly string[]; // #932: sh case patterns that pass the shim through in any position: a session the user chose, or no conversation
   planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the header offers their refresh
   canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from SessionStart and opens no free session until #931
 }
@@ -19,14 +20,18 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
       'agents', 'attach', 'auth', 'auto-mode', 'doctor', 'gateway', 'import', 'install', 'kill', 'logs', 'mcp', 'plugin', 'plugins', 'purge',
       'respawn', 'rm', 'setup-token', 'stop', 'ultrareview', 'update', 'upgrade',
     ],
+    shimFlags: ['--resume', '--resume=*', '-r', '--continue', '-c', '--session-id', '--session-id=*', '-p', '--print', '-h', '--help', '-v', '--version'],
   },
   codex: {
     label: 'Codex', command: 'codex', planLimits: false, canChooseSessionId: false, // planLimits: #929
-    // as `codex --help` lists them (finding §12), aliases included; resume and fork open a conversation, so they are not passed through
+    // as `codex --help` lists them (finding §12), aliases included; resume and fork open a session the user chose, which the shim runs as typed,
+    // as Claude's --resume (#932)
     subcommands: [
       'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server', 'remote-control', 'app', 'completion', 'update', 'doctor',
       'sandbox', 'debug', 'apply', 'a', 'queue', 'archive', 'delete', 'migrate-rollouts', 'unarchive', 'cloud', 'exec-server', 'features', 'help',
+      'resume', 'fork',
     ],
+    shimFlags: ['-h', '--help', '-V', '--version'], // #932: no -c, which is a config override in Codex
   },
 };
 
@@ -45,10 +50,6 @@ export const agentOf = (stage: Pick<Stage, 'agent'>, config: Pick<Config, 'defau
 /** What every run before #925 ran: a saved session or worker with no agent was Claude's. Frozen, not DEFAULT_AGENT, so a later default never
  * relabels old runs (config-migrate.ts freezes its own for the same reason). */
 export const LEGACY_RUN_AGENT: AgentId = 'claude';
-
-/** The agent whose CLI the terminals' shim wraps (#696, #925): what a capture records. Each runner installs its own agent's shim (#924); only
- * this one is first on a terminal's PATH. */
-export const SHIM_AGENT: AgentId = 'claude';
 
 /** `value` when AGENT_IDS has it (#925): what an open route's kind and a saved run's agent are checked against. */
 export const knownAgent = (value: unknown): AgentId | undefined => AGENT_IDS.find((id) => id === value);

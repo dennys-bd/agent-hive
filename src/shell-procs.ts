@@ -60,16 +60,18 @@ function agentIn(line: string): string | undefined {
 }
 
 /** The agents running in a terminal that no captured session accounts for (#696): the shell's children and theirs, whose command is an
- * agent's. The shim's own line is skipped (its child is the one that counts), and a line naming a captured session's id is the Hive's. */
-export async function strayAgents(ptyPid: number | undefined, o: { captured: readonly string[]; shim: string }, exec: Exec): Promise<string[]> {
+ * agent's. A shim's own line is skipped, and so is its child (#932): a registered run is the shim's child, while a refused or passthrough one
+ * execs, so it is the shell's. A line naming a captured session's id is the Hive's. */
+export async function strayAgents(ptyPid: number | undefined, o: { captured: readonly string[]; shims: readonly string[] }, exec: Exec): Promise<string[]> {
   if (ptyPid === undefined) return [];
   const [shell] = await childPids(ptyPid, exec);
   if (shell === undefined) return [];
+  const isShim = (line: string): boolean => o.shims.some((shim) => line.includes(shim));
   const children = await commandLines(shell, exec);
-  const grandchildren = (await Promise.all(children.map((child) => commandLines(child.pid, exec)))).flat();
-  return [...children, ...grandchildren].flatMap(({ line }) => {
+  const grandchildren = await Promise.all(children.map(async (child) => (isShim(child.line) ? [] : commandLines(child.pid, exec))));
+  return [...children, ...grandchildren.flat()].flatMap(({ line }) => {
     const agent = agentIn(line);
-    const isHeld = line.includes(o.shim) || o.captured.some((id) => line.includes(id));
+    const isHeld = isShim(line) || o.captured.some((id) => line.includes(id));
     return agent === undefined || isHeld ? [] : [agent];
   });
 }
