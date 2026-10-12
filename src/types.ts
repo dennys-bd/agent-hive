@@ -116,11 +116,12 @@ export interface UsageRule {
 /** How long a disable holds (#297): until the source drops below the percent (the default), until a fixed time, or until religar. */
 export type DisableUntil = { kind: 'reset' } | { kind: 'at'; at: string } | { kind: 'manual' }; // at: ISO
 
-/** A fired rule the user switched off from the strip (#297): identified by source + percent. */
+/** A fired rule the user switched off from the strip (#297): identified by source + percent + agent (#929). */
 export interface DisabledRule {
   source: RuleSource;
   percent: number;
   until: DisableUntil;
+  agent?: AgentId; // #929: the rule's agent; absent = the default agent, as UsageRule.agent
 }
 
 /** A disabled rule as effectiveLimits reports it (#297): the rule and when it is expected back. */
@@ -1303,8 +1304,8 @@ export type HiveEvent =
   | { type: 'setSignals'; signals: SignalSettings } // like setUsageRules: the signal table, from a save that changed it (#727)
   | { type: 'setBudget'; budget: Budget }
   | { type: 'setUsageRules'; usageRules: UsageRule[] }
-  | { type: 'disableRule'; source: RuleSource; percent: number; until: DisableUntil } // the strip's desligar (#297): only a rule of the table firing now
-  | { type: 'enableRule'; source: RuleSource; percent: number } // the strip's religar (#297)
+  | { type: 'disableRule'; source: RuleSource; percent: number; until: DisableUntil; agent?: AgentId } // the strip's desligar (#297): only a rule of the table firing now; agent: #929
+  | { type: 'enableRule'; source: RuleSource; percent: number; agent?: AgentId } // the strip's religar (#297)
   | { type: 'setDeleteActivity'; deleteActivity: DeleteActivityScope } // like setBudget: what deleting an activity forgets, from a save that changed it (#236, #573)
   | { type: 'setShutdownIdle'; minutes: number } // like setDeleteActivity: the shutdown window, from a save that changed it (#233)
   | { type: 'setRateLimitWait'; minutes: number } // like setApprovalMinutes: the rate-limit wait's ceiling, from a save that changed it (#805)

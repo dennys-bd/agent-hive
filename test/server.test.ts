@@ -2724,6 +2724,21 @@ test('POST /rules/disable and /rules/enable (#297): a bad source, percent or unt
   assert.deepEqual(server.getState()?.disabledRules, []);
 });
 
+test('POST /rules/disable and /rules/enable carry a plan rule\'s agent: each rule goes off on its own; an unknown agent is a 400 (#929)', async (t) => {
+  const { base, server } = await start(t, { ...BODY, usageRules: [{ source: 'week', percent: 90, signal: 'red', agent: 'codex' }, { source: 'week', percent: 90, signal: 'yellow' }] });
+  const week = (usedPercent: number) => ({ at: new Date().toISOString(), windows: { seven_day: { usedPercent, resetsAt: new Date(Date.now() + HOUR_MS).toISOString() } } });
+  await server.dispatch({ type: 'rateLimits', agent: 'codex', rateLimits: week(95) });
+  await server.dispatch({ type: 'rateLimits', agent: 'claude', rateLimits: week(10) });
+  assert.equal((await postJson(`${base}/rules/disable`, { source: 'week', percent: 90, agent: 'gemini', until: { kind: 'manual' } })).status, 400);
+  assert.equal((await postJson(`${base}/rules/enable`, { source: 'week', percent: 90, agent: 7 })).status, 400);
+  assert.equal((await postJson(`${base}/rules/disable`, { source: 'week', percent: 90, until: { kind: 'manual' } })).status, 200);
+  assert.deepEqual(server.getState()?.disabledRules, [], 'no agent: Claude\'s week, which does not fire');
+  assert.equal((await postJson(`${base}/rules/disable`, { source: 'week', percent: 90, agent: 'codex', until: { kind: 'manual' } })).status, 200);
+  assert.deepEqual(server.getState()?.disabledRules, [{ source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' }]);
+  assert.equal((await postJson(`${base}/rules/enable`, { source: 'week', percent: 90, agent: 'codex' })).status, 200);
+  assert.deepEqual(server.getState()?.disabledRules, []);
+});
+
 test('a save that renames a stage carries its tasks: the running one stays in it under the new name and its Stop ends the renamed stage through its transition (#861)', async (t) => {
   const { log, lines } = fakeLog();
   const { base, repo, server, workers } = await start(t, BODY, log);

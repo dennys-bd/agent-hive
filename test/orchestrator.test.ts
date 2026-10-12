@@ -3567,3 +3567,14 @@ test('a rateLimits event merges or replaces only its own agent\'s reading; the o
   const codexLower: RateLimits = { at: LIMITS.at, windows: { thirty_day: { usedPercent: 10, resetsAt: FUTURE } } };
   assert.deepEqual(reduce(both, { type: 'rateLimits', agent: 'codex', rateLimits: codexLower }).state.rateLimits, { claude, codex }, 'merged: the higher percent stands, Claude\'s untouched');
 });
+
+test('a disable names its rule\'s agent: Codex\'s week rule goes off alone, its own enable brings it back, and a save without the rule drops it (#929)', () => {
+  const claudeWeek: UsageRule = { source: 'week', percent: 90, signal: 'red' };
+  const codexWeek: UsageRule = { ...claudeWeek, agent: 'codex' };
+  const state: State = { ...base(1), usageRules: [claudeWeek, codexWeek], rateLimits: { claude: windows(0, 95), codex: windows(0, 95) } };
+  const off = reduce(state, { type: 'disableRule', source: 'week', percent: 90, agent: 'codex', until: { kind: 'manual' } }).state;
+  assert.deepEqual(off.disabledRules, [{ source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' }]);
+  assert.deepEqual(reduce(off, { type: 'enableRule', source: 'week', percent: 90 }).state.disabledRules, off.disabledRules, 'no agent: Claude\'s, which is not off');
+  assert.deepEqual(reduce(off, { type: 'enableRule', source: 'week', percent: 90, agent: 'codex' }).state.disabledRules, []);
+  assert.deepEqual(reduce(off, { type: 'setUsageRules', usageRules: [claudeWeek] }).state.disabledRules, [], 'its rule gone, its disable goes');
+});

@@ -4,7 +4,7 @@ import { withBase, withLocal } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
 import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withPr, withResult, withTurn } from './record-kit.js';
-import { ranAgent } from './agents.js';
+import { liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
@@ -117,8 +117,8 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setSignal': return fill(runActions({ ...state, signal: event.signal })); // #727: a looser workerless row acts at once
     case 'setSignals': return fill(runActions({ ...state, signals: event.signals })); // #727: idem, and a looser row may start work at once
     case 'setBudget': return fill(none({ ...state, budget: event.budget })); // raising the limit can open a job right away
-    case 'setUsageRules': return fill(none({ ...state, usageRules: event.usageRules, disabledRules: namedDisables(state.disabledRules, event.usageRules) })); // a disable never outlives its rule (#297)
-    case 'disableRule': return refillIfChanged(state, disableRule(state, { source: event.source, percent: event.percent, until: event.until }, Date.now()));
+    case 'setUsageRules': return fill(none({ ...state, usageRules: event.usageRules, disabledRules: namedDisables(state.disabledRules, event.usageRules, liveDefaultAgent(state)) })); // a disable never outlives its rule (#297)
+    case 'disableRule': return refillIfChanged(state, disableRule(state, { source: event.source, percent: event.percent, until: event.until, ...(event.agent === undefined ? {} : { agent: event.agent }) }, Date.now()));
     case 'enableRule': return refillIfChanged(state, enableRule(state, event));
     case 'setDeleteActivity': return none({ ...state, deleteActivity: event.deleteActivity }); // no fill: what deleting an activity forgets never starts a job
     case 'setShutdownIdle': return none({ ...state, shutdownIdleMinutes: event.minutes }); // no fill: the window starts no job (#233)

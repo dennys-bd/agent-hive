@@ -360,6 +360,8 @@ test('describeEvent names a disabled or re-enabled rule by its source and percen
   assert.equal(describeEvent({ type: 'disableRule', source: 'hour', percent: 50, until: { kind: 'at', at: '2026-09-25T15:00:00.000Z' } }), 'disableRule hour≥50 until=2026-09-25T15:00:00.000Z');
   assert.equal(describeEvent({ type: 'disableRule', source: 'week', percent: 90, until: { kind: 'manual' } }), 'disableRule week≥90 until=manual');
   assert.equal(describeEvent({ type: 'enableRule', source: 'week', percent: 90 }), 'enableRule week≥90');
+  assert.equal(describeEvent({ type: 'disableRule', source: 'week', percent: 90, agent: 'codex', until: { kind: 'manual' } }), 'disableRule week≥90 agent=codex until=manual');
+  assert.equal(describeEvent({ type: 'enableRule', source: 'week', percent: 90, agent: 'codex' }), 'enableRule week≥90 agent=codex');
 });
 
 

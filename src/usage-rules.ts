@@ -1,5 +1,5 @@
 import { liveDefaultAgent } from './agents.js';
-import { type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, type PlanSource, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
+import { AGENT_IDS, type AgentId, type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, type PlanSource, isPlanSource, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
 import { DAY_MS, HOUR_MS, usageTotals } from './usage.js';
 
 export const SIGNAL_RANK: Record<Signal, number> = { green: 0, yellow: 1, red: 2 };
@@ -86,13 +86,16 @@ export function stageCapRules(caps: Record<string, number>, fired: UsageRule[]):
   }));
 }
 
-/** A rule's identity across JSON (#297): its source and its percent, as the strip groups them. */
-export const sameRule = (a: Pick<UsageRule, 'source' | 'percent'>, b: Pick<UsageRule, 'source' | 'percent'>): boolean =>
-  a.source === b.source && a.percent === b.percent;
+type RuleId = Pick<UsageRule, 'source' | 'percent' | 'agent'>;
+
+/** A rule's identity across JSON (#297): its source, its percent and, on a plan source, its agent (#929), an absent agent being the default
+ * one. A budget rule reads every agent's tokens, so the agent is no part of it. */
+export const sameRule = (a: RuleId, b: RuleId, defaultAgent: AgentId): boolean =>
+  a.source === b.source && a.percent === b.percent && (!isPlanSource(a.source) || (a.agent ?? defaultAgent) === (b.agent ?? defaultAgent));
 
 /** The rules minus every one a disable names (#297): what effectiveLimits hands firedRules and applyUsageRules. */
-export const activeRules = (rules: UsageRule[], disabled: DisabledRule[]): UsageRule[] =>
-  rules.filter((rule) => !disabled.some((entry) => sameRule(entry, rule)));
+export const activeRules = (rules: UsageRule[], disabled: DisabledRule[], defaultAgent: AgentId): UsageRule[] =>
+  rules.filter((rule) => !disabled.some((entry) => sameRule(entry, rule, defaultAgent)));
 
 /**
  * When a rolling budget window would fall below `percent` of `limit` if no new token arrived (#297): the samples inside the window leave
@@ -146,13 +149,15 @@ export function isDisableUntil(value: unknown): value is DisableUntil {
   return value.kind === 'reset' || value.kind === 'manual' || (value.kind === 'at' && isIsoDate(value.at));
 }
 
-/** A disable in the shape the routes accept (#297): a known source, a finite percent and a valid until. */
+/** A disable in the shape the routes accept (#297): a known source, a finite percent, a valid until and, when given, a known agent (#929). */
 export const isDisabledRule = (value: unknown): value is DisabledRule =>
-  isObject(value) && isRuleSource(value.source) && isPercent(value.percent) && isDisableUntil(value.until);
+  isObject(value) && isRuleSource(value.source) && isPercent(value.percent) && isDisableUntil(value.until)
+  && (value.agent === undefined || AGENT_IDS.includes(value.agent as AgentId));
 
 /** A disable copied field by field (#297): nothing else a hand-edited state.json carries rides along. */
-export const copyDisabledRule = ({ source, percent, until }: DisabledRule): DisabledRule => ({
+export const copyDisabledRule = ({ source, percent, until, agent }: DisabledRule): DisabledRule => ({
   source, percent, until: until.kind === 'at' ? { kind: 'at', at: until.at } : until.kind === 'reset' ? { kind: 'reset' } : { kind: 'manual' },
+  ...(agent === undefined ? {} : { agent }),
 });
 
 // Where a disable's rule is expected back (#297): a reset one where ruleBackAt says, an at one at its time, a manual one never.
@@ -165,10 +170,10 @@ function backAtOf(entry: DisabledRule, rule: UsageRule, state: RuleState, now: n
 }
 
 /** Every disabled rule of the table, in its order, with when it is expected back (#297): what effectiveLimits reports and the strip shows.
- * ponytail: two rows with the same source + percent are one rule to a disable (the strip's sameRule); each such row is listed. */
+ * ponytail: two rows with the same source + percent + agent are one rule to a disable (the strip's sameRule); each such row is listed. */
 export function disabledStatuses(state: Pick<State, 'usageRules'> & RuleState, disabled: DisabledRule[], now: number): DisabledRuleStatus[] {
   return state.usageRules.flatMap((rule) => {
-    const entry = disabled.find((d) => sameRule(d, rule));
+    const entry = disabled.find((d) => sameRule(d, rule, liveDefaultAgent(state)));
     if (!entry) return [];
     const backAt = backAtOf(entry, rule, state, now);
     const estimate = entry.until.kind === 'reset' && (rule.source === 'hour' || rule.source === 'day'); // a rolling window has no fixed reset
@@ -186,17 +191,18 @@ export function dropExpiredDisables(state: State, now: number): State {
 
 /** desligar (#297): only a rule of the table that fires right now and is not disabled yet; anything else returns the state itself. */
 export function disableRule(state: State, entry: DisabledRule, now: number): State {
-  const known = state.usageRules.some((rule) => sameRule(rule, entry));
-  if (!known || rulePercents(state, now)(entry) < entry.percent || state.disabledRules.some((d) => sameRule(d, entry))) return state;
+  const same = (a: RuleId, b: RuleId): boolean => sameRule(a, b, liveDefaultAgent(state));
+  const known = state.usageRules.some((rule) => same(rule, entry));
+  if (!known || rulePercents(state, now)(entry) < entry.percent || state.disabledRules.some((d) => same(d, entry))) return state;
   return { ...state, disabledRules: [...state.disabledRules, entry] };
 }
 
 /** religar (#297): the disable goes at once; the state itself when there was none. */
-export function enableRule(state: State, pair: Pick<DisabledRule, 'source' | 'percent'>): State {
-  const kept = state.disabledRules.filter((entry) => !sameRule(entry, pair));
+export function enableRule(state: State, pair: Pick<DisabledRule, 'source' | 'percent' | 'agent'>): State {
+  const kept = state.disabledRules.filter((entry) => !sameRule(entry, pair, liveDefaultAgent(state)));
   return kept.length === state.disabledRules.length ? state : { ...state, disabledRules: kept };
 }
 
-/** The disables whose source + percent still name a rule of `rules` (#297): a disable must not outlive its rule, nor attach to another. */
-export const namedDisables = (disabled: DisabledRule[], rules: UsageRule[]): DisabledRule[] =>
-  disabled.filter((entry) => rules.some((rule) => sameRule(rule, entry)));
+/** The disables that still name a rule of `rules` (#297, #929: its agent too): a disable must not outlive its rule, nor attach to another. */
+export const namedDisables = (disabled: DisabledRule[], rules: UsageRule[], defaultAgent: AgentId): DisabledRule[] =>
+  disabled.filter((entry) => rules.some((rule) => sameRule(rule, entry, defaultAgent)));

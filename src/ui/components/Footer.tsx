@@ -1,6 +1,7 @@
 import { ChevronDownIcon } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
-import type { DisabledRuleStatus, DisableUntil, EffectiveLimits, State, UsageRule } from '../../types';
+import { liveDefaultAgent } from '../../agents';
+import { type AgentId, DEFAULT_AGENT, type DisabledRuleStatus, type DisableUntil, type EffectiveLimits, type State, type UsageRule } from '../../types';
 import { workerCount } from '../../worker-count';
 import { act } from '@/components/actions';
 import { Confirm } from '@/components/Confirm';
@@ -9,16 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { type MessageKey, t } from '@/i18n';
 import { signalEffect } from '@/lib/signal-effect';
-import { clock, countdown, describeRules, nextMorning, type PauseChoice, pauseUntil, timeLeft, windowResetsAt } from '@/lib/usage';
+import { clock, countdown, describeRules, nextMorning, type PauseChoice, pauseUntil, ruleTarget, timeLeft, windowResetsAt } from '@/lib/usage';
 
 interface FooterProps { state: State; effective: EffectiveLimits; locale: string; onEditRules?(): void; console?: ReactNode } // console: its chip (redesign 05)
 
 // The footer's chips and buttons share the 1px 8px chip box of the handoff (02), on the ui Button so focus and hover come with it.
 const CHIP = 'h-auto gap-1.5 rounded-sm px-2 py-px text-xs font-normal text-foreground';
 
-// Two rules are the same one when they share a source, a floor and a stage: the payload crosses JSON, so identity is lost.
+// Two rules are the same one when they share a source, a floor, a stage and an agent (#929): the payload crosses JSON, so identity is lost.
 /** The search's pausar regra › reads the rules through these three too (#584). */
-export const ruleKey = (rule: UsageRule): string => `${rule.source}-${rule.percent}-${rule.stage ?? ''}`;
+export const ruleKey = (rule: UsageRule): string => `${rule.source}-${rule.percent}-${rule.stage ?? ''}-${rule.agent ?? ''}`;
 
 /** The fired rules in force, each once: the signal's, the cap's, then every stage cap's. */
 export function firedRules(effective: EffectiveLimits): UsageRule[] {
@@ -26,13 +27,13 @@ export function firedRules(effective: EffectiveLimits): UsageRule[] {
   return all.filter((rule, i) => all.findIndex((other) => ruleKey(other) === ruleKey(rule)) === i);
 }
 
-/** `semana ≥ 90% → máx 2 workers`: the rule, then what it does. */
-export function ruleLabel(rule: UsageRule): string {
+/** `semana ≥ 90% · codex → máx 2 workers`: the rule, its agent when it is not the default one (#929), then what it does. */
+export function ruleLabel(rule: UsageRule, defaultAgent: AgentId = DEFAULT_AGENT): string {
   const effects = [
     ...(rule.signal ? [rule.signal] : []),
     ...(rule.maxWorkers === undefined ? [] : [rule.stage ? t('footer.rule.stageCap', { stage: rule.stage, n: rule.maxWorkers }) : t('footer.rule.cap', { n: rule.maxWorkers })]),
   ];
-  return `${describeRules([rule])} → ${effects.join(' · ')}`;
+  return `${describeRules([rule], defaultAgent)} → ${effects.join(' · ')}`;
 }
 
 function MenuItem({ onClick, hint, muted, children }: { onClick(): void; hint?: string; muted?: boolean; children: ReactNode }) {
@@ -74,13 +75,13 @@ function RuleChip({ rule, paused, state, locale, onEditRules }: RuleChipProps) {
   const now = Date.now();
   const resetAt = windowResetsAt(state, rule); // #929: its own agent's window
   const close = () => { setOpen(false); setCustom(false); };
-  const pause = (until: DisableUntil) => { close(); void act('/rules/disable', { source: rule.source, percent: rule.percent, until }); };
-  const resume = () => { close(); void act('/rules/enable', { source: rule.source, percent: rule.percent }); };
+  const pause = (until: DisableUntil) => { close(); void act('/rules/disable', { ...ruleTarget(rule), until }); };
+  const resume = () => { close(); void act('/rules/enable', ruleTarget(rule)); };
   return (
     <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" className={`${CHIP} ${paused ? 'text-muted-foreground line-through' : ''}`}>
-          {ruleLabel(rule)}
+          {ruleLabel(rule, liveDefaultAgent(state))}
           <ChevronDownIcon className="size-3 text-muted-foreground" />
         </Button>
       </PopoverTrigger>

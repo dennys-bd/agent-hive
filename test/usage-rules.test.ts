@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DAY_MS, HOUR_MS } from '../src/usage.js';
-import { activeRules, applyUsageRules, copyDisabledRule, disableExpired, firedRules, isDisabledRule, isGlobalRule, PLAN_WINDOW, rollingBackAt, ruleBackAt, rulePercents, type RulePercent, type RuleState, SIGNAL_RANK, stageCapRules, stageCaps, worstSignal } from '../src/usage-rules.js';
+import { activeRules, applyUsageRules, copyDisabledRule, disableExpired, firedRules, isDisabledRule, isGlobalRule, PLAN_WINDOW, rollingBackAt, ruleBackAt, rulePercents, type RulePercent, type RuleState, sameRule, SIGNAL_RANK, stageCapRules, stageCaps, worstSignal } from '../src/usage-rules.js';
 import { type Budget, type DisabledRule, type RateLimits, RULE_SOURCES, type RuleSource, type Stage, type UsageRule, type UsageSample } from '../src/types.js';
 
 const NOW = Date.parse('2026-09-16T12:00:00Z');
@@ -107,8 +107,8 @@ test('worstSignal ranks green < yellow < red', () => {
 
 test('activeRules leaves out only the rules whose source and percent a disable names (#297)', () => {
   const disabled: DisabledRule[] = [{ source: 'hour', percent: 80, until: { kind: 'reset' } }, { source: 'week', percent: 80, until: { kind: 'manual' } }];
-  assert.deepEqual(activeRules(RULES, disabled), [RULES[0], RULES[2], RULES[3]], 'week 80 names no rule: the table has week 90');
-  assert.deepEqual(activeRules(RULES, []), RULES);
+  assert.deepEqual(activeRules(RULES, disabled, 'claude'), [RULES[0], RULES[2], RULES[3]], 'week 80 names no rule: the table has week 90');
+  assert.deepEqual(activeRules(RULES, [], 'claude'), RULES);
 });
 
 test('rollingBackAt is when the sample whose leaving brings the window below the percent ages out; undefined without a limit (#297)', () => {
@@ -170,10 +170,13 @@ test('isDisabledRule accepts the three untils with a known source and a finite p
     { source: 'hour', percent: '80', until: { kind: 'reset' } }, { source: 'hour', percent: Number.NaN, until: { kind: 'reset' } }, { source: 'hour', percent: 80 },
     { source: 'hour', percent: 80, until: { kind: 'later' } }, { source: 'hour', percent: 80, until: { kind: 'at', at: 'soon' } },
     { source: 'hour', percent: 80, until: { kind: 'at', at: '2026-09-16' } }, { source: 'hour', percent: 80, until: { kind: 'at' } },
+    { source: 'week', percent: 80, until: { kind: 'reset' }, agent: 'gemini' },
   ];
   for (const value of bad) assert.equal(isDisabledRule(value), false, JSON.stringify(value));
   const loose = { source: 'hour', percent: 80, until: { kind: 'at', at, extra: 1 }, extra: true } as unknown as DisabledRule;
   assert.deepEqual(copyDisabledRule(loose), { source: 'hour', percent: 80, until: { kind: 'at', at } });
+  assert.equal(isDisabledRule({ source: 'week', percent: 80, until: { kind: 'reset' }, agent: 'codex' }), true);
+  assert.deepEqual(copyDisabledRule({ source: 'week', percent: 80, until: { kind: 'manual' }, agent: 'codex' }), { source: 'week', percent: 80, until: { kind: 'manual' }, agent: 'codex' });
 });
 
 test('a plan rule reads its own agent\'s reading, one without an agent the default agent\'s; a budget rule reads every agent\'s tokens (#929)', () => {
@@ -195,4 +198,16 @@ test('a month rule reads thirty_day: Codex\'s free plan has only that window (#9
   assert.deepEqual(applyUsageRules(percent, [rule]), { signal: 'yellow' });
   assert.deepEqual(applyUsageRules(percent, [{ ...rule, percent: 41 }]), { signal: 'green' });
   assert.deepEqual(applyUsageRules(percent, [defaultAgentRule]), { signal: 'green' }, 'the default agent, Claude, has no month reading');
+});
+
+test('sameRule matches the agent too, an absent one being the default; activeRules leaves out only the disabled agent\'s rule; a reset disable reads its own agent (#929)', () => {
+  const claudeWeek: UsageRule = { source: 'week', percent: 90, signal: 'red' };
+  const codexWeek: UsageRule = { ...claudeWeek, agent: 'codex' };
+  assert.deepEqual([sameRule(claudeWeek, { ...claudeWeek, agent: 'claude' }, 'claude'), sameRule(claudeWeek, codexWeek, 'claude'), sameRule(claudeWeek, codexWeek, 'codex')], [true, false, true]);
+  assert.equal(sameRule({ source: 'hour', percent: 50 }, { source: 'hour', percent: 50, agent: 'codex' }, 'claude'), true, 'a budget rule reads every agent: the agent is no part of it');
+  const off: DisabledRule = { source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' };
+  assert.deepEqual(activeRules([claudeWeek, codexWeek], [off], 'claude'), [claudeWeek]);
+  const percent = rulePercents({ usage: [], budget: {}, rateLimits: { claude: windows(10, 10), codex: windows(10, 95) } }, NOW);
+  assert.equal(disableExpired({ ...off, until: { kind: 'reset' } }, percent, NOW), false, 'Codex\'s week still reads 95');
+  assert.equal(disableExpired({ source: 'week', percent: 90, until: { kind: 'reset' } }, percent, NOW), true, 'no agent: Claude\'s, which reads 10');
 });

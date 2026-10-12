@@ -133,8 +133,8 @@ export function describeEvent(event: HiveEvent): string {
     case 'setSignals': return `setSignals onOpen=${event.signals.onOpen}`; // #727: the rows are the config's
     case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
     case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
-    case 'disableRule': return `disableRule ${event.source}≥${event.percent} until=${event.until.kind === 'at' ? event.until.at : event.until.kind}`;
-    case 'enableRule': return `enableRule ${event.source}≥${event.percent}`;
+    case 'disableRule': return `disableRule ${event.source}≥${event.percent}${event.agent ? ` agent=${event.agent}` : ''} until=${event.until.kind === 'at' ? event.until.at : event.until.kind}`;
+    case 'enableRule': return `enableRule ${event.source}≥${event.percent}${event.agent ? ` agent=${event.agent}` : ''}`;
     case 'setDeleteActivity': return `setDeleteActivity ${JSON.stringify(event.deleteActivity)}`;
     case 'setShutdownIdle': return `setShutdownIdle ${event.minutes}`;
     case 'setRateLimitWait': return `setRateLimitWait ${event.minutes}`; // #805

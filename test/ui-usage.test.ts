@@ -84,7 +84,7 @@ test('describeRules joins source ≥ N% with a comma, the source names from the 
 test('describeRules takes an optional joiner, used by the strip to join rules inside one clause with "and"', () => {
   setLanguage('en');
   const rules: UsageRule[] = [{ source: 'session', percent: 60, signal: 'yellow' }, { source: 'week', percent: 50, signal: 'yellow' }];
-  assert.equal(describeRules(rules, ' and '), 'session ≥ 60% and week ≥ 50%');
+  assert.equal(describeRules(rules, 'claude', ' and '), 'session ≥ 60% and week ≥ 50%');
 });
 
 test('inBackoff is true only when remaining is below the reserve and the reset is still ahead', () => {
@@ -159,4 +159,10 @@ test('a plan source reads its rule\'s agent, or the default agent\'s without one
     sourcePercent({ ...state, defaultAgent: 'codex' as const }, { source: 'week' }, NOW),
   ], [10, 70, 70]);
   assert.equal(windowResetsAt(state, { source: 'week', agent: 'codex' }), at(-60));
+});
+
+test('describeRules names a rule\'s agent when it is not the default agent (#929)', () => {
+  const codexWeek = { source: 'week', percent: 90, signal: 'red', agent: 'codex' } as const;
+  assert.equal(describeRules([codexWeek, { source: 'session', percent: 80, signal: 'yellow', agent: 'claude' }]), `${t('window.week')} ≥ 90% · codex, ${t('window.session')} ≥ 80%`);
+  assert.equal(describeRules([codexWeek], 'codex'), `${t('window.week')} ≥ 90%`, 'the default agent: not named');
 });

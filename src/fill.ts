@@ -2,6 +2,7 @@
 // 800 lines. One signal table decides: a new task needs `newTasks` (#32: always, or tree with its tree started), a started one waiting for a worker needs resume, a session that ends its
 // stage needs continue (its session is #134's keepsRun, checked by the callers); caps and budget hold as before, and a manual act passes none
 // of this. Pure: every function returns new objects.
+import { liveDefaultAgent } from './agents.js';
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
 import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
 import { treeStarted } from './task-tree.js';
@@ -21,7 +22,7 @@ export type Gate = EffectiveLimits & { behaviour: SignalBehaviour };
 export function effectiveLimits(state: State, now: number): EffectiveLimits {
   const percent = rulePercents(state, now); // #929: each rule on its own agent's reading
   const disabled = state.disabledRules.filter((entry) => !disableExpired(entry, percent, now));
-  const rules = activeRules(state.usageRules, disabled);
+  const rules = activeRules(state.usageRules, disabled, liveDefaultAgent(state));
   const fired = firedRules(percent, rules);
   const floor = applyUsageRules(percent, rules);
   const caps = stageCaps(state.stages, fired); // #475: a stage rule caps its stage only

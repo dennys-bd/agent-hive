@@ -137,3 +137,18 @@ test('an estimated end reads with ~, and a stage rule sharing a global rule sour
   expect(within(footer()).getByRole('button', { name: 'semana ≥ 90% → review máx 2' })).toBeInTheDocument();
   expect(within(footer()).getByRole('button', { name: 'semana ≥ 90% → máx 2 workers' })).toBeInTheDocument();
 });
+
+test('a rule of a non-default agent names it on its chip and posts it with its pause and its resume (#929)', async () => {
+  const user = userEvent.setup();
+  const codexWeek: UsageRule = { ...WEEK_CAP, agent: 'codex' };
+  const { unmount } = render(<Footer state={STATE} effective={{ ...FIRED, capRules: [WEEK_CAP, codexWeek] }} locale="pt-BR" />);
+  expect(within(footer()).getAllByRole('button').map((b) => b.textContent)).toContain('semana ≥ 90% · codex → máx 2 workers');
+  await user.click(screen.getByRole('button', { name: /semana ≥ 90% · codex/ }));
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /até resetar/ }));
+  await posted('/rules/disable', { source: 'week', percent: 90, agent: 'codex', until: { kind: 'reset' } });
+  unmount();
+  render(<Footer state={STATE} effective={{ ...NONE, disabledRules: [{ rule: codexWeek, until: 'manual', estimate: false }] }} locale="pt-BR" />);
+  await user.click(screen.getByRole('button', { name: /semana ≥ 90% · codex/ }));
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'retomar agora' }));
+  await posted('/rules/enable', { source: 'week', percent: 90, agent: 'codex' });
+});

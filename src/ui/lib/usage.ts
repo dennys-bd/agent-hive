@@ -1,6 +1,6 @@
 // Pure meter math for the header and the tasks. No DOM, no React: node:test imports it from dist/src/ui/lib.
-import { liveDefaultAgent } from '../../agents.js';
-import { isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
+import { agentName, liveDefaultAgent } from '../../agents.js';
+import { type AgentId, DEFAULT_AGENT, isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
 import { type MessageKey, statusText, t } from '../i18n.js';
 
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
@@ -79,10 +79,20 @@ export function windowLabel(key: string): string {
   return key.replaceAll('_', ' ');
 }
 
-/** `session ≥ 80%, week ≥ 70%`: the rules behind a lock or a strip segment, in the order they fired.
+// One rule as the strip and the locked hints name it: `week ≥ 90%`, then `· codex` when its agent is not the default one (#929)
+const ruleText = (rule: UsageRule, defaultAgent: AgentId): string => {
+  const text = `${t(SOURCE_LABEL[rule.source])} ≥ ${rule.percent}%`;
+  return rule.agent === undefined || rule.agent === defaultAgent ? text : `${text} · ${agentName(rule.agent)}`;
+};
+
+/** `session ≥ 80%, week ≥ 70% · codex`: the rules behind a lock or a strip segment, in the order they fired.
  * `joiner` lets the strip join rules inside one clause with ` and ` / ` e `, keeping the default comma for the locked hints. */
-export const describeRules = (rules: UsageRule[], joiner = ', '): string =>
-  rules.map((r) => `${t(SOURCE_LABEL[r.source])} ≥ ${r.percent}%`).join(joiner);
+export const describeRules = (rules: UsageRule[], defaultAgent: AgentId = DEFAULT_AGENT, joiner = ', '): string =>
+  rules.map((rule) => ruleText(rule, defaultAgent)).join(joiner);
+
+/** What desligar and religar post for a rule (#297, #929): its source, its floor and, when it names one, its agent. */
+export const ruleTarget = (rule: Pick<UsageRule, 'source' | 'percent' | 'agent'>): { source: RuleSource; percent: number; agent?: AgentId } =>
+  ({ source: rule.source, percent: rule.percent, ...(rule.agent === undefined ? {} : { agent: rule.agent }) });
 
 // Mirrors inBackoff in src/polling.ts
 export const inBackoff = (quota: SourceQuota | undefined, now: number): boolean =>

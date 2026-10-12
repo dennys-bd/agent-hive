@@ -900,3 +900,10 @@ test('loadState reads a file from before #925 with agent claude on every session
   assert.equal(loaded.workers[0].agent, 'claude', 'an occupied worker ran an agent');
   assert.equal('agent' in loaded.workers[1], false, 'an empty worker runs nothing');
 });
+
+test('loadState keeps a disable\'s agent and drops one naming an unknown agent (#929)', async (t) => {
+  const dir = await tempDir(t, '');
+  const disabledRules = [{ source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' }, { source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'gemini' }];
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), disabledRules }));
+  assert.deepEqual((await loadState(dir)).disabledRules, [disabledRules[0]]);
+});
