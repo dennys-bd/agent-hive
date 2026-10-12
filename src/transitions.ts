@@ -1,5 +1,7 @@
+import { stageAgentIn } from './agents.js';
 import { stageSession } from './task-runs.js';
-import { FIXED_VERDICTS, TRIES_OUT, type Activity, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
+import { sessionsOf } from './tasks.js';
+import { FIXED_VERDICTS, TRIES_OUT, type Activity, type AgentId, type Stage, type State, type Task, type Transition, type Trigger } from './types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands its destination, and the tries an
 // automatic one counts. Pure and free of node modules, since the page reads it too; no state is written here, transit.ts applies the answers.
@@ -55,12 +57,21 @@ export function verdictsOf(stage: Pick<Stage, 'action' | 'prompt' | 'verdicts'>)
 /** The session a transition hands its destination (#134). */
 export type ResolvedSession = { policy: 'new' } | { policy: 'continue'; sessionId: string };
 
+/** Whether a stage run of `agent` may resume session `id` (#925): one agent never resumes another's session. A session the records do not list
+ * keeps the continue it always had. */
+export const resumableBy = (state: Pick<State, 'activityRecords'>, task: Task, id: string, agent: AgentId): boolean =>
+  (sessionsOf(state, task.item.itemId).find((s) => s.id === id)?.agent ?? agent) === agent;
+
 /** previous: the session the activity holds, the run that just ended; continueOf: the task's last session that ran in that stage; new: a new
- * one; absent: the destination's own policy, as a stage end decided it before. Nothing to resume is a new session. */
+ * one; absent: the destination's own policy, as a stage end decided it before. Nothing to resume is a new session. A session of another agent
+ * than the destination's is nothing to resume (#925). */
 export function resolveSession(
-  state: Pick<State, 'activityRecords'>, task: Task, activity: Pick<Activity, 'sessionId'> | undefined, transition: Pick<Transition, 'session'>, destination: Pick<Stage, 'session'>,
+  state: Pick<State, 'activityRecords' | 'defaultAgent'>, task: Task, activity: Pick<Activity, 'sessionId'> | undefined, transition: Pick<Transition, 'session'>,
+  destination: Pick<Stage, 'session' | 'agent'>,
 ): ResolvedSession {
-  const resume = (id: string | undefined): ResolvedSession => (id === undefined ? { policy: 'new' } : { policy: 'continue', sessionId: id });
+  const agent = stageAgentIn(state, destination);
+  // #925: a session of another agent resolves as nothing to resume: the destination starts its own
+  const resume = (id: string | undefined): ResolvedSession => (id === undefined || !resumableBy(state, task, id, agent) ? { policy: 'new' } : { policy: 'continue', sessionId: id });
   const { session } = transition;
   if (session === 'new') return { policy: 'new' };
   if (session === 'previous') return resume(activity?.sessionId);

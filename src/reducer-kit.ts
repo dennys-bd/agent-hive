@@ -3,6 +3,7 @@ import { ranAgent, stageAgentIn } from './agents.js';
 import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
 import { handoverRun } from './task-runs.js';
+import { resumableBy } from './transitions.js';
 import { withColumnWrite } from './column-write.js';
 import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
 import { isLeaving } from './types.js';
@@ -143,7 +144,8 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const task = queued;
   const startedAt = new Date().toISOString();
   const agent = stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
-  const session = answer?.policy ?? policy ?? (stage.session === 'continue' && work.sessionId !== undefined ? 'continue' : 'new');
+  const continues = stage.session === 'continue' && work.sessionId !== undefined && resumableBy(born.state, task, work.sessionId, agent); // #925: never another agent's session
+  const session = answer?.policy ?? policy ?? (continues ? 'continue' : 'new');
   // A new run is a new Claude session, a continue the activity's own (#164); either way the session records this stage and this use (#236)
   const sessionId = session === 'new' ? randomUUID() : work.sessionId;
   const worker: Worker = {

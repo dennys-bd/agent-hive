@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { localActivityId } from '../src/activities.js';
+import { activityOf, localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { describeEvent } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
@@ -70,4 +70,16 @@ test('a run that sleeps records its worker\'s agent (#925)', () => {
   const seen = reduce(started.state, { type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: S2, cwd: '/wt' } }).state;
   const stopped = reduce(seen, { type: 'stop', ptyId, cause: 'manual' }).state;
   assert.equal(reduce(stopped, { type: 'exit', ptyId }).state.slept?.[0]?.agent, OTHER);
+});
+
+test('a continue stage whose activity holds another agent\'s session spawns a new session with the stage\'s agent (#925)', () => {
+  const { state, effects } = start(onDev({ session: 'continue', agent: OTHER }));
+  const spawn = spawnOf(effects);
+  assert.deepEqual([spawn?.session, spawn?.worker.agent], ['new', OTHER]);
+  assert.notEqual(activityOf(state, ITEM.itemId)?.sessionId, S1);
+});
+
+test('the same continue stage resumes a session of its own agent (#925)', () => {
+  const spawn = spawnOf(start(onDev({ session: 'continue', agent: OTHER }, OTHER)).effects);
+  assert.deepEqual([spawn?.session, spawn?.activity.sessionId], ['continue', S1]);
 });
