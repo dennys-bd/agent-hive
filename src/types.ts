@@ -556,6 +556,7 @@ export interface Activity {
   tryLog?: TryRecord[]; // #915: the tries behind tries, oldest first; dropped wherever tries is
   freeSessionStage?: string; // #812: the stage a free run last started in; continue is not offered there until a stage run starts or the task enters a stage again
   checkpoints?: Checkpoint[]; // #619: in capture order; absent when none. Goes with the activity's delete
+  stageGone?: string; // #861: the deleted stage the running worker or stage action started in: its end ends no stage and the task halts with STAGE_GONE. Cleared wherever stopped is set or a stage is entered; never persisted (a boot ends the run it marks)
 }
 
 /** How a checkpoint ended (#619): its stage's hive_done, a Restart, or a restore that replaced it. */
