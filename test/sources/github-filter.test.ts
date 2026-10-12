@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { facetsOf, matchesFilter, splitBlocked, usesMe } from '../../src/sources/github-filter.js';
+import { facetsOf, matchesFilter, projectQuery, splitBlocked, usesMe } from '../../src/sources/github-filter.js';
 import { ITEMS, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { FilterOp, FilterRule } from '../../src/types.js';
 
@@ -108,4 +108,21 @@ test('splitBlocked parts a source filter into its blocked rules and the others, 
   assert.deepEqual(splitBlocked([hive, free, p0]), { blocked: [free], other: [hive, p0] });
   assert.deepEqual(splitBlocked([]), { blocked: [], other: [] });
   assert.equal(matchesFilter([{ field: 'blocked', op: 'any' }], undefined, issue()), false, 'an item carries no relations: why listItems judges blocked after the relations query');
+});
+
+test('projectQuery writes each plain rule in the Project\'s filter syntax and ANDs them with a space; none negates (#234)', () => {
+  assert.equal(projectQuery([rule('milestone', 'any', ['Wave 1', 'beta'])]), 'milestone:"Wave 1","beta"');
+  assert.equal(projectQuery([rule('label', 'none', ['wip'])]), '-label:"wip"');
+  assert.equal(projectQuery([rule('assignee', 'any', ['@ME', 'ana'])]), 'assignee:@me,"ana"');
+  assert.equal(projectQuery([rule('repository', 'any', ['acme/app']), rule('label', 'any', ['bug'])]), 'repo:"acme/app" label:"bug"');
+});
+
+test('projectQuery: "nenhum" alone becomes no: or has:; a rule it cannot say is left to matchesFilter; no rule left gives undefined (#234)', () => {
+  assert.equal(projectQuery([rule('milestone', 'any', ['@none'])]), 'no:milestone');
+  assert.equal(projectQuery([rule('milestone', 'none', ['@none'])]), 'has:milestone');
+  assert.equal(projectQuery([rule('milestone', 'any', ['@none', 'beta'])]), undefined, 'emptiness OR a value is not one qualifier');
+  assert.equal(projectQuery([rule('label', 'any', ['say "hi"'])]), undefined);
+  assert.equal(projectQuery([priority('any', ['High']), { field: 'blocked', op: 'any' }]), undefined);
+  assert.equal(projectQuery([priority('any', ['High']), rule('label', 'any', ['bug'])]), 'label:"bug"');
+  assert.equal(projectQuery([]), undefined);
 });

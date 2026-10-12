@@ -164,6 +164,14 @@ test('listItems pages items by cursor and concatenates the pages, stopping at ha
   assert.deepEqual(items[1].variables, { login: 'acme', number: 6, after: 'CUR_1' });
 });
 
+test('listItems hands GitHub the filter as the items query, and warns when the pages still end before the items do (#234)', async () => {
+  const { gql, calls } = fakeGql({ items: [page([item(1)], true, 'CUR_1'), page([item(2)], true, 'CUR_2')], relations: {} });
+  const { log, lines } = fakeLog();
+  await createSource(filtered([{ field: 'milestone', op: 'any', values: ['Wave 1'] }]), { gql, log }).listItems();
+  assert.ok(calls.filter((c) => c.name === 'items').every((c) => c.variables?.filter === 'milestone:"Wave 1"'));
+  assert.deepEqual(lines.filter((l) => l.startsWith('WARN')), ['WARN source acme/6: more than 200 items pass its filter; the ones past them never reach the flow']);
+});
+
 test('with owner @me, listItems resolves the login once and polls with it', async () => {
   const mine = specOf({ source: { ...GITHUB_SOURCE, owner: '@me' } });
   const { gql, calls } = fakeGql({ viewer: { viewer: { login: 'dennys' } }, items: [page([item(1)]), page([item(2)])], relations: {} });

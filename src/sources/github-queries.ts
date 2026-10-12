@@ -55,12 +55,12 @@ export const SELECT_FIELDS = `query($login: String!, $number: Int!) {
 // milestone and repository here, and each item's set field values with their field's name, single-select or text (#245); together about two
 // rate-limit points per page. A dynamic source's rules read those same field values by name (#293): the query never grows for them.
 // Each issue also carries its node id and its sub-issues' node ids (epic order) and states, so listItems can queue an epic's children right after it (#211) and link every item to its parent and children (#28).
-export const ITEMS = `query($login: String!, $number: Int!, $after: String) {
+export const ITEMS = `query($login: String!, $number: Int!, $after: String, $filter: String) {
   rateLimit { limit remaining resetAt }
   repositoryOwner(login: $login) {
     ... on ProjectV2Owner {
       projectV2(number: $number) {
-        items(first: ${PAGE_SIZE}, after: $after) {
+        items(first: ${PAGE_SIZE}, after: $after, query: $filter) {
           pageInfo { hasNextPage endCursor }
           nodes {
             id
