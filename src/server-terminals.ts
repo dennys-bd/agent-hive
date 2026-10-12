@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { Express, NextFunction, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace } from './config.js';
-import { capturedArgs, capturedReply, shimPath } from './shim.js';
+import { capturedReply, shimPath } from './shim.js';
 import { AGENTS, ranAgent, SHIM_AGENT } from './agents.js';
 import { runners } from './agents/registry.js';
+import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { Runtime } from './server.js';
@@ -108,9 +109,10 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
       await deps.dispatch({ type: 'exit', ptyId: runId });
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
+    const agent = ranAgent(worker); // #925 records SHIM_AGENT on a captured run
     let mcpPath: string;
     try {
-      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[ranAgent(worker)].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
+      mcpPath = await writeMcpConfig(runtime.promptsDir, runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: runId, secret: deps.secret, withHive: onTask }));
     } catch (err) {
       return unregister(errorMessage(err));
     }
@@ -120,11 +122,13 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     // #803: a captured claude is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
     const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
     const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
-    const reply = capturedReply(runId, capturedArgs({
-      sessionId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, claudeArgs: runtime.config.agentArgs.claude, // temporary (#924): Task 8
-      ...(lspPluginDir === undefined ? {} : { lspPluginDir }),
+    // #924: the capture through its worker's runner: the Hive's flags, the agent's own args and the session id the Hive chose
+    const run: AgentRun = {
+      ptyId: runId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, lspPluginDir,
       ...(onTask ? { protocolPath: task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session } : {}),
-    }));
+      extraArgs: runtime.config.agentArgs[agent], session: { id: sessionId, resume: false },
+    };
+    const reply = capturedReply(runId, runners[agent].launch(run).flat());
     if (reply === undefined) return unregister(SPLIT_ARG_MESSAGE);
     res.type('text/plain').send(reply);
   });

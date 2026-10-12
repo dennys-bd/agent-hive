@@ -9,7 +9,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
 import type { Exec, OpenResult, Command, SettingsBody, WorkspaceFork } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, WORKSPACE, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { workId, workPath } from './fixtures/work.js';
@@ -110,7 +110,7 @@ test('a terminal opened with a command runs the workspace\'s command in the task
   await waitFor(() => workers.length === 2);
   const { launch } = workers[1];
   assert.deepEqual([launch.terminal, launch.run, launch.cwd], [true, { command: FRONT_LINE, env: FRONT.env }, workers[0].launch.cwd]);
-  assert.equal(launch.protocolPath, undefined, 'a command runs no agent: no protocol (#167)');
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), undefined, 'a command runs no agent: no protocol (#167)');
   assert.equal(server.getState()?.terminals.at(-1)?.command, FRONT.name);
   await server.dispatch({ type: 'openTerminal', activityId: workId(server.getState()!, TASK), command: 'Gone' }); // a click a save raced
   await waitFor(() => server.getState()?.error !== undefined);

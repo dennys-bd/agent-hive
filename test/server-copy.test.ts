@@ -14,7 +14,7 @@ import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { worktreePath } from '../src/worktree.js';
-import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 import { NO_PROCESS_LIST } from './process-list.js';
@@ -93,11 +93,11 @@ test('POST …/copy into another activity copies the transcript there, spawns th
   const copy = sessionsOf(server.getState()!, 'local:2').at(-1)!;
   const { launch } = workers[1];
   assert.deepEqual(answer, { ok: true, ptyId: launch.ptyId });
-  assert.deepEqual([launch.cwd, launch.args], [two, ['--resume', source, '--fork-session', '--session-id', copy.id, '--name=no dois']]);
+  assert.deepEqual([launch.cwd, plainArgs(launch)], [two, ['--resume', source, '--fork-session', '--session-id', copy.id, '--name=no dois']]);
   assert.equal(copy.name, 'no dois');
   assert.match(await readFile(launch.promptPath!, 'utf8'), /^Hive: this conversation was copied from task HIVE-1 \(one\), branch feature\/x/);
-  assert.ok('hive' in (JSON.parse(await readFile(launch.mcpPath!, 'utf8')) as { mcpServers: object }).mcpServers, 'a task\'s copy has the Hive\'s tools');
-  assert.equal(launch.protocolPath, join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'and the session protocol that goes with them (#167)');
+  assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'a task\'s copy has the Hive\'s tools');
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'and the session protocol that goes with them (#167)');
   const dir = transcriptDir(two);
   assert.deepEqual(await readdir(dir), [`${source}.jsonl`]);
   await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: copy.id, cwd: two } });
@@ -110,9 +110,9 @@ test('POST …/copy into the workspace\'s local runs in the checkout with an MCP
   assert.equal((await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: localActivityId(WORKSPACE) }, notice: false })).status, 200);
   const { launch } = workers[1];
   const [local] = localSessionsOf(server.getState()!, WORKSPACE);
-  assert.deepEqual([launch.cwd, launch.promptPath, launch.args.slice(-2)], [repo, undefined, ['--session-id', local.id]]);
-  assert.deepEqual(JSON.parse(await readFile(launch.mcpPath!, 'utf8')), { mcpServers: {} });
-  assert.equal(launch.protocolPath, undefined, 'a local session has no Hive tools, so no protocol (#167)');
+  assert.deepEqual([launch.cwd, launch.promptPath, plainArgs(launch).slice(-2)], [repo, undefined, ['--session-id', local.id]]);
+  assert.deepEqual(JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')), { mcpServers: {} });
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), undefined, 'a local session has no Hive tools, so no protocol (#167)');
   const listed = (await (await hiveFetch(`${base}/ptys`)).json()) as { ptys: { label: string }[] };
   assert.deepEqual(listed.ptys.map((w) => w.label), [WORKSPACE]);
 });
@@ -145,7 +145,7 @@ test('a local session continues in the checkout, resumed by id, and clears once 
   await mkdir(transcriptDir(repo), { recursive: true });
   await writeFile(join(transcriptDir(repo), `${local.id}.jsonl`), `${TRANSCRIPT}\n`);
   const answer = (await (await open(local.id)).json()) as OpenResult;
-  assert.deepEqual([answer.ptyId, workers[2].launch.cwd, workers[2].launch.args], [workers[2].launch.ptyId, repo, ['--resume', local.id]]);
+  assert.deepEqual([answer.ptyId, workers[2].launch.cwd, plainArgs(workers[2].launch)], [workers[2].launch.ptyId, repo, ['--resume', local.id]]);
   workers[2].handlers.onExit();
   await waitFor(() => server.getState()!.workers.length === 0);
   assert.equal((await postJson(`${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions/${local.id}/clear`)).status, 200);
@@ -183,7 +183,7 @@ test('while a copy\'s temporary transcript waits for its SessionStart, a second 
   await refused(postJson(path, { to: { activityId: localActivityId(WORKSPACE) }, notice: false }), 409, 'uma cópia desta sessão ainda está abrindo');
   assert.equal((await postJson(path, { to: { activityId: workId(server.getState()!, 'local:2') }, notice: false })).status, 200);
   const copy = workers[1].launch;
-  await server.dispatch({ type: 'hook', ptyId: copy.ptyId, payload: { hook_event_name: 'SessionStart', session_id: copy.args.at(-1), cwd: copy.cwd } });
+  await server.dispatch({ type: 'hook', ptyId: copy.ptyId, payload: { hook_event_name: 'SessionStart', session_id: plainArgs(copy).at(-1), cwd: copy.cwd } });
   assert.equal((await postJson(path, { to: { activityId: localActivityId(WORKSPACE) }, notice: false })).status, 200, 'settled: the file is gone');
 });
 

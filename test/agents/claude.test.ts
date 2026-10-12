@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { AGENTS } from '../../src/agents.js';
 import { runners } from '../../src/agents/registry.js';
 import type { AgentRun } from '../../src/agents/runner.js';
-import { capturedArgs } from '../../src/shim.js';
-import { copyArgs, ptyCommand, runArgs, shellQuote } from '../../src/spawn.js';
+import { ptyCommand, shellQuote } from '../../src/spawn.js';
 import type { LaunchArg } from '../../src/types.js';
 
-// Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed, checked here against
-// the code that built them then; the runner must keep them. The Hive's own flags are [flag, value] pairs, which the command line renders
-// bare with the value quoted; every other word is quoted whole.
+// Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed (Task 1 checked them
+// against that code); the runner must keep them. The Hive's own flags are [flag, value] pairs, which the command line renders bare with the
+// value quoted; every other word is quoted whole.
 interface Expected { flags: [string, string][]; words: string[] }
 
 const ID = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -40,6 +40,7 @@ const COPY: Expected = {
 const NAMED_COPY: Expected = { flags: COPY.flags, words: [...COPY.words, `--name=${NAME}`] };
 
 const flat = ({ flags, words }: Expected): string[] => [...flags.flat(), ...words];
+const argvOf = ({ flags, words }: Expected): LaunchArg[] => [...flags, ...words];
 const TRAILER = `curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @"$HIVE_SECRET_FILE" --noproxy '*' >/dev/null`;
 // The command line a run renders to: the flags bare with their values quoted, the quoted words, the prompt last
 const commandOf = ({ flags, words }: Expected, prompt?: string): string => {
@@ -47,66 +48,43 @@ const commandOf = ({ flags, words }: Expected, prompt?: string): string => {
   return `cd '/wt' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude ${parts.join(' ')}; ${TRAILER}`;
 };
 
-const BASE = { ptyId: 'W1', slug: 'hive-1-task', cwd: '/wt', port: 4242, hooksPath: HOOKS, pluginDir: PLUGIN };
-
-test('today: a new stage run with the MCP, the protocol, the language-server plugin and a model renders the pinned argv (#924)', () => {
-  const args = runArgs({ sessionId: ID }, { model: 'sonnet' }, 'new', EXTRA, 'claude');
-  assert.deepEqual(args, NEW_STAGE_RUN.words);
-  assert.equal(ptyCommand({ ...BASE, mcpPath: MCP, lspPluginDir: LSP, protocolPath: STAGE_MD, promptPath: PROMPT, args }), commandOf(NEW_STAGE_RUN, PROMPT));
-});
-
-test('today: a new run without the MCP, the protocol, the plugin, a model or extra args renders the pinned argv (#924)', () => {
-  const args = runArgs({ sessionId: ID }, {}, 'new', [], 'claude');
-  assert.deepEqual(args, BARE_RUN.words);
-  assert.equal(ptyCommand({ ...BASE, args }), commandOf(BARE_RUN));
-});
-
-test('today: a resume renders the pinned argv (#924)', () => {
-  const args = runArgs({ sessionId: ID }, {}, 'continue', EXTRA, 'claude');
-  assert.deepEqual(args, RESUME.words);
-  assert.equal(ptyCommand({ ...BASE, mcpPath: MCP, args }), commandOf(RESUME));
-});
-
-test("today: the shim's captured launch is the pinned argv (#924)", () => {
-  const captured = capturedArgs({ sessionId: ID, mcpPath: MCP, hooksPath: HOOKS, pluginDir: PLUGIN, lspPluginDir: LSP, protocolPath: SESSION_MD, claudeArgs: EXTRA });
-  assert.deepEqual(captured, flat(CAPTURE));
-});
-
-test('today: a copy, with and without a name, renders the pinned argv (#924)', () => {
-  const args = copyArgs({ from: FROM, notice: 'ignored here' }, ID, EXTRA);
-  assert.deepEqual(args, COPY.words);
-  assert.equal(ptyCommand({ ...BASE, mcpPath: MCP, args }), commandOf(COPY));
-  const named = copyArgs({ from: FROM, name: NAME }, ID, EXTRA);
-  assert.deepEqual(named, NAMED_COPY.words);
-  assert.equal(ptyCommand({ ...BASE, mcpPath: MCP, args: named }), commandOf(NAMED_COPY));
-});
-
 const RUN: AgentRun = { ptyId: 'W1', hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
-const argvOf = ({ flags, words }: Expected): LaunchArg[] => [...flags, ...words];
+// ptyCommand over the runner's argv, as the spawner builds the launch
+const commandFor = (argv: LaunchArg[], prompt?: string): string =>
+  ptyCommand({ ptyId: 'W1', slug: 'hive-1-task', cwd: '/wt', port: 4242, ...(prompt === undefined ? {} : { promptPath: prompt }), agent: { command: AGENTS.claude.command, argv } });
 
-test('the runner launches a new stage run as the pinned argv: the Hive\'s flags as pairs, the rest plain (#924)', () => {
+test('a new stage run with the MCP, the protocol, the language-server plugin and a model: the pinned argv and command line (#924)', () => {
   const argv = runners.claude.launch({ ...RUN, mcpPath: MCP, lspPluginDir: LSP, protocolPath: STAGE_MD, model: 'sonnet', session: { id: ID, resume: false }, extraArgs: EXTRA });
   assert.deepEqual(argv, argvOf(NEW_STAGE_RUN));
   assert.deepEqual(argv.flat(), flat(NEW_STAGE_RUN));
+  assert.equal(commandFor(argv, PROMPT), commandOf(NEW_STAGE_RUN, PROMPT));
 });
 
-test('the runner launches a new run without the MCP, the protocol, the plugin, a model or extra args as the pinned argv (#924)', () => {
-  assert.deepEqual(runners.claude.launch({ ...RUN, session: { id: ID, resume: false } }).flat(), flat(BARE_RUN));
+test('a new run without the MCP, the protocol, the plugin, a model or extra args: the pinned argv and command line (#924)', () => {
+  const argv = runners.claude.launch({ ...RUN, session: { id: ID, resume: false } });
+  assert.deepEqual(argv.flat(), flat(BARE_RUN));
+  assert.equal(commandFor(argv), commandOf(BARE_RUN));
 });
 
-test('the runner launches a resume as the pinned argv (#924)', () => {
-  assert.deepEqual(runners.claude.launch({ ...RUN, mcpPath: MCP, session: { id: ID, resume: true }, extraArgs: EXTRA }).flat(), flat(RESUME));
+test('a resume: the pinned argv and command line (#924)', () => {
+  const argv = runners.claude.launch({ ...RUN, mcpPath: MCP, session: { id: ID, resume: true }, extraArgs: EXTRA });
+  assert.deepEqual(argv.flat(), flat(RESUME));
+  assert.equal(commandFor(argv), commandOf(RESUME));
 });
 
-test("the runner launches the shim's capture as the pinned argv (#924)", () => {
+test("the shim's capture: the pinned argv, which the register sends flat (#924)", () => {
   const argv = runners.claude.launch({ ...RUN, mcpPath: MCP, lspPluginDir: LSP, protocolPath: SESSION_MD, session: { id: ID, resume: false }, extraArgs: EXTRA });
   assert.deepEqual(argv.flat(), flat(CAPTURE));
 });
 
-test('the runner copies as the pinned argv, with and without a name; no session, no copy; clear has no argv (#924)', () => {
+test('a copy, with and without a name: the pinned argv and command line; no session, no copy; clear has no argv (#924)', () => {
   const run: AgentRun = { ...RUN, mcpPath: MCP, session: { id: ID, resume: true }, extraArgs: EXTRA };
-  assert.deepEqual(runners.claude.copy(run, FROM), argvOf(COPY), 'resume is ignored: the copy always starts under the new id');
-  assert.deepEqual(runners.claude.copy(run, FROM, NAME)?.flat(), flat(NAMED_COPY));
+  const copy = runners.claude.copy(run, FROM);
+  assert.deepEqual(copy, argvOf(COPY), 'resume is ignored: the copy always starts under the new id');
+  assert.equal(commandFor(copy ?? []), commandOf(COPY));
+  const named = runners.claude.copy(run, FROM, NAME);
+  assert.deepEqual(named?.flat(), flat(NAMED_COPY));
+  assert.equal(commandFor(named ?? []), commandOf(NAMED_COPY));
   assert.equal(runners.claude.copy({ ...run, session: undefined }, FROM), undefined);
   assert.equal(runners.claude.clear(run), undefined);
 });

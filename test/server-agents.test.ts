@@ -2,11 +2,11 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import { runArgs, ptyCommand } from '../src/spawn.js';
+import { ptyCommand } from '../src/spawn.js';
 import type { Activity, AgentAvailability, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
 import { activityOf } from '../src/activities.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, plainArgs, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // The agent a stage run starts (#516), end to end through the server: the detection, the resolution and the refusal before any worktree.
@@ -64,8 +64,8 @@ test("a stage's agent and modelo reach the launch as typed; claude's command lin
   const { server, workers } = await start(t, { ...BODY, stages: [stage] });
   await waitFor(() => workers.length === 1);
   const { launch } = workers[0];
-  assert.deepEqual(launch.args, runArgs(work0(server)!, stage, 'new', [], 'claude'));
-  assert.deepEqual(launch.args.slice(0, 2), ['--model', 'sonnet']);
+  assert.deepEqual(plainArgs(launch), ['--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
+  assert.deepEqual(plainArgs(launch).slice(0, 2), ['--model', 'sonnet']);
   assert.match(ptyCommand(launch), /^cd '[^']+' && HIVE_PTY_ID=\S+ HIVE_PORT=\d+ claude /);
 });
 
@@ -86,4 +86,12 @@ test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
   const { server, workers } = await start(t);
   await waitFor(() => workers.length === 1);
   assert.equal(worker0(server).agent, 'claude');
+});
+
+test('agentArgs of the stage\'s agent reaches its launch after the Hive\'s flags and before the model and the session (#924)', async (t) => {
+  const stage = { ...STAGES[0], model: 'sonnet' };
+  const { server, workers } = await start(t, { ...BODY, stages: [stage], agentArgs: { claude: ['--permission-mode', 'auto'] } });
+  await waitFor(() => workers.length === 1);
+  assert.deepEqual(plainArgs(workers[0].launch), ['--permission-mode', 'auto', '--model', 'sonnet', '--session-id', work0(server)!.sessionId!]);
+  assert.match(ptyCommand(workers[0].launch), / '--permission-mode' 'auto' '--model' 'sonnet' '--session-id' /);
 });

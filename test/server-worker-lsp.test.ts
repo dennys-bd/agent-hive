@@ -10,7 +10,7 @@ import type { RecordInput } from '../src/events.js';
 import type { OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { workerLspPath } from '../src/worker-lsp.js';
-import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive, workspacesAt } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // The workers' language servers through the server (#803): the plugin written on boot, on a save and on an install's end, and every claude
@@ -62,11 +62,11 @@ test('every claude run in the workspace gets its plugin as a second --plugin-dir
   assert.ok((JSON.parse(await readFile(join(dir, '.lsp.json'), 'utf8')) as Record<string, unknown>).gopls, 'the boot wrote the plugin before any run');
   await server.poll();
   await server.dispatch({ type: 'setSignal', signal: 'green' });
-  assert.equal(workers[0]?.launch.lspPluginDir, dir, 'the stage run');
+  assert.equal(launchFlag(workers[0]?.launch, '--plugin-dir', 1), dir, 'the stage run');
   const session = (await (await postJson(`${base}/activities/${LOCAL}/sessions`)).json()) as OpenResult;
-  assert.equal(launchOf(workers, session.ptyId)?.lspPluginDir, dir, 'a local session');
+  assert.equal(launchFlag(launchOf(workers, session.ptyId), '--plugin-dir', 1), dir, 'a local session');
   const shell = (await (await postJson(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult;
-  assert.equal(launchOf(workers, shell.ptyId)?.lspPluginDir, undefined, 'a shell runs no claude');
+  assert.equal(launchFlag(launchOf(workers, shell.ptyId), '--plugin-dir', 1), undefined, 'a shell runs no claude');
   const [, ...argv] = (await (await hiveFetch(`${base}/hooks/terminals/${shell.ptyId}/session`, { method: 'POST' })).text()).split('\n');
   assert.deepEqual(argv.slice(4, 8), ['--plugin-dir', join(home, 'plugin'), '--plugin-dir', dir], 'a terminal\'s claude, after the Hive\'s own');
   const spawned = records.filter((r) => r.event === 'run.spawned').at(-1) as Record<string, unknown> | undefined;

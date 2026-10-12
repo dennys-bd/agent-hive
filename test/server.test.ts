@@ -30,7 +30,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, move, workspacesAt, tempHive, chained } from './fakes.js';
+import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -291,16 +291,20 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
   assert.equal(workers.length, 1);
   const promptPath = join(home, 'prompts', 'hive-1-from-ready.md');
   assert.deepEqual(workers[0].launch, {
-    ptyId: worker.runId, slug: 'hive-1-from-ready', cwd: join(repo, '.hive', 'worktrees', 'hive-1-from-ready'), port,
-    hooksPath: join(home, 'hooks.json'), pluginDir: join(home, 'plugin'), mcpPath: join(home, 'prompts', `${worker.runId}.mcp.json`), promptPath,
-    protocolPath: join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), // a stage run is told how to end it (#167), its workspace's memory under it (#797)
-    args: ['--session-id', work0(server)!.sessionId!], // #629: the activity's
-    env: {},
+    ptyId: worker.runId, slug: 'hive-1-from-ready', cwd: join(repo, '.hive', 'worktrees', 'hive-1-from-ready'), port, promptPath, env: {},
+    agent: {
+      command: 'claude',
+      argv: [
+        ['--mcp-config', join(home, 'prompts', `${worker.runId}.mcp.json`)], ['--settings', join(home, 'hooks.json')], ['--plugin-dir', join(home, 'plugin')],
+        ['--append-system-prompt-file', join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md')], // a stage run is told how to end it (#167), its workspace's memory under it (#797)
+        '--session-id', work0(server)!.sessionId!, // #629: the activity's
+      ],
+    },
   });
-  assert.deepEqual(JSON.parse(await readFile(workers[0].launch.mcpPath, 'utf8')), renderMcpConfig(port, worker.runId!, SECRET), 'the tools reach this Hive as this worker');
-  assert.equal(await readFile(workers[0].launch.protocolPath ?? '', 'utf8'), STAGE_PROTOCOL, 'the boot wrote the workspace\'s file: no lesson yet, the protocol alone (#797)');
+  assert.deepEqual(JSON.parse(await readFile(launchFlag(workers[0].launch, '--mcp-config')!, 'utf8')), renderMcpConfig(port, worker.runId!, SECRET), 'the tools reach this Hive as this worker');
+  assert.equal(await readFile(launchFlag(workers[0].launch, '--append-system-prompt-file') ?? '', 'utf8'), STAGE_PROTOCOL, 'the boot wrote the workspace\'s file: no lesson yet, the protocol alone (#797)');
   assert.equal(workers[0].options?.secretFile, join(home, 'hive.secret'), 'the run\'s env gets the path of hive.secret from the spawner options, never the value (#467)');
-  assert.match(workers[0].launch.args[1], /^[0-9a-f-]{36}$/);
+  assert.match(plainArgs(workers[0].launch)[1], /^[0-9a-f-]{36}$/);
   const prompt = await readFile(promptPath, 'utf8');
   assert.match(prompt, /^Task #1: from Ready/, 'the command line reads the prompt from this file');
   assert.equal(prompt, renderPrompt(STAGES[0].prompt ?? '', task0(server).item), 'the rendered prompt and nothing after it: the protocol has its own file (#167)');
@@ -319,7 +323,7 @@ test('a spawn creates the task worktree before the worker exists and launches it
   assert.deepEqual(calls.at(0)?.slice(3, 5), ['worktree', 'list'], 'the path git lists decides everything that follows');
   assert.deepEqual(calls.find((c) => c.includes('add'))?.slice(3), ['worktree', 'add', '-b', 'hive/1-from-ready', '--', worktree], 'no start point: nothing here resolves origin/main');
   assert.equal(workers[0].launch.cwd, worktree);
-  assert.equal(workers[0].launch.args.some((a) => a.startsWith('--worktree')), false);
+  assert.equal(plainArgs(workers[0].launch).some((a) => a.startsWith('--worktree')), false);
 });
 
 test('git refusing to create the worktree is a spawnFailed: the worker frees, the task keeps git\'s own words and no worker starts', async (t) => {
@@ -1949,16 +1953,16 @@ test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' }));
   assert.equal(work0(server)?.worktree, worktree, 'the terminal needs the worktree too: created first');
   assert.deepEqual([workers.length, workers[0].launch.terminal, server.getState()!.terminals.length], [1, true, 1], 'the terminal runs through the pool');
-  assert.equal(workers[0].launch.protocolPath, undefined, 'a terminal runs no agent: no protocol (#167)');
+  assert.equal(launchFlag(workers[0].launch, '--append-system-prompt-file'), undefined, 'a terminal runs no agent: no protocol (#167)');
   assert.equal(server.getState()!.workers.filter((s) => s.status !== 'empty').length, 0, 'a terminal holds no worker');
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   const first = server.getState()!.workers.find((s) => s.freeSession)!;
   assert.deepEqual([first.freeSession, taskOfWorker(server.getState()!, first)?.item.itemId, first.draining, worker0(server).status], [true, 'board:I1', undefined, 'empty'], 'appended: the free worker stays the fill\'s (#459)');
   assert.equal(workers.length, 2, 'the spawn ran before the answer');
   const { launch } = workers[1];
-  assert.deepEqual([launch.slug, launch.cwd, launch.promptPath, launch.args, launch.mcpPath],
+  assert.deepEqual([launch.slug, launch.cwd, launch.promptPath, plainArgs(launch), launchFlag(launch, '--mcp-config')],
     ['hive-1-from-ready', worktree, undefined, ['--session-id', first.sessionId], join(home, 'prompts', `${first.runId}.mcp.json`)]);
-  assert.equal(launch.protocolPath, join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'a free session on a task is told the session protocol (#167)');
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'session.md'), 'a free session on a task is told the session protocol (#167)');
   assert.equal(work0(server)?.workerId, undefined, 'task.workerId stays the automatic worker\'s');
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   const live = server.getState()!.workers;
@@ -1971,7 +1975,7 @@ test('POST /tasks/:id/open: a bad kind is 400 and creates nothing; terminal on a
   workers[1].handlers.onExit();
   await waitFor(() => !server.getState()!.workers.some((s) => s.runId === first.runId));
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude', continueId: first.sessionId }));
-  assert.deepEqual(workers[3].launch.args, ['--resume', first.sessionId]);
+  assert.deepEqual(plainArgs(workers[3].launch), ['--resume', first.sessionId]);
 });
 
 test('a resumed repo session runs in the workspace\'s main repo, not in the task\'s worktree path (#208)', async (t) => {
@@ -1982,7 +1986,7 @@ test('a resumed repo session runs in the workspace\'s main repo, not in the task
   assert.equal(sessions0(server)[0].repo, true);
   await server.dispatch({ type: 'openSession', activityId: workId(server.getState()!, 'board:I1'), continueId: session.id });
   assert.equal(workers.length, 2, 'the spawn ran inside the dispatch');
-  assert.deepEqual([workers[1].launch.cwd, workers[1].launch.args], [repo, ['--resume', session.id]]);
+  assert.deepEqual([workers[1].launch.cwd, plainArgs(workers[1].launch)], [repo, ['--resume', session.id]]);
 });
 
 test('POST /activities/:id/sessions/:session/open opens a listed session in a manual worker on any task, a repo one in the main repo once its transcript moved there; refusals in order: unknown task, missing, deleting, not continuable, a worktree session with no worktree on disk, a repo session whose transcript is gone (#208)', async (t) => {
@@ -2017,7 +2021,7 @@ test('POST /activities/:id/sessions/:session/open opens a listed session in a ma
   await opened(open('board:I1', s));
   assert.deepEqual((await readdir(transcriptDir(repo))).sort(), [s, `${s}.jsonl`].sort(), 'moved before the session opened');
   assert.deepEqual(await readdir(from), []);
-  assert.deepEqual([workers.length, workers[1].launch.cwd, workers[1].launch.args], [2, repo, ['--resume', s]]);
+  assert.deepEqual([workers.length, workers[1].launch.cwd, plainArgs(workers[1].launch)], [2, repo, ['--resume', s]]);
   await refused('board:I1', s, 409, 'sessão já aberta ou desconhecida'); // its worker holds it now
 });
 
@@ -2034,7 +2038,7 @@ test('a blocked task opens a terminal, a new claude session and a listed session
   await opened(postJson(`${base}/tasks/board:I1/open`, { kind: 'claude' }));
   await opened(postJson(`${base}${workPath(server, 'board:I1')}/sessions/${session.id}/open`));
   assert.equal(workers.length, 4, 'the stage run, then the terminal, the new session and the resumed one');
-  assert.deepEqual(workers[3].launch.args, ['--resume', session.id]);
+  assert.deepEqual(plainArgs(workers[3].launch), ['--resume', session.id]);
   const state = server.getState()!;
   const leaving: State = { ...state, tasks: state.tasks.map((c) => ({ ...c, leaving: true as const })) };
   assert.deepEqual(openTask(leaving, 'board:I1'), { status: 409, message: 'tarefa saindo da source' });
@@ -2297,7 +2301,7 @@ test('a terminal goes through the pool with no worker: its launch is the user\'s
   const [terminal] = server.getState()!.terminals;
   const { launch } = workers[0];
   assert.deepEqual(
-    [launch.terminal, launch.ptyId, launch.cwd, launch.mcpPath, launch.promptPath],
+    [launch.terminal, launch.ptyId, launch.cwd, launchFlag(launch, '--mcp-config'), launch.promptPath],
     [true, terminal.terminalId, worktreePath(repo, TASK_SLUG), undefined, undefined],
   );
   assert.equal(server.getState()!.workers.filter((s) => s.status !== 'empty').length, 0, 'a terminal holds no worker');
@@ -2334,8 +2338,8 @@ test('POST /activities/:id/continue resumes the stopped stage\'s latest session 
   workers[0].handlers.onExit(); // no hive_done: stopped
   await waitFor(() => work0(server)?.stopped === true);
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/continue`)), { ok: true });
-  assert.deepEqual(workers[1].launch.args, ['--resume', session]);
-  assert.equal(workers[1].launch.protocolPath, join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'Continue is a stage run: the stage protocol (#167)');
+  assert.deepEqual(plainArgs(workers[1].launch), ['--resume', session]);
+  assert.equal(launchFlag(workers[1].launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md'), 'Continue is a stage run: the stage protocol (#167)');
   assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), CONTINUE_PROMPT);
 });
 
@@ -2370,7 +2374,7 @@ test('a stage spawn records where it started; GET /activities/:id/restart previe
   ]);
   assert.equal(workers.length, 2, 'a new stage run');
   assert.equal(workers[1].launch.cwd, worktreePath(repo, TASK_SLUG));
-  assert.notEqual(workers[1].launch.args[1], workers[0].launch.args[1], 'in a new session');
+  assert.notEqual(plainArgs(workers[1].launch)[1], plainArgs(workers[0].launch)[1], 'in a new session');
 });
 
 test('a stage run started in a stage that already has its start keeps that start: one stage start per stage (#812)', async (t) => {
@@ -2654,7 +2658,7 @@ test('feedback with start on a task whose run ended resumes the stage\'s session
   await server.dispatch({ type: 'setSignal', signal: 'red' }); // past red, like a start
   assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/feedback`, { text: 'fix the flaky test', start: true })), { ok: true });
   assert.equal(workers.length, 2);
-  assert.deepEqual(workers[1].launch.args.slice(-2), ['--resume', session]);
+  assert.deepEqual(plainArgs(workers[1].launch).slice(-2), ['--resume', session]);
   assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), 'The user reviewed this stage and asks:\n\nfix the flaky test');
 });
 

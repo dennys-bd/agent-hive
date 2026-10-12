@@ -16,6 +16,9 @@ import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
 import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
+import { AGENTS } from '../src/agents.js';
+import { runners } from '../src/agents/registry.js';
+import type { AgentRun } from '../src/agents/runner.js';
 
 export interface FakeWorker {
   launch: PtyLaunch;
@@ -62,11 +65,27 @@ export function fakeSpawn(options: FakeSpawnOptions = {}): { spawn: LaunchPty; w
   return { spawn, workers };
 }
 
-export const LAUNCH: PtyLaunch = {
-  ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242,
-  hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json', promptPath: '/repo/.hive/prompts/hive-1-task.md',
-  args: ['--session-id', 'a1b2c3d4-0000-4000-8000-000000000001'],
+// The run LAUNCH's agent renders (#924): ptyCommand's expected strings were written against these paths
+const LAUNCH_RUN: AgentRun = {
+  ptyId: 'W1', hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
+  session: { id: 'a1b2c3d4-0000-4000-8000-000000000001', resume: false }, extraArgs: [],
 };
+
+/** A launch's agent as Claude's runner renders `run` over LAUNCH's own (#924). */
+export const claudeLaunch = (run: Partial<AgentRun> = {}): NonNullable<PtyLaunch['agent']> =>
+  ({ command: AGENTS.claude.command, argv: runners.claude.launch({ ...LAUNCH_RUN, ...run }) });
+
+export const LAUNCH: PtyLaunch = {
+  ptyId: 'W1', slug: 'hive-1-task', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, promptPath: '/repo/.hive/prompts/hive-1-task.md', agent: claudeLaunch(),
+};
+
+/** The plain words of a launch's argv (#924): the agent's own args, the model and the session, what PtyLaunch.args held before. */
+export const plainArgs = (launch: Pick<PtyLaunch, 'agent'> | undefined): string[] =>
+  (launch?.agent?.argv ?? []).filter((arg): arg is string => typeof arg === 'string');
+
+/** The value behind the `at`-th of one of the Hive's own flags in a launch's argv (#924); undefined when it has none. */
+export const launchFlag = (launch: Pick<PtyLaunch, 'agent'> | undefined, flag: string, at = 0): string | undefined =>
+  (launch?.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' || arg[0] !== flag ? [] : [arg[1]]))[at];
 
 export const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'];
 

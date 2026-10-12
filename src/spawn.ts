@@ -3,15 +3,14 @@ import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { runners } from './agents/registry.js';
+import type { AgentRun } from './agents/runner.js';
 import { shimDir } from './shim.js';
 import { historyPath } from './terminal-files.js';
-import type { Activity, AgentId, Stage, Exec, SessionCopy, SessionPolicy, Item, PtyLaunch } from './types.js';
+import { AGENT_IDS, type Stage, type Exec, type SessionPolicy, type Item, type LaunchArg, type PtyLaunch } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const NO_MATCH_EXIT = 1;
-// temporary (#924): Claude's model and protocol flags until Task 8 renders every argv through the runner's launch
-const MODEL_FLAG = '--model';
-const PROTOCOL_FLAG = '--append-system-prompt-file';
 
 // {id} {number} {title} {body} {url}, {verdict} {feedback} (#134), or {result.<dotted path>} into the task's result (#99). One pass: text a
 // substitution brings in (a task body that says `{result.spec}`, an evidence that says `{id}`) is never read as a placeholder.
@@ -70,20 +69,10 @@ export async function writePrompt(promptsDir: string, slug: string, text: string
   return path;
 }
 
-/** The argv the reducer decided: the global claudeArgs, the stage model behind the agent's flag, as typed (#516), then the session id as
- * `--session-id` (new: the Hive generated it) or `--resume` (continue: the activity's own). No id at all leaves the choice to claude. The
- * worktree is not here: the Hive created it and the worker is started inside it (PtyLaunch.cwd). */
-export function runArgs(activity: Pick<Activity, 'sessionId'>, stage: Pick<Stage, 'model'>, session: SessionPolicy, claudeArgs: string[], _agent: AgentId): string[] {
-  const model = stage.model === undefined ? [] : [MODEL_FLAG, stage.model];
-  const id = activity.sessionId === undefined ? [] : [session === 'continue' ? '--resume' : '--session-id', activity.sessionId];
-  return [...claudeArgs, ...model, ...id];
-}
-
-/** A copy's argv (#587): the source session resumed as a new one under the id the reducer chose, so the new transcript and its SessionStart
- * carry that id. claudeArgs first, as runArgs puts them; a free session has no model. The dialog's name becomes the fork's own title in
- * place of the source's it would carry, so the session has one name; `--name=` so a name starting with `-` is never an option. */
-export const copyArgs = (copy: SessionCopy, sessionId: string, claudeArgs: string[]): string[] =>
-  [...claudeArgs, '--resume', copy.from, '--fork-session', '--session-id', sessionId, ...(copy.name === undefined ? [] : [`--name=${copy.name}`])];
+/** A run's session as its runner reads it (#924): continue resumes the id, new starts under it (the Hive generated it); no id at all leaves the
+ * choice to the agent. The worktree is not here: the Hive created it and the run starts inside it (PtyLaunch.cwd). */
+export const runSession = (sessionId: string | undefined, policy: SessionPolicy): AgentRun['session'] =>
+  (sessionId === undefined ? undefined : { id: sessionId, resume: policy === 'continue' });
 
 /** A run's own temp dir (#428): TMPDIR for everything the run starts, removed when it exits. Under the daemon's own temp dir, which the OS
  * purges, so the dir of a run a daemon crash interrupted still goes eventually. */
@@ -91,10 +80,14 @@ export function runTmpDir(ptyId: string, base = tmpdir()): string {
   return join(base, 'hive-runs', ptyId);
 }
 
-/** The Hive's own env minus what a child must not inherit (see ptyEnv); a language server (#780) is started with the same. */
+// The Hive's own variables no child inherits (see ptyEnv); every runner's hostEnv joins them (#924)
+const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME'];
+
+/** The Hive's own env minus what a child must not inherit (see ptyEnv): every runner's host env, whatever the run's agent, since it
+ * describes the process the Hive was started from (#924). A language server (#780) is started with the same. */
 export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const { CLAUDECODE: _claudecode, CLAUDE_CODE_CHILD_SESSION: _childSession, NODE_PATH: _nodePath, HIVE_SECRET: _secret, HIVE_HOME: _home, ...env } = base;
-  return env;
+  const dropped = new Set([...AGENT_IDS.flatMap((id) => runners[id].hostEnv), ...HIVE_ONLY_ENV]);
+  return Object.fromEntries(Object.entries(base).filter(([name]) => !dropped.has(name)));
 }
 
 /**
@@ -130,11 +123,14 @@ const CLOSING_LINE = `printf '\\r\\n── encerrado (código %s) ──\\r\\n' 
 const commandLine = ({ command, env }: NonNullable<PtyLaunch['run']>): string =>
   `${Object.entries(env).map(([name, value]) => `export ${name}=${shellQuote(value)} && `).join('')}${COMMAND_ECHO} ${shellQuote(command)} && "\${SHELL:-sh}" -c ${shellQuote(command)}; hive_code=$?; ${CLOSING_LINE}; `;
 
-// The one shell string of the repo (#283, #251), in three renders: the claude run, a terminal and a workspace's run command (#300). The
-// pty host runs it through `sh -c`, so there is no argv to pass. Everything user-controlled goes through shellQuote:
-// the args are the reducer's (runArgs), quoted one by one; a run command's line and env values are quoted whole, and its env names passed
-// ENV_NAME in the parser and the form, since `export NAME=` cannot quote a name.
-// --mcp-config takes several values: --settings right after it ends the list, or the prompt would be read as a second config.
+// A launch word as the shell reads it (#924): one of the Hive's own flags bare with its value quoted, any other word quoted whole, as the
+// command line always had them
+const shellWord = (arg: LaunchArg): string => (typeof arg === 'string' ? shellQuote(arg) : `${arg[0]} ${shellQuote(arg[1])}`);
+
+// The one shell string of the repo (#283, #251), in three renders: an agent's run, a terminal and a workspace's run command (#300). The
+// pty host runs it through `sh -c`, so there is no argv to pass. Everything user-controlled goes through shellQuote: the agent's argv, which
+// its runner rendered (#924), word by word; a run command's line and env values are quoted whole, and its env names passed ENV_NAME in the
+// parser and the form, since `export NAME=` cannot quote a name.
 export function ptyCommand(o: PtyLaunch): string {
   // The secret from hive.secret, whose path the env ptyEnv gave the run holds (#467): curl reads the header from the file, so neither
   // sh -c's argv nor curl's ever holds the value
@@ -142,20 +138,14 @@ export function ptyCommand(o: PtyLaunch): string {
   // A terminal (#283, #647): the user's shell in the worktree, not exec'd, so the trailer still reports its exit; or a run command, which ends with its command (#300, #353).
   if (o.terminal && o.run) return `cd ${shellQuote(o.cwd)} && ${commandLine(o.run)}${trailer}; exit "$hive_code"`;
   if (o.terminal) return `cd ${shellQuote(o.cwd)} && "\${SHELL:-sh}"; ${trailer}`;
-  const claude = [
+  if (o.agent === undefined) throw new Error('pty: a run launch with no agent');
+  const line = [
     `cd ${shellQuote(o.cwd)} &&`,
-    `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} claude`,
-    ...(o.mcpPath === undefined ? [] : [`--mcp-config ${shellQuote(o.mcpPath)}`]), // every claude run has the MCP (#99, #283)
-    `--settings ${shellQuote(o.hooksPath)}`,
-    `--plugin-dir ${shellQuote(o.pluginDir)}`, // the Hive's skills (/hive:new-spec …) and the agents they dispatch (#100)
-    // the workspace's language servers (#803), a plugin of their own: Claude Code's LSP tool reads its .lsp.json at launch
-    ...(o.lspPluginDir === undefined ? [] : [`--plugin-dir ${shellQuote(o.lspPluginDir)}`]),
-    // the Hive's protocol (#167): how to end a stage, ask and give up, beside the tools it names instead of inside every prompt
-    ...(o.protocolPath === undefined ? [] : [`${PROTOCOL_FLAG} ${shellQuote(o.protocolPath)}`]),
-    ...o.args.map(shellQuote),
+    `HIVE_PTY_ID=${o.ptyId} HIVE_PORT=${o.port} ${o.agent.command}`, // an AGENTS constant, never the user's text: bare, as it always was
+    ...o.agent.argv.map(shellWord),
     ...(o.promptPath === undefined ? [] : [`"$(cat ${shellQuote(o.promptPath)})"`]), // a session starts with no prompt (#164)
   ].join(' ');
-  return `${claude}; ${trailer}`;
+  return `${line}; ${trailer}`;
 }
 
 // pkill / pgrep by a pattern the caller owns: true when a process matched; exit 1 is "nothing matched", anything else throws.

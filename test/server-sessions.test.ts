@@ -11,7 +11,7 @@ import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
-import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -66,7 +66,7 @@ test('POST /activities/local:<name>/shell opens a terminal in the workspace\'s c
   assert.equal(terminal.activityId, localActivityId(WORKSPACE), 'the workspace\'s local activity (#629)');
   const { launch } = workers[0];
   assert.deepEqual(
-    [launch.slug, launch.cwd, launch.terminal, launch.run, launch.args, launch.promptPath, launch.mcpPath],
+    [launch.slug, launch.cwd, launch.terminal, launch.run, plainArgs(launch), launch.promptPath, launchFlag(launch, '--mcp-config')],
     ['workspace', repo, true, undefined, [], undefined, undefined],
   );
   assert.deepEqual(git.slice(before), [], 'no git: no worktree, no checkout, no setup');
@@ -121,14 +121,14 @@ test('a new local claude session runs claude in the workspace\'s checkout with i
   await server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE) });
   const { ptyId, sessionId } = localWorker(server);
   const { launch } = workers[0];
-  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launch.protocolPath], ['workspace', repo, undefined, undefined, undefined], 'no Hive tools, no protocol (#167)');
-  assert.ok(launch.mcpPath?.endsWith(`${ptyId}.mcp.json`), 'the worker id in claude\'s argv');
-  assert.deepEqual(launch.args.slice(-2), ['--session-id', sessionId]);
+  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launchFlag(launch, '--append-system-prompt-file')], ['workspace', repo, undefined, undefined, undefined], 'no Hive tools, no protocol (#167)');
+  assert.ok(launchFlag(launch, '--mcp-config')?.endsWith(`${ptyId}.mcp.json`), 'the worker id in claude\'s argv');
+  assert.deepEqual(plainArgs(launch).slice(-2), ['--session-id', sessionId]);
   assert.deepEqual(git.slice(before), [], 'no worktree, no checkout, no setup');
   await server.dispatch({ type: 'hook', ptyId, payload: { hook_event_name: 'SessionStart', session_id: sessionId } });
   await server.dispatch({ type: 'exit', ptyId });
   await server.dispatch({ type: 'openLocalSession', activityId: localActivityId(WORKSPACE), sessionId });
-  assert.deepEqual(workers[1].launch.args.slice(-2), ['--resume', sessionId]);
+  assert.deepEqual(plainArgs(workers[1].launch).slice(-2), ['--resume', sessionId]);
 });
 
 test('a local claude session whose workspace a save removed ends in spawnFailed with the reason in the bar; its worker leaves (#590)', async (t) => {

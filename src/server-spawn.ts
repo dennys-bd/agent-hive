@@ -1,7 +1,8 @@
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { agentOf, agentRefusal, ranAgent } from './agents.js';
+import { AGENTS, agentOf, agentRefusal, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
+import type { AgentRun } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { runTaskSetup } from './task-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
@@ -14,7 +15,7 @@ import type { PtyHost } from './pty-host.js';
 import { recordStageStart } from './restart.js';
 import { commandIn } from './run-commands.js';
 import type { Runtime } from './server.js';
-import { copyArgs, renderPrompt, stackedPrLine, verdictsLine, withHandoff, runArgs, terminalEnv, writePrompt } from './spawn.js';
+import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, writePrompt } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
 import type { Activity, AgentAvailability, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
@@ -103,9 +104,6 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 // #808: the page's grid on a launch, and no `size: undefined` key when it sent none: the host's fallback applies
 const sized = (size?: TerminalSize): Pick<PtyLaunch, 'size'> => (size === undefined ? {} : { size });
 
-// #803: the workspace's plugin on a claude launch, and no `lspPluginDir: undefined` key when it has none
-const lspPlugin = (dir: string | undefined): Pick<PtyLaunch, 'lspPluginDir'> => (dir === undefined ? {} : { lspPluginDir: dir });
-
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, events, lspDir } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
@@ -165,7 +163,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!ptyId) return;
     const slug = workSlug(activity, task);
     const { config, hooksPath, promptsDir, pluginDir, port } = runtime;
-    const agent = agentOf(stage, config);
+    const agent = agentOf(stage, config); // the agent the reducer recorded on the worker too (#925)
+    const runner = runners[agent];
     const refusal = agentRefusal(agent, agents); // #516: before prepare, so a missing agent leaves no worktree, setup or prompt behind
     if (refusal !== undefined) {
       await dispatch({ type: 'spawnFailed', ptyId, message: refusal });
@@ -187,14 +186,15 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runners[agent].mcpConfig({ port, ptyId, secret, withHive: true })); // the tools' channel (#99); its path puts the pty id in the agent's argv
+    const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig({ port, ptyId, secret, withHive: true })); // the tools' channel (#99); its path puts the pty id in the agent's argv
+    const run: AgentRun = {
+      ptyId, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), model: stage.model, session: runSession(activity.sessionId, session),
+      protocolPath: taskProtocol(home, runtime, task).stage, // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
+      extraArgs: config.agentArgs[agent], // #924: the stage's agent's own
+    };
     pool.start({
       ptyId,
-      launch: {
-        ptyId, slug, cwd, env, port, hooksPath, pluginDir, mcpPath, promptPath, ...sized(size), ...lspPlugin(lspDir(workspace)),
-        protocolPath: taskProtocol(home, runtime, task).stage, // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
-        args: runArgs(activity, stage, session, config.agentArgs[agent], agent),
-      },
+      launch: { ptyId, slug, cwd, env, port, promptPath, ...sized(size), agent: { command: AGENTS[agent].command, argv: runner.launch(run) } },
       ...handlers(ptyId, slug),
     });
   }
@@ -217,20 +217,30 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
     const first = copy?.notice ?? prompt;
+    // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
+    const agent = ranAgent(effect.worker);
+    const runner = runners[agent];
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
     const files = await Promise.all([
-      writeMcpConfig(promptsDir, ptyId, runners[ranAgent(effect.worker)].mcpConfig({ port, ptyId, secret, withHive: task !== undefined })),
+      writeMcpConfig(promptsDir, ptyId, runner.mcpConfig({ port, ptyId, secret, withHive: task !== undefined })),
       first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
     const [mcpPath, promptPath] = files;
-    // the user's own session stays claude's (#516); temporary (#924): agentArgs.claude until Task 8 reads the worker's own agent's list
-    const args = copy ? copyArgs(copy, sessionId, config.agentArgs.claude) : runArgs({ sessionId }, {}, continues ? 'continue' : 'new', config.agentArgs.claude, 'claude');
     // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
-    const told = task === undefined ? {} : { protocolPath: taskProtocol(home, runtime, task).session }; // #797: the task's workspace's
+    const run: AgentRun = {
+      ptyId, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), extraArgs: config.agentArgs[agent],
+      session: runSession(sessionId, continues ? 'continue' : 'new'),
+      ...(task === undefined ? {} : { protocolPath: taskProtocol(home, runtime, task).session }), // #797: the task's workspace's
+    };
+    const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);
+    if (argv === undefined) {
+      await dispatch({ type: 'spawnFailed', ptyId, message: `${AGENTS[agent].label} cannot copy a session` });
+      return;
+    }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: place.slug, cwd: place.cwd, env, port, hooksPath, pluginDir, mcpPath, ...(promptPath === undefined ? {} : { promptPath }), ...told, ...lspPlugin(lspDir(place.workspace.name)), ...sized(size), args },
+      launch: { ptyId, slug: place.slug, cwd: place.cwd, env, port, ...(promptPath === undefined ? {} : { promptPath }), ...sized(size), agent: { command: AGENTS[agent].command, argv } },
       ...handlers(ptyId, place.slug),
     });
   }
@@ -252,7 +262,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   async function spawnTerminal(runtime: Runtime, { terminal, activity, task }: Extract<Effect, { type: 'spawnTerminal' }>, size?: TerminalSize): Promise<void> {
     if (activity.kind === 'local' || !task) return spawnProjectShell(runtime, terminal, size);
     const { terminalId: ptyId } = terminal;
-    const { config, hooksPath, pluginDir, port } = runtime;
+    const { config, port } = runtime;
     const workspace = taskWorkspace(config, task);
     if (!workspace) {
       await dispatch({ type: 'spawnFailed', ptyId, message: noWorkspaceReason(task) });
@@ -270,7 +280,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     pool.start({
       ptyId,
       launch: {
-        ptyId, slug: workSlug(activity, task), port, hooksPath, pluginDir, args: [], terminal: true, ...where, ...sized(size),
+        ptyId, slug: workSlug(activity, task), port, terminal: true, ...where, ...sized(size),
         ...(found ? { run: { command: found.command, env: found.env } } : {}),
       },
       ...handlers(ptyId, workSlug(activity, task)),
@@ -284,7 +294,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   async function spawnProjectShell(runtime: Runtime, terminal: Terminal, size?: TerminalSize): Promise<void> {
     const { terminalId: ptyId } = terminal;
     const name = localWorkspaceOf(terminal.activityId) ?? '';
-    const { config, hooksPath, pluginDir, port } = runtime;
+    const { config, port } = runtime;
     const workspace = workspaceByName(config, name);
     if (!workspace) {
       await dispatch({ type: 'spawnFailed', ptyId, message: `workspace "${name}" não existe mais` });
@@ -292,7 +302,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     }
     pool.start({
       ptyId,
-      launch: { ptyId, slug: LOCAL_SLUG, port, hooksPath, pluginDir, args: [], terminal: true, ...sized(size), ...(await keptLaunch(terminal, workspace.path, await runEnv(exec, workspace))) },
+      launch: { ptyId, slug: LOCAL_SLUG, port, terminal: true, ...sized(size), ...(await keptLaunch(terminal, workspace.path, await runEnv(exec, workspace))) },
       ...handlers(ptyId, LOCAL_SLUG),
     });
   }

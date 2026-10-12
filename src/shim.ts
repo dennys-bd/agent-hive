@@ -31,18 +31,6 @@ export async function installShim(home: string, agent: ShimAgent): Promise<strin
   return path;
 }
 
-/** What claude gets before the user's own args in a captured session (#696): a free session's (#283): the MCP, the hooks, the plugin, the
- * workspace's language-server plugin when it has one (#803), the protocol on a task's activity only, then the global claudeArgs and the
- * session id the Hive chose, in runArgs' order. --settings right after --mcp-config ends its list, as ptyCommand orders them. */
-export interface CapturedLaunch { sessionId: string; mcpPath: string; hooksPath: string; pluginDir: string; lspPluginDir?: string; protocolPath?: string; claudeArgs: string[] }
-
-export const capturedArgs = (o: CapturedLaunch): string[] => [
-  '--mcp-config', o.mcpPath, '--settings', o.hooksPath, '--plugin-dir', o.pluginDir,
-  ...(o.lspPluginDir === undefined ? [] : ['--plugin-dir', o.lspPluginDir]),
-  ...(o.protocolPath === undefined ? [] : ['--append-system-prompt-file' /* temporary (#924): Task 8 removes capturedArgs */, o.protocolPath]),
-  ...o.claudeArgs, '--session-id', o.sessionId,
-];
-
 // What the shim's read loop cannot take: a line break would split one arg in two, or start a forged one
 const LINE_BREAK = /[\r\n]/;
 
