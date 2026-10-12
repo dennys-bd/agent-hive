@@ -59,6 +59,13 @@ export const commentRow = (id: string, issueNodeId: string, updatedAt = T1): Com
 export const NOW = (): Date => new Date('2026-10-12T12:00:00Z');
 export const SYNCED = NOW().toISOString();
 export const ok = (body: unknown, extra: { next?: string; etag?: string; quota?: RestQuota } = {}): RestAnswer => ({ status: 200, body, ...extra });
+export const REST_REPO = {
+  id: 1, node_id: 'R_1', full_name: 'acme/hive', html_url: 'https://github.com/acme/hive', fork: false, has_issues: true, pushed_at: T1,
+  permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+};
+export const restLabel = (name: string): Record<string, unknown> => ({ id: name.length, node_id: `LA_${name}`, name, color: 'ededed', default: false });
+/** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */
+export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([])];
 export const restIssue = (n: number, updatedAt: string): Record<string, unknown> => ({ ...REST_ISSUE, node_id: `I_${n}`, number: n, title: `T${n}`, updated_at: updatedAt });
 export const restComment = (id: string, issue: number, updatedAt: string): Record<string, unknown> => ({
   ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,

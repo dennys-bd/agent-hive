@@ -3,7 +3,9 @@ import { commentFromRest, issueFromRest } from './normalize.js';
 import type { RestGet } from './rest.js';
 import type { CommentRow, IssueRow } from './rows.js';
 
-const KINDS: readonly SyncKind[] = ['issues', 'comments'];
+const KINDS: readonly SyncKind[] = ['issues', 'comments', 'repo', 'labels'];
+// the two since-cursor scopes; repo and labels are repo-scopes.ts's
+type ListKind = Extract<SyncKind, 'issues' | 'comments'>;
 
 /** What a sync needs (#180): the database, the read transport, whose rows these are, and the clock its scopes are stamped with. */
 export interface SyncDeps { db: ReadModel; rest: RestGet; source: string; now(): Date; isStopped?: () => boolean }
@@ -37,7 +39,7 @@ export const EMPTY_REPORT: SyncReport = { kinds: [], requests: { 200: 0, 304: 0 
 
 /** A scope's URL. One fixed spelling per cursor, so a saved ETag names exactly the URL it is sent with again. sort=updated: the comments
  * endpoint otherwise orders by creation, and an edited comment would fall behind the cursor. */
-export function scopePath(repository: string, kind: SyncKind, cursor: string | null): string {
+export function scopePath(repository: string, kind: ListKind, cursor: string | null): string {
   const since = cursor === null ? '' : `&since=${encodeURIComponent(cursor)}`;
   return kind === 'issues'
     ? `repos/${repository}/issues?state=all&sort=updated&direction=asc&per_page=100${since}`
@@ -56,7 +58,7 @@ function itemsOf(body: unknown): unknown[] {
   return body;
 }
 
-function rowOf(deps: SyncDeps, repository: string, kind: SyncKind, item: unknown): IssueRow | CommentRow | undefined {
+function rowOf(deps: SyncDeps, repository: string, kind: ListKind, item: unknown): IssueRow | CommentRow | undefined {
   const { db, source } = deps;
   return kind === 'issues' ? issueFromRest(source, repository, item) : commentFromRest(source, repository, item, (n) => db.nodeIdOf(source, repository, n));
 }
@@ -64,7 +66,7 @@ function rowOf(deps: SyncDeps, repository: string, kind: SyncKind, item: unknown
 interface PageStored { last: string | undefined; blocked: boolean; wrote: boolean }
 
 // One page in one transaction: the last updated_at it stored, whether a comment with no stored issue stopped it, and whether a row was written
-function storePage(deps: SyncDeps, repository: string, kind: SyncKind, items: unknown[]): PageStored {
+function storePage(deps: SyncDeps, repository: string, kind: ListKind, items: unknown[]): PageStored {
   const { db } = deps;
   return db.transaction(() => {
     let last: string | undefined;
@@ -83,7 +85,7 @@ function storePage(deps: SyncDeps, repository: string, kind: SyncKind, items: un
 interface PagesRead { report: SyncReport; last: string | null; firstEtag: string | null; blocked: boolean }
 
 // Every page from the saved cursor; undefined on a 304, which only a first page sent with its ETag can answer
-async function readPages(deps: SyncDeps, repository: string, kind: SyncKind, saved: SyncScope | undefined): Promise<PagesRead | undefined> {
+async function readPages(deps: SyncDeps, repository: string, kind: ListKind, saved: SyncScope | undefined): Promise<PagesRead | undefined> {
   let path: string | undefined = scopePath(repository, kind, saved?.cursor ?? null);
   let read: PagesRead = { report: EMPTY_REPORT, last: saved?.cursor ?? null, firstEtag: null, blocked: false };
   let first = true;
@@ -110,7 +112,7 @@ async function readPages(deps: SyncDeps, repository: string, kind: SyncKind, sav
 
 /** One scope of one repository (#180): every page from its cursor, then the cursor on the last updated_at stored. A throw leaves the scope
  * where it was: it never reaches setScope. */
-export async function syncScope(deps: SyncDeps, repository: string, kind: SyncKind): Promise<ScopeReport> {
+export async function syncScope(deps: SyncDeps, repository: string, kind: ListKind): Promise<ScopeReport> {
   const { db, source } = deps;
   const saved = db.scope(source, repository, kind);
   const from = saved?.cursor ?? null;

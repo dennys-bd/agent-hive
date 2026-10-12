@@ -3,6 +3,7 @@ import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
+import { syncLabels, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 
@@ -25,7 +26,7 @@ function reconcileDue(deps: SyncDeps, repository: string): boolean {
   return !(deps.now().getTime() - Date.parse(at ?? '') <= RECONCILE_EVERY_MS);
 }
 
-/** One repository's round (#180): issues, then comments (whose issues the first scope stored), then the full listing when due. A first round
+/** One repository's round (#180): issues, then comments (whose issues the first scope stored), then the repo and labels scopes, then the full listing when due. A first round
  * that read both scopes from null to their end already read everything: it counts as the listing. A scope that throws ends the round
  * there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
 export async function syncRepository(deps: SyncDeps, repository: string): Promise<RoundResult> {
@@ -37,6 +38,9 @@ export async function syncRepository(deps: SyncDeps, repository: string): Promis
     const comments = await syncScope(deps, repository, 'comments');
     report = mergeReports(report, comments);
     commentsBlocked = comments.blocked === true;
+    // #181: after the issue scopes, which the views need most; a failure here ends the round as any scope's does
+    report = mergeReports(report, await syncRepo(deps, repository));
+    report = mergeReports(report, await syncLabels(deps, repository));
     if (issues.full && comments.full) stampReconcile(deps, repository);
     else if (reconcileDue(deps, repository)) report = mergeReports(report, await reconcile(deps, repository));
     return { report, ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
