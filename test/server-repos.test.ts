@@ -11,10 +11,6 @@ import { fakeGqlJson } from './fakes.js';
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: [{ name: 'hive', path: '/code/hive', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 const exec: Exec = async () => ({ stdout: 'git@github.com:acme/hive.git\n' }); // the one workspace's origin: acme/hive
 const RATE = { limit: 5000, remaining: 4000, resetAt: '2999-01-01T00:00:00Z' };
-const SUMMARY = {
-  url: 'https://github.com/acme/hive', pushedAt: '2026-10-05T09:00:00Z', viewerPermission: 'WRITE', hasIssuesEnabled: true, pullRequests: { totalCount: 1 }, open: { totalCount: 3 }, closed: { totalCount: 4 },
-  lastIssue: { nodes: [] }, lastPr: { nodes: [] },
-};
 type Answer = (query: string, variables: Record<string, unknown>) => unknown;
 
 // The repository routes alone over this state, GitHub answering `answer`; `polls` records every poll. Answers the base URL
@@ -32,59 +28,22 @@ function routes(t: TestContext, answer: Answer, extra: Partial<State> = {}, poll
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
 
-test('GET /repositories answers the summary of each repository the Hive lists (#757)', async (t) => {
-  const base = routes(t, (_query, variables) => (variables.n0 === 'hive' ? { rateLimit: RATE, r0: SUMMARY } : {}));
-  const res = await fetch(`${base}/repositories`);
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), [{
-    repository: 'acme/hive', url: 'https://github.com/acme/hive', workspace: 'hive', openPrs: 1, openIssues: 3, closedIssues: 4, canPush: true, issuesEnabled: true, lastActivity: '2026-10-05T09:00:00Z',
-  }]);
-});
-
-test('a reading under the reserve refuses the routes with 429 and its reset; with no reading yet they read (#757)', async (t) => {
-  let reads = 0;
-  const low = { ...RATE, remaining: 499 };
-  const base = routes(t, () => { reads += 1; return { rateLimit: low, r0: SUMMARY }; });
-  assert.equal((await fetch(`${base}/repositories`)).status, 200, 'no reading yet: it reads, and keeps the low one');
-  const refused = await fetch(`${base}/repositories`);
-  assert.deepEqual([refused.status, await refused.json()], [429, { error: 'GitHub quota is low', resetsAt: low.resetAt }]);
-  assert.equal(reads, 1, 'refused before the read');
-});
-
-test('GET /repositories is a 502 with GitHub\'s words (#757)', async (t) => {
-  const base = routes(t, () => { throw new Error('Bad credentials'); });
-  const res = await fetch(`${base}/repositories`);
-  assert.deepEqual([res.status, await res.json()], [502, { error: 'Bad credentials' }]);
-});
-
-const ISSUE_NODE = {
-  number: 12, title: 'T12', url: 'https://github.com/acme/hive/issues/12', updatedAt: '2026-10-05T09:00:00Z',
-  labels: { nodes: [] }, assignees: { nodes: [] }, closedByPullRequestsReferences: { nodes: [] },
-};
-const ISSUE = { number: 12, title: 'T12', url: 'https://github.com/acme/hive/issues/12', updatedAt: '2026-10-05T09:00:00Z', labels: [], assignees: [], pullRequests: [] };
-
-test('GET …/issues answers the state asked; another state is a 400 and a repository the Hive does not list a 404 (#757)', async (t) => {
-  const base = routes(t, () => ({ rateLimit: RATE, repository: { issues: { totalCount: 1, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [ISSUE_NODE] } } }));
-  const res = await fetch(`${base}/repositories/acme/hive/issues?state=closed`);
-  assert.deepEqual([res.status, await res.json()], [200, { state: 'closed', total: 1, truncated: false, issues: [ISSUE] }]);
-  const bad = await fetch(`${base}/repositories/acme/hive/issues?state=all`);
-  assert.deepEqual([bad.status, await bad.json()], [400, { error: 'state must be open or closed' }]);
-  const other = await fetch(`${base}/repositories/acme/other/issues?state=open`);
-  assert.deepEqual([other.status, await other.json()], [404, { error: 'repository is not one the Hive lists' }]);
-});
-
-test('GET …/issues/:number answers the issue page; a number that is none is a 400 (#757)', async (t) => {
-  const node = { ...ISSUE_NODE, body: 'b', createdAt: '2026-10-01T09:00:00Z', author: { login: 'bia' }, comments: { totalCount: 0, nodes: [] } };
-  const base = routes(t, () => ({ rateLimit: RATE, repository: { issue: node } }));
-  const res = await fetch(`${base}/repositories/acme/hive/issues/12`);
-  assert.deepEqual([res.status, await res.json()], [200, { ...ISSUE, repository: 'acme/hive', body: 'b', author: 'bia', createdAt: '2026-10-01T09:00:00Z', comments: [], commentCount: 0 }]);
-  const bad = await fetch(`${base}/repositories/acme/hive/issues/x`);
-  assert.deepEqual([bad.status, await bad.json()], [400, { error: 'number must be an issue number' }]);
-});
-
 const U1 = '2026-10-05T09:00:00Z';
 const U2 = '2026-10-06T10:00:00Z';
 const post = (url: string, body: unknown): Promise<Response> => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('a reading under the reserve refuses the writes with 429 and its reset; with no reading yet they write (#757, #181)', async (t) => {
+  let reads = 0;
+  const low = { ...RATE, remaining: 499 };
+  const base = routes(t, (query) => {
+    if (query !== ADD_COMMENT) reads += 1;
+    return { rateLimit: low, repository: { issue: { id: 'I_12', updatedAt: U1 } } };
+  });
+  assert.equal((await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'one' })).status, 200, 'no reading yet: it writes, and keeps the low one');
+  const refused = await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'two' });
+  assert.deepEqual([refused.status, await refused.json()], [429, { error: 'GitHub quota is low', resetsAt: low.resetAt }]);
+  assert.equal(reads, 1, 'refused before the read');
+});
 
 test('POST …/issues/:number refuses no title nor body, an empty or long title, a long body or no updatedAt, before asking GitHub (#757)', async (t) => {
   let calls = 0;
@@ -115,7 +74,7 @@ test('POST …/issues/:number is a 409 that writes nothing on a newer issue; a m
   assert.deepEqual(polls, [['roadmap']], 'an issue no task is: nothing polled');
 });
 
-test('labels: GET names the repository\'s; POST refuses a malformed body or an unknown label, and a valid one writes and polls the issue\'s source (#757)', async (t) => {
+test('labels: POST refuses a malformed body or an unknown label, and a valid one writes and polls the issue\'s source (#757)', async (t) => {
   const polls: string[][] = [];
   const writes: string[] = [];
   const answer = (query: string) => {
@@ -125,8 +84,6 @@ test('labels: GET names the repository\'s; POST refuses a malformed body or an u
   };
   const task: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'T', body: '', url: 'https://github.com/acme/hive/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
   const base = routes(t, answer, { tasks: [task] }, polls);
-  const read = await fetch(`${base}/repositories/acme/hive/labels`);
-  assert.deepEqual([read.status, await read.json()], [200, ['bug']]);
   assert.equal((await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: 'bug', remove: [] })).status, 400);
   const unknown = await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['wontfix'], remove: [] });
   assert.deepEqual([unknown.status, await unknown.json()], [400, { error: 'label not in the repository: wontfix' }]);

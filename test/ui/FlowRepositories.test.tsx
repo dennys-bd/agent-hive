@@ -8,7 +8,7 @@ import { readView, resetViewState } from '@/lib/view-state';
 import type { RepoSummary } from '../../src/types';
 
 const repo = (name: string, day: number): RepoSummary => ({
-  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, lastActivity: `2026-10-0${day}T09:00:00Z`,
+  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: null, lastActivity: `2026-10-0${day}T09:00:00Z`,
 });
 // newest first by last activity: g f e d c b a
 const LIST = [repo('a', 1), repo('b', 2), repo('c', 3), repo('d', 4), repo('e', 5), repo('f', 6), repo('g', 7)];

@@ -1661,6 +1661,7 @@ export interface RepoSummary {
   pair?: string; // #886: the other repository of a fork workspace's pair (owner/name as listed), what the sidebar pairs by
   canPush: boolean; // #854: the login's viewerPermission is ADMIN, MAINTAIN or WRITE
   issuesEnabled: boolean; // #854: GitHub's hasIssuesEnabled
+  syncedAt: string | null; // #181: ISO, the repo scope's last complete round; null: never synced
 }
 
 /** One issue of a repository's list (#757). `pullRequests` reuses #756's ProjectPr; `draft` is added there. */
@@ -1675,7 +1676,10 @@ export interface RepoIssue {
 }
 
 /** A page of a repository's issues in one state (#757). */
-export interface RepoIssues { state: 'open' | 'closed'; total: number; issues: RepoIssue[]; truncated: boolean }
+export interface RepoIssues {
+  state: 'open' | 'closed'; total: number; issues: RepoIssue[]; truncated: boolean;
+  syncedAt: string | null; // #181: the issues scope's last complete round; null: never synced, and no rows
+}
 
 /** An issue as its page shows it (#757). `updatedAt` is sent back with a title or description edit to detect a change made meanwhile. */
 export interface IssuePage extends RepoIssue {

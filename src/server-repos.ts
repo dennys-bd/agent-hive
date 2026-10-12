@@ -1,8 +1,11 @@
 import type { Express, Request, Response } from 'express';
 import { inBackoff } from './polling.js';
-import { comment, editIssue, IssueChanged, type IssueEdit, readIssue, readIssues, readLabels, readSummaries, setLabels, UnknownLabel } from './repos/github-repos.js';
+import { comment, editIssue, IssueChanged, type IssueEdit, setLabels, UnknownLabel } from './repos/github-repos.js';
 import { issueUrl, taskOfIssue } from './repos/issue-task.js';
 import type { Logger } from './log.js';
+import type { ReadModel } from './read-model/db.js';
+import type { ReadModelLoop } from './read-model/loop.js';
+import { issuePageOf, issuesOf, summaryOf } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github.js';
@@ -12,6 +15,10 @@ import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
 const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
+const HTTP_SERVICE_UNAVAILABLE = 503;
+const MODEL_CLOSED_MESSAGE = 'the read model is not open yet';
+const NO_LOGIN_MESSAGE = 'no GitHub login';
+const UNREACHABLE_MESSAGE = 'could not reach GitHub';
 export const TITLE_MAX = 256; // GitHub's own cap on an issue or a PR title
 export const BODY_MAX = 65_536; // GitHub's own cap on an issue body or a comment
 const EDIT_MESSAGE = `title (1 to ${TITLE_MAX} characters) or body (up to ${BODY_MAX}), and the updatedAt the page read`;
@@ -30,10 +37,14 @@ const QUOTA_MESSAGE = 'GitHub quota is low';
 export interface RepoRouteDeps {
   requireLive(res: Response): { state: State; runtime: { config: Pick<Config, 'comb'> } } | undefined;
   exec: Exec; // git remote get-url, one per workspace on each request
-  gql: GqlJson; // gh api graphql --input -: the Hive's own login, as the PR page's writes (#592, #758); a repository is no source's
+  gql: GqlJson; // the writes' GraphQL (gh api graphql --input -): the Hive's own login, as the PR page's writes (#592, #758); a repository is no source's
   poll(names: string[]): Promise<void>; // /sources/refresh's path, for these sources only: after a write on a task's issue
   log: Pick<Logger, 'error'>;
+  readModel?: RepoReadModel; // absent: the daemon could not open the model, or setup mode (#181)
 }
+
+/** What the read routes answer from (#181): the model, whose rows to read, and the issue page's refetch. */
+export interface RepoReadModel { db: ReadModel; source(): Promise<string | undefined>; refetch: ReadModelLoop['refetch'] }
 
 interface Refusal { status: number; message: string }
 
@@ -62,16 +73,10 @@ function contextOf(deps: RepoRouteDeps): RepoContext {
   return { deps, gql, quota: () => quota };
 }
 
-// The live state and the repositories it lists, or undefined once the refusal is out: no config (requireLive's 409), or the quota under
-// QUOTA_RESERVE before its reset, the shape inBackoff checks for a source
+// The live state and the repositories it lists, or undefined once the refusal is out: no config (requireLive's 409)
 async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; refs: RepoRef[] } | undefined> {
   const live = ctx.deps.requireLive(res);
   if (!live) return undefined;
-  const quota = ctx.quota();
-  if (inBackoff({ quota }, Date.now())) {
-    res.status(HTTP_TOO_MANY_REQUESTS).json({ error: QUOTA_MESSAGE, resetsAt: quota?.resetsAt });
-    return undefined;
-  }
   return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, ctx.deps.exec) };
 }
 
@@ -91,15 +96,6 @@ function numberOf(req: Request): number | undefined {
   const raw = req.params.number;
   // the raw text, not Number(): 1e2, 0x10 and 01 all parse to an integer yet name no issue the URL spells
   return typeof raw === 'string' && ISSUE_NUMBER.test(raw) ? Number(raw) : undefined;
-}
-
-// A read's answer: its JSON, or the refusal its failure maps to
-async function answer(res: Response, read: () => Promise<unknown>): Promise<void> {
-  try {
-    res.json(await read());
-  } catch (err) {
-    refuse(res, refusalOf(err));
-  }
 }
 
 /** An edit's body (#757, #758): the updatedAt the page read, and a non-empty title of up to TITLE_MAX characters or a body of up to BODY_MAX, or both; an issue's or a PR's. */
@@ -125,6 +121,7 @@ async function pollOwner(ctx: RepoContext, { state, repository, number }: Target
 // A write's answer: { ok: true } once GitHub took it; the poll when `pollAfter` runs after the answer, so a slow or failing poll never
 // turns a write GitHub took into a refusal; its failure the refusal it maps to
 async function write(ctx: RepoContext, res: Response, target: Target, run: () => Promise<void>, pollAfter: boolean): Promise<void> {
+  if (inQuotaBackoff(ctx, res)) return;
   try {
     await run();
   } catch (err) {
@@ -164,31 +161,80 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
   });
 }
 
-// GET /repositories (#757): the sidebar's list, read when it mounts and on the repository header's refresh, never polled; then a repository's issues
+// The writes' GraphQL backoff (#757): under QUOTA_RESERVE before its reset a write is refused; the reads make no GraphQL call (#181)
+function inQuotaBackoff(ctx: RepoContext, res: Response): boolean {
+  const quota = ctx.quota();
+  if (!inBackoff({ quota }, Date.now())) return false;
+  res.status(HTTP_TOO_MANY_REQUESTS).json({ error: QUOTA_MESSAGE, resetsAt: quota?.resetsAt });
+  return true;
+}
+
+interface Reading { model: RepoReadModel; source: string }
+
+// The read model and whose rows to read, or undefined once the 503 is out: a read never falls back to GitHub (#181)
+async function readingOf(ctx: RepoContext, res: Response): Promise<Reading | undefined> {
+  const model = ctx.deps.readModel;
+  if (model === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: MODEL_CLOSED_MESSAGE });
+  const source = await model.source();
+  if (source === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: NO_LOGIN_MESSAGE });
+  return { model, source };
+}
+
+type NamedReading = Reading & { repository: string };
+
+async function namedReading(ctx: RepoContext, req: Request, res: Response): Promise<NamedReading | undefined> {
+  const found = await named(ctx, req, res);
+  const reading = found && (await readingOf(ctx, res));
+  return found && reading ? { ...reading, repository: found.repository } : undefined;
+}
+
+// The issue page (#181): a stored row at once, its refetch started and not awaited (the loop logs a failure; a change comes back as a
+// readModel event); a missing one waits for the refetch, so an issue the sync has not reached yet is no 404
+async function issuePage(res: Response, reading: NamedReading, number: number): Promise<void> {
+  const { model, source, repository } = reading;
+  const stored = issuePageOf(model.db, source, repository, number);
+  if (stored !== undefined) {
+    void model.refetch(repository, number);
+    res.json(stored);
+    return;
+  }
+  const outcome = await model.refetch(repository, number);
+  // a round may have stored it meanwhile: only a row still missing is refused
+  const page = outcome === 'gone' ? undefined : issuePageOf(model.db, source, repository, number);
+  if (page !== undefined) {
+    res.json(page);
+    return;
+  }
+  if (outcome === 'failed' || outcome === 'skipped') return refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: UNREACHABLE_MESSAGE });
+  refuse(res, { status: HTTP_NOT_FOUND, message: `issue not found: ${repository}#${number}` });
+}
+
+// GET /repositories and a repository's issues, page and labels (#757), from the read model alone (#181)
 function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories', async (_req: Request, res: Response) => {
     const found = await listed(ctx, res);
-    if (found) await answer(res, () => readSummaries(ctx.gql, found.refs));
+    const reading = found && (await readingOf(ctx, res));
+    if (found && reading) res.json(found.refs.map((ref) => summaryOf(reading.model.db, reading.source, ref)));
   });
   app.get('/repositories/:owner/:name/issues', async (req: Request, res: Response) => {
     const state = STATES.find((s) => s === req.query.state);
     if (state === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: STATE_MESSAGE });
-    const found = await named(ctx, req, res);
-    if (found) await answer(res, () => readIssues(ctx.gql, found.repository, state));
+    const reading = await namedReading(ctx, req, res);
+    if (reading) res.json(issuesOf(reading.model.db, reading.source, reading.repository, state));
   });
   app.get('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     if (number === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: NUMBER_MESSAGE });
-    const found = await named(ctx, req, res);
-    if (found) await answer(res, () => readIssue(ctx.gql, found.repository, number));
+    const reading = await namedReading(ctx, req, res);
+    if (reading) await issuePage(res, reading, number);
   });
   app.get('/repositories/:owner/:name/labels', async (req: Request, res: Response) => {
-    const found = await named(ctx, req, res);
-    if (found) await answer(res, () => readLabels(ctx.gql, found.repository));
+    const reading = await namedReading(ctx, req, res);
+    if (reading) res.json(reading.model.db.labels(reading.source, reading.repository));
   });
 }
 
-/** The repositories' routes (#757): what the Hive knows of each repository, read with the Hive's own login. */
+/** The repositories' routes (#757): read from the read model (#181), written with the Hive's own login (#757). */
 export function registerRepoRoutes(app: Express, deps: RepoRouteDeps): void {
   const ctx = contextOf(deps);
   registerReadRoutes(app, ctx);

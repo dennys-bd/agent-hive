@@ -10,7 +10,7 @@ import { readView, resetViewState } from '@/lib/view-state';
 import type { PrRow, RepoPrs, RepoSummary, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
-const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 3, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true };
+const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/acme/site', workspace: 'hive', openPrs: 3, openIssues: 2, closedIssues: 1, canPush: true, issuesEnabled: true, syncedAt: null };
 const LINK = 'https://github.com/acme/site/pull/';
 const row = (n: number, extra: Partial<PrRow> = {}): PrRow => ({ url: `${LINK}${n}`, number: n, title: `PR ${n}`, state: 'open', isDraft: false, mergeState: 'clean', updatedAt: '2026-10-05T09:00:00Z', ...extra });
 const OPEN: RepoPrs = {

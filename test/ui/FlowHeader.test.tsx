@@ -143,7 +143,7 @@ test('with onRefresh, atualizar runs it instead of polling every source (#756)',
 test('with a repository the header shows its workspace square, its name, its workspace, the PRs and issues tabs with GitHub\'s open counts, and its own search (#757, #758)', async () => {
   const user = userEvent.setup();
   const onTab = vi.fn();
-  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true };
+  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
   render(<FlowHeader state={state(tasks)} tasks={tasks} search="" onSearch={vi.fn()} repository={{ summary, tab: 'prs', onTab }} />);
   expect(within(header()).getByText('web')).toHaveAttribute('title', 'acme/web');
   expect(within(header()).getByText('workspace site')).toBeInTheDocument();
