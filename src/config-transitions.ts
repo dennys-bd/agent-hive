@@ -1,6 +1,7 @@
+import { agentOf } from './agents.js';
 import { isGate } from './tasks.js';
 import { isAutomatic, transitionKey, verdictsOf } from './transitions.js';
-import { END, TRIGGERS, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
+import { END, TRIGGERS, type AgentId, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
 
 // comb.transitions and a stage's verdicts in hive.config.json (#134), out of config.ts, which is over 400 lines. The prefix is config.ts's
 // CONFIG_FILE, written out, and the source maps are config.ts's own parser, handed in: config.ts calls this file, so importing it back would
@@ -108,4 +109,30 @@ export function parseTransitions(raw: unknown, stages: readonly Stage[], parseSo
   const twin = keys.findIndex((key, i) => keys.indexOf(key) !== i);
   if (twin !== -1) fail(`comb.transitions[${twin}]`, 'repeats the "from", "when" and "verdict" of an earlier transition');
   return transitions;
+}
+
+// The stage whose session a transition resumes, when the flow alone says it (#925): previous and a plain move into a continue stage resume
+// the origin's, continueOf names its stage; a new session, or a move into a stage that starts its own, resumes nothing
+function resumedStage(transition: Transition, to: Stage): string | undefined {
+  if (transition.session === 'previous') return transition.from;
+  if (typeof transition.session === 'object') return transition.session.continueOf;
+  return transition.session === undefined && to.session === 'continue' ? transition.from : undefined;
+}
+
+// A stage that spawns an agent: a prompt and no action. A gate, a commands, a wait-for-CI or a delete-activity stage runs none and resumes none
+const runsAgent = (stage: Stage): boolean => stage.action === undefined && stage.prompt !== undefined;
+
+/** #925: every transition whose resumed session the flow names, refused when that session's agent is not its destination's: one agent cannot
+ * resume another's session, a handoff (#692) switches them. Pure, so it is tested with a stage of a second agent before AGENT_IDS has one;
+ * parseConfig runs it once defaultAgent is parsed. */
+export function checkResumedAgents(stages: readonly Stage[], transitions: readonly Transition[], defaultAgent: AgentId): void {
+  transitions.forEach((transition, i) => {
+    const to = stages.find((s) => s.name === transition.to);
+    const resumed = to === undefined ? undefined : resumedStage(transition, to);
+    const from = stages.find((s) => s.name === resumed);
+    if (to === undefined || from === undefined || !runsAgent(to) || !runsAgent(from)) return;
+    const was = agentOf(from, { defaultAgent });
+    const now = agentOf(to, { defaultAgent });
+    if (was !== now) fail(`comb.transitions[${i}].session`, `resumes a session of ${was} in a stage of ${now}: use "handoff" to switch agents (#692)`);
+  });
 }
