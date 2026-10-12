@@ -5,9 +5,11 @@ import { createServer, type HiveServer, type ServerDeps } from '../src/server.js
 import { ptyCommand } from '../src/spawn.js';
 import type { Activity, AgentAvailability, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
 import { activityOf } from '../src/activities.js';
+import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, plainArgs, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, move, onOwnStages, plainArgs, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
+import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
 
 // The agent a stage run starts (#516), end to end through the server: the detection, the resolution and the refusal before any worktree.
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
@@ -109,4 +111,47 @@ test('a codex stage starts codex with its overrides, the trust bypass and the st
   assert.ok(pairs.includes(`projects={${JSON.stringify(launch.cwd)}={trust_level="trusted"}}`), 'the worktree it starts in');
   assert.equal(launch.env?.HIVE_MCP_SECRET, SECRET);
   assert.equal(JSON.stringify(launch.agent?.argv).includes(SECRET), false);
+});
+
+// What a worker's hook command posts: the JSON on the body, the worker on the header
+const hookEvent = (base: string, ptyId: string, payload: unknown): Promise<Response> =>
+  hiveFetch(`${base}/hooks/event`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-pty': ptyId }, body: JSON.stringify(payload) });
+
+// plan, then dev in the same session, both on codex: the Stop after hive_done continues in place (#167)
+const CODEX_CONTINUE: LegacyStage[] = [
+  { name: 'plan', from: { board: ['Ready'] }, onFinish: { board: [move('In progress')] }, prompt: '/hive-plan {url}', agent: 'codex' },
+  { name: 'dev', from: { board: ['In progress'] }, onStart: { board: [move('In progress')] }, prompt: '/hive-build {url}', session: 'continue', agent: 'codex' },
+];
+
+test('a codex stage\'s Stop after hive_done with a continue stage next is answered with the block reply, and the worker is working again (#928, finding §2)', async (t) => {
+  const { base, server, workers } = await start(t, onOwnStages({ ...BODY, stages: CODEX_CONTINUE }));
+  await waitFor(() => workers.length === 1);
+  const ptyId = worker0(server).runId!;
+  assert.equal((await hookEvent(base, ptyId, CODEX_TURN.SessionStart)).status, 204);
+  await server.dispatch({ type: 'done', ptyId }); // what hive_done dispatches (src/mcp.ts)
+  const stop = await hookEvent(base, ptyId, CODEX_TURN.Stop);
+  assert.equal(stop.status, 200);
+  assert.deepEqual(await stop.json(), { decision: 'block', reason: '/hive-build https://github.com/acme/r/issues/1' });
+  assert.deepEqual([worker0(server).status, worker0(server).runId, task0(server).stage, workers.length], ['working', ptyId, 'dev', 1]);
+});
+
+test('a codex worker\'s SessionEnd is dropped at the route: 204, a debug line, and the worker keeps running (#928, finding §8)', async (t) => {
+  const { log, lines } = fakeLog();
+  const { base, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' as const }] }, { log });
+  await waitFor(() => workers.length === 1);
+  const ptyId = worker0(server).runId!;
+  await hookEvent(base, ptyId, CODEX_TURN.SessionStart);
+  assert.equal((await hookEvent(base, ptyId, codexHook('SessionEnd', { reason: 'other' }))).status, 204); // what /clear sends
+  assert.deepEqual([worker0(server).runId, worker0(server).status === 'empty', workers.length], [ptyId, false, 1]);
+  assert.ok(lines.includes('DEBUG hook ignored: codex SessionEnd'), lines.join('\n'));
+});
+
+test('a forged hook whose event name is not a string never reaches the runner or the log line, and never errors (#928)', async (t) => {
+  const { base, server, workers } = await start(t, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' as const }] });
+  await waitFor(() => workers.length === 1);
+  const ptyId = worker0(server).runId!;
+  for (const name of [{ toString: 'x' }, ['Stop'], 7]) {
+    assert.equal((await hookEvent(base, ptyId, { hook_event_name: name, agent_id: 'a' })).status, 204, JSON.stringify(name));
+  }
+  assert.deepEqual([worker0(server).runId, workers.length], [ptyId, 1]);
 });

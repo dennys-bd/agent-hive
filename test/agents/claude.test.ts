@@ -4,7 +4,7 @@ import { AGENTS } from '../../src/agents.js';
 import { runners } from '../../src/agents/registry.js';
 import type { AgentRun } from '../../src/agents/runner.js';
 import { ptyCommand, shellQuote } from '../../src/spawn.js';
-import type { LaunchArg } from '../../src/types.js';
+import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { mcpConfigPattern } from '../../src/hooks-settings.js';
 
 // Claude's argv, byte for byte (#924). The literals below are what the Hive handed claude before its runner existed (Task 1 checked them
@@ -96,4 +96,13 @@ test('Claude\'s stray pattern is its MCP config path, its run needs no env of it
   const argv = runners.claude.launch({ ...RUN, protocolPath: STAGE_MD, protocolText: 'PROTOCOL-TEXT', session: { id: ID, resume: false } });
   assert.equal(JSON.stringify(argv).includes('PROTOCOL-TEXT'), false, 'the text is for an agent that takes it so');
   assert.deepEqual(argv.flat(), [...flat({ flags: [['--settings', HOOKS], ['--plugin-dir', PLUGIN], ['--append-system-prompt-file', STAGE_MD]], words: [] }), '--session-id', ID]);
+});
+
+test('Claude\'s hooks reach the reducer as Claude Code sends them: the same payload back (#928)', () => {
+  const payloads: HookPayload[] = [
+    { hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Allow Bash?' },
+    { hook_event_name: 'SessionEnd', reason: 'other' },
+    { hook_event_name: 'PermissionRequest' }, // Claude does not subscribe to it: whatever posts it, nothing of Claude's moves
+  ];
+  for (const payload of payloads) assert.equal(runners.claude.hookPayload(payload), payload, payload.hook_event_name);
 });

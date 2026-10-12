@@ -1,13 +1,15 @@
 // Codex behind the runner contract (#927). Every Hive setting reaches it as a `-c key=value` override on the argv (finding.codex-surface §1,
 // §5, §6, §13), so a run needs no file in the user's CODEX_HOME. Its session id is its own, learned from the first SessionStart (§3).
 import { hookCommand, MCP_ROUTE, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
+import { isRecord } from '../rate-limits.js';
 import { SECRET_HEADER } from '../secret.js';
+import type { HookPayload } from '../types.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
 export const MCP_SECRET_ENV = 'HIVE_MCP_SECRET';
 
-/** Every hook event the Hive reads from Codex (§1); what the reducer makes of each beyond SessionStart is #928. Codex has no Notification. */
+/** Every hook event the Hive reads from Codex (§1); hookPayload makes them the reducer's (#928). Codex has no Notification. */
 export const CODEX_HOOK_EVENTS: readonly string[] = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Stop', 'SessionEnd'];
 
 const TRUST_FLAG = '--dangerously-bypass-hook-trust'; // the inline hooks run without the trust entry Codex would persist in config.toml (§1)
@@ -48,6 +50,26 @@ export const overrides = (run: AgentRun): LaunchArg[] => [
 // resume continues Codex's own id (§7); a new run never passes the Hive's, since Codex has no --session-id (§3)
 const resumeWords = (session: AgentRun['session']): string[] => (session?.resume ? ['resume', session.id] : []);
 
+const PERMISSION_PROMPT = 'permission_prompt'; // the Notification type the reducer reads as a wait (WAITING_NOTIFICATIONS)
+
+const nonEmpty = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+
+// Codex has no Notification (§1): its PermissionRequest marks the wait and names the question in tool_input.description (§4)
+function permissionPrompt(raw: HookPayload): HookPayload {
+  const input: unknown = raw.tool_input;
+  const message = nonEmpty(isRecord(input) ? input.description : undefined) ?? nonEmpty(raw.tool_name) ?? PERMISSION_PROMPT;
+  return { ...raw, hook_event_name: 'Notification', notification_type: PERMISSION_PROMPT, message };
+}
+
+/** Codex's hook as the reducer reads Claude's (#928). Every field is read as unknown: nothing in a forged body throws. */
+function hookPayload(raw: HookPayload): HookPayload | undefined {
+  if (raw.hook_event_name === 'PermissionRequest') return permissionPrompt(raw); // a subagent's approval needs the user too
+  // a subagent's hooks carry the parent's session_id (§11), so isChildSession cannot tell them; its turn ends on SubagentStop, never Stop
+  if (isRecord(raw) && nonEmpty(raw.agent_id) !== undefined) return undefined;
+  // the pty's exit ends the run (/hooks/exit); Codex sends SessionEnd reason=other on /clear (§8), which would free a live worker
+  return raw.hook_event_name === 'SessionEnd' ? undefined : raw;
+}
+
 export const codexRunner: AgentRunner = {
   hostEnv: [MCP_SECRET_ENV], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
@@ -64,4 +86,5 @@ export const codexRunner: AgentRunner = {
   statusLimits: () => undefined,
   strayPattern: (ptyId) => ptyId, // in the x-hive-pty header's literal (§12)
   runEnv: ({ secret, withHive }): Record<string, string> => (withHive ? { [MCP_SECRET_ENV]: secret } : {}),
+  hookPayload,
 };

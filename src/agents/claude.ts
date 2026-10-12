@@ -35,6 +35,7 @@ export const claudeRunner: AgentRunner = {
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
+  hookPayload: (raw) => raw, // the reducer's hook rules are Claude Code's own events (#928)
   // Arrows on purpose: registry.ts sits in import cycles with usage.ts and transcript.ts, and an arrow reads the binding at call time
   prepareHome: (home, port) => prepareClaudeHome(home, port),
   mcpConfig: (server) => claudeMcpConfig(server),
