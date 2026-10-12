@@ -15,7 +15,7 @@
     "test": "concurrently --group \"pnpm:test:*\"",
     "test:lint": "biome lint --error-on-warnings",
     "test:types-ui": "tsc -p src/ui",
-    "test:node": "tsc && rm -rf dist/src/ui/assets && vite build && node --test \"dist/test/*.test.js\" \"dist/test/sources/*.test.js\" \"dist/test/experiment/*.test.js\" \"dist/test/repos/*.test.js\"",
+    "test:node": "tsc && rm -rf dist/src/ui/assets && vite build && node --test \"dist/test/*.test.js\" \"dist/test/agents/*.test.js\" \"dist/test/sources/*.test.js\" \"dist/test/experiment/*.test.js\" \"dist/test/repos/*.test.js\"",
     "test:vitest": "vitest run",
     "lint": "biome lint --error-on-warnings",
     "experiment:snapshot": "pnpm build && node dist/scripts/experiment/snapshot-cli.js",
