@@ -132,3 +132,66 @@ test('anchors answers pins in one frame, a scroll anywhere answers them again, a
   expect(scrollTo).toHaveBeenCalledWith({ left: 300, top: 250 });
   expect(sent()).toEqual([pins, pins, pins]);
 });
+
+test('in comment mode a hover outlines, a click posts an element anchor and the design\'s own handler never runs, a drag of 4 px or more posts an area anchor; off, neither (#112)', () => {
+  const { sent } = harness();
+  vi.stubGlobal('scrollY', 100);
+  document.body.innerHTML = '<main><button id="buy">Buy</button></main>';
+  const buy = document.getElementById('buy')!;
+  vi.spyOn(buy, 'getBoundingClientRect').mockReturnValue(box(10, 20, 80, 30));
+  const designClick = vi.fn();
+  buy.addEventListener('click', designClick);
+  start();
+  const mouse = (type: string, x: number, y: number, target: Element = buy): boolean =>
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  mouse('mousedown', 15, 25);
+  mouse('mouseup', 15, 25);
+  mouse('click', 15, 25);
+  mouse('mousedown', 0, 0);
+  mouse('mousemove', 40, 30);
+  mouse('mouseup', 40, 30);
+  expect(sent()).toEqual([]);
+  expect(designClick).toHaveBeenCalledTimes(1);
+  design({ type: 'comment-mode', on: true });
+  expect(document.documentElement.style.cursor).toBe('crosshair');
+  const outline = document.querySelector<HTMLElement>('[data-hive="outline"]')!;
+  const area = document.querySelector<HTMLElement>('[data-hive="area"]')!;
+  mouse('mousedown', 15, 25);
+  mouse('mousemove', 17, 27); // under 4 px: a hover, not a drag
+  expect([outline.style.display, outline.style.left, outline.style.top]).toEqual(['block', '10px', '20px']);
+  mouse('mouseup', 17, 27);
+  expect(mouse('click', 17, 27)).toBe(false);
+  mouse('mousedown', 0, 0, document.body);
+  mouse('mousemove', 3, 0, document.body);
+  mouse('mousemove', 40, 30, document.body);
+  expect([outline.style.display, area.style.display, area.style.top, area.style.width]).toEqual(['none', 'block', '0px', '40px']);
+  mouse('mouseup', 40, 30, document.body);
+  mouse('click', 40, 30, document.body); // the click a drag ends with anchors nothing
+  expect(designClick).toHaveBeenCalledTimes(1);
+  expect(sent()).toEqual([
+    { hive: 'design', type: 'anchor', anchor: { kind: 'element', selector: '#buy', text: 'Buy', rect: { x: 10, y: 120, width: 80, height: 30 } } },
+    { hive: 'design', type: 'anchor', anchor: { kind: 'area', rect: { x: 0, y: 100, width: 40, height: 30 } } },
+  ]);
+  design({ type: 'comment-mode', on: false });
+  expect(document.querySelectorAll('[data-hive]')).toHaveLength(0);
+  expect(document.documentElement.style.cursor).toBe('');
+});
+
+test('c and Escape are forwarded, Escape\'s default prevented only in comment mode; never from an editable field or with a modifier (#112)', () => {
+  const { sent } = harness();
+  document.body.innerHTML = '<input id="field"><p>Text</p>';
+  start();
+  const key = (name: string, target: Element = document.body, init: KeyboardEventInit = {}): boolean =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true, ...init }));
+  expect(key('c')).toBe(true);
+  expect(key('Escape')).toBe(true);
+  key('x');
+  key('c', document.getElementById('field')!);
+  key('c', document.body, { metaKey: true });
+  key('Escape', document.body, { shiftKey: true });
+  design({ type: 'comment-mode', on: true });
+  expect(key('Escape')).toBe(false);
+  expect(sent()).toEqual([
+    { hive: 'design', type: 'key', key: 'c' }, { hive: 'design', type: 'key', key: 'Escape' }, { hive: 'design', type: 'key', key: 'Escape' },
+  ]);
+});

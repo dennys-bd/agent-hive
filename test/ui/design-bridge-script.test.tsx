@@ -28,7 +28,26 @@ test('the real bridgeScript body runs in jsdom with every function it reaches jo
   flush();
   design({ type: 'scroll-to', id: 'a' });
   flush();
+  design({ type: 'comment-mode', on: true });
+  const p = document.querySelector('p')!;
+  const mouse = (type: string, x: number, y: number): void => {
+    p.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+  };
+  mouse('mousedown', 0, 0);
+  mouse('mousemove', 1, 1);
+  mouse('mouseup', 1, 1);
+  mouse('click', 1, 1);
+  mouse('mousedown', 0, 0);
+  mouse('mousemove', 10, 10);
+  mouse('mouseup', 10, 10);
+  mouse('click', 10, 10);
+  p.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', bubbles: true, cancelable: true }));
   const pins = { hive: 'design', type: 'pins', pins: [{ id: 'a', rect }, { id: 'b', rect: null }] };
   expect(errors).toEqual([]);
-  expect(posted.mock.calls.map(([data]) => data)).toEqual([pins, pins]);
+  expect(posted.mock.calls.map(([data]) => data)).toEqual([
+    pins, pins,
+    { hive: 'design', type: 'anchor', anchor: { kind: 'element', selector: 'body > main:nth-of-type(1) > p:nth-of-type(1)', text: 'Hello', rect } },
+    { hive: 'design', type: 'anchor', anchor: { kind: 'area', rect: { x: 0, y: 0, width: 10, height: 10 } } },
+    { hive: 'design', type: 'key', key: 'c' },
+  ]);
 });
