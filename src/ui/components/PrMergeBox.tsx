@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { activityOf, prsOf } from '../../activities';
 import { mergeOrderBlocker, prRepo } from '../../pull-requests';
 import { liveRuns } from '../../task-runs';
 import type { OpenResult, PrData, State, Task } from '../../types';
 import { act, attachRun, focusRun } from '@/components/actions';
+import { DefaultAgentContext } from '@/components/NewRunButton';
 import { awaitsReview, MergeButton, mergeOffReason } from '@/components/MergeButton';
 import { runTab, useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -32,10 +33,11 @@ function Head({ tone, title, facts }: { tone: string; title: string; facts: stri
   );
 }
 
-// resolve in the activity (handoff 03): to the task's live agent run when there is one, sending nothing; else a new claude session on the
+// resolve in the activity (handoff 03): to the task's live agent run when there is one, sending nothing; else a new session of the default agent (#925) on the
 // task, started with the merge-from-base prompt the server renders from its key
 function ResolveButton({ task, base, state }: { task: Task; base: string; state: State }) {
   const openRun = useOpenRun();
+  const agent = useContext(DefaultAgentContext);
   const [isOpening, setOpening] = useState(false);
   const resolve = (): void => {
     const live = liveRuns(task, state).find((run) => run.kind !== 'terminal');
@@ -45,7 +47,7 @@ function ResolveButton({ task, base, state }: { task: Task; base: string; state:
     }
     const path = `/tasks/${encodeURIComponent(task.item.itemId)}/open`;
     setOpening(true);
-    void act<OpenResult>(path, { kind: 'claude', prompt: 'mergeBase', promptBase: base, size: shownSize() }).then((result) => {
+    void act<OpenResult>(path, { kind: agent, prompt: 'mergeBase', promptBase: base, size: shownSize() }).then((result) => {
       setOpening(false);
       if (result) attachRun(result, task, 'session', openRun);
     });

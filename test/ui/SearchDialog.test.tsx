@@ -110,7 +110,7 @@ test('comandos list every available operation with its shortcut; ↵ closes the 
 test('the empty field shows recentes and precisam de você (#584)', () => {
   const now = new Date(Date.now() - 30_000).toISOString();
   const live = task('1', 'Live', { worktree: '/w/1' });
-  const activityRecords = [recordFor('I1', { sessions: [{ id: 's-1', startedAt: now, stages: ['dev'], lastUsedAt: now }] })]; // #629: the session is the record's
+  const activityRecords = [recordFor('I1', { sessions: [{ id: 's-1', startedAt: now, stages: ['dev'], agent: 'claude' as const, lastUsedAt: now }] })]; // #629: the session is the record's
   const state = stateOf([live], { workers: [{ id: 'a', activityId: activityIdOf('I1'), status: 'waiting', runId: 'W1', waitingSince: now }], activityRecords });
   renderSearch('all', ctxOf(state), state);
   expect(within(screen.getByRole('group', { name: 'recentes' })).getByRole('option')).toHaveTextContent(/#1 Live.*claude · agora.*esperando você/);

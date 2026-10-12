@@ -35,7 +35,7 @@ beforeEach(() => {
 
 test('sleepInput names the task, a stage run\'s stage and each session; continuar only for a run that holds a session (#672)', () => {
   const input = sleepInput(activity(), [STAGE], 'manual');
-  expect([input.cause, input.where, input.sessions, input.onContinue]).toEqual(['manual', '#11 Task 11', [{ ptyId: 'W1', session: 'a1b2c3d4', stage: 'dev' }], undefined]);
+  expect([input.cause, input.where, input.sessions, input.onContinue]).toEqual(['manual', '#11 Task 11', [{ ptyId: 'W1', agent: 'claude', session: 'a1b2c3d4', stage: 'dev' }], undefined]);
   expect(sleepInput(activity([asleep('W5')]), [{ ...STAGE, ptyId: 'W5' }], 'auto').onContinue).toBeTypeOf('function');
 });
 

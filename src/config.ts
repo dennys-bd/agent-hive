@@ -7,7 +7,7 @@ import { createInProblem, type CreateInProblem } from './create-in.js';
 import { REPOSITORY } from './task-refs.js';
 import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
-import { parseTransitions, parseVerdicts } from './config-transitions.js';
+import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { parseConventions } from './conventions.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseTimeout } from './run-commands.js';
@@ -548,7 +548,7 @@ function requireTrustedDomains(value: unknown): string[] {
   return [...new Set(hosts)];
 }
 
-export function parseConfig(raw: unknown): Config {
+function parseFields(raw: unknown): Config {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: root must be an object`);
   const moved = MOVED_INTO_COMB.find((key) => raw[key] !== undefined);
   if (moved) throw new Error(`${CONFIG_FILE}: "${moved}" moved to "comb.${moved}"`);
@@ -606,6 +606,12 @@ export function parseConfig(raw: unknown): Config {
     sidebarsPerView: requireSidebarsPerView(raw.sidebarsPerView), // #821: a file from before the key boots the settings form prefilled (hive.ts)
     signals: requireSignals(raw.signals), // #727: a file from before the key boots the settings form prefilled (hive.ts)
   };
+}
+
+export function parseConfig(raw: unknown): Config {
+  const config = parseFields(raw);
+  checkResumedAgents(config.comb.stages, config.comb.transitions, config.defaultAgent); // #925: needs defaultAgent, which the fields parse last
+  return config;
 }
 
 /** The parsed JSON of hive.config.json, undefined when the file is missing; unreadable or invalid JSON rejects naming the path. */

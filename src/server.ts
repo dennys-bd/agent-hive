@@ -163,10 +163,10 @@ interface Live {
 }
 
 // What the reducer resolves workspaces and sources against (#179, #180), what deleting an activity forgets (#236, #573), the shutdown window (#233), the
-// approval window (#268) and the rate-limit wait (#805), from the config and never from state.json: seeded wherever `live` is created, the way the stages are. A
+// approval window (#268), the rate-limit wait (#805) and the default agent (#925), from the config and never from state.json: seeded wherever `live` is created, the way the stages are. A
 // source's saved status survives while the source is still configured.
 const withWorkspaces = (state: State, config: Config): State =>
-  ({ ...state, ...workspaceScope(config), deleteActivity: config.deleteActivity, shutdownIdleMinutes: config.shutdownIdleMinutes, approvalMinutes: config.approvalMinutes, rateLimitWaitMinutes: config.rateLimitWaitMinutes, syncs: syncsFor(state.syncs, config.comb.sources.map((b) => b.name)) });
+  ({ ...state, ...workspaceScope(config), deleteActivity: config.deleteActivity, shutdownIdleMinutes: config.shutdownIdleMinutes, approvalMinutes: config.approvalMinutes, rateLimitWaitMinutes: config.rateLimitWaitMinutes, defaultAgent: config.defaultAgent, syncs: syncsFor(state.syncs, config.comb.sources.map((b) => b.name)) });
 
 /** Boot-only orphan defense: a run of a previous Hive may still hold a worktree. Every run carries its pty id in claude's argv, a
  * free session too through its --mcp-config path (#283): that uuid is the pkill pattern. A terminal needs none: it lived in the old
@@ -723,7 +723,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (Object.keys(renames).length > 0) await dispatch({ type: 'renameSources', renames });
     // setBudget, setUsageRules, setStages and setWorkspaces run fill, whose effects (deleteActivity, sourceAction, spawn) can take a
     // while: POST /settings answers once the config is written and reduced, not after those effects settle (#476). renameSources,
-    // setDeleteActivity, setShutdownIdle, setApprovalMinutes, setRateLimitWait and setSources emit no effects, so they stay awaited. queueSave only
+    // setDeleteActivity, setShutdownIdle, setApprovalMinutes, setRateLimitWait, setDefaultAgent and setSources emit no effects, so they stay awaited. queueSave only
     // serializes the config write and the reductions themselves, never the effects a reduction fires: those stay pinned to
     // the runtime live held when dispatch reduced them, so a later save's own runtime swap cannot redirect them (#476).
     if (!isDeepStrictEqual(live.state.budget, config.budget)) dispatchInBackground({ type: 'setBudget', budget: config.budget });
@@ -735,6 +735,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     if (live.state.shutdownIdleMinutes !== config.shutdownIdleMinutes) await dispatch({ type: 'setShutdownIdle', minutes: config.shutdownIdleMinutes });
     if (live.state.approvalMinutes !== config.approvalMinutes) await dispatch({ type: 'setApprovalMinutes', minutes: config.approvalMinutes });
     if (live.state.rateLimitWaitMinutes !== config.rateLimitWaitMinutes) await dispatch({ type: 'setRateLimitWait', minutes: config.rateLimitWaitMinutes }); // #805
+    if (live.state.defaultAgent !== config.defaultAgent) await dispatch({ type: 'setDefaultAgent', agent: config.defaultAgent }); // #925
     if (!isDeepStrictEqual(live.state.stages, config.comb.stages) || !isDeepStrictEqual(live.state.transitions, config.comb.transitions)) {
       dispatchInBackground({ type: 'setStages', stages: config.comb.stages, transitions: config.comb.transitions }); // #134: they travel together
     }

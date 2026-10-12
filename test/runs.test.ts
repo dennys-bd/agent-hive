@@ -13,7 +13,7 @@ import { activityIdOf, withLocal, withWork, workId } from './fixtures/work.js';
 // A workspace's local activity (#590): a new claude session in its checkout, kept as a local session (#587) from its start.
 const SESSION = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 const PAST = '2026-09-28T10:00:00.000Z';
-const kept: Session = { id: SESSION, startedAt: PAST, stages: [], lastUsedAt: PAST, tokens: 900 };
+const kept: Session = { id: SESSION, startedAt: PAST, stages: [], agent: 'claude' as const, lastUsedAt: PAST, tokens: 900 };
 // The one worker busy under red: a local session opens past the signal and the cap, as the user's own sessions do (#459)
 const red = (): State => withLocal({
   ...initialState(1), signal: 'red', workspaces: ['hive'],
@@ -27,7 +27,7 @@ test('newLocalSession appends a free session holding the workspace and no task, 
   assert.deepEqual([worker.activityId, worker.freeSession, worker.status, state.workers.length], [localActivityId('hive'), true, 'working', 2]); // #629: the local activity is its only owner
   assert.notEqual(worker.sessionId, SESSION, 'a new session');
   assert.deepEqual(effects, [{ type: 'spawnSession', worker, activity: { id: localActivityId('hive'), kind: 'local', workspace: 'hive' }, sessionId: worker.sessionId, continues: false }]); // #629: the local activity
-  assert.deepEqual(localSessionsOf(state, 'hive'), [kept, { id: worker.sessionId, startedAt: worker.startedAt, stages: [], lastUsedAt: worker.startedAt }]);
+  assert.deepEqual(localSessionsOf(state, 'hive'), [kept, { id: worker.sessionId, startedAt: worker.startedAt, stages: [], agent: 'claude', lastUsedAt: worker.startedAt }]);
 });
 
 test('newLocalSession opens nothing for a workspace the Comb does not have; a spawn that fails forgets the entry it appended (#590)', () => {
@@ -183,7 +183,7 @@ test('openTerminal starts in the event\'s cwd when the shell route gave one, els
 
 // #812: task 1 in `stage`, its worktree there, and a stage run's session from spec in its record; under red nothing fills on an exit
 const STAGE_RUN = 'cccccccc-0000-4000-8000-000000000001';
-const SPEC_RUN: Session = { id: STAGE_RUN, startedAt: PAST, stages: ['spec'], lastUsedAt: PAST };
+const SPEC_RUN: Session = { id: STAGE_RUN, startedAt: PAST, stages: ['spec'], agent: 'claude' as const, lastUsedAt: PAST };
 const ranSpec = (stage: string): State => withWork({
   ...initialState(1), signal: 'red', workspaces: ['hive'],
   stages: [{ name: 'spec', from: {}, prompt: 'x' }, { name: 'plan', from: {}, prompt: 'x' }, { name: 'dev', from: {}, prompt: 'x' }],
@@ -197,7 +197,7 @@ const opens = (state: State, continueId?: string): State =>
 test('openSession with no continueId appends a free session with no stage: stopped, a stage that never ran still offers start, and a stage that ran keeps its stage run\'s session (#812)', () => {
   const opened = opens(ranSpec('plan'));
   const worker = freeRun(opened);
-  assert.deepEqual(sessionsOf(opened, ITEM.itemId), [SPEC_RUN, { id: worker.sessionId, startedAt: worker.startedAt, stages: [], lastUsedAt: worker.startedAt, free: true }]);
+  assert.deepEqual(sessionsOf(opened, ITEM.itemId), [SPEC_RUN, { id: worker.sessionId, startedAt: worker.startedAt, stages: [], agent: 'claude', lastUsedAt: worker.startedAt, free: true }]);
   const stopped = exited(opened);
   assert.equal(startMode(stopped.tasks[0], stopped), 'start', 'plan never ran: the free session is no stage run');
   const inSpec = exited(opens(ranSpec('spec')));
@@ -232,7 +232,7 @@ test('captureSession on a task appends a free session with no stage: the task st
   const SESSION_ID = 'ffffffff-0000-4000-8000-000000000002';
   const captured = reduce({ ...start, terminals: [shell] }, { type: 'captureSession', terminalId: SHELL_ID, runId: 'eeeeeeee-0000-4000-8000-000000000002', sessionId: SESSION_ID }).state;
   const at = freeRun(captured).startedAt;
-  assert.deepEqual(sessionsOf(captured, ITEM.itemId).at(-1), { id: SESSION_ID, startedAt: at, stages: [], lastUsedAt: at, free: true });
+  assert.deepEqual(sessionsOf(captured, ITEM.itemId).at(-1), { id: SESSION_ID, startedAt: at, stages: [], agent: 'claude', lastUsedAt: at, free: true });
   assert.equal(startMode(captured.tasks[0], captured), 'start', 'its run holds no stage session either');
 });
 

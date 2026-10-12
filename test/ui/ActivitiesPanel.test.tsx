@@ -186,7 +186,7 @@ test('the + menu offers nova atividadeâ€¦ with its hint and adicionar workspaceâ
 test('a workspace\'s local sessions list under its local entry with their name and, while running, their status; a click on a stopped one continues it (#587)', async () => {
   const user = userEvent.setup();
   const [live, stopped] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  const record = { id: localActivityId('hive'), taskIds: [], sessions: [{ id: live, startedAt: '', stages: [], lastUsedAt: '', name: 'no main' }, { id: stopped, startedAt: '', stages: [], lastUsedAt: '' }] };
+  const record = { id: localActivityId('hive'), taskIds: [], sessions: [{ id: live, startedAt: '', stages: [], agent: 'claude' as const, lastUsedAt: '', name: 'no main' }, { id: stopped, startedAt: '', stages: [], agent: 'claude' as const, lastUsedAt: '' }] };
   // #629: the local sessions are the local activity's record's
   const local: LocalActivity = { kind: 'local', activity: { id: localActivityId('hive'), kind: 'local', workspace: 'hive' }, record, workspace: 'hive', runs: [], sessions: [], kept: [] };
   const workers = [{ id: 's', status: 'waiting' as const, runId: 'W9', activityId: localActivityId('hive'), sessionId: live, freeSession: true as const }];

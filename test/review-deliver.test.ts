@@ -12,7 +12,7 @@ const PASTE = (text: string): string => `\x1b[200~${text}\x1b[201~\r`;
 
 // A state holder whose dispatch answers an openSession with a spawnSession and a worker that sees its first hook `hookAfterMs` later (never when undefined)
 function fake(workers: Worker[], hookAfterMs?: number, isPty = true) {
-  let state: State = withWork({ ...initialState(0), tasks: [TASK], workers }, 'local:1', { worktree: '/wt' }, { sessions: [{ id: S1, startedAt: AT, stages: ['fila'], lastUsedAt: AT }] });
+  let state: State = withWork({ ...initialState(0), tasks: [TASK], workers }, 'local:1', { worktree: '/wt' }, { sessions: [{ id: S1, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }] });
   const events: HiveEvent[] = [];
   const written: [string, string][] = [];
   const deps: DeliverDeps = {

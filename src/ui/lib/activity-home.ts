@@ -2,7 +2,8 @@
 // Activity the center already has, like activities.ts; nothing of it is stored.
 import { type LiveRun, sessionLabel } from '../../task-runs.js';
 import { t } from '../i18n.js';
-import type { Session, Status, Worker } from '../../types.js';
+import { ranAgent } from '../../agents.js';
+import type { AgentId, Session, Status, Worker } from '../../types.js';
 import type { Activity, KeptTerminal, LocalActivity, TaskActivity } from './activities.js';
 import { relativeTime } from './home.js';
 import { urgencyIndex } from './status.js';
@@ -12,7 +13,7 @@ import { urgencyIndex } from './status.js';
 export type HomeTarget = { kind: 'run'; ptyId: string } | { kind: 'session'; session: Session; live?: Pick<Worker, 'runId' | 'terminalId'> };
 
 /** One agent session as the home lists it (#759): `{name or short id} · {free session, last stage} · {time}` as parts, its status and its action. */
-export interface HomeSession { key: string; meta: string[]; status: Status; action: 'open' | 'continue'; target: HomeTarget }
+export interface HomeSession { key: string; agent: AgentId; meta: string[]; status: Status; action: 'open' | 'continue'; target: HomeTarget }
 
 // A row and what it sorts by within its status: the kept session's last use, undefined for a live run not kept yet
 interface Ranked { row: HomeSession; at?: string }
@@ -38,9 +39,9 @@ const runTarget = (run: LiveRun): HomeTarget => ({ kind: 'run', ptyId: run.termi
 function taskRows(activity: TaskActivity, now: number): Ranked[] {
   return activity.sessions.flatMap(({ session, run, status }): Ranked[] => {
     const meta = metaOf(session === undefined ? run?.session : sessionLabel(session), session, now);
-    if (run !== undefined) return [{ row: { key: session?.id ?? run.ptyId, meta, status, action: 'open', target: runTarget(run) }, at: session?.lastUsedAt }];
+    if (run !== undefined) return [{ row: { key: session?.id ?? run.ptyId, agent: session?.agent ?? ranAgent(run), meta, status, action: 'open', target: runTarget(run) }, at: session?.lastUsedAt }];
     if (session === undefined) return [];
-    return [{ row: { key: session.id, meta, status: 'empty', action: 'continue', target: { kind: 'session', session } }, at: session.lastUsedAt }];
+    return [{ row: { key: session.id, agent: session.agent, meta, status: 'empty', action: 'continue', target: { kind: 'session', session } }, at: session.lastUsedAt }];
   });
 }
 
@@ -48,14 +49,14 @@ function taskRows(activity: TaskActivity, now: number): Ranked[] {
 function localRows(activity: LocalActivity, now: number): Ranked[] {
   const kept = activity.kept.map(({ session, run, status }): Ranked => ({
     row: {
-      key: session.id, meta: metaOf(sessionLabel(session), session, now), status, action: run === undefined ? 'continue' : 'open',
+      key: session.id, agent: session.agent, meta: metaOf(sessionLabel(session), session, now), status, action: run === undefined ? 'continue' : 'open',
       target: { kind: 'session', session, ...(run === undefined ? {} : { live: { runId: run.ptyId, terminalId: run.terminalId } }) },
     },
     at: session.lastUsedAt,
   }));
   const unkept = activity.sessions
     .filter(({ run }) => !activity.kept.some((k) => k.run?.ptyId === run.ptyId))
-    .map(({ run, status }): Ranked => ({ row: { key: run.ptyId, meta: metaOf(run.session, undefined, now), status, action: 'open', target: runTarget(run) } }));
+    .map(({ run, status }): Ranked => ({ row: { key: run.ptyId, agent: ranAgent(run), meta: metaOf(run.session, undefined, now), status, action: 'open', target: runTarget(run) } }));
   return [...kept, ...unkept];
 }
 

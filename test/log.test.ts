@@ -319,7 +319,7 @@ test('describeChanges names a task whose worktree vanished while stopped; a work
 
 test('describeChanges names the auto switch, the worktree a task with auto off got, its move and each free session, new or resumed (#164, #283, #573)', () => {
   const stopped: WithWork = { ...taskFor('30'), sessionId: 'kept-session-id-0001' };
-  const kept = { id: 'kept-session-id-0001', startedAt: '', stages: ['dev'], lastUsedAt: '' }; // #629: the task's session, in its record
+  const kept = { id: 'kept-session-id-0001', startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }; // #629: the task's session, in its record
   const prev: State = { ...initialState(0), workers: [{ id: WORKER, status: 'empty' }], tasks: [stopped], activityRecords: [{ id: 'r30', taskIds: ['I30'], sessions: [kept] }] };
   const marked: State = { ...prev, tasks: [{ ...stopped, auto: false }] };
   assert.deepEqual(describeChanges(prev, marked), ['task #30: auto off']);

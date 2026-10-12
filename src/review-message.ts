@@ -1,6 +1,6 @@
-import { AGENTS } from './agents.js';
-import { SESSION_ID_CHARS } from './tasks.js';
-import { type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type ThreadAnchor } from './types.js';
+import { agentName, liveDefaultAgent } from './agents.js';
+import { sessionsOf, SESSION_ID_CHARS } from './tasks.js';
+import { type AgentId, type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type State, type ThreadAnchor } from './types.js';
 
 // What a session receives (#591): one builder for a comment sent now and for a batch, so both carry the anchor and the way back.
 
@@ -15,15 +15,21 @@ export const chipId = (id: string, newLabel: string): string => (id === NEW_SESS
  * shows its own label. */
 export const chipText = (id: string, newLabel: string = NEW_SESSION): string => `@${ICON_ROOM}·${chipId(id, newLabel)}`;
 
-// ponytail: every session is claude's; name the session's own agent once #101 brings a second one
-const AGENT = AGENTS.claude.label.toLowerCase();
+/** The agent each session a message names runs (#925). */
+export type AgentOf = (session: string) => AgentId;
 
-/** A mentioned session as the agent reads it: @claude and the id's first 8 characters. */
-export const mentionName = (id: string): string => `@${AGENT} ${id === NEW_SESSION ? 'new session' : id.slice(0, SESSION_ID_CHARS)}`;
+/** The task's sessions as their records say they ran, a new session as the default agent (#925): what a delivery names its mentions with. */
+export function agentsOf(state: Pick<State, 'activityRecords' | 'defaultAgent'>, taskId: string): AgentOf {
+  const sessions = sessionsOf(state, taskId);
+  return (id) => sessions.find((s) => s.id === id)?.agent ?? liveDefaultAgent(state);
+}
+
+/** A mentioned session as the agent reads it: @ its own agent and the id's first 8 characters (#925). */
+export const mentionName = (id: string, agentOf: AgentOf): string => `@${agentName(agentOf(id))} ${id === NEW_SESSION ? 'new session' : id.slice(0, SESSION_ID_CHARS)}`;
 
 /** The text with each of its mentions' chips written as the session's name, where it was. */
-export const withMentionNames = (text: string, mentions: readonly string[] = []): string =>
-  mentions.reduce((rest, id) => rest.split(chipText(id)).join(mentionName(id)), text);
+export const withMentionNames = (text: string, mentions: readonly string[] | undefined, agentOf: AgentOf): string =>
+  (mentions ?? []).reduce((rest, id) => rest.split(chipText(id)).join(mentionName(id, agentOf)), text);
 
 // A fence longer than any backtick run of the excerpt, so the excerpt never closes it
 function fenceFor(lines: string[]): string {
@@ -36,9 +42,9 @@ const linesOf = (anchor: ReviewAnchor): string => (anchor.start === anchor.end ?
 export type Outgoing = Pick<ReviewMessage, 'text' | 'mentions'>;
 
 // Who else the message names, before the excerpt: each recipient reads which mention is itself. None without a mention
-function mentionsLine(mentions: readonly string[] = [], recipient: string): string[] {
+function mentionsLine(mentions: readonly string[] = [], recipient: string, agentOf: AgentOf): string[] {
   if (mentions.length === 0) return [];
-  return [`Mentions: ${mentions.map((id) => `${mentionName(id)}${id === recipient ? ' (you)' : ''}`).join(', ')}`];
+  return [`Mentions: ${mentions.map((id) => `${mentionName(id, agentOf)}${id === recipient ? ' (you)' : ''}`).join(', ')}`];
 }
 
 const isFrom = (message: ReviewMessage, session: string): boolean => message.author !== 'user' && message.author.session === session;
@@ -54,9 +60,9 @@ export function missed(thread: ReviewThread, messageId: string, recipient: strin
 }
 
 // The missed messages before the new one, each under its author and time, so the session reads the thread in order
-function catchUp(earlier: readonly ReviewMessage[]): string[] {
+function catchUp(earlier: readonly ReviewMessage[], agentOf: AgentOf): string[] {
   if (earlier.length === 0) return [];
-  const lines = earlier.flatMap((m) => [`[${m.author === 'user' ? 'user' : mentionName(m.author.session)}, ${m.at}]`, withMentionNames(m.text, m.mentions)]);
+  const lines = earlier.flatMap((m) => [`[${m.author === 'user' ? 'user' : mentionName(m.author.session, agentOf)}, ${m.at}]`, withMentionNames(m.text, m.mentions, agentOf)]);
   return ['Earlier in this conversation, not sent to you yet:', ...lines, 'New message:'];
 }
 
@@ -73,26 +79,26 @@ function targetOf(anchor: DesignAnchor): string {
 }
 
 // A design comment (#111): numbered by its pin, so a batch reads as the canvas does; the agent may propose a resolve, the user confirms it
-function designText(anchor: DesignAnchor, threadId: string, message: Outgoing, recipient: string, earlier: readonly ReviewMessage[]): string {
+function designText(anchor: DesignAnchor, threadId: string, message: Outgoing, recipient: string, agentOf: AgentOf, earlier: readonly ReviewMessage[]): string {
   return [
     `Design comment ${anchor.pin} on ${oneLine(anchor.path)} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, `Viewport: ${anchor.viewport} px, theme: ${anchor.theme}`,
-    ...mentionsLine(message.mentions, recipient), ...catchUp(earlier), withMentionNames(message.text, message.mentions),
+    ...mentionsLine(message.mentions, recipient, agentOf), ...catchUp(earlier, agentOf), withMentionNames(message.text, message.mentions, agentOf),
     `Answer with the hive_reply tool, thread "${threadId}". Pass resolve: true when the comment is done; the user confirms it.`,
   ].join('\n');
 }
 
 /** The text `recipient` (a session id, or NEW_SESSION) receives: `earlier`, what missed answers for it, before the message. */
-export function commentText(anchor: ThreadAnchor, threadId: string, message: Outgoing, recipient: string, earlier: readonly ReviewMessage[] = []): string {
-  if (isDesignAnchor(anchor)) return designText(anchor, threadId, message, recipient, earlier);
+export function commentText(anchor: ThreadAnchor, threadId: string, message: Outgoing, recipient: string, agentOf: AgentOf, earlier: readonly ReviewMessage[] = []): string {
+  if (isDesignAnchor(anchor)) return designText(anchor, threadId, message, recipient, agentOf, earlier);
   const fence = fenceFor(anchor.excerpt);
   return [
-    `Review comment on ${anchor.path}, ${linesOf(anchor)} (conversation ${threadId}):`, ...mentionsLine(message.mentions, recipient),
-    fence, ...anchor.excerpt, fence, ...catchUp(earlier), withMentionNames(message.text, message.mentions),
+    `Review comment on ${anchor.path}, ${linesOf(anchor)} (conversation ${threadId}):`, ...mentionsLine(message.mentions, recipient, agentOf),
+    fence, ...anchor.excerpt, fence, ...catchUp(earlier, agentOf), withMentionNames(message.text, message.mentions, agentOf),
     `Answer with the hive_reply tool, thread "${threadId}".`,
   ].join('\n');
 }
 
 export interface BatchItem extends Outgoing { anchor: ThreadAnchor; threadId: string }
 
-export const batchText = (items: BatchItem[], recipient: string): string =>
-  items.map((item) => commentText(item.anchor, item.threadId, item, recipient)).join('\n\n');
+export const batchText = (items: BatchItem[], recipient: string, agentOf: AgentOf): string =>
+  items.map((item) => commentText(item.anchor, item.threadId, item, recipient, agentOf)).join('\n\n');

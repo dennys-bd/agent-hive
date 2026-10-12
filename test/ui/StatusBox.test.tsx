@@ -10,7 +10,7 @@ import { activityIdOf, bareTask, movedWork, type WithWork } from '../fixtures/wo
 
 const SESSION = 'aaaaaaaa-0000-4000-8000-000000000001';
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
-const sessions = [{ id: SESSION, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-25T10:00:00.000Z' }];
+const sessions = [{ id: SESSION, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
 // A stage run stopped five minutes (and a few seconds) ago, its start recorded: continuar and reiniciar etapa… both answer. The marks are its
 // activity's, the sessions its record's (#629)
 const stopped: WithWork = {

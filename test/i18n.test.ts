@@ -119,12 +119,12 @@ test('no copy says board in either language, and no key keeps the board prefix (
   assert.deepEqual([MESSAGES.en['settings.back'], MESSAGES.pt['settings.back']], ['back', 'voltar'], 'the button returns to whichever view was open (#510)');
 });
 
-test('the agent copy (#516): neutral delete activity texts, the execution hint, the new keys in both languages; only the open-session kind names Claude', (ctx) => {
+test('the agent copy (#516): neutral delete activity texts, the execution hint, the new keys in both languages; no copy names Claude: every agent is named from AGENTS (#516, #925)', (ctx) => {
   ctx.after(() => setLanguage('en'));
   for (const language of ['pt', 'en'] as const) {
     for (const key of ['confirm.deleteActivity.session', 'settings.deleteActivity.session', 'settings.deleteActivity.transcripts.hint'] as const) assert.doesNotMatch(MESSAGES[language][key], /claude/i, `${language}.${key}`);
     const naming = Object.entries(MESSAGES[language]).filter(([, text]) => /claude/i.test(text)).map(([key]) => key);
-    assert.deepEqual(naming, ['session.claude'], language);
+    assert.deepEqual(naming, [], language);
   }
   assert.deepEqual([MESSAGES.pt['settings.section.execution.hint'], MESSAGES.en['settings.section.execution.hint']], ['agente, branches, excluir atividade', 'agent, branches, delete activity']);
   assert.deepEqual([MESSAGES.pt['settings.defaultAgent'], MESSAGES.en['settings.defaultAgent']], ['agente padrão', 'default agent']);

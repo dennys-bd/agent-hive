@@ -6,8 +6,8 @@ import type { Session, Task } from '../../src/types';
 
 const USED = '2026-09-24T15:30:00.000Z';
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
-const ran: Session = { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: USED, stages: ['spec', 'dev'], lastUsedAt: USED };
-const free: Session = { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: USED, stages: [], lastUsedAt: USED, free: true };
+const ran: Session = { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: USED, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: USED };
+const free: Session = { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: USED, stages: [], agent: 'claude' as const, lastUsedAt: USED, free: true };
 const answered: Session = { ...free, id: 'cccccccc-0000-4000-8000-000000000003', stages: ['spec'] }; // a feedback run gave it its stage
 beforeEach(() => setLanguage('pt'));
 

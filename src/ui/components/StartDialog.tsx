@@ -2,8 +2,9 @@ import { type KeyboardEvent, useCallback, useContext, useEffect, useId, useRef, 
 import { activityOf, workIdOf } from '../../activities';
 import { startMode } from '../../task-runs';
 import { canOpenSession, defaultSession, HIVE_SOURCE, stageOf } from '../../tasks';
-import type { Task, OpenResult, State } from '../../types';
+import type { AgentId, Task, OpenResult, State } from '../../types';
 import { act, attachRun } from '@/components/actions';
+import { DefaultAgentContext } from '@/components/NewRunButton';
 import { TaskPicker } from '@/components/TaskPicker';
 import { SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
@@ -47,10 +48,10 @@ async function runStages(task: Task, state: State, base: BaseChoice, created: bo
   if (created) await act(`${path}/auto`, { auto: true });
 }
 
-// sessão livre: the agent opened on the task with no prompt, a new session or a resumed one. The caller attaches the run it answers,
+// sessão livre: the agent opened on the task with no prompt (#925: the field's agent, the default preselected), a new session or a resumed one. The caller attaches the run it answers,
 // unless the dialog closed meanwhile (#351)
-function openFree(task: Task, base: BaseChoice, session: string): Promise<OpenResult> {
-  const body = { kind: 'claude', ...(session === NEW_SESSION ? {} : { continueId: session }), ...baseBody(base), size: shownSize() };
+function openFree(task: Task, base: BaseChoice, session: string, agent: AgentId): Promise<OpenResult> {
+  const body = { kind: agent, ...(session === NEW_SESSION ? {} : { continueId: session }), ...baseBody(base), size: shownSize() };
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
 }
 
@@ -129,13 +130,14 @@ function useTaskPick(state: State, taskId: string | undefined, initialMode: Star
   const [picked, setPicked] = useState(taskId);
   const [mode, setMode] = useState<StartMode>(() => (nothingToRun(state, taskId) ? 'free' : initialMode)); // #774: not an effect, no frame on stages
   const [session, setSession] = useState(() => initialSession(state, taskId));
+  const defaultAgent = useContext(DefaultAgentContext); const [agent, setAgent] = useState<AgentId>(defaultAgent);
   const task = state.tasks.find((c) => c.item.itemId === picked);
   const pick = (itemId: string): void => {
     setPicked(itemId);
     setError(undefined);
     setSession(initialSession(state, itemId));
   };
-  return { picked, setPicked, mode, setMode, session, setSession, pick, task };
+  return { picked, setPicked, mode, setMode, session, setSession, agent, setAgent, pick, task };
 }
 
 function useStart({ state, taskId, initialMode = 'stages', workspace, title, onStarted, onActivity, onClose }: StartDialogProps) {
@@ -146,7 +148,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const done = useRef(false); // started or closed: a late answer changes nothing
   const heldIds = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
   const onError = useCallback((message: string) => setError(message), []);
-  const { picked, setPicked, mode, setMode, session, setSession, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const { picked, setPicked, mode, setMode, session, setSession, agent, setAgent, pick, task } = useTaskPick(state, taskId, initialMode, setError);
   const base = useStartBase(picked, onError);
   const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
   useCreateOnOpen(taskId === undefined ? title : undefined, create);
@@ -175,7 +177,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     held.clearAwaiting(); setPending(true); setError(undefined);
     const itemId = task.item.itemId;
     const isCreated = created.has(itemId) || heldIds.current.has(itemId); // created with auto off either way: the start turns it on
-    const run = mode === 'stages' ? runStages(task, state, base.choice, isCreated) : openFree(task, base.choice, session);
+    const run = mode === 'stages' ? runStages(task, state, base.choice, isCreated) : openFree(task, base.choice, session, agent);
     run.then((opened) => {
       if (done.current) return; // closed meanwhile: nothing attaches it, the task carries the session (#351)
       done.current = true;
@@ -192,7 +194,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     });
   };
   useAutoStart(held.awaiting, task, isBlocked || pending || done.current, () => { held.clearAwaiting(); submit(); });
-  return { task, picked, mode, setMode, session, setSession, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry };
+  return { task, picked, mode, setMode, session, setSession, agent, setAgent, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry };
 }
 
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the
@@ -202,7 +204,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
 export function StartDialog(props: StartDialogProps) {
   const { state, taskId } = props;
   const id = useId();
-  const { task, picked, mode, setMode, session, setSession, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held } = useStart(props);
+  const { task, picked, mode, setMode, session, setSession, agent, setAgent, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held } = useStart(props);
   const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined : t('start.noStages', { stage: task.stage });
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
   const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId)) setMode('free'); };
@@ -231,7 +233,7 @@ export function StartDialog(props: StartDialogProps) {
         )}
         <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
         <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
-        {mode === 'stages' ? <StagesBox task={task} stages={state.stages} /> : <FreeFields id={id} task={task} state={state} session={session} onSession={setSession} />}
+        {mode === 'stages' ? <StagesBox task={task} stages={state.stages} /> : <FreeFields id={id} task={task} state={state} session={session} agent={agent} onSession={setSession} onAgent={setAgent} />}
         {error && <p role="alert" className="text-destructive text-sm">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>

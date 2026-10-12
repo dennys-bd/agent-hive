@@ -11,7 +11,7 @@ import { activityIdOf, taskPairOf, withPointedWork, type WithWork } from '../fix
 // Its own file: Radix's ContextMenu opens once per file under jsdom
 const S = 'a1b2c3d4-0000-4000-8000-000000000001';
 const task: WithWork = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, workspace: 'hive', worktree: '/w/1' };
-const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], lastUsedAt: '' }] }]; // #629: the task's session is its record's
+const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }] }]; // #629: the task's session is its record's
 const run = { ptyId: 'W3', label: 'Claude · a1b2c3d4', kind: 'session' as const, session: 'a1b2c3d4' };
 const activity: TaskActivity = { kind: 'task', ...taskPairOf('I1', {}, records[0]), task, runs: [run], sessions: [{ run, status: 'working' }], status: 'working', worker: false, records };
 const state: State = withPointedWork({

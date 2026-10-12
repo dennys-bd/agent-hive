@@ -1,8 +1,9 @@
 import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef } from 'react';
 import { continueTaskSession } from '@/components/actions';
-import { ClaudeIcon } from '@/components/ClaudeIcon';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { openLocalSession } from '@/components/local-runs';
+import { agentName } from '../../agents';
+import { AgentIcon } from '@/components/SessionLabel';
 import { DefaultAgentContext, newRunEntries, referenceOf, startEntry } from '@/components/NewRunButton';
 import { StatusWord } from '@/components/StatusWord';
 import { useOpenDiff, useOpenRun } from '@/components/terminal-tabs';
@@ -76,8 +77,6 @@ function Rows({ activity, onOpenRun }: ActivityHomeProps) {
     else openLocalSession(activity.workspace, target.session, target.live, openRun);
   };
   if (!hasRows) return null;
-  // ponytail: every session is claude's while AGENT_IDS holds only claude; rows name their own agent once #101 adds another
-  const claudeMark = <ClaudeIcon className="size-3.5" />;
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only holds the rows its arrow keys move across (#759)
     <div ref={list} role="group" onKeyDown={moveFocus} className="flex flex-col gap-7">
@@ -85,7 +84,7 @@ function Rows({ activity, onOpenRun }: ActivityHomeProps) {
         <Block label={t('center.empty.sessions', { n: sessions.length })}>
           {sessions.map((row) => (
             <ActivityHomeRow
-              key={row.key} mark={claudeMark} name={t('session.claude')} meta={row.meta.join(' · ')}
+              key={row.key} mark={<AgentIcon agent={row.agent} className="size-3.5" />} name={agentName(row.agent)} meta={row.meta.join(' · ')}
               status={<StatusWord status={row.status} emptyWord="session.sleeping" />} action={t(SESSION_ACTION[row.action])} onRun={() => runSession(row)}
             />
           ))}

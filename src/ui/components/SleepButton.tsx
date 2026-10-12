@@ -4,7 +4,8 @@ import type { LiveRun } from '../../task-runs';
 import { useConfirmLoss } from '@/components/AgentLossConfirm';
 import { sleepTerminal } from '@/components/close-tab-notice';
 import { KeyHint } from '@/components/KeyHint';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { ranAgent } from '../../agents';
+import { agentName } from '@/components/NewRunButton';
 import { useSleep, waitsForCi } from '@/components/sleep-notice';
 import { asksBeforeSleepAll, SleepAllConfirm } from '@/components/SleepMenu';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,7 @@ function SessionsMenu({ agents, focusedRun, isDisabled, onSleep, onSleepAll }: S
         <DropdownMenuLabel>{t('activity.stop.sessions', { n: agents.length })}</DropdownMenuLabel>
         {agents.map((run) => (
           <DropdownMenuItem key={run.ptyId} onSelect={() => onSleep(run)}>
-            <span className="shrink-0">{agentName(RUN_AGENT)}</span>
+            <span className="shrink-0">{agentName(ranAgent(run))}</span>
             <span className="min-w-0 truncate font-mono">{run.session ?? ''}</span>
             {run.ptyId === focusedRun && <span className="ml-auto text-muted-foreground text-xs">{t('activity.stop.focused')}</span>}
           </DropdownMenuItem>

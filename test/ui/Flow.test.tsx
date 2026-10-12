@@ -569,7 +569,7 @@ test('a click on a task\'s free area opens it; its buttons, its PR link, a dialo
   const onOpen = vi.fn();
   const ran = { sessionId: 'a1b2c3d4-0000-4000-8000-000000000001', worktree: '/wt/hive-1-task-1' };
   // #629: the session and the PR are the task's record's
-  const records = [{ ...rec([{ id: ran.sessionId, startedAt: '', stages: ['dev'], lastUsedAt: '' }])[0], prs: [{ url: 'https://github.com/o/r/pull/9', state: 'open' as const }] }];
+  const records = [{ ...rec([{ id: ran.sessionId, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }])[0], prs: [{ url: 'https://github.com/o/r/pull/9', state: 'open' as const }] }];
   render(<Flow state={{ ...state([task('1', 'dev', ran), task('2', 'dev', { missing: true })], [worker('s1')]), activityRecords: records }} onOpen={onOpen} />);
   await user.click(screen.getByRole('button', { name: 'continuar' })); // the task ran: its session is the stage's (#283)
     await user.click(screen.getByRole('button', { name: 'fechar' }));
@@ -638,7 +638,7 @@ test('a task with several sessions borders itself in the worst of them: a waitin
 
 test('a stopped task whose stage ran offers continuar, which posts continue; reiniciar is the menu\'s now; a task that never ran offers iniciar (#283, #542)', async () => {
   const user = userEvent.setup();
-  const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-25T10:00:00.000Z' }];
+  const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
   const ran = task('1', 'dev', { stopped: true, stageStart: { stage: 'dev', commit: 'a1b2c3d' } });
   const { rerender } = render(<Flow state={{ ...state([ran], [worker('s1')]), activityRecords: rec(sessions) }} />);
   expect(screen.queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
@@ -654,7 +654,7 @@ test('a task whose stage session is held by a live free session offers no contin
   const focusDetached = vi.fn(async () => true);
   vi.stubGlobal('hive', { focusDetached });
   const held = sessionWorker('s2', 'cccccccc-0000-4000-8000-000000000003');
-  const sessions = [{ id: held.sessionId!, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-25T10:00:00.000Z' }];
+  const sessions = [{ id: held.sessionId!, startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
   render(<Flow state={{ ...state([task('1', 'dev', { stopped: true, worktree: '/wt/hive-1-task-1' })], [worker('s1'), held]), activityRecords: rec(sessions) }} />);
   expect(screen.queryByRole('button', { name: 'continuar' })).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'abrir' }));
@@ -701,7 +701,7 @@ test('no strip while nothing in the stage is closable (a running or deleting mis
 
 test('a task awaiting approval shows the approval colour and aguardando aprovação with no Start, Continue or Restart, and aprovar while a held run keeps its worker (#268, #542)', () => {
   const since = '2026-09-25T10:00:00.000Z';
-  const ran = rec([{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: since, stages: ['dev'], lastUsedAt: since }]);
+  const ran = rec([{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: since, stages: ['dev'], agent: 'claude' as const, lastUsedAt: since }]);
   const { rerender } = render(<Flow state={{ ...state([task('1', 'dev', { approval: { since } })], [worker('s1')]), activityRecords: ran }} />);
   const tile = () => screen.getByText('#1 Task 1').closest('li')!;
   expect(tile()).toHaveClass('border-approval');

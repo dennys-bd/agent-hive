@@ -186,7 +186,7 @@ test('Iniciar #id from a task: its title and stage under the title, no task fiel
 test('abrir sessão on a task with its worktree opens on sessão livre with no base; the session starts where a normal start would resume, lists new and then the sessions no worker holds, newest first, and the open posts the pick (redesign 11, 2b, #237)', async () => {
   const user = userEvent.setup();
   bases = { ...BASES, hasWorktree: true };
-  const sessions = ['aaaaaaaa', 'bbbbbbbb', 'cccccccc'].map((id, i) => ({ id: `${id}-0000-4000-8000-00000000000${i}`, startedAt: `2026-09-22T1${i}:00:00.000Z`, stages: ['dev'], lastUsedAt: `2026-09-22T1${i}:00:00.000Z` }));
+  const sessions = ['aaaaaaaa', 'bbbbbbbb', 'cccccccc'].map((id, i) => ({ id: `${id}-0000-4000-8000-00000000000${i}`, startedAt: `2026-09-22T1${i}:00:00.000Z`, stages: ['dev'], agent: 'claude' as const, lastUsedAt: `2026-09-22T1${i}:00:00.000Z` }));
   const continuable = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev', worktree: '/wt/site-4' });
   const held: Worker = { id: 'm1', status: 'working', activityId: activityIdOf('I4'), runId: 'W1', freeSession: true, sessionId: sessions[0].id };
   const onContinue = withPointedWork({ ...state([continuable]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions }], workers: [held], stages: stages.map((s) => (s.name === 'dev' ? { ...s, session: 'continue' as const } : s)) });
@@ -210,8 +210,8 @@ test('the resume picker names a free session sessão livre where a stage run\'s 
   const user = userEvent.setup();
   bases = { ...BASES, hasWorktree: true };
   const sessions = [
-    { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T10:00:00.000Z' },
-    { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: '2026-09-22T11:00:00.000Z', stages: [], lastUsedAt: '2026-09-22T11:00:00.000Z', free: true as const },
+    { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T10:00:00.000Z' },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: '2026-09-22T11:00:00.000Z', stages: [], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z', free: true as const },
   ];
   const landing = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev', worktree: '/wt/site-4' });
   render(<StartDialog state={withPointedWork({ ...state([landing]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions }] })} taskId="I4" initialMode="free" onClose={vi.fn()} />);
@@ -222,7 +222,7 @@ test('the resume picker names a free session sessão livre where a stage run\'s 
 
 test('executar etapas on a task whose activity was deleted posts continue to its newest record when the stage already ran, never a start (#283, #629)', async () => {
   const user = userEvent.setup();
-  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T10:00:00.000Z', repo: true as const }];
+  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T10:00:00.000Z', repo: true as const }];
   const deleted = { ...state([LANDING]), activityRecords: [{ id: 'old-I4', taskIds: ['I4'], sessions: ran }] };
   const onClose = vi.fn();
   render(<StartDialog state={deleted} taskId="I4" initialMode="stages" onClose={onClose} />);
@@ -236,7 +236,7 @@ test('executar etapas on a task whose activity was deleted posts continue to its
 test('executar etapas after a free run in the stage posts a start, never a continue (#812)', async () => {
   const user = userEvent.setup();
   bases = { ...BASES, hasWorktree: true };
-  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T10:00:00.000Z' }];
+  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T10:00:00.000Z' }];
   const adjusted = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev', worktree: '/wt/site-4', freeSessionStage: 'dev' });
   const onClose = vi.fn();
   render(<StartDialog state={withPointedWork({ ...state([adjusted]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions: ran }] })} taskId="I4" initialMode="stages" onClose={onClose} />);

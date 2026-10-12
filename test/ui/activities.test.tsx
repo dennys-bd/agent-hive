@@ -25,7 +25,7 @@ test('a run command alone makes no activity and a project shell never does; a pl
   expect(of([], [terminal('C1', 'I1', 'test'), projectShell])).toEqual([]);
   const [only] = of([worker('s2', 'I2', { sessionId: 'abcdef123456' })], [terminal('C1', 'I1', 'test'), terminal('S2', 'I2')]);
   expect(only.task.item.itemId).toBe('I2');
-  expect(only.runs).toEqual([{ ptyId: 'W-s2', label: 'Claude · abcdef12', kind: 'stage', session: 'abcdef12' }, { ptyId: 'S2', label: 'Terminal', kind: 'terminal' }]);
+  expect(only.runs).toEqual([{ ptyId: 'W-s2', label: 'Claude · abcdef12', kind: 'stage', agent: 'claude', session: 'abcdef12' }, { ptyId: 'S2', label: 'Terminal', kind: 'terminal' }]);
 });
 
 test('status is the most urgent of the task\'s workers, and empty for a task with terminals only (#457)', () => {
@@ -63,15 +63,15 @@ test('sessions are the agent runs with their own worker\'s status, the terminals
 
 test('one local activity per workspace comes first, in the config\'s order, with its live runs, its agent sessions and each kept session with the run continuing it (#590)', () => {
   const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-  const kept = { id, startedAt: T0, stages: [], lastUsedAt: T0, name: 'fix login' };
-  const other = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3302', startedAt: T0, stages: [], lastUsedAt: T0 };
+  const kept = { id, startedAt: T0, stages: [], agent: 'claude' as const, lastUsedAt: T0, name: 'fix login' };
+  const other = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3302', startedAt: T0, stages: [], agent: 'claude' as const, lastUsedAt: T0 };
   const workers: Worker[] = [{ id: 's9', status: 'waiting', activityId: localActivityId('hive'), freeSession: true, runId: 'L1', sessionId: id }, worker('s1', 'I1')];
   const terminals: Terminal[] = [{ terminalId: 'P1', activityId: localActivityId('hive'), startedAt: T0, cwd: '/repo' }];
   // #629: each workspace's local activity and record, as withLocalActivities keeps them in state
   const [hive, site] = [localPairOf('hive', [kept, other]), localPairOf('site')];
   const list = activitiesOf(withPointedWork({ tasks: TASKS, workers, terminals, workspaces: ['hive', 'site'], activities: [hive.activity, site.activity], activityRecords: [hive.record, site.record] }));
   expect(list.map(activityKey)).toEqual(['local/hive', 'local/site', 'I1']);
-  const run = { ptyId: 'L1', label: 'Claude · fix login', kind: 'session', session: 'fix login' };
+  const run = { ptyId: 'L1', label: 'Claude · fix login', kind: 'session', agent: 'claude', session: 'fix login' };
   expect(list[0]).toEqual({
     kind: 'local', ...hive, workspace: 'hive', runs: [run, { ptyId: 'P1', label: 'Terminal', kind: 'terminal' }], sessions: [{ run, status: 'waiting', sessionId: id }],
     kept: [{ session: kept, run, status: 'waiting' }, { session: other, status: 'empty' }], slept: [], // #672: none asleep
@@ -95,7 +95,7 @@ test('a local activity\'s center layout is stored under local/<workspace> (#590)
 
 const A = '11111111-0000-4000-8000-000000000001';
 const B = '22222222-0000-4000-8000-000000000002';
-const kept = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['dev'], lastUsedAt: T0, ...extra });
+const kept = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['dev'], agent: 'claude' as const, lastUsedAt: T0, ...extra });
 // Task 1's kept sessions, in its record (#629)
 const tasks = (tasks: Task[], workers: Worker[], sessions: Session[] = []): TaskActivity[] =>
   activitiesOf(withPointedWork({ tasks, workers, terminals: [], workspaces: [], activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }] })).filter(isTask);
@@ -151,7 +151,7 @@ test('a task\'s and a workspace\'s sleeping runs are listed apart from their liv
   const pairs = localPairs(['hive']);
   const [local, own] = activitiesOf(withPointedWork({ tasks: [sleepy], workers: [], terminals: [], workspaces: ['hive'], ...pairs, slept }));
   expect(own?.runs).toEqual([]);
-  expect(own?.slept).toEqual([{ run: { ptyId: 'W2', label: 'Claude · abcdef12', kind: 'session', session: 'abcdef12' }, sessionId: S, cause: 'manual' }]);
+  expect(own?.slept).toEqual([{ run: { ptyId: 'W2', label: 'Claude · abcdef12', kind: 'session', agent: 'claude', session: 'abcdef12' }, sessionId: S, cause: 'manual' }]);
   expect(local?.slept?.map((s) => s.run.ptyId)).toEqual(['W5']);
 });
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isUuid } from './orchestrator.js';
 import { localActivityId } from './activities.js';
+import { LEGACY_RUN_AGENT } from './agents.js';
 import { isJsonObject, SLUG, savedRecordFields, savedSession, savedWork } from './state-guards.js';
 import { resolveWorkspace, type WorkspaceNames } from './tasks.js';
 import type { Activity, ActivityRecord, Session, State, Task } from './types.js';
@@ -20,7 +21,7 @@ const has = (saved: Record<string, unknown>, keys: string[]): boolean => keys.so
 function recordFields(saved: Record<string, unknown>, task: Task, repo: boolean): Omit<ActivityRecord, 'id' | 'taskIds'> {
   const fields = savedRecordFields(saved);
   const lone: Session[] = fields.sessions.length === 0 && !Array.isArray(saved.sessions) && isUuid(saved.sessionId)
-    ? [{ id: saved.sessionId, startedAt: task.enteredAt ?? '', stages: [task.stage], lastUsedAt: task.enteredAt ?? '' }] : [];
+    ? [{ id: saved.sessionId, startedAt: task.enteredAt ?? '', stages: [task.stage], lastUsedAt: task.enteredAt ?? '', agent: LEGACY_RUN_AGENT }] : [];
   const sessions = fields.sessions.length > 0 ? fields.sessions : lone;
   return { ...fields, sessions: repo ? sessions.map((s): Session => ({ ...s, repo: true })) : sessions };
 }

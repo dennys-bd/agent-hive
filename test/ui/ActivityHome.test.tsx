@@ -13,8 +13,8 @@ const NOW = new Date(2026, 9, 6, 12, 0).getTime();
 const at = (day: number, hour: number, minute = 0): string => new Date(2026, 9, day, hour, minute).toISOString();
 const S1 = 'a1b2c3d4-0000-4000-8000-000000000001';
 const S2 = 'b1b2c3d4-0000-4000-8000-000000000002';
-const asleep: Session = { id: S1, startedAt: at(5, 9), stages: ['spec', 'dev'], lastUsedAt: at(5, 10) };
-const held: Session = { id: S2, startedAt: at(6, 4), stages: ['dev'], lastUsedAt: at(6, 4, 46) };
+const asleep: Session = { id: S1, startedAt: at(5, 9), stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: at(5, 10) };
+const held: Session = { id: S2, startedAt: at(6, 4), stages: ['dev'], agent: 'claude' as const, lastUsedAt: at(6, 4, 46) };
 const W2: LiveRun = { ptyId: 'W2', label: 'Claude · b1b2c3d4', kind: 'session', session: 'b1b2c3d4' };
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, workspace: 'hive' };
 // Task 1: a sleeping session, a session its live run works in, a live terminal and a sleeping one

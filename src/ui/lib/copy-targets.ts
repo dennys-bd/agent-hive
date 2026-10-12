@@ -1,4 +1,5 @@
 // Where a session can be copied to and how the copy names its ends (#587). Derived from the State the dashboard already receives; nothing of it is stored.
+import { agentName } from '../../agents.js';
 import { activityOf, isLocalActivityId, localWorkspaceOf, recordOf, recordWithSession, taskOfActivity } from '../../activities.js';
 import { canOpenSession, taskLabel, resolveWorkspace, SESSION_ID_CHARS } from '../../tasks.js';
 import { hasDirectory } from '../../local-sessions.js';
@@ -51,17 +52,19 @@ export function copyTargets(state: State, ref: SessionRef): CopyTargets {
 /** `#12` / `HIVE-3`: taskLabel without the title. */
 export const activityRef = (task: Pick<Task, 'created' | 'item'>): string => `${task.created ? '' : '#'}${task.item.id}`;
 
-export interface CopyLabels { source: string; shortId: string; from: string; to: string; toRef: string }
+export interface CopyLabels { source: string; agent: string; shortId: string; from: string; to: string; toRef: string }
 
-/** The words the dialog names the two ends with: the session's name or `claude <id>`, the source and the destination in full and short. */
+/** The words the dialog names the two ends with: the session's name or `<agent> <id>`, the source and the destination in full and short. */
 export function copyLabels(state: State, from: SessionRef, to: SessionTarget): CopyLabels {
   const shortId = from.sessionId.slice(0, SESSION_ID_CHARS);
   const local = t('activities.local');
   const source = taskOfActivity(state, from.activityId);
   const target = taskOfActivity(state, to.activityId);
+  const session = sessionOf(state, from);
+  const agent = session === undefined ? '' : agentName(session.agent); // the dialog opens on a kept session only (sessionRefOf)
   return {
-    source: sessionOf(state, from)?.name ?? `${t('session.claude')} ${shortId}`,
-    shortId,
+    source: session?.name ?? `${agent} ${shortId}`.trim(),
+    agent, shortId,
     from: isLocalActivityId(from.activityId) ? local : source ? activityRef(source) : from.activityId,
     to: isLocalActivityId(to.activityId) ? local : target ? taskLabel(target) : to.activityId,
     toRef: isLocalActivityId(to.activityId) ? local : target ? activityRef(target) : to.activityId,

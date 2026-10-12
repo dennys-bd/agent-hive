@@ -4,6 +4,7 @@ import { initialState, isSessionId, isUuid, SIGNALS, STATUSES } from './orchestr
 import { syncOf } from './polling.js';
 import { isRateLimits } from './rate-limits.js';
 import { isLocalActivityId, pruneRecords } from './activities.js';
+import { savedAgent } from './agents.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
@@ -74,6 +75,7 @@ function normalizeWorker(worker: Worker): Worker {
     waitedMs: isCount(waitedMs) ? waitedMs : undefined, seenAt: isDate(seenAt) ? seenAt : undefined, waitingSince: isDate(waitingSince) ? waitingSince : undefined,
     copyOf: copyMarkOf(worker.copyOf),
     backoff: backoffOf(worker.backoff), apiErrors: isFailureCount(apiErrors) ? apiErrors : undefined, // #805
+    agent: status !== 'empty' && isUuid(runId) ? savedAgent(worker.agent) : undefined, // #925: a worker with a run ran an agent (one saved before it ran Claude); a commands worker has no run
   };
   return { id, status, ...Object.fromEntries(Object.entries(kept).filter(([, v]) => v !== undefined)) };
 }

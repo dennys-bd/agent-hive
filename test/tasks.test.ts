@@ -315,7 +315,7 @@ test('dueDeletions takes a task without auto only when the scope\'s nonAutoTasks
 });
 
 test('sessionsOf reads every record of the task, oldest first; continuable drops the sessions a live worker holds and the automatic worker\'s own while it runs (#164, #629)', () => {
-  const session = (id: string): Session => ({ id, startedAt: ago(HOUR), stages: ['dev'], lastUsedAt: ago(HOUR) });
+  const session = (id: string): Session => ({ id, startedAt: ago(HOUR), stages: ['dev'], agent: 'claude' as const, lastUsedAt: ago(HOUR) });
   assert.deepEqual(sessionsOf(NO_WORK, 'item1'), []);
   const kept: ActivityRecord = { id: 'old', taskIds: ['item1'], sessions: [{ ...session('z-session-0009'), repo: true }] };
   assert.deepEqual(sessionsOf({ activityRecords: [kept, ...work([session('a-session-0001')]).activityRecords] }, 'item1').map((s) => s.id), ['z-session-0009', 'a-session-0001'],
@@ -330,7 +330,7 @@ test('sessionsOf reads every record of the task, oldest first; continuable drops
 });
 
 test('sessionIdentity is the session\'s first 8 characters of its id, then its stages joined by " → " (#346)', () => {
-  const session = { id: 'abcdefgh12345', startedAt: ago(DAY), stages: ['spec', 'plan'], lastUsedAt: ago(HOUR) };
+  const session = { id: 'abcdefgh12345', startedAt: ago(DAY), stages: ['spec', 'plan'], agent: 'claude' as const, lastUsedAt: ago(HOUR) };
   assert.equal(sessionIdentity(session), 'abcdefgh · spec → plan');
 });
 
@@ -339,27 +339,27 @@ test('touchSession appends a session the task does not list to its live record, 
   const later = ago(0);
   const c = task(1, DEV);
   const live = withWork({ ...initialState(0), tasks: [c] }, 'item1');
-  const fresh = touchSession(live, c, 'a-session-0001', 'dev', at);
-  assert.deepEqual(sessionsOf(fresh, 'item1'), [{ id: 'a-session-0001', startedAt: at, stages: ['dev'], lastUsedAt: at }]);
-  const two = touchSession(fresh, c, 'b-session-0002', 'spec', at);
-  const moved = touchSession(two, c, 'a-session-0001', 'review', later);
+  const fresh = touchSession(live, c, 'a-session-0001', 'dev', at, 'claude');
+  assert.deepEqual(sessionsOf(fresh, 'item1'), [{ id: 'a-session-0001', startedAt: at, stages: ['dev'], agent: 'claude', lastUsedAt: at }]);
+  const two = touchSession(fresh, c, 'b-session-0002', 'spec', at, 'claude');
+  const moved = touchSession(two, c, 'a-session-0001', 'review', later, 'claude');
   assert.deepEqual(sessionsOf(moved, 'item1'), [
-    { id: 'a-session-0001', startedAt: at, stages: ['dev', 'review'], lastUsedAt: later },
-    { id: 'b-session-0002', startedAt: at, stages: ['spec'], lastUsedAt: at },
+    { id: 'a-session-0001', startedAt: at, stages: ['dev', 'review'], agent: 'claude' as const, lastUsedAt: later },
+    { id: 'b-session-0002', startedAt: at, stages: ['spec'], agent: 'claude' as const, lastUsedAt: at },
   ]);
-  assert.deepEqual(sessionsOf(touchSession(moved, c, 'a-session-0001', 'review', later), 'item1')[0].stages, ['dev', 'review'], 'the same stage again: no repeat');
-  assert.deepEqual(sessionsOf(touchSession(moved, c, 'a-session-0001', 'dev', later), 'item1')[0].stages, ['dev', 'review', 'dev'], 'back to an earlier stage: a new entry');
-  const counted = withWork(live, 'item1', {}, { sessions: [{ id: 'a-session-0001', startedAt: at, stages: ['dev'], lastUsedAt: at, tokens: 1200 }] });
-  assert.equal(sessionsOf(touchSession(counted, c, 'a-session-0001', 'review', later), 'item1')[0].tokens, 1200, 'used again, it keeps the baseline a resume counts from (#248)');
-  const older = withKeptRecord(live, 'item1', 'old', { sessions: [{ id: 'saved-session-0001', startedAt: at, stages: ['dev'], lastUsedAt: at, repo: true }] });
-  const reused = touchSession(older, c, 'saved-session-0001', 'dev', later);
+  assert.deepEqual(sessionsOf(touchSession(moved, c, 'a-session-0001', 'review', later, 'claude'), 'item1')[0].stages, ['dev', 'review'], 'the same stage again: no repeat');
+  assert.deepEqual(sessionsOf(touchSession(moved, c, 'a-session-0001', 'dev', later, 'claude'), 'item1')[0].stages, ['dev', 'review', 'dev'], 'back to an earlier stage: a new entry');
+  const counted = withWork(live, 'item1', {}, { sessions: [{ id: 'a-session-0001', startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at, tokens: 1200 }] });
+  assert.equal(sessionsOf(touchSession(counted, c, 'a-session-0001', 'review', later, 'claude'), 'item1')[0].tokens, 1200, 'used again, it keeps the baseline a resume counts from (#248)');
+  const older = withKeptRecord(live, 'item1', 'old', { sessions: [{ id: 'saved-session-0001', startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at, repo: true }] });
+  const reused = touchSession(older, c, 'saved-session-0001', 'dev', later, 'claude');
   assert.deepEqual(reused.activityRecords.map((r) => r.sessions.map((s) => [s.id, s.lastUsedAt])), [[], [['saved-session-0001', later]]],
     'a session an older record lists is used again there, not copied into the live one');
 });
 
 test('defaultSession follows the stage\'s session policy as a normal start does: new (undefined) on a new stage, the newest session nothing holds on a continue stage, new there when nothing is continuable (#237)', () => {
   const CONTINUE: LegacyStage = { ...DEV, name: 'spec', session: 'continue' };
-  const session = (id: string, hours: number) => ({ id, startedAt: ago(hours * HOUR), stages: ['dev'], lastUsedAt: ago(hours * HOUR) });
+  const session = (id: string, hours: number) => ({ id, startedAt: ago(hours * HOUR), stages: ['dev'], agent: 'claude' as const, lastUsedAt: ago(hours * HOUR) });
   const marked = task(1, CONTINUE, { auto: false });
   const records = work([session('a-session-0001', 3), session('b-session-0002', 2), session('c-session-0003', 1)]);
   assert.equal(defaultSession(marked, { workers: [], ...records }, DEV), undefined, 'a new stage starts a new session');
@@ -371,7 +371,7 @@ test('defaultSession follows the stage\'s session policy as a normal start does:
 
 test('worktreeSessions is continuable minus the repo sessions, and empty while the worktree is gone from disk; defaultSession picks from it (#208)', () => {
   const CONTINUE: LegacyStage = { ...DEV, session: 'continue' };
-  const session = (id: string, repo = false) => ({ id, startedAt: ago(HOUR), stages: ['dev'], lastUsedAt: ago(HOUR), ...(repo ? { repo: true as const } : {}) });
+  const session = (id: string, repo = false) => ({ id, startedAt: ago(HOUR), stages: ['dev'], agent: 'claude' as const, lastUsedAt: ago(HOUR), ...(repo ? { repo: true as const } : {}) });
   const mixed = task(1, CONTINUE);
   const state = { workers: [], ...work([session('a-session-0001'), session('b-session-0002', true)]) };
   assert.deepEqual(continuable(mixed, state).map((s) => s.id), ['a-session-0001', 'b-session-0002'], 'the sidebar offers both');
@@ -531,7 +531,7 @@ test('resolveWorkspace with the task list: the parent\'s resolved workspace afte
 test('canSetWorkspace: only a stopped task with no worktree, no session, nothing deleting; hasWorktree reads the worktree or any session of any record (#179, #629)', () => {
   const fresh = task(1, DEV);
   assert.deepEqual([canSetWorkspace(fresh, NO_WORK), hasWorktree(fresh, NO_WORK)], [true, false]);
-  const listed = { id: 's-0001-abcd', startedAt: ago(HOUR), stages: ['dev'], lastUsedAt: ago(HOUR) };
+  const listed = { id: 's-0001-abcd', startedAt: ago(HOUR), stages: ['dev'], agent: 'claude' as const, lastUsedAt: ago(HOUR) };
   const kept = { activities: [], activityRecords: [{ id: 'old', taskIds: ['item1'], sessions: [{ ...listed, repo: true as const }] }] };
   const cases: [string, Pick<State, 'activities' | 'activityRecords'>][] = [
     ['a worktree', work([], 'item1', { worktree: '/wt/1' })],

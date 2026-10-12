@@ -7,7 +7,7 @@ import { recordFor, stateOf, task } from './search-fixtures';
 import { activityIdOf, type WithWork } from '../fixtures/work';
 
 const at = '2026-09-28T10:00:00.000Z';
-const sessions = (id: string, lastUsedAt: string): Session[] => [{ id, startedAt: lastUsedAt, stages: ['dev'], lastUsedAt }];
+const sessions = (id: string, lastUsedAt: string): Session[] => [{ id, startedAt: lastUsedAt, stages: ['dev'], lastUsedAt, agent: 'claude' }];
 const ids = (groups: SearchGroup[]): [string, string[]][] => groups.map((group) => [group.id, group.rows.map((row) => {
   if (row.kind === 'activity') return `a:${row.activity.task.item.id}`;
   return row.kind === 'task' ? `t:${row.task.item.id}` : `o:${row.view.label}`;

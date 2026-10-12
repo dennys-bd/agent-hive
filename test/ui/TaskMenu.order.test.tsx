@@ -8,7 +8,7 @@ import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom (see Flow.contextmenu.test.tsx); every state arrives through rerender.
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }, { name: 'review', from: { board: ['In review'] } }];
-const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-25T10:00:00.000Z' }];
+const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
 // A stopped task whose stage ran with a recorded start (so reiniciar etapa… shows) and a free session open on it (so dormir shows)
 const task = (extra: Partial<WithWork> = {}): WithWork => ({
   item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, stage: 'dev', boardColumn: 'Ready', auto: true,

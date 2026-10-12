@@ -11,8 +11,8 @@ const task = (itemId: string, id: string, project: string, extra: Partial<WithWo
 });
 const ONE = task('local:1', 'HIVE-1', 'hive', { created: true });
 // ONE's session, in its record (#629)
-const ONE_RECORD: ActivityRecord = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], lastUsedAt: '', name: 'revisão' }] };
-const LOCAL_HIVE: ActivityRecord = { id: 'local:hive', taskIds: [], sessions: [{ id: S, startedAt: '', stages: [], lastUsedAt: '' }] };
+const ONE_RECORD: ActivityRecord = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '', name: 'revisão' }] };
+const LOCAL_HIVE: ActivityRecord = { id: 'local:hive', taskIds: [], sessions: [{ id: S, startedAt: '', stages: [], agent: 'claude' as const, lastUsedAt: '' }] };
 const state = (tasks: Task[], workers: Worker[] = [], activityRecords: ActivityRecord[] = [ONE_RECORD]): State => withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages: [], tasks, sourceOrder: [], localCount: 0, activities: [], activityRecords, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],
   workspaces: ['hive', 'site'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,
@@ -30,7 +30,7 @@ test('sessionRefOf reads a run\'s session from its worker, a stage run\'s from t
   const s = state([ONE, task('I2', '2', 'hive'), task('I3', '3', 'site')], [{ id: 'x', status: 'working', runId: 'W1', activityId: activityIdOf('local:1'), sessionId: S, freeSession: true }]);
   expect(sessionRefOf(s, { taskId: 'local:1', ptyId: 'W1' })).toEqual({ activityId: 'a-local:1', sessionId: S });
   expect(sessionRefOf(s, { taskId: 'local:1', ptyId: 'nope' })).toBeUndefined();
-  expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: 'local:hive' })).toEqual({ source: 'revisão', shortId: 'a1b2c3d4', from: 'HIVE-1', to: 'local', toRef: 'local' });
+  expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: 'local:hive' })).toEqual({ source: 'revisão', agent: 'claude', shortId: 'a1b2c3d4', from: 'HIVE-1', to: 'local', toRef: 'local' });
   expect(copyLabels(s, { activityId: 'a-local:1', sessionId: S }, { activityId: activityIdOf('I2') })).toMatchObject({ to: '#2 task 2', toRef: '#2' });
   expect([copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'local:1'), copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'I3'), copyRefusal(s, { activityId: 'a-local:1', sessionId: S }, 'I2')])
     .toEqual(['copy.sameActivity', 'copy.otherWorkspace', undefined]);

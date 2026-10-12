@@ -16,7 +16,7 @@ const S2 = 'abcd1234-0000-4000-8000-000000000000';
 const S3 = 'ffff0000-0000-4000-8000-000000000000';
 const PANE: ReviewPane = {
   taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, defaultSession: S1, refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request,
-  sessions: [{ id: S1, status: 'working', lastUsedAt: 'T' }, { id: S2, status: 'empty', lastUsedAt: 'T' }, { id: S3, status: 'empty', lastUsedAt: 'T' }],
+  sessions: [{ id: S1, status: 'working', lastUsedAt: 'T', agent: 'claude' }, { id: S2, status: 'empty', lastUsedAt: 'T', agent: 'claude' }, { id: S3, status: 'empty', lastUsedAt: 'T', agent: 'claude' }],
 };
 const ICON = 'svg[data-icon="claude"]';
 // A chip as the field's text holds it: @, the em space its icon is drawn over, ·, four characters

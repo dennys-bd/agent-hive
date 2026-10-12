@@ -10,7 +10,7 @@ import { movedWork, type WithWork } from '../fixtures/work';
 
 // Its own file: Radix's ContextMenu opens once per file under jsdom. reiniciar etapa… left the task face for the menu (#542).
 const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
-const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-25T10:00:00.000Z' }];
+const sessions = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-25T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-25T10:00:00.000Z' }];
 const task: WithWork = {
   item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true,
   stopped: true, stageStart: { stage: 'dev', commit: 'a1b2c3d' },

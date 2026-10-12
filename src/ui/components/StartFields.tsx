@@ -1,8 +1,9 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
 import { useState } from 'react';
+import { agentName, knownAgent } from '../../agents';
 import type { KeyLike } from '../../shortcuts';
 import { worktreeSessions } from '../../tasks';
-import type { BaseOptions, Session, Task, Stage, State } from '../../types';
+import { AGENT_IDS, type AgentId, type BaseOptions, type Session, type Task, type Stage, type State } from '../../types';
 import { WorkspaceSelect } from '@/components/WorkspaceSelect';
 import { Button } from '@/components/ui/button';
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -172,14 +173,17 @@ function SelectField({ id, label, value, choices, onChange }: { id: string; labe
   );
 }
 
-interface FreeFieldsProps { id: string; task?: Task; state: State; session: string; onSession(session: string): void }
+interface FreeFieldsProps { id: string; task?: Task; state: State; session: string; agent: AgentId; onSession(session: string): void; onAgent(agent: AgentId): void }
 
-/** sessão livre: the agent (the one runner today, #489) and the session, new or one to resume, side by side. */
-export function FreeFields({ id, task, state, session, onSession }: FreeFieldsProps) {
+/** sessão livre: the agent (every agent, the default preselected, #925) and the session, new or one to resume, side by side. */
+export function FreeFields({ id, task, state, session, agent, onSession, onAgent }: FreeFieldsProps) {
   const sessions = task === undefined ? [] : sessionChoices(task, state);
   return (
     <div className="grid grid-cols-2 gap-3">
-      <SelectField id={`${id}-agent`} label={t('start.agent')} value="claude" choices={[{ value: 'claude', label: t('session.claude') }]} onChange={() => {}} />
+      <SelectField
+        id={`${id}-agent`} label={t('start.agent')} value={agent} choices={AGENT_IDS.map((a) => ({ value: a, label: agentName(a) }))}
+        onChange={(value) => { const picked = knownAgent(value); if (picked !== undefined) onAgent(picked); }}
+      />
       <SelectField id={`${id}-session`} label={t('session.pick')} value={session} choices={sessions.length > 0 ? sessions : [{ value: session, label: t('session.new') }]} onChange={onSession} />
     </div>
   );

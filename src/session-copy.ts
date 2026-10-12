@@ -4,14 +4,15 @@ import { touchFreeSession } from './record-kit.js';
 import { canOpenSession, taskId, runningFirst, titled } from './tasks.js';
 import { hasDirectory, localSessionsOf, continuableLocal } from './local-sessions.js';
 import { ensureActivity, none, type Reduced } from './reducer-kit.js';
-import type { Activity, Session, Effect, HiveEvent, SessionCopy, SessionRef, SessionTarget, Worker, State } from './types.js';
+import { liveDefaultAgent } from './agents.js';
+import type { Activity, AgentId, Session, Effect, HiveEvent, SessionCopy, SessionRef, SessionTarget, Worker, State } from './types.js';
 
 // Copy (#587) and the local session, out of orchestrator.ts and runs.ts, both past 400 lines. Pure: every function returns new objects.
 
 type CopyEvent = Extract<HiveEvent, { type: 'copySession' }>;
 type LocalEvent = Extract<HiveEvent, { type: 'openLocalSession' | 'clearLocalSession' | 'newLocalSession' }>;
 type Entry = (base: Session) => Session;
-interface NewRun { sessionId: string; startedAt: string; worker: Worker; copy: SessionCopy }
+interface NewRun { sessionId: string; startedAt: string; worker: Worker; copy: SessionCopy; agent: AgentId }
 
 /** The session a copy starts from (#587): any session a record lists, a live one too (the fork reads the transcript as it is), or a local one. */
 export function copySource(state: State, from: SessionRef): Session | undefined {
@@ -45,10 +46,11 @@ function newRun(event: CopyEvent, source: Session): NewRun {
   const startedAt = new Date().toISOString();
   const worker: Worker = {
     id: randomUUID(), runId: randomUUID(), status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
+    agent: source.agent, // a copy forks its source: the same agent's transcript (#925)
     ...(source.tokens === undefined ? {} : { tokens: source.tokens }),
     ...(event.copied === undefined ? {} : { copyOf: { from: source.id, dir: event.copied } }),
   };
-  return { sessionId, startedAt, worker, copy: { from: source.id, ...(event.name === undefined ? {} : { name: event.name }), ...(event.notice === undefined ? {} : { notice: event.notice }) } };
+  return { sessionId, startedAt, worker, agent: source.agent, copy: { from: source.id, ...(event.name === undefined ? {} : { name: event.name }), ...(event.notice === undefined ? {} : { notice: event.notice }) } };
 }
 
 // The copy's entry: the dialog's name, shown before the first turn end reads it back from the fork's title, and the source's total
@@ -80,7 +82,7 @@ function copyToTask(state: State, id: string, run: NewRun, entry: Entry): Reduce
   if (!task || !canOpenSession(task, live) || !hasDirectory(live)) return none(state);
   const born = ensureActivity(state, task);
   if (!born) return none(state);
-  const touched = touchFreeSession(born.state, task, run.sessionId, run.startedAt); // a copy runs no stage (#812); its entry applies on top below
+  const touched = touchFreeSession(born.state, task, run.sessionId, run.startedAt, run.agent); // a copy runs no stage (#812); its entry applies on top below
   const holder = recordWithSession(touched, id, run.sessionId);
   const named = holder ? withRecord(touched, { ...holder, sessions: holder.sessions.map((s) => (s.id === run.sessionId ? entry(s) : s)) }) : touched;
   const worker: Worker = { ...run.worker, activityId: born.activity.id };
@@ -95,7 +97,7 @@ function copyToTask(state: State, id: string, run: NewRun, entry: Entry): Reduce
 function copyToLocal(state: State, workspace: string, run: NewRun, entry: Entry): Reduced {
   if (!state.workspaces.includes(workspace)) return none(state);
   const worker: Worker = { ...run.worker, activityId: localActivityId(workspace) };
-  const created = entry({ id: run.sessionId, startedAt: run.startedAt, stages: [], lastUsedAt: run.startedAt });
+  const created = entry({ id: run.sessionId, startedAt: run.startedAt, stages: [], lastUsedAt: run.startedAt, agent: run.agent });
   const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...localSessionsOf(state, workspace), created]);
   return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), sessionId: run.sessionId, continues: false, copy: run.copy }] };
 }
@@ -107,7 +109,7 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
   if (!session || !state.workspaces.includes(workspace)) return none(state);
   const startedAt = new Date().toISOString();
   const worker: Worker = {
-    id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
+    id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent: session.agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
     ...(session.tokens === undefined ? {} : { tokens: session.tokens }),
   };
   const used = localSessionsOf(state, workspace).map((s) => (s.id === sessionId ? { ...s, lastUsedAt: startedAt } : s));
@@ -115,15 +117,16 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
   return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), sessionId, continues: true }] };
 }
 
-/** A new claude session in a workspace's local activity (#590): a free session of its own, past the signal, the cap and the budget, as a copy
+/** A new session in a workspace's local activity (#590): a free session of its own, past the signal, the cap and the budget, as a copy
  * into the local is (#587), minus the fork. Its entry is appended at the start; forgetFailedLocal and forgetUnopenedLocal drop it if it never opens. */
-export function newLocalSession(state: State, { activityId }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
+export function newLocalSession(state: State, { activityId, agent: asked }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
   const workspace = localWorkspaceOf(activityId) ?? '';
   if (!state.workspaces.includes(workspace)) return none(state);
   const sessionId = randomUUID();
   const startedAt = new Date().toISOString();
-  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true };
-  const created: Session = { id: sessionId, startedAt, stages: [], lastUsedAt: startedAt };
+  const agent = asked ?? liveDefaultAgent(state); // #925: the local route's kind, else the default
+  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true };
+  const created: Session = { id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent };
   const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...localSessionsOf(state, workspace), created]);
   return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), sessionId, continues: false }] };
 }

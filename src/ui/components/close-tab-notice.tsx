@@ -4,6 +4,7 @@
 import { createContext, useContext } from 'react';
 import { toast } from 'sonner';
 import type { LiveRun } from '../../task-runs';
+import { ranAgent } from '../../agents';
 import { taskLabel } from '../../tasks';
 import { CLOSE_TAB_DEFAULTS, type CloseTabAction, type Config } from '../../types';
 import { act } from '@/components/actions';
@@ -100,7 +101,7 @@ export function showCloseTabNotice({ run, where, stage, onReopen, onSleep, openS
     };
     return (
       <CloseTabNotice
-        session={run.session} where={where} stage={stage} terminal={run.kind === 'terminal' ? run.label : undefined}
+        agent={ranAgent(run)} session={run.session} where={where} stage={stage} terminal={run.kind === 'terminal' ? run.label : undefined}
         onReopen={onReopen && then(onReopen)} onSleep={then(onSleep)} onSettings={openSettings && then(openSettings)}
         onDontWarn={saveNotice && ((checked) => saveNotice(key, !checked))} onClose={() => toast.dismiss(id)}
       />

@@ -26,7 +26,7 @@ const state = (c: Task, workers: Worker[] = [], extra: Partial<State> = {}): Sta
   sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, ...extra,
 });
 const since = '2026-09-25T10:00:00.000Z';
-const ran: Session[] = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: since, stages: ['dev'], lastUsedAt: since }];
+const ran: Session[] = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: since, stages: ['dev'], agent: 'claude' as const, lastUsedAt: since }];
 const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: ran }]; // #629: the session is the task's record's
 const tile = (): HTMLElement => screen.getByText('#1 Task 1').closest('li')!;
 const bases: BaseOptions = { hasWorktree: true, defaultRef: 'origin/main', tasks: [], local: [], remote: [] }; // what the Start dialog reads

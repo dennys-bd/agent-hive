@@ -7,7 +7,7 @@ import { taskPairOf } from '../fixtures/work';
 const AT = (h: number): string => `2026-09-29T${String(h).padStart(2, '0')}:00:00.000Z`;
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'T', body: '', url: '' }, stage: 'dev', boardColumn: '', auto: true };
 // The task's sessions, in its record (#629)
-const sessions = [{ id: 'aaaaaaaa-1', startedAt: AT(1), stages: ['dev'], lastUsedAt: AT(5) }, { id: 'bbbbbbbb-2', startedAt: AT(2), stages: ['dev'], lastUsedAt: AT(3) }];
+const sessions = [{ id: 'aaaaaaaa-1', startedAt: AT(1), stages: ['dev'], agent: 'claude' as const, lastUsedAt: AT(5) }, { id: 'bbbbbbbb-2', startedAt: AT(2), stages: ['dev'], agent: 'claude' as const, lastUsedAt: AT(3) }];
 const activity: TaskActivity = {
   kind: 'task', task, runs: [], sessions: [{ run: { ptyId: 'W1', label: 'Claude', kind: 'session' }, status: 'working', session: sessions[1] }], status: 'working', worker: false,
   ...taskPairOf('I1', {}, { sessions }),

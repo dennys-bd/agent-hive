@@ -12,7 +12,7 @@ import { chained } from './fakes.js';
 const SOURCE = 'a1b2c3d4-0000-4000-8000-000000000001';
 const T0 = '2026-09-29T10:00:00.000Z';
 const DIR = '/claude/projects/-repo--hive-worktrees-two'; // an opaque string to the reducer
-const session = (extra: Partial<Session> = {}): Session => ({ id: SOURCE, startedAt: T0, stages: ['dev'], lastUsedAt: T0, tokens: 1200, name: 'review', ...extra });
+const session = (extra: Partial<Session> = {}): Session => ({ id: SOURCE, startedAt: T0, stages: ['dev'], agent: 'claude' as const, lastUsedAt: T0, tokens: 1200, name: 'review', ...extra });
 const worktreeOf = (n: number): string => `/repo/.hive/worktrees/hive-hive-${n}-task-${n}`;
 const task = (n: number, extra: Partial<Task> = {}): Task => ({
   item: { itemId: `local:${n}`, id: `HIVE-${n}`, title: `task ${n}`, body: '', url: '' }, stage: 'dev', boardColumn: 'dev',

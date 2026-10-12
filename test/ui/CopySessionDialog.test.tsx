@@ -14,7 +14,7 @@ const task = (itemId: string, id: string, extra: Partial<WithWork> = {}): WithWo
 });
 const ONE = task('local:1', 'HIVE-1');
 // #629: ONE's session is its record's
-const ONE_RECORD = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], lastUsedAt: '', name: 'revisão', tokens: 22400 }] };
+const ONE_RECORD = { id: 'a-local:1', taskIds: ['local:1'], sessions: [{ id: S, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '', name: 'revisão', tokens: 22400 }] };
 const TWO = task('local:2', 'HIVE-2');
 const state: State = movedWork({ // #629: each task's live activity, a-<itemId>, a copy's target
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: [], tasks: [ONE, TWO], sourceOrder: [], localCount: 0, activities: [], activityRecords: [ONE_RECORD], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [],

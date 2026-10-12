@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   exitName, exitOf, FEEDBACK_TEMPLATE, isAutomatic, needsHandover, outgoing, resolveSession, retryTransition, takeTry, transitionByKey, transitionKey, transitionPrompt, verdictsOf, verdictText,
 } from '../src/transitions.js';
-import type { ActivityRecord, Stage, Task, Transition } from '../src/types.js';
+import type { ActivityRecord, AgentId, Stage, Task, Transition } from '../src/types.js';
 
 // The flow as a graph (#134): which transition a stage end fires, the session and the prompt it hands on, the tries it counts. Pure.
 
@@ -26,7 +26,7 @@ const graph = { stages: STAGES, transitions: FLOW };
 const task: Task = { item: { itemId: 'board:1', id: '1', title: 't', body: '', url: '' }, stage: 'Build', boardColumn: '', auto: true };
 const AT = '2026-10-09T00:00:00.000Z';
 const records = (sessions: { id: string; stages: string[] }[]): { activityRecords: ActivityRecord[] } =>
-  ({ activityRecords: [{ id: 'a', taskIds: ['board:1'], sessions: sessions.map((s) => ({ ...s, startedAt: AT, lastUsedAt: AT })) }] });
+  ({ activityRecords: [{ id: 'a', taskIds: ['board:1'], sessions: sessions.map((s) => ({ ...s, startedAt: AT, agent: 'claude' as const, lastUsedAt: AT })) }] });
 
 test('transitionKey is the (from, when, verdict) triple as JSON, so free-text names never collide; transitionByKey finds it back (#134)', () => {
   assert.equal(transitionKey(T('a', 'b', 'done')), '["a","done",null]');
@@ -115,4 +115,16 @@ test('retryTransition names the transition leaving the task\'s stage whose exit 
   assert.equal(retryTransition({ transitions: FLOW }, stuck, 'no transition: verdict:failed'), undefined);
   assert.equal(retryTransition({ transitions: FLOW }, stuck, undefined), undefined);
   assert.equal(retryTransition({ transitions: FLOW.filter((t) => t !== failed) }, stuck, 'tries out: verdict:failed · 3'), undefined);
+});
+
+test('resolveSession never resumes a session of another agent: previous, continueOf and a continue destination start a new one (#925)', () => {
+  const OTHER = 'other' as AgentId; // #925: no second id until 3.1; resolveSession only compares ids
+  const state = records([{ id: 's-spec', stages: ['Spec'] }]); // claude's
+  const live = { sessionId: 's-spec' };
+  const build = { ...STAGES[1], agent: OTHER };
+  assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, build), { policy: 'new' });
+  assert.deepEqual(resolveSession(state, task, live, { session: { continueOf: 'Spec' } }, build), { policy: 'new' });
+  assert.deepEqual(resolveSession(state, task, live, {}, { ...build, session: 'continue' }), { policy: 'new' });
+  assert.deepEqual(resolveSession({ ...state, defaultAgent: OTHER }, task, live, { session: 'previous' }, STAGES[1]), { policy: 'new' }, 'a stage with no agent runs the default');
+  assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, { ...build, agent: 'claude' }), { policy: 'continue', sessionId: 's-spec' });
 });

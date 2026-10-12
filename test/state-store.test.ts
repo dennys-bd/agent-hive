@@ -170,7 +170,7 @@ test('loadState maps the legacy Portuguese statuses, empties a worker with an un
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), ...owned, workers }));
   const loaded = await loadState(dir);
   assert.deepEqual(loaded.workers.map((s) => s.status), ['working', 'waiting', 'review', 'empty', 'empty', 'working', 'review', 'empty']);
-  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER }, 'the sentence is dropped, the rest is kept');
+  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER, agent: 'claude' }, 'the sentence is dropped, the rest is kept');
   assert.equal('lastEvent' in loaded.workers[1], false);
   assert.deepEqual(loaded.workers[4], { id: 'e', status: 'empty' }, 'unknown status: only the id survives');
   assert.deepEqual(loaded.workers[5].lastEvent, { kind: 'tool', detail: 'Bash: ls' }, 'a WorkerEvent object is kept as is');
@@ -194,7 +194,7 @@ test('loadState drops a legacy queue and the task fields of workers, keeps activ
   await writeFile(join(dir, 'state.json'), JSON.stringify(legacy));
   const loaded = await loadState(dir);
   assert.equal('queue' in loaded, false);
-  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER, tokens: 5 });
+  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER, tokens: 5, agent: 'claude' });
   assert.deepEqual(loaded.tasks, [task, task, task, task], 'a slug or a session id a task still carries is dropped, the task kept: loadActivity checks the activity\'s (#629)');
   assert.deepEqual(loaded.stages, []);
 });
@@ -222,7 +222,7 @@ test('loadState empties a worker whose runId randomUUID could not have produced:
   ].map((w) => ({ ...w, activityId: OWNER }));
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), ...owned, workers }));
   const loaded = await loadState(dir);
-  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER }, 'a real worker id survives, the worker stays working');
+  assert.deepEqual(loaded.workers[0], { id: 'a', status: 'working', runId: uuid(1), activityId: OWNER, agent: 'claude' }, 'a real worker id survives, the worker stays working');
   assert.deepEqual(loaded.workers.slice(1), ['b', 'c', 'd', 'e', 'f', 'g'].map((id) => ({ id, status: 'empty' })),
     'the worker is emptied, not just stripped: a working worker boot cannot kill would stay working forever');
 });
@@ -320,11 +320,11 @@ test('loadState reads a saved manual true as auto false, keeps Worker.freeSessio
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
   const task = { item, stage: 'dev', boardColumn: 'Ready' }; // no auto: a task saved before #573
-  const good = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec', 'dev'], lastUsedAt: '2026-09-22T11:00:00.000Z' };
+  const good = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z' };
   const tasks = [{ ...task, manual: true, viewing: true }, { ...task, manual: 'yes' }];
   // #629: the sessions are the record's, read through the same guard
   const activityRecords = [
-    savedRecord(OWNER, { sessions: [good, { ...good, id: 'a b' }, { ...good, id: '--settings' }, { ...good, startedAt: 7 }, { ...good, stages: ['dev', 7] }, { ...good, lastUsedAt: 7 }, 'x', { ...good, extra: 1 }] }),
+    savedRecord(OWNER, { sessions: [good, { ...good, id: 'a b' }, { ...good, id: '--settings' }, { ...good, startedAt: 7 }, { ...good, stages: ['dev', 7] }, { ...good, agent: 'claude', lastUsedAt: 7 }, 'x', { ...good, extra: 1 }] }),
     savedRecord('r2', { sessions: 'x' }),
   ];
   const workers = [{ id: 'a', status: 'working', runId: uuid(1), activityId: OWNER, freeSession: true }, { id: 'b', status: 'working', runId: uuid(2), activityId: OWNER, freeSession: 'yes' }, { id: 'c', status: 'working', runId: uuid(3), activityId: OWNER, manual: true }];
@@ -356,8 +356,8 @@ test('loadState reads a session saved before #236, with only the column it start
   await writeFile(join(dir, 'state.json'), JSON.stringify(pre629({ ...initialState(0), tasks: [{ item, stage: 'plan', boardColumn: 'Ready', auto: true, slug: 'hive-1-t', sessions: [old] }, lone] })));
   // #629: neither task has live work, so the migration keeps its sessions in a deleted activity's record, in the main repo
   const loaded = await loadState(dir);
-  assert.deepEqual(sessionsOf(loaded, 'I1'), [{ id: old.id, startedAt: old.startedAt, stages: ['spec'], lastUsedAt: old.startedAt, repo: true }]);
-  assert.deepEqual(sessionsOf(loaded, 'I2'), [{ id: uuid(4), startedAt: old.startedAt, stages: ['plan'], lastUsedAt: old.startedAt, repo: true }], 'a task saved before the list reads as its sessionId, in its stage');
+  assert.deepEqual(sessionsOf(loaded, 'I1'), [{ id: old.id, startedAt: old.startedAt, stages: ['spec'], agent: 'claude', lastUsedAt: old.startedAt, repo: true }]);
+  assert.deepEqual(sessionsOf(loaded, 'I2'), [{ id: uuid(4), startedAt: old.startedAt, stages: ['plan'], agent: 'claude', lastUsedAt: old.startedAt, repo: true }], 'a task saved before the list reads as its sessionId, in its stage');
   assert.deepEqual(loaded.activityRecords.map((r) => r.slug), ['hive-1-t', 'hive-2-t'], 'each record keeps the task\'s slug: where its kept transcripts sit (#629)');
 });
 
@@ -441,10 +441,10 @@ test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s t
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
   const task = { item, stage: 'dev', boardColumn: 'Ready', auto: true };
-  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T11:00:00.000Z' };
+  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z' };
   const usage = { tokens: 3_400_000, ms: 4_320_000, waitingMs: 0 };
   const at = '2026-09-24T10:00:00.000Z';
-  const worker: Worker = { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER, waitedMs: 60_000, seenAt: at, waitingSince: at };
+  const worker: Worker = { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER, agent: 'claude', waitedMs: 60_000, seenAt: at, waitingSince: at };
   const good = withKeptRecord({ ...initialState(0), ...owned, workers: [worker], tasks: [task] }, 'I1', 'r1', { usage, sessions: [{ ...session, tokens: 1200 }] }); // #629: the record's
   await saveState(dir, good);
   const loaded = await loadState(dir);
@@ -455,13 +455,13 @@ test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s t
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), workers, tasks: [task], activities: owned.activities, activityRecords: [...activityRecords, ...owned.activityRecords] }));
   const dropped = await loadState(dir);
   assert.deepEqual(dropped.activityRecords.filter((r) => r.id !== OWNER).map(({ id: _id, ...r }) => r), [...badUsage.map(() => ({ taskIds: ['I1'], sessions: [] })), { taskIds: ['I1'], sessions: [session, session] }], 'dropped, not kept as undefined: the record reads as nothing recorded');
-  assert.deepEqual(dropped.workers[0], { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER });
+  assert.deepEqual(dropped.workers[0], { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER, agent: 'claude' });
 });
 
 test('loadState keeps an activity\'s worktreeGone and a session\'s repo and free only as true: a save and a load keep them, anything else drops the key (#208, #629, #812)', async (t) => {
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
-  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T11:00:00.000Z' };
+  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z' };
   const task: Task = { item, stage: 'dev', boardColumn: 'Ready', auto: true };
   const live = { id: uuid(1), kind: 'task' as const, workspace: 'hive', slug: 'hive-1-t' }; // #629: the mark is the activity's
   const state = withKeptRecord(withWork({ ...initialState(1), tasks: [task] }, 'I1', { ...live, worktreeGone: true }), 'I1', 'r1', { sessions: [{ ...session, repo: true, free: true }] });
@@ -479,7 +479,7 @@ test('loadState keeps an activity\'s worktreeGone and a session\'s repo and free
 test('loadState keeps a session\'s name only as a non-empty string, cleaned and cut to 60 characters: a save and a load keep it, anything else drops the key (#489)', async (t) => {
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
-  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-09-22T11:00:00.000Z' };
+  const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z' };
   const task = { item, stage: 'dev', boardColumn: 'Ready', auto: true };
   const named = withKeptRecord({ ...initialState(1), tasks: [task] }, 'I1', 'r1', { sessions: [{ ...session, name: 'fix the login' }] }); // #629: the record's
   await saveState(dir, named);
@@ -597,7 +597,7 @@ test('loadState keeps a workspace shell with its local activity (#292, #629), an
 test('loadState drops the terminal mode a file from before #378 still carries: on a terminal, on a worker and on the state itself', async (t) => {
   const dir = await tempDir(t, '');
   const terminal = { terminalId: uuid(3), activityId: OWNER, startedAt: '2026-09-26T10:00:00.000Z', cwd: '/repo' };
-  const worker = { id: 's1', status: 'working', runId: uuid(4), activityId: OWNER };
+  const worker = { id: 's1', status: 'working', runId: uuid(4), activityId: OWNER, agent: 'claude' };
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), ...owned, terminal: 'internal', workers: [{ ...worker, terminal: 'internal' }], terminals: [{ ...terminal, terminal: 'internal' }] }));
   const loaded = await loadState(dir);
   assert.deepEqual([loaded.terminals, loaded.workers, 'terminal' in loaded], [[terminal], [worker], false]);
@@ -676,7 +676,7 @@ test('loadState keeps disabledRules in the shapes the route accepts, a past at i
 test('loadState keeps each workspace\'s local sessions in a task session\'s shape with no stages, drops a bad id and a workspace the saved Comb no longer names, reads a file without them as none, and keeps a worker\'s workspace and a copy mark only in its shape (#587)', async (t) => {
   const dir = await tempDir(t, '');
   const at = '2026-09-29T10:00:00.000Z';
-  const kept = { id: uuid(1), startedAt: at, stages: [], lastUsedAt: at, tokens: 10, name: 'no main' };
+  const kept = { id: uuid(1), startedAt: at, stages: [], agent: 'claude' as const, lastUsedAt: at, tokens: 10, name: 'no main' };
   const worker = { id: 's', status: 'waiting', runId: uuid(2), workspace: 'hive', sessionId: uuid(1), freeSession: true, copyOf: { from: uuid(3), dir: '/x' } };
   const forged = [{ ...worker, id: 't', copyOf: { from: '../x', dir: '/x' } }, { ...worker, id: 'u', copyOf: { from: uuid(3), dir: 7 } }, { ...worker, id: 'v', copyOf: 'x' }];
   const saved = { ...initialState(0), workspaces: ['hive'], workers: [worker, ...forged], localSessions: { hive: [kept, { ...kept, id: '--settings' }], gone: [kept] } };
@@ -692,9 +692,9 @@ test('loadState keeps each workspace\'s local sessions in a task session\'s shap
 test('loadState drops a stored inheritedTitle, written before a copy\'s fork got its own name (#587)', async (t) => {
   const dir = await tempDir(t, '');
   const at = '2026-09-29T10:00:00.000Z';
-  const entry = { id: uuid(1), startedAt: at, stages: [], lastUsedAt: at, name: 'no dois', inheritedTitle: 'review' };
+  const entry = { id: uuid(1), startedAt: at, stages: [], agent: 'claude' as const, lastUsedAt: at, name: 'no dois', inheritedTitle: 'review' };
   await writeFile(join(dir, 'state.json'), JSON.stringify(pre629({ ...initialState(0), workspaces: ['hive'], localSessions: { hive: [entry] } })));
-  assert.deepEqual(localSessionsOf(await loadState(dir), 'hive'), [{ id: uuid(1), startedAt: at, stages: [], lastUsedAt: at, name: 'no dois' }]);
+  assert.deepEqual(localSessionsOf(await loadState(dir), 'hive'), [{ id: uuid(1), startedAt: at, stages: [], agent: 'claude', lastUsedAt: at, name: 'no dois' }]);
 });
 
 test('loadState maps a pre-#629 worker\'s workspace to its local activity only on a local session\'s run, a free session with no taskId; any other occupied one is emptied (#590, #629)', async (t) => {
@@ -711,7 +711,7 @@ test('loadState reads a state.json in the #569 shape as it is (#569)', async (t)
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
   const task = { item, stage: 'dev', boardColumn: 'Ready', auto: true };
   const state = {
-    ...initialState(1), ...owned, tasks: [task], workers: [{ id: 's1', status: 'working' as const, runId: uuid(1), activityId: OWNER }],
+    ...initialState(1), ...owned, tasks: [task], workers: [{ id: 's1', status: 'working' as const, runId: uuid(1), activityId: OWNER, agent: 'claude' as const }],
     terminals: [{ terminalId: uuid(2), activityId: OWNER, startedAt: at, cwd: '/repo' }], crash: { at, tasks: ['I1'] },
   };
   await saveState(dir, state);
@@ -721,7 +721,7 @@ test('loadState reads a state.json in the #569 shape as it is (#569)', async (t)
 test('saveState then loadState round-trips activities and records (#629)', async (t) => {
   const dir = await tempDir(t, '');
   const task: Task = { item: { itemId: 'board:item1', id: '1', title: 'T', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, workspace: 'hive' };
-  const session = { id: uuid(5), startedAt: '2026-10-01T10:00:00.000Z', stages: ['dev'], lastUsedAt: '2026-10-01T10:00:00.000Z' };
+  const session = { id: uuid(5), startedAt: '2026-10-01T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-10-01T10:00:00.000Z' };
   const worked = withWork({ ...initialState(1), workspaces: ['hive'], tasks: [task] }, 'board:item1', { id: uuid(1), slug: 'hive-1-t', worktree: '/w/1', branch: 'hive/1-t' }, { sessions: [session], result: { spec: 'a.md' } });
   const state = withLocal(worked, 'hive');
   await saveState(dir, state);
@@ -744,7 +744,7 @@ test('loadState drops an activity or a record that fails its guard, an activity 
 
 const at = '2026-09-30T10:00:00.000Z';
 const savedItem = (n: number) => ({ itemId: `board:item${n}`, id: String(n), title: `Task ${n}`, body: '', url: `https://github.com/o/r/issues/${n}`, source: 'board' });
-const sessionAt = (n: number, stage: string) => ({ id: uuid(n), startedAt: at, stages: [stage], lastUsedAt: at });
+const sessionAt = (n: number, stage: string) => ({ id: uuid(n), startedAt: at, stages: [stage], agent: 'claude' as const, lastUsedAt: at });
 // A state.json written before #629: every task carries its own work
 const PRE_629 = {
   maxConcurrent: 1, signal: 'green', workspaces: ['hive', 'web'],
@@ -762,7 +762,7 @@ const PRE_629 = {
       result: { pr: 'x' }, prs: [{ url: 'https://github.com/o/r/pull/3', state: 'merged' }] },
     { item: savedItem(4), stage: 'dev', boardColumn: 'Ready', auto: true, slug: 'hive-4-task-4', local: true },
   ],
-  localSessions: { hive: [{ id: uuid(6), startedAt: at, stages: [], lastUsedAt: at }], web: [{ id: uuid(7), startedAt: at, stages: [], lastUsedAt: at }], gone: [] },
+  localSessions: { hive: [{ id: uuid(6), startedAt: at, stages: [], agent: 'claude', lastUsedAt: at }], web: [{ id: uuid(7), startedAt: at, stages: [], agent: 'claude', lastUsedAt: at }], gone: [] },
 };
 
 test('loadState turns a pre-#629 file\'s task work into activities and records, every worktree, session, run and approval intact (#629)', async (t) => {
@@ -787,7 +787,7 @@ test('loadState turns a pre-#629 file\'s task work into activities and records, 
   assert.deepEqual(recordsOf(loaded, 'board:item4'), [], 'a lone local: nothing');
   for (const [workspace, n] of [['hive', 6], ['web', 7]] as const) {
     assert.deepEqual(loaded.activities.find((a) => a.id === localActivityId(workspace)), { id: localActivityId(workspace), kind: 'local', workspace });
-    assert.deepEqual(recordOf(loaded, localActivityId(workspace))?.sessions, [{ id: uuid(n), startedAt: at, stages: [], lastUsedAt: at }]);
+    assert.deepEqual(recordOf(loaded, localActivityId(workspace))?.sessions, [{ id: uuid(n), startedAt: at, stages: [], agent: 'claude', lastUsedAt: at }]);
   }
   assert.equal(loaded.activities.some((a) => a.workspace === 'gone'), false, 'a workspace the file no longer names gets nothing');
   assert.equal('sessions' in loaded.tasks[0], false, 'the record keys left the task');
@@ -856,7 +856,7 @@ test('a record keeps its stageRuns on load, counts only; a PR keeps the times th
 test('a worker in backoff keeps its wait, its count and its apiError event across a load; a malformed wait or count drops only that field; rateLimitWaitMinutes reads as the default (#805)', async (t) => {
   const dir = await tempDir(t, '');
   const waiting: Worker = {
-    id: 'a', status: 'backoff', runId: uuid(1), activityId: OWNER, apiErrors: 2,
+    id: 'a', status: 'backoff', runId: uuid(1), activityId: OWNER, agent: 'claude', apiErrors: 2,
     backoff: { error: 'overloaded', until: '2026-10-06T12:02:00.000Z' }, lastEvent: { kind: 'apiError', detail: 'overloaded' },
   };
   const workers = [
@@ -872,4 +872,20 @@ test('a worker in backoff keeps its wait, its count and its apiError event acros
     ['b', 'backoff', undefined, 2], ['c', 'backoff', waiting.backoff, undefined], ['d', 'backoff', undefined, undefined],
   ], 'the field goes, never the worker');
   assert.equal(loaded.rateLimitWaitMinutes, RATE_LIMIT_WAIT_DEFAULT, 'overwritten by the config on boot');
+});
+
+test('loadState reads a file from before #925 with agent claude on every session and occupied worker; a known agent is kept, an unknown one read as claude (#925)', async (t) => {
+  const dir = await tempDir(t, '');
+  const at = '2026-10-11T10:00:00.000Z';
+  const session = (n: number, agent?: unknown) => ({ id: uuid(n), startedAt: at, stages: ['dev'], lastUsedAt: at, ...(agent === undefined ? {} : { agent }) });
+  const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
+  await writeFile(join(dir, 'state.json'), JSON.stringify({
+    ...initialState(1), ...owned, tasks: [{ item, stage: 'dev', boardColumn: 'Ready', auto: true }],
+    activityRecords: [savedRecord(OWNER, { sessions: [session(1), session(2, 'claude'), session(3, 'gpt')] })],
+    workers: [{ id: 'a', status: 'working', runId: uuid(4), activityId: OWNER }, { id: 'b', status: 'empty' }],
+  }));
+  const loaded = await loadState(dir);
+  assert.deepEqual(recordOf(loaded, OWNER)?.sessions.map((s) => s.agent), ['claude', 'claude', 'claude']);
+  assert.equal(loaded.workers[0].agent, 'claude', 'an occupied worker ran an agent');
+  assert.equal('agent' in loaded.workers[1], false, 'an empty worker runs nothing');
 });

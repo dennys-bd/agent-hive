@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { recordWithSession } from '../../activities';
 import { taskLabel, resolveWorkspace, continuable, SESSION_ID_CHARS } from '../../tasks';
 import type { Activity as LiveActivity, ActivityRecord, Task, Session, OpenResult, OperationId, Stage, State, Worker } from '../../types';
+import { agentName, ranAgent } from '../../agents';
 import { displayBinding } from '../../shortcuts';
 import { act, attachRun } from '@/components/actions';
 import { useOpenRun } from '@/components/terminal-tabs';
@@ -28,7 +29,6 @@ type Work = Pick<State, 'workers' | 'activities' | 'activityRecords'>;
 interface HomeProps { tasks: Task[]; stages?: Stage[]; workers: Worker[]; liveActivities: LiveActivity[]; activityRecords: ActivityRecord[]; workspaces: string[]; sourceWorkspaces?: Record<string, string>; nav: HomeNav }
 
 const MUTED = 'text-muted-foreground text-xs';
-const AGENT = 'claude'; // every worker run is Claude's today (#489): each runner's issue (#101, #102, #103) names its own
 const HINTS: ReadonlyArray<[OperationId, MessageKey]> = [
   ['newActivity', 'home.newActivity'], ['search', 'home.search'], ['newTerminal', 'home.localTerminal'], ['viewFlow', 'home.flow'],
 ];
@@ -66,7 +66,7 @@ function PendingItem({ row, workspaces, sourceWorkspaces, nav }: RowProps & { ro
     <div className={`flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2.5 text-[13px] ${STATUS_BORDER[row.status]}`}>
       <Square task={row.task} workspaces={workspaces} sourceWorkspaces={sourceWorkspaces} />
       <span className="min-w-0 flex-1 truncate">{taskLabel(row.task)}</span>
-      {id !== undefined && <span className={MUTED}>{t('home.session', { agent: AGENT, id })}</span>}
+      {id !== undefined && <span className={MUTED}>{t('home.session', { agent: agentName(ranAgent(row.worker)), id })}</span>}
       <StatusWord status={row.status} />
       <Button type="button" size="xs" variant="outline" onClick={() => nav.openActivity(row.task.item.itemId)}>
         {t(row.status === 'waiting' ? 'home.open' : 'home.review')}

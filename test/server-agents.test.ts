@@ -76,3 +76,14 @@ test('GET /settings lists the agents found on boot; without detection every agen
   const plain = await start(t, BODY, {}, 0);
   assert.deepEqual(((await (await hiveFetch(`${plain.base}/settings`)).json()) as SettingsInfo).agents, [{ agent: 'claude', available: true }]);
 });
+
+test('the live state holds the config\'s default agent from the first save on (#925)', async (t) => {
+  const { server } = await start(t);
+  assert.equal(server.getState()!.defaultAgent, 'claude');
+});
+
+test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
+  const { server, workers } = await start(t);
+  await waitFor(() => workers.length === 1);
+  assert.equal(worker0(server).agent, 'claude');
+});

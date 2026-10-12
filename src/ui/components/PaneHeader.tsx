@@ -1,6 +1,7 @@
 import { taskLabel, resolveWorkspace, stageOf } from '../../tasks';
 import type { Activity as LiveActivity, Task, State, Status } from '../../types';
-import { agentName, RUN_AGENT } from '@/components/NewRunButton';
+import { ranAgent } from '../../agents';
+import { agentName } from '@/components/NewRunButton';
 import { StatusWord } from '@/components/StatusWord';
 import { t } from '@/i18n';
 import { type Activity, runStatus, sleepingOf } from '@/lib/activities';
@@ -43,7 +44,7 @@ function headerOf(item: CenterTabRef, label: string, activity: Activity, context
   if (run.kind === 'terminal') return { name: t('activities.menu.terminal'), parts: folder, ...(sleeping === undefined ? {} : { status: 'empty' as const }) }; // #696: sleeping, muted
   const model = context.model === undefined ? [] : [context.model];
   const status = sleeping === undefined ? runStatus(activity, run.ptyId) : 'empty'; // a sleeping run reads sleeping, muted (#672)
-  return { name: agentName(RUN_AGENT), parts: [...model, ...folder], status };
+  return { name: agentName(ranAgent(run)), parts: [...model, ...folder], status };
 }
 
 interface PaneHeaderProps { item: CenterTabRef; label: string; activity: Activity; context: PaneContext }
