@@ -514,7 +514,50 @@ test('a zoom keeps the centre of the last scroll, not of the offsets the browser
   fireEvent.scroll(pane);
   pane.scrollLeft = 0; // the clamp a zoom out's smaller sizer makes before the anchor runs
   await user.click(screen.getByRole('button', { name: 'afastar' }));
-  expect(pane.scrollLeft).toBeCloseTo((100 + 200) * 0.9 - 200); // anchoredScroll(100, 400, 1, 0.9)
+  expect(pane.scrollLeft).toBeCloseTo((100 + 200) * 0.9 - 200); // anchoredScroll(100, 200, 1, 0.9)
+});
+
+// A wheel on the pane as its native listener gets it; false when the listener prevented it
+const wheel = (pane: HTMLElement, init: WheelEventInit): boolean => {
+  let isKept = true;
+  act(() => { isKept = pane.dispatchEvent(new WheelEvent('wheel', { cancelable: true, ...init })); });
+  return isKept;
+};
+const percent = (): string | null => screen.getByRole('button', { name: /^\d+%$/ }).textContent;
+
+test('⌘ + wheel, Ctrl + wheel and a pinch zoom the flow one 10% step and keep the page from zooming; a plain wheel and one with no deltaY only scroll (#81)', () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  viewport(400, 600);
+  render(<Flow state={twoStages()} />);
+  const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
+  expect(wheel(pane, { deltaY: -100 })).toBe(true);
+  expect(percent()).toBe('100%');
+  expect(wheel(pane, { deltaY: -100, metaKey: true })).toBe(false);
+  expect(percent()).toBe('110%');
+  expect(wheel(pane, { deltaY: 2, ctrlKey: true })).toBe(false); // a pinch out: Chromium sends it as a wheel with ctrlKey
+  expect(percent()).toBe('100%');
+  expect(wheel(pane, { deltaY: 0, ctrlKey: true })).toBe(true);
+  expect(percent()).toBe('100%');
+});
+
+test('a wheel zoom keeps the point under the pointer in place; one at the bound is still prevented, and the next button zoom anchors at the centre again (#81)', async () => {
+  onTestFinished(() => { vi.restoreAllMocks(); });
+  const user = userEvent.setup();
+  viewport(400, 600);
+  resetViewState({ flowView: { loops: true, zoom: 1.4, pan: { x: 100, y: 0 } } });
+  render(<Flow state={twoStages()} />);
+  const pane = paneOf(screen.getByRole('region', { name: 'fluxograma' }));
+  vi.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ left: 50, top: 20 } as DOMRect);
+  expect(wheel(pane, { deltaY: -100, metaKey: true, clientX: 150, clientY: 50 })).toBe(false); // the pointer 100, 30 into the pane
+  expect(percent()).toBe('150%');
+  const afterWheel = ((100 + 100) * 1.5) / 1.4 - 100;
+  expect(pane.scrollLeft).toBeCloseTo(afterWheel);
+  expect(pane.scrollTop).toBeCloseTo((30 * 1.5) / 1.4 - 30);
+  expect(wheel(pane, { deltaY: -100, ctrlKey: true, clientX: 450, clientY: 50 })).toBe(false); // at 150%: no zoom, but the page stays put
+  expect(percent()).toBe('150%');
+  expect(pane.scrollLeft).toBeCloseTo(afterWheel);
+  await user.click(screen.getByRole('button', { name: 'afastar' }));
+  expect(pane.scrollLeft).toBeCloseTo(((afterWheel + 200) * 1.4) / 1.5 - 200); // the centre, not the 400 px of the wheel at the bound
 });
 
 test('coming back to the flow after Atividades hid it (display: none) puts the last scroll back (#596, #910)', () => {
@@ -896,7 +939,7 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   await user.click(focusOn('872'));
   rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} />);
   expect(trail()).not.toBeInTheDocument();
-  expect(document.querySelector('.opacity-30')).toBeNull();
+  expect(document.querySelector('[data-flow-stages] .opacity-30')).toBeNull(); // the chart's, not the zoom controls' idle fade (#81)
 });
 
 test('Esc leaves the focus, prevented so the details panel\'s Escape never sees it, and the next Esc is the panel\'s; Esc in buscar tarefas only clears the search (#35)', async () => {

@@ -13,7 +13,7 @@ interface FlowChartProps {
   stages: readonly Stage[]; transitions: readonly Transition[];
   loops: boolean; // #909: false draws only the arrows forward
   zoom: number; pan: FlowView['pan']; fitRequest: number; // #910: the stored pan is set once; a new fitRequest fits the chart
-  onPan(pan: FlowView['pan']): void; onFit(zoom: number): void;
+  onPan(pan: FlowView['pan']): void; onFit(zoom: number): void; onZoom(zoom: number): void;
   renderNode(stage: Stage, maxHeight: number): ReactNode;
 }
 
@@ -21,7 +21,7 @@ interface FlowChartProps {
  * together, inside a sizer of the scaled size so the scroll follows it; auto margins centre a chart smaller than the canvas and, unlike
  * justify-content, never make an overflow unreachable. Each node sits where layoutFlow puts it and may grow down to the canvas's bottom, the
  * viewport read at the zoom's scale. No arrow reads a node's height, so only the viewport is measured. */
-export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, onPan, onFit, renderNode }: FlowChartProps) {
+export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, onPan, onFit, onZoom, renderNode }: FlowChartProps) {
   const order = new Map(stages.map((s, i) => [s.name, i]));
   const isBack = (t: Transition): boolean => {
     const [i, j] = [order.get(t.from), order.get(t.to)];
@@ -33,7 +33,7 @@ export function FlowChart({ stages, transitions, loops, zoom, pan, fitRequest, o
   // top reads the edges alone (#908): a first pass at NODE_MIN gives it, and is the chart fit must show (#910)
   const sized = (height: number) => layoutFlow(stages.map((s) => ({ id: s.name, height })), edges, NODE_WIDTH, { loops });
   const least = sized(NODE_MIN);
-  const { pane, size, onScroll } = useCanvasPane({ zoom, pan, fitRequest, graph: least, onPan, onFit });
+  const { pane, size, onScroll } = useCanvasPane({ zoom, pan, fitRequest, graph: least, onPan, onFit, onZoom });
   // #910: the viewport at the zoom's scale, so a node zoomed out still reaches the canvas's bottom and shows more of its tasks
   const maxHeight = maxNodeHeight(size.height / zoom, least);
   const layout = sized(maxHeight);

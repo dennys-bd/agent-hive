@@ -19,9 +19,13 @@ test('fitZoom is the largest zoom up to 100% that shows the whole chart, never u
   expect(fitZoom({ width: 0, height: 0 }, { width: 500, height: 200 })).toBe(0.5); // a canvas not measured yet
 });
 
-test('anchoredScroll keeps the point at the viewport\'s centre where it was, never scrolling before the start (#910)', () => {
-  expect(anchoredScroll(100, 400, 1, 2)).toBe(400); // the centre is the chart's 300 before and after: (100 + 200) / 1 = (400 + 200) / 2
-  expect(anchoredScroll(400, 400, 2, 1)).toBe(100);
-  expect(anchoredScroll(0, 400, 1, 1)).toBe(0);
-  expect(anchoredScroll(0, 400, 1, 0.5)).toBe(0); // (0 + 200) × 0.5 − 200 is −100: the pane cannot scroll there
+test('anchoredScroll keeps the point at the anchor where it was, the centre being half the viewport, never scrolling before the start (#910, #81)', () => {
+  expect(anchoredScroll(100, 200, 1, 2)).toBe(400); // a 400 px viewport's centre: the chart's 300 before and after
+  expect(anchoredScroll(400, 200, 2, 1)).toBe(100);
+  expect(anchoredScroll(0, 200, 1, 1)).toBe(0);
+  const next = anchoredScroll(100, 50, 1, 2); // off-centre: the pointer 50 px into the pane
+  expect(next).toBe(250);
+  expect((100 + 50) / 1).toBe((next + 50) / 2); // the content point under the anchor is the same before and after
+  expect(anchoredScroll(300, 350, 1.5, 1)).toBeCloseTo(650 / 1.5 - 350);
+  expect(anchoredScroll(0, 300, 1, 0.5)).toBe(0); // (0 + 300) × 0.5 − 300 is −150: the pane cannot scroll there
 });
