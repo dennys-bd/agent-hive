@@ -4,7 +4,7 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-m
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
-import type { ProjectPr } from '../../src/types.js';
+import type { Gql, ProjectPr } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 
 // Shaped after the answers the spike's probe recorded (#765), trimmed to the fields read and with every name replaced (#178)
@@ -90,4 +90,14 @@ export async function tempModel(t: TestContext): Promise<ReadModel> {
   const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE));
   t.after(() => db.close());
   return db;
+}
+
+/** A Gql answering ISSUE_CLOSING_PRS with these closing PRs, recording the variables of every call. */
+export function fakeLinks(nodes: GhPullRequest[] = []): { gql: Gql; calls: unknown[] } {
+  const calls: unknown[] = [];
+  const gql: Gql = async (_query, variables) => {
+    calls.push(variables);
+    return { repository: { issue: { closedByPullRequestsReferences: { nodes } } } };
+  };
+  return { gql, calls };
 }
