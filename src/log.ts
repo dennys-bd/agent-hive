@@ -148,7 +148,7 @@ export function describeEvent(event: HiveEvent): string {
       return `setWorkspaces ${event.workspaces.join(',')}${defaults === '' ? '' : ` defaults=${defaults}`}`;
     }
     case 'setWorkspace': return `setWorkspace #${event.taskId} ${event.workspace}`;
-    case 'rateLimits': return event.ptyId ? `rateLimits pty=${shortId(event.ptyId)}` : 'rateLimits source=hive';
+    case 'rateLimits': return `rateLimits agent=${event.agent} ${event.ptyId ? `pty=${shortId(event.ptyId)}` : 'source=hive'}`; // #929
     case 'pollFailed': return `pollFailed source=${event.source} ${event.message}`;
     case 'itemRead': return `itemRead source=${event.source} #${event.itemId}${event.entry ? ` column=${event.entry.column}` : ' unlisted'}`; // #686: never a title
     case 'blockerSet': return `blockerSet #${event.itemId} ${event.change.action} ${event.change.kind}=${event.change.ref}`; // #56: ids only, never a title

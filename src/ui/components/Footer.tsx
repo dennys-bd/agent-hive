@@ -72,7 +72,7 @@ function RuleChip({ rule, paused, state, locale, onEditRules }: RuleChipProps) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
   const now = Date.now();
-  const resetAt = windowResetsAt(state, rule.source);
+  const resetAt = windowResetsAt(state, rule); // #929: its own agent's window
   const close = () => { setOpen(false); setCustom(false); };
   const pause = (until: DisableUntil) => { close(); void act('/rules/disable', { source: rule.source, percent: rule.percent, until }); };
   const resume = () => { close(); void act('/rules/enable', { source: rule.source, percent: rule.percent }); };

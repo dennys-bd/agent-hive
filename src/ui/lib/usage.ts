@@ -1,4 +1,5 @@
 // Pure meter math for the header and the tasks. No DOM, no React: node:test imports it from dist/src/ui/lib.
+import { liveDefaultAgent } from '../../agents.js';
 import { isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
 import { type MessageKey, statusText, t } from '../i18n.js';
 
@@ -116,20 +117,25 @@ export function timeLeft(iso: string, now: number): string {
 // Mirrors PLAN_WINDOW in src/usage-rules.ts.
 const PLAN_WINDOW: Record<PlanSource, string> = { session: 'five_hour', week: 'seven_day', month: 'thirty_day' };
 
-/** When a plan source's window resets, for até resetar; undefined for a rolling budget source or before the first reading. */
-export const windowResetsAt = (state: Pick<State, 'rateLimits'>, source: RuleSource): string | undefined =>
-  (isPlanSource(source) ? state.rateLimits?.windows[PLAN_WINDOW[source]]?.resetsAt : undefined);
+type RuleReading = Pick<UsageRule, 'source' | 'agent'>;
 
-/** What the ruler marks as now (#512), mirroring sourcePercents in src/usage-rules.ts (src/usage.ts pulls node:fs into the browser).
+// Mirrors planReading in src/usage-rules.ts (#929): the rule's agent's window, or the default agent's
+const planWindow = (state: Pick<State, 'rateLimits' | 'defaultAgent'>, rule: RuleReading) =>
+  (isPlanSource(rule.source) ? state.rateLimits?.[rule.agent ?? liveDefaultAgent(state)]?.windows[PLAN_WINDOW[rule.source]] : undefined);
+
+/** When a plan rule's window resets, for até resetar; undefined for a rolling budget source or before the first reading. */
+export const windowResetsAt = (state: Pick<State, 'rateLimits' | 'defaultAgent'>, rule: RuleReading): string | undefined => planWindow(state, rule)?.resetsAt;
+
+/** What the ruler marks as now (#512), mirroring rulePercents in src/usage-rules.ts (src/usage.ts pulls node:fs into the browser).
  * Undefined when there is nothing to measure: no plan reading yet, or a budget source with no limit. A window past its reset reads 0. */
-export function sourcePercent(state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, source: RuleSource, now: number): number | undefined {
-  if (isPlanSource(source)) {
-    const reading = state.rateLimits?.windows[PLAN_WINDOW[source]];
+export function sourcePercent(state: Pick<State, 'usage' | 'budget' | 'rateLimits' | 'defaultAgent'>, rule: RuleReading, now: number): number | undefined {
+  if (isPlanSource(rule.source)) {
+    const reading = planWindow(state, rule);
     if (reading === undefined) return undefined;
     return Date.parse(reading.resetsAt) <= now ? 0 : Math.round(reading.usedPercent);
   }
-  const limit = source === 'hour' ? state.budget.maxTokensPerHour : state.budget.maxTokensPerDay;
-  return limit ? percent(usageTotals(state.usage, now)[source], limit) : undefined;
+  const limit = rule.source === 'hour' ? state.budget.maxTokensPerHour : state.budget.maxTokensPerDay;
+  return limit ? percent(usageTotals(state.usage, now)[rule.source], limit) : undefined;
 }
 
 /** The freshest GitHub quota among the syncs (#512): every GitHub source polls with the Hive's one account, so one reading speaks for all. */

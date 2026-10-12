@@ -91,7 +91,7 @@ test('traySignal: the manual signal, the effective one and the rule floor of a p
 
 test('traySignal: the view carries the plan reading when the payload has one (#197)', () => {
   const read = reading('2026-09-24T12:00:00.000Z');
-  assert.deepEqual(traySignal({ ...payload('green', 'red', 'red'), rateLimits: read }), { ...HELD, rateLimits: read });
+  assert.deepEqual(traySignal({ ...payload('green', 'red', 'red'), rateLimits: { claude: read } }), { ...HELD, rateLimits: { claude: read } });
 });
 
 test('trayIconFile: the template with no signal; otherwise the effective signal\'s badge, the white comb on a dark bar and the black one on a light bar (#196)', () => {
@@ -239,14 +239,14 @@ test('watchSignal: a daemon() that answers undefined (no hive.port or hive.secre
   assert.deepEqual(seen, [GREEN]);
 });
 
-test('watchSignal: a new plan reading is reported while the signal holds; the same reading again is not (#197)', async (t) => {
+test('watchSignal: a new plan reading of any agent is reported while the signal holds; the same readings again are not (#197, #929)', async (t) => {
   const sse = await sseServer(t);
   const seen: (TraySignal | undefined)[] = [];
   const stop = watchSignal(() => ({ port: sse.port, secret: SECRET }), (signal) => seen.push(signal), QUIET);
   t.after(stop); // a timeout in until() must not leave the reconnect loop running
   const res = await sse.next();
-  const first = reading('2026-09-24T12:00:00.000Z');
-  const second = reading('2026-09-24T12:05:00.000Z');
+  const first = { claude: reading('2026-09-24T12:00:00.000Z') };
+  const second = { ...first, codex: reading('2026-09-24T12:05:00.000Z') };
   res.write(frame({ ...payload('green', 'green', 'green'), rateLimits: first }));
   res.write(frame({ ...payload('green', 'green', 'green'), rateLimits: first })); // a repeat: no report
   res.write(frame({ ...payload('green', 'green', 'green'), rateLimits: second }));

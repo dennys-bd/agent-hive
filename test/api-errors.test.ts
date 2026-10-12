@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { HiveEvent, HookPayload, Item, RateLimits, SourceItem, State, Terminal, Worker } from '../src/types.js';
+import type { AgentId, HiveEvent, HookPayload, Item, RateLimits, SourceItem, State, Terminal, Worker } from '../src/types.js';
 import { chained } from './fakes.js';
 import { withWork, workId } from './fixtures/work.js';
 
@@ -27,7 +27,7 @@ const ptyOf = (state: State): string => state.workers.find((w) => w.status !== '
 const workerOf = (state: State, ptyId: string): Worker => state.workers.find((w) => w.runId === ptyId)!;
 const hook = (ptyId: string, payload: HookPayload): HiveEvent => ({ type: 'hook', ptyId, payload });
 const failed = (state: State, ptyId: string, error: string) => reduce(state, hook(ptyId, { hook_event_name: 'StopFailure', error }));
-const withLimits = (state: State, windows: RateLimits['windows']): State => ({ ...state, rateLimits: { at: iso(Date.now()), windows } });
+const withLimits = (state: State, windows: RateLimits['windows'], agent: AgentId = 'claude'): State => ({ ...state, rateLimits: { [agent]: { at: iso(Date.now()), windows } } });
 // The retry as it lands: the timer's retryDue, then the prompt it typed and the turn's first tool
 const retried = (state: State, ptyId: string): State => {
   const resumed = reduce(state, { type: 'retryDue', ptyId, until: workerOf(state, ptyId).backoff!.until }).state;
@@ -172,4 +172,16 @@ test('a subagent\'s or a teammate\'s StopFailure is skipped, as its Stop is (#24
   const ptyId = ptyOf(start);
   const started = reduce(start, hook(ptyId, { hook_event_name: 'SessionStart', session_id: SESSION })).state;
   assert.equal(reduce(started, hook(ptyId, { hook_event_name: 'StopFailure', error: 'overloaded', session_id: CHILD })).state, started);
+});
+
+test('rate_limit waits on the failing worker\'s own agent\'s full window: Codex\'s full month never holds a Claude run, and holds a Codex one (#929)', () => {
+  const start = running();
+  const ptyId = ptyOf(start);
+  const reset = Date.now() + 30 * MINUTE;
+  const full = { thirty_day: { usedPercent: 100, resetsAt: iso(reset) } };
+  const claudeRun = workerOf(failed(withLimits(start, full, 'codex'), ptyId, 'rate_limit').state, ptyId);
+  assert.equal(claudeRun.apiErrors, 1, 'Claude\'s reading has no full window: the 1-minute schedule, counted');
+  const asCodex: State = { ...withLimits(start, full, 'codex'), workers: start.workers.map((w) => (w.runId === ptyId ? { ...w, agent: 'codex' as const } : w)) };
+  const codexRun = workerOf(failed(asCodex, ptyId, 'rate_limit').state, ptyId);
+  assert.deepEqual([codexRun.backoff, 'apiErrors' in codexRun], [{ error: 'rate_limit', until: iso(reset + MINUTE) }, false]);
 });

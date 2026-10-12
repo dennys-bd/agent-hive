@@ -2,7 +2,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState, isSessionId, isUuid, SIGNALS, STATUSES } from './orchestrator.js';
 import { syncOf } from './polling.js';
-import { isRateLimits } from './rate-limits.js';
+import { loadPlanReadings } from './rate-limits.js';
 import { isLocalActivityId, pruneRecords } from './activities.js';
 import { savedAgent } from './agents.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
@@ -180,6 +180,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
   const workers = Array.isArray(parsed.workers)
     ? parsed.workers.map((w) => onLoadedWork(normalizeWorker((pre629 ? migrateWorker(w, work) : w) as Worker), loadedIds))
     : initialState(maxConcurrent).workers;
+  const readings = loadPlanReadings(rateLimits);
   // #672: a sleeping run's transcript lived in the pty host, which died with the Hive: its record is dropped with it
   return {
     ...rest,
@@ -208,7 +209,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
     signals: SIGNALS_DEFAULTS, // overwritten by the config on boot (#727)
     terminals: Array.isArray(terminals) ? terminals.filter((x) => isTerminal(x) && loadedIds.has(x.activityId)).map(loadTerminal) : [], // #283, #292, #378; on a loaded activity (#629)
     ...(cleanStop === true ? { cleanStop } : {}), ...(isCrash(crash) ? { crash: { at: crash.at, tasks: crash.tasks } } : {}), // #283
-    ...(isRateLimits(rateLimits) ? { rateLimits } : {}), // wrong shape or legacy file: no key at all, the header shows nothing
+    ...(readings === undefined ? {} : { rateLimits: readings }), // #929: per agent; a wrong shape or a pre-#929 file is no key
   };
 }
 

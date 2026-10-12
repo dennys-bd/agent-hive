@@ -1,4 +1,4 @@
-import type { Language, RateLimits, RateLimitWindow } from './types.js';
+import { AGENT_IDS, type Language, type PlanReadings, type RateLimits, type RateLimitWindow } from './types.js';
 
 export const MAX_WINDOWS = 8;
 /** How often the plan limits are read again (#924: the Hive's timer, moved here from plan-limits.ts; the reading is the runner's). */
@@ -74,4 +74,15 @@ export function formatRateLimits(limits: RateLimits, language: Language): string
   return Object.entries(limits.windows)
     .map(([key, window]) => `${windowLabel(key, language)} ${Math.round(window.usedPercent)}%`)
     .join(' · ');
+}
+
+/** A saved state's readings (#929): each kept only under a known agent and in the persisted shape; none left is no key. A reading saved before
+ * #929 ({ at, windows }) has no agent key, so it loads as none: the next timer reading refills it, no migration. */
+export function loadPlanReadings(value: unknown): PlanReadings | undefined {
+  if (!isRecord(value)) return undefined;
+  const kept = AGENT_IDS.flatMap((agent) => {
+    const reading = value[agent];
+    return isRateLimits(reading) ? [[agent, reading] as const] : [];
+  });
+  return kept.length === 0 ? undefined : Object.fromEntries(kept);
 }

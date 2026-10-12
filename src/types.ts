@@ -158,8 +158,11 @@ export interface RateLimits {
   windows: Record<string, RateLimitWindow>; // keyed as Claude Code sends them: five_hour, seven_day, …
 }
 
-/** Reads the plan limits of the Claude Code account; rejects when it cannot (no token, network, 401). */
-export type PlanLimitsReader = () => Promise<RateLimits | undefined>;
+/** Each agent's last plan reading (#929); an agent without one has no key. */
+export type PlanReadings = Partial<Record<AgentId, RateLimits>>;
+/** One read of every agent with plan limits (#929): the readings it got and each failing agent's reason. */
+export interface PlanLimitsReport { readings: { agent: AgentId; rateLimits: RateLimits }[]; failures: { agent: AgentId; reason: string }[] }
+export type PlanLimitsReader = () => Promise<PlanLimitsReport>;
 
 /** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
 export interface SourceQuota {
@@ -696,7 +699,7 @@ export interface State {
   cleanStop?: true; // set by quit (#283): the kills of a Quit are not exits, and the next boot resumes the tasks in flight
   crash?: { at: string; tasks: string[] }; // the item ids a boot after a crash stopped (#283): the source lists them until dismissCrash
   slept?: SleptRun[]; // #672: the runs that ended with their session kept, newest last, at most SLEPT_MAX; never saved (state-store.ts)
-  rateLimits?: RateLimits; // read by the session / week rules and the header; absent until a worker's status line or the Hive's own reading reports it
+  rateLimits?: PlanReadings; // #929: one reading per agent, read by the plan rules and the header; an agent with none has no key
   error?: string;
 }
 
@@ -1312,7 +1315,7 @@ export type HiveEvent =
   | { type: 'setStages'; stages: Stage[]; transitions: Transition[] } // #134: the transitions travel with the stages
   | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)
   | { type: 'setWorkspace'; taskId: string; workspace: string } // right-click › Workspace (#179)
-  | { type: 'rateLimits'; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
+  | { type: 'rateLimits'; agent: AgentId; ptyId?: string; rateLimits: RateLimits; replace?: boolean } // agent: whose plan (#929); no ptyId: the Hive's own reading; replace: the header's refresh, taken as read
   | { type: 'sourceQuota'; source: string; quota: SourceQuota }
   | { type: 'pollFailed'; source: string; message: string } // that source's listItems rejected (#180): its tasks stay as they are
   | { type: 'setSources'; sources: string[] } // like setWorkspaces: the Comb's sources, from the config on every save (#180)

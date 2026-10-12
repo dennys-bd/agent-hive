@@ -121,17 +121,22 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   assert.deepEqual((await loadState(dir)).usage, []);
 });
 
-test('loadState keeps a valid rateLimits reading', async (t) => {
+test('loadState keeps each agent\'s valid reading (#929)', async (t) => {
   const dir = await tempDir(t, '');
-  const rateLimits = {
+  const claude = {
     at: '2026-09-16T12:00:00.000Z',
     windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-16T15:00:00.000Z' }, seven_day_fable: { usedPercent: 7, resetsAt: '2026-09-20T00:00:00.000Z' } },
   };
-  await saveState(dir, { ...initialState(1), rateLimits });
-  assert.deepEqual((await loadState(dir)).rateLimits, rateLimits);
+  const codex = { at: '2026-09-16T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-10-01T00:00:00.000Z' } } };
+  await saveState(dir, { ...initialState(1), rateLimits: { claude, codex } });
+  assert.deepEqual((await loadState(dir)).rateLimits, { claude, codex });
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), rateLimits: claude })); // a reading saved before #929
+  assert.equal('rateLimits' in (await loadState(dir)), false, 'the old single reading: no key, no migration');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), rateLimits: { claude, gemini: codex, codex: { at: 5 } } }));
+  assert.deepEqual((await loadState(dir)).rateLimits, { claude }, 'an unknown agent and a bad entry go; the rest stays');
 });
 
-test('loadState drops a rateLimits with the wrong shape and leaves the key absent', async (t) => {
+test('loadState drops an agent\'s reading with the wrong shape and leaves the key absent', async (t) => {
   const dir = await tempDir(t, '');
   const base = initialState(1);
   const at = '2026-09-16T12:00:00.000Z';
@@ -141,10 +146,9 @@ test('loadState drops a rateLimits with the wrong shape and leaves the key absen
     { at, windows: { five_hour: { usedPercent: 1, resetsAt: 7 } } },
     { at, windows: { five_hour: null } },
   ];
-  for (const rateLimits of bad) {
-    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...base, rateLimits }));
-    const loaded = await loadState(dir);
-    assert.equal('rateLimits' in loaded, false, JSON.stringify(rateLimits));
+  for (const reading of bad) {
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...base, rateLimits: { claude: reading } }));
+    assert.equal('rateLimits' in (await loadState(dir)), false, JSON.stringify(reading));
   }
 });
 

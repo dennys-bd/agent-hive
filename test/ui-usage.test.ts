@@ -113,23 +113,23 @@ test('timeLeft reads minutes under a day and the countdown beyond, never negativ
 
 test('windowResetsAt: a plan source reads its window, a budget source has none', () => {
   const rateLimits = { at: 'x', windows: { seven_day: { usedPercent: 90, resetsAt: '2026-09-30T00:00:00Z' } } };
-  assert.equal(windowResetsAt({ rateLimits }, 'week'), '2026-09-30T00:00:00Z');
-  assert.equal(windowResetsAt({ rateLimits }, 'session'), undefined);
-  assert.equal(windowResetsAt({ rateLimits }, 'hour'), undefined);
+  assert.equal(windowResetsAt({ rateLimits: { claude: rateLimits } }, { source: 'week' }), '2026-09-30T00:00:00Z');
+  assert.equal(windowResetsAt({ rateLimits: { claude: rateLimits } }, { source: 'session' }), undefined);
+  assert.equal(windowResetsAt({ rateLimits: { claude: rateLimits } }, { source: 'hour' }), undefined);
 });
 
 test('sourcePercent: the plan windows as last read (0 past reset, undefined with no reading), the budget sources as a share of the sample (undefined with no limit) (#512)', () => {
   const state: Pick<State, 'usage' | 'budget' | 'rateLimits'> = {
     usage: [{ at: at(10), tokens: 500 }],
     budget: { maxTokensPerHour: 1_000 },
-    rateLimits: { at: at(0), windows: { five_hour: { usedPercent: 11.4, resetsAt: at(-60) } } },
+    rateLimits: { claude: { at: at(0), windows: { five_hour: { usedPercent: 11.4, resetsAt: at(-60) } } } },
   };
-  assert.equal(sourcePercent(state, 'session', NOW), 11);
-  const past: Pick<State, 'usage' | 'budget' | 'rateLimits'> = { ...state, rateLimits: { at: at(0), windows: { five_hour: { usedPercent: 11.4, resetsAt: at(60) } } } };
-  assert.equal(sourcePercent(past, 'session', NOW), 0, 'a window already past its reset reads 0');
-  assert.equal(sourcePercent(state, 'week', NOW), undefined, 'no seven_day window: nothing to measure');
-  assert.equal(sourcePercent(state, 'hour', NOW), 50);
-  assert.equal(sourcePercent(state, 'day', NOW), undefined, 'no maxTokensPerDay: no limit to share');
+  assert.equal(sourcePercent(state, { source: 'session' }, NOW), 11);
+  const past: Pick<State, 'usage' | 'budget' | 'rateLimits'> = { ...state, rateLimits: { claude: { at: at(0), windows: { five_hour: { usedPercent: 11.4, resetsAt: at(60) } } } } };
+  assert.equal(sourcePercent(past, { source: 'session' }, NOW), 0, 'a window already past its reset reads 0');
+  assert.equal(sourcePercent(state, { source: 'week' }, NOW), undefined, 'no seven_day window: nothing to measure');
+  assert.equal(sourcePercent(state, { source: 'hour' }, NOW), 50);
+  assert.equal(sourcePercent(state, { source: 'day' }, NOW), undefined, 'no maxTokensPerDay: no limit to share');
 });
 
 test('latestQuota: the freshest reading among the sources; a source without one is skipped; {} is undefined (#512)', () => {
@@ -145,8 +145,18 @@ test('latestQuota: the freshest reading among the sources; a source without one 
 
 test('a month source reads thirty_day: its percent, its reset and its labels (#929)', () => {
   const rateLimits = { at: at(0), windows: { thirty_day: { usedPercent: 39.6, resetsAt: at(-60) } } };
-  assert.equal(sourcePercent({ usage: [], budget: {}, rateLimits }, 'month', NOW), 40);
-  assert.equal(windowResetsAt({ rateLimits }, 'month'), at(-60));
+  assert.equal(sourcePercent({ usage: [], budget: {}, rateLimits: { claude: rateLimits } }, { source: 'month' }, NOW), 40);
+  assert.equal(windowResetsAt({ rateLimits: { claude: rateLimits } }, { source: 'month' }), at(-60));
   assert.equal(windowLabel('thirty_day'), t('window.thirtyDay'));
   assert.equal(describeRules([{ source: 'month', percent: 40, signal: 'yellow' }]), `${t('window.thirtyDay')} ≥ 40%`);
+});
+
+test('a plan source reads its rule\'s agent, or the default agent\'s without one (#929)', () => {
+  const week = (usedPercent: number) => ({ at: at(0), windows: { seven_day: { usedPercent, resetsAt: at(-60) } } });
+  const state = { usage: [], budget: {}, rateLimits: { claude: week(10), codex: week(70) } };
+  assert.deepEqual([
+    sourcePercent(state, { source: 'week' }, NOW), sourcePercent(state, { source: 'week', agent: 'codex' }, NOW),
+    sourcePercent({ ...state, defaultAgent: 'codex' as const }, { source: 'week' }, NOW),
+  ], [10, 70, 70]);
+  assert.equal(windowResetsAt(state, { source: 'week', agent: 'codex' }), at(-60));
 });

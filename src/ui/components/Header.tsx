@@ -24,9 +24,8 @@ const VIEW_LABEL: Record<CenterMode, MessageKey> = { automation: 'header.flow', 
 const LIMITS: ReadonlyArray<{ key: string; short: MessageKey; long: MessageKey }> = [
   { key: 'five_hour', short: 'header.fiveHour', long: 'header.fiveHour' },
   { key: 'seven_day', short: 'header.week', long: 'window.week' },
+  { key: 'thirty_day', short: 'header.thirtyDay', long: 'window.thirtyDay' }, // #929: Codex's free plan has only this one
 ];
-// Each agent's plan limits' last reading; only Claude reports any today (#516); Codex's is #929
-const readingOf = (state: State): Record<AgentId, RateLimits | undefined> => ({ claude: state.rateLimits, codex: undefined });
 
 // The agent's own colour, on its symbol in the usage group only (#669): the design system's agent-colour exception. An agent without one
 // keeps currentColor
@@ -76,7 +75,7 @@ function LimitMeter({ label, percent, resetsAt, now }: { label: string; percent:
 }
 
 // Reads the plan limits now and replaces the held reading: the timer's merge keeps the higher percent inside a window, so a plan upgrade
-// that lowers it only shows after the reset. The route reads the Hive's own reading, which is Claude's: the only agent with one today
+// that lowers it only shows after the reset. The route reads every agent with plan limits (#929)
 function RefreshUsage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refresh = (): void => {
@@ -117,7 +116,7 @@ export function Header({ state, signal, center, onView }: HeaderProps) {
     const id = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(id);
   }, []);
-  const readings = readingOf(state);
+  const readings = state.rateLimits ?? {}; // #929: each agent's own reading
   return (
     <header className={`@container flex shrink-0 items-center gap-4 border-b pr-3 ${WINDOW_CHROME}`}>
       <div className="flex items-center gap-1.5">

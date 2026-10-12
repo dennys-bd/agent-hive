@@ -41,6 +41,7 @@ test('windowName: the board\'s windowLabel with its first letter upper-cased: Se
   assert.equal(windowName('five_hour'), 'Session');
   assert.equal(windowName('seven_day'), 'Week');
   assert.equal(windowName('seven_day_opus'), 'Week opus');
+  assert.equal(windowName('thirty_day'), '30 days');
   assert.equal(windowName('some_new_window'), 'Some new window', 'a menu line starts upper-case');
 });
 
@@ -96,22 +97,22 @@ test('meterBitmap: the fill is the band\'s color, neutral grey, yellow or red as
 test('usageItems: nothing before a reading, or with a reading that has no windows (#197)', () => {
   const noIcon = (): undefined => assert.fail('no line, no icon');
   assert.deepEqual(usageItems(undefined, NOW, 'en-US', noIcon, () => {}), []);
-  assert.deepEqual(usageItems({ at: AT, windows: {} }, NOW, 'en-US', noIcon, () => {}), []);
+  assert.deepEqual(usageItems({ claude: { at: AT, windows: {} } }, NOW, 'en-US', noIcon, () => {}), []);
   const broken = { at: AT, windows: { five_hour: null } } as unknown as RateLimits; // a malformed frame: the menu still opens
-  assert.deepEqual(usageItems(broken, NOW, 'en-US', noIcon, () => {}), []);
+  assert.deepEqual(usageItems({ claude: broken }, NOW, 'en-US', noIcon, () => {}), []);
 });
 
 test('usageItems: a line per window in the reading\'s order, the bar from the rounded percent and its band, the reading time on hover, a click that opens the board, then a separator (#197)', () => {
   const icons: [number, MeterBand][] = [];
   let opened = 0;
-  const items = usageItems(READING, NOW, 'en-US', (percent, band) => void icons.push([percent, band]), () => {
+  const items = usageItems({ claude: READING }, NOW, 'en-US', (percent, band) => void icons.push([percent, band]), () => {
     opened += 1;
   });
   const toolTip = `Read at ${clock(AT, 'en-US')}`;
   assert.match(toolTip, /^Read at \d{2}:\d{2}/, 'the local time of the reading');
   assert.deepEqual(items.map(({ click: _click, ...item }) => item), [
-    { label: 'Session 82% · resets in 2h40m', icon: undefined, toolTip },
-    { label: 'Week 95% · resets in 4d3h', icon: undefined, toolTip },
+    { label: 'Claude · Session 82% · resets in 2h40m', icon: undefined, toolTip },
+    { label: 'Claude · Week 95% · resets in 4d3h', icon: undefined, toolTip },
     { type: 'separator' },
   ]);
   assert.deepEqual(icons, [[82, 'yellow'], [95, 'red']]);
@@ -124,6 +125,13 @@ test('usageItems in pt: the board\'s window names and texts, the name upper-case
   setLanguage('pt');
   assert.equal(usageLine('five_hour', READING.windows.five_hour, NOW), 'Sessão 82% · reseta em 2h40m');
   assert.equal(usageLine('seven_day_opus', { usedPercent: 12.4, resetsAt: '2026-09-28T15:00:00.000Z' }, NOW), 'Semana opus 12% · reseta em 4d3h');
-  const [line] = usageItems(READING, NOW, 'pt-BR', () => undefined, () => {});
+  const [line] = usageItems({ claude: READING }, NOW, 'pt-BR', () => undefined, () => {});
   assert.equal(line.toolTip, `Lido às ${clock(AT, 'pt-BR')}`);
+});
+
+test('usageItems lists Claude\'s lines, then Codex\'s, each prefixed by its label and read at its own time; one separator after all (#929)', () => {
+  const codex: RateLimits = { at: '2026-09-24T11:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-10-04T12:00:00.000Z' } } };
+  const items = usageItems({ codex, claude: READING }, NOW, 'en-US', () => undefined, () => {});
+  assert.deepEqual(items.map((item) => item.label ?? item.type), ['Claude · Session 82% · resets in 2h40m', 'Claude · Week 95% · resets in 4d3h', 'Codex · 30 days 40% · resets in 10d', 'separator']);
+  assert.equal(items[2].toolTip, `Read at ${clock(codex.at, 'en-US')}`);
 });

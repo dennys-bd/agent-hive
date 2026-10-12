@@ -12,7 +12,7 @@ interface SignalRulesGroupProps { draft: SettingsDraft; state?: State; onChange(
 // Each rule carries its own measure; there is no view state (#526). One ruler per measure a rule uses, then the one table of every rule.
 export function SignalRulesGroup({ draft, state, onChange }: SignalRulesGroupProps) {
   const now = Date.now();
-  const percents: Partial<Record<RuleSource, number>> = state ? Object.fromEntries(MEASURES.map((s) => [s, sourcePercent(state, s, now)])) : {};
+  const percents: Partial<Record<RuleSource, number>> = state ? Object.fromEntries(MEASURES.map((s) => [s, sourcePercent(state, { source: s }, now)])) : {};
   const inUse = measuresInUse(draft.rules);
   const stages = draft.stages.map((s) => s.name.trim()).filter((name) => name !== '');
 

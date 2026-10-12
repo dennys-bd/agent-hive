@@ -158,7 +158,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'quit': return quit(state); // no fill: the Hive is going down (#283)
     case 'dismissCrash': return dismissCrash(state); // no fill: a display flag (#283)
     case 'error': return { state: { ...state, error: event.message }, effects: [] };
-    case 'rateLimits': return fill(setRateLimits(state, event.ptyId, event.rateLimits, event.replace)); // a reading is an input of the gate: a window that reset can open a job, one that filled can close it
+    case 'rateLimits': return fill(setRateLimits(state, event)); // a reading is an input of the gate: a window that reset can open a job, one that filled can close it
     case 'sourceQuota': return none(withSync(state, event.source, (s) => ({ ...s, quota: event.quota }))); // display and that source's backoff only: no fill, no effects
     case 'pollFailed': return none(withSync(state, event.source, (s) => ({ ...s, error: event.message }))); // its tasks stay as they are
     case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks go missing at the next poll
@@ -210,15 +210,18 @@ function step(state: State, event: HiveEvent): Reduced {
   }
 }
 
-// Account-wide data. From a worker it needs a live worker, as with hooks (any local process can post to the route); the Hive's own
-// reading never passes through a route, so it is always kept. The session / week rules read it through limits(); the reducer wraps it in fill.
-// `replace` is the user's refresh: a fresh read of the endpoint, taken whole, because the merge keeps the higher percent inside a window
-// and a bigger plan lowers it without moving the reset. A worker's snapshot can be hours old, so it is always merged.
-function setRateLimits(state: State, ptyId: string | undefined, rateLimits: RateLimits, replace = false): Reduced {
-  const merged = mergeRateLimits(state.rateLimits, rateLimits);
-  if (ptyId === undefined) return none({ ...state, rateLimits: replace ? rateLimits : merged });
+// Account-wide data, one reading per agent (#929). From a worker it needs a live worker, as with hooks (any local process can post to the
+// route); the Hive's own reading never passes through a route, so it is always kept. The plan rules read it through limits(); the reducer
+// wraps it in fill. `replace` is the user's refresh: a fresh read taken whole, because the merge keeps the higher percent inside a window and
+// a bigger plan lowers it without moving the reset. A worker's snapshot can be hours old, so it is always merged. Only the event's own agent's
+// reading changes.
+function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false }: Extract<HiveEvent, { type: 'rateLimits' }>): Reduced {
+  const readings = state.rateLimits ?? {};
+  const kept = (reading: RateLimits): Reduced => none({ ...state, rateLimits: { ...readings, [agent]: reading } });
+  const merged = mergeRateLimits(readings[agent], rateLimits);
+  if (ptyId === undefined) return kept(replace ? rateLimits : merged);
   const worker = state.workers.find((s) => s.runId === ptyId);
-  return !worker || worker.status === 'empty' ? none(state) : none({ ...state, rateLimits: merged });
+  return !worker || worker.status === 'empty' ? none(state) : kept(merged);
 }
 
 // The human override: no signal, cap, budget or `after` check; the task runs in the stage it is in. Unknown, running, deleting, missing or

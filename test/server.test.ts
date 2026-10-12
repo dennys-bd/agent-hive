@@ -30,7 +30,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained } from './fakes.js';
+import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -741,7 +741,7 @@ test('POST /settings reads the plan limits through the injected reader with no w
   const { home, repo } = await tempHive(t);
   const server = createServer({
     secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit,
-    readPlanLimits: async () => { reads += 1; return { ...PLAN, at: `2026-09-17T12:0${reads}:00.000Z` }; },
+    readPlanLimits: async () => { reads += 1; return claudePlan({ ...PLAN, at: `2026-09-17T12:0${reads}:00.000Z` }); },
   });
   const port = await server.listen(0);
   t.after(() => server.close());
@@ -749,47 +749,47 @@ test('POST /settings reads the plan limits through the injected reader with no w
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200); // no worker: no worker ever
   await waitFor(() => reads === 1); // the poll and the plan-limits read both run in the background (#59)
   assert.equal(reads, 1, 'configure reads once, after the poll');
-  assert.deepEqual(server.getState()?.rateLimits, { ...PLAN, at: '2026-09-17T12:01:00.000Z' });
+  assert.deepEqual(server.getState()?.rateLimits?.claude, { ...PLAN, at: '2026-09-17T12:01:00.000Z' });
   t.mock.timers.tick(PLAN_LIMITS_INTERVAL_MS);
-  await waitFor(() => server.getState()?.rateLimits?.at === '2026-09-17T12:02:00.000Z');
+  await waitFor(() => server.getState()?.rateLimits?.claude?.at === '2026-09-17T12:02:00.000Z');
   assert.equal(reads, 2);
   // the state changes before persist writes it: wait for the file, not the memory
   const saved = async (): Promise<State> => JSON.parse(await readFile(join(home, 'state.json'), 'utf8')) as State;
-  for (let i = 0; i < 200 && (await saved()).rateLimits?.at !== '2026-09-17T12:02:00.000Z'; i += 1) await sleep(5);
+  for (let i = 0; i < 200 && (await saved()).rateLimits?.claude?.at !== '2026-09-17T12:02:00.000Z'; i += 1) await sleep(5);
   assert.deepEqual((await saved()).rateLimits, server.getState()?.rateLimits, 'persisted like any other reading');
   assert.equal(server.getState()?.error, undefined);
 });
 
-test('a reader that rejects keeps the last value and the Hive going; the reason is logged once per change and the recovery once', async (t) => {
+test('a failing agent keeps its last value and the Hive going; the reason is logged once per change and the recovery once (#929)', async (t) => {
   const { log, lines } = fakeLog();
   let failWith: string | undefined = NO_TOKEN;
   const { home, repo } = await tempHive(t);
   const server = createServer({
     secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, exec: noGit, log,
-    readPlanLimits: async () => { if (failWith) throw new Error(failWith); return PLAN; },
+    readPlanLimits: async () => (failWith ? claudePlanFailure(failWith) : claudePlan(PLAN)),
   });
   const port = await server.listen(0);
   t.after(() => server.close());
   const planLines = (): string[] => lines.filter((l) => l.includes('plan limits'));
   assert.equal((await postJson(`http://127.0.0.1:${port}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200, 'setup succeeds without limits');
   await waitFor(() => planLines().length > 0); // the plan-limits read runs in the background, after the poll (#59)
-  assert.equal(server.getState()?.rateLimits, undefined);
+  assert.equal(server.getState()?.rateLimits?.claude, undefined);
   assert.equal(server.getState()?.error, undefined, 'never the error bar: an API-key user has no token, by design');
-  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`]);
+  assert.deepEqual(planLines(), [`INFO plan limits claude: ${NO_TOKEN}`]);
   await server.refreshPlanLimits();
-  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`], 'same reason again: silent');
+  assert.deepEqual(planLines(), [`INFO plan limits claude: ${NO_TOKEN}`], 'same reason again: silent');
   failWith = 'HTTP 401';
   await server.refreshPlanLimits();
-  assert.deepEqual(planLines(), [`INFO plan limits: ${NO_TOKEN}`, 'INFO plan limits: HTTP 401']);
+  assert.deepEqual(planLines(), [`INFO plan limits claude: ${NO_TOKEN}`, 'INFO plan limits claude: HTTP 401']);
   failWith = undefined;
   await server.refreshPlanLimits();
-  assert.deepEqual(server.getState()?.rateLimits, PLAN);
-  assert.deepEqual(planLines().at(-1), 'INFO plan limits: ok');
+  assert.deepEqual(server.getState()?.rateLimits?.claude, PLAN);
+  assert.deepEqual(planLines().at(-1), 'INFO plan limits claude: ok');
   await server.refreshPlanLimits();
   assert.equal(planLines().length, 3, 'a success after a success logs nothing');
   failWith = 'HTTP 401';
   await server.refreshPlanLimits();
-  assert.deepEqual(server.getState()?.rateLimits, PLAN, 'the last value stays');
+  assert.deepEqual(server.getState()?.rateLimits?.claude, PLAN, 'the last value stays');
   assert.ok(!lines.some((l) => l.startsWith('ERROR')), lines.filter((l) => l.startsWith('ERROR')).join('\n'));
 });
 
@@ -2697,7 +2697,7 @@ test('a leaving sourceAction (#286): the source applies it and the task leaves t
 
 test('POST /rules/disable and /rules/enable (#297): a bad source, percent or until is a 400 that changes nothing; a good one dispatches, and the disable holds until the enable', async (t) => {
   const { base, server } = await start(t, { ...BODY, usageRules: [{ source: 'session', percent: 80, signal: 'yellow' }] });
-  await server.dispatch({ type: 'rateLimits', rateLimits: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 85, resetsAt: new Date(Date.now() + HOUR_MS).toISOString() } } } });
+  await server.dispatch({ type: 'rateLimits', agent: 'claude', rateLimits: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 85, resetsAt: new Date(Date.now() + HOUR_MS).toISOString() } } } });
   const past = new Date(Date.now() - 60_000).toISOString();
   const bad = [
     { source: 'year', percent: 80, until: { kind: 'reset' } },

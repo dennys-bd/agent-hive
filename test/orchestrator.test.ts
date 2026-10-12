@@ -91,14 +91,14 @@ const ruled = (state: State, tokens: number, ageMs = 0): State => ({
 });
 const started = (state: State, itemId: string) => reduce(state, { type: 'start', itemId });
 const LIMITS: RateLimits = { at: '2026-09-16T12:00:00.000Z', windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-16T15:00:00.000Z' } } };
-const limited = (state: State, ptyId: string, rateLimits: RateLimits = LIMITS) => reduce(state, { type: 'rateLimits', ptyId, rateLimits });
+const limited = (state: State, ptyId: string, rateLimits: RateLimits = LIMITS) => reduce(state, { type: 'rateLimits', agent: 'claude', ptyId, rateLimits });
 const PLAN_RULES: UsageRule[] = [{ source: 'session', percent: 80, signal: 'yellow' }, { source: 'week', percent: 50, maxWorkers: 1 }];
 const FUTURE = new Date(Date.now() + HOUR_MS).toISOString();
 const PAST = new Date(Date.now() - HOUR_MS).toISOString();
 const LATER = new Date(Date.now() + 5 * HOUR_MS).toISOString(); // the next window: what a reading carries once the current one has reset
 const windows = (session: number, week = 0, resetsAt = FUTURE): RateLimits =>
   ({ at: LIMITS.at, windows: { five_hour: { usedPercent: session, resetsAt }, seven_day: { usedPercent: week, resetsAt } } });
-const planned = (state: State, rateLimits: RateLimits): State => ({ ...state, usageRules: PLAN_RULES, rateLimits });
+const planned = (state: State, rateLimits: RateLimits): State => ({ ...state, usageRules: PLAN_RULES, rateLimits: { claude: rateLimits } });
 const WORKTREE = '/tmp/worktrees/hive-1-task-1';
 // A task that ran once and stopped: session id from the spawn, worktree and branch from its SessionStart, worker freed by an exit under red
 // (in flight since its spawn, under yellow it would resume at once, #224)
@@ -887,29 +887,29 @@ test('rateLimits from an occupied worker stores the reading and runs fill; unkno
   const id = first.workers[0].runId!;
   const roomy: State = { ...first, maxConcurrent: 2, workers: [...first.workers, { id: 'free', status: 'empty' }] };
   const { state, effects } = limited(roomy, id);
-  assert.deepEqual(state.rateLimits, LIMITS);
+  assert.deepEqual(state.rateLimits?.claude, LIMITS);
   assert.deepEqual(effects.map((e) => e.type), ['spawn'], 'a reading is an input of the gate: fill runs and the free worker takes task 2');
   assert.equal(ownerAt(state, 1), 'board:item2');
   assert.equal(limited(first, 'ghost').state, first, 'nothing stored, nothing to fill: same object');
   const gone = reduce(first, { type: 'exit', ptyId: id }).state;
-  assert.equal(limited(gone, id).state.rateLimits, undefined);
-  const own = reduce(base(1), { type: 'rateLimits', rateLimits: LIMITS });
-  assert.deepEqual(own.state.rateLimits, LIMITS);
+  assert.equal(limited(gone, id).state.rateLimits?.claude, undefined);
+  const own = reduce(base(1), { type: 'rateLimits', agent: 'claude', rateLimits: LIMITS });
+  assert.deepEqual(own.state.rateLimits?.claude, LIMITS);
   assert.equal(own.effects.length, 0, 'no task: nothing to fill');
-  assert.deepEqual(reduce(reduce(state, { type: 'poll', source: 'board', items: many(2) }).state, { type: 'boot' }).state.rateLimits, LIMITS, 'survives poll and boot');
+  assert.deepEqual(reduce(reduce(state, { type: 'poll', source: 'board', items: many(2) }).state, { type: 'boot' }).state.rateLimits?.claude, LIMITS, 'survives poll and boot');
 });
 
 test('a reading is merged window by window: a stale snapshot from a long-running worker never drags a window back, a reset does', () => {
   const two: State = { ...filled(2, 3).state, usageRules: PLAN_RULES };
-  const high = reduce(two, { type: 'rateLimits', rateLimits: windows(85) }).state;
+  const high = reduce(two, { type: 'rateLimits', agent: 'claude', rateLimits: windows(85) }).state;
   const id = high.workers[0].runId!;
   const stale = limited(high, id, { ...windows(20), at: '2026-09-16T13:00:00.000Z' }); // the cached snapshot this worker's Claude Code still replays
-  assert.deepEqual(stale.state.rateLimits, { ...windows(85), at: '2026-09-16T13:00:00.000Z' }, 'inside one window use only grows: the higher reading stands');
+  assert.deepEqual(stale.state.rateLimits?.claude, { ...windows(85), at: '2026-09-16T13:00:00.000Z' }, 'inside one window use only grows: the higher reading stands');
   assert.equal(stale.effects.length, 0, 'the floor still holds: nothing is filled on a stale reading');
   const older = limited(high, id, windows(90, 0, PAST));
-  assert.deepEqual(older.state.rateLimits, windows(85), 'a window that already reset is behind the one held: dropped');
+  assert.deepEqual(older.state.rateLimits?.claude, windows(85), 'a window that already reset is behind the one held: dropped');
   const rolled = limited(high, id, windows(20, 0, LATER));
-  assert.deepEqual(rolled.state.rateLimits, windows(20, 0, LATER), 'the next window wins outright, lower percent and all');
+  assert.deepEqual(rolled.state.rateLimits?.claude, windows(20, 0, LATER), 'the next window wins outright, lower percent and all');
   assert.equal(rolled.effects.length, 0, 'the floor is lifted but both workers are taken: nothing to fill');
 });
 
@@ -934,8 +934,8 @@ test('plan-window rules: session ≥ 80 blocks fill with no usage samples, week 
   assert.equal(occupied(polled(planned(base(2), windows(10)), many(2)).state).length, 2, 'under the floor: nothing fires');
   assert.equal(occupied(polled(planned(base(2), windows(10, 60)), many(2)).state).length, 1, 'week 60 ≥ 50: cap 1');
   const two: State = { ...filled(2, 3).state, usageRules: PLAN_RULES }; // 2 running, 1 waiting
-  const read = reduce(two, { type: 'rateLimits', rateLimits: windows(85) });
-  assert.deepEqual(read.state.rateLimits, windows(85));
+  const read = reduce(two, { type: 'rateLimits', agent: 'claude', rateLimits: windows(85) });
+  assert.deepEqual(read.state.rateLimits?.claude, windows(85));
   assert.equal(read.effects.length, 0, 'no kill');
   assert.equal(occupied(read.state).length, 2);
   assert.ok(read.state.workers.every((s) => !s.draining), 'no drain');
@@ -948,13 +948,13 @@ test('plan-window rules: session ≥ 80 blocks fill with no usage samples, week 
 test('a plan rule stops firing when its window passes resetsAt or a fresh reading comes below the floor: the next poll or the reading itself fills; a manual yellow stays yellow', () => {
   const blocked = polled(planned(base(1), windows(85)), many(1)).state;
   assert.equal(occupied(blocked).length, 0);
-  const reset = polled({ ...blocked, rateLimits: windows(85, 0, PAST) }, many(1));
+  const reset = polled({ ...blocked, rateLimits: { claude: windows(85, 0, PAST) } }, many(1));
   assert.deepEqual(reset.effects.map((e) => e.type), ['spawn'], 'past resetsAt the window reads 0 even before the reader catches up');
-  const lower = reduce(blocked, { type: 'rateLimits', rateLimits: windows(70, 0, LATER) });
+  const lower = reduce(blocked, { type: 'rateLimits', agent: 'claude', rateLimits: windows(70, 0, LATER) });
   assert.deepEqual(lower.effects.map((e) => e.type), ['spawn'], 'a reading below the floor reopens at once, no poll needed');
-  assert.deepEqual(lower.state.rateLimits, windows(70, 0, LATER));
+  assert.deepEqual(lower.state.rateLimits?.claude, windows(70, 0, LATER));
   const manual = signaled(blocked, 'yellow').state;
-  const stillYellow = polled({ ...manual, rateLimits: windows(70, 0, PAST) }, many(1));
+  const stillYellow = polled({ ...manual, rateLimits: { claude: windows(70, 0, PAST) } }, many(1));
   assert.equal(stillYellow.effects.length, 0, 'a rule never touches the manual signal');
   assert.equal(stillYellow.state.signal, 'yellow');
 });
@@ -1028,9 +1028,9 @@ test('disableRule leaves the state as is for a rule below its percent, a pair th
 test('a disabled session rule is dropped by the first event after its window resets, and a later reading above its percent fires it again (#297)', () => {
   const off = switchOff(planned(base(1), windows(85)), 'session', 80).state;
   assert.equal(reduce(off, { type: 'tick' }).state.disabledRules.length, 1, 'still above 80 before the reset');
-  const reset = reduce({ ...off, rateLimits: windows(85, 0, PAST) }, { type: 'tick' }).state; // time passed its resetsAt, no reading since
+  const reset = reduce({ ...off, rateLimits: { claude: windows(85, 0, PAST) } }, { type: 'tick' }).state; // time passed its resetsAt, no reading since
   assert.deepEqual(reset.disabledRules, []);
-  const risen = reduce(reset, { type: 'rateLimits', rateLimits: windows(90, 0, LATER) }).state;
+  const risen = reduce(reset, { type: 'rateLimits', agent: 'claude', rateLimits: windows(90, 0, LATER) }).state;
   assert.deepEqual(effectiveLimits(risen, Date.now()).signalRules, [PLAN_RULES[0]], 'the next window above 80: the rule fires as usual');
 });
 
@@ -1047,9 +1047,9 @@ test('a disabled hour rule is dropped once its samples age out below the percent
 
 test('an at disable survives a window reset and is dropped on the first event at or after its time; effectiveLimits already ignores it past that time (#297)', () => {
   const off = switchOff(planned(base(1), windows(85)), 'session', 80, { kind: 'at', at: FUTURE }).state;
-  const reset = reduce({ ...off, rateLimits: windows(85, 0, PAST) }, { type: 'tick' }).state;
+  const reset = reduce({ ...off, rateLimits: { claude: windows(85, 0, PAST) } }, { type: 'tick' }).state;
   assert.equal(reset.disabledRules.length, 1, 'the window reset: an at disable holds until its time');
-  const due: State = { ...reset, rateLimits: windows(85, 0, LATER), disabledRules: [{ source: 'session', percent: 80, until: { kind: 'at', at: PAST } }] }; // its time has come
+  const due: State = { ...reset, rateLimits: { claude: windows(85, 0, LATER) }, disabledRules: [{ source: 'session', percent: 80, until: { kind: 'at', at: PAST } }] }; // its time has come
   assert.deepEqual(effectiveLimits(due, Date.now()).signalRules, [PLAN_RULES[0]], 'past its time the rule counts again, before any event');
   assert.deepEqual(effectiveLimits(due, Date.now()).disabledRules, []);
   assert.deepEqual(reduce(due, { type: 'tick' }).state.disabledRules, []);
@@ -1057,8 +1057,8 @@ test('an at disable survives a window reset and is dropped on the first event at
 
 test('a manual disable survives a window reset and a later rise; only enableRule drops it, and the rule is back in the floor (#297)', () => {
   const off = switchOff(planned(base(1), windows(85)), 'session', 80, { kind: 'manual' }).state;
-  const reset = reduce({ ...off, rateLimits: windows(85, 0, PAST) }, { type: 'tick' }).state;
-  const risen = reduce(reset, { type: 'rateLimits', rateLimits: windows(95, 0, LATER) }).state;
+  const reset = reduce({ ...off, rateLimits: { claude: windows(85, 0, PAST) } }, { type: 'tick' }).state;
+  const risen = reduce(reset, { type: 'rateLimits', agent: 'claude', rateLimits: windows(95, 0, LATER) }).state;
   assert.equal(risen.disabledRules.length, 1);
   assert.equal(effectiveLimits(risen, Date.now()).floor.signal, 'green');
   const on = reduce(risen, { type: 'enableRule', source: 'session', percent: 80 }).state;
@@ -3412,14 +3412,14 @@ test('a gate task with no workspace awaits nothing until setWorkspace places it,
 
 test('a replacing reading (the header\'s refresh) takes the windows as read: a lower percent in the same window wins and a window it lacks goes; a worker\'s never replaces', () => {
   const held: RateLimits = { ...windows(85, 95), windows: { ...windows(85, 95).windows, seven_day_opus: { usedPercent: 10, resetsAt: FUTURE } } };
-  const high = reduce(base(1), { type: 'rateLimits', rateLimits: held }).state;
+  const high = reduce(base(1), { type: 'rateLimits', agent: 'claude', rateLimits: held }).state;
   const upgraded = windows(30, 40); // a bigger plan: the same windows, lower percents
-  assert.deepEqual(reduce(high, { type: 'rateLimits', rateLimits: upgraded, replace: true }).state.rateLimits, upgraded);
-  assert.deepEqual(reduce(high, { type: 'rateLimits', rateLimits: upgraded }).state.rateLimits?.windows.five_hour.usedPercent, 85, 'without replace the merge keeps the higher percent');
+  assert.deepEqual(reduce(high, { type: 'rateLimits', agent: 'claude', rateLimits: upgraded, replace: true }).state.rateLimits?.claude, upgraded);
+  assert.deepEqual(reduce(high, { type: 'rateLimits', agent: 'claude', rateLimits: upgraded }).state.rateLimits?.claude?.windows.five_hour.usedPercent, 85, 'without replace the merge keeps the higher percent');
   const busy = filled(1, 1).state;
   const id = busy.workers[0].runId!;
-  const fromWorker = reduce({ ...busy, rateLimits: held }, { type: 'rateLimits', ptyId: id, rateLimits: upgraded, replace: true }).state;
-  assert.equal(fromWorker.rateLimits?.windows.five_hour.usedPercent, 85, 'a worker\'s cached snapshot is always merged');
+  const fromWorker = reduce({ ...busy, rateLimits: { claude: held } }, { type: 'rateLimits', agent: 'claude', ptyId: id, rateLimits: upgraded, replace: true }).state;
+  assert.equal(fromWorker.rateLimits?.claude?.windows.five_hour.usedPercent, 85, 'a worker\'s cached snapshot is always merged');
 });
 
 test('every stage run counts on its activity record: the spawn, the continue in place into the next stage, a Continue; a free session does not (#742)', () => {
@@ -3555,4 +3555,15 @@ test('a task that leaves with its worktree keeps its activity, and the same item
   const gone = reduce(polled(seen, []).state, { type: 'closeTask', taskId: 'board:item1' }).state;
   assert.deepEqual([gone.tasks.length, gone.activities.some((a) => a.id === id)], [0, true], 'kept while its worktree is on disk');
   assert.equal(ACT(polled(gone, [listed(1)]).state, 1), id, 'the returning task finds it through its record');
+});
+
+test('a rateLimits event merges or replaces only its own agent\'s reading; the other agent\'s stays as it was (#929)', () => {
+  const claude = windows(85);
+  const codex: RateLimits = { at: LIMITS.at, windows: { thirty_day: { usedPercent: 40, resetsAt: FUTURE } } };
+  const both = reduce(reduce(base(1), { type: 'rateLimits', agent: 'claude', rateLimits: claude }).state, { type: 'rateLimits', agent: 'codex', rateLimits: codex }).state;
+  assert.deepEqual(both.rateLimits, { claude, codex });
+  const lower = windows(20);
+  assert.deepEqual(reduce(both, { type: 'rateLimits', agent: 'claude', rateLimits: lower, replace: true }).state.rateLimits, { claude: lower, codex }, 'replace: Claude\'s only');
+  const codexLower: RateLimits = { at: LIMITS.at, windows: { thirty_day: { usedPercent: 10, resetsAt: FUTURE } } };
+  assert.deepEqual(reduce(both, { type: 'rateLimits', agent: 'codex', rateLimits: codexLower }).state.rateLimits, { claude, codex }, 'merged: the higher percent stands, Claude\'s untouched');
 });

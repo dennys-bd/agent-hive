@@ -5,7 +5,7 @@ import type { DaemonAddress } from './daemon.js';
 import type { Logger } from './log.js';
 import { SIGNALS } from './orchestrator.js';
 import { SECRET_HEADER } from './secret.js';
-import type { EventsPayload, RateLimits, Signal } from './types.js';
+import { AGENT_IDS, type EventsPayload, type PlanReadings, type Signal } from './types.js';
 import { t } from './ui/i18n.js';
 import { SIGNAL_RANK } from './usage-rules.js';
 
@@ -14,7 +14,7 @@ export interface TraySignal {
   manual: Signal; // state.signal
   effective: Signal; // effective.signal
   floor: Signal; // effective.floor.signal
-  rateLimits?: RateLimits; // state.rateLimits, absent until a reading arrives (#197)
+  rateLimits?: PlanReadings; // state.rateLimits, per agent (#929), absent until a reading arrives (#197)
 }
 
 export const RECONNECT_MS = 2000; // a daemon stop or Restart ends the stream: a short fixed retry brings the badge back soon after
@@ -76,10 +76,11 @@ export function signalItems(signal: TraySignal, onPick: (s: Signal) => void): Me
   return [{ label: heading, enabled: false }, ...radios, { type: 'separator' }];
 }
 
-// a new plan reading always carries a new `at` (#197): it is reported even when the signals hold
+// a new plan reading always carries a new `at` (#197): it is reported even when the signals hold; each agent's on its own (#929)
+const sameReadings = (a: PlanReadings | undefined, b: PlanReadings | undefined): boolean => AGENT_IDS.every((agent) => a?.[agent]?.at === b?.[agent]?.at);
 const sameSignal = (a: TraySignal | undefined, b: TraySignal | undefined): boolean =>
   a === b || (a !== undefined && b !== undefined && a.manual === b.manual && a.effective === b.effective && a.floor === b.floor
-    && a.rateLimits?.at === b.rateLimits?.at);
+    && sameReadings(a.rateLimits, b.rateLimits));
 
 // What one connection reports to (#196, #199): the badge's reduced view, and every payload whole
 interface SignalSink { report(signal: TraySignal | undefined): void; deliver(payload: EventsPayload | undefined): void }
