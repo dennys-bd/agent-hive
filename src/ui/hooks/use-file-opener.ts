@@ -2,7 +2,7 @@
 // it carries one, a detached window's links included. Also what the open files need of the page: a gone activity's models closed, and an
 // unload over unsaved edits asked about.
 import { useEffect, useRef } from 'react';
-import { type OpenFile, type OpenFileHow, openedFile } from '@/components/terminal-tabs';
+import { isHiveDesign, type OpenFile, type OpenFileHow, openedFile } from '@/components/terminal-tabs';
 import type { FileTabKind } from '@/hooks/use-activity';
 import { type Activity, activityKey } from '@/lib/activities';
 import { fileRefPath } from '@/lib/center-layout';
@@ -16,14 +16,16 @@ function askBeforeUnload(event: BeforeUnloadEvent): void {
   if (models.anyDirty()) event.preventDefault();
 }
 
-// The tab a click asks for (#697, #668): a preview, the changes, else the editor
-function tabKindOf(how?: OpenFileHow): FileTabKind {
+// The tab a click asks for (#697, #668, #109): a preview, the changes or the editor when asked; else a Hive design's pane for a .hv.html, the
+// editor for any other file. Every file click comes through here, so a design opens as one from the tree, a result file or a terminal link
+function tabKindOf(path: string, how?: OpenFileHow): FileTabKind {
   if (how?.preview === true) return 'preview';
-  return how?.changes === true ? 'changes' : 'file';
+  if (how?.changes === true) return 'changes';
+  return how?.editor !== true && isHiveDesign(path) ? 'design' : 'file';
 }
 
 /** The opener FileOpenerContext hands down (#717), over the listed activities. `open` is useActivity's openFile: the activity picked and the
- * file's editor tab requested, its preview's (#697) or its changes' (#668). */
+ * file's editor tab requested, its preview's (#697), its changes' (#668) or its design's (#109). */
 export function useFileOpener(activities: Activity[], open: (key: string, path: string, kind: FileTabKind) => void): OpenFile {
   const ids = activities.map((activity) => activity.activity.id).join('\n'); // one string: the effect runs only when the list changes
   useEffect(() => {
@@ -36,7 +38,7 @@ export function useFileOpener(activities: Activity[], open: (key: string, path: 
   }, []);
   // The tab a resolved path opens in, the cursor at `at` for an editor's
   const show = (activityId: string, key: string, ref: string, at?: FileAt, how?: OpenFileHow): void => {
-    const kind = tabKindOf(how);
+    const kind = tabKindOf(ref, how);
     if (kind === 'file' && at !== undefined) models.revealAt(activityId, ref, at);
     open(key, ref, kind); // a preview or a changes tab has no cursor: `at` is the editor's
   };

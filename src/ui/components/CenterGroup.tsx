@@ -242,7 +242,7 @@ function ConsoleTab({ item, active, fontFamily, ops }: { item: ConsoleRef; activ
 }
 
 // A tab's view (#457, #458): a run's terminal or its split's panes (#641), kept mounted while another tab shows, a task's diff (#270), a file's
-// editor pane (#717) or the console (redesign 05)
+// editor pane (#717), a Hive design's design pane (#109) or the console (redesign 05)
 function TabBody({ item, activity, active, fileLinks, fontFamily, ops, onExit, onWake }: TabBodyProps) {
   if (item.kind === 'console') return <ConsoleTab item={item} active={active} fontFamily={fontFamily} ops={ops} />;
   if (item.kind === 'diff') {
@@ -274,8 +274,10 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
   const isEnd = drag.landing?.kind === 'strip' && drag.landing.group === group.id && drag.landing.target === 'end';
   const shown = group.tabs[group.active];
   // The header describes what the keys act on (#641): a split tab's focused pane
-  // a console tab has none: its panel's own line is its header (#755); nor a file tab: the editor's bar names its path (#850)
-  const headed: CenterTabRef | undefined = shown?.kind === 'run' && shown.panes !== undefined ? { kind: 'run', ptyId: shown.panes.focused } : shown?.kind === 'console' || shown?.kind === 'file' ? undefined : shown;
+  // a console tab has none: its panel's own line is its header (#755); nor a file tab: the editor's bar names its path (#850); nor a design
+  // tab: its preview bar does (#109)
+  const isUnheaded = shown?.kind === 'console' || shown?.kind === 'file' || shown?.kind === 'design';
+  const headed: CenterTabRef | undefined = shown?.kind === 'run' && shown.panes !== undefined ? { kind: 'run', ptyId: shown.panes.focused } : isUnheaded ? undefined : shown;
   const focus = (): void => {
     if (focused !== group.id) ops.select(group.id, group.active);
   };
