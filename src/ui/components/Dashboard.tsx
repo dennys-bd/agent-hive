@@ -6,6 +6,7 @@ import { issueOfLink, issueUrl, taskOfIssue } from '../../repos/issue-task';
 import { prLink, prNumber, prRepo, repoName } from '../../pull-requests';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
+import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { ActivityBar } from '@/components/ActivityBar';
 import { ActivityMenu } from '@/components/ActivityMenu';
 import { AutomationPanel } from '@/components/AutomationPanel';
@@ -269,10 +270,12 @@ function TreeHoverHost({ children }: { children: ReactNode }) {
   return <TreeHoverContext.Provider value={{ hoveredId, setHoveredId }}>{children}</TreeHoverContext.Provider>;
 }
 
-/** The dashboard, with the create destinations (#846) its dialogs and popovers read from the context, the tree row the details hover (#36), and
+const NO_COLORS: Readonly<Record<string, string>> = {};
+
+/** The dashboard, with the workspaces' colours (#78), the create destinations (#846) its dialogs and popovers read from the context, the tree row the details hover (#36), and
  * the details panel's slot (#64) around the dock, which a page's block lands in. */
 export function Dashboard(props: DashboardProps) {
-  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><TreeHoverHost><DetailSlotProvider><DashboardView {...props} /></DetailSlotProvider></TreeHoverHost></CreateTargetsContext.Provider>;
+  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><WorkspaceColorsContext.Provider value={props.state?.workspaceColors ?? NO_COLORS}><TreeHoverHost><DetailSlotProvider><DashboardView {...props} /></DetailSlotProvider></TreeHoverHost></WorkspaceColorsContext.Provider></CreateTargetsContext.Provider>;
 }
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
