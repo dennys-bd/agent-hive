@@ -27,10 +27,11 @@ const saves = ({ cap }: { cap: number }): Response => {
   return jsonResponse({ ok: true });
 };
 let capAnswer = saves;
+let readFails = false; // the memory read answers 500, as after a save whose follow-up read fails
 
 const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   if (url === '/workspaces/hive/memory/cap' && init?.method === 'PUT') return capAnswer(JSON.parse(String(init.body)) as { cap: number });
-  if (url === '/workspaces/hive/memory') return jsonResponse(view);
+  if (url === '/workspaces/hive/memory') return readFails ? jsonResponse({ error: 'unreadable' }, 500) : jsonResponse(view);
   if (url === '/workspaces/hive/memory/stats') return jsonResponse(stats);
   return jsonResponse({ error: 'unknown workspace' }, 404);
 });
@@ -39,6 +40,7 @@ beforeEach(() => {
   setLanguage('pt');
   view = VIEW;
   capAnswer = saves;
+  readFails = false;
   stats = { runs: 12, cited: 2, tokensPerRun: 150, last: { at: lastAt(), task: '812', stage: 'build', cited: 1 } };
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockClear();
@@ -180,4 +182,23 @@ test('a cap the route refuses shows the range under the field, any other failure
   expect(usage.queryByText(/EACCES/)).not.toBeInTheDocument();
   expect(onCapSaved).not.toHaveBeenCalled();
   expect(usage.getByText('87 de 4.000 caracteres')).toBeInTheDocument();
+});
+
+test('a save whose follow-up read fails still stands: no error, both the field and the bar take the new cap (#115)', async () => {
+  const user = userEvent.setup();
+  const onCapSaved = vi.fn();
+  render(<MemorySection workspace="hive" saved onCapSaved={onCapSaved} />);
+  await user.click(await screen.findByRole('button', { name: 'ver memória…' }));
+  const usage = within(await screen.findByRole('region', { name: 'uso' }));
+  capAnswer = (body) => {
+    readFails = true;
+    return saves(body);
+  };
+  const cap = usage.getByRole('spinbutton', { name: 'limite total' });
+  await user.clear(cap);
+  await user.type(cap, '6000{Enter}');
+  expect(await usage.findByText('87 de 6.000 caracteres')).toBeInTheDocument();
+  expect(onCapSaved).toHaveBeenCalledWith(6000);
+  expect(usage.queryByRole('alert')).not.toBeInTheDocument();
+  expect(usage.getByRole('button', { name: 'salvar' })).toBeDisabled();
 });

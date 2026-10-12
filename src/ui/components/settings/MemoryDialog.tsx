@@ -49,16 +49,17 @@ function useMemoryStats(workspace: string, open: boolean): MemoryStats | undefin
   return stats;
 }
 
-interface CapFieldProps { workspace: string; cap: number; onCapSaved(cap: number): void; onView(view: MemoryView): void }
+interface CapFieldProps { workspace: string; view: MemoryView; onCapSaved(cap: number): void; onView(view: MemoryView): void }
 
-// #115: the route's own range refusal in the user's language; any other failure is not the user's to fix, and its words go to hive.log
+// #115: the route's own range refusal in the user's language; any other failure is not the user's to fix, so the server's words are never shown
 const capErrorText = (err: unknown): string => t((err as { code?: unknown } | null)?.code === 'cap_range' ? 'settings.memory.capRange' : 'settings.memory.capFailed');
 
 // #115: the total limit, saved at once through PUT …/memory/cap like every edit in this dialog, never the Settings draft. Save (or Enter) only
 // for a valid value other than the saved one, so a number typed key by key is never written midway. Under the field what a full memory
 // costs per run, or the range; then a failed save's reason
-function CapField({ workspace, cap, onCapSaved, onView }: CapFieldProps) {
+function CapField({ workspace, view, onCapSaved, onView }: CapFieldProps) {
   const id = useId();
+  const { cap } = view;
   const [text, setText] = useState(String(cap));
   const [error, setError] = useState<string>();
   const valid = isMemoryCap(text);
@@ -66,12 +67,14 @@ function CapField({ workspace, cap, onCapSaved, onView }: CapFieldProps) {
   const canSave = valid && next !== cap;
   const save = (): void => {
     if (!canSave) return;
-    saveCap(workspace, next)
-      .then(async () => {
-        onCapSaved(next); // in the file now: the Settings draft and its baseline take it even if the read below fails
-        onView(await readMemory(workspace));
-      })
-      .catch((err: unknown) => setError(capErrorText(err)));
+    saveCap(workspace, next).then(
+      () => {
+        onCapSaved(next); // in the file now: the Settings draft and its baseline take it whatever the read below does
+        // the save stands even if the read fails: the bars take the new cap now, the next focus read the rest
+        readMemory(workspace).then(onView, () => onView({ ...view, cap: next }));
+      },
+      (err: unknown) => setError(capErrorText(err)),
+    );
   };
   return (
     <div className="flex flex-col gap-2">
@@ -105,7 +108,7 @@ function UsageBlock({ workspace, view, onCapSaved, onView }: UsageBlockProps) {
       <MemoryUsage view={view} medium />
       <div className="grid grid-cols-2 items-start gap-3">
         {/* keyed by the saved cap: a new one (this field's save, or a read on focus) resets what is typed */}
-        <CapField key={view.cap} workspace={workspace} cap={view.cap} onCapSaved={onCapSaved} onView={onView} />
+        <CapField key={view.cap} workspace={workspace} view={view} onCapSaved={onCapSaved} onView={onView} />
         <div className="flex flex-col gap-2">
           <Label htmlFor={`${id}-max`} className="font-normal text-muted-foreground text-xs">{t('settings.memory.lessonLimit')}</Label>
           <Input id={`${id}-max`} type="number" value={view.textMax} readOnly disabled />
