@@ -19,6 +19,8 @@ test('the real bridgeScript body runs in jsdom with every function it reaches jo
   };
   document.body.innerHTML = '<main><p>Hello</p></main>';
   const script = bridgeScript();
+  // one arrow around every joined function: as a classic script, their names would otherwise land on the design's window
+  expect([script.startsWith('<script>(() => {\n'), script.endsWith('\n})()</script>')]).toEqual([true, true]);
   new Function(script.slice('<script>'.length, -'</script>'.length))();
   const rect = { x: 0, y: 0, width: 0, height: 0 };
   design({ type: 'anchors', anchors: [

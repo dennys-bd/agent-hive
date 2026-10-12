@@ -167,6 +167,11 @@ test('in comment mode a hover outlines, a click posts an element anchor and the 
   expect([outline.style.display, area.style.display, area.style.top, area.style.width]).toEqual(['none', 'block', '0px', '40px']);
   mouse('mouseup', 40, 30, document.body);
   mouse('click', 40, 30, document.body); // the click a drag ends with anchors nothing
+  const right = (type: string, x: number, y: number): boolean =>
+    document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 2 }));
+  right('mousedown', 0, 0);
+  mouse('mousemove', 40, 30, document.body);
+  right('mouseup', 40, 30); // a secondary button draws no area
   expect(designClick).toHaveBeenCalledTimes(1);
   expect(sent()).toEqual([
     { hive: 'design', type: 'anchor', anchor: { kind: 'element', selector: '#buy', text: 'Buy', rect: { x: 10, y: 120, width: 80, height: 30 } } },

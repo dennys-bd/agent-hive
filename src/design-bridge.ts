@@ -174,6 +174,7 @@ function bridgePointer(bridge: BridgeState, event: MouseEvent): void {
   event.stopPropagation();
   const at = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
   if (event.type === 'mousedown') {
+    if (event.button !== 0) return; // only the main button draws an area
     bridge.start = at;
     bridge.dragged = false;
   } else if (event.type === 'mousemove') {
@@ -227,5 +228,7 @@ const BRIDGE_FUNCTIONS = [
 /** The bridge as the inline script the design frame route puts into every HTML page it serves (#108): inline, so it needs no route.
  *  Function.toString carries no import, so every function the bridge reaches is joined in, and the anchor functions it calls are
  *  handed over by name. */
+// The arrow wrapper keeps the joined functions out of the design's global scope: a design declaring one of their names would otherwise
+// break its own script or replace ours
 export const bridgeScript = (): string =>
-  `<script>${[...anchorFunctions, ...BRIDGE_FUNCTIONS].map(String).join('\n')}\ndesignBridge({ elementAnchor, findAnchor, pinRects, isEditable, isAnchorList })</script>`;
+  `<script>(() => {\n${[...anchorFunctions, ...BRIDGE_FUNCTIONS].map(String).join('\n')}\ndesignBridge({ elementAnchor, findAnchor, pinRects, isEditable, isAnchorList });\n})()</script>`;
