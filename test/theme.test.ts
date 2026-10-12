@@ -76,3 +76,13 @@ test('--backoff is the orange of the backoff status, darker on white, and reads 
     assert.ok(ratio >= UI_MIN, `${name}: --backoff on --background is ${ratio.toFixed(2)}:1`);
   }
 });
+
+test('--agent-codex is declared in both themes, apart from green, yellow and red, and reads at 3:1 on the background (#927)', () => {
+  assert.ok(DARK.has('--agent-codex') && block(LIGHT_BLOCK).has('--agent-codex'), 'both themes');
+  for (const [name, tokens] of [['dark', DARK], ['light', LIGHT]] as const) {
+    const codex = tokens.get('--agent-codex') ?? '';
+    for (const signal of ['--working', '--waiting', '--destructive']) assert.notEqual(codex, tokens.get(signal), `${name}: ${signal}`);
+    const ratio = contrast(codex, tokens.get('--background') ?? '');
+    assert.ok(ratio >= UI_MIN, `${name}: --agent-codex on --background is ${ratio.toFixed(2)}:1`);
+  }
+});

@@ -30,7 +30,7 @@ const readingOf = (state: State): Record<AgentId, RateLimits | undefined> => ({ 
 
 // The agent's own colour, on its symbol in the usage group only (#669): the design system's agent-colour exception. An agent without one
 // keeps currentColor
-const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude' };
+const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex' };
 
 // The mark in the header is one filled hexagon, the honeycomb's centre cell (the handoff's ⬢), in the signal's colour
 function HiveMark({ signal }: { signal: Signal }) {

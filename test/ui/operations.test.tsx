@@ -84,7 +84,7 @@ test('with an activity open its group comes before the global one, each labelled
   expect(ops.map((op) => op.group).indexOf('global')).toBeGreaterThan(ops.map((op) => op.group).lastIndexOf('activity'));
   expect(ops.filter((op) => op.group === 'activity').map((op) => text(op, ctx))).toEqual(['nova sessão · #11', 'diff · #11', 'mostrar PR · #11', 'dividir com o mesmo tipo · #11']);
   expect(ops.find((op) => op.id === 'activity.diff')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['diff da worktree']);
-  expect(ops.find((op) => op.id === 'activity.newSession')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['claude', 'codex']);
+  expect(ops.find((op) => op.id === 'activity.newSession')?.children?.(ctx).map((op) => op.label(ctx))).toEqual(['claude']);
   expect(operationsFor(ctxOf(state)).some((op) => op.group === 'activity')).toBe(false);
 });
 

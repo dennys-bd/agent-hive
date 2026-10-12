@@ -1,6 +1,6 @@
 import { PlusIcon } from 'lucide-react';
 import { createContext, useContext, useEffect, useRef } from 'react';
-import { agentName } from '../../agents';
+import { AGENTS, agentName } from '../../agents';
 import { nextPr } from '../../pull-requests';
 import { canDiff } from '../../task-runs';
 import { type Activity as LiveActivity, AGENT_IDS, type AgentId, type Task, type TaskPr, DEFAULT_AGENT, type DiffScope, type OpenResult, type OperationId } from '../../types';
@@ -74,7 +74,8 @@ export interface NewRunEntry { kind: NewRunKind | 'diff'; label: string; key?: O
 /** The new-run entries of an activity (#759): terminal, each agent (the default one carries newSession's key) and, on a task's, its diff. */
 export function newRunEntries(target: RunTarget, defaultAgent: AgentId): NewRunEntry[] {
   const isClosed = !canOpenIn(target);
-  const agents = AGENT_IDS.map((agent): NewRunEntry => ({ kind: agent, label: agentName(agent), key: agent === defaultAgent ? 'newSession' : undefined, disabled: isClosed }));
+  // #927: an agent that picks its own session id (Codex) opens no free session until #931, so it is not offered
+  const agents = AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent): NewRunEntry => ({ kind: agent, label: agentName(agent), key: agent === defaultAgent ? 'newSession' : undefined, disabled: isClosed }));
   const diff: NewRunEntry[] = target.kind === 'task'
     ? [{ kind: 'diff', label: t('activity.new.diff'), key: 'openDiff', disabled: isClosed || diffScopeOf(target.task, target.activity) === undefined }]
     : [];

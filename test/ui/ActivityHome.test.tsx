@@ -128,7 +128,7 @@ test('on a local activity a kept session goes through openLocalSession and a liv
   await user.click(sleeping);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`/activities/local%3Ahive/sessions/${S1}/open`, expect.objectContaining({ method: 'POST' })));
   await waitFor(() => expect(openRun).toHaveBeenCalledWith({ ptyId: 'W9', kind: 'session', project: 'hive', title: 'hive' }));
-  expect(within(newRun('hive')).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.firstChild?.textContent)).toEqual(['terminal', 'claude', 'codex']);
+  expect(within(newRun('hive')).getAllByRole('button').map((button) => button.getAttribute('aria-label') ?? button.firstChild?.textContent)).toEqual(['terminal', 'claude']);
 });
 
 test('the new-run row: terminal and claude post the task\'s /open as the + does, diff opens the worktree\'s diff (#759)', async () => {

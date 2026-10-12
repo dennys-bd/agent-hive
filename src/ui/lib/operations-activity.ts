@@ -1,5 +1,6 @@
 // The activity group (#584): what the activity's menus, + and bar offer, targeted at the open activity, or at the row a → opened. Built per
 // activity, so each run closes over its task.
+import { AGENTS } from '../../agents';
 import { canDiff, canRunCommand, commandsOf, startMode } from '../../task-runs';
 import { nextPr } from '../../pull-requests';
 import { activityOf } from '../../activities';
@@ -32,10 +33,10 @@ export function commandOperations(task: Task, ctx: OperationContext): Operation[
   }));
 }
 
-// nova sessão ›: one item per agent, opened in the activity (a task's worktree or a workspace's checkout, #590)
+// nova sessão ›: one item per agent that can open a free session (#927: not Codex, which picks its own id, until #931), opened in the activity (a task's worktree or a workspace's checkout, #590)
 const newSession = (activity: Activity, op: OpFactory, isOpenable: boolean): Operation => op('newSession', 'activities.menu.newSession', {
   available: () => isOpenable,
-  children: () => AGENT_IDS.map((agent) => pick(`activity.newSession.${agent}`, agentName(agent), (c) => openNew(activity, agent, c.nav.openRun))),
+  children: () => AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => pick(`activity.newSession.${agent}`, agentName(agent), (c) => openNew(activity, agent, c.nav.openRun))),
 });
 
 // the split key's listener mounts with the center, so only the shown activity splits

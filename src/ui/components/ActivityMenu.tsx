@@ -1,6 +1,7 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { activityOf } from '../../activities';
+import { AGENTS } from '../../agents';
 import { openFeedbackSession, startMode } from '../../task-runs';
 import { canOpenSession, stageOf } from '../../tasks';
 import { type Activity, AGENT_IDS, type Task, type State } from '../../types';
@@ -43,7 +44,8 @@ function NewSessionSub({ task, activity, kit }: { task: Task; activity?: Activit
     <Sub>
       <SubTrigger disabled={!activity || !canOpenSession(task, activity)}>{t('activities.menu.newSession')}</SubTrigger>
       <SubContent>
-        {AGENT_IDS.map((agent) => <Item key={agent} onSelect={() => activity && openNew({ kind: 'task', task, activity }, agent, openRun)}>{agentName(agent)}</Item>)}
+        {/* #927: only an agent that can open a free session (Codex picks its own id; until #931) */}
+        {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <Item key={agent} onSelect={() => activity && openNew({ kind: 'task', task, activity }, agent, openRun)}>{agentName(agent)}</Item>)}
         <Item onSelect={() => activity && openNew({ kind: 'task', task, activity }, 'terminal', openRun)}>{t('activities.menu.terminal')}</Item>
       </SubContent>
     </Sub>

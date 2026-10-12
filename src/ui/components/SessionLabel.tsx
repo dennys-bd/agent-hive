@@ -3,12 +3,13 @@ import { agentName } from '../../agents';
 import { SESSION_ID_CHARS } from '../../tasks';
 import { type AgentId, NEW_SESSION } from '../../types';
 import { ClaudeIcon } from '@/components/ClaudeIcon';
+import { CodexIcon } from '@/components/CodexIcon';
 import { useSessionAgent } from '@/components/review-context';
 import { t } from '@/i18n';
 
 /** Each agent's own mark (#516, #591): the header's usage groups and every place a review names a session. Partial, so an agent added
  * without a logo still reads, by its name. */
-export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon };
+export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon, codex: CodexIcon };
 
 const MARK = 'size-3.5 shrink-0';
 
