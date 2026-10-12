@@ -1,7 +1,8 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { PrState, ProjectPr, Signal } from '../types.js';
-import type { CommentRow, IssueRow, IssueView, UpsertOrigin } from './rows.js';
+import type { CommentRow, IssueRow, IssueView, RepoRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
@@ -15,14 +16,29 @@ const ISSUE_COLUMNS = ['source', 'node_id', 'repository', 'number', 'kind', 'sta
 const COMMENT_COLUMNS = ['source', 'node_id', 'issue_node_id', 'repository', 'url', 'author', 'body', 'created_at', 'updated_at'];
 const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
 const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
+const NO_LIMIT = -1; // SQLite's LIMIT -1: every row
+// The changed-row guard of upsertSql without its updated_at rule: a repository has no updated_at, and only the sync writes it
+const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at)
+  VALUES ($source, $repository, $url, $canPush, $issuesEnabled, $forkParent, $pushedAt)
+  ON CONFLICT (source, repository) DO UPDATE SET url = excluded.url, can_push = excluded.can_push, issues_enabled = excluded.issues_enabled,
+    fork_parent = excluded.fork_parent, pushed_at = excluded.pushed_at
+  WHERE (excluded.url, excluded.can_push, excluded.issues_enabled, excluded.fork_parent, excluded.pushed_at)
+    IS NOT (repos.url, repos.can_push, repos.issues_enabled, repos.fork_parent, repos.pushed_at)`;
+const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open') AS open_issues,
+  COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'closed') AS closed_issues, COUNT(*) FILTER (WHERE kind = 'pr' AND state = 'open') AS open_prs,
+  MAX(updated_at) AS last FROM issues WHERE source = ? AND repository = ?`;
 const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
-export type SyncKind = 'issues' | 'comments';
+/** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). */
+export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels';
 /** A row of sync_scopes (#180): the two incremental scopes, and the full listing's, whose synced_at spaces it. kind is TEXT: no migration. */
 export type ScopeKind = SyncKind | 'reconcile';
 /** A scope's place in its sync: the `since` cursor, the first page's ETag, and the time of the last complete round. */
 export interface SyncScope { cursor: string | null; etag: string | null; syncedAt: string | null }
+
+/** What the repository summary counts from the rows (#181): open and closed issues, open PRs, the newest updated_at of either kind. */
+export interface RepoCounts { openIssues: number; closedIssues: number; openPrs: number; lastUpdatedAt?: string }
 
 /** The read model (#178): one upsert per entity, the scopes and the views' queries, every one scoped to a source. */
 export interface ReadModel {
@@ -33,7 +49,12 @@ export interface ReadModel {
   removeComment(source: string, nodeId: string): void;
   scope(source: string, repository: string, kind: ScopeKind): SyncScope | undefined;
   setScope(source: string, repository: string, kind: ScopeKind, scope: SyncScope): void;
-  issues(source: string, repository: string, state: IssueRow['state']): IssueView[]; // issues only, newest update first
+  issues(source: string, repository: string, state: IssueRow['state'], limit?: number): IssueView[]; // issues only, newest update first
+  setRepo(row: RepoRow): boolean; // whether it wrote; an identical row writes nothing
+  repo(source: string, repository: string): RepoRow | undefined;
+  setLabels(source: string, repository: string, names: string[]): boolean; // replaces the set; whether it changed
+  labels(source: string, repository: string): string[]; // by name
+  counts(source: string, repository: string): RepoCounts;
   issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
   nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's
   comments(source: string, issueNodeId: string): CommentRow[]; // oldest first
@@ -157,7 +178,7 @@ function viewsOf(db: DatabaseSync): (source: string, rows: Row[]) => IssueView[]
 
 function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
   const scope = db.prepare('SELECT cursor, etag, synced_at FROM sync_scopes WHERE source = ? AND repository = ? AND kind = ?');
-  const issues = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND kind = 'issue' AND state = ? ORDER BY updated_at DESC, number DESC");
+  const issues = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND kind = 'issue' AND state = ? ORDER BY updated_at DESC, number DESC LIMIT ?");
   const issue = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND number = ? AND kind = 'issue'");
   const nodeId = db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ? AND number = ?');
   const comments = db.prepare('SELECT * FROM comments WHERE source = ? AND issue_node_id = ? ORDER BY created_at');
@@ -171,7 +192,7 @@ function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue'
       const row = scope.get(source, repository, kind);
       return row === undefined ? undefined : { cursor: nullable(row, 'cursor'), etag: nullable(row, 'etag'), syncedAt: nullable(row, 'synced_at') };
     },
-    issues: (source, repository, state) => views(source, issues.all(source, repository, state)),
+    issues: (source, repository, state, limit = NO_LIMIT) => views(source, issues.all(source, repository, state, limit)),
     issue: (source, repository, number) => {
       const row = issue.get(source, repository, number);
       return row === undefined ? undefined : views(source, [row])[0];
@@ -182,6 +203,54 @@ function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue'
     },
     comments: (source, issueNodeId) => comments.all(source, issueNodeId).map(commentOf),
     nodeIds: (source, repository, table) => ids[table].all(source, repository).map((row) => text(row, 'node_id')),
+  };
+}
+
+function repoOf(row: Row): RepoRow {
+  return {
+    source: text(row, 'source'), repository: text(row, 'repository'), url: text(row, 'url'), canPush: Number(row.can_push) === 1,
+    issuesEnabled: Number(row.issues_enabled) === 1, forkParent: nullable(row, 'fork_parent'), pushedAt: nullable(row, 'pushed_at'),
+  };
+}
+
+function repoTablesOf(db: DatabaseSync): Pick<ReadModel, 'setRepo' | 'repo' | 'setLabels' | 'labels'> {
+  const upsert = db.prepare(UPSERT_REPO);
+  const repo = db.prepare('SELECT * FROM repos WHERE source = ? AND repository = ?');
+  const names = db.prepare('SELECT name FROM labels WHERE source = ? AND repository = ? ORDER BY name COLLATE NOCASE');
+  const dropLabels = db.prepare('DELETE FROM labels WHERE source = ? AND repository = ?');
+  const addLabel = db.prepare('INSERT INTO labels (source, repository, name) VALUES (?, ?, ?)');
+  const labels = (source: string, repository: string): string[] => names.all(source, repository).map((row) => text(row, 'name'));
+  return {
+    // node:sqlite binds no boolean
+    setRepo: (row) => written(upsert.run({ ...row, canPush: row.canPush ? 1 : 0, issuesEnabled: row.issuesEnabled ? 1 : 0 })),
+    repo: (source, repository) => {
+      const row = repo.get(source, repository);
+      return row === undefined ? undefined : repoOf(row);
+    },
+    // Compared as sets first: an unchanged 200 writes nothing, so the round names no labels kind
+    setLabels: (source, repository, wanted) => {
+      const next = [...new Set(wanted)].sort();
+      if (isDeepStrictEqual(next, [...labels(source, repository)].sort())) return false;
+      inTransaction(db, () => {
+        dropLabels.run(source, repository);
+        for (const name of next) addLabel.run(source, repository, name);
+      });
+      return true;
+    },
+    labels,
+  };
+}
+
+function countsOf(db: DatabaseSync): Pick<ReadModel, 'counts'> {
+  const counts = db.prepare(COUNTS);
+  return {
+    counts: (source, repository) => {
+      const row = counts.get(source, repository) ?? {}; // an aggregate always answers one row
+      return {
+        openIssues: Number(row.open_issues ?? 0), closedIssues: Number(row.closed_issues ?? 0), openPrs: Number(row.open_prs ?? 0),
+        ...(typeof row.last === 'string' ? { lastUpdatedAt: row.last } : {}),
+      };
+    },
   };
 }
 
@@ -205,7 +274,7 @@ function restrict(path: string): void {
 }
 
 function modelOf(db: DatabaseSync, now: () => number): ReadModel {
-  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
+  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), ...repoTablesOf(db), ...countsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
 }
 
 // The handle is closed on any failure, statement preparation included, so the files can be deleted after it (Windows refuses an open one)

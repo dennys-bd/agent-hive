@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
-import type { CommentRow, IssueRow } from '../../src/read-model/rows.js';
+import type { CommentRow, IssueRow, RepoRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
 import type { Gql, ProjectPr } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
@@ -43,6 +43,7 @@ export const ISSUE_ROW: IssueRow = {
   source: SOURCE, nodeId: 'I_12', repository: REPO, number: 12, kind: 'issue', state: 'closed', title: 'T12', body: 'b', author: 'bia',
   labels: ['bug'], assignees: ['bia', 'caio'], createdAt: CREATED, updatedAt: T1, closedAt: T1, comments: 1,
 };
+export const REPO_ROW: RepoRow = { source: SOURCE, repository: REPO, url: 'https://github.com/acme/hive', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: T1 };
 export const REST_COMMENT = {
   url: 'https://api.github.com/repos/acme/hive/issues/comments/5', html_url: COMMENT_URL,
   issue_url: 'https://api.github.com/repos/acme/hive/issues/12', id: 5, node_id: 'IC_5', user: { login: 'bia', id: 7 }, created_at: COMMENTED, updated_at: COMMENTED, body: 'c',
