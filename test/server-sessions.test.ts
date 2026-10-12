@@ -262,12 +262,18 @@ test('POST /activities/local:<name>/sessions runs the agent its kind names, over
   await refused(postJson(url, { kind: 'gpt' }), 400, `kind precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`, 'not an agent');
 });
 
-test('a new local session of codex, asked for or the default, is refused; a claude one still opens (#927)', async (t) => {
-  const { base, server } = await start(t);
+const CODEX_ID = '01a12d45-1dff-7000-8000-0000000000bb';
+
+test('a new local codex session runs codex with no id; its first SessionStart records it, and its continue resumes it with no transcript check (#931)', async (t) => {
+  const { base, server, workers } = await start(t);
   const url = `${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
-  const message = 'codex sessions are not available yet: run codex in a flow stage';
-  await refused(postJson(url, { kind: 'codex' }), 400, message, 'asked for');
-  await server.dispatch({ type: 'setDefaultAgent', agent: 'codex' });
-  await refused(postJson(url, {}), 400, message, 'the default agent');
-  assert.equal((await postJson(url, { kind: 'claude' })).status, 200);
+  assert.equal((await postJson(url, { kind: 'codex' })).status, 200);
+  const worker = server.getState()?.workers.find((s) => s.activityId === localActivityId(WORKSPACE) && s.status !== 'empty');
+  assert.ok(worker?.runId !== undefined);
+  assert.deepEqual([workers[0].launch.agent?.command, worker.sessionId, localSessionsOf(server.getState()!, WORKSPACE)], ['codex', undefined, []]);
+  await server.dispatch({ type: 'hook', ptyId: worker.runId, payload: { hook_event_name: 'SessionStart', session_id: CODEX_ID, source: 'startup' } });
+  assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).map((s) => [s.id, s.agent]), [[CODEX_ID, 'codex']]);
+  await server.dispatch({ type: 'exit', ptyId: worker.runId });
+  assert.equal((await postJson(`${url}/${CODEX_ID}/open`)).status, 200, 'Codex keeps its rollouts by date, not by folder: nothing to find until #929');
+  assert.deepEqual(workers[1].launch.agent?.argv.slice(0, 2), ['resume', CODEX_ID]);
 });
