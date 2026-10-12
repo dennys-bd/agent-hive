@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
 import { AGENTS } from '../../src/agents.js';
-import { codexRunner, tomlString } from '../../src/agents/codex.js';
+import { createHash } from 'node:crypto';
+import { codexRunner } from '../../src/agents/codex.js';
+import { agentRoles, tomlString } from '../../src/agents/codex-home.js';
 import type { AgentRun } from '../../src/agents/runner.js';
-import { hookCommand, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
+import { hookCommand, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
@@ -32,22 +34,28 @@ const MCP: LaunchArg[] = [
 ];
 const PROTOCOL_ARG: LaunchArg = ['-c', `developer_instructions=${JSON.stringify(PROTOCOL)}`];
 const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', `projects={"${CWD}"={trust_level="trusted"}}`]];
+// #934: the skills as the plugin boot copied into Codex's cache, then one role per agent; <home> is RUN.pluginDir's parent, /h
+const MARKETPLACE = `agent-hive-${createHash('sha256').update('/h').digest('hex').slice(0, 8)}`;
+const PLUGIN: LaunchArg = ['-c', `plugins.hive@${MARKETPLACE}.enabled=true`];
+const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+const ROLES: LaunchArg[] = agentRoles(pluginSource()).map((role) => ['-c', `agents.hive:${role.name}={description=${JSON.stringify(role.description)},config_file="/h/codex/agents/${role.name}.toml"}`]);
+const HIVE_PLUGIN: LaunchArg[] = [PLUGIN, ...ROLES];
 const TAIL = ['--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write', '-m', 'gpt-5.6-terra'];
 const STAGE_RUN: AgentRun = { ...RUN, protocolText: PROTOCOL, model: 'gpt-5.6-terra', extraArgs: ['--sandbox', 'workspace-write'] };
 
 test('a new stage run: the hooks, the MCP server, the protocol, the startup switches, the trust bypass, the agent\'s args, the model; never the Hive\'s id (#927)', () => {
   const argv = codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: false } });
-  assert.deepEqual(argv, [...HOOKS, ...MCP, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
+  assert.deepEqual(argv, [...HOOKS, ...MCP, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
   assert.equal(JSON.stringify(argv).includes(ID), false, 'Codex picks its own session id (finding §3)');
 });
 
 test('a resume is `resume <id>` followed by the same overrides (#927)', () => {
-  assert.deepEqual(codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: true } }), ['resume', ID, ...HOOKS, ...MCP, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
+  assert.deepEqual(codexRunner.launch({ ...STAGE_RUN, session: { id: ID, resume: true } }), ['resume', ID, ...HOOKS, ...MCP, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
 });
 
 test('no model has no -m, no protocol text no developer_instructions, and a run without the Hive\'s server no mcp_servers.hive key (#927)', () => {
   const argv = codexRunner.launch({ ...RUN, withHive: false });
-  assert.deepEqual(argv, [...HOOKS, ...STARTUP, '--dangerously-bypass-hook-trust']);
+  assert.deepEqual(argv, [...HOOKS, ...HIVE_PLUGIN, ...STARTUP, '--dangerously-bypass-hook-trust']);
   assert.equal(argv.flat().some((word) => word.startsWith('mcp_servers.hive')), false);
 });
 
@@ -131,4 +139,20 @@ test('a forged body never throws: odd event names, tool inputs, tool names and a
     codexHook('Stop', { agent_id: { id: 'x' } }),
   ];
   for (const body of forged) assert.doesNotThrow(() => codexRunner.hookPayload(body), JSON.stringify(body));
+});
+
+test('every run enables the Hive\'s plugin by a dotted key and names one hive:<name> role per agent, word for word; never the whole plugins table (#934)', () => {
+  assert.deepEqual(ROLES.map(([, pair]) => pair.slice('agents.hive:'.length, pair.indexOf('='))), AGENT_NAMES);
+  assert.deepEqual(ROLES[0], ['-c', 'agents.hive:architect={description="System design specialist. Consulted on the architectural path of /hive:new-spec, before the spec is written, for trade-offs between approaches, component boundaries and interface changes. Returns a recommendation; never writes files.",config_file="/h/codex/agents/architect.toml"}']);
+  for (const run of [STAGE_RUN, { ...RUN, withHive: false }]) {
+    const words = codexRunner.launch(run).flat();
+    assert.ok(words.includes(PLUGIN[1]), 'a local run too, as Claude\'s --plugin-dir');
+    assert.equal(words.some((word) => word.startsWith('plugins=') || word.startsWith('agents=')), false, 'a whole table replaces the user\'s');
+  }
+});
+
+test('the home is the run\'s plugin dir\'s parent: another home is another marketplace and other role files (#934)', () => {
+  const words = codexRunner.launch({ ...RUN, pluginDir: '/other/plugin' }).flat();
+  assert.ok(words.includes(`plugins.hive@agent-hive-${createHash('sha256').update('/other').digest('hex').slice(0, 8)}.enabled=true`));
+  assert.ok(words.some((word) => word.startsWith('agents.hive:tdd=') && word.endsWith(`config_file=${tomlString('/other/codex/agents/tdd.toml')}}`)));
 });
