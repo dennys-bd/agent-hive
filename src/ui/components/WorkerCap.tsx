@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { liveDefaultAgent } from '../../agents';
 import { act } from '@/components/actions';
 import { Input } from '@/components/ui/input';
 import { t } from '@/i18n';
@@ -26,7 +27,7 @@ export function WorkerCap({ state, effective }: WorkerCapProps) {
 
   const active = workerCount(state.workers);
   const cap = effective?.floor.maxWorkers;
-  const capTitle = effective && cap !== undefined ? t('maxWorkers.locked', { rules: describeRules(effective.capRules) }) : undefined;
+  const capTitle = effective && cap !== undefined ? t('maxWorkers.locked', { rules: describeRules(effective.capRules, liveDefaultAgent(state)) }) : undefined;
 
   return (
     <div className="flex shrink-0 items-center gap-2 text-[13px]">

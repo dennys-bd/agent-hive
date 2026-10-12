@@ -1,10 +1,11 @@
-import { type Budget, type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
+import { liveDefaultAgent } from './agents.js';
+import { AGENT_IDS, type AgentId, type DisabledRule, type DisabledRuleStatus, type DisableUntil, type RateLimits, type PlanSource, isPlanSource, RULE_SOURCES, type RuleSource, type Signal, type Stage, type State, type UsageLimits, type UsageRule, type UsageSample } from './types.js';
 import { DAY_MS, HOUR_MS, usageTotals } from './usage.js';
 
 export const SIGNAL_RANK: Record<Signal, number> = { green: 0, yellow: 1, red: 2 };
 const PERCENT = 100;
 /** The plan window each plan source reads; per-model weekly windows (seven_day_<model>) stay display-only. */
-export const PLAN_WINDOW: Record<'session' | 'week', string> = { session: 'five_hour', week: 'seven_day' };
+export const PLAN_WINDOW: Record<PlanSource, string> = { session: 'five_hour', week: 'seven_day', month: 'thirty_day' }; // month: #929, Codex's free plan
 
 export function worstSignal(a: Signal, b: Signal): Signal {
   return SIGNAL_RANK[b] > SIGNAL_RANK[a] ? b : a;
@@ -16,19 +17,27 @@ function share(used: number, limit: number | undefined): number {
 }
 
 // No data = no restriction. A window past its reset has reset even when the reader has not caught up (it can fail for hours on a bad token).
-function windowPercent(rateLimits: RateLimits | undefined, key: string, now: number): number {
-  const reading = rateLimits?.windows[key];
-  return reading === undefined || Date.parse(reading.resetsAt) <= now ? 0 : reading.usedPercent;
+function windowPercent(reading: RateLimits | undefined, key: string, now: number): number {
+  const window = reading?.windows[key];
+  return window === undefined || Date.parse(window.resetsAt) <= now ? 0 : window.usedPercent;
 }
 
-/** What every source reads right now, in percent: the budget shares over the samples, the plan windows as last read. */
-export function sourcePercents(usage: UsageSample[], budget: Budget, rateLimits: RateLimits | undefined, now: number): Record<RuleSource, number> {
-  const { hour, day } = usageTotals(usage, now);
-  return {
-    hour: share(hour, budget.maxTokensPerHour),
-    day: share(day, budget.maxTokensPerDay),
-    session: windowPercent(rateLimits, PLAN_WINDOW.session, now),
-    week: windowPercent(rateLimits, PLAN_WINDOW.week, now),
+/** What a rule reads (#929): the budget and its samples, every agent's plan reading, and the default agent a rule without one reads. */
+export type RuleState = Pick<State, 'usage' | 'budget' | 'rateLimits' | 'defaultAgent'>;
+/** A rule's percent right now (#929): two rules on one plan source can read two agents, so every check reads its rule's own. */
+export type RulePercent = (rule: Pick<UsageRule, 'source' | 'agent'>) => number;
+
+/** The plan reading a rule compares (#929): its agent's, or the default agent's. */
+export const planReading = (state: Pick<State, 'rateLimits' | 'defaultAgent'>, rule: Pick<UsageRule, 'agent'>): RateLimits | undefined =>
+  state.rateLimits?.[rule.agent ?? liveDefaultAgent(state)];
+
+/** Each rule's percent: the budget shares over the samples (every agent's tokens), a plan window as its agent last read it. */
+export function rulePercents(state: RuleState, now: number): RulePercent {
+  const { hour, day } = usageTotals(state.usage, now);
+  return (rule) => {
+    if (rule.source === 'hour') return share(hour, state.budget.maxTokensPerHour);
+    if (rule.source === 'day') return share(day, state.budget.maxTokensPerDay);
+    return windowPercent(planReading(state, rule), PLAN_WINDOW[rule.source], now);
   };
 }
 
@@ -38,9 +47,9 @@ function minDefined(a: number | undefined, b: number | undefined): number | unde
   return Math.min(a, b);
 }
 
-/** Every rule whose source is at or above its percent (the floor included); order preserved. */
-export function firedRules(percents: Record<RuleSource, number>, rules: UsageRule[]): UsageRule[] {
-  return rules.filter((rule) => percents[rule.source] >= rule.percent);
+/** Every rule whose percent reads at or above its floor; order preserved. */
+export function firedRules(percent: RulePercent, rules: UsageRule[]): UsageRule[] {
+  return rules.filter((rule) => percent(rule) >= rule.percent);
 }
 
 /** A rule that caps the total (#475): one without a stage. Only these reach the floor, capRules and the header. */
@@ -48,8 +57,8 @@ export const isGlobalRule = (rule: UsageRule): boolean => rule.stage === undefin
 
 /** Every rule whose source is at or above its percent fires; the worst signal and the smallest cap among them win. Array order is irrelevant.
  * A stage rule (#475) is left to stageCaps. */
-export function applyUsageRules(percents: Record<RuleSource, number>, rules: UsageRule[]): UsageLimits {
-  return firedRules(percents, rules)
+export function applyUsageRules(percent: RulePercent, rules: UsageRule[]): UsageLimits {
+  return firedRules(percent, rules)
     .filter(isGlobalRule)
     .reduce<UsageLimits>((limits, rule) => {
       const maxWorkers = minDefined(limits.maxWorkers, rule.maxWorkers);
@@ -77,13 +86,16 @@ export function stageCapRules(caps: Record<string, number>, fired: UsageRule[]):
   }));
 }
 
-/** A rule's identity across JSON (#297): its source and its percent, as the strip groups them. */
-export const sameRule = (a: Pick<UsageRule, 'source' | 'percent'>, b: Pick<UsageRule, 'source' | 'percent'>): boolean =>
-  a.source === b.source && a.percent === b.percent;
+type RuleId = Pick<UsageRule, 'source' | 'percent' | 'agent'>;
+
+/** A rule's identity across JSON (#297): its source, its percent and, on a plan source, its agent (#929), an absent agent being the default
+ * one. A budget rule reads every agent's tokens, so the agent is no part of it. */
+export const sameRule = (a: RuleId, b: RuleId, defaultAgent: AgentId): boolean =>
+  a.source === b.source && a.percent === b.percent && (!isPlanSource(a.source) || (a.agent ?? defaultAgent) === (b.agent ?? defaultAgent));
 
 /** The rules minus every one a disable names (#297): what effectiveLimits hands firedRules and applyUsageRules. */
-export const activeRules = (rules: UsageRule[], disabled: DisabledRule[]): UsageRule[] =>
-  rules.filter((rule) => !disabled.some((entry) => sameRule(entry, rule)));
+export const activeRules = (rules: UsageRule[], disabled: DisabledRule[], defaultAgent: AgentId): UsageRule[] =>
+  rules.filter((rule) => !disabled.some((entry) => sameRule(entry, rule, defaultAgent)));
 
 /**
  * When a rolling budget window would fall below `percent` of `limit` if no new token arrived (#297): the samples inside the window leave
@@ -102,22 +114,21 @@ export function rollingBackAt(usage: UsageSample[], windowMs: number, limit: num
 }
 
 /** When a reset disable's rule is expected back (#297): a plan rule at its window's reset, a budget rule at rollingBackAt's estimate. */
-export function ruleBackAt(rule: Pick<UsageRule, 'source' | 'percent'>, state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, now: number): string | undefined {
+export function ruleBackAt(rule: Pick<UsageRule, 'source' | 'percent' | 'agent'>, state: RuleState, now: number): string | undefined {
   switch (rule.source) {
     case 'session':
-    case 'week': {
-      const reading = state.rateLimits?.windows[PLAN_WINDOW[rule.source]];
-      return reading?.resetsAt;
-    }
+    case 'week':
+    case 'month': return planReading(state, rule)?.windows[PLAN_WINDOW[rule.source]]?.resetsAt; // #929: its own agent's window
     case 'hour': return rollingBackAt(state.usage, HOUR_MS, state.budget.maxTokensPerHour, rule.percent, now);
     case 'day': return rollingBackAt(state.usage, DAY_MS, state.budget.maxTokensPerDay, rule.percent, now);
   }
 }
 
-/** Whether a disable has run its course at `now` (#297): reset once its source reads below the percent, at from its time, manual never. */
-export function disableExpired(entry: DisabledRule, percents: Record<RuleSource, number>, now: number): boolean {
+/** Whether a disable has run its course at `now` (#297): reset once its rule reads below the percent on its agent's reading (#929), at from
+ * its time, manual never. */
+export function disableExpired(entry: DisabledRule, percent: RulePercent, now: number): boolean {
   switch (entry.until.kind) {
-    case 'reset': return percents[entry.source] < entry.percent;
+    case 'reset': return percent(entry) < entry.percent;
     case 'at': return now >= Date.parse(entry.until.at);
     case 'manual': return false;
   }
@@ -138,17 +149,19 @@ export function isDisableUntil(value: unknown): value is DisableUntil {
   return value.kind === 'reset' || value.kind === 'manual' || (value.kind === 'at' && isIsoDate(value.at));
 }
 
-/** A disable in the shape the routes accept (#297): a known source, a finite percent and a valid until. */
+/** A disable in the shape the routes accept (#297): a known source, a finite percent, a valid until and, when given, a known agent (#929). */
 export const isDisabledRule = (value: unknown): value is DisabledRule =>
-  isObject(value) && isRuleSource(value.source) && isPercent(value.percent) && isDisableUntil(value.until);
+  isObject(value) && isRuleSource(value.source) && isPercent(value.percent) && isDisableUntil(value.until)
+  && (value.agent === undefined || AGENT_IDS.includes(value.agent as AgentId));
 
 /** A disable copied field by field (#297): nothing else a hand-edited state.json carries rides along. */
-export const copyDisabledRule = ({ source, percent, until }: DisabledRule): DisabledRule => ({
+export const copyDisabledRule = ({ source, percent, until, agent }: DisabledRule): DisabledRule => ({
   source, percent, until: until.kind === 'at' ? { kind: 'at', at: until.at } : until.kind === 'reset' ? { kind: 'reset' } : { kind: 'manual' },
+  ...(agent === undefined ? {} : { agent }),
 });
 
 // Where a disable's rule is expected back (#297): a reset one where ruleBackAt says, an at one at its time, a manual one never.
-function backAtOf(entry: DisabledRule, rule: UsageRule, state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, now: number): string | undefined {
+function backAtOf(entry: DisabledRule, rule: UsageRule, state: RuleState, now: number): string | undefined {
   switch (entry.until.kind) {
     case 'reset': return ruleBackAt(rule, state, now);
     case 'at': return entry.until.at;
@@ -157,10 +170,10 @@ function backAtOf(entry: DisabledRule, rule: UsageRule, state: Pick<State, 'usag
 }
 
 /** Every disabled rule of the table, in its order, with when it is expected back (#297): what effectiveLimits reports and the strip shows.
- * ponytail: two rows with the same source + percent are one rule to a disable (the strip's sameRule); each such row is listed. */
-export function disabledStatuses(state: Pick<State, 'usageRules' | 'usage' | 'budget' | 'rateLimits'>, disabled: DisabledRule[], now: number): DisabledRuleStatus[] {
+ * ponytail: two rows with the same source + percent + agent are one rule to a disable (the strip's sameRule); each such row is listed. */
+export function disabledStatuses(state: Pick<State, 'usageRules'> & RuleState, disabled: DisabledRule[], now: number): DisabledRuleStatus[] {
   return state.usageRules.flatMap((rule) => {
-    const entry = disabled.find((d) => sameRule(d, rule));
+    const entry = disabled.find((d) => sameRule(d, rule, liveDefaultAgent(state)));
     if (!entry) return [];
     const backAt = backAtOf(entry, rule, state, now);
     const estimate = entry.until.kind === 'reset' && (rule.source === 'hour' || rule.source === 'day'); // a rolling window has no fixed reset
@@ -171,25 +184,25 @@ export function disabledStatuses(state: Pick<State, 'usageRules' | 'usage' | 'bu
 /** The disables still in force at `now` (#297). The state itself when none expired, so an event that changes nothing still returns it. */
 export function dropExpiredDisables(state: State, now: number): State {
   if (state.disabledRules.length === 0) return state;
-  const percents = sourcePercents(state.usage, state.budget, state.rateLimits, now);
-  const kept = state.disabledRules.filter((entry) => !disableExpired(entry, percents, now));
+  const percent = rulePercents(state, now);
+  const kept = state.disabledRules.filter((entry) => !disableExpired(entry, percent, now));
   return kept.length === state.disabledRules.length ? state : { ...state, disabledRules: kept };
 }
 
 /** desligar (#297): only a rule of the table that fires right now and is not disabled yet; anything else returns the state itself. */
 export function disableRule(state: State, entry: DisabledRule, now: number): State {
-  const percents = sourcePercents(state.usage, state.budget, state.rateLimits, now);
-  const known = state.usageRules.some((rule) => sameRule(rule, entry));
-  if (!known || percents[entry.source] < entry.percent || state.disabledRules.some((d) => sameRule(d, entry))) return state;
+  const same = (a: RuleId, b: RuleId): boolean => sameRule(a, b, liveDefaultAgent(state));
+  const known = state.usageRules.some((rule) => same(rule, entry));
+  if (!known || rulePercents(state, now)(entry) < entry.percent || state.disabledRules.some((d) => same(d, entry))) return state;
   return { ...state, disabledRules: [...state.disabledRules, entry] };
 }
 
 /** religar (#297): the disable goes at once; the state itself when there was none. */
-export function enableRule(state: State, pair: Pick<DisabledRule, 'source' | 'percent'>): State {
-  const kept = state.disabledRules.filter((entry) => !sameRule(entry, pair));
+export function enableRule(state: State, pair: Pick<DisabledRule, 'source' | 'percent' | 'agent'>): State {
+  const kept = state.disabledRules.filter((entry) => !sameRule(entry, pair, liveDefaultAgent(state)));
   return kept.length === state.disabledRules.length ? state : { ...state, disabledRules: kept };
 }
 
-/** The disables whose source + percent still name a rule of `rules` (#297): a disable must not outlive its rule, nor attach to another. */
-export const namedDisables = (disabled: DisabledRule[], rules: UsageRule[]): DisabledRule[] =>
-  disabled.filter((entry) => rules.some((rule) => sameRule(rule, entry)));
+/** The disables that still name a rule of `rules` (#297, #929: its agent too): a disable must not outlive its rule, nor attach to another. */
+export const namedDisables = (disabled: DisabledRule[], rules: UsageRule[], defaultAgent: AgentId): DisabledRule[] =>
+  disabled.filter((entry) => rules.some((rule) => sameRule(rule, entry, defaultAgent)));

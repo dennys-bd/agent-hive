@@ -2,11 +2,12 @@
 // 800 lines. One signal table decides: a new task needs `newTasks` (#32: always, or tree with its tree started), a started one waiting for a worker needs resume, a session that ends its
 // stage needs continue (its session is #134's keepsRun, checked by the callers); caps and budget hold as before, and a manual act passes none
 // of this. Pure: every function returns new objects.
+import { liveDefaultAgent } from './agents.js';
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
 import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
 import { treeStarted } from './task-tree.js';
 import { hasBudget } from './usage.js';
-import { activeRules, applyUsageRules, disableExpired, disabledStatuses, firedRules, isGlobalRule, sourcePercents, stageCapRules, stageCaps, worstSignal } from './usage-rules.js';
+import { activeRules, applyUsageRules, disableExpired, disabledStatuses, firedRules, isGlobalRule, rulePercents, stageCapRules, stageCaps, worstSignal } from './usage-rules.js';
 import { hasRoom, isFree, occupy, type Reduced, slugTaken, stageHasRoom, withTask } from './reducer-kit.js';
 import { startCommands } from './stage-commands.js';
 import type { Effect, EffectiveLimits, SignalBehaviour, Stage, State, Task, Worker, WorkerEventKind } from './types.js';
@@ -19,11 +20,11 @@ export type Gate = EffectiveLimits & { behaviour: SignalBehaviour };
  * caps the signal (#727): it follows the flow's. A rule disabled from the strip (#297) counts for none of it and is listed in `disabledRules`;
  * an expired disable counts again at once. */
 export function effectiveLimits(state: State, now: number): EffectiveLimits {
-  const percents = sourcePercents(state.usage, state.budget, state.rateLimits, now);
-  const disabled = state.disabledRules.filter((entry) => !disableExpired(entry, percents, now));
-  const rules = activeRules(state.usageRules, disabled);
-  const fired = firedRules(percents, rules);
-  const floor = applyUsageRules(percents, rules);
+  const percent = rulePercents(state, now); // #929: each rule on its own agent's reading
+  const disabled = state.disabledRules.filter((entry) => !disableExpired(entry, percent, now));
+  const rules = activeRules(state.usageRules, disabled, liveDefaultAgent(state));
+  const fired = firedRules(percent, rules);
+  const floor = applyUsageRules(percent, rules);
   const caps = stageCaps(state.stages, fired); // #475: a stage rule caps its stage only
   return {
     signal: worstSignal(state.signal, floor.signal),

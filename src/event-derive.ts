@@ -9,7 +9,7 @@ import { workerCount } from './reducer-kit.js';
 import { onSource, runTime, stageOf, taskId } from './tasks.js';
 import { outgoing } from './transitions.js';
 import { END, isLeaving, type EffectiveLimits, type SourceAction, type HiveEvent, type Signal, type State, type Task, type TaskPr, type Worker } from './types.js';
-import { sourcePercents } from './usage-rules.js';
+import { rulePercents } from './usage-rules.js';
 
 // The facts of one reduction for events.jsonl (#742), derived from the two states and the event as describeChanges derives hive.log's lines:
 // one place covers every reducer rule, current or future, and the reducer stays pure. Pure: `now` is the caller's clock.
@@ -215,7 +215,7 @@ export function startedRuns(prev: State, next: State, event: HiveEvent, now: num
 function ruleOf(state: State, limits: EffectiveLimits, now: number): { rule?: string; usage_percent?: number } {
   const [rule, other] = limits.signal === state.signal ? [] : limits.signalRules;
   if (!rule || other) return {};
-  const percent = sourcePercents(state.usage, state.budget, state.rateLimits, now)[rule.source];
+  const percent = rulePercents(state, now)(rule);
   return { rule: `${rule.source}≥${rule.percent}`, usage_percent: Math.round(percent) };
 }
 

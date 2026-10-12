@@ -44,7 +44,10 @@ export interface AgentRunner {
   prepareHome(home: string, port: number): Promise<void>;
   mcpConfig(server: McpServer): string;
   lspPlugin(servers: LspServers): { path: string; content: string }[];
-  transcriptDir(cwd: string, env?: NodeJS.ProcessEnv): string;
+  transcriptDir(cwd: string, env?: NodeJS.ProcessEnv): string | undefined; // #929: undefined when transcripts are not kept per cwd (Codex)
+  // #929: cwd: Claude keys transcripts by it, Codex ignores it; sessionId pins the file to that session (Codex owns nothing without one)
+  ownsTranscript(path: string, cwd: string, sessionId: string | undefined, env?: NodeJS.ProcessEnv): boolean;
+  sessionFiles(cwd: string, sessionId: string, env?: NodeJS.ProcessEnv): Promise<string[]>; // #929: what deleting the session's transcripts removes
   readTurn(path: string, since?: number): Promise<TranscriptTurn>;
   countMessages(path: string): Promise<number>;
   planLimits(deps?: PlanLimitsDeps): Promise<RateLimits | undefined>;

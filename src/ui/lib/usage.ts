@@ -1,5 +1,6 @@
 // Pure meter math for the header and the tasks. No DOM, no React: node:test imports it from dist/src/ui/lib.
-import type { SourceQuota, SourceSync, DisableUntil, RuleSource, State, UsageRule } from '../../types.js';
+import { agentName, liveDefaultAgent } from '../../agents.js';
+import { type AgentId, DEFAULT_AGENT, isPlanSource, type PlanSource, type SourceQuota, type SourceSync, type DisableUntil, type RuleSource, type State, type UsageRule } from '../../types.js';
 import { type MessageKey, statusText, t } from '../i18n.js';
 
 // Mirrors src/usage.ts, which cannot be imported here (it pulls node:fs into the browser).
@@ -15,10 +16,10 @@ export const RED_AT = 90;
 // Mirrors src/polling.ts (pulls the orchestrator into the browser).
 export const QUOTA_RESERVE = 500;
 // Mirrors src/rate-limits.ts; the text comes from the dictionary.
-const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week' };
+const WINDOW_LABEL: Record<string, MessageKey> = { five_hour: 'window.session', seven_day: 'window.week', thirty_day: 'window.thirtyDay' };
 const WEEKLY_PREFIX = 'seven_day_';
 // The strip and the header name a rule by its source and floor; the source names are the meter labels.
-const SOURCE_LABEL: Record<RuleSource, MessageKey> = { hour: 'usage.hour', day: 'usage.day', session: 'window.session', week: 'window.week' };
+const SOURCE_LABEL: Record<RuleSource, MessageKey> = { hour: 'usage.hour', day: 'usage.day', session: 'window.session', week: 'window.week', month: 'window.thirtyDay' };
 
 export function usageTotals(usage: { at: string; tokens: number }[], now: number): { hour: number; day: number } {
   return usage.reduce((totals, { at, tokens }) => {
@@ -78,10 +79,20 @@ export function windowLabel(key: string): string {
   return key.replaceAll('_', ' ');
 }
 
-/** `session ≥ 80%, week ≥ 70%`: the rules behind a lock or a strip segment, in the order they fired.
+// One rule as the strip and the locked hints name it: `week ≥ 90%`, then `· codex` when its agent is not the default one (#929)
+const ruleText = (rule: UsageRule, defaultAgent: AgentId): string => {
+  const text = `${t(SOURCE_LABEL[rule.source])} ≥ ${rule.percent}%`;
+  return rule.agent === undefined || rule.agent === defaultAgent ? text : `${text} · ${agentName(rule.agent)}`;
+};
+
+/** `session ≥ 80%, week ≥ 70% · codex`: the rules behind a lock or a strip segment, in the order they fired.
  * `joiner` lets the strip join rules inside one clause with ` and ` / ` e `, keeping the default comma for the locked hints. */
-export const describeRules = (rules: UsageRule[], joiner = ', '): string =>
-  rules.map((r) => `${t(SOURCE_LABEL[r.source])} ≥ ${r.percent}%`).join(joiner);
+export const describeRules = (rules: UsageRule[], defaultAgent: AgentId = DEFAULT_AGENT, joiner = ', '): string =>
+  rules.map((rule) => ruleText(rule, defaultAgent)).join(joiner);
+
+/** What desligar and religar post for a rule (#297, #929): its source, its floor and, when it names one, its agent. */
+export const ruleTarget = (rule: Pick<UsageRule, 'source' | 'percent' | 'agent'>): { source: RuleSource; percent: number; agent?: AgentId } =>
+  ({ source: rule.source, percent: rule.percent, ...(rule.agent === undefined ? {} : { agent: rule.agent }) });
 
 // Mirrors inBackoff in src/polling.ts
 export const inBackoff = (quota: SourceQuota | undefined, now: number): boolean =>
@@ -114,22 +125,27 @@ export function timeLeft(iso: string, now: number): string {
 }
 
 // Mirrors PLAN_WINDOW in src/usage-rules.ts.
-const PLAN_WINDOW: Record<'session' | 'week', string> = { session: 'five_hour', week: 'seven_day' };
+const PLAN_WINDOW: Record<PlanSource, string> = { session: 'five_hour', week: 'seven_day', month: 'thirty_day' };
 
-/** When a plan source's window resets, for até resetar; undefined for a rolling budget source or before the first reading. */
-export const windowResetsAt = (state: Pick<State, 'rateLimits'>, source: RuleSource): string | undefined =>
-  source === 'session' || source === 'week' ? state.rateLimits?.windows[PLAN_WINDOW[source]]?.resetsAt : undefined;
+type RuleReading = Pick<UsageRule, 'source' | 'agent'>;
 
-/** What the ruler marks as now (#512), mirroring sourcePercents in src/usage-rules.ts (src/usage.ts pulls node:fs into the browser).
+// Mirrors planReading in src/usage-rules.ts (#929): the rule's agent's window, or the default agent's
+const planWindow = (state: Pick<State, 'rateLimits' | 'defaultAgent'>, rule: RuleReading) =>
+  (isPlanSource(rule.source) ? state.rateLimits?.[rule.agent ?? liveDefaultAgent(state)]?.windows[PLAN_WINDOW[rule.source]] : undefined);
+
+/** When a plan rule's window resets, for até resetar; undefined for a rolling budget source or before the first reading. */
+export const windowResetsAt = (state: Pick<State, 'rateLimits' | 'defaultAgent'>, rule: RuleReading): string | undefined => planWindow(state, rule)?.resetsAt;
+
+/** What the ruler marks as now (#512), mirroring rulePercents in src/usage-rules.ts (src/usage.ts pulls node:fs into the browser).
  * Undefined when there is nothing to measure: no plan reading yet, or a budget source with no limit. A window past its reset reads 0. */
-export function sourcePercent(state: Pick<State, 'usage' | 'budget' | 'rateLimits'>, source: RuleSource, now: number): number | undefined {
-  if (source === 'session' || source === 'week') {
-    const reading = state.rateLimits?.windows[PLAN_WINDOW[source]];
+export function sourcePercent(state: Pick<State, 'usage' | 'budget' | 'rateLimits' | 'defaultAgent'>, rule: RuleReading, now: number): number | undefined {
+  if (isPlanSource(rule.source)) {
+    const reading = planWindow(state, rule);
     if (reading === undefined) return undefined;
     return Date.parse(reading.resetsAt) <= now ? 0 : Math.round(reading.usedPercent);
   }
-  const limit = source === 'hour' ? state.budget.maxTokensPerHour : state.budget.maxTokensPerDay;
-  return limit ? percent(usageTotals(state.usage, now)[source], limit) : undefined;
+  const limit = rule.source === 'hour' ? state.budget.maxTokensPerHour : state.budget.maxTokensPerDay;
+  return limit ? percent(usageTotals(state.usage, now)[rule.source], limit) : undefined;
 }
 
 /** The freshest GitHub quota among the syncs (#512): every GitHub source polls with the Hive's one account, so one reading speaks for all. */

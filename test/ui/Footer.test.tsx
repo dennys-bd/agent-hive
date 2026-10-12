@@ -20,7 +20,7 @@ const STATE = {
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers: [{ id: 's1', status: 'working' }, { id: 's2', status: 'working', freeSession: true }, { id: 's3', status: 'empty' }],
   tasks: [], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
   deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [], stages: [],
-  rateLimits: { at: '2026-09-28T10:00:00Z', windows: { seven_day: { usedPercent: 91, resetsAt: new Date(Date.now() + (4 * 24 + 10) * 3_600_000 + 60_000).toISOString() } } },
+  rateLimits: { claude: { at: '2026-09-28T10:00:00Z', windows: { seven_day: { usedPercent: 91, resetsAt: new Date(Date.now() + (4 * 24 + 10) * 3_600_000 + 60_000).toISOString() } } } },
 } as unknown as State;
 
 const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -136,4 +136,19 @@ test('an estimated end reads with ~, and a stage rule sharing a global rule sour
   expect(footer()).toHaveTextContent('pausada · ~52 min');
   expect(within(footer()).getByRole('button', { name: 'semana ≥ 90% → review máx 2' })).toBeInTheDocument();
   expect(within(footer()).getByRole('button', { name: 'semana ≥ 90% → máx 2 workers' })).toBeInTheDocument();
+});
+
+test('a rule of a non-default agent names it on its chip and posts it with its pause and its resume (#929)', async () => {
+  const user = userEvent.setup();
+  const codexWeek: UsageRule = { ...WEEK_CAP, agent: 'codex' };
+  const { unmount } = render(<Footer state={STATE} effective={{ ...FIRED, capRules: [WEEK_CAP, codexWeek] }} locale="pt-BR" />);
+  expect(within(footer()).getAllByRole('button').map((b) => b.textContent)).toContain('semana ≥ 90% · codex → máx 2 workers');
+  await user.click(screen.getByRole('button', { name: /semana ≥ 90% · codex/ }));
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /até resetar/ }));
+  await posted('/rules/disable', { source: 'week', percent: 90, agent: 'codex', until: { kind: 'reset' } });
+  unmount();
+  render(<Footer state={STATE} effective={{ ...NONE, disabledRules: [{ rule: codexWeek, until: 'manual', estimate: false }] }} locale="pt-BR" />);
+  await user.click(screen.getByRole('button', { name: /semana ≥ 90% · codex/ }));
+  await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'retomar agora' }));
+  await posted('/rules/enable', { source: 'week', percent: 90, agent: 'codex' });
 });

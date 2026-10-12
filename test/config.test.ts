@@ -425,8 +425,8 @@ test('parseConfig rejects bad usage rules naming the field', () => {
   const rules = (usageRules: unknown) => () => parseConfig({ ...GITHUB, usageRules });
   assert.throws(rules('x'), /"usageRules" must be an array/);
   assert.throws(rules([5]), /"usageRules\[0\]" must be an object/);
-  assert.throws(rules([{ percent: 50, signal: 'red' }]), { message: 'hive.config.json: "usageRules[0].source" must be one of: hour, day, session, week' }, 'no source: no default, nothing to migrate');
-  assert.throws(rules([{ source: 'x', percent: 50, signal: 'red' }]), /"usageRules\[0\]\.source" must be one of: hour, day, session, week/);
+  assert.throws(rules([{ percent: 50, signal: 'red' }]), { message: 'hive.config.json: "usageRules[0].source" must be one of: hour, day, session, week, month' }, 'no source: no default, nothing to migrate');
+  assert.throws(rules([{ source: 'x', percent: 50, signal: 'red' }]), /"usageRules\[0\]\.source" must be one of: hour, day, session, week, month/);
   assert.throws(rules([{ source: 'hour', percent: 101, signal: 'red' }]), /"usageRules\[0\]\.percent" must be an integer from 0 to 100/);
   assert.throws(rules([{ source: 'hour', percent: -1, signal: 'red' }]), /usageRules\[0\]\.percent/);
   assert.throws(rules([{ source: 'hour', percent: 1.5, signal: 'red' }]), /usageRules\[0\]\.percent/);
@@ -1158,4 +1158,17 @@ test('a codex stage, by its own agent or the default, refuses a Claude model nam
   assert.throws(() => parseConfig(withStage({ model: 'opus' }, { defaultAgent: 'codex' })), /"comb\.stages\[0\]\.model" "opus" is a Claude model/, 'the default agent counts');
   assert.equal(parseConfig(withStage({ agent: 'codex', model: 'gpt-5.6-terra' })).comb.stages[0].model, 'gpt-5.6-terra');
   assert.equal(parseConfig(withStage({ model: 'opus' })).comb.stages[0].model, 'opus', 'a claude stage keeps its aliases');
+});
+
+test('parseConfig reads a month rule and a plan rule\'s agent; it refuses an unknown agent and an agent on a budget source (#929)', () => {
+  const usageRules = [
+    { source: 'month', percent: 40, signal: 'yellow', agent: 'codex' }, { source: 'week', percent: 90, signal: 'red', agent: 'claude' },
+    { source: 'session', percent: 80, maxWorkers: 1 },
+  ];
+  assert.deepEqual(parseConfig({ ...GITHUB, usageRules }).usageRules, usageRules);
+  const rules = (rule: unknown) => () => parseConfig({ ...GITHUB, usageRules: [rule] });
+  assert.throws(rules({ source: 'week', percent: 90, signal: 'red', agent: 'gemini' }), { message: 'hive.config.json: "usageRules[0].agent" must be one of: claude, codex' });
+  for (const source of ['hour', 'day']) {
+    assert.throws(rules({ source, percent: 50, signal: 'red', agent: 'codex' }), { message: 'hive.config.json: "usageRules[0].agent" only applies to a plan source (session, week, month)' }, source);
+  }
 });

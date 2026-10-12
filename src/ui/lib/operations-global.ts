@@ -1,13 +1,14 @@
 // The global group (#584): always listed, in the spec's order. The ones that are a shortcut run through the key's own listener (runShortcut),
 // so the search does exactly what the key does.
-import type { OperationId, UsageRule } from '../../types';
+import { liveDefaultAgent } from '../../agents';
+import type { AgentId, OperationId, UsageRule } from '../../types';
 import { act } from '@/components/actions';
 import { firedRules, ruleKey, ruleLabel } from '@/components/Footer';
 import { SIGNALS } from '@/components/SignalToggle';
 import { type MessageKey, t } from '@/i18n';
 import { runShortcut } from '@/lib/dock-layout';
 import type { Operation } from '@/lib/operations';
-import { type PauseChoice, pauseUntil } from '@/lib/usage';
+import { type PauseChoice, pauseUntil, ruleTarget } from '@/lib/usage';
 
 const keyed = (id: OperationId, label: MessageKey): Operation => ({
   id, group: 'global', shortcut: id, label: () => t(label), available: () => true, run: () => runShortcut(id),
@@ -33,11 +34,11 @@ const HORIZONS: ReadonlyArray<[PauseChoice, MessageKey]> = [
 ];
 
 // A rule's page: retomar agora while paused, then the horizons, posting what the footer's popover posts
-function ruleOperation(rule: UsageRule, isPaused: boolean): Operation {
-  const body = { source: rule.source, percent: rule.percent };
+function ruleOperation(rule: UsageRule, isPaused: boolean, defaultAgent: AgentId): Operation {
+  const body = ruleTarget(rule);
   const horizons = HORIZONS.map(([choice, key]) => leaf(`pause.${choice}`, t(key), () => void act('/rules/disable', { ...body, until: pauseUntil(choice, Date.now()) })));
   const resume = isPaused ? [leaf('pause.resume', t('pause.resume'), () => void act('/rules/enable', body))] : [];
-  return { id: `pause.${ruleKey(rule)}`, group: 'global', label: () => ruleLabel(rule), available: () => true, children: () => [...resume, ...horizons] };
+  return { id: `pause.${ruleKey(rule)}`, group: 'global', label: () => ruleLabel(rule, defaultAgent), available: () => true, children: () => [...resume, ...horizons] };
 }
 
 // pausar regra › (the footer's chips): each fired rule, then each paused one; listed only while there is one
@@ -45,8 +46,8 @@ const pause: Operation = {
   id: 'pauseRule', group: 'global', label: () => t('pause.title'),
   available: (ctx) => ctx.effective !== undefined && firedRules(ctx.effective).length + ctx.effective.disabledRules.length > 0,
   children: (ctx) => (ctx.effective === undefined ? [] : [
-    ...firedRules(ctx.effective).map((rule) => ruleOperation(rule, false)),
-    ...ctx.effective.disabledRules.map((status) => ruleOperation(status.rule, true)),
+    ...firedRules(ctx.effective).map((rule) => ruleOperation(rule, false, liveDefaultAgent(ctx.state))),
+    ...ctx.effective.disabledRules.map((status) => ruleOperation(status.rule, true, liveDefaultAgent(ctx.state))),
   ]),
 };
 

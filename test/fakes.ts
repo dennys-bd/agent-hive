@@ -13,7 +13,7 @@ import type { Logger } from '../src/log.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { EventLog, RecordInput } from '../src/events.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
-import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch } from '../src/types.js';
+import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
@@ -329,3 +329,8 @@ export function fakePtys(): { spawnPty: SpawnPty; ptys: FakePty[] } {
   };
   return { spawnPty, ptys };
 }
+
+/** A plan-limits reader's answer with Claude's reading, or none (#929). */
+export const claudePlan = (rateLimits?: RateLimits): PlanLimitsReport => ({ readings: rateLimits === undefined ? [] : [{ agent: 'claude', rateLimits }], failures: [] });
+/** A plan-limits reader's answer with Claude failing for `reason` (#929). */
+export const claudePlanFailure = (reason: string): PlanLimitsReport => ({ readings: [], failures: [{ agent: 'claude', reason }] });

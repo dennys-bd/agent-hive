@@ -110,27 +110,33 @@ test('loadState reads missing usage and budget as empty, keeps valid samples and
   assert.deepEqual(kept.budget, { maxTokensPerHour: 10 });
   const rule = { source: 'hour', percent: 80, signal: 'yellow' };
   const staged = { source: 'week', percent: 70, maxWorkers: 1, stage: 'build' }; // #475
+  const codexMonth = { source: 'month', percent: 40, signal: 'yellow', agent: 'codex' };
   const usageRules = [
-    rule, staged, { ...staged, stage: 3 }, { percent: 80, signal: 'yellow' }, { source: 'x', percent: 80, signal: 'yellow' }, { source: 'hour', percent: 'x', signal: 'red' },
+    rule, staged, codexMonth, { ...codexMonth, agent: 'gemini' }, { ...staged, stage: 3 }, { percent: 80, signal: 'yellow' }, { source: 'x', percent: 80, signal: 'yellow' }, { source: 'hour', percent: 'x', signal: 'red' },
     { source: 'hour', percent: 50 }, { source: 'hour', percent: 50, signal: 'blue' }, { source: 'hour', percent: 50, signal: 'green' }, null, 7,
   ];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usageRules }));
-  assert.deepEqual((await loadState(dir)).usageRules, [rule, staged], 'malformed rules are dropped: no source, unknown source, no consequence, green, a stage that is not a string');
+  assert.deepEqual((await loadState(dir)).usageRules, [rule, staged, codexMonth], 'malformed rules are dropped: no source, unknown source, no consequence, green, a stage that is not a string, an unknown agent');
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...legacy, usage: 'nope' }));
   assert.deepEqual((await loadState(dir)).usage, []);
 });
 
-test('loadState keeps a valid rateLimits reading', async (t) => {
+test('loadState keeps each agent\'s valid reading (#929)', async (t) => {
   const dir = await tempDir(t, '');
-  const rateLimits = {
+  const claude = {
     at: '2026-09-16T12:00:00.000Z',
     windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-16T15:00:00.000Z' }, seven_day_fable: { usedPercent: 7, resetsAt: '2026-09-20T00:00:00.000Z' } },
   };
-  await saveState(dir, { ...initialState(1), rateLimits });
-  assert.deepEqual((await loadState(dir)).rateLimits, rateLimits);
+  const codex = { at: '2026-09-16T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-10-01T00:00:00.000Z' } } };
+  await saveState(dir, { ...initialState(1), rateLimits: { claude, codex } });
+  assert.deepEqual((await loadState(dir)).rateLimits, { claude, codex });
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), rateLimits: claude })); // a reading saved before #929
+  assert.equal('rateLimits' in (await loadState(dir)), false, 'the old single reading: no key, no migration');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), rateLimits: { claude, gemini: codex, codex: { at: 5 } } }));
+  assert.deepEqual((await loadState(dir)).rateLimits, { claude }, 'an unknown agent and a bad entry go; the rest stays');
 });
 
-test('loadState drops a rateLimits with the wrong shape and leaves the key absent', async (t) => {
+test('loadState drops an agent\'s reading with the wrong shape and leaves the key absent', async (t) => {
   const dir = await tempDir(t, '');
   const base = initialState(1);
   const at = '2026-09-16T12:00:00.000Z';
@@ -140,10 +146,9 @@ test('loadState drops a rateLimits with the wrong shape and leaves the key absen
     { at, windows: { five_hour: { usedPercent: 1, resetsAt: 7 } } },
     { at, windows: { five_hour: null } },
   ];
-  for (const rateLimits of bad) {
-    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...base, rateLimits }));
-    const loaded = await loadState(dir);
-    assert.equal('rateLimits' in loaded, false, JSON.stringify(rateLimits));
+  for (const reading of bad) {
+    await writeFile(join(dir, 'state.json'), JSON.stringify({ ...base, rateLimits: { claude: reading } }));
+    assert.equal('rateLimits' in (await loadState(dir)), false, JSON.stringify(reading));
   }
 });
 
@@ -666,7 +671,7 @@ test('loadState keeps disabledRules in the shapes the route accepts, a past at i
   await saveState(dir, { ...initialState(1), disabledRules });
   assert.deepEqual((await loadState(dir)).disabledRules, disabledRules, 'a save and a load keep them');
   const bad = [
-    { source: 'month', percent: 80, until: { kind: 'reset' } }, { source: 'hour', percent: '80', until: { kind: 'reset' } },
+    { source: 'year', percent: 80, until: { kind: 'reset' } }, { source: 'hour', percent: '80', until: { kind: 'reset' } },
     { source: 'hour', percent: 80, until: { kind: 'later' } }, { source: 'hour', percent: 80, until: { kind: 'at', at: 'soon' } },
     { source: 'hour', percent: 80 }, null, 'x',
   ];
@@ -894,4 +899,11 @@ test('loadState reads a file from before #925 with agent claude on every session
   assert.deepEqual(recordOf(loaded, OWNER)?.sessions.map((s) => s.agent), ['claude', 'claude', 'claude']);
   assert.equal(loaded.workers[0].agent, 'claude', 'an occupied worker ran an agent');
   assert.equal('agent' in loaded.workers[1], false, 'an empty worker runs nothing');
+});
+
+test('loadState keeps a disable\'s agent and drops one naming an unknown agent (#929)', async (t) => {
+  const dir = await tempDir(t, '');
+  const disabledRules = [{ source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' }, { source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'gemini' }];
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), disabledRules }));
+  assert.deepEqual((await loadState(dir)).disabledRules, [disabledRules[0]]);
 });

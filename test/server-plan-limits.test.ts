@@ -2,9 +2,9 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { RateLimits, SettingsBody } from '../src/types.js';
+import type { PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
 // POST /plan-limits/refresh: the header's refresh button, a reading on demand that replaces the held one instead of merging into it
@@ -37,39 +37,52 @@ async function start(t: TestContext, extra: Partial<ServerDeps>, configure = tru
 
 test('POST /plan-limits/refresh replaces the held reading: a lower percent in the same window wins, which the timer\'s merge never lets in', async (t) => {
   let next = HIGH;
-  const { base, server } = await start(t, { readPlanLimits: async () => next });
-  await waitFor(() => server.getState()?.rateLimits?.at === HIGH.at); // the background read after the save
+  const { base, server } = await start(t, { readPlanLimits: async () => claudePlan(next) });
+  await waitFor(() => server.getState()?.rateLimits?.claude?.at === HIGH.at); // the background read after the save
   next = AFTER_UPGRADE;
   await server.refreshPlanLimits();
-  assert.equal(server.getState()?.rateLimits?.windows.seven_day.usedPercent, 95, 'the timer merges: the higher percent stands');
+  assert.equal(server.getState()?.rateLimits?.claude?.windows.seven_day.usedPercent, 95, 'the timer merges: the higher percent stands');
   const res = await postJson(`${base}/plan-limits/refresh`);
   assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
-  assert.deepEqual(server.getState()?.rateLimits, AFTER_UPGRADE);
+  assert.deepEqual(server.getState()?.rateLimits?.claude, AFTER_UPGRADE);
 });
 
 test('POST /plan-limits/refresh answers 502 with the reader\'s reason and keeps the held reading', async (t) => {
   let failWith: string | undefined;
-  const { base, server } = await start(t, { readPlanLimits: async () => { if (failWith) throw new Error(failWith); return HIGH; } });
+  const { base, server } = await start(t, { readPlanLimits: async () => (failWith ? claudePlanFailure(failWith) : claudePlan(HIGH)) });
   await waitFor(() => server.getState()?.rateLimits !== undefined);
   failWith = 'HTTP 429';
   const res = await postJson(`${base}/plan-limits/refresh`);
   assert.deepEqual([res.status, await res.json()], [502, { error: 'HTTP 429' }]);
-  assert.deepEqual(server.getState()?.rateLimits, HIGH);
+  assert.deepEqual(server.getState()?.rateLimits?.claude, HIGH);
 });
 
 test('POST /plan-limits/refresh answers 502 when the endpoint brings no plan window, and keeps the held reading', async (t) => {
   let next: RateLimits | undefined = HIGH;
-  const { base, server } = await start(t, { readPlanLimits: async () => next });
+  const { base, server } = await start(t, { readPlanLimits: async () => claudePlan(next) });
   await waitFor(() => server.getState()?.rateLimits !== undefined);
   next = undefined;
   const res = await postJson(`${base}/plan-limits/refresh`);
   assert.deepEqual([res.status, await res.json()], [502, { error: 'the usage endpoint answered no plan window' }]);
-  assert.deepEqual(server.getState()?.rateLimits, HIGH);
+  assert.deepEqual(server.getState()?.rateLimits?.claude, HIGH);
 });
 
 test('POST /plan-limits/refresh is 501 without a reader and 409 before the settings', async (t) => {
   const bare = await start(t, {});
   assert.equal((await postJson(`${bare.base}/plan-limits/refresh`)).status, 501);
-  const unset = await start(t, { readPlanLimits: async () => HIGH }, false);
+  const unset = await start(t, { readPlanLimits: async () => claudePlan(HIGH) }, false);
   assert.equal((await postJson(`${unset.base}/plan-limits/refresh`)).status, 409);
+});
+
+test('the refresh dispatches one reading per agent and answers ok while any agent gave one; a failing agent keeps its last reading (#929)', async (t) => {
+  const codex: RateLimits = { at: HIGH.at, windows: { thirty_day: { usedPercent: 40, resetsAt: RESET } } };
+  let report: PlanLimitsReport = { readings: [{ agent: 'claude', rateLimits: HIGH }, { agent: 'codex', rateLimits: codex }], failures: [] };
+  const { base, server } = await start(t, { readPlanLimits: async () => report });
+  await waitFor(() => server.getState()?.rateLimits?.codex !== undefined);
+  assert.deepEqual(server.getState()?.rateLimits, { claude: HIGH, codex });
+  const later: RateLimits = { ...codex, at: AFTER_UPGRADE.at };
+  report = { readings: [{ agent: 'codex', rateLimits: later }], failures: [{ agent: 'claude', reason: 'HTTP 429' }] };
+  const res = await postJson(`${base}/plan-limits/refresh`);
+  assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
+  assert.deepEqual(server.getState()?.rateLimits, { claude: HIGH, codex: later });
 });

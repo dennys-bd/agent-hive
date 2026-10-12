@@ -16,6 +16,8 @@ import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DE
 import { AUTH, GITHUB_ENTRY, STAGES, fakeEvents, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { withWork, withLocal } from './fixtures/work.js';
+import { tempDir } from './temp-dir.js';
+import { localDay, OTHER, SESSION, sessionMeta, turnContext, usageRecord, writeRollout } from './codex-rollouts.js';
 
 // One worker and one stage (fila): the fake source's task spawns at the green signal
 const BODY: Omit<SettingsBody, 'workspaces'> = {
@@ -28,14 +30,14 @@ const BODY: Omit<SettingsBody, 'workspaces'> = {
 interface Hive { server: HiveServer; records: RecordInput[]; base: string; ptyId: string; home: string; repo: string }
 
 // Every record the server writes, kept by a fake event log
-async function start(t: TestContext, seed?: (home: string) => Promise<void>): Promise<Hive> {
+async function start(t: TestContext, seed?: (home: string) => Promise<void>, body: Omit<SettingsBody, 'workspaces'> = BODY): Promise<Hive> {
   const { home, repo } = await tempHive(t, 1); // one worker: the fake source's task starts
   await seed?.(home);
   const { events, records } = fakeEvents();
   const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, events, exec: async () => ({ stdout: '' }) });
   const port = await server.listen(0);
   t.after(() => server.close());
-  const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo) }) });
+  const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...body, workspaces: workspacesAt(repo) }) });
   assert.equal(saved.status, 200);
   await server.poll();
   await server.dispatch({ type: 'setSignal', signal: 'green' });
@@ -289,4 +291,30 @@ test('run.spawned names the language servers its workspace\'s plugin holds, and 
   assert.deepEqual(pick(seeded.records.find((r) => r.event === 'run.spawned'), ['lsp_servers']), { lsp_servers: ['gopls'] });
   const bare = await start(t);
   assert.deepEqual(pick(bare.records.find((r) => r.event === 'run.spawned'), ['lsp_servers']), { lsp_servers: [] });
+});
+
+async function codexHome(t: TestContext): Promise<string> {
+  const home = await tempDir(t, 'codex-');
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
+  return home;
+}
+
+test('a Codex Stop naming its own rollout adds the turn\'s tokens to the usage and to the stage run; a rollout of another session id reads nothing (#929)', async (t) => {
+  const home = await codexHome(t);
+  const { base, server, records, ptyId } = await start(t, undefined, { ...BODY, stages: [{ ...STAGES[0], agent: 'codex' }] });
+  const used = (): number => server.getState()!.usage.reduce((sum, sample) => sum + sample.tokens, 0);
+  await postHook(base, ptyId, { hook_event_name: 'SessionStart', session_id: SESSION, source: 'startup' });
+  const at = new Date(Date.now() + 1000).toISOString(); // after the stage run's start
+  const day = localDay(new Date());
+  const rollout = await writeRollout(home, day, SESSION, [sessionMeta(SESSION), turnContext(at, 'turn-1', 'gpt-5.6-terra'), usageRecord(at, 'turn-1', 'resp-1', { input: 1200, cached: 200, cacheWrite: 0, output: 34 }, 1234)], Date.now());
+  const forged = await writeRollout(home, day, OTHER, [usageRecord(at, 'turn-1', 'resp-9', { input: 9000, cached: 0, cacheWrite: 0, output: 0 }, 9000)], Date.now());
+  await postHook(base, ptyId, { hook_event_name: 'Stop', session_id: SESSION, transcript_path: forged });
+  assert.equal(used(), 0, 'not its own session\'s file: dropped, nothing read');
+  await server.dispatch({ type: 'done', ptyId });
+  await postHook(base, ptyId, { hook_event_name: 'Stop', session_id: SESSION, transcript_path: rollout });
+  assert.equal(used(), 1234);
+  const ended = records.filter((r) => r.event === 'stage.ended');
+  assert.deepEqual(pick(ended.at(-1), ['tokens', 'models']), { tokens: { input: 1000, output: 34, cache_write: 0, cache_read: 200 }, models: ['gpt-5.6-terra'] });
 });

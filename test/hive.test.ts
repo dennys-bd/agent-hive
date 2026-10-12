@@ -12,7 +12,7 @@ import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceSpec } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive, claudePlan } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // A home with a Comb on a temp git repo: no source, zero workers, a port of its own (#466), so it boots without gh or a claude
@@ -474,10 +474,10 @@ test('bootHive reads the plan limits through the injected reader on boot, so the
   const { home } = await hiveWithConfig(t, {});
   const rateLimits: RateLimits = { at: '2026-09-17T12:00:00.000Z', windows: { five_hour: { usedPercent: 23, resetsAt: '2026-09-17T15:00:00.000Z' } } };
   let reads = 0;
-  const { server } = await bootHive(home, { readPlanLimits: async () => { reads += 1; return rateLimits; } });
+  const { server } = await bootHive(home, { readPlanLimits: async () => { reads += 1; return claudePlan(rateLimits); } });
   t.after(() => server.close());
   assert.equal(reads, 1);
-  assert.deepEqual(server.getState()?.rateLimits, rateLimits);
+  assert.deepEqual(server.getState()?.rateLimits?.claude, rateLimits);
   const plain = (await hiveWithConfig(t, {})).home;
   const bare = await bootHive(plain);
   t.after(() => bare.server.close());

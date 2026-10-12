@@ -1,4 +1,6 @@
+import { useContext } from 'react';
 import { act } from '@/components/actions';
+import { DefaultAgentContext } from '@/components/NewRunButton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { t } from '@/i18n';
 import { signalEffect } from '@/lib/signal-effect';
@@ -12,7 +14,8 @@ export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
  * when disabled, so the toggle shows what the user chose and the footer what is in force. Nothing is locked before the first events payload. */
 export function SignalToggle({ signal, signals, effective }: { signal: Signal; signals: SignalSettings; effective?: EffectiveLimits }) {
   const floor = SIGNALS.indexOf(effective?.floor.signal ?? 'green');
-  const lockTitle = effective && t('signal.locked', { rules: describeRules(effective.signalRules) });
+  const defaultAgent = useContext(DefaultAgentContext);
+  const lockTitle = effective && t('signal.locked', { rules: describeRules(effective.signalRules, defaultAgent) });
   const hint = signalEffect(signal, signals);
   return (
     <div className="flex flex-col gap-2">

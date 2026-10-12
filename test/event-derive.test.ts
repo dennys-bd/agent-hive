@@ -206,7 +206,7 @@ test('a StopFailure is run.api_error at warn: a backoff with its failure number 
   assert.deepEqual(failed('server_error', runner({ apiErrors: 2 })), record({ error: 'server_error', action: 'backoff', failure: 3, wait_ms: 240_000 }));
   assert.deepEqual(failed('overloaded', runner({ apiErrors: 3 })), record({ error: 'overloaded', action: 'stopped', failure: 4 }));
   assert.deepEqual(failed('authentication_failed'), record({ error: 'authentication_failed', action: 'stopped' }));
-  assert.deepEqual(failed('rate_limit', runner(), { rateLimits: LIMITS }), record({ error: 'rate_limit', action: 'backoff', wait_ms: 3_660_000 }));
+  assert.deepEqual(failed('rate_limit', runner(), { rateLimits: { claude: LIMITS } }), record({ error: 'rate_limit', action: 'backoff', wait_ms: 3_660_000 }));
   assert.doesNotMatch(JSON.stringify(failed('overloaded')), /SECRET/, 'never the details nor the message');
   assert.deepEqual(only(deriveEvents(base(), { ...base(), workers: [] }, STOP, NOW), 'run.api_error'), [], 'a plain Stop is no API error');
   assert.deepEqual(failed('overloaded', runner({ done: true })), [], 'after hive_done it is the run\'s Stop, not an API error');

@@ -1,7 +1,8 @@
 // The menu bar's plan lines (#197): one per plan window of the latest /events reading, with a small bar in the header's meter bands (#86).
 // Electron is imported for its types only, so node:test covers all of it; main.ts turns the bitmaps into images and wires the menu.
 import type { MenuItemConstructorOptions, NativeImage } from 'electron';
-import type { RateLimits, RateLimitWindow } from './types.js';
+import { AGENTS } from './agents.js';
+import { AGENT_IDS, type AgentId, type PlanReadings, type RateLimits, type RateLimitWindow } from './types.js';
 import { t } from './ui/i18n.js';
 import { clock, countdown, type MeterBand, meterBand, PERCENT_MAX, windowLabel } from './ui/lib/usage.js';
 
@@ -47,17 +48,23 @@ export function meterBitmap(percent: number, band: MeterBand, scale: 1 | 2): Buf
   return bitmap;
 }
 
-/** The menu's plan section: a line per window, in the stream's order, then a separator; none before a reading. `icon` builds the bar's
- *  image (main.ts owns nativeImage) and may give none; a click opens the main window, where the details are. */
-export function usageItems(rateLimits: RateLimits | undefined, now: number, locale: string,
-  icon: (percent: number, band: MeterBand) => NativeImage | undefined, onClick: () => void): MenuItemConstructorOptions[] {
+type MeterIcon = (percent: number, band: MeterBand) => NativeImage | undefined;
+
+// One agent's lines (#929), its label first: `Claude · Session 82% · resets in 2h40m`, each read at its own reading's time
+function agentLines(agent: AgentId, reading: RateLimits | undefined, now: number, locale: string, icon: MeterIcon, onClick: () => void): MenuItemConstructorOptions[] {
   // a window that is not an object (null from a bad frame) would throw here and keep the whole menu from opening: it is skipped
-  const windows = Object.entries(rateLimits?.windows ?? {}).filter(([, limit]) => typeof limit === 'object' && limit !== null);
-  if (!rateLimits || windows.length === 0) return [];
-  const toolTip = capitalized(t('limits.at', { time: clock(rateLimits.at, locale) })); // a reading can be old: it comes from a worker's status line
-  const lines = windows.map(([key, limit]): MenuItemConstructorOptions => {
+  const windows = Object.entries(reading?.windows ?? {}).filter(([, limit]) => typeof limit === 'object' && limit !== null);
+  if (!reading || windows.length === 0) return [];
+  const toolTip = capitalized(t('limits.at', { time: clock(reading.at, locale) })); // a reading can be old: it comes from a worker's status line
+  return windows.map(([key, limit]): MenuItemConstructorOptions => {
     const percent = Math.round(limit.usedPercent); // as the header rounds it, so the bar's band matches the number
-    return { label: usageLine(key, limit, now), icon: icon(percent, meterBand(percent)), toolTip, click: onClick };
+    return { label: `${AGENTS[agent].label} · ${usageLine(key, limit, now)}`, icon: icon(percent, meterBand(percent)), toolTip, click: onClick };
   });
-  return [...lines, { type: 'separator' }];
+}
+
+/** The menu's plan section: every agent's lines in AGENT_IDS order (#929), each window in its reading's order, then a separator; none before a
+ *  reading. `icon` builds the bar's image (main.ts owns nativeImage) and may give none; a click opens the main window, where the details are. */
+export function usageItems(readings: PlanReadings | undefined, now: number, locale: string, icon: MeterIcon, onClick: () => void): MenuItemConstructorOptions[] {
+  const lines = AGENT_IDS.flatMap((agent) => agentLines(agent, readings?.[agent], now, locale, icon, onClick));
+  return lines.length === 0 ? [] : [...lines, { type: 'separator' }];
 }

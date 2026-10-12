@@ -133,8 +133,8 @@ export function describeEvent(event: HiveEvent): string {
     case 'setSignals': return `setSignals onOpen=${event.signals.onOpen}`; // #727: the rows are the config's
     case 'setBudget': return `setBudget ${JSON.stringify(event.budget)}`;
     case 'setUsageRules': return `setUsageRules rules=${event.usageRules.length}`;
-    case 'disableRule': return `disableRule ${event.source}≥${event.percent} until=${event.until.kind === 'at' ? event.until.at : event.until.kind}`;
-    case 'enableRule': return `enableRule ${event.source}≥${event.percent}`;
+    case 'disableRule': return `disableRule ${event.source}≥${event.percent}${event.agent ? ` agent=${event.agent}` : ''} until=${event.until.kind === 'at' ? event.until.at : event.until.kind}`;
+    case 'enableRule': return `enableRule ${event.source}≥${event.percent}${event.agent ? ` agent=${event.agent}` : ''}`;
     case 'setDeleteActivity': return `setDeleteActivity ${JSON.stringify(event.deleteActivity)}`;
     case 'setShutdownIdle': return `setShutdownIdle ${event.minutes}`;
     case 'setRateLimitWait': return `setRateLimitWait ${event.minutes}`; // #805
@@ -148,7 +148,7 @@ export function describeEvent(event: HiveEvent): string {
       return `setWorkspaces ${event.workspaces.join(',')}${defaults === '' ? '' : ` defaults=${defaults}`}`;
     }
     case 'setWorkspace': return `setWorkspace #${event.taskId} ${event.workspace}`;
-    case 'rateLimits': return event.ptyId ? `rateLimits pty=${shortId(event.ptyId)}` : 'rateLimits source=hive';
+    case 'rateLimits': return `rateLimits agent=${event.agent} ${event.ptyId ? `pty=${shortId(event.ptyId)}` : 'source=hive'}`; // #929
     case 'pollFailed': return `pollFailed source=${event.source} ${event.message}`;
     case 'itemRead': return `itemRead source=${event.source} #${event.itemId}${event.entry ? ` column=${event.entry.column}` : ' unlisted'}`; // #686: never a title
     case 'blockerSet': return `blockerSet #${event.itemId} ${event.change.action} ${event.change.kind}=${event.change.ref}`; // #56: ids only, never a title

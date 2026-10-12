@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { adoptTranscript, copyTranscript, dropCopiedTranscript, removeTranscripts } from '../src/transcript.js';
+import { adoptTranscript, copyTranscript, dropCopiedTranscript, findTranscript, removeTranscripts } from '../src/transcript.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { tempDir } from './temp-dir.js';
+import { CHILD, DAY, OTHER, SESSION, subagent, TWO_TURNS, writeRollout } from './codex-rollouts.js';
 
 test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in the transcript dir of the worktree and nothing else there; a file already gone is a debug line; an id that is not a session id is skipped (#236)', async (t) => {
   const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
@@ -102,4 +104,28 @@ test('dropCopiedTranscript removes only <id>.jsonl in the dir; a file already go
   await dropCopiedTranscript(dir, 'bad id', log);
   assert.deepEqual((await readdir(dir)).sort(), [id, `${other}.jsonl`, 'bad id.jsonl'].sort());
   assert.deepEqual(lines, [`transcript ${id}.jsonl: already gone`]);
+});
+
+test('removeTranscripts removes a Codex session\'s rollout and its subagent\'s wherever their date folders are, nothing in the daemon\'s cwd (#929)', async (t) => {
+  const home = await tempDir(t, 'codex-');
+  const own = await writeRollout(home, DAY, SESSION, TWO_TURNS);
+  const child = await writeRollout(home, '2026/10/13', CHILD, subagent(CHILD, SESSION));
+  const other = await writeRollout(home, DAY, OTHER, TWO_TURNS);
+  const cwd = await tempDir(t, 'cwd-'); // what an empty transcript dir would have named: <id>.jsonl and <id>/ relative to the daemon's cwd
+  await writeFile(join(cwd, `${SESSION}.jsonl`), '{}\n');
+  await mkdir(join(cwd, SESSION));
+  const previous = process.cwd();
+  process.chdir(cwd);
+  t.after(() => process.chdir(previous));
+  const lines: string[] = [];
+  await removeTranscripts('/repo/.hive/worktrees/hive-1-t', '/repo', [{ id: SESSION, agent: 'codex' }], { debug: (line) => lines.push(line) }, { CODEX_HOME: home });
+  assert.deepEqual([existsSync(own), existsSync(child), existsSync(other)], [false, false, true]);
+  assert.deepEqual((await readdir(cwd)).sort(), [SESSION, `${SESSION}.jsonl`].sort(), 'the daemon\'s cwd untouched');
+  assert.deepEqual(lines, []);
+});
+
+test('an agent without a transcript dir (Codex): adoptTranscript, findTranscript and copyTranscript answer none (#929)', async () => {
+  assert.equal(await adoptTranscript('/repo/.hive/worktrees/hive-1-t', '/repo', SESSION, 'codex'), false);
+  assert.equal(await findTranscript(['/repo'], SESSION, 'codex'), undefined);
+  assert.equal(await copyTranscript(['/repo'], '/repo2', SESSION, 'codex'), 'missing');
 });

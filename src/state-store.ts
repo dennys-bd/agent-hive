@@ -2,14 +2,14 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { initialState, isSessionId, isUuid, SIGNALS, STATUSES } from './orchestrator.js';
 import { syncOf } from './polling.js';
-import { isRateLimits } from './rate-limits.js';
+import { loadPlanReadings } from './rate-limits.js';
 import { isLocalActivityId, pruneRecords } from './activities.js';
 import { savedAgent } from './agents.js';
 import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord, SLUG } from './state-guards.js';
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
 import { copyDisabledRule, isDisabledRule } from './usage-rules.js';
-import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
+import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -21,10 +21,11 @@ const isSample = (value: unknown): value is UsageSample =>
 // Config validates the rules; here only the shape is checked, so a hand-edited state.json cannot feed the reducer garbage.
 const isRule = (value: unknown): value is UsageRule => {
   if (typeof value !== 'object' || value === null) return false;
-  const { source, percent, maxWorkers, signal, stage } = value as UsageRule;
+  const { source, percent, maxWorkers, signal, stage, agent } = value as UsageRule;
   return RULE_SOURCES.includes(source) && Number.isFinite(percent) && (maxWorkers === undefined || Number.isFinite(maxWorkers))
     && (signal === undefined || RULE_SIGNALS.includes(signal)) && (maxWorkers !== undefined || signal !== undefined)
-    && (stage === undefined || typeof stage === 'string'); // #475
+    && (stage === undefined || typeof stage === 'string') // #475
+    && (agent === undefined || AGENT_IDS.includes(agent)); // #929
 };
 
 // Files written before the status keys were neutral carry the Portuguese words and a lastEvent sentence.
@@ -179,6 +180,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
   const workers = Array.isArray(parsed.workers)
     ? parsed.workers.map((w) => onLoadedWork(normalizeWorker((pre629 ? migrateWorker(w, work) : w) as Worker), loadedIds))
     : initialState(maxConcurrent).workers;
+  const readings = loadPlanReadings(rateLimits);
   // #672: a sleeping run's transcript lived in the pty host, which died with the Hive: its record is dropped with it
   return {
     ...rest,
@@ -207,7 +209,7 @@ function normalize(parsed: State, scope?: WorkspaceNames): State {
     signals: SIGNALS_DEFAULTS, // overwritten by the config on boot (#727)
     terminals: Array.isArray(terminals) ? terminals.filter((x) => isTerminal(x) && loadedIds.has(x.activityId)).map(loadTerminal) : [], // #283, #292, #378; on a loaded activity (#629)
     ...(cleanStop === true ? { cleanStop } : {}), ...(isCrash(crash) ? { crash: { at: crash.at, tasks: crash.tasks } } : {}), // #283
-    ...(isRateLimits(rateLimits) ? { rateLimits } : {}), // wrong shape or legacy file: no key at all, the header shows nothing
+    ...(readings === undefined ? {} : { rateLimits: readings }), // #929: per agent; a wrong shape or a pre-#929 file is no key
   };
 }
 

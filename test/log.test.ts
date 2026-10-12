@@ -167,8 +167,8 @@ test('describeEvent summarises every other event with names, ids and counts only
   assert.equal(describeEvent({ type: 'setShutdown', armed: true }), 'setShutdown on');
   assert.equal(describeEvent({ type: 'setShutdown', armed: false }), 'setShutdown off');
   assert.equal(describeEvent({ type: 'tick' }), 'tick');
-  assert.equal(describeEvent({ type: 'rateLimits', ptyId: PTY, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits pty=1a2b3c4d');
-  assert.equal(describeEvent({ type: 'rateLimits', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits source=hive');
+  assert.equal(describeEvent({ type: 'rateLimits', agent: 'claude', ptyId: PTY, rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits agent=claude pty=1a2b3c4d');
+  assert.equal(describeEvent({ type: 'rateLimits', agent: 'codex', rateLimits: { at: '2026-09-17T12:00:00.000Z', windows: {} } }), 'rateLimits agent=codex source=hive');
   assert.equal(
     describeEvent({ type: 'sourceQuota', source: 'board', quota: { limit: 5000, remaining: 4320, resetsAt: '2026-09-16T13:00:00.000Z', at: '2026-09-16T12:00:00.000Z' } }),
     'sourceQuota source=board remaining=4320/5000 resetsAt=2026-09-16T13:00:00.000Z',
@@ -360,6 +360,8 @@ test('describeEvent names a disabled or re-enabled rule by its source and percen
   assert.equal(describeEvent({ type: 'disableRule', source: 'hour', percent: 50, until: { kind: 'at', at: '2026-09-25T15:00:00.000Z' } }), 'disableRule hour≥50 until=2026-09-25T15:00:00.000Z');
   assert.equal(describeEvent({ type: 'disableRule', source: 'week', percent: 90, until: { kind: 'manual' } }), 'disableRule week≥90 until=manual');
   assert.equal(describeEvent({ type: 'enableRule', source: 'week', percent: 90 }), 'enableRule week≥90');
+  assert.equal(describeEvent({ type: 'disableRule', source: 'week', percent: 90, agent: 'codex', until: { kind: 'manual' } }), 'disableRule week≥90 agent=codex until=manual');
+  assert.equal(describeEvent({ type: 'enableRule', source: 'week', percent: 90, agent: 'codex' }), 'enableRule week≥90 agent=codex');
 });
 
 

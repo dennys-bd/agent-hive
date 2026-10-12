@@ -201,7 +201,7 @@ test('the ruler and the row read the measure\'s current usage, and the budget ca
   const state: State = {
     ...BASE_STATE,
     usage: [{ at: new Date().toISOString(), tokens: 100 }],
-    rateLimits: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 11, resetsAt: '2099-01-01T00:00:00.000Z' } } },
+    rateLimits: { claude: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 11, resetsAt: '2099-01-01T00:00:00.000Z' } } } },
   };
   render(<Settings info={info} state={state} onSaved={vi.fn()} />);
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/settings/source-columns?type=github&owner=acme&number=1&auth=cli'));

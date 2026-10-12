@@ -106,3 +106,13 @@ test('Claude\'s hooks reach the reducer as Claude Code sends them: the same payl
   ];
   for (const payload of payloads) assert.equal(runners.claude.hookPayload(payload), payload, payload.hook_event_name);
 });
+
+test('Claude owns a .jsonl directly in its transcript dir and, with a session id, only that session\'s; deleting a session lists <id>.jsonl and <id>/ (#929)', async () => {
+  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
+  const own = `/cfg/projects/-repo/${ID}.jsonl`;
+  assert.equal(runners.claude.ownsTranscript(own, '/repo', undefined, env), true, 'no session id: the folder check alone, as before');
+  assert.equal(runners.claude.ownsTranscript(own, '/repo', ID, env), true);
+  assert.equal(runners.claude.ownsTranscript(`/cfg/projects/-repo/${FROM}.jsonl`, '/repo', ID, env), false, 'another session in the same folder');
+  assert.equal(runners.claude.ownsTranscript(`/cfg/projects/-repo-x/${ID}.jsonl`, '/repo', ID, env), false);
+  assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, `/cfg/projects/-repo/${ID}`]);
+});

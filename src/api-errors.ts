@@ -1,4 +1,5 @@
 import { taskOfWorker } from './activities.js';
+import { ranAgent } from './agents.js';
 import { liveWorker, none, patch, type Reduced, withError } from './reducer-kit.js';
 import { stop } from './runs.js';
 import type { HookPayload, RateLimits, State, Worker, WorkerEvent } from './types.js';
@@ -47,7 +48,7 @@ function rateLimitWait(state: State, reset: number, now: number): StopFailureDec
 
 // The schedule alone: a rate limit with a window to wait for, a transient class (a rate limit with none included) until its retries run out
 function scheduled(state: State, worker: Worker, error: string, now: number): StopFailureDecision {
-  const reset = error === RATE_LIMIT ? exhaustedReset(state.rateLimits, now) : undefined;
+  const reset = error === RATE_LIMIT ? exhaustedReset(state.rateLimits?.[ranAgent(worker)], now) : undefined; // #929: the failing run's own agent's window
   if (reset !== undefined) return rateLimitWait(state, reset, now);
   if (error !== RATE_LIMIT && !TRANSIENT_ERRORS.includes(error)) return { action: 'stopped', error, text: errorText(error) };
   const failure = (worker.apiErrors ?? 0) + 1;

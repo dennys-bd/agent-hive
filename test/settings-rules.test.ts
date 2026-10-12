@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  consequenceLabel, consequences, emptyRule, isRuleValid, MEASURES, measuresInUse, type RuleDraft, ruleDrafts, rulesFrom, rulesProblem,
+  agentOptions, consequenceLabel, consequences, emptyRule, isRuleValid, MEASURES, measuresInUse, type RuleDraft, ruleDrafts, rulerRows, rulersInUse, rulesFrom, rulesProblem,
 } from '../src/ui/lib/settings-rules.js';
 import type { UsageRule } from '../src/types.js';
 
@@ -56,8 +56,8 @@ test('isRuleValid and rulesProblem: a row must have a percent 0-100, a kind and 
   assert.deepEqual(rulesProblem([week70dev, week70deploy], ['dev']), { section: 'rules', message: t('settings.rules.stageUnknown', { n: 2, source: t('settings.rules.measure.week'), stage: 'deploy' }) });
 });
 
-test('MEASURES lists the four measures in ruler order; measuresInUse keeps those at least one row uses, empty rows included (#526)', () => {
-  assert.deepEqual(MEASURES, ['session', 'week', 'hour', 'day']);
+test('MEASURES lists the five measures in ruler order; measuresInUse keeps those at least one row uses, empty rows included (#526)', () => {
+  assert.deepEqual(MEASURES, ['session', 'week', 'month', 'hour', 'day']);
   assert.deepEqual(measuresInUse([]), []);
   assert.deepEqual(measuresInUse([row({ source: 'day' }), row({ source: 'session' }), row({ source: 'session' })]), ['session', 'day']);
   assert.deepEqual(measuresInUse([emptyRule('week')]), ['week']);
@@ -72,4 +72,23 @@ test('consequences lists the total cap, one per stage, then the signal; a row\'s
   assert.deepEqual(labels, [t('settings.rules.effect.maxWorkers'), t('settings.rules.effect.stageWorkers', { stage: 'spec' }), t('settings.rules.effect.stageWorkers', { stage: 'old' }), t('settings.rules.effect.signal')]);
   assert.deepEqual(withoutId(emptyRule('week')), { source: 'week', percent: '', stage: '', kind: '', value: '' });
   assert.notEqual(emptyRule('week').id, emptyRule('week').id, 'ids are unique per call');
+});
+
+test('a plan row keeps its agent; rulesFrom writes it only when it is not the default, never on a budget row, and folds only rows of one agent (#929)', () => {
+  const rule: UsageRule = { source: 'month', percent: 40, signal: 'yellow', agent: 'codex' };
+  assert.deepEqual(ruleDrafts(rule).map(withoutId), [{ source: 'month', percent: '40', stage: '', kind: 'signal', value: 'yellow', agent: 'codex' }]);
+  assert.deepEqual(rulesFrom(ruleDrafts(rule), 'claude'), [rule]);
+  assert.deepEqual(rulesFrom(ruleDrafts(rule), 'codex'), [{ source: 'month', percent: 40, signal: 'yellow' }], 'the default agent: no key');
+  assert.deepEqual(rulesFrom([row({ source: 'hour', percent: '50', kind: 'maxWorkers', value: '1', agent: 'codex' })], 'claude'), [{ source: 'hour', percent: 50, maxWorkers: 1 }], 'a budget row has no agent');
+  const two = rulesFrom([row({ percent: '60', kind: 'signal', value: 'red', agent: 'codex' }), row({ percent: '60', kind: 'maxWorkers', value: '2' })], 'claude');
+  assert.deepEqual(two, [{ source: 'session', percent: 60, signal: 'red', agent: 'codex' }, { source: 'session', percent: 60, maxWorkers: 2 }], 'two agents: two rules, not folded');
+});
+
+test('agentOptions puts the default agent first; rulersInUse gives a plan measure one ruler per agent its rows read, naming only a non-default one (#929)', () => {
+  assert.deepEqual([agentOptions('claude'), agentOptions('codex')], [['claude', 'codex'], ['codex', 'claude']]);
+  const rows = [row({ source: 'week' }), row({ source: 'week', agent: 'codex' }), row({ source: 'week', agent: 'claude' }), row({ source: 'day', agent: 'codex' })];
+  assert.deepEqual(rulersInUse(rows, 'claude'), [{ source: 'week' }, { source: 'week', agent: 'codex' }, { source: 'day' }]);
+  assert.deepEqual(rulerRows(rows, { source: 'week' }, 'claude'), [rows[0], rows[2]]);
+  assert.deepEqual(rulerRows(rows, { source: 'week', agent: 'codex' }, 'claude'), [rows[1]]);
+  assert.deepEqual(rulerRows(rows, { source: 'day' }, 'claude'), [rows[3]], 'a budget ruler takes every row of its measure');
 });

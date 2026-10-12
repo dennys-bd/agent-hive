@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { access, rename, writeFile } from 'node:fs/promises';
 import type { Server as HttpServer } from 'node:http';
-import { basename, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual, promisify } from 'node:util';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -21,7 +21,7 @@ import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { excludeFromGit, prepareHome, type ProtocolPaths } from './hooks-settings.js';
-import { ALL_AGENTS, ranAgent } from './agents.js';
+import { AGENTS, ALL_AGENTS, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createEventLog, type EventLog } from './events.js';
@@ -83,9 +83,9 @@ import { trustedCopies } from './copy-sides.js';
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
-  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
+  AGENT_IDS, CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
-  type AgentAvailability, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
+  type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Signal, type SourceItem, type Worker, type LaunchPty, type State,
 } from './types.js';
 
@@ -256,7 +256,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let pollTimer: NodeJS.Timeout | undefined;
   let planLimitsTimer: NodeJS.Timeout | undefined;
   let readModel = deps.readModel; // #180: close() closes it once
-  let planLimitsReason: string | undefined; // last failure logged; a repeat is silent, a change and the recovery are one line each
+  let planLimitsReasons: Partial<Record<AgentId, string>> = {}; // #929: the last failure logged per agent; a repeat is silent, a change and the recovery are one line each
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
   let settingsChain: Promise<void> = Promise.resolve();
@@ -632,25 +632,24 @@ export function createServer(deps: ServerDeps): HiveServer {
     await wiring.pollPrActivity(live?.state, urls, prGql); // #742: commits and checks in a query of their own: its failure never costs a merge
   }
 
-  // A failure keeps the last value and is logged once per reason: an API-key user (no OAuth token) sees it in hive.log once, not
-  // every 5 min. Info, not error: nothing is broken. The reader's message never carries the token or the response body.
-  // `replace`: the header's refresh, whose reading is taken whole (see setRateLimits); the timer's is merged.
+  // Info, not error: an API-key user has no OAuth token by design and sees the reason in hive.log once, not every 5 min. The reason never
+  // carries the token or a response body
+  function notePlanReason(agent: AgentId, reason: string | undefined): void {
+    if (planLimitsReasons[agent] === reason) return;
+    log.info(`plan limits ${agent}: ${reason ?? 'ok'}`);
+    planLimitsReasons = { ...planLimitsReasons, [agent]: reason };
+  }
+
+  // Every agent with plan limits (#929): one rateLimits event per reading; a failing agent keeps its last value. `replace`: the header's
+  // refresh, whose reading is taken whole (see setRateLimits); the timer's is merged. A reason only when no agent gave a reading
   async function refreshPlanLimits(replace = false): Promise<string | undefined> {
     const read = deps.readPlanLimits;
     if (!read || !live) return undefined;
-    try {
-      const rateLimits = await read();
-      if (planLimitsReason !== undefined) log.info('plan limits: ok');
-      planLimitsReason = undefined;
-      if (!rateLimits) return replace ? NO_PLAN_READING : undefined; // the refresh says so; the timer just has nothing to merge
-      await dispatch({ type: 'rateLimits', rateLimits, replace });
-      return undefined;
-    } catch (err) {
-      const reason = errorMessage(err);
-      if (reason !== planLimitsReason) log.info(`plan limits: ${reason}`);
-      planLimitsReason = reason;
-      return reason;
-    }
+    const { readings, failures } = await read();
+    for (const agent of AGENT_IDS.filter((id) => AGENTS[id].planLimits)) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
+    for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });
+    if (readings.length > 0) return undefined;
+    return failures[0]?.reason ?? (replace ? NO_PLAN_READING : undefined); // the refresh says so; the timer just has nothing to merge
   }
 
   // Every boot, both paths (bootHive and the first POST /settings): strays of a previous Hive die, then the boot reducer closes every run.
@@ -692,9 +691,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     // a local session (#587) has no task: it runs in its workspace's checkout
     const activity = worker && live ? activityOfWorker(live.state, worker) : undefined;
     const local = task === undefined && activity?.kind === 'local' && live !== undefined ? workspaceByName(live.runtime.config, activity.workspace) : undefined;
-    const agent = ranAgent(worker ?? {}); // #924: its own agent's transcript dir; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
-    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent)) // taskDir's folder (#444)
-      || (local !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent) && basename(payload.transcript_path) === `${worker?.sessionId}.jsonl`); // its own session only, not the checkout's other transcripts (#590)
+    const agent = ranAgent(worker ?? {}); // #924: its own agent's runner; an unknown pty reads as LEGACY_RUN_AGENT and owns no transcript anyway
+    // #929: the runner owns the path. A task worker's is pinned to the hook's own session id: a /clear gives a new one before the worker
+    // learns it. A local session's is pinned to the worker's, never the checkout's other transcripts (#590), and to none before it is known
+    const own = (task !== undefined && workspace !== undefined && activity !== undefined && isWorkerTranscript(payload.transcript_path, workspace.path, activity, agent, undefined, payload.session_id)) // taskDir's folder (#444)
+      || (local !== undefined && worker?.sessionId !== undefined && isTranscriptIn(payload.transcript_path, local.path, agent, undefined, worker.sessionId));
     return payload.transcript_path === undefined || own ? payload : { ...payload, transcript_path: undefined };
   }
 
@@ -868,13 +869,14 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.type('text/plain');
     const ptyId = req.header('x-hive-pty');
     // #924: the reporting worker's agent reads its own status line; an unknown pty reads as LEGACY_RUN_AGENT, and the reducer ignores its reading
-    const rateLimits = runners[ranAgent((ptyId === undefined ? undefined : workerOf(ptyId)) ?? {})].statusLimits(req.body, Date.now());
+    const agent = ranAgent((ptyId === undefined ? undefined : workerOf(ptyId)) ?? {});
+    const rateLimits = runners[agent].statusLimits(req.body, Date.now());
     if (!ptyId || !rateLimits) {
       res.send('');
       return;
     }
     res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
-    await dispatch({ type: 'rateLimits', ptyId, rateLimits });
+    await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits }); // #929: the worker's agent's reading
   });
   // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
   mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId), reviews, notifyReview, events: wiring.events, memory });

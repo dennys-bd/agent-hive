@@ -1,4 +1,4 @@
-import { dirname, isAbsolute } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { runners } from './agents/registry.js';
 import type { Tokens } from './events.js';
 import type { Activity, AgentId, Budget, UsageSample } from './types.js';
@@ -54,14 +54,15 @@ export function isTranscriptPath(value: unknown): value is string {
 
 
 /**
- * The worker's own transcript: an absolute `.jsonl` directly under the transcript dir of the folder it runs in (taskDir: its worktree at
- * `<repo>/.hive/worktrees/<slug>`, or the workspace's checkout for a local task, #444). A forged hook cannot point the excerpt at any other file.
+ * The worker's own transcript: an absolute `.jsonl` its agent's runner owns for the folder it runs in (taskDir: its worktree at
+ * `<repo>/.hive/worktrees/<slug>`, or the workspace's checkout for a local task, #444), pinned to `sessionId` when given (#929). A forged hook
+ * cannot point the excerpt at any other file.
  */
-export function isWorkerTranscript(value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, env: NodeJS.ProcessEnv = process.env): value is string {
-  return isTranscriptIn(value, taskDir(repo, activity), agent, env);
+export function isWorkerTranscript(value: unknown, repo: string, activity: Pick<Activity, 'slug' | 'local'>, agent: AgentId, env: NodeJS.ProcessEnv = process.env, sessionId?: string): value is string {
+  return isTranscriptIn(value, taskDir(repo, activity), agent, env, sessionId);
 }
 
-/** An absolute `.jsonl` directly under `agent`'s transcript dir of `cwd` (#924): a local session's (#587) is its workspace's checkout. */
-export function isTranscriptIn(value: unknown, cwd: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env): value is string {
-  return isTranscriptPath(value) && dirname(value) === runners[agent].transcriptDir(cwd, env);
+/** An absolute `.jsonl` that `agent`'s runner owns for `cwd` (#924, #929): a local session's (#587) is its workspace's checkout. */
+export function isTranscriptIn(value: unknown, cwd: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env, sessionId?: string): value is string {
+  return isTranscriptPath(value) && runners[agent].ownsTranscript(value, cwd, sessionId, env);
 }

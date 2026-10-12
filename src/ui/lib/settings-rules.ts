@@ -1,29 +1,46 @@
 // Settings › regras' signal rules (#512): one row per consequence, each on its own measure (#526). Pure, so node:test checks it.
-import { RULE_SIGNALS, type RuleSignal, type RuleSource, type UsageRule } from '../../types.js';
+import { AGENT_IDS, type AgentId, DEFAULT_AGENT, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, type RuleSignal, type RuleSource, type UsageRule } from '../../types.js';
 import { type MessageKey, t } from '../i18n.js';
 import type { SettingsProblem } from './settings-form.js';
 import { PERCENT_MAX } from './usage.js';
 
 export type EffectKind = 'maxWorkers' | 'signal';
 // id: the row's React key, never sent. ruleDrafts splits a rule holding both consequences; rulesFrom folds them back.
-export interface RuleDraft { id: string; source: RuleSource; percent: string; stage: string; kind: EffectKind | ''; value: string }
+export interface RuleDraft { id: string; source: RuleSource; percent: string; stage: string; kind: EffectKind | ''; value: string;
+  agent?: AgentId } // #929: a plan row's agent; absent = the form's default agent
 /** One option of a row's consequence select: the total cap, a stage's cap (#475) or the signal. */
 export interface Consequence { kind: EffectKind; stage: string }
 
 export const MEASURE_LABEL: Record<RuleSource, MessageKey> = {
-  session: 'settings.rules.measure.session', week: 'settings.rules.measure.week', hour: 'settings.rules.measure.hour', day: 'settings.rules.measure.day',
+  session: 'settings.rules.measure.session', week: 'settings.rules.measure.week', month: 'settings.rules.measure.month', hour: 'settings.rules.measure.hour', day: 'settings.rules.measure.day',
 };
-const PLAN_SOURCES: readonly RuleSource[] = ['session', 'week'];
 const BUDGET_SOURCES: readonly RuleSource[] = ['hour', 'day'];
-/** The four measures in ruler order (#526). */
+/** The five measures in ruler order (#526, #929). */
 export const MEASURES: readonly RuleSource[] = [...PLAN_SOURCES, ...BUDGET_SOURCES];
 /** The measures at least one row uses, in ruler order; an empty row counts so its bar appears with the row. */
 export const measuresInUse = (rules: readonly RuleDraft[]): RuleSource[] => MEASURES.filter((s) => rules.some((r) => r.source === s));
 
+/** One ruler: a measure and, on a plan measure, a non-default agent (#929). */
+export interface Ruler { source: RuleSource; agent?: AgentId }
+
+/** One ruler per measure in use and, on a plan measure, one per agent its rows read, the default first (#929). Only a non-default agent is
+ * named, so a single-agent table keeps one ruler per measure, named as before. */
+export function rulersInUse(rows: readonly RuleDraft[], defaultAgent: AgentId): Ruler[] {
+  return measuresInUse(rows).flatMap((source): Ruler[] => {
+    if (!isPlanSource(source)) return [{ source }];
+    const read = agentOptions(defaultAgent).filter((agent) => rows.some((r) => r.source === source && (r.agent ?? defaultAgent) === agent));
+    return read.map((agent) => (agent === defaultAgent ? { source } : { source, agent }));
+  });
+}
+
+/** A ruler's rows (#929): its measure's, and on a plan measure only those of its agent. */
+export const rulerRows = (rows: readonly RuleDraft[], ruler: Ruler, defaultAgent: AgentId): RuleDraft[] =>
+  rows.filter((r) => r.source === ruler.source && (!isPlanSource(r.source) || (r.agent ?? defaultAgent) === (ruler.agent ?? defaultAgent)));
+
 export const emptyRule = (source: RuleSource): RuleDraft => ({ id: crypto.randomUUID(), source, percent: '', stage: '', kind: '', value: '' });
 
 export function ruleDrafts(rule: UsageRule): RuleDraft[] {
-  const row = (kind: EffectKind, value: string): RuleDraft => ({ id: crypto.randomUUID(), source: rule.source, percent: String(rule.percent), stage: rule.stage ?? '', kind, value });
+  const row = (kind: EffectKind, value: string): RuleDraft => ({ id: crypto.randomUUID(), source: rule.source, percent: String(rule.percent), stage: rule.stage ?? '', kind, value, ...(rule.agent === undefined ? {} : { agent: rule.agent }) });
   return [
     ...(rule.maxWorkers === undefined ? [] : [row('maxWorkers', String(rule.maxWorkers))]),
     ...(rule.signal === undefined ? [] : [row('signal', rule.signal)]),
@@ -32,15 +49,23 @@ export function ruleDrafts(rule: UsageRule): RuleDraft[] {
 
 const effectOf = (row: RuleDraft): Pick<UsageRule, 'maxWorkers' | 'signal'> =>
   row.kind === 'maxWorkers' ? { maxWorkers: Number(row.value) } : { signal: row.value as RuleSignal };
-// A rule a row may fold into: same source, percent and stage, and still free of the row's kind.
-const foldsInto = (rule: UsageRule, row: RuleDraft): boolean =>
-  rule.source === row.source && rule.percent === Number(row.percent) && (rule.stage ?? '') === row.stage && rule[row.kind as EffectKind] === undefined;
+/** The agent select's options (#929): the default agent first, then the others in AGENT_IDS order. */
+export const agentOptions = (defaultAgent: AgentId): AgentId[] => [defaultAgent, ...AGENT_IDS.filter((agent) => agent !== defaultAgent)];
+
+/** The agent a row saves (#929): a plan row's own when it is not the default, else none; a budget row never has one (the parser refuses it). */
+export const ruleAgent = (row: Pick<RuleDraft, 'source' | 'agent'>, defaultAgent: AgentId): AgentId | undefined =>
+  (isPlanSource(row.source) && row.agent !== undefined && row.agent !== defaultAgent ? row.agent : undefined);
+
+// A rule a row may fold into: same source, percent, stage and agent (#929), and still free of the row's kind.
+const foldsInto = (rule: UsageRule, row: RuleDraft, agent: AgentId | undefined): boolean =>
+  rule.source === row.source && rule.percent === Number(row.percent) && (rule.stage ?? '') === row.stage && rule.agent === agent && rule[row.kind as EffectKind] === undefined;
 
 /** The rows as usageRules, folding a split rule back so an untouched form saves what it loaded. validateSettings ran first. */
-export const rulesFrom = (rows: readonly RuleDraft[]): UsageRule[] => rows.reduce<UsageRule[]>((rules, row) => {
-  const i = rules.findIndex((rule) => foldsInto(rule, row));
+export const rulesFrom = (rows: readonly RuleDraft[], defaultAgent: AgentId = DEFAULT_AGENT): UsageRule[] => rows.reduce<UsageRule[]>((rules, row) => {
+  const agent = ruleAgent(row, defaultAgent);
+  const i = rules.findIndex((rule) => foldsInto(rule, row, agent));
   if (i !== -1) return rules.map((rule, j) => (j === i ? { ...rule, ...effectOf(row) } : rule));
-  return rules.concat({ source: row.source, percent: Number(row.percent), ...effectOf(row), ...(row.stage === '' ? {} : { stage: row.stage }) });
+  return rules.concat({ source: row.source, percent: Number(row.percent), ...effectOf(row), ...(row.stage === '' ? {} : { stage: row.stage }), ...(agent === undefined ? {} : { agent }) });
 }, []);
 
 const isCount = (text: string): boolean => /^\d+$/.test(text.trim());

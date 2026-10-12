@@ -18,7 +18,7 @@ import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
 import { parseSignals } from './signals-config.js';
-import { AGENT_IDS, END, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { AGENT_IDS, END, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -162,6 +162,14 @@ function requireLanguage(value: unknown): Language {
 // `source` first: a rule without it is the one thing an older-looking file could carry, and the message says what to add. A stage rule
 // (#475) only caps that stage's workers: the signal stops every start, so it never goes with a stage. The name is checked against
 // comb.stages in parseConfig, where both are known.
+// #929: a budget sums every agent's tokens, so an agent there would mean nothing. Unknown first: requireAgent's message, as defaultAgent's
+function parseRuleAgent(raw: unknown, source: RuleSource, field: string): AgentId | undefined {
+  if (raw === undefined) return undefined;
+  const agent = requireAgent(raw, field);
+  if (!isPlanSource(source)) throw new Error(`${CONFIG_FILE}: "${field}" only applies to a plan source (${PLAN_SOURCES.join(', ')})`);
+  return agent;
+}
+
 function parseUsageRule(raw: unknown, field: string): UsageRule {
   if (!isRecord(raw)) throw new Error(`${CONFIG_FILE}: "${field}" must be an object`);
   const source = requireSource(raw.source, `${field}.source`);
@@ -170,9 +178,10 @@ function parseUsageRule(raw: unknown, field: string): UsageRule {
   const maxWorkers = raw.maxWorkers === undefined ? undefined : requireInt(raw.maxWorkers, `${field}.maxWorkers`);
   const signal = raw.signal === undefined ? undefined : requireSignal(raw.signal, `${field}.signal`);
   const stage = raw.stage === undefined ? undefined : requireString(raw.stage, `${field}.stage`);
+  const agent = parseRuleAgent(raw.agent, source, `${field}.agent`);
   if (maxWorkers === undefined && signal === undefined) throw new Error(`${CONFIG_FILE}: "${field}" must set "maxWorkers" or "signal"`);
   if (stage !== undefined && signal !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.signal" cannot be combined with "stage": a stage rule only caps its workers`);
-  return { source, percent, ...(maxWorkers === undefined ? {} : { maxWorkers }), ...(signal === undefined ? {} : { signal }), ...(stage === undefined ? {} : { stage }) };
+  return { source, percent, ...(maxWorkers === undefined ? {} : { maxWorkers }), ...(signal === undefined ? {} : { signal }), ...(stage === undefined ? {} : { stage }), ...(agent === undefined ? {} : { agent }) };
 }
 
 function parseUsageRules(raw: unknown): UsageRule[] {

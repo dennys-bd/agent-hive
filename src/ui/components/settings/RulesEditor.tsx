@@ -3,11 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { t } from '@/i18n';
-import { type Consequence, consequenceLabel, consequences, emptyRule, MEASURE_LABEL, MEASURES, type RuleDraft } from '@/lib/settings-rules';
-import { RULE_SIGNALS, type RuleSignal, type RuleSource } from '../../../types';
+import { agentName } from '../../../agents';
+import { agentOptions, type Consequence, consequenceLabel, consequences, emptyRule, MEASURE_LABEL, MEASURES, type RuleDraft } from '@/lib/settings-rules';
+import { type AgentId, isPlanSource, RULE_SIGNALS, type RuleSignal, type RuleSource } from '../../../types';
 
-interface RulesEditorProps { rules: RuleDraft[]; stages: string[]; now: Partial<Record<RuleSource, number>>; onChange(rules: RuleDraft[]): void }
-interface RuleRowProps { rule: RuleDraft; stages: string[]; now?: number; onUpdate(patch: Partial<RuleDraft>): void; onRemove(): void }
+interface RulesEditorProps { rules: RuleDraft[]; stages: string[]; defaultAgent: AgentId; now(rule: RuleDraft): number | undefined; onChange(rules: RuleDraft[]): void }
+interface RuleRowProps { rule: RuleDraft; stages: string[]; defaultAgent: AgentId; now?: number; onUpdate(patch: Partial<RuleDraft>): void; onRemove(): void }
 
 const NONE = '__none__'; // Radix Select rejects value=""; mapped back to '' on the way out
 const DOT: Record<RuleSignal, string> = { yellow: 'bg-signal-yellow', red: 'bg-signal-red' };
@@ -45,6 +46,17 @@ function MeasureSelect({ rule, onUpdate }: { rule: RuleDraft; onUpdate(patch: Pa
   );
 }
 
+// #929: whose plan a plan row reads, the default agent first and selected; a budget row reads every agent's tokens and has none
+function AgentSelect({ rule, defaultAgent, onUpdate }: { rule: RuleDraft; defaultAgent: AgentId; onUpdate(patch: Partial<RuleDraft>): void }) {
+  if (!isPlanSource(rule.source)) return <span />;
+  return (
+    <Select value={rule.agent ?? defaultAgent} onValueChange={(v) => onUpdate({ agent: v as AgentId })}>
+      <SelectTrigger aria-label={t('settings.rules.agent')} className="w-full"><SelectValue /></SelectTrigger>
+      <SelectContent>{agentOptions(defaultAgent).map((agent) => <SelectItem key={agent} value={agent}>{agentName(agent)}</SelectItem>)}</SelectContent>
+    </Select>
+  );
+}
+
 function ValueCell({ rule, onUpdate }: { rule: RuleDraft; onUpdate(patch: Partial<RuleDraft>): void }) {
   if (rule.kind === 'maxWorkers') {
     return <Input aria-label={t('settings.rules.value')} type="number" min={0} step={1} className="w-20" defaultValue={rule.value} onChange={(e) => onUpdate({ value: e.target.value })} />;
@@ -65,14 +77,15 @@ function ValueCell({ rule, onUpdate }: { rule: RuleDraft; onUpdate(patch: Partia
   return <span />;
 }
 
-// One grid for the header and the rows: measure, from + %, consequence, value, now, remove.
-const GRID = 'grid grid-cols-[13rem_7rem_12rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-3 px-3 py-2';
+// One grid for the header and the rows: measure, agent, from + %, consequence, value, now, remove.
+const GRID = 'grid grid-cols-[13rem_7rem_7rem_12rem_minmax(0,1fr)_4.5rem_2rem] items-center gap-3 px-3 py-2';
 
 /** `medida | a partir de | consequência | valor | agora | ×`: one row per RuleDraft. */
-function RuleRow({ rule, stages, now, onUpdate, onRemove }: RuleRowProps) {
+function RuleRow({ rule, stages, defaultAgent, now, onUpdate, onRemove }: RuleRowProps) {
   return (
     <div data-testid="rule-row" className={`${GRID} border-b`}>
       <MeasureSelect rule={rule} onUpdate={onUpdate} />
+      <AgentSelect rule={rule} defaultAgent={defaultAgent} onUpdate={onUpdate} />
       <div className="flex items-center gap-1.5">
         <Input type="number" min={0} max={100} step={1} className="w-[4.5rem]" aria-label={t('settings.rules.from')} defaultValue={rule.percent} onChange={(e) => onUpdate({ percent: e.target.value })} />
         <span className="text-muted-foreground text-xs">%</span>
@@ -86,7 +99,7 @@ function RuleRow({ rule, stages, now, onUpdate, onRemove }: RuleRowProps) {
 }
 
 /** Every rule as one compact table (#526), in draft order so a row never jumps while it is edited; edits and removes go by row id. */
-export function RulesEditor({ rules, stages, now, onChange }: RulesEditorProps) {
+export function RulesEditor({ rules, stages, defaultAgent, now, onChange }: RulesEditorProps) {
   const update = (id: string, patch: Partial<RuleDraft>): void => onChange(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const remove = (id: string): void => onChange(rules.filter((r) => r.id !== id));
 
@@ -94,6 +107,7 @@ export function RulesEditor({ rules, stages, now, onChange }: RulesEditorProps) 
     <div className="flex flex-col rounded-md border">
       <div className={`${GRID} border-b text-muted-foreground text-xs`}>
         <span>{t('settings.rules.measure')}</span>
+        <span>{t('settings.rules.agent')}</span>
         <span>{t('settings.rules.from')}</span>
         <span>{t('settings.rules.effect')}</span>
         <span>{t('settings.rules.value')}</span>
@@ -101,7 +115,7 @@ export function RulesEditor({ rules, stages, now, onChange }: RulesEditorProps) 
         <span />
       </div>
       {rules.map((rule) => (
-        <RuleRow key={rule.id} rule={rule} stages={stages} now={now[rule.source]} onUpdate={(patch) => update(rule.id, patch)} onRemove={() => remove(rule.id)} />
+        <RuleRow key={rule.id} rule={rule} stages={stages} defaultAgent={defaultAgent} now={now(rule)} onUpdate={(patch) => update(rule.id, patch)} onRemove={() => remove(rule.id)} />
       ))}
       <div className="px-3 py-2">
         <Button type="button" variant="ghost" size="sm" onClick={() => onChange([...rules, emptyRule('session')])}>{t('settings.rules.add')}</Button>
