@@ -52,22 +52,32 @@ export async function adoptTranscript(worktree: string, repo: string, id: string
   return true;
 }
 
-/** A session's transcript as `claude --resume` finds it from one of `cwds` (#587): the first dir, in order, holding <id>.jsonl as a file. */
+// One cwd's transcript of session `id`: <id>.jsonl in its transcript dir, or, for an agent that keeps none per cwd (Codex, #929), the
+// session's own file among those its runner lists, always first (#933)
+async function transcriptIn(cwd: string, id: string, agent: AgentId, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const dir = runners[agent].transcriptDir(cwd, env);
+  if (dir === undefined) return (await runners[agent].sessionFiles(cwd, id, env))[0];
+  return (await isFile(join(dir, `${id}.jsonl`))) ? join(dir, `${id}.jsonl`) : undefined;
+}
+
+/** A session's transcript as its agent's resume finds it from one of `cwds` (#587): the first, in order, that has it. */
 export async function findTranscript(cwds: string[], id: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
   if (!isUuid(id)) return undefined;
   for (const cwd of cwds) {
-    const dir = runners[agent].transcriptDir(cwd, env); // #929: undefined for an agent that keeps none per cwd
-    if (dir !== undefined && (await isFile(join(dir, `${id}.jsonl`)))) return join(dir, `${id}.jsonl`);
+    const found = await transcriptIn(cwd, id, agent, env);
+    if (found !== undefined) return found;
   }
   return undefined;
 }
 
 /** A copy's temporary transcript (#587): <id>.jsonl from the first of `from` that has it into `to`'s transcript dir, where `--resume` looks. Never
- * <id>/ (subagents are not the conversation) and never over a file already there (the link refuses it): that one, or one dir for both, is `same`. */
+ * <id>/ (subagents are not the conversation) and never over a file already there (the link refuses it): that one, or one dir for both, is `same`.
+ * An agent with no dir per cwd (Codex) forks the source by id from anywhere (#933): found is `same`, nothing copied. */
 export async function copyTranscript(from: string[], to: string, id: string, agent: AgentId, env: NodeJS.ProcessEnv = process.env): Promise<'copied' | 'same' | 'missing'> {
   const dir = runners[agent].transcriptDir(to, env);
   const source = await findTranscript(from, id, agent, env);
-  if (source === undefined || dir === undefined) return 'missing';
+  if (source === undefined) return 'missing';
+  if (dir === undefined) return 'same';
   const target = join(dir, `${id}.jsonl`);
   if (source === target) return 'same';
   await mkdir(dir, { recursive: true });

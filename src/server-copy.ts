@@ -72,7 +72,7 @@ async function runCopy(deps: Deps, planned: Planned, body: { name?: unknown; not
   }
   if (copied === 'missing') return refuse(res, { status: HTTP_CONFLICT, message: NO_TRANSCRIPT });
   const dir = runners[planned.session.agent].transcriptDir(planned.target.cwd);
-  const placed = copied === 'copied' ? dir : undefined; // #929: an agent without a dir answers missing, so copied always has one
+  const placed = copied === 'copied' ? dir : undefined; // #933: an agent without a dir answers same: nothing placed, no copyOf mark
   const name = cleanTitle(body.name);
   const notice = body.notice ? await noticeFor(planned, deps.exec) : undefined;
   const effects = await deps.dispatch({
