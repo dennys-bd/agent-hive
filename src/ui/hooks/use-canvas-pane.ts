@@ -85,6 +85,7 @@ export function useCanvasPane({ zoom, pan, fitRequest, graph, onPan, onFit, onZo
     const next = fitZoom(size, graph);
     scrollPane(el, scroll, { x: 0, y: 0 });
     scrolledAt.current = next; // the fit's scroll is already its own: no anchor when its zoom arrives
+    anchor.current = undefined; // a wheel in the same frame would otherwise leave its pointer for the next button zoom
     onFit(next);
   });
   useLayoutEffect(() => {
