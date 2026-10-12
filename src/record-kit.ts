@@ -1,7 +1,7 @@
 import { activityOf, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
-import type { ActivityRecord, DeleteActivityScope, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
+import type { ActivityRecord, AgentId, DeleteActivityScope, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
 
 // The record side of a task's runs (#629): its sessions, its usage, its result and its PRs, written to the records where tasks.ts wrote them
 // on the task. New work lands in the live activity's record; a session already listed is updated in the record that holds it. Pure.
@@ -23,22 +23,22 @@ const withSession = (state: State, task: Task, id: string, change: (session: Ses
 };
 
 /** Session `id` put to work by a stage run in `stage` at `now` (#236): used again in the record holding it (the stage added unless it is already its last
- * one, a resume in the same stage), else appended to the live record, started now. */
-export function touchSession(state: State, task: Task, id: string, stage: string, now: string): State {
+ * one, a resume in the same stage, keeping its own agent), else appended to the live record, started now; a new one records `agent` (#925). */
+export function touchSession(state: State, task: Task, id: string, stage: string, now: string, agent: AgentId): State {
   if (recordWithSession(state, taskId(task), id)) {
     return withSession(state, task, id, (s) => ({ ...s, stages: s.stages.at(-1) === stage ? s.stages : [...s.stages, stage], lastUsedAt: now }));
   }
-  return withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [stage], lastUsedAt: now }] }));
+  return withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [stage], lastUsedAt: now, agent }] }));
 }
 
 /** Session `id` put to work by a free run at `now` (#812): a free session, a copy or a captured one has no stage prompt to go on with, so it
  * never writes `stages`, the one thing stageSession reads. One the record holds (a free one, or a stage run's resumed by hand) only moves its
  * lastUsedAt; a new one is appended to the live record, free and with no stage. It marks the stage on the live activity, so the task offers no
- * continue there until a stage run spawns. */
-export function touchFreeSession(state: State, task: Task, id: string, now: string): State {
+ * continue there until a stage run spawns. A new one records `agent` (#925); one already listed keeps its own. */
+export function touchFreeSession(state: State, task: Task, id: string, now: string, agent: AgentId): State {
   const used = recordWithSession(state, taskId(task), id)
     ? withSession(state, task, id, (s) => ({ ...s, lastUsedAt: now }))
-    : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true }] }));
+    : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true, agent }] }));
   const live = activityOf(used, taskId(task));
   return live ? withActivity(used, { ...live, freeSessionStage: task.stage }) : used;
 }

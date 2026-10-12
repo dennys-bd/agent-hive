@@ -10,7 +10,7 @@ import { localPairOf, taskPairOf } from '../fixtures/work';
 // Noon of 2026-10-06 in the machine's own zone: metaTime compares calendar days locally, as relativeTime does
 const NOW = new Date(2026, 9, 6, 12, 0).getTime();
 const at = (day: number, hour: number, minute = 0): string => new Date(2026, 9, day, hour, minute).toISOString();
-const session = (n: number, lastUsedAt: string, stages = ['dev']): Session => ({ id: `0000000${n}-0000-4000-8000-000000000000`, startedAt: lastUsedAt, stages, lastUsedAt });
+const session = (n: number, lastUsedAt: string, stages = ['dev']): Session => ({ id: `0000000${n}-0000-4000-8000-000000000000`, startedAt: lastUsedAt, stages, lastUsedAt, agent: 'claude' });
 const run = (ptyId: string, name?: string): LiveRun => ({ ptyId, label: 'Claude', kind: 'session', ...(name === undefined ? {} : { session: name }) });
 const task: Task = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const taskOf = (sessions: TaskActivity['sessions'], terminals: KeptTerminal[] = []): TaskActivity => ({

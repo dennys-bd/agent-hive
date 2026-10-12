@@ -89,7 +89,7 @@ test('a sleeping terminal\'s tab is drawn as a sleeping agent\'s; a click wakes 
 test('after a restart a tab naming a kept session no run holds stays as a sleeping tab with no transcript, and its click continues it (#696)', async () => {
   const user = userEvent.setup();
   seed({ root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1' }, { kind: 'run', ptyId: 'W2', sessionId: S }], active: 1 }, focused: 'g1' });
-  render(<Center runs={[STAGE]} keptSessions={[{ id: S, startedAt: '2026-10-03T10:00:00.000Z', stages: [], lastUsedAt: '2026-10-03T10:00:00.000Z' }]} />);
+  render(<Center runs={[STAGE]} keptSessions={[{ id: S, startedAt: '2026-10-03T10:00:00.000Z', stages: [], agent: 'claude', lastUsedAt: '2026-10-03T10:00:00.000Z' }]} />);
   expect(strips()).toEqual([['Claude', 'Claude · abcdef12']]);
   expect(pane('W2')).toHaveAttribute('data-asleep', 'true');
   await user.click(screen.getByRole('button', { name: 'continuar' }));

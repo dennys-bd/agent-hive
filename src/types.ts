@@ -394,6 +394,7 @@ export interface Session {
   repo?: true; // the worktree it ran in was removed: it opens in the workspace's main repo, its transcript moves there on first open (#208)
   name?: string; // the session's /rename title as its last turn end read it (#489): what its run's tab shows. Display text only
   free?: true; // opened by hand (#812): a free session, a copy or a captured one. Only a feedback run after its hive_done gives it stages
+  agent: AgentId; // #925: the agent whose run recorded it; a session saved before reads as claude (savedSession)
 }
 
 export type PrState = 'open' | 'merged' | 'closed';
@@ -600,7 +601,7 @@ export const SLEPT_MAX = 20;
 /** A run that ended with its session kept (#672): its tab stays open on its transcript until the tab closes, the session continues, or it
  * falls out of the last SLEPT_MAX. taskId: a task's run; workspace: a local session's. cause: absent when the run ended on its own (a /exit). */
 export interface SleptRun {
-  ptyId: string; sessionId: string; agent: string; kind: 'session' | 'stage'; stage?: string; taskId?: string; workspace?: string; cause?: SleepCause;
+  ptyId: string; sessionId: string; agent: AgentId; kind: 'session' | 'stage'; stage?: string; taskId?: string; workspace?: string; cause?: SleepCause;
   at: number; // epoch ms of the end
 }
 
@@ -1354,8 +1355,8 @@ export type HiveEvent =
   | { type: 'copySession'; from: SessionRef; to: SessionTarget; name?: string; notice?: string; copied?: string } // #587; name: the dialog's, as the route cleaned it; copied: the transcript dir the route put a temporary <from>.jsonl in
   | { type: 'openLocalSession'; activityId: string; sessionId: string } // continue a local session (#587)
   | { type: 'clearLocalSession'; activityId: string; sessionId: string } // its limpar (#587)
-  | { type: 'newLocalSession'; activityId: string } // a new claude session in a workspace's local activity (#590): kept from its start, as a copy into the local is
-  | { type: 'openSession'; activityId: string; continueId?: string; prompt?: string } // Abrir sessão on any task (#283), or the sidebar's session (#208); continueId = one of continuable(task); a record id (#629): a kept session opens in the task's live activity, born when none; prompt: its first message, rendered by the open route (#758)
+  | { type: 'newLocalSession'; activityId: string; agent?: AgentId } // a new session in a workspace's local activity (#590): kept from its start, as a copy into the local is; agent: the local route's kind (#925), absent = the live default
+  | { type: 'openSession'; activityId: string; continueId?: string; prompt?: string; agent?: AgentId } // agent: a new session's, the open route's kind (#925); absent = the live default; a resume runs its session's own. Abrir sessão on any task (#283), or the sidebar's session (#208); continueId = one of continuable(task); a record id (#629): a kept session opens in the task's live activity, born when none; prompt: its first message, rendered by the open route (#758)
   | { type: 'openTerminal'; activityId: string; command?: string; cwd?: string } // a terminal on a task, in its worktree (#283, #570): not a session; command = a workspace's command (#300); cwd = a folder of the worktree the shell route checked (#818)
   | { type: 'openProjectShell'; project: string; cwd: string } // the terminal panel's + (#292): a shell in that project's main checkout, `cwd` (#696)
   | { type: 'sleepTerminal'; terminalId: string; cwd?: string } // #696: the pty is gone or going; cwd as read, absent = keep the held one

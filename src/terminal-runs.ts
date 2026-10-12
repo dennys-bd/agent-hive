@@ -5,7 +5,10 @@ import { touchFreeSession } from './record-kit.js';
 import { none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
 import { withLocal } from './session-copy.js';
 import { canOpenSession, LOCAL_SLUG } from './tasks.js';
-import type { Activity, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
+import type { Activity, AgentId, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
+
+// #925: the shim wraps the claude CLI only (claude-shim.ts), so what it captures is Claude's
+const SHIM_AGENT: AgentId = 'claude';
 
 // Kept terminals (#696), out of runs.ts: a terminal sleeps with no pty, keeps its cwd and wakes in the same id until it is forgotten. A
 // command's run (#300) is the console's, never kept. Pure: every function returns new objects.
@@ -94,11 +97,11 @@ function withCapturedSession(state: State, activity: Activity, worker: Worker, s
   const workers = [...state.workers, worker];
   if (activity.kind === 'local') {
     if (!state.workspaces.includes(activity.workspace)) return undefined;
-    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at };
+    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent: SHIM_AGENT };
     return withLocal({ ...state, workers }, activity.workspace, [...localSessionsOf(state, activity.workspace), created]);
   }
   const task = taskOfActivity(state, activity.id);
-  return task && touchFreeSession({ ...state, workers }, task, sessionId, at);
+  return task && touchFreeSession({ ...state, workers }, task, sessionId, at, SHIM_AGENT);
 }
 
 /** The shim's register (#696): a free session of the terminal's activity, appended outside the cap like any free session (#459), with the
@@ -109,6 +112,6 @@ export function captureSession(state: State, { terminalId, runId, sessionId }: E
   const activity = terminal && state.activities.find((a) => a.id === terminal.activityId);
   if (!activity) return none(state);
   const startedAt = new Date().toISOString();
-  const worker: Worker = { id: randomUUID(), runId, activityId: activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true, terminalId };
+  const worker: Worker = { id: randomUUID(), runId, activityId: activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true, terminalId, agent: SHIM_AGENT };
   return none(withCapturedSession(state, activity, worker, sessionId, startedAt) ?? state);
 }

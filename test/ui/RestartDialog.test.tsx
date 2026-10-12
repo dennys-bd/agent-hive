@@ -13,7 +13,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 // The mockup's task (#580): backlog and plan ran before dev, each in its own session
 const at = '2026-09-30T10:00:00.000Z';
-const session = (id: string, stages: string[]): Session => ({ id, startedAt: at, stages, lastUsedAt: at });
+const session = (id: string, stages: string[]): Session => ({ id, startedAt: at, stages, agent: 'claude' as const, lastUsedAt: at });
 const DEV_SESSION = session('a42d1861-0000-4000-8000-000000000003', ['dev']);
 const stages: Stage[] = ['backlog', 'plan', 'dev'].map((name) => ({ name, from: { board: [name] }, prompt: '/x' }));
 const COMMIT = '3f1c9e2d4b5a69788796a5b4c3d2e1f001234567';

@@ -26,7 +26,7 @@ const graph = { stages: STAGES, transitions: FLOW };
 const task: Task = { item: { itemId: 'board:1', id: '1', title: 't', body: '', url: '' }, stage: 'Build', boardColumn: '', auto: true };
 const AT = '2026-10-09T00:00:00.000Z';
 const records = (sessions: { id: string; stages: string[] }[]): { activityRecords: ActivityRecord[] } =>
-  ({ activityRecords: [{ id: 'a', taskIds: ['board:1'], sessions: sessions.map((s) => ({ ...s, startedAt: AT, lastUsedAt: AT })) }] });
+  ({ activityRecords: [{ id: 'a', taskIds: ['board:1'], sessions: sessions.map((s) => ({ ...s, startedAt: AT, agent: 'claude' as const, lastUsedAt: AT })) }] });
 
 test('transitionKey is the (from, when, verdict) triple as JSON, so free-text names never collide; transitionByKey finds it back (#134)', () => {
   assert.equal(transitionKey(T('a', 'b', 'done')), '["a","done",null]');

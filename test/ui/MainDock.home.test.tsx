@@ -119,7 +119,7 @@ test('a recent task with only its worktree left resumes its last session rather 
   const at = new Date(Date.now() - 60_000).toISOString();
   const id = '5e6b7939-0000-4000-8000-000000000001';
   const idle: Task = taskA;
-  const activityRecords = [{ id: 'a-A', taskIds: [idle.item.itemId], sessions: [{ id, startedAt: at, stages: ['dev'], lastUsedAt: at }] }]; // #629: the session is the record's
+  const activityRecords = [{ id: 'a-A', taskIds: [idle.item.itemId], sessions: [{ id, startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at }] }]; // #629: the session is the record's
   render(
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[idle]} workers={[]} terminals={[]} activityRecords={activityRecords}
@@ -179,7 +179,7 @@ test('a local activity picked under Atividades shows the right side with its che
 test('picking a sleeping activity wakes nothing, though its stored layout names its session: only a click in its pane or on its line does (#16)', () => {
   const at = new Date(Date.now() - 60_000).toISOString();
   const id = '5e6b7939-0000-4000-8000-000000000002';
-  const activityRecords = [{ id: 'a-A', taskIds: [taskA.item.itemId], sessions: [{ id, startedAt: at, stages: ['dev'], lastUsedAt: at }] }];
+  const activityRecords = [{ id: 'a-A', taskIds: [taskA.item.itemId], sessions: [{ id, startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at }] }];
   resetViewState({ centerLayouts: { A: { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'run', ptyId: 'W1', sessionId: id }], active: 0 }, focused: 'g1' } } });
   render(
     <MainDock

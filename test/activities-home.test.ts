@@ -10,7 +10,7 @@ const task = (id: string): Task => ({
 });
 // The task's sessions live in its record (#629)
 const record = (id: string, lastUsed: string[]): ActivityRecord => ({
-  id: `a-${id}`, taskIds: [`I${id}`], sessions: lastUsed.map((at, i) => ({ id: `${id}-s${i}`, startedAt: at, stages: ['dev'], lastUsedAt: at })),
+  id: `a-${id}`, taskIds: [`I${id}`], sessions: lastUsed.map((at, i) => ({ id: `${id}-s${i}`, startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at })),
 });
 // A worker on task I<n> points at its activity, `a-<n>` (#629)
 const worker = (id: string, taskId: string, status: Worker['status'], waitingSince?: string): Worker =>

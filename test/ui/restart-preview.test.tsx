@@ -5,7 +5,7 @@ import type { Session, Stage } from '../../src/types';
 import { bareTask, movedWork, type WithWork } from '../fixtures/work';
 
 const at = '2026-09-30T10:00:00.000Z';
-const session = (n: number, stages: string[]): Session => ({ id: `a42d186${n}-0000-4000-8000-00000000000${n}`, startedAt: at, stages, lastUsedAt: at });
+const session = (n: number, stages: string[]): Session => ({ id: `a42d186${n}-0000-4000-8000-00000000000${n}`, startedAt: at, stages, agent: 'claude' as const, lastUsedAt: at });
 const stages: Stage[] = ['backlog', 'plan', 'dev', 'review'].map((name) => ({ name, from: { board: [name] }, prompt: '/x' }));
 const COMMIT = '3f1c9e2d4b5a69788796a5b4c3d2e1f001234567';
 const SESSIONS = [session(1, ['backlog']), session(2, ['plan']), session(3, ['dev'])];

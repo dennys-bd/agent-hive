@@ -16,8 +16,8 @@ const T0 = '2026-09-29T10:00:00.000Z';
 const T1 = '2026-09-30T09:00:00.000Z';
 const ITEM = 'local:1';
 const ACTIVITY = activityIdOf(ITEM);
-const entry = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['spec', 'dev'], lastUsedAt: T1, tokens: 1200, name: 'review', ...extra });
-const renamed: Session = { id: NEW, startedAt: T0, stages: ['spec', 'dev'], lastUsedAt: T1 }; // no tokens, no name
+const entry = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: T1, tokens: 1200, name: 'review', ...extra });
+const renamed: Session = { id: NEW, startedAt: T0, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: T1 }; // no tokens, no name
 const task: Task = {
   item: { itemId: ITEM, id: 'HIVE-1', title: 'task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'dev', workspace: 'hive', created: true, auto: false,
 };

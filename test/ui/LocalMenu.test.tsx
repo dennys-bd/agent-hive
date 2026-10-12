@@ -15,8 +15,8 @@ const run = { ptyId: 'L1', label: 'Claude · fix login', kind: 'session' as cons
 const activity: LocalActivity = {
   kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [run], sessions: [{ run, status: 'working' }],
   kept: [
-    { session: { id: LIVE, startedAt: T0, stages: [], lastUsedAt: T0, name: 'fix login' }, run, status: 'working' },
-    { session: { id: IDLE, startedAt: T0, stages: [], lastUsedAt: T0 }, status: 'empty' },
+    { session: { id: LIVE, startedAt: T0, stages: [], agent: 'claude', lastUsedAt: T0, name: 'fix login' }, run, status: 'working' },
+    { session: { id: IDLE, startedAt: T0, stages: [], agent: 'claude', lastUsedAt: T0 }, status: 'empty' },
   ],
 };
 const answer = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });

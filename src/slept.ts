@@ -4,7 +4,8 @@
 import { activityOfWorker, taskOfWorker } from './activities.js';
 import type { Reduced } from './reducer-kit.js';
 import { taskId } from './tasks.js';
-import { DEFAULT_AGENT, type Effect, type HiveEvent, type SleepCause, type SleptRun, SLEPT_MAX, type State, type Worker } from './types.js';
+import { ranAgent } from './agents.js';
+import { type Effect, type HiveEvent, type SleepCause, type SleptRun, SLEPT_MAX, type State, type Worker } from './types.js';
 
 const isLiveRun = (state: State, ptyId: string): boolean => state.workers.some((s) => s.runId === ptyId && s.status !== 'empty');
 
@@ -31,7 +32,7 @@ function sleptOf(before: State, { state: after, effects }: Reduced, worker: Work
   const activity = activityOfWorker(before, worker);
   const cause = causeOf(worker, runId, effects);
   return {
-    ptyId: runId, sessionId, agent: DEFAULT_AGENT, kind: worker.freeSession ? 'session' : 'stage', at: now,
+    ptyId: runId, sessionId, agent: ranAgent(worker), kind: worker.freeSession ? 'session' : 'stage', at: now,
     ...(task === undefined ? {} : { taskId: taskId(task) }),
     ...(task !== undefined && !worker.freeSession ? { stage: task.stage } : {}),
     ...(activity?.kind === 'local' ? { workspace: activity.workspace } : {}),

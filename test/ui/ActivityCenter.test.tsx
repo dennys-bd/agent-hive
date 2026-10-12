@@ -64,7 +64,7 @@ test('a tab\'s X closes it and its terminal; the agent\'s run keeps going, the t
 });
 
 test('with no tab, the strip keeps only the + over the activity\'s home, which lists its sessions; nothing to split (#759)', () => {
-  const kept: Session = { id: 'abcdef12-0000-4000-8000-000000000001', startedAt: '', stages: ['dev'], lastUsedAt: '' };
+  const kept: Session = { id: 'abcdef12-0000-4000-8000-000000000001', startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' };
   render(<Center runs={[]} keptSessions={[kept]} />);
   expect(strips()).toEqual([]);
   expect(screen.getByRole('button', { name: 'Novo terminal ou sessão' })).toBeInTheDocument();

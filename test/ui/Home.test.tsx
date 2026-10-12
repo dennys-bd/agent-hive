@@ -13,7 +13,7 @@ const task = (id: string): WithWork => ({
 });
 // Each task's session last used at `at`, in its record (#629)
 const records = (at: string, ...ids: string[]): ActivityRecord[] =>
-  ids.map((id) => ({ id: `a-I${id}`, taskIds: [`I${id}`], sessions: [{ id: `5e6b7939-${id}`, startedAt: at, stages: ['dev'], lastUsedAt: at }] }));
+  ids.map((id) => ({ id: `a-I${id}`, taskIds: [`I${id}`], sessions: [{ id: `5e6b7939-${id}`, startedAt: at, stages: ['dev'], agent: 'claude' as const, lastUsedAt: at }] }));
 const waiting: Worker = { id: 's1', activityId: activityIdOf('I1'), status: 'waiting', sessionId: '5e6b7939-aaaa' };
 const approval: Worker = { id: 's2', activityId: activityIdOf('I2'), status: 'approval', sessionId: 'f9f0456a-bbbb' };
 

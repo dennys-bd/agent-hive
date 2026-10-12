@@ -57,7 +57,7 @@ const withMade = (s: State, n: number, made: Partial<Omit<ActivityRecord, 'id' |
   const live = work(s, n);
   return live ? withRecord(s, { ...recordOf(s, live.id)!, ...made }) : withWork(s, `board:item${n}`, {}, made);
 };
-const keptSession = (id: string, stages: string[] = ['spec']) => ({ id, startedAt: PAST, stages, lastUsedAt: PAST });
+const keptSession = (id: string, stages: string[] = ['spec']) => ({ id, startedAt: PAST, stages, agent: 'claude' as const, lastUsedAt: PAST });
 // Task n's live activity id, what the worktree and deletion events name (#629); 'none' while it has none
 const ACT = (s: State, n: number): string => work(s, n)?.id ?? 'none';
 // Task n's live activity with `fields` on it (#629): the reducer's own when a run gave the task one, else a fixture pair under its slug
@@ -2105,7 +2105,7 @@ test('openSession claude opens past red and an exhausted budget, as a free sessi
   assert.deepEqual(first.state.workers[0], red.workers[0], 'the free worker stays the fill\'s (#459)');
   const opened = task(first.state, 1)!;
   assert.deepEqual([work(first.state, 1)?.workerId, work(first.state, 1)?.sessionId], [undefined, undefined], 'the activity\'s workerId and sessionId stay the pipeline\'s (#629)');
-  assert.deepEqual(sessionsN(first.state, 1), [{ id: worker.sessionId, startedAt: worker.startedAt, stages: [], lastUsedAt: worker.startedAt, free: true }]); // a free session runs no stage (#812)
+  assert.deepEqual(sessionsN(first.state, 1), [{ id: worker.sessionId, startedAt: worker.startedAt, stages: [], agent: 'claude', lastUsedAt: worker.startedAt, free: true }]); // a free session runs no stage (#812)
   assert.deepEqual(first.effects, [{ type: 'spawnSession', worker, activity: work(first.state, 1), task: opened, sessionId: worker.sessionId, continues: false }], 'no setColumn: nothing reaches the board');
   const second = reduce(first.state, { type: 'openSession', activityId: workId(first.state, 'board:item1') }).state;
   assert.deepEqual([second.workers.length, second.workers[2].draining, second.workers[2].freeSession, second.maxConcurrent], [3, undefined, true, 1]);
@@ -2123,10 +2123,10 @@ test('openSession on a task whose worktree git is removing changes nothing: no s
 
 test('openSession with resume reuses the session and appends nothing; a session a live worker holds, an unknown id, a task without worktree or an unknown task change nothing (#164, #283, #491)', () => {
   const at = '2026-09-22T10:00:00.000Z';
-  const ran = withMade(manualState(2, { sessionId: 'kept-session-id-0001', enteredAt: at }), 1, { sessions: [{ id: 'kept-session-id-0001', startedAt: at, stages: ['spec'], lastUsedAt: at }] }); // #629: the record holds it
+  const ran = withMade(manualState(2, { sessionId: 'kept-session-id-0001', enteredAt: at }), 1, { sessions: [{ id: 'kept-session-id-0001', startedAt: at, stages: ['spec'], agent: 'claude' as const, lastUsedAt: at }] }); // #629: the record holds it
   const resumed = reduce(ran, { type: 'openSession', activityId: workId(ran, 'board:item1'), continueId: 'kept-session-id-0001' });
   assert.equal(occupied(resumed.state)[0].sessionId, 'kept-session-id-0001');
-  assert.deepEqual(sessionsN(resumed.state, 1), [{ id: 'kept-session-id-0001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec'], lastUsedAt: occupied(resumed.state)[0].startedAt }], 'one row per session: a resume adds none, it uses the one again (#236)');
+  assert.deepEqual(sessionsN(resumed.state, 1), [{ id: 'kept-session-id-0001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec'], agent: 'claude', lastUsedAt: occupied(resumed.state)[0].startedAt }], 'one row per session: a resume adds none, it uses the one again (#236)');
   assert.deepEqual(resumed.effects.map((e) => (e.type === 'spawnSession' ? e.continues : e.type)), [true]);
   const refused: [State, string | undefined, string][] = [
     [resumed.state, 'kept-session-id-0001', 'held by a live worker: two terminals on one transcript'],
@@ -2184,7 +2184,7 @@ test('a manual task continues in place like any other: its stage-ending Stop ans
 
 test('occupy appends a new session to task.sessions and a continue appends nothing (#164)', () => {
   const first = filled(1, 1).state; // spec: a new session
-  assert.deepEqual(sessionsN(first, 1), [{ id: work(first, 1)?.sessionId, startedAt: first.workers[0].startedAt, stages: ['spec'], lastUsedAt: first.workers[0].startedAt }]);
+  assert.deepEqual(sessionsN(first, 1), [{ id: work(first, 1)?.sessionId, startedAt: first.workers[0].startedAt, stages: ['spec'], agent: 'claude', lastUsedAt: first.workers[0].startedAt }]);
   const known: State = withMade(withLive({ ...base(1), tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }] }, 1, { sessionId: 'kept-session-id-0001' }), 1, { sessions: [keptSession('kept-session-id-0001', ['dev'])] });
   const resumed = reduce(known, { type: 'setSignal', signal: 'green' }).state;
   assert.equal(occupied(resumed).length, 1);
@@ -2534,7 +2534,7 @@ test('a start whose slug another task of the same workspace owns spawns nothing:
 test('a session records every stage it ran in and when the Hive last put it to work (#236): a new spawn, an in-place continuation, a continue spawn and a manual resume; the same stage twice in a row is kept once', () => {
   const first = filled(1, 1).state; // spec: a new session
   const [spec] = sessionsN(first, 1);
-  assert.deepEqual(spec, { id: work(first, 1)?.sessionId, startedAt: first.workers[0].startedAt, stages: ['spec'], lastUsedAt: first.workers[0].startedAt });
+  assert.deepEqual(spec, { id: work(first, 1)?.sessionId, startedAt: first.workers[0].startedAt, stages: ['spec'], agent: 'claude', lastUsedAt: first.workers[0].startedAt });
   const [inPlace] = sessionsN(stopped(first, first.workers[0].runId!).state, 1); // green: dev continues the session in the same process
   assert.deepEqual([inPlace.id, inPlace.startedAt, inPlace.stages], [spec.id, spec.startedAt, ['spec', 'dev']]);
   assert.ok(inPlace.lastUsedAt >= spec.lastUsedAt, 'used again now');
@@ -2543,9 +2543,9 @@ test('a session records every stage it ran in and when the Hive last put it to w
   assert.ok(respawned.effects.some((e) => e.type === 'spawn' && e.session === 'continue'));
   assert.deepEqual(sessionsN(respawned.state, 1).map((s) => [s.id, s.stages]), [[spec.id, ['spec', 'dev']]], 'a continue spawn: the same session, one stage more');
   const at = '2026-09-22T10:00:00.000Z';
-  const ran = withMade(manualState(2, { sessionId: 'kept-session-id-0001', enteredAt: at }), 1, { sessions: [{ id: 'kept-session-id-0001', startedAt: at, stages: ['spec'], lastUsedAt: at }] });
+  const ran = withMade(manualState(2, { sessionId: 'kept-session-id-0001', enteredAt: at }), 1, { sessions: [{ id: 'kept-session-id-0001', startedAt: at, stages: ['spec'], agent: 'claude' as const, lastUsedAt: at }] });
   const resumed = reduce(ran, { type: 'openSession', activityId: workId(ran, 'board:item1'), continueId: 'kept-session-id-0001' }).state;
-  assert.deepEqual(sessionsN(resumed, 1), [{ id: 'kept-session-id-0001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec'], lastUsedAt: occupied(resumed)[0].startedAt }], 'resumed in the stage it ran in: no repeat');
+  assert.deepEqual(sessionsN(resumed, 1), [{ id: 'kept-session-id-0001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec'], agent: 'claude', lastUsedAt: occupied(resumed)[0].startedAt }], 'resumed in the stage it ran in: no repeat');
 });
 
 test('cleaned and worktreeRemoved forget only what the scope removed (#236): the worktree, its branch and the id a continue would resume with worktree on (#208), the sessions and the id a continue would resume with session on; the PRs stay; setCleanup replaces the scope with no effects', () => {
@@ -2553,7 +2553,7 @@ test('cleaned and worktreeRemoved forget only what the scope removed (#236): the
   // git's fields on the task's activity and the session id on the task, then whether its records still hold a session (#629)
   const left = (s: State): boolean[] => [work(s, 1)?.worktree !== undefined, work(s, 1)?.branch !== undefined, holds(s, 1, 'sessionId'), sessionsN(s, 1).length > 0];
   const first = polled(base(1, DELETE_STAGES), [listed(1, 'Done')]).state; // in done, 5d to go: the test marks it deleting itself
-  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['dev'], lastUsedAt: PAST }];
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['dev'], agent: 'claude' as const, lastUsedAt: PAST }];
   const pr = 'https://github.com/o/r/pull/1';
   const inFlight = (deleteActivity: DeleteActivityScope): State => withMade(withLive({
     ...first, deleteActivity,
@@ -2580,7 +2580,7 @@ test('cleaned and worktreeRemoved forget only what the scope removed (#236): the
 
 test('a removal that covers the worktree forgets its path, branch, session id and gone mark and moves every session to the main repo; with the sessions in scope no session is left (#208)', () => {
   const first = polled(base(1, DELETE_STAGES), [listed(1, 'Done')]).state; // in done, 5d to go: the test marks it deleting itself
-  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['dev'], lastUsedAt: PAST }, { id: 'kept-session-id-0002', startedAt: PAST, stages: ['done'], lastUsedAt: PAST }];
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['dev'], agent: 'claude' as const, lastUsedAt: PAST }, { id: 'kept-session-id-0002', startedAt: PAST, stages: ['done'], agent: 'claude' as const, lastUsedAt: PAST }];
   const inFlight = (deleteActivity: DeleteActivityScope): State => withMade(withLive({
     ...first, deleteActivity,
   }, 1, { worktree: WORKTREE, branch: 'hive/1-task-1', worktreeGone: true, deleting: true, sessionId: 'kept-session-id-0002' }), 1, { sessions });
@@ -2745,7 +2745,7 @@ test('a turn end with a title names the worker\'s session; one without keeps the
 });
 
 test('a spawn that resumes a session starts its worker from the session\'s last total, so the first Stop counts only what the run added, on the task and in the budget; a manual resume too; a new session starts empty (#248)', () => {
-  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec'], lastUsedAt: PAST, tokens: 1000 }];
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec'], agent: 'claude' as const, lastUsedAt: PAST, tokens: 1000 }];
   const known: State = withMade(withLive({ ...base(1), tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }] }, 1, { sessionId: 'kept-session-id-0001' }), 1, { sessions });
   const resumed = reduce(known, { type: 'setSignal', signal: 'green' });
   assert.equal(resumed.effects[0].type === 'spawn' && resumed.effects[0].session, 'continue');
@@ -2866,7 +2866,7 @@ test('a spawn that fails drops the session its new run appended, so the stage re
   const failed = reduce(first, { type: 'spawnFailed', ptyId: first.workers[0].runId!, message: 'pty: boom' }).state;
   assert.deepEqual([sessionsN(failed, 1), holds(failed, 1, 'sessionId'), work(failed, 1)?.error], [[], false, `${SPAWN_FAILED}pty: boom`]);
   assert.equal(startMode(task(failed, 1)!, failed), 'start');
-  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], lastUsedAt: PAST }];
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: PAST }];
   const known: State = withMade(withLive({ ...base(1), tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }] }, 1, { sessionId: 'kept-session-id-0001' }), 1, { sessions });
   const resumed = reduce(known, { type: 'setSignal', signal: 'green' }).state; // dev continues the kept session
   const kept = reduce(resumed, { type: 'spawnFailed', ptyId: resumed.workers[0].runId!, message: 'git: boom' }).state;
@@ -2908,7 +2908,7 @@ test('restart runs the stage\'s prompt in a new session and takes the branch the
 });
 
 test('restart is ignored on a stage that continues the previous stage\'s session; resume still works there (#283)', () => {
-  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], lastUsedAt: PAST }];
+  const sessions = [{ id: 'kept-session-id-0001', startedAt: PAST, stages: ['spec', 'dev'], agent: 'claude' as const, lastUsedAt: PAST }];
   const inDev: State = withMade(withLive({
     ...signaled(base(1), 'red').state,
     tasks: [{ item: item(1), stage: 'dev', boardColumn: 'In progress', auto: true }],
@@ -2929,7 +2929,7 @@ test('stageStarted stores the stage and the commit a stage run started at, only 
 // A task in `stage` whose sessions ran `runs`, oldest first, each used a minute after the one before: what a spawn leaves before its
 // stageStarted arrives (#580)
 function ranIn(stage: string, runs: string[][]): State {
-  const sessions = runs.map((stages, i) => ({ id: `session-${i}`, startedAt: PAST, stages, lastUsedAt: new Date(Date.parse(PAST) + i * 60_000).toISOString() }));
+  const sessions = runs.map((stages, i) => ({ id: `session-${i}`, startedAt: PAST, stages, agent: 'claude' as const, lastUsedAt: new Date(Date.parse(PAST) + i * 60_000).toISOString() }));
   return withWork({ ...base(1), tasks: [{ item: item(1), stage, boardColumn: '', auto: true }] }, 'board:item1', { slug: 'hive-1-task-1' }, { sessions }); // #629
 }
 const recordedStart = (state: State, stage: string) =>
@@ -2974,7 +2974,7 @@ test('clearSessions forgets only the named session, and sessionId only when it i
   const withSessions: State = withMade({
     ...withActivity(idle, { ...work(idle, 1)!, sessionId: loose }), // #629: the activity's
     workers: [{ id: 'm1', status: 'working', runId: 'cccccccc-0000-4000-8000-000000000003', activityId: work(idle, 1)!.id, sessionId: held, freeSession: true }],
-  }, 1, { sessions: [held, loose, other].map((id) => ({ id, startedAt: PAST, stages: ['spec'], lastUsedAt: PAST })) });
+  }, 1, { sessions: [held, loose, other].map((id) => ({ id, startedAt: PAST, stages: ['spec'], agent: 'claude' as const, lastUsedAt: PAST })) });
   const { state, effects } = reduce(withSessions, { type: 'clearSessions', activityId: workId(withSessions, 'board:item1'), sessionId: loose });
   assert.deepEqual([sessionsN(state, 1)?.map((s) => s.id), holds(state, 1, 'sessionId'), effects], [[held, other], false, []]);
   const kept = reduce(withSessions, { type: 'clearSessions', activityId: workId(withSessions, 'board:item1'), sessionId: other }).state;

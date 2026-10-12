@@ -17,7 +17,7 @@ const WT = '/wt/hive-1-task-1';
 const PAST = '2026-09-20T10:00:00.000Z';
 const item = (n: number): Item => ({ itemId: `board:item${n}`, id: String(n), title: `Task ${n}`, body: '', url: `https://github.com/o/r/issues/${n}`, source: 'board' });
 const listed = (n: number, column: string): SourceItem => ({ item: item(n), column });
-const session = (id: string, stage: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: PAST, stages: [stage], lastUsedAt: PAST, ...extra });
+const session = (id: string, stage: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: PAST, stages: [stage], agent: 'claude' as const, lastUsedAt: PAST, ...extra });
 const GATE: LegacyStage[] = [
   { name: 'review', from: { board: ['Review'] }, approval: true },
   { name: 'dev', from: { board: ['Ready'] }, prompt: 'x' },

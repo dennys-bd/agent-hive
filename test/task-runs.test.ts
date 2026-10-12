@@ -12,7 +12,7 @@ const REVIEW: Stage = { name: 'review', from: { board: ['In review'] } };
 const DONE: Stage = { name: 'done', from: { board: ['Done'] }, action: 'deleteActivity' };
 const stages = [SPEC, DEV, WAIT, REVIEW, DONE];
 const AT = '2026-09-25T10:00:00.000Z';
-const session = (id: string, stages: string[]): Session => ({ id, startedAt: AT, stages, lastUsedAt: AT });
+const session = (id: string, stages: string[]): Session => ({ id, startedAt: AT, stages, agent: 'claude' as const, lastUsedAt: AT });
 // A fixture task, the sessions its record holds and its activity's worktree and run fields (#629): the adapters below hand them to the reads
 // as the task's one activity and record
 type Work = Pick<Activity, 'worktree' | 'branch' | 'worktreeGone' | 'local' | 'base' | 'setup' | 'deleting' | 'sessionId' | 'workerId' | 'stopped'
@@ -264,7 +264,7 @@ test('localRuns lists a workspace\'s local claude sessions, named by their kept 
     { id: 's4', status: 'working', activityId: 'a-1', runId: 'W4' },
   ];
   const terminals: Terminal[] = [{ terminalId: 'P1', activityId: localActivityId('hive'), startedAt: AT, cwd: '/repo' }, { terminalId: 'P2', activityId: localActivityId('hive'), startedAt: AT, cwd: '/repo' }, { terminalId: 'C1', activityId: 'a-1', startedAt: AT, cwd: '/repo' }];
-  const activityRecords: ActivityRecord[] = [{ id: localActivityId('hive'), taskIds: [], sessions: [{ id, startedAt: AT, stages: [], lastUsedAt: AT, name: 'fix login' }] }];
+  const activityRecords: ActivityRecord[] = [{ id: localActivityId('hive'), taskIds: [], sessions: [{ id, startedAt: AT, stages: [], agent: 'claude' as const, lastUsedAt: AT, name: 'fix login' }] }];
   assert.deepEqual(localRuns('hive', { workers, terminals, activityRecords }), [
     { ptyId: 'W1', label: 'Claude · fix login', kind: 'session', session: 'fix login' },
     { ptyId: 'W2', label: 'Claude', kind: 'session' },

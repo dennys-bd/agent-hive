@@ -16,7 +16,7 @@ const task: WithWork = {
   item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: 'https://github.com/acme/r/issues/1' }, stage: 'gate', boardColumn: 'Ready', auto: true,
   approval: { since: AT },
 };
-const sessions = [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: AT, stages: ['spec'], lastUsedAt: AT }]; // #629: the record's
+const sessions = [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: AT, stages: ['spec'], agent: 'claude' as const, lastUsedAt: AT }]; // #629: the record's
 const workers: Worker[] = [{ id: 's1', status: 'empty' }];
 const state: State = movedWork<State>({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers, terminals: [], stages, tasks: [task], sourceOrder: [], localCount: 0, activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'],

@@ -21,7 +21,7 @@ const on = (s: State, n: number, live: Partial<Activity> = {}, made: Parameters<
   withWork(s, `local:${n}`, { slug: `hive-${n}`, worktree: worktreePath('/repo', `hive-${n}`), ...live }, made);
 const state = (tasks: Task[], extra: Partial<State> = {}): State =>
   tasks.reduce((acc, c) => on(acc, Number(c.item.itemId.split(':')[1])), { ...initialState(0), workspaces: ['hive'], tasks, ...extra });
-const listed = { id: ID, startedAt: '', stages: ['dev'], lastUsedAt: '' };
+const listed = { id: ID, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' };
 
 test('sourceSide: a worktree session is looked for in its worktree\'s dir, a repo one in the worktree\'s then the main repo\'s and runs in the main repo, a local one in the checkout; refusals name the unknown task, workspace or session (#587)', () => {
   const worktree = worktreePath('/repo', 'hive-1');

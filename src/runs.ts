@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { liveDefaultAgent } from './agents.js';
 import { withoutHold } from './approval.js';
 import { pendingEnd, withoutPending } from './handoff.js';
 import { activityOf, ensureLocal, localActivityId, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withLocalActivities } from './activities.js';
@@ -275,7 +276,7 @@ export function openTerminal(state: State, { activityId, command, cwd }: Extract
  * worktree (#208); anything else needs the task's worktree on disk (the route creates or recreates it first). It puts the task on top of its
  * stage, as a start does (#356); a refused open changes nothing. A terminal is openTerminal's (#570).
  */
-export function openSession(state: State, { activityId, continueId, prompt }: Extract<HiveEvent, { type: 'openSession' }>): Reduced {
+export function openSession(state: State, { activityId, continueId, prompt, agent: asked }: Extract<HiveEvent, { type: 'openSession' }>): Reduced {
   const id = recordTaskId(state, activityId); // a record id: a kept session opens in the task's live activity, born when none (#629)
   const task = state.tasks.find((c) => taskId(c) === id);
   const live = activityOf(state, id);
@@ -286,13 +287,14 @@ export function openSession(state: State, { activityId, continueId, prompt }: Ex
   const born = ensureActivity(state, task);
   if (!born) return none(state);
   const sessionId = continueId ?? randomUUID();
+  const agent = session?.agent ?? asked ?? liveDefaultAgent(state); // #925: a resume runs its session's own agent, a new session the one asked for
   const startedAt = new Date().toISOString();
   // Appended, never a free worker (#459): a free worker is the fill's, so taking one would still cost the automation a worker; releaseWorker drops it
   const worker: Worker = {
-    id: randomUUID(), runId: randomUUID(), activityId: born.activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
+    id: randomUUID(), runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
     ...sessionBaseline(born.state, task, sessionId), // a resume counts only what it adds (#248)
   };
-  const touched = touchFreeSession({ ...born.state, workers: [...born.state.workers, worker] }, task, sessionId, startedAt); // a new session is appended free, a resumed one only used again (#236, #812)
+  const touched = touchFreeSession({ ...born.state, workers: [...born.state.workers, worker] }, task, sessionId, startedAt, agent); // a new session is appended free, a resumed one only used again (#236, #812)
   return onTop({
     state: touched,
     effects: [{

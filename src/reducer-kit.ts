@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { ranAgent, stageAgentIn } from './agents.js';
 import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
 import { handoverRun } from './task-runs.js';
@@ -141,11 +142,12 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const work = answer?.activity ?? born.activity;
   const task = queued;
   const startedAt = new Date().toISOString();
+  const agent = stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
   const session = answer?.policy ?? policy ?? (stage.session === 'continue' && work.sessionId !== undefined ? 'continue' : 'new');
   // A new run is a new Claude session, a continue the activity's own (#164); either way the session records this stage and this use (#236)
   const sessionId = session === 'new' ? randomUUID() : work.sessionId;
   const worker: Worker = {
-    id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
+    id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
     ...sessionBaseline(born.state, task, sessionId), // a resumed transcript already holds its old turns (#248)
     ...(born.state.workers[index].draining ? { draining: true } : {}),
   };
@@ -157,7 +159,7 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   const running: Activity = { ...unstopped, workerId: worker.id, ...(sessionId === undefined ? {} : { sessionId }) };
   // the activity holds its worker before the stage is reordered
   const next = withActivity(withTask({ ...born.state, workers: born.state.workers.map((s, i) => (i === index ? worker : s)) }, started), running);
-  const touched = withStageRun(sessionId === undefined ? next : touchSession(next, started, sessionId, stage.name, startedAt), started, stage.name); // #742: the run's attempt
+  const touched = withStageRun(sessionId === undefined ? next : touchSession(next, started, sessionId, stage.name, startedAt, agent), started, stage.name); // #742: the run's attempt
   const activity = activityOf(touched, taskId(started)) ?? born.activity; // as stored after the writes above (#629)
   const spawn: Effect = {
     type: 'spawn', worker, activity, task: started, stage, session, run: answer?.run ?? run, ...resultField(touched, started), ...(answer ? { prompt: answer.prompt } : {}),
@@ -284,7 +286,7 @@ export function continueInPlace(freed: State, worker: Worker, ptyId: string, mov
   if (!live) return { state: held, effects: [...finished, ...written.effects] }; // a running worker always has its activity (#629)
   const { handover: _handover, ...unqueued } = live;
   const placed = withActivity(held, { ...unqueued, workerId: worker.id });
-  const touched = withStageRun(live.sessionId === undefined ? placed : touchSession(placed, task, live.sessionId, next.name, new Date().toISOString()), task, next.name); // one stage more (#236); the run's attempt (#742)
+  const touched = withStageRun(live.sessionId === undefined ? placed : touchSession(placed, task, live.sessionId, next.name, new Date().toISOString(), ranAgent(worker)), task, next.name); // one stage more (#236); the run's attempt (#742)
   const activity = activityOf(touched, taskId(task)) ?? live;
   return {
     state: touched,

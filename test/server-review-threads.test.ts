@@ -152,7 +152,7 @@ function routesOver(t: TestContext, deps: Partial<ThreadRouteDeps> & Pick<Thread
   const app = express();
   app.use(express.json());
   registerReviewThreadRoutes(app, {
-    requireLive: () => ({ state: withWork({ ...initialState(0), tasks: [TASK] }, 'local:1', {}, { sessions: [{ id: SESSION_A, startedAt: 'T', stages: ['fila'], lastUsedAt: 'T' }] }), runtime: {} as LiveView['runtime'] }),
+    requireLive: () => ({ state: withWork({ ...initialState(0), tasks: [TASK] }, 'local:1', {}, { sessions: [{ id: SESSION_A, startedAt: 'T', stages: ['fila'], agent: 'claude' as const, lastUsedAt: 'T' }] }), runtime: {} as LiveView['runtime'] }),
     notifyReview: () => undefined,
     log: { error: () => undefined, info: () => undefined, debug: () => undefined },
     deliver: async (_c, to) => ({ ok: true, session: to }),

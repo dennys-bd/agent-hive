@@ -31,7 +31,7 @@ const BASE: State = {
 };
 // TASK's activity, stopped, with its branch and one session
 const STATE: State = withWork(BASE, TASK.item.itemId, { workspace: 'site', branch: 'hive/1-task-1' }, {
-  sessions: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: USED, stages: ['dev'], lastUsedAt: USED }],
+  sessions: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: USED, stages: ['dev'], agent: 'claude', lastUsedAt: USED }],
 });
 const NAV: DetailNav = { center: 'automation', canOpenActivity: () => false, openActivity: () => {}, showFlow: () => {} };
 

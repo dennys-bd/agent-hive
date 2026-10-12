@@ -18,7 +18,7 @@ const task: WithWork = {
 const worker: Worker = { id: 's1', status: 'working', activityId: activityIdOf('I1'), runId: 'W1', tokens: 12345 };
 // Task I1's record (#629): its sessions, PRs and usage; by default the one session its sessionId names
 const rec = (made: Partial<Omit<ActivityRecord, 'id' | 'taskIds'>> = {}): ActivityRecord[] => [{ id: 'a-I1', taskIds: ['I1'], sessions: [], ...made }];
-const RAN = rec({ sessions: [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '', stages: ['dev'], lastUsedAt: '' }] });
+const RAN = rec({ sessions: [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' }] });
 const state: State = withPointedWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [worker], stages: [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }], tasks: [task], sourceOrder: [], localCount: 0, activities: [], activityRecords: RAN, usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: ['hive'], sourceWorkspaces: {}, commands: {}, syncs: {}, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [],
 });
@@ -181,8 +181,8 @@ test('a local task has no issue link and no board line: the title reads HIVE-1 w
 test('the sessions section lists the task\'s sessions, oldest first: short id, the stages joined by →, the last use as a local clock; absent without any (#236, redesign 06)', () => {
   const used = '2026-09-24T15:30:00.000Z';
   const listed = rec({ sessions: [
-    { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec', 'plan', 'build'], lastUsedAt: used },
-    { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: '2026-09-23T10:00:00.000Z', stages: ['review'], lastUsedAt: used },
+    { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['spec', 'plan', 'build'], agent: 'claude' as const, lastUsedAt: used },
+    { id: 'bbbbbbbb-0000-4000-8000-000000000002', startedAt: '2026-09-23T10:00:00.000Z', stages: ['review'], agent: 'claude' as const, lastUsedAt: used },
   ] });
   const { unmount } = render(<Panel state={movedWork({ ...IDLE, activityRecords: listed })} initial={TASK} />);
   const time = new Date(used).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -198,7 +198,7 @@ test('each session a worker may resume gets abrir, which posts that session\'s r
   const user = userEvent.setup();
   const used = '2026-09-24T15:30:00.000Z';
   const [a, b] = ['aaaaaaaa-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000002'];
-  const listed = rec({ sessions: [{ id: a, startedAt: used, stages: ['spec'], lastUsedAt: used, repo: true }, { id: b, startedAt: used, stages: ['dev'], lastUsedAt: used }] });
+  const listed = rec({ sessions: [{ id: a, startedAt: used, stages: ['spec'], agent: 'claude' as const, lastUsedAt: used, repo: true }, { id: b, startedAt: used, stages: ['dev'], agent: 'claude' as const, lastUsedAt: used }] });
   const held: Worker = { id: 'm1', status: 'working', activityId: activityIdOf('I1'), runId: 'W2', freeSession: true, sessionId: b };
   render(<Panel state={movedWork({ ...IDLE, workers: [held], activityRecords: listed })} initial={TASK} />);
   const items = within(screen.getByRole('region', { name: 'sessões' })).getAllByRole('listitem');
@@ -213,7 +213,7 @@ test('abrir attaches the run the route answered, no extra click on terminal: its
   const user = userEvent.setup();
   const focusDetached = vi.fn(async () => true);
   vi.stubGlobal('hive', { focusDetached });
-  const listed = rec({ sessions: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-24T15:30:00.000Z', stages: ['spec'], lastUsedAt: '2026-09-24T15:30:00.000Z' }] });
+  const listed = rec({ sessions: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: '2026-09-24T15:30:00.000Z', stages: ['spec'], agent: 'claude' as const, lastUsedAt: '2026-09-24T15:30:00.000Z' }] });
   fetchMock.mockImplementationOnce(async () => reply({ ok: true, ptyId: 'W1' }));
   const { unmount } = render(<Panel state={movedWork({ ...IDLE, activityRecords: listed })} initial={TASK} />);
   await user.click(screen.getByRole('button', { name: 'abrir' }));
@@ -316,7 +316,7 @@ test('each session a worker may resume gets limpar beside abrir, which posts tha
   const user = userEvent.setup();
   const used = '2026-09-24T15:30:00.000Z';
   const [a, b] = ['aaaaaaaa-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000002'];
-  const listed = rec({ sessions: [{ id: a, startedAt: used, stages: ['spec'], lastUsedAt: used }, { id: b, startedAt: used, stages: ['dev'], lastUsedAt: used }] });
+  const listed = rec({ sessions: [{ id: a, startedAt: used, stages: ['spec'], agent: 'claude' as const, lastUsedAt: used }, { id: b, startedAt: used, stages: ['dev'], agent: 'claude' as const, lastUsedAt: used }] });
   const held: Worker = { id: 'm1', status: 'working', activityId: activityIdOf('I1'), runId: 'W2', freeSession: true, sessionId: a };
   render(<Panel state={movedWork({ ...IDLE, workers: [held], activityRecords: listed })} initial={TASK} />);
   const items = within(within(screen.getByRole('region', { name: 'sessões' })).getByRole('list')).getAllByRole('listitem');
@@ -384,7 +384,7 @@ test('a task in a manual gate whose previous stage ran gets the status box of a 
   const reviewed: State = withTasks({
     ...IDLE,
     stages: [{ name: 'spec', from: { board: ['Backlog'] }, prompt: '/hive-spec {url}' }, { name: 'dev', from: { board: ['Ready'] }, approval: true }], // dev is the gate
-    activityRecords: rec({ sessions: [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: used, stages: ['spec'], lastUsedAt: used }] }),
+    activityRecords: rec({ sessions: [{ id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: used, stages: ['spec'], agent: 'claude', lastUsedAt: used }] }),
   }, [{ ...STOPPED, approval: { since: new Date().toISOString() } }]);
   render(<Panel state={reviewed} initial={TASK} />);
   const band = screen.getByRole('region', { name: 'aguardando aprovação' });

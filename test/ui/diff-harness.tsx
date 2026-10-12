@@ -50,7 +50,7 @@ export function renderPane(activity: TaskActivity = activityOf(), scope: DiffSco
   return { ...view, onScope, tab };
 }
 export const SESSION = 'abcdef12-0000-4000-8000-000000000000';
-export const SESSIONS: Session[] = [{ id: SESSION, startedAt: 'T', stages: ['dev'], lastUsedAt: 'T' }];
+export const SESSIONS: Session[] = [{ id: SESSION, startedAt: 'T', stages: ['dev'], agent: 'claude' as const, lastUsedAt: 'T' }];
 /** The task's activity with its session kept in its record (#629). */
 export const withSessions = (): Partial<Omit<TaskActivity, 'kind'>> => ({ records: [{ id: 'a-I1', taskIds: ['I1'], sessions: SESSIONS }] });
 

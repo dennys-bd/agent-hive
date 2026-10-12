@@ -2,6 +2,7 @@ import { isPrUrl, isSessionId, isUuid } from './orchestrator.js';
 import { PR_STATES } from './pull-requests.js';
 import { cleanTitle } from './usage.js';
 import { localActivityId } from './activities.js';
+import { savedAgent } from './agents.js';
 import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
@@ -77,7 +78,7 @@ export function savedPrs(prs: unknown, legacy: unknown): TaskPr[] {
 // #489: a name only as display text, through the same rule the transcript read uses.
 export function savedSession(value: unknown): Session[] {
   if (typeof value !== 'object' || value === null) return [];
-  const { id, startedAt, stages, lastUsedAt, column, tokens, repo, free, name } = value as Record<string, unknown>;
+  const { id, startedAt, stages, lastUsedAt, column, tokens, repo, free, name, agent } = value as Record<string, unknown>;
   if (!isUuid(id) || typeof startedAt !== 'string') return [];
   const title = cleanTitle(name);
   // a resume counts its first delta from tokens (#248); repo, only as true, sends the session to the main repo (#208); free, only as true,
@@ -86,8 +87,9 @@ export function savedSession(value: unknown): Session[] {
     ...(isCount(tokens) ? { tokens } : {}), ...(repo === true ? { repo: true as const } : {}), ...(free === true ? { free: true as const } : {}),
     ...(title === undefined ? {} : { name: title }),
   };
-  if (isStringArray(stages) && typeof lastUsedAt === 'string') return [{ id, startedAt, stages, lastUsedAt, ...kept }];
-  return typeof column === 'string' ? [{ id, startedAt, stages: [column], lastUsedAt: startedAt }] : [];
+  const ran = savedAgent(agent); // #925: a session saved before it was Claude's
+  if (isStringArray(stages) && typeof lastUsedAt === 'string') return [{ id, startedAt, stages, lastUsedAt, agent: ran, ...kept }];
+  return typeof column === 'string' ? [{ id, startedAt, stages: [column], lastUsedAt: startedAt, agent: ran }] : [];
 }
 
 // A stage awaiting approval (#268): kept when since is a date, until only when it is one too; copied field by field.

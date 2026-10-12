@@ -17,7 +17,7 @@ export const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
 export const SESSION_OTHER = 'cccccccc-3333-4333-8333-333333333333'; // task 2's
 export const DIFF_TEXT = ['diff --git a/a.txt b/a.txt', '--- a/a.txt', '+++ b/a.txt', '@@ -1 +1 @@', '-one', '+two', ''].join('\n');
 const AT = '2026-09-29T10:00:00.000Z';
-const session = (id: string, lastUsedAt = AT) => ({ id, startedAt: AT, stages: ['fila'], lastUsedAt });
+const session = (id: string, lastUsedAt = AT) => ({ id, startedAt: AT, stages: ['fila'], agent: 'claude' as const, lastUsedAt });
 
 export interface Reviews { base: string; home: string; server: HiveServer }
 

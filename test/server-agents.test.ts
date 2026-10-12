@@ -81,3 +81,9 @@ test('the live state holds the config\'s default agent from the first save on (#
   const { server } = await start(t);
   assert.equal(server.getState()!.defaultAgent, 'claude');
 });
+
+test('the stage run\'s worker records the agent it runs (#925)', async (t) => {
+  const { server, workers } = await start(t);
+  await waitFor(() => workers.length === 1);
+  assert.equal(worker0(server).agent, 'claude');
+});

@@ -11,7 +11,7 @@ import { taskPairOf, type WithWork } from '../fixtures/work';
 
 // A sleeping session (#614): one the task keeps and no run holds
 const S = 'a1b2c3d4-0000-4000-8000-000000000001';
-const session: Session = { id: S, startedAt: '', stages: ['dev'], lastUsedAt: '' };
+const session: Session = { id: S, startedAt: '', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '' };
 const task: WithWork = { item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true, workspace: 'hive', worktree: '/w/1' };
 const records = [{ id: 'a-I1', taskIds: ['I1'], sessions: [session] }]; // #629: the task's session is its record's
 const activity: TaskActivity = { kind: 'task', ...taskPairOf('I1', {}, records[0]), task, runs: [], sessions: [{ session, status: 'empty' }], status: 'empty', worker: false, records };

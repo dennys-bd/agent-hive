@@ -22,7 +22,7 @@ const S = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-2222
 const record = (n: number, extra: Partial<TryRecord> = {}): TryRecord =>
   ({ transition: KEY, n, max: 3, cause: 'lint', error: `lint error ${n}`, at: `2026-10-11T10:0${n}:00.000Z`, stage: 'build', sessionId: S[n - 1], ...extra });
 const THREE = [record(1), record(2), record(3)];
-const session = (id: string): Session => ({ id, startedAt: '', stages: ['build'], lastUsedAt: '' });
+const session = (id: string): Session => ({ id, startedAt: '', stages: ['build'], agent: 'claude' as const, lastUsedAt: '' });
 const taskIn = (stage: string): Task => ({ item: { itemId: 'I1', id: '1', title: 'Task 1', body: '', url: '' }, stage, boardColumn: '', auto: true });
 const at = (work: Partial<Activity>, { stage = 'checks', transitions = [BACK] }: { stage?: string; transitions?: Transition[] } = {}): State => withWork({
   signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 1, workers: [], terminals: [], stages: STAGES, transitions, tasks: [taskIn(stage)], sourceOrder: [], localCount: 0,

@@ -63,8 +63,8 @@ test('sessions are the agent runs with their own worker\'s status, the terminals
 
 test('one local activity per workspace comes first, in the config\'s order, with its live runs, its agent sessions and each kept session with the run continuing it (#590)', () => {
   const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-  const kept = { id, startedAt: T0, stages: [], lastUsedAt: T0, name: 'fix login' };
-  const other = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3302', startedAt: T0, stages: [], lastUsedAt: T0 };
+  const kept = { id, startedAt: T0, stages: [], agent: 'claude' as const, lastUsedAt: T0, name: 'fix login' };
+  const other = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3302', startedAt: T0, stages: [], agent: 'claude' as const, lastUsedAt: T0 };
   const workers: Worker[] = [{ id: 's9', status: 'waiting', activityId: localActivityId('hive'), freeSession: true, runId: 'L1', sessionId: id }, worker('s1', 'I1')];
   const terminals: Terminal[] = [{ terminalId: 'P1', activityId: localActivityId('hive'), startedAt: T0, cwd: '/repo' }];
   // #629: each workspace's local activity and record, as withLocalActivities keeps them in state
@@ -95,7 +95,7 @@ test('a local activity\'s center layout is stored under local/<workspace> (#590)
 
 const A = '11111111-0000-4000-8000-000000000001';
 const B = '22222222-0000-4000-8000-000000000002';
-const kept = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['dev'], lastUsedAt: T0, ...extra });
+const kept = (id: string, extra: Partial<Session> = {}): Session => ({ id, startedAt: T0, stages: ['dev'], agent: 'claude' as const, lastUsedAt: T0, ...extra });
 // Task 1's kept sessions, in its record (#629)
 const tasks = (tasks: Task[], workers: Worker[], sessions: Session[] = []): TaskActivity[] =>
   activitiesOf(withPointedWork({ tasks, workers, terminals: [], workspaces: [], activities: [], activityRecords: [{ id: 'a-I1', taskIds: ['I1'], sessions }] })).filter(isTask);
