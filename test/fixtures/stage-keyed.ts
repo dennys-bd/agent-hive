@@ -25,7 +25,7 @@ const ACTIVITY: Activity = {
   checkpoints: [{ n: 1, stage: 'A', start: 'c0ffee', head: 'c0ffee', commit: 'c0ffee', branch: 'hive/1-t', at: AT, ended: 'done' }],
   stageGone: 'A',
 };
-const RECORD: ActivityRecord = { id: 'a1', taskIds: ['board:I1'], sessions: [{ id: 's1', startedAt: AT, stages: ['A', 'B'], lastUsedAt: AT }], stageRuns: { A: 2, B: 1 } };
+const RECORD: ActivityRecord = { id: 'a1', taskIds: ['board:I1'], sessions: [{ id: 's1', startedAt: AT, stages: ['A', 'B'], lastUsedAt: AT, agent: 'claude' }], stageRuns: { A: 2, B: 1 } };
 
 /** The audited State: every stage-keyed field filled. */
 export const stageKeyedState = (): State => ({
