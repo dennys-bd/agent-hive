@@ -11,14 +11,13 @@ import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX,
 import { t } from '@/i18n';
 import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
-import { clockOf } from '@/lib/design-comments';
+import { clockOf, type DesignTheme } from '@/lib/design-comments';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
 // The design pane (#109): one Hive design (.hv.html) of an activity, served by the design frame route (#108) into a sandboxed frame on the
 // handoff's canvas, under its preview bar. Read only: the agent writes the file.
 
-type DesignTheme = 'dark' | 'light';
 const THEMES: readonly DesignTheme[] = ['dark', 'light'];
 type Mint = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; url: string };
 

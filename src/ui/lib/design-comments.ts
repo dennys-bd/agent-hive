@@ -1,6 +1,7 @@
 // The design pane's comments (#113): a design file's drafts and conversations as its panel lists them, each in one of the handoff's five
 // states derived from #111's stored fields, and the session enviar sends them to. Pure.
-import { type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewFile, type ReviewMessage, type ReviewThread, type ThreadAnchor } from '../../types.js';
+import { type DesignAnchor, type DesignTarget, isDesignAnchor, NEW_SESSION, type ReviewFile, type ReviewMessage, type ReviewThread, type ThreadAnchor, type UnpinnedDesignAnchor } from '../../types.js';
+import { t } from '../i18n.js';
 
 export type CommentState = 'draft' | 'agent' | 'replied' | 'agentDone' | 'resolved';
 
@@ -13,6 +14,18 @@ export interface DesignComment {
 
 /** HH:MM in the viewer's locale, 24 h as the handoff writes it (#109, #113). */
 export const clockOf = (at: Date): string => at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** A design's own theme (#109): the frame's, apart from the Hive's. */
+export type DesignTheme = UnpinnedDesignAnchor['theme'];
+
+/** A comment's target as the panel and the composer head it (#113, #114): an element's selector, or an area's size. */
+export const targetOf = (anchor: DesignTarget): string =>
+  (anchor.kind === 'element' ? anchor.selector : t('design.area', { w: Math.round(anchor.rect.width), h: Math.round(anchor.rect.height) }));
+
+/** The pin the server gives the file's next comment (review-store.ts's nextPin, which the UI cannot import): the highest of its drafts and
+ *  threads, plus one. The composer's pin shows it before the server answers. */
+export const nextPin = ({ open, resolved }: { open: readonly DesignComment[]; resolved: readonly DesignComment[] }): number =>
+  Math.max(0, ...[...open, ...resolved].map((c) => c.anchor.pin)) + 1;
 
 const onPath = (path: string) => <T extends { anchor: ThreadAnchor }>(item: T): item is T & { anchor: DesignAnchor } =>
   isDesignAnchor(item.anchor) && item.anchor.path === path;

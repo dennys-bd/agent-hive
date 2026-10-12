@@ -3,7 +3,7 @@ import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useS
 import { agentName } from '../../agents';
 import { displayBinding, matches } from '../../shortcuts';
 import { taskLabel } from '../../tasks';
-import { type AgentId, type DesignAnchor, NEW_SESSION, type ReviewMessage } from '../../types';
+import { type AgentId, NEW_SESSION, type ReviewMessage } from '../../types';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { DefaultAgentContext } from '@/components/NewRunButton';
 import { dropDraft, replyTo, resolveThread, retryMessage, sendComment } from '@/components/review-actions';
@@ -14,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
 import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
-import { clockOf, type CommentState, type DesignComment, fileComments } from '@/lib/design-comments';
+import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
 import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
@@ -39,10 +39,6 @@ const SELECTED = 'bg-card shadow-[inset_2px_0_0_var(--foreground)]';
 const PIN_TEXT = 'text-white';
 const PIN_ON_WAITING = 'text-[#111418]'; // the handoff's pin text on --waiting
 const isQuiet = (state: CommentState): boolean => state === 'draft' || state === 'resolved'; // the --empty states read muted
-
-// An element's selector, or an area's size, as the item's target
-const targetOf = (anchor: DesignAnchor): string =>
-  (anchor.kind === 'element' ? anchor.selector : t('design.area', { w: Math.round(anchor.rect.width), h: Math.round(anchor.rect.height) }));
 
 function wordOf(item: DesignComment, sessions: ReviewPane['sessions']): string {
   if (item.state === 'agent') return t('design.status.agent', { session: sessionName(item.session ?? NEW_SESSION, sessions) });

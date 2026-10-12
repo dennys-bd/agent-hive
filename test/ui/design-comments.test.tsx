@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { fileComments, recipientOf, threadState } from '@/lib/design-comments';
+import { setLanguage } from '@/i18n';
+import { fileComments, nextPin, recipientOf, targetOf, threadState } from '@/lib/design-comments';
 import { EMPTY_REVIEW } from '@/lib/review-view';
 import { NEW_SESSION } from '../../src/types';
 import { AT, PATH, REVIEW } from './design-review';
@@ -34,4 +35,13 @@ test('the recipient: the pick while it is the task\'s, else the session in focus
   expect(recipientOf(undefined, undefined, sessions)).toEqual({ session: NEW_SESSION, how: 'new' });
   expect(recipientOf(SESSION, NEW_SESSION, sessions)).toEqual({ session: NEW_SESSION, how: 'picked' });
   expect(recipientOf(undefined, 'gone', sessions)).toEqual({ session: NEW_SESSION, how: 'new' });
+});
+
+test('targetOf heads an element by its selector and an area by its rounded size; nextPin is the file\'s highest pin plus one (#114)', () => {
+  setLanguage('pt');
+  const rect = { x: 0, y: 0, width: 320.4, height: 179.6 };
+  expect(targetOf({ kind: 'element', selector: 'main > h1:nth-of-type(1)', text: 'Hi', rect })).toBe('main > h1:nth-of-type(1)');
+  expect(targetOf({ kind: 'area', rect })).toBe('área · 320×180');
+  expect(nextPin(fileComments(REVIEW, PATH))).toBe(7); // T6 is the highest, resolved ones included
+  expect(nextPin({ open: [], resolved: [] })).toBe(1);
 });
