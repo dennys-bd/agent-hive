@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { syncRepository } from '../../src/read-model/loop.js';
 import { WireError } from '../../src/read-model/normalize.js';
 import { labelsPath, repoPath, syncLabels, syncRepo } from '../../src/read-model/repo-scopes.js';
+import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
 import { fakeRest, NOW, ok, REPO, REPO_ROW, REST_REPO, restIssue, restLabel, SOURCE, SYNCED, T1, tempModel } from './fixtures.js';
 
@@ -61,4 +62,29 @@ test('syncRepository runs the repo and labels scopes before issues; the round na
   const quiet = fakeRest([ok(REST_REPO), ok([restLabel('bug')]), { status: 304 }, { status: 304 }]);
   const second = await syncRepository({ db, rest: quiet.rest, source: SOURCE, now: NOW }, REPO);
   assert.deepEqual(second.report, { kinds: [], requests: { 200: 2, 304: 2 } }, 'an identical 200 names no kind');
+});
+
+test('a round whose repo, labels and issues scopes all fail reports every failure, so none is missing from the log (#181)', async (t) => {
+  const db = await tempModel(t);
+  const rest: RestGet = async (path) => {
+    if (path === repoPath(REPO)) throw new Error('repo HTTP 403');
+    if (path === labelsPath(REPO)) throw new Error('labels HTTP 502');
+    throw new Error('issues HTTP 500');
+  };
+  const { error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  for (const failure of ['repo HTTP 403', 'labels HTTP 502', 'issues HTTP 500']) assert.match(String(error), new RegExp(failure));
+});
+
+test('a stop after a failed repo scope still reports that failure; the stop itself is none (#181)', async (t) => {
+  const db = await tempModel(t);
+  const calls: string[] = [];
+  const rest: RestGet = async (path) => {
+    calls.push(path);
+    if (path === repoPath(REPO)) throw new Error('repo HTTP 403');
+    return ok([]);
+  };
+  const { error } = await syncRepository({ db, rest, source: SOURCE, now: NOW, isStopped: () => calls.length >= 2 }, REPO);
+  assert.deepEqual(calls, [repoPath(REPO), labelsPath(REPO)]);
+  assert.match(String(error), /repo HTTP 403/);
+  assert.doesNotMatch(String(error), /stop/i);
 });

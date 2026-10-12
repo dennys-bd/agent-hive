@@ -374,7 +374,7 @@ test('a repo scope that fails does not stop labels, issues, comments or the firs
   assert.equal(db.scope(SOURCE, REPO, 'repo'), undefined);
 });
 
-test('a failing labels scope does not stop the repos row, and a repo scope\'s failure does not outlive a stop (#181)', async (t) => {
+test('a failing labels scope does not stop the repos row; a round stopped before it starts makes no request and reports no error (#181)', async (t) => {
   const db = await tempModel(t);
   const rest: RestGet = async (path) => {
     if (path === labelsPath(REPO)) throw new Error('gh api: HTTP 502');
