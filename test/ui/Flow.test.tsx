@@ -939,7 +939,7 @@ test('#870 in the trail widens the focus to the whole tree; × leaves it; a new 
   await user.click(focusOn('872'));
   rerender(<Flow state={{ ...s, tasks: s.tasks.filter((c) => c.item.itemId !== 'I872') }} />);
   expect(trail()).not.toBeInTheDocument();
-  expect(document.querySelector('.opacity-30')).toBeNull();
+  expect(document.querySelector('[data-flow-stages] .opacity-30')).toBeNull(); // the chart's, not the zoom controls' idle fade (#81)
 });
 
 test('Esc leaves the focus, prevented so the details panel\'s Escape never sees it, and the next Esc is the panel\'s; Esc in buscar tarefas only clears the search (#35)', async () => {
