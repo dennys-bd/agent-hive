@@ -139,6 +139,8 @@ test('a forged body never throws: odd event names, tool inputs, tool names and a
     codexHook('Stop', { agent_id: { id: 'x' } }),
   ];
   for (const body of forged) assert.doesNotThrow(() => codexRunner.hookPayload(body), JSON.stringify(body));
+});
+
 test('every run enables the Hive\'s plugin by a dotted key and names one hive:<name> role per agent, word for word; never the whole plugins table (#934)', () => {
   assert.deepEqual(ROLES.map(([, pair]) => pair.slice('agents.hive:'.length, pair.indexOf('='))), AGENT_NAMES);
   assert.deepEqual(ROLES[0], ['-c', 'agents.hive:architect={description="System design specialist. Consulted on the architectural path of /hive:new-spec, before the spec is written, for trade-offs between approaches, component boundaries and interface changes. Returns a recommendation; never writes files.",config_file="/h/codex/agents/architect.toml"}']);
