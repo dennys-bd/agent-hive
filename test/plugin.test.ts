@@ -6,7 +6,7 @@ import { pluginSource } from '../src/hooks-settings.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
 
 const frontmatter = (text: string): Record<string, string> => {
   const block = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -17,7 +17,7 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the eight agents and the two references, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the nine agents and the two references, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
@@ -96,4 +96,11 @@ test('every gh call /hive:new-pr makes for the docs PR names the docs repository
   const calls = text.match(/gh pr \w+[^`\n]*<docs (?:PR|head|base)>[^`\n]*/g) ?? [];
   assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the docs PR');
   for (const call of calls) assert.match(call, /-R <docs repo>/, `${call} does not pass -R <docs repo>`);
+});
+
+test('hive:design-reviewer reports and never edits: its tools hold no Write or Edit', async () => {
+  const front = frontmatter(await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8'));
+  const tools = (front.tools ?? '').split(',').map((tool) => tool.trim());
+  assert.ok(tools.includes('Read'), 'it reads the screens');
+  for (const tool of ['Write', 'Edit']) assert.ok(!tools.includes(tool), `design-reviewer declares ${tool}`);
 });
