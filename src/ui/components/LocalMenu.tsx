@@ -1,12 +1,10 @@
 import { MoreHorizontalIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { AGENTS } from '../../agents';
 import { sessionLabel } from '../../task-runs';
-import { AGENT_IDS } from '../../types';
 import { act } from '@/components/actions';
 import { continueLocalRun, openLocalRun } from '@/components/local-runs';
 import { CONTEXT_KIT, DROPDOWN_KIT, type MenuKit } from '@/components/menu-kit';
-import { agentName } from '@/components/NewRunButton';
+import { agentName, useAgentPicks } from '@/components/NewRunButton';
 import { useActivitySleepMenu } from '@/components/SleepMenu';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { sessionPath } from '@/lib/copy-targets';
@@ -24,6 +22,7 @@ const MENU_WIDTH = 'w-[236px]';
 // No stage, diff, flow or delete item: the local activity holds no task. The sleep dialog sits beside the menu: a pick closes it
 function useLocalMenu(activity: LocalActivity, kit: MenuKit): { items: ReactNode; dialog: ReactNode } {
   const openRun = useOpenRun();
+  const picks = useAgentPicks();
   const sleep = useActivitySleepMenu(activity, { kit });
   const { workspace } = activity;
   const { Item, Separator, Sub, SubTrigger, SubContent } = kit;
@@ -34,8 +33,8 @@ function useLocalMenu(activity: LocalActivity, kit: MenuKit): { items: ReactNode
         <SubTrigger>{t('activities.menu.newSession')}</SubTrigger>
         <SubContent>
           <Item onSelect={() => openLocalRun(workspace, 'terminal', openRun)}>{t('activities.menu.terminal')}</Item>
-          {/* #927: only an agent that can open a free session (Codex picks its own id; until #931) */}
-          {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <Item key={agent} onSelect={() => openLocalRun(workspace, agent, openRun)}>{agentName(agent)}</Item>)}
+          {/* #931: every agent; one boot did not find is disabled and named off PATH */}
+          {picks.map(({ agent, label, disabled }) => <Item key={agent} disabled={disabled} onSelect={() => openLocalRun(workspace, agent, openRun)}>{label}</Item>)}
         </SubContent>
       </Sub>
       {activity.kept.length > 0 && <Separator />}

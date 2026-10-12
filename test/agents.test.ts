@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGENTS, agentOf, agentRefusal, detectAgents, knownAgent, liveDefaultAgent, ranAgent, savedAgent, stageAgentIn } from '../src/agents.js';
+import { AGENTS, agentOf, agentRefusal, detectAgents, isAvailable, knownAgent, liveDefaultAgent, ranAgent, savedAgent, stageAgentIn } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
 import { AGENT_IDS, DEFAULT_AGENT, type AgentId, type Exec } from '../src/types.js';
 
@@ -75,4 +75,9 @@ test('codex runs as `codex`, reports plan limits (#929) and cannot choose its se
   assert.ok(['resume', 'fork'].every((c) => AGENTS.codex.subcommands.includes(c)), 'both open a session the user chose: the shim runs them as typed (#932)');
   assert.deepEqual(AGENTS.codex.shimFlags, ['-h', '--help', '-V', '--version'], 'no -c: Codex\'s is a config override, not continue (#932)');
   assert.ok(AGENTS.claude.shimFlags.includes('-c') && AGENTS.claude.shimFlags.includes('--resume=*'));
+});
+
+test('isAvailable is true only for an agent boot found; one it never checked is not (#931)', () => {
+  const found = [{ agent: 'claude' as const, available: true }, { agent: 'codex' as const, available: false }];
+  assert.deepEqual([isAvailable('claude', found), isAvailable('codex', found), isAvailable('codex', [])], [true, false, false]);
 });

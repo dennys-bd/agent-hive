@@ -1,14 +1,14 @@
 // The activity group (#584): what the activity's menus, + and bar offer, targeted at the open activity, or at the row a → opened. Built per
 // activity, so each run closes over its task.
-import { AGENTS } from '../../agents';
+import { ALL_AGENTS } from '../../agents';
 import { canDiff, canRunCommand, commandsOf, startMode } from '../../task-runs';
 import { nextPr } from '../../pull-requests';
 import { activityOf } from '../../activities';
 import { canOpenSession, removalBlocker, resolveWorkspace } from '../../tasks';
-import { AGENT_IDS, type Task, type DiffScope } from '../../types';
+import type { Task, DiffScope } from '../../types';
 import { runCommand } from '@/components/actions';
 import { asksBeforeSleepAll } from '@/components/SleepMenu';
-import { agentName, openNew } from '@/components/NewRunButton';
+import { agentPicks, openNew } from '@/components/NewRunButton';
 import { type MessageKey, t } from '@/i18n';
 import { type Activity, activityPrs, type LocalActivity, type TaskActivity } from '@/lib/activities';
 import { runShortcut } from '@/lib/dock-layout';
@@ -33,10 +33,12 @@ export function commandOperations(task: Task, ctx: OperationContext): Operation[
   }));
 }
 
-// nova sessão ›: one item per agent that can open a free session (#927: not Codex, which picks its own id, until #931), opened in the activity (a task's worktree or a workspace's checkout, #590)
+// nova sessão ›: one item per agent, Codex too (#931), one boot did not find disabled and named off PATH, opened in the activity (a task's
+// worktree or a workspace's checkout, #590)
 const newSession = (activity: Activity, op: OpFactory, isOpenable: boolean): Operation => op('newSession', 'activities.menu.newSession', {
   available: () => isOpenable,
-  children: () => AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => pick(`activity.newSession.${agent}`, agentName(agent), (c) => openNew(activity, agent, c.nav.openRun))),
+  children: (c) => agentPicks(c.agents ?? ALL_AGENTS).map(({ agent, label, disabled }) =>
+    pick(`activity.newSession.${agent}`, label, (run) => openNew(activity, agent, run.nav.openRun), { disabled: () => disabled })),
 });
 
 // the split key's listener mounts with the center, so only the shown activity splits

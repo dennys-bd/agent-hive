@@ -1,9 +1,8 @@
 import { ChevronDownIcon, Columns2Icon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { AGENT_IDS } from '../../types';
 import { KeyHint } from '@/components/KeyHint';
-import { AGENTS, ranAgent } from '../../agents';
-import { agentName, type NewRunKind, openNew, SEGMENT, SEGMENT_TRACK } from '@/components/NewRunButton';
+import { ranAgent } from '../../agents';
+import { type NewRunKind, openNew, SEGMENT, SEGMENT_TRACK, useAgentPicks } from '@/components/NewRunButton';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,8 +33,7 @@ export function sameKind(activity: Activity, group: TabGroup): NewRunKind | unde
   const run = activity.runs.find((r) => r.ptyId === ptyId);
   if (run === undefined) return undefined;
   if (run.kind === 'terminal') return 'terminal';
-  const agent = ranAgent(run);
-  return AGENTS[agent].canChooseSessionId ? agent : undefined; // #927: a codex run has no free session to repeat until #931
+  return ranAgent(run); // #931: every agent opens a free session, Codex included
 }
 
 /** A split's pick: a new session of `kind`, its pane beside `group`. */
@@ -98,6 +96,7 @@ interface SplitMenuProps { activity: Activity; group: TabGroup; onSplit: SplitOp
  * (the file pane is not built yet), the edge it goes to, and the same type as the shown tab with its key. Disabled by the rule the + reads. */
 export function SplitMenu({ activity, group, onSplit }: SplitMenuProps) {
   const same = sameKind(activity, group);
+  const picks = useAgentPicks();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={!canOpenIn(activity)}>
@@ -106,7 +105,7 @@ export function SplitMenu({ activity, group, onSplit }: SplitMenuProps) {
       <DropdownMenuContent align="end" className="w-[220px]">
         <DropdownMenuLabel>{t('split.with')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onSplit('terminal', group.id)}>{t('activities.menu.terminal')}</DropdownMenuItem>
-        {AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent) => <DropdownMenuItem key={agent} onSelect={() => onSplit(agent, group.id)}>{agentName(agent)}</DropdownMenuItem>)}
+        {picks.map(({ agent, label, disabled }) => <DropdownMenuItem key={agent} disabled={disabled} onSelect={() => onSplit(agent, group.id)}>{label}</DropdownMenuItem>)}
         <DropdownMenuItem disabled>{t('split.file')}<span className="ml-auto text-muted-foreground text-xs">{t('split.soon')}</span></DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel>{t('split.position')}</DropdownMenuLabel>

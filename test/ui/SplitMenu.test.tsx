@@ -49,7 +49,7 @@ test('dividir lists terminal, each agent and arquivo… em breve; terminal posts
   render(<Opened runs={[STAGE, SHELL]} />);
   await openSplit(user);
   expect(screen.getByText('novo pane ao lado com')).toBeInTheDocument();
-  expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['terminal', 'claude', 'arquivo…em breve', 'dividir com o mesmo tipoCtrl+Shift+\\']);
+  expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['terminal', 'claude', 'codex', 'arquivo…em breve', 'dividir com o mesmo tipoCtrl+Shift+\\']);
   expect(screen.getByRole('menuitem', { name: /^arquivo…/ })).toHaveAttribute('data-disabled');
   await user.click(screen.getByRole('menuitem', { name: 'terminal' }));
   posted('terminal');
@@ -98,8 +98,8 @@ test('Ctrl+Shift+\\ splits the focused group with its shown run\'s kind, the new
   expect(saved().I1.root).toMatchObject({ kind: 'split', axis: 'row', sizes: [28, 22, 50] }); // g1's half, 56/44
 });
 
-test('dividir com o mesmo tipo repeats no agent that cannot open a free session: a codex run offers none (#927)', () => {
+test('dividir com o mesmo tipo repeats the shown run\'s agent, codex too (#931)', () => {
   const group = { kind: 'group' as const, id: 'g1', tabs: [{ kind: 'run' as const, ptyId: STAGE.ptyId }], active: 0 };
-  expect(sameKind({ runs: [{ ...STAGE, agent: 'codex' }] } as unknown as Activity, group)).toBeUndefined();
+  expect(sameKind({ runs: [{ ...STAGE, agent: 'codex' }] } as unknown as Activity, group)).toBe('codex');
   expect(sameKind({ runs: [STAGE] } as unknown as Activity, group)).toBe('claude');
 });

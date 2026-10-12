@@ -1,9 +1,9 @@
 import { PlusIcon } from 'lucide-react';
 import { createContext, useContext, useEffect, useRef } from 'react';
-import { AGENTS, agentName } from '../../agents';
+import { agentName, ALL_AGENTS, isAvailable } from '../../agents';
 import { nextPr } from '../../pull-requests';
 import { canDiff } from '../../task-runs';
-import { type Activity as LiveActivity, AGENT_IDS, type AgentId, type Task, type TaskPr, DEFAULT_AGENT, type DiffScope, type OpenResult, type OperationId } from '../../types';
+import { type Activity as LiveActivity, AGENT_IDS, type AgentAvailability, type AgentId, type Task, type TaskPr, DEFAULT_AGENT, type DiffScope, type OpenResult, type OperationId } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { KeyHint } from '@/components/KeyHint';
 import { openLocalRun } from '@/components/local-runs';
@@ -31,6 +31,20 @@ export const SEGMENT = 'flex-1 justify-center py-0.5 font-medium text-[13px] foc
 /** The config's defaultAgent (#516), which the newSession key opens (#536): App provides it from the settings info the page already reads. */
 export const DefaultAgentContext = createContext<AgentId>(DEFAULT_AGENT);
 
+/** The agents boot found (#516), SettingsInfo.agents: App provides them; every agent until it does (#931). */
+export const AgentsContext = createContext<readonly AgentAvailability[]>(ALL_AGENTS);
+
+/** An agent as every menu that opens a session lists it (#931): all of them, one boot did not find disabled and named as AgentSelect names it. */
+export interface AgentPick { agent: AgentId; label: string; disabled: boolean }
+
+export const agentPicks = (agents: readonly AgentAvailability[]): AgentPick[] => AGENT_IDS.map((agent) => {
+  const isOn = isAvailable(agent, agents);
+  return { agent, label: isOn ? agentName(agent) : `${agentName(agent)} · ${t('settings.agent.offPath')}`, disabled: !isOn };
+});
+
+/** agentPicks of the agents App provides. */
+export const useAgentPicks = (): AgentPick[] => agentPicks(useContext(AgentsContext));
+
 // The diff the + offers (#591): the stage's while it has a recorded start, else the worktree's; none without a worktree
 const diffScopeOf = (task: Task, activity: LiveActivity | undefined): DiffScope | undefined =>
   (canDiff(task, activity, 'stage') ? 'stage' : canDiff(task, activity, 'worktree') ? 'worktree' : undefined);
@@ -41,10 +55,11 @@ export function useNewRunKeys(target: RunTarget): void {
   const openRun = useOpenRun();
   const openDiff = useOpenDiff();
   const agent = useContext(DefaultAgentContext);
+  const agents = useContext(AgentsContext);
   const latest = useRef<Record<'session' | 'diff', () => void>>({ session: () => undefined, diff: () => undefined });
   useEffect(() => {
     latest.current = {
-      session: () => { if (canOpenIn(target)) openNew(target, agent, openRun); },
+      session: () => { if (canOpenIn(target) && isAvailable(agent, agents)) openNew(target, agent, openRun); }, // #931: nothing where its item is disabled
       diff: () => startEntry(target, 'diff', openRun, openDiff),
     };
   });
@@ -71,15 +86,15 @@ export function openNew(target: RunTarget, kind: NewRunKind, openRun?: OpenRun, 
  * its buttons, so the two never drift. `disabled` where the + is (canOpenIn), and the diff also with no worktree to diff. */
 export interface NewRunEntry { kind: NewRunKind | 'diff'; label: string; key?: OperationId; disabled: boolean }
 
-/** The new-run entries of an activity (#759): terminal, each agent (the default one carries newSession's key) and, on a task's, its diff. */
-export function newRunEntries(target: RunTarget, defaultAgent: AgentId): NewRunEntry[] {
+/** The new-run entries of an activity (#759): terminal, each agent (the default one carries newSession's key; one off PATH disabled, #931)
+ * and, on a task's, its diff. */
+export function newRunEntries(target: RunTarget, defaultAgent: AgentId, agents: readonly AgentAvailability[]): NewRunEntry[] {
   const isClosed = !canOpenIn(target);
-  // #927: an agent that picks its own session id (Codex) opens no free session until #931, so it is not offered
-  const agents = AGENT_IDS.filter((agent) => AGENTS[agent].canChooseSessionId).map((agent): NewRunEntry => ({ kind: agent, label: agentName(agent), key: agent === defaultAgent ? 'newSession' : undefined, disabled: isClosed }));
+  const sessions = agentPicks(agents).map(({ agent, label, disabled }): NewRunEntry => ({ kind: agent, label, key: agent === defaultAgent ? 'newSession' : undefined, disabled: isClosed || disabled }));
   const diff: NewRunEntry[] = target.kind === 'task'
     ? [{ kind: 'diff', label: t('activity.new.diff'), key: 'openDiff', disabled: isClosed || diffScopeOf(target.task, target.activity) === undefined }]
     : [];
-  return [{ kind: 'terminal', label: t('activities.menu.terminal'), key: 'newTerminal', disabled: isClosed }, ...agents, ...diff];
+  return [{ kind: 'terminal', label: t('activities.menu.terminal'), key: 'newTerminal', disabled: isClosed }, ...sessions, ...diff];
 }
 
 /** An entry's pick (#759): a run opened as the + opens it, or the task's diff, the stage's while it has a recorded start, else the worktree's
@@ -125,6 +140,7 @@ export function NewRunButton({ activity, onNewFile }: { activity: RunTarget & Pa
   const openRun = useOpenRun();
   const openDiff = useOpenDiff();
   const defaultAgent = useContext(DefaultAgentContext);
+  const agents = useContext(AgentsContext);
   const task = activity.kind === 'task' ? activity.task : undefined; // the PR item is a task's (#592)
   return (
     <DropdownMenu>
@@ -133,7 +149,7 @@ export function NewRunButton({ activity, onNewFile }: { activity: RunTarget & Pa
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px]">
         <DropdownMenuLabel>{t('activity.new.title', { task: referenceOf(activity) })}</DropdownMenuLabel>
-        {newRunEntries(activity, defaultAgent).map((entry) => (
+        {newRunEntries(activity, defaultAgent, agents).map((entry) => (
           <DropdownMenuItem key={entry.kind} disabled={entry.disabled} onSelect={() => startEntry(activity, entry.kind, openRun, openDiff)}>
             {entry.label}{entry.key && <KeyHint id={entry.key} />}
           </DropdownMenuItem>
