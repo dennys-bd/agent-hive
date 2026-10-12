@@ -335,7 +335,7 @@ export function toSettingsBody(draft: SettingsDraft): SettingsBody {
     stages: draft.stages.map((c) => stageFrom(c, draft.sources)), ...(Object.keys(stageRenames).length === 0 ? {} : { stageRenames }),
     transitions: draft.transitions.map((d) => transitionFrom(d, draft.stages, draft.sources)), // #134: always sent, [] included
     budget: { ...(hour ? { maxTokensPerHour: hour } : {}), ...(day ? { maxTokensPerDay: day } : {}) },
-    usageRules: rulesFrom(renamedRuleDrafts(draft.rules, stageRenames)), language: draft.language, ...optional('branch', draft.branch),
+    usageRules: rulesFrom(renamedRuleDrafts(draft.rules, stageRenames), draft.defaultAgent), language: draft.language, ...optional('branch', draft.branch),
     // always sent, '' included: optional() would omit the key and saveSettings would keep the old branch, so clearing the field could never work
     baseBranch: draft.baseBranch.trim(),
     onClose: draft.onClose, // always sent (#513)

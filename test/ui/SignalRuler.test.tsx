@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, test } from 'vitest';
 import { SignalRuler } from '@/components/settings/SignalRuler';
-import { setLanguage } from '@/i18n';
-import { emptyRule, type RuleDraft } from '@/lib/settings-rules';
+import { setLanguage, t } from '@/i18n';
+import { emptyRule, MEASURE_LABEL, type RuleDraft } from '@/lib/settings-rules';
 
 beforeEach(() => setLanguage('pt'));
 
@@ -54,4 +54,9 @@ test('no 0% / 100% end labels', () => {
   render(<SignalRuler source="session" rows={MOCK} />);
   expect(screen.queryByText('100%')).toBeNull();
   expect(screen.queryByText('0%')).toBeNull();
+});
+
+test('a ruler of a non-default agent names it after its measure (#929)', () => {
+  render(<SignalRuler source="week" agent="codex" rows={[]} />);
+  expect(screen.getByRole('group', { name: `${t(MEASURE_LABEL.week)} · codex` })).toBeInTheDocument();
 });
