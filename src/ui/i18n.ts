@@ -1661,6 +1661,7 @@ const en = {
   'repos.outOfFlow': 'out of the flow',
   'repos.prDraft': '#{n} draft',
   'repos.footer.open': '↵ opens the issue',
+  'repos.syncing': 'syncing…', // #182: a repository the read model never synced; the spinner's label
   'issue.description': 'description', // #757: the issue page
   'issue.comments': 'comments · {n}',
   'issue.moreComments': '{n} more on GitHub ›',
@@ -3474,6 +3475,7 @@ const pt: Record<MessageKey, string> = {
   'repos.outOfFlow': 'fora do fluxo',
   'repos.prDraft': '#{n} rascunho',
   'repos.footer.open': '↵ abre a issue',
+  'repos.syncing': 'sincronizando…',
   'issue.description': 'descrição',
   'issue.comments': 'comentários · {n}',
   'issue.moreComments': 'mais {n} no GitHub ›',

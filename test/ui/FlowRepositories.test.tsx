@@ -9,7 +9,7 @@ import { readView, resetViewState } from '@/lib/view-state';
 import type { RepoSummary } from '../../src/types';
 
 const repo = (name: string, day: number): RepoSummary => ({
-  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: null, lastActivity: `2026-10-0${day}T09:00:00Z`,
+  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z', lastActivity: `2026-10-0${day}T09:00:00Z`,
 });
 // newest first by last activity: g f e d c b a
 const LIST = [repo('a', 1), repo('b', 2), repo('c', 3), repo('d', 4), repo('e', 5), repo('f', 6), repo('g', 7)];
@@ -153,4 +153,14 @@ test('any readModel event reads the repositories again, whatever its repository 
   listed = [...LIST, repo('h', 8)];
   act(() => emitReadModelEvent({ repository: 'acme/elsewhere', kinds: ['labels'] }));
   expect(await screen.findByTitle('acme/h')).toBeInTheDocument();
+});
+
+test('a row whose repository the model never synced shows sincronizando… in place of its open PRs (#182)', async () => {
+  listed = [{ ...repo('a', 1), syncedAt: null }, repo('b', 2)];
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/a');
+  expect(within(screen.getByTitle('acme/a')).getByRole('status', { name: 'sincronizando…' })).toHaveClass('text-muted-foreground');
+  expect(within(screen.getByTitle('acme/a')).queryByText('1')).not.toBeInTheDocument();
+  expect(within(screen.getByTitle('acme/b')).queryByRole('status')).not.toBeInTheDocument();
+  expect(within(screen.getByTitle('acme/b')).getByText('2')).toHaveClass('tabular-nums');
 });
