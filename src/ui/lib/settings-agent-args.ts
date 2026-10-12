@@ -9,4 +9,4 @@ export const agentArgsDraft = (saved: Partial<Record<AgentId, readonly string[]>
 
 /** What the form sends: each non-blank line one argument, kept as typed; validateSettings refuses nothing here, any line is an argument. */
 export const agentArgsFrom = (draft: Record<AgentId, string>): Record<AgentId, string[]> =>
-  Object.fromEntries(AGENT_IDS.map((id) => [id, draft[id].split('\n').filter((line) => line.trim() !== '')])) as Record<AgentId, string[]>;
+  Object.fromEntries(AGENT_IDS.map((id) => [id, draft[id].split(/\r?\n/).filter((line) => line.trim() !== '')])) as Record<AgentId, string[]>;
