@@ -118,7 +118,7 @@ const sleepingTerminals = (terminals: KeptTerminal[]): SleepingRun[] =>
 
 // The sleeping runs of one activity (#672), named by the session they hold, as their live run was
 function sleepingIn(slept: readonly SleptRun[] | undefined, isOwn: (run: SleptRun) => boolean, sessions: Session[]): SleepingRun[] {
-  return (slept ?? []).filter(isOwn).map((s) => ({ run: namedRun(s.ptyId, s.sessionId, sessions, s.kind), sessionId: s.sessionId, ...(s.cause === undefined ? {} : { cause: s.cause }) }));
+  return (slept ?? []).filter(isOwn).map((s) => ({ run: namedRun(s.ptyId, s.sessionId, sessions, s.kind, s.agent), sessionId: s.sessionId, ...(s.cause === undefined ? {} : { cause: s.cause }) }));
 }
 
 function taskActivityOf(task: Task, state: Slice): TaskActivity | undefined {
@@ -201,9 +201,9 @@ export function withRestored(activity: Activity, layout: CenterLayout | undefine
   const asleep = new Set(sleepingSessions(activity));
   const shown = new Set([...activity.runs, ...(activity.slept ?? []).map((s) => s.run)].map((run) => run.ptyId));
   const sessions = activity.kind === 'local' ? activity.kept.map((k) => k.session) : activity.sessions.flatMap((s) => s.session ?? []);
-  const restored = groupsOf(layout.root).flatMap((group) => group.tabs).flatMap((tab): SleepingRun[] =>
-    (tab.kind === 'run' && tab.sessionId !== undefined && asleep.has(tab.sessionId) && !shown.has(tab.ptyId)
-      ? [{ run: namedRun(tab.ptyId, tab.sessionId, sessions, 'session'), sessionId: tab.sessionId }]
-      : []));
+  const restored = groupsOf(layout.root).flatMap((group) => group.tabs).flatMap((tab): SleepingRun[] => {
+    const session = tab.kind === 'run' && !shown.has(tab.ptyId) ? sessions.find((s) => s.id === tab.sessionId && asleep.has(s.id)) : undefined;
+    return session === undefined || tab.kind !== 'run' ? [] : [{ run: namedRun(tab.ptyId, session.id, sessions, 'session', session.agent), sessionId: session.id }]; // #925: its session's agent
+  });
   return restored.length === 0 ? activity : { ...activity, slept: [...(activity.slept ?? []), ...restored] };
 }

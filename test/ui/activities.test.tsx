@@ -25,7 +25,7 @@ test('a run command alone makes no activity and a project shell never does; a pl
   expect(of([], [terminal('C1', 'I1', 'test'), projectShell])).toEqual([]);
   const [only] = of([worker('s2', 'I2', { sessionId: 'abcdef123456' })], [terminal('C1', 'I1', 'test'), terminal('S2', 'I2')]);
   expect(only.task.item.itemId).toBe('I2');
-  expect(only.runs).toEqual([{ ptyId: 'W-s2', label: 'Claude · abcdef12', kind: 'stage', session: 'abcdef12' }, { ptyId: 'S2', label: 'Terminal', kind: 'terminal' }]);
+  expect(only.runs).toEqual([{ ptyId: 'W-s2', label: 'Claude · abcdef12', kind: 'stage', agent: 'claude', session: 'abcdef12' }, { ptyId: 'S2', label: 'Terminal', kind: 'terminal' }]);
 });
 
 test('status is the most urgent of the task\'s workers, and empty for a task with terminals only (#457)', () => {
@@ -71,7 +71,7 @@ test('one local activity per workspace comes first, in the config\'s order, with
   const [hive, site] = [localPairOf('hive', [kept, other]), localPairOf('site')];
   const list = activitiesOf(withPointedWork({ tasks: TASKS, workers, terminals, workspaces: ['hive', 'site'], activities: [hive.activity, site.activity], activityRecords: [hive.record, site.record] }));
   expect(list.map(activityKey)).toEqual(['local/hive', 'local/site', 'I1']);
-  const run = { ptyId: 'L1', label: 'Claude · fix login', kind: 'session', session: 'fix login' };
+  const run = { ptyId: 'L1', label: 'Claude · fix login', kind: 'session', agent: 'claude', session: 'fix login' };
   expect(list[0]).toEqual({
     kind: 'local', ...hive, workspace: 'hive', runs: [run, { ptyId: 'P1', label: 'Terminal', kind: 'terminal' }], sessions: [{ run, status: 'waiting', sessionId: id }],
     kept: [{ session: kept, run, status: 'waiting' }, { session: other, status: 'empty' }], slept: [], // #672: none asleep
@@ -151,7 +151,7 @@ test('a task\'s and a workspace\'s sleeping runs are listed apart from their liv
   const pairs = localPairs(['hive']);
   const [local, own] = activitiesOf(withPointedWork({ tasks: [sleepy], workers: [], terminals: [], workspaces: ['hive'], ...pairs, slept }));
   expect(own?.runs).toEqual([]);
-  expect(own?.slept).toEqual([{ run: { ptyId: 'W2', label: 'Claude · abcdef12', kind: 'session', session: 'abcdef12' }, sessionId: S, cause: 'manual' }]);
+  expect(own?.slept).toEqual([{ run: { ptyId: 'W2', label: 'Claude · abcdef12', kind: 'session', agent: 'claude', session: 'abcdef12' }, sessionId: S, cause: 'manual' }]);
   expect(local?.slept?.map((s) => s.run.ptyId)).toEqual(['W5']);
 });
 

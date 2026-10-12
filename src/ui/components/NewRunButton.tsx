@@ -1,6 +1,6 @@
 import { PlusIcon } from 'lucide-react';
 import { createContext, useContext, useEffect, useRef } from 'react';
-import { AGENTS } from '../../agents';
+import { agentName } from '../../agents';
 import { nextPr } from '../../pull-requests';
 import { canDiff } from '../../task-runs';
 import { type Activity as LiveActivity, AGENT_IDS, type AgentId, type Task, type TaskPr, DEFAULT_AGENT, type DiffScope, type OpenResult, type OperationId } from '../../types';
@@ -21,8 +21,7 @@ import { shownSize } from '@/lib/xterm-setup';
 /** What a new run opens (#491, #536): a terminal, or an agent's new session. */
 export type NewRunKind = 'terminal' | AgentId;
 
-/** An agent as a menu names it (#536): its own label, lowercase as every label is. */
-export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLowerCase();
+export { agentName } from '../../agents';
 
 /** The handoff's segmented control inside a menu (#536): a muted track, the checked segment in the page's background. The track and accent
  * share a colour, so the keyboard's focus shows as a ring instead of a fill. */

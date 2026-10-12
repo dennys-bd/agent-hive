@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { isTaskSession, parseThreadAnchor, recipientsOf, textOf } from './review-bodies.js';
 import type { Deliver } from './review-deliver.js';
-import { batchText, commentText, missed } from './review-message.js';
+import { agentsOf, batchText, commentText, missed, type AgentOf } from './review-message.js';
 import { appendMessage, convertDrafts, draftMentions, type Outcome, pinned, replyTarget, resolve, settleMessage, startThread } from './review-store.js';
 import type { TaskRouteDeps } from './server-tasks.js';
 import { badRequest, errorMessage, liveTaskIn, readReview, refuse, type ReviewRouteDeps, storeEdit, writeReview } from './server-review.js';
@@ -48,16 +48,17 @@ const mentionsOf = (state: State, task: Task, raw: unknown): string[] | undefine
   (raw === undefined ? undefined : recipientsOf(state, task.item.itemId, raw) ?? null);
 
 // The stored message delivered to what it still owes, then settled (#591): the text was written first, so a failure never loses it
-async function deliverAndSettle(deps: ThreadRouteDeps, res: Response, task: Task, thread: Pick<ReviewThread, 'id' | 'anchor'>, message: ReviewMessage): Promise<void> {
+async function deliverAndSettle(deps: ThreadRouteDeps, res: Response, { task, state }: { task: Task; state: State }, thread: Pick<ReviewThread, 'id' | 'anchor'>, message: ReviewMessage): Promise<void> {
   if (delivering.has(message.id)) return refuse(res, { status: HTTP_CONFLICT, message: DELIVERING_MESSAGE });
   delivering.add(message.id);
   try {
     const taskId = task.item.itemId;
+    const agentOf = agentsOf(state, taskId); // #925: each mention by its session's agent, read as the delivery goes out
     // Read again through the store's queue, now that no other delivery of it can start: one that settled since the route's read owes nothing.
     // The stored thread says what each recipient has not received yet
     const found = await owed(deps, res, taskId, thread.id, message.id);
     if (found === undefined) return;
-    const textFor = (asked: string): string => commentText(thread.anchor, thread.id, message, asked, missed(found.thread, message.id, asked));
+    const textFor = (asked: string): string => commentText(thread.anchor, thread.id, message, asked, agentOf, missed(found.thread, message.id, asked));
     const outcome = await deliverAll(deps.deliver, taskId, found.pending, textFor);
     await writeReview(deps, res, taskId, (file) => settleMessage(file, thread.id, message.id, outcome), { thread: thread.id, message: message.id, failed: outcome.failed });
   } finally {
@@ -108,7 +109,7 @@ function registerThreadRoute(app: Express, deps: ThreadRouteDeps): void {
     // Pinned inside the store's edit (#111); the stored thread is the one delivered, so the text and the file carry the same pin
     const stored = await storeEdit(deps, res, task.item.itemId, (file) => startThread(file, { id, anchor: pinned(file, anchor), participants: [], messages: [message] }));
     const thread = stored?.threads.find((candidate) => candidate.id === id);
-    if (thread) await deliverAndSettle(deps, res, task, thread, message);
+    if (thread) await deliverAndSettle(deps, res, live, thread, message);
   });
 }
 
@@ -124,7 +125,7 @@ function registerMessageRoutes(app: Express, deps: ThreadRouteDeps): void {
     const text = textOf(body.text);
     if (text === undefined || !to || mentions === null) return badRequest(res, REPLY_MESSAGE);
     const message = userMessage(text, to, mentions);
-    if (await storeEdit(deps, res, found.task.item.itemId, (file) => appendMessage(file, found.thread.id, message))) await deliverAndSettle(deps, res, found.task, found.thread, message);
+    if (await storeEdit(deps, res, found.task.item.itemId, (file) => appendMessage(file, found.thread.id, message))) await deliverAndSettle(deps, res, found, found.thread, message);
   });
   app.post('/tasks/:id/review/threads/:thread/messages/:message/retry', async (req: Request, res: Response) => {
     const found = await threadOf(deps, req, res);
@@ -132,7 +133,7 @@ function registerMessageRoutes(app: Express, deps: ThreadRouteDeps): void {
     const message = found.thread.messages.find((m) => m.id === req.params.message);
     if (!message) return refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_MESSAGE_MESSAGE });
     if (!message.failed || !message.pending?.length) return refuse(res, { status: HTTP_CONFLICT, message: NOTHING_TO_RETRY_MESSAGE });
-    await deliverAndSettle(deps, res, found.task, found.thread, message);
+    await deliverAndSettle(deps, res, found, found.thread, message);
   });
 }
 
@@ -172,9 +173,9 @@ async function saveBatch(deps: ThreadRouteDeps, taskId: string, session: string,
 }
 
 // One session's drafts in one message (#591): delivered first, turned into conversations only once it arrived, so nothing is half-sent
-async function submitGroup(deps: ThreadRouteDeps, taskId: string, session: string, drafts: ReviewDraft[]): Promise<GroupResult> {
+async function submitGroup(deps: ThreadRouteDeps, taskId: string, session: string, drafts: ReviewDraft[], agentOf: AgentOf): Promise<GroupResult> {
   const items = drafts.map((draft) => ({ draft, threadId: randomUUID(), messageId: randomUUID() }));
-  const delivery = await deps.deliver(taskId, session, batchText(items.map(({ draft, threadId }) => ({ anchor: draft.anchor, threadId, text: draft.text, ...draftMentions(draft) })), session));
+  const delivery = await deps.deliver(taskId, session, batchText(items.map(({ draft, threadId }) => ({ anchor: draft.anchor, threadId, text: draft.text, ...draftMentions(draft) })), session, agentOf));
   if (!delivery.ok) return 'failed';
   const saved = await saveBatch(deps, taskId, session, (file) => convertDrafts(file, items, delivery.session, new Date().toISOString()));
   if (!saved) return 'unsaved';
@@ -183,14 +184,14 @@ async function submitGroup(deps: ThreadRouteDeps, taskId: string, session: strin
 }
 
 // skip: the sessions whose last batch arrived but was not saved; their drafts would paste it again (#591). kind: the pane's own drafts (#111)
-async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, skip: string[], kind: 'lines' | 'design'): Promise<void> {
+async function submitAll(deps: ThreadRouteDeps, res: Response, taskId: string, skip: string[], kind: 'lines' | 'design', agentOf: AgentOf): Promise<void> {
   const file = await readReview(deps, res, taskId);
   if (!file) return;
   const drafts = file.drafts.filter((d) => !skip.includes(d.session) && isDesignAnchor(d.anchor) === (kind === 'design'));
   if (drafts.length === 0) return refuse(res, { status: HTTP_CONFLICT, message: NO_DRAFT_MESSAGE });
   const sessions = [...new Set(drafts.map((d) => d.session))];
   try {
-    const results = await Promise.all(sessions.map((s) => submitGroup(deps, taskId, s, drafts.filter((d) => d.session === s))));
+    const results = await Promise.all(sessions.map((s) => submitGroup(deps, taskId, s, drafts.filter((d) => d.session === s), agentOf)));
     const having = (result: GroupResult): string[] => sessions.filter((_s, i) => results[i] === result);
     res.json({ failed: having('failed'), ...(having('unsaved').length > 0 ? { unsaved: having('unsaved') } : {}) });
   } catch (err) {
@@ -211,7 +212,7 @@ function registerSubmitRoute(app: Express, deps: ThreadRouteDeps): void {
     if (submitting.has(taskId)) return refuse(res, { status: HTTP_CONFLICT, message: SUBMITTING_MESSAGE });
     submitting.add(taskId);
     try {
-      await submitAll(deps, res, taskId, skip, kind);
+      await submitAll(deps, res, taskId, skip, kind, agentsOf(state, taskId));
     } finally {
       submitting.delete(taskId);
     }

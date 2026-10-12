@@ -56,6 +56,9 @@ export const liveDefaultAgent = (state: Pick<State, 'defaultAgent'>): AgentId =>
 export const stageAgentIn = (state: Pick<State, 'defaultAgent'>, stage: Pick<Stage, 'agent'>): AgentId =>
   agentOf(stage, { defaultAgent: liveDefaultAgent(state) });
 
+/** An agent as the UI and a review mention name it (#536, #925): its own label, lowercase as every label is. The one agent-to-label map. */
+export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLowerCase();
+
 /** Why a run of `agent` cannot start, or undefined: an agent boot did not find (or never checked) is refused before any worktree. */
 export function agentRefusal(agent: AgentId, agents: readonly AgentAvailability[]): string | undefined {
   return agents.some((a) => a.agent === agent && a.available) ? undefined : `agent ${agent} is not on PATH: install it, then restart the Hive`;

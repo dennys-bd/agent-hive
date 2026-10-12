@@ -39,7 +39,7 @@ test('POST /threads stores the conversation, delivers the comment to each recipi
   assert.deepEqual(thread.participants, [SESSION_A, NEW_ID]);
   assert.deepEqual([thread.messages[0].text, thread.messages[0].to, thread.messages[0].pending], ['why?', [SESSION_A, NEW_ID], undefined]);
   assert.deepEqual(h.delivered.map((d) => d.to), [SESSION_A, 'new']);
-  assert.equal(h.delivered[0].text, commentText(ANCHOR, answer.thread, { text: 'why?' }, SESSION_A));
+  assert.equal(h.delivered[0].text, commentText(ANCHOR, answer.thread, { text: 'why?' }, SESSION_A, () => 'claude'));
 });
 
 test('a failed delivery keeps the message failed with no participant; reenviar delivers it to that recipient only (#591)', async (t) => {
@@ -93,7 +93,7 @@ test('submit sends each session its drafts in one message, turns them into conve
   assert.deepEqual(h.delivered.map((d) => d.to), [SESSION_A, SESSION_B]);
   const file = await h.file();
   assert.deepEqual(file.threads.map((th) => [th.messages[0].text, th.participants]), [['one', [SESSION_A]], ['two', [SESSION_A]]]);
-  assert.equal(h.delivered[0].text, batchText(file.threads.map((th) => ({ anchor: th.anchor, threadId: th.id, text: th.messages[0].text })), SESSION_A));
+  assert.equal(h.delivered[0].text, batchText(file.threads.map((th) => ({ anchor: th.anchor, threadId: th.id, text: th.messages[0].text })), SESSION_A, () => 'claude'));
   assert.deepEqual(file.drafts.map((d) => d.text), ['three']);
   h.failing.clear();
   await send(h.base, 'POST', '/tasks/local%3A1/review/submit');
@@ -290,7 +290,7 @@ test('a design comment sent now is pinned in the store edit and delivers the pin
   assert.equal(res.status, 200);
   const [stored] = (await h.file()).threads;
   assert.deepEqual(stored.anchor, { ...DESIGN, pin: 2 });
-  assert.equal(h.delivered[0].text, commentText(stored.anchor, thread, { text: 'now' }, SESSION_A));
+  assert.equal(h.delivered[0].text, commentText(stored.anchor, thread, { text: 'now' }, SESSION_A, () => 'claude'));
   assert.match(h.delivered[0].text, /^Design comment 2 on /);
   assert.equal((await send(h.base, 'POST', '/tasks/local%3A1/review/threads', { anchor: { ...DESIGN, theme: 'sepia' }, text: 'x', to: [SESSION_A] })).status, 400);
 });
