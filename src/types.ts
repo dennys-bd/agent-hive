@@ -1124,7 +1124,7 @@ export interface Config {
   consoleLines: number; // required, no default (#353): the most lines a console channel keeps, summed over its runs; integer CONSOLE_LINES_MIN..CONSOLE_LINES_MAX
   /** Branch a new worker's worktree starts from (as origin/<branch>); absent = the remote's default (origin/HEAD), else main. */
   baseBranch?: string;
-  claudeArgs: string[];
+  agentArgs: Record<AgentId, string[]>; // #924: each agent's own arguments, after the Hive's flags and before the model and the session; required, every agent
   budget: Budget; // copied to State.budget by setBudget on configure / reconfigure
   usageRules: UsageRule[]; // copied to State.usageRules by setUsageRules on configure / reconfigure
   /** What closing the last main window does (#513, was #198's menuBar + stopOnClose): menuBar = the viewer stays in the menu bar and the
@@ -1528,6 +1528,8 @@ export interface SettingsBody {
   closeTerminalTabNotice?: boolean;
   /** Same rules as onClose (#516). */
   defaultAgent?: AgentId;
+  /** #924: the form always sends it; an API caller that omits it keeps the saved lists; a first setup without it starts with none. */
+  agentArgs?: Record<AgentId, string[]>;
   /** Same rules as onClose (#754). */
   fileIcons?: FileIcons;
   /** Same rules as onClose (#821). */

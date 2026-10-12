@@ -192,7 +192,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       launch: {
         ptyId, slug, cwd, env, port, hooksPath, pluginDir, mcpPath, promptPath, ...sized(size), ...lspPlugin(lspDir(workspace)),
         protocolPath: taskProtocol(home, runtime, task).stage, // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
-        args: runArgs(activity, stage, session, config.claudeArgs, agent),
+        args: runArgs(activity, stage, session, config.agentArgs[agent], agent),
       },
       ...handlers(ptyId, slug),
     });
@@ -223,8 +223,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
     const [mcpPath, promptPath] = files;
-    // the user's own session stays claude's (#516)
-    const args = copy ? copyArgs(copy, sessionId, config.claudeArgs) : runArgs({ sessionId }, {}, continues ? 'continue' : 'new', config.claudeArgs, 'claude');
+    // the user's own session stays claude's (#516); temporary (#924): agentArgs.claude until Task 8 reads the worker's own agent's list
+    const args = copy ? copyArgs(copy, sessionId, config.agentArgs.claude) : runArgs({ sessionId }, {}, continues ? 'continue' : 'new', config.agentArgs.claude, 'claude');
     // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
     const told = task === undefined ? {} : { protocolPath: taskProtocol(home, runtime, task).session }; // #797: the task's workspace's
     pool.start({

@@ -119,7 +119,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
     const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
     const lspPluginDir = workspace === undefined ? undefined : deps.lspDir(workspace);
     const reply = capturedReply(runId, capturedArgs({
-      sessionId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, claudeArgs: runtime.config.claudeArgs,
+      sessionId, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir, claudeArgs: runtime.config.agentArgs.claude, // temporary (#924): Task 8
       ...(lspPluginDir === undefined ? {} : { lspPluginDir }),
       ...(onTask ? { protocolPath: task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session } : {}),
     }));

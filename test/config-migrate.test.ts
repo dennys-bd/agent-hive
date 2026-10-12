@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadConfig, parseConfig } from '../src/config.js';
-import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
+import { migrateConfig, migrateRetiredKeys, migrateTransitions, migrateDefaultAgent, migrateAgentArgs, migrateFileIcons, migrateOnClose, migrateStageActions, migrateWorkspaces, migrateCreateIn, transitionsOf } from '../src/config-migrate.js';
 import { combConfig, FILTER, LOCAL_STAGES } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -250,4 +250,21 @@ test('a pre-#846 Comb gains hiveSource true and createIn hive, today\'s behaviou
   assert.equal(combOf(migrateCreateIn({ ...raw, comb: { ...comb, hiveSource: 'no' } })).hiveSource, 'no');
   for (const odd of [null, 7, 'x', {}, { comb: 'x' }]) assert.equal(migrateCreateIn(odd), odd, JSON.stringify(odd));
   assert.equal(parseConfig(migrateConfig(old)).comb.createIn, 'hive', 'readConfig\'s chain runs it');
+});
+
+test('migrateAgentArgs moves claudeArgs into agentArgs.claude, gives a file with neither an empty list, drops claudeArgs either way, and is idempotent (#924)', () => {
+  const file = combConfig({ stages: LOCAL_STAGES });
+  const { agentArgs: _gone, ...bare } = file;
+  assert.deepEqual(migrateAgentArgs({ ...bare, claudeArgs: ['--permission-mode', 'auto'] }), { ...bare, agentArgs: { claude: ['--permission-mode', 'auto'] } });
+  assert.deepEqual(migrateAgentArgs(bare), { ...bare, agentArgs: { claude: [] } });
+  assert.deepEqual(migrateAgentArgs({ ...file, claudeArgs: ['--verbose'] }), file, 'a file with both keeps agentArgs; claudeArgs goes');
+  assert.equal(migrateAgentArgs(file), file, "today's shape comes back as the same reference");
+  const once = migrateAgentArgs({ ...bare, claudeArgs: ['--x'] });
+  assert.deepEqual(migrateAgentArgs(once), once, 'idempotent');
+  assert.equal(migrateAgentArgs('x'), 'x');
+});
+
+test('migrateConfig runs migrateAgentArgs: a pre-#924 file parses with its claudeArgs as agentArgs.claude (#924)', () => {
+  const { agentArgs: _gone, ...raw } = combConfig({ stages: LOCAL_STAGES });
+  assert.deepEqual(parseConfig(migrateConfig({ ...raw, claudeArgs: ['--permission-mode', 'auto'] })).agentArgs, { claude: ['--permission-mode', 'auto'] });
 });

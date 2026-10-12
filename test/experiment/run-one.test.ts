@@ -48,7 +48,8 @@ test('executeRun branches at the baseline, writes the home under <state>/homes/<
   const config = await loadConfig(runHome(join(root, 'state'), TOKEN));
   assert.deepEqual([config.baseBranch, config.comb.prefix], [BRANCH, PREFIX]);
   assert.ok(config.comb.stages[0].prompt?.startsWith('/hive:new-spec'));
-  const allowed = config.claudeArgs[config.claudeArgs.indexOf('--allowedTools') + 1] ?? '';
+  const args = config.agentArgs.claude;
+  const allowed = args[args.indexOf('--allowedTools') + 1] ?? '';
   for (const rule of [`Bash(git push origin HEAD:${BRANCH}*)`, `Read(/${runHome(join(root, 'state'), TOKEN)}/plugin/**)`]) assert.ok(allowed.includes(rule), rule);
   const order = git.calls.map(line);
   assert.ok(order.includes(`git branch -f ${BRANCH} base1`));

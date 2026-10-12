@@ -206,18 +206,18 @@ test('POST /settings with an invalid body answers 400 naming the field', async (
   await assert.rejects(stat(configFile(home)));
 });
 
-test('a second POST /settings reconfigures in memory, keeps claudeArgs and drops a leftover port (#466)', async (t) => {
+test('a second POST /settings reconfigures in memory, keeps agentArgs and drops a leftover port (#466)', async (t) => {
   const { base, home, server, configs } = await start(t);
   assert.equal((await postSettings(base, BODY)).status, 200);
   const saved = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
-  await writeFile(configFile(home), JSON.stringify({ ...saved, port: 5000, claudeArgs: ['--model', 'sonnet'] })); // port: a key from before #466
+  await writeFile(configFile(home), JSON.stringify({ ...saved, port: 5000, agentArgs: { claude: ['--model', 'sonnet'] } })); // port: a key from before #466
   const res = await postSettings(base, { ...BODY, stages: [{ ...STAGES[0], from: { board: ['Done'] } }] });
   assert.equal(res.status, 200);
   assert.deepEqual(await json(res), { ok: true });
   const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
   assert.equal(rewritten.comb.stages[0].from.board?.[0], 'Done');
   assert.equal('port' in rewritten, false, 'the parse ignores it, so the save drops it');
-  assert.deepEqual(rewritten.claudeArgs, ['--model', 'sonnet']);
+  assert.deepEqual(rewritten.agentArgs, { claude: ['--model', 'sonnet'] });
   await server.poll(); // reconfigure's poll runs in the background (#59)
   assert.deepEqual(server.getState()?.tasks.map((c) => c.item.title), ['from Done']);
   assert.equal(configs.at(-1)?.stages[0].from.board?.[0], 'Done');
@@ -385,6 +385,29 @@ test('POST /settings without defaultAgent keeps the one already in hive.config.j
   const { defaultAgent: _omitted, ...withoutAgent } = BODY;
   assert.equal((await postSettings(base, withoutAgent)).status, 200);
   assert.equal((JSON.parse(await readFile(configFile(home), 'utf8')) as Config).defaultAgent, 'claude');
+});
+
+test('a hive.config.json from before #924 keeps its claudeArgs as agentArgs.claude, and the next save writes agentArgs without claudeArgs (#924)', async (t) => {
+  const { base, home } = await start(t);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  const { agentArgs: _gone, ...saved } = JSON.parse(await readFile(configFile(home), 'utf8')) as Config;
+  await writeFile(configFile(home), JSON.stringify({ ...saved, claudeArgs: ['--permission-mode', 'auto'] }));
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  const rewritten = JSON.parse(await readFile(configFile(home), 'utf8')) as Record<string, unknown>;
+  assert.deepEqual(rewritten.agentArgs, { claude: ['--permission-mode', 'auto'] });
+  assert.equal('claudeArgs' in rewritten, false, 'the retired key is gone from the file');
+});
+
+test('POST /settings takes agentArgs from the body and keeps the saved ones when the body has none (#924)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).agentArgs;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), { claude: [] }, 'a first setup without the key starts with none');
+  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: ['--verbose'] } })).status, 200);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), { claude: ['--verbose'] }, 'an API caller that omits it keeps the saved lists');
+  assert.equal((await postSettings(base, { ...BODY, agentArgs: { claude: [] } })).status, 200);
+  assert.deepEqual(await onDisk(), { claude: [] });
 });
 
 // POST /config with a non-zero maxConcurrent is skipped here: this file's start() uses the real
