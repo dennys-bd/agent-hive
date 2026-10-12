@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type HiveServer, killStrays } from '../src/server.js';
 import type { AgentId, Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { transcriptDir } from '../src/usage.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { FOLDER_BODY_MESSAGE } from '../src/server-sessions.js';
 import { FOLDER_MISSING_MESSAGE, OUTSIDE_MESSAGE } from '../src/tree-paths.js';
 import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';

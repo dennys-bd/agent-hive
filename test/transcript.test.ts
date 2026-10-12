@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { adoptTranscript, copyTranscript, dropCopiedTranscript, removeTranscripts } from '../src/transcript.js';
-import { transcriptDir } from '../src/usage.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { tempDir } from './temp-dir.js';
 
 test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in the transcript dir of the worktree and nothing else there; a file already gone is a debug line; an id that is not a session id is skipped (#236)', async (t) => {

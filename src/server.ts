@@ -76,7 +76,8 @@ import type { TerminalSize } from './terminal-wire.js';
 import { loadState, saveState } from './state-store.js';
 import { dropCopiedTranscript } from './transcript.js';
 import { trustedCopies } from './copy-sides.js';
-import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, readTranscript, type TranscriptTurn } from './usage.js';
+import { readTranscript } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the worker's runner
+import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,

@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from 'express';
-import { copyNotice, type CopySide, countMessages, noticeSide, readBranch, sourceSide, targetSide, uncommitted } from './copy-sides.js';
+import { copyNotice, type CopySide, noticeSide, readBranch, sourceSide, targetSide, uncommitted } from './copy-sides.js';
 import { activityParam, keptTarget } from './activity-routes.js';
 import { copyPending } from './local-sessions.js';
 import { answerOpen, type TaskRouteDeps, type Refusal } from './server-tasks.js';
@@ -7,7 +7,8 @@ import { COPY_PENDING_MESSAGE } from './server-sessions.js';
 import { copyTranscript, dropCopiedTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import type { Session, CopySummary, Exec, SessionRef, SessionTarget } from './types.js';
-import { cleanTitle, transcriptDir } from './usage.js';
+import { countMessages, transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the session's runner
+import { cleanTitle } from './usage.js';
 
 type Deps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'exec' | 'log'>;
 interface Planned { from: SessionRef; to: SessionTarget; source: CopySide; target: CopySide; session: Session }

@@ -10,7 +10,7 @@ import { commandsIn } from './run-commands.js';
 import { answerOpen, type LiveView, type TaskRouteDeps, openTask, workspaceOf, type Refusal } from './server-tasks.js';
 import { adoptTranscript, findTranscript } from './transcript.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { transcriptDir } from './usage.js';
+import { transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the session's runner
 import { treeRoot } from './server-tree.js';
 import { treeFolder } from './tree-paths.js';
 import { AGENT_IDS, type ActivityRecord, type Task, type Session, type State } from './types.js';

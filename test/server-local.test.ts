@@ -12,7 +12,7 @@ import { deleteActivityOnDisk } from '../src/server-tasks.js';
 import { LOCAL_BASES, LOCAL_MESSAGE, localOf, openPlace, startLocal } from '../src/server-local.js';
 import type { Activity, Task, DeleteActivityScope, Exec, SettingsBody, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { transcriptDir } from '../src/usage.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { AUTH, fakeSourceFactory, fakeLog, fakeSpawn, type FakeWorker, GITHUB_ENTRY, workspacesAt, STAGES, tempHive } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { hiveFetch, SECRET } from './secret-client.js';

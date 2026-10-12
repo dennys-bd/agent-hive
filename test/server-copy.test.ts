@@ -12,7 +12,7 @@ import { PROMPTS_DIR, PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { transcriptDir } from '../src/usage.js';
+import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { worktreePath } from '../src/worktree.js';
 import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Logger } from './log.js';
 import { isUuid } from './orchestrator.js';
 import type { Session } from './types.js';
-import { transcriptDir } from './usage.js';
+import { transcriptDir } from './agents/claude-transcript.js'; // temporary (#924): Task 7 reads the session's runner
 
 // <id>.jsonl and <id>/ in `dir`: a file already gone is a debug line, any other failure rejects
 async function removeIn(dir: string, id: string, log: Pick<Logger, 'debug'>): Promise<void> {
