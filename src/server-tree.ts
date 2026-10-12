@@ -1,5 +1,5 @@
 import { access, lstat, readdir } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { canDiff } from './task-runs.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -156,7 +156,8 @@ export function treeCheckout(state: State, config: Parameters<typeof taskWorkspa
   const target = liveTarget(state, id);
   if ('status' in target || !target.task) return undefined;
   const workspace = taskWorkspace(config, target.task);
-  const checkout = workspace === undefined ? '' : relative(workspace.path, root);
+  // The page joins it with '/', so a Windows separator would mix
+  const checkout = workspace === undefined ? '' : relative(workspace.path, root).split(sep).join('/');
   return checkout === '' ? undefined : checkout;
 }
 
