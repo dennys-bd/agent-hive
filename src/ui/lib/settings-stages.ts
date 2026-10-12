@@ -1,6 +1,7 @@
+import { destinationOf } from '../../stage-delete.js';
 import { isGate, onSource } from '../../tasks.js';
-import { type AgentId, type CiChecks, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction } from '../../types.js';
-import { t } from '../i18n.js';
+import { type AgentId, type CiChecks, SOURCE_ACTIONS, type SourceAction, type SourceFields, isLeaving, type ItemAction, LEAVING_ACTIONS, type OnMissing, type Stage, type StageAction, type Task } from '../../types.js';
+import { t, tPlural } from '../i18n.js';
 
 // Settings › fluxo's stage editor (#515): the draft ↔ Stage edges and the action-list rules the entra / executa / sai blocks offer, out of
 // settings-form.ts, as settings-rules.ts and settings-commands.ts are.
@@ -8,10 +9,11 @@ import { t } from '../i18n.js';
 // commands / stopOnFailure / onMissing (#755): a commands stage's names in run order, its switch and what a missing line does; ciChecks / checks /
 // rerunOnce / timeout (#834): a wait for CI's which checks, its list, its switch and its wait ('' = no limit). Each kept as typed while another
 // action is picked, sent only with its own action.
+// savedName (#861): the name the stage was loaded with, absent on a new one: what a rename is read from; never sent
 // id: a per-stage React key, never sent. from / onStart are keyed by source row id (#180): a name the user is still typing never
 // splits an entry. onStart holds an ordered list per row (#515).
 // gate (#134): the draft's só aprovação, a stage that runs nothing and awaits approval; verdicts: a prompt stage's own, in order
-export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string }
+export interface StageDraft { id: string; name: string; session: 'new' | 'continue'; model: string; agent: '' | AgentId; from: Record<string, string[]>; onStart: Record<string, SourceAction[]>; gate: boolean; verdicts: string[]; prompt: string; action: '' | StageAction; after: string; approval: boolean; handoff: boolean; maxWorkers: string; commands: string[]; stopOnFailure: boolean; onMissing: OnMissing; ciChecks: CiChecks; checks: string[]; rerunOnce: boolean; timeout: string; savedName?: string }
 /** What a stage's maps are keyed against: a source row's id and its name as typed. */
 export interface StageRow { id: string; name: string }
 
@@ -38,7 +40,7 @@ export const withEntry = <T>(map: Record<string, T>, key: string, value: T | und
 };
 
 export const stageDraft = (c: Stage, rows: StageRow[]): StageDraft => ({
-  id: crypto.randomUUID(), name: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
+  id: crypto.randomUUID(), name: c.name, savedName: c.name, session: c.session ?? 'new', model: c.model ?? '', agent: c.agent ?? '', // '' = the default agent (#516)
   from: byRow(c.from, rows), onStart: byRow(c.onStart, rows), gate: isGate(c), verdicts: c.verdicts ?? [], prompt: c.prompt ?? '',
   action: c.action ?? '', after: c.after ?? '', approval: c.approval === true, handoff: c.handoff === true, // #692
   maxWorkers: c.maxWorkers === undefined ? '' : String(c.maxWorkers), // #475: not numberField, which reads 0 as empty; 0 here is a cap
@@ -138,3 +140,28 @@ export function entryLabel(key: string, rows: readonly StageRow[]): string {
   const name = index === -1 ? '' : rows[index].name.trim() || `#${index + 1}`;
   return name === '' ? column : `${name} · ${column}`;
 }
+
+/** The stages loaded under another name (#861): saved name → trimmed new name. A new stage renames nothing. */
+export const stageRenamesFrom = (drafts: readonly StageDraft[]): Record<string, string> =>
+  Object.fromEntries(drafts.flatMap((d) => (d.savedName === undefined || d.name.trim() === d.savedName ? [] : [[d.savedName, d.name.trim()]])));
+
+/** How many tasks a save's deleted stages send to one stage (#861). */
+export interface StageMove { stage: string; n: number }
+
+/** Where a save's deleted stages send their tasks (#861), per destination, under the new names: `saved` is the config's stages, `next` the ones
+ * the save sends; [] when no deleted stage holds a task. The reducer's own rule, so the confirmation says what the save will do. */
+export function deletionMoves(drafts: readonly StageDraft[], saved: readonly Stage[], next: Stage[], tasks: readonly Task[]): StageMove[] {
+  const renames = stageRenamesFrom(drafts);
+  const kept = new Set(drafts.flatMap((d) => (d.savedName === undefined ? [] : [d.savedName])));
+  const old = saved.map((s) => ({ name: Object.hasOwn(renames, s.name) ? renames[s.name] : s.name }));
+  const destinations = tasks.flatMap((task) => {
+    if (kept.has(task.stage) || !saved.some((s) => s.name === task.stage)) return [];
+    const to = destinationOf(task, task.stage, old, next);
+    return to === undefined ? [] : [to.name];
+  });
+  return [...new Set(destinations)].map((stage) => ({ stage, n: destinations.filter((d) => d === stage).length }));
+}
+
+/** The deletion confirmation's text (#861): one line per destination. */
+export const deletionMessage = (moves: readonly StageMove[]): string =>
+  [t('settings.stages.deleteMoves.message'), ...moves.map((m) => tPlural('settings.stages.deleteMoves.move', m.n, { n: m.n, stage: m.stage }))].join('\n');

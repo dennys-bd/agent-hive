@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  actionLabel, addableActions, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, withAction, withEntry, withoutAction,
+  actionLabel, addableActions, deletionMoves, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
-import type { SourceAction, Stage } from '../src/types.js';
+import type { SourceAction, Stage, Task } from '../src/types.js';
 
 const move = (column: string): SourceAction => ({ type: 'move', column });
 const CLOSE: SourceAction = { type: 'close' };
@@ -129,4 +129,20 @@ test('a gate draft sends approval alone; a prompt stage sends its verdicts when 
   assert.deepEqual(stageFrom({ ...emptyStage(), name: 'Rev', prompt: '/r', verdicts: ['ok', 'redo'] }, ROWS).verdicts, ['ok', 'redo']);
   assert.equal('verdicts' in stageFrom({ ...emptyStage(), name: 'Rev', prompt: '/r' }, ROWS), false);
   assert.deepEqual([stageDraft({ name: 'PR', from: {}, approval: true }, ROWS).gate, stageDraft({ name: 'B', from: {}, prompt: '/b', verdicts: ['ok'] }, ROWS).verdicts], [true, ['ok']]);
+});
+
+test('stageRenamesFrom sends each saved stage whose trimmed name changed; a new stage renames nothing (#861)', () => {
+  const spec = stageDraft({ name: 'spec', from: {} }, ROWS);
+  assert.equal(spec.savedName, 'spec');
+  assert.equal('savedName' in emptyStage(), false);
+  assert.deepEqual(stageRenamesFrom([{ ...spec, name: ' Spec ' }, { ...emptyStage(), name: 'new' }, stageDraft({ name: 'dev', from: {} }, ROWS)]), { spec: 'Spec' });
+});
+
+test('deletionMoves counts the tasks of the deleted stages by destination, under the new names; adjacent deletions meet on one survivor (#861)', () => {
+  const saved: Stage[] = [{ name: 'spec', from: { work: ['Backlog'] } }, { name: 'dev', from: { work: ['Ready'] } }, { name: 'qa', from: { work: ['QA'] } }, { name: 'done', from: { work: ['Done'] } }];
+  const drafts = [{ ...stageDraft(saved[0], ROWS), name: 'Spec' }, stageDraft(saved[3], ROWS)]; // spec renamed, dev and qa deleted
+  const next = drafts.map((d) => stageFrom(d, ROWS));
+  const at = (n: number, stage: string, column: string): Task => ({ item: { itemId: `work:${n}`, id: String(n), title: '', body: '', url: '', source: 'work' }, stage, boardColumn: column, auto: true });
+  assert.deepEqual(deletionMoves(drafts, saved, next, [at(1, 'dev', 'Ready'), at(2, 'qa', 'QA'), at(3, 'done', 'Done'), at(4, 'qa', 'Done')]), [{ stage: 'Spec', n: 2 }, { stage: 'done', n: 1 }]);
+  assert.deepEqual(deletionMoves(drafts, saved, next, [at(3, 'done', 'Done')]), [], 'no deleted stage holds a task');
 });
