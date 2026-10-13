@@ -37,7 +37,9 @@ export function TaskDescription({ body }: { body: string }) {
   const copyRich = (): void => { if (rendered.current) copied(copyRendered(rendered.current)); };
   return (
     <div className="flex flex-col gap-1">
-      <TooltipProvider>
+      {/* Radix keeps a tooltip open while the pointer crosses toward it; with two adjacent buttons that path runs over the neighbour, so
+          moving from one to the other could leave the first's label showing */}
+      <TooltipProvider disableHoverableContent>
         <div className="flex justify-end gap-0.5">
           <CopyButton label="detail.copy" icon={<Copy />} onClick={copyRich} />
           <CopyButton label="detail.copyRaw" icon={<FileCode />} onClick={() => copied(navigator.clipboard.writeText(body))} />
