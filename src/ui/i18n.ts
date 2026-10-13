@@ -1622,6 +1622,7 @@ const en = {
   'shortcuts.search': 'search',
   'shortcuts.searchOperations': 'search commands', // #584
   'shortcuts.searchTasks': 'search tasks', // #542
+  'shortcuts.searchSettings': 'search settings', // #689
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
@@ -1698,6 +1699,7 @@ const en = {
   'shortcuts.scope.files': 'files tree',
   'shortcuts.scope.flow': 'flow',
   'shortcuts.scope.dialogs': 'dialogs and feedback',
+  'shortcuts.scope.settings': 'settings',
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
   'shortcutMap.title': 'shortcuts', // #639: the shortcut map's dialog
   'shortcutMap.edit': 'edit in settings › shortcuts',
@@ -3522,6 +3524,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.search': 'buscar',
   'shortcuts.searchOperations': 'buscar comandos', // #584
   'shortcuts.searchTasks': 'buscar tarefas', // #542
+  'shortcuts.searchSettings': 'buscar configuração', // #689
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
@@ -3598,6 +3601,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.files': 'árvore de arquivos',
   'shortcuts.scope.flow': 'fluxo',
   'shortcuts.scope.dialogs': 'diálogos e feedback',
+  'shortcuts.scope.settings': 'configurações',
   'shortcuts.soon': '(em breve)',
   'shortcutMap.title': 'atalhos',
   'shortcutMap.edit': 'editar em configurações › atalhos',

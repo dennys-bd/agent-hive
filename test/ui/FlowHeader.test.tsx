@@ -243,3 +243,10 @@ test('⑂ árvore shows only with onTree, right before ↺ voltas, pressed with 
   await user.click(tree);
   expect(onTree).toHaveBeenCalledOnce();
 });
+
+test('⌘F leaves buscar tarefas alone while the Settings page is open, and the key goes on unprevented (#689)', () => {
+  render(<><Flow state={state(tasks)} /><div data-settings-page="" /></>);
+  const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
+  expect(fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true })).toBe(true);
+  expect(field).not.toHaveFocus();
+});

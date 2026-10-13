@@ -4,8 +4,8 @@ import type { OperationId } from './types.js';
 import type { MessageKey } from './ui/i18n.js';
 
 /** Where a key acts (#585), the atalhos section's cards in order: everywhere, with an activity shown, with the focus in the files tree (#818),
- * with the flow shown, in a dialog. */
-export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'dialogs'] as const;
+ * with the flow shown, in a dialog, on the Settings page (#689). */
+export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'dialogs', 'settings'] as const;
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];
 
 /** A default per platform (#585): macOS's, and the one Linux and Windows share, where Ctrl alone would take a key the terminal reads. null:
@@ -123,6 +123,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),
   fixed('cancel', 'dialogs', same(['Escape'])),
+  row('searchSettings', both('CmdOrCtrl+F'), 'settings'), // #689: Settings holds the window, so neither the flow's nor the terminal's ⌘F acts with it
 ];
 
 /** The global keys that do nothing with the focus in a dialog (#225), so a dialog's own key may hold the same binding: problems' ⌘⇧M is
