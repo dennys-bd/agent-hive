@@ -19,8 +19,10 @@ export function DockFrame({ layout, shown, panels, children, onActivate, onMove,
       onResize={(size) => onResize(side, size)} onClose={() => onClose(side)}
     />
   );
+  // min-w-0 (#295): as a flex item of DockBody's row, next to the rail, the frame would otherwise take its content's min-content width (a wide
+  // tab bar, a terminal, the minimap) and push past the window, so the sides' percentages would be of a wider frame
   return (
-    <div ref={frame} className="flex min-h-0 flex-1 flex-row">
+    <div ref={frame} className="flex min-h-0 min-w-0 flex-1 flex-row">
       {group('left', frame)}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col"> {/* relative: the console's drawer sits over it (redesign 05) */}
         {children}
