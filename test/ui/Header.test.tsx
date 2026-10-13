@@ -113,7 +113,18 @@ test('with the left side closed, hovering, focusing or clicking the ⬢ opens th
   await user.keyboard('{Escape}');
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); // the focus handed back to the ⬢ does not reopen it
   await user.click(mark());
-  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  expect(await screen.findByRole('dialog', { name: 'hive' })).toBeInTheDocument();
+});
+
+test('a popover the keyboard or a click opened stays when the pointer crosses the ⬢ and leaves (#295)', async () => {
+  const user = userEvent.setup();
+  render(header(shellOf({ layout: LEFT_CLOSED })));
+  act(() => mark().focus());
+  const popover = await screen.findByRole('dialog');
+  await user.hover(mark());
+  await user.unhover(mark());
+  await new Promise((resolve) => setTimeout(resolve, 300)); // past the hover close's delay
+  expect(popover).toBeInTheDocument();
 });
 
 test('the mark is one size in every state: the open brand, the closed ⬢ and the popover\'s first row (#295)', async () => {

@@ -70,9 +70,10 @@ function useHoverOpen() {
     if (!isOpen) opener.current = by;
     setIsOpen(true);
   };
+  // Only a hover's popover closes on the pointer leaving: one the keyboard or a click opened stays until Escape or a click outside
   const leave = (): void => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setIsOpen(false), HOVER_CLOSE_MS);
+    if (opener.current === 'hover') timer.current = setTimeout(() => setIsOpen(false), HOVER_CLOSE_MS);
   };
   const hover = { onPointerEnter: () => show('hover'), onPointerLeave: leave };
   const trigger = {
@@ -102,7 +103,7 @@ function CompactBrand({ title, signal, children }: { title: string; signal: Sign
           <HiveMark signal={signal} />
         </button>
       </PopoverTrigger>
-      <PopoverContent {...CONTENT} {...hover.content}>{children}</PopoverContent>
+      <PopoverContent {...CONTENT} aria-label={t('header.brand')} {...hover.content}>{children}</PopoverContent>
     </Popover>
   );
 }
@@ -125,7 +126,7 @@ export function HeaderBrand({ state, effective, isCompact = false }: HeaderBrand
           <span className="truncate text-muted-foreground text-xs">{` · ${workers}`}</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent {...CONTENT}>{body}</PopoverContent>
+      <PopoverContent {...CONTENT} aria-label={t('header.brand')}>{body}</PopoverContent>
     </Popover>
   );
 }
