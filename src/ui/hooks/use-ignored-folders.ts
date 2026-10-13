@@ -19,10 +19,13 @@ const folderUrl = (activityId: string, path: string): string => `/activities/${e
 /** The children on disk of every expanded ignored folder, and of every expanded folder under one (HIVE-22), by path. Read when shown, again
  *  every POLL_MS and after each tree operation (onTreeChanged), as useTaskTree reads the tree; a collapsed ignored folder is never read. A
  *  folder whose read fails (moved, deleted) leaves the map with no toast: the tree still shows it, unloaded. A collapsed folder's marks stay
- *  as last read (#289), with no re-read, so they keep raising the folders above it; they reset only with the activity. */
+ *  as last read (#289), with no re-read, so they keep raising the folders above it; they reset with the activity, and those under a folder
+ *  no longer ignored (deleted, renamed) are left out. */
 export function useIgnoredFolders(activityId: string, isShown: boolean, expanded: ReadonlySet<string>, ignoredFolders: readonly string[] | undefined): LoadedFolders {
   const [loaded, setLoaded] = useState(NONE);
   const [remembered, setRemembered] = useState<Remembered>({ activityId, marks: NO_MARKS });
+  // Reset during render, not in an effect, so a switch back to the previous activity can never show its old marks
+  if (remembered.activityId !== activityId) setRemembered({ activityId, marks: NO_MARKS });
   // A key, not the set: each toggle and each poll make new objects, and only a change in what to read must restart the reads
   const key = ignoredToRead(expanded, ignoredFolders ?? []).join('\0');
   useEffect(() => {
@@ -62,5 +65,8 @@ export function useIgnoredFolders(activityId: string, isShown: boolean, expanded
     const stop = onTreeChanged(activityId, () => { clearTimeout(timer); read(); });
     return () => { live = false; clearTimeout(timer); stop(); };
   }, [activityId, isShown, key]);
-  return { loaded, marks: remembered.activityId === activityId ? remembered.marks : NO_MARKS };
+  const roots = ignoredFolders ?? [];
+  const isUnderRoot = (path: string): boolean => roots.some((root) => path.startsWith(`${root}/`));
+  const marks = remembered.activityId === activityId ? Object.fromEntries(Object.entries(remembered.marks).filter(([path]) => isUnderRoot(path))) : NO_MARKS;
+  return { loaded, marks };
 }
