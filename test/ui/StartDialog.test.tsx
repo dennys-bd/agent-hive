@@ -8,7 +8,7 @@ import { CreateTargetsContext, type CreateTargets } from '@/lib/create-targets';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import type { BaseOptions, Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
-import { activityIdOf, withPointedWork, type WithWork } from '../fixtures/work';
+import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 
 const stages: Stage[] = [
   { name: 'inbox', from: { board: ['Inbox'] } }, // no prompt: a task created here skips it
@@ -513,4 +513,54 @@ test('sessão livre always shows the five run fields; a resume shows its session
   await user.click(open);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts()).toEqual([['/tasks/I4/open', { kind: 'claude', args: ['--verbose'] }]]);
+});
+
+test('executar etapas shows the run the stage would launch; personalizar opens its block, a change shows alterado and restaurar padrão, and the start posts only what changed (#290)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByText('claude · padrão do claude · sessão nova')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /personalizar/ }));
+  const block = within(screen.getByRole('region', { name: 'execução de backlog' }));
+  expect(block.getByText('padrão da etapa')).toBeInTheDocument();
+  expect(block.getByText('vale só para esta execução. as próximas etapas usam o que está configurado no fluxo.')).toBeInTheDocument();
+  expect(block.queryByText('alterado')).not.toBeInTheDocument();
+  await user.type(block.getByRole('textbox', { name: 'argumentos' }), '--verbose');
+  expect(block.getByText('alterado')).toBeInTheDocument();
+  await user.click(block.getByRole('button', { name: 'restaurar padrão' }));
+  expect(block.queryByText('alterado')).not.toBeInTheDocument();
+  expect(block.getByRole('textbox', { name: 'argumentos' })).toHaveValue('');
+  await user.type(block.getByRole('textbox', { name: 'argumentos' }), '--verbose');
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I9/start', { base: null, local: false, args: ['--verbose'] }]]);
+});
+
+test('a stage with a model shows it as the stage\'s default; another agent drops a session it cannot resume back to nova and runs its own default model (#290, #925)', async () => {
+  const user = userEvent.setup();
+  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: AT, stages: ['backlog'], agent: 'claude' as const, lastUsedAt: AT }];
+  const inDev = task('I9', 'SITE-9', 'Landing hero for teams', { stage: 'dev' });
+  const continuing = withPointedWork({ ...state([inDev]), activityRecords: [{ id: 'a-I9', taskIds: ['I9'], sessions: ran }], stages: stages.map((s) => (s.name === 'dev' ? { ...s, session: 'continue' as const, model: 'opus' } : s)) });
+  render(<StartDialog state={continuing} taskId="I9" onClose={vi.fn()} />);
+  expect(screen.getByText('claude · opus · sessão mesma da etapa anterior')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /personalizar/ }));
+  const block = within(screen.getByRole('region', { name: 'execução de dev' }));
+  expect(block.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão da etapa · opus');
+  expect(block.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('mesma da etapa anterior');
+  await user.click(block.getByRole('combobox', { name: 'agente' }));
+  await user.click(screen.getByRole('option', { name: 'codex' }));
+  expect(block.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('nova');
+  expect(block.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do codex');
+  expect(screen.getByText('codex · padrão do codex · sessão nova')).toBeInTheDocument();
+});
+
+test('a continue shows the run without personalizar, since its session is fixed; so does a task whose handover decides its next run (#290, #134)', () => {
+  const ran = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: AT, stages: ['dev'], agent: 'claude' as const, lastUsedAt: AT }];
+  const { unmount } = render(<StartDialog state={withPointedWork({ ...state([LANDING]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions: ran }] })} taskId="I4" onClose={vi.fn()} />);
+  expect(screen.getByText('claude · padrão do claude · sessão nova')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /personalizar/ })).not.toBeInTheDocument();
+  unmount();
+  render(<StartDialog state={withWork(state(), 'I9', { handover: { prompt: 'from the transition' } })} taskId="I9" onClose={vi.fn()} />);
+  expect(screen.queryByRole('button', { name: /personalizar/ })).not.toBeInTheDocument();
 });

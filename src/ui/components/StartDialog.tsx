@@ -1,6 +1,6 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
-import { startMode } from '../../task-runs';
+import { startMode, startsFresh } from '../../task-runs';
 import { canOpenSession, HIVE_SOURCE } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
@@ -9,6 +9,7 @@ import { TaskPicker } from '@/components/TaskPicker';
 import { SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { RunFields, type RunFieldsProps } from '@/components/RunFields';
+import { RunCustomize, RunSummary } from '@/components/RunSummary';
 import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
-import { openBody, resumedLaunch, type RunPicks, type RunPickState, useRunPick } from '@/hooks/use-run-pick';
+import { isChanged, openBody, resumedLaunch, type RunPicks, type RunPickState, startBody, useRunPick } from '@/hooks/use-run-pick';
 import { baseBody, type BaseChoice, useStartBase } from '@/hooks/use-start-base';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
@@ -40,14 +41,15 @@ const taskPath = (itemId: string): string => `/tasks/${encodeURIComponent(itemId
 // Candidates: every task the Hive holds, but those leaving it or gone from their source
 const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.missing && !c.leaving && !activityOf(state, c.item.itemId)?.deleting);
 
-// executar etapas: the stage's start with the base chosen, or its continue once the stage already ran (#283). A task this dialog created
+// executar etapas: the stage's start with the base chosen and the run picks (#290: {} while they are the stage's), or its continue once the
+// stage already ran (#283), which resumes the stage's session as it ran. A task this dialog created
 // was created with auto off, so the fill left it alone until now; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
-async function runStages(task: Task, state: State, base: BaseChoice, created: boolean): Promise<void> {
+async function runStages(task: Task, state: State, base: BaseChoice, created: boolean, picks: Record<string, unknown>): Promise<void> {
   const path = taskPath(task.item.itemId);
   const work = workIdOf(state, task.item.itemId); // the live activity, else a deleted one's record whose session the continue resumes (#629)
   const mode = startMode(task, state);
   if (typeof mode === 'object' && mode.continue && work !== undefined) await postJson(`/activities/${encodeURIComponent(work)}/continue`, { size: shownSize() }); // #812: after a free run, a start
-  else await postJson(`${path}/start`, { ...baseBody(base), size: shownSize() });
+  else await postJson(`${path}/start`, { ...baseBody(base), ...picks, size: shownSize() });
   if (created) await act(`${path}/auto`, { auto: true });
 }
 
@@ -169,7 +171,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     held.clearAwaiting(); setPending(true); setError(undefined);
     const itemId = task.item.itemId;
     const isCreated = created.has(itemId) || heldIds.current.has(itemId); // created with auto off either way: the start turns it on
-    const request = mode === 'stages' ? runStages(task, state, base.choice, isCreated) : openFree(task, state, base.choice, run.picks);
+    const request = mode === 'stages' ? runStages(task, state, base.choice, isCreated, startBody(run.picks, run.initial)) : openFree(task, state, base.choice, run.picks);
     request.then((opened) => {
       if (done.current) return; // closed meanwhile: nothing attaches it, the task carries the session (#351)
       done.current = true;
@@ -189,6 +191,10 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   return { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry };
 }
 
+// Whether personalizar is offered (#290): only on a start; never on a continue, whose session is fixed, nor while a handover decides the run (#134)
+const isCustomizable = (task: Task | undefined, state: State): boolean =>
+  task !== undefined && startsFresh(startMode(task, state)) && activityOf(state, task.item.itemId)?.handover === undefined;
+
 // The run fields with the agents' lists (#290), fetched once when they first show: the stages box alone asks for nothing
 function RunFieldsLoaded(props: Omit<RunFieldsProps, 'options'>) {
   return <RunFields {...props} options={useLaunchOptions()} />;
@@ -202,7 +208,16 @@ function RunSection({ id, mode, task, state, run }: { id: string; mode: StartMod
       stageModel={mode === 'stages' ? run.stageModel : undefined}
       locked={mode === 'free' && task !== undefined ? resumedLaunch(run.picks, task, state) : undefined} />
   );
-  return mode === 'stages' ? <StagesBox task={task} stages={state.stages} /> : fields();
+  if (mode === 'free') return fields();
+  const canCustomize = isCustomizable(task, state);
+  return (
+    <>
+      <StagesBox task={task} stages={state.stages} run={<RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={run.isCustomizing} onToggle={run.setCustomizing} />} />
+      {canCustomize && run.isCustomizing && task && (
+        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore}>{fields(run.initial)}</RunCustomize>
+      )}
+    </>
+  );
 }
 
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the

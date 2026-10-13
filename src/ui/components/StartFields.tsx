@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { KeyLike } from '../../shortcuts';
 import type { BaseOptions, Task, Stage } from '../../types';
 import { WorkspaceSelect } from '@/components/WorkspaceSelect';
@@ -148,13 +148,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** What executar etapas will do: each stage's own agent, the stages ahead, and where the task stops for the user. */
-export function StagesBox({ task, stages }: { task?: Task; stages: Stage[] }) {
+/** What executar etapas will do: the run (#290), the stages ahead, and where the task stops for the user. */
+export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run: ReactNode }) {
   const path = task === undefined ? undefined : stagePath(task.stage, stages);
   const stop = path?.stop === undefined ? '—' : path.approval ? `${path.stop} · ${statusText('approval')}` : path.stop;
   return (
     <div className="grid grid-cols-[72px_1fr] gap-x-2 gap-y-1 rounded-md border p-2.5 text-xs">
-      <Row label={t('start.agent')} value={t('start.agentByStage')} />
+      {run}
       <Row label={t('start.next')} value={path && path.next.length > 0 ? path.next.join(' → ') : '—'} />
       <Row label={t('start.stopsAt')} value={stop} />
     </div>

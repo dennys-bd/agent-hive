@@ -355,7 +355,6 @@ const en = {
   'start.preparing': 'preparing the worktree', // the Start and open dialogs' submit while the worktree setup runs (#351)
   'start.stacked': 'tell the worker of {id} · stacked PR',
   'start.agent': 'agent',
-  'start.agentByStage': 'set per stage',
   'start.next': 'next',
   'start.stopsAt': 'stops at',
   'run.label': 'run', // #290: the Start dialog's run (handoff design_handoff_iniciar)
@@ -2293,7 +2292,6 @@ const pt: Record<MessageKey, string> = {
   'start.preparing': 'preparando a worktree',
   'start.stacked': 'avisar o worker de {id} · PR empilhado',
   'start.agent': 'agente',
-  'start.agentByStage': 'definido por etapa',
   'start.next': 'próximas',
   'start.stopsAt': 'para em',
   'run.label': 'execução', // #290: the Start dialog's run (handoff design_handoff_iniciar)
