@@ -41,7 +41,7 @@ export function DeleteDoneDialog({ activities }: { activities: TaskActivity[] })
   };
   return (
     <Confirm
-      message={message(deletable, skipped)} confirmLabel={t('activities.deleteAll.title')} onConfirm={run}
+      title={t('activities.deleteAll.title')} message={message(deletable, skipped)} confirmLabel={t('activities.deleteAll.confirm')} onConfirm={run}
       trigger={<button type="button" disabled={isRunning} className="shrink-0 disabled:cursor-default disabled:opacity-50 cursor-pointer rounded-[4px] border px-1.5 hover:text-foreground">{t('activities.deleteAll')}</button>}
     />
   );

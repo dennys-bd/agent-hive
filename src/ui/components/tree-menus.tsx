@@ -141,7 +141,7 @@ export function TrashConfirm({ paths, onConfirm, onCancel }: { paths?: string[];
   return (
     <Confirm
       open={paths !== undefined} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}
-      message={trashMessage(paths)} confirmLabel={t('files.trash')} onConfirm={onConfirm}
+      title={t('confirm.title.trash')} message={trashMessage(paths)} confirmLabel={t('files.trash')} onConfirm={onConfirm}
     />
   );
 }

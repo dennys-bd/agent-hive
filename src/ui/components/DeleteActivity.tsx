@@ -31,6 +31,7 @@ export const taskDeletionUrl = (task: Task, state: State): string => {
 interface DeleteActivityProps {
   url: string; // the task route (#182) or, for a worktree no task owns, /worktrees/:slug/remove (#181)
   message: string; // the confirm text: what is lost
+  title?: string; // the confirm's title; the activity's by default, a worktree no task owns says its own
   available: boolean; // shows the trigger (the Settings row hides it); the popup stays mounted whatever it says
   disabledReason?: string; // set: the default trigger shows disabled, with this reason as its native tooltip; no confirm opens (#210)
   size?: 'sm'; // the default trigger's size; unset keeps the Button default, as the Settings WorktreesTab still wants (#344)
@@ -50,7 +51,7 @@ interface DeleteActivityProps {
  * whatever either says: the task route marks the task deleting before git runs and that mark reaches the panel before the answer, so only
  * the trigger follows it; the popup must outlive it. Errors go to the toast, as `act` does.
  */
-export function DeleteActivity({ url, message, available, disabledReason, size, onDone, trigger, confirm }: DeleteActivityProps) {
+export function DeleteActivity({ url, message, title = t('confirm.title.deleteActivity'), available, disabledReason, size, onDone, trigger, confirm }: DeleteActivityProps) {
   const [refused, setRefused] = useState<string>();
   const reasonId = useId();
   const label = t('detail.deleteActivity');
@@ -66,7 +67,7 @@ export function DeleteActivity({ url, message, available, disabledReason, size, 
   };
   return (
     <>
-      {confirm && <Confirm open={confirm.open} onOpenChange={confirm.onOpenChange} message={message} confirmLabel={label} onConfirm={() => remove()} />}
+      {confirm && <Confirm open={confirm.open} onOpenChange={confirm.onOpenChange} title={title} message={message} confirmLabel={label} onConfirm={() => remove()} />}
       {!confirm && available && disabledReason !== undefined && (
         // title shows the reason to the pointer; aria-describedby reads it to a screen reader, which never focuses a disabled button
         <span title={disabledReason} className="self-start">
@@ -76,6 +77,7 @@ export function DeleteActivity({ url, message, available, disabledReason, size, 
       )}
       {!confirm && available && disabledReason === undefined && (
         <Confirm
+          title={title}
           message={message}
           confirmLabel={label}
           trigger={trigger ?? <Button type="button" variant="destructive" size={size} className="self-start">{label}</Button>}

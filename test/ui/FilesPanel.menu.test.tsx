@@ -127,7 +127,7 @@ test('excluir with two rows selected keeps the selection, asks about both, and c
   await user.keyboard('[/ControlLeft]');
   await menuOf(user, readme);
   await user.click(screen.getByRole('menuitem', { name: /^excluir/ }));
-  expect(screen.getByRole('alertdialog')).toHaveTextContent('Mover 2 itens para a lixeira?');
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('mover 2 itens para a lixeira?');
   await user.click(screen.getByRole('button', { name: 'mover para a lixeira' }));
   expect(posted()).toEqual(['/activities/a-I1/tree/trash {"paths":["README.md","src"]}']);
 });

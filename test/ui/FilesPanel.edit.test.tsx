@@ -101,7 +101,7 @@ test('the tree\'s keys act only with the focus in the tree: F2 in a field outsid
   expect(nameInput()).toBeNull();
   readme.focus();
   await user.keyboard('{Delete}');
-  expect(await screen.findByRole('alertdialog')).toHaveTextContent('Mover README.md para a lixeira?');
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent('mover README.md para a lixeira?');
   await user.keyboard('{Enter}');
   await waitFor(() => expect(posted()).toEqual(['/activities/a-I1/tree/trash {"paths":["README.md"]}']));
   expect(nameInput()).toBeNull();

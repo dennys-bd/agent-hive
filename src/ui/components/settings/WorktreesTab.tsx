@@ -81,7 +81,8 @@ function RemoveButton({ row, onDone }: { row: WorktreeRow; onDone(): void }) {
   if (row.task && !row.task.removable) {
     return <span title={t('worktrees.sessionBlocks')}><Button type="button" variant="ghost" size="icon-sm" aria-label={t('worktrees.remove')} disabled><XIcon /></Button></span>;
   }
-  return <DeleteActivity url={removalUrl(row)} message={removalMessage(row)} available onDone={onDone} trigger={trigger} />;
+  const title = row.task ? undefined : t('confirm.title.deleteWorktree'); // no task owns it: not an activity
+  return <DeleteActivity url={removalUrl(row)} title={title} message={removalMessage(row)} available onDone={onDone} trigger={trigger} />;
 }
 
 function WorktreeItem({ row, state, onDone }: { row: WorktreeRow; state?: Slice; onDone(): void }) {
@@ -156,6 +157,7 @@ export function WorktreesTab({ state }: { state?: Slice }) {
     <>
       <FilterToggle value={filter} all={all.length} orphans={orphans.length} onChange={setFilter} />
       <Confirm
+        title={t('confirm.title.cleanOrphans')}
         message={t('confirm.cleanOrphans', { n: cleanable.length })}
         confirmLabel={t('worktrees.cleanOrphans')}
         trigger={<Button type="button" variant="destructive" size="sm" disabled={cleanable.length === 0}>{t('worktrees.cleanOrphans')}</Button>}

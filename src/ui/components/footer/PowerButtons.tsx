@@ -36,7 +36,7 @@ export function PowerButtons({ keepAwake, armed }: PowerButtonsProps) {
       >
         <CoffeeIcon className="size-3.5" />
       </Button>
-      {armed ? shutdown : <Confirm message={t('confirm.shutdown')} confirmLabel={t('shutdown.arm')} trigger={shutdown} onConfirm={() => act('/shutdown', { armed: true })} />}
+      {armed ? shutdown : <Confirm title={t('confirm.title.shutdown')} message={t('confirm.shutdown')} confirmLabel={t('shutdown.arm')} trigger={shutdown} onConfirm={() => act('/shutdown', { armed: true })} />}
     </span>
   );
 }

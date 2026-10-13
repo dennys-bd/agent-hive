@@ -3,7 +3,7 @@ import { type DialogAction, DialogBase } from '@/components/DialogBase';
 import { AlertDialogDescription } from '@/components/ui/alert-dialog';
 
 interface ConfirmProps {
-  title?: string; context?: ReactNode; message: ReactNode; confirmLabel: string; onConfirm(): void | Promise<void>;
+  title: string; context?: ReactNode; message: ReactNode; confirmLabel: string; onConfirm(): void | Promise<void>;
   secondary?: DialogAction; error?: string; trigger?: ReactElement; open?: boolean; onOpenChange?(open: boolean): void;
 }
 
@@ -12,7 +12,7 @@ interface ConfirmProps {
 export function Confirm({ title, context, message, confirmLabel, onConfirm, secondary, error, trigger, open, onOpenChange }: ConfirmProps) {
   return (
     <DialogBase
-      title={title ?? confirmLabel} context={context} primary={{ label: confirmLabel, onConfirm }} secondary={secondary} error={error}
+      title={title} context={context} primary={{ label: confirmLabel, onConfirm }} secondary={secondary} error={error}
       trigger={trigger} open={open} onOpenChange={onOpenChange}
     >
       <AlertDialogDescription className="text-[13px] leading-[19px] text-pretty whitespace-pre-wrap">{message}</AlertDialogDescription>

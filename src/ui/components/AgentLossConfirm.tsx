@@ -10,7 +10,7 @@ export function useConfirmLoss(): { confirm: ConfirmLoss; dialog: ReactNode } {
   const dialog = (
     <Confirm
       open={pending !== undefined} onOpenChange={(isOpen) => { if (!isOpen) setPending(undefined); }}
-      message={t('confirm.agentLost')} confirmLabel={t('session.sleep')} onConfirm={() => pending?.()}
+      title={t('confirm.title.sleep')} message={t('confirm.agentLost')} confirmLabel={t('session.sleep')} onConfirm={() => pending?.()}
     />
   );
   return { confirm: (sleep) => setPending(() => sleep), dialog };

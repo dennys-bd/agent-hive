@@ -100,7 +100,7 @@ test('limpar confirms, then posts with no body; a refusal opens the force popup 
   fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { answer = resolve; }));
   const { rerender } = render(<Panel state={IDLE} initial={TASK} />);
   await askRemoval(user);
-  expect(dialog()).toHaveTextContent('Excluir esta atividade? Isto apaga: • a worktree • o branch local • os terminais'); // today's scope (#236)
+  expect(dialog()).toHaveTextContent('excluir esta atividade? Isto apaga: • a worktree • o branch local • os terminais'); // today's scope (#236)
   expect(dialog()).not.toHaveTextContent('sessões');
   await user.click(within(dialog()).getByRole('button', { name: 'excluir atividade' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/delete', posted());
@@ -243,13 +243,13 @@ test('limpar\'s confirm lists only what the scope removes; in a delete activity 
   const user = userEvent.setup();
   const { unmount } = render(<Panel state={movedWork({ ...IDLE, deleteActivity: { session: true, transcripts: true, nonAutoTasks: false } })} initial={TASK} />);
   await askRemoval(user);
-  expect(dialog()).toHaveTextContent('Excluir esta atividade? Isto apaga: • a worktree • o branch local • os terminais • as sessões do agente: a próxima execução começa uma nova • as transcrições das sessões no disco');
+  expect(dialog()).toHaveTextContent('excluir esta atividade? Isto apaga: • a worktree • o branch local • os terminais • as sessões do agente: a próxima execução começa uma nova • as transcrições das sessões no disco');
   unmount();
   const { worktree: _worktree, sessionId: _sessionId, ...bare } = STOPPED;
   const inDeleteActivity: State = movedWork({ ...IDLE, stages: [...IDLE.stages, { name: 'done', from: {}, action: 'deleteActivity' }], tasks: [{ ...bare, stage: 'done' }] });
   render(<Panel state={inDeleteActivity} initial={TASK} />);
   await askRemoval(user);
-  expect(dialog()).toHaveTextContent('Nada para excluir nessa tarefa: ela segue para a próxima etapa.');
+  expect(dialog()).toHaveTextContent('nada para excluir nessa tarefa: ela segue para a próxima etapa.');
   await user.click(within(dialog()).getByRole('button', { name: 'excluir atividade' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/activities/a-I1/delete', posted());
 });

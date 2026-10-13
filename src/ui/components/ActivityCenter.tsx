@@ -70,7 +70,7 @@ function useTabClose(activity: Activity, layout: CenterLayout | undefined, ops: 
   const confirm = (
     <Confirm
       open={asking !== undefined} onOpenChange={(isOpen) => { if (!isOpen) setAsking(undefined); }}
-      message={t('editor.discardConfirm')} confirmLabel={t('editor.discard')} onConfirm={() => { if (asking) now(asking); }}
+      title={t('confirm.title.discardEdits')} message={t('editor.discardConfirm')} confirmLabel={t('editor.discard')} onConfirm={() => { if (asking) now(asking); }}
     />
   );
   return { close, confirm };

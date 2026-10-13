@@ -32,6 +32,7 @@ function MissingStrip({ stage, tasks, state }: { stage: string; tasks: Task[]; s
     <div className="flex items-center justify-between gap-2 text-destructive text-xs">
       {t('stage.missing', { n: closable })}
       <Confirm
+        title={t('confirm.title.closeTasks')}
         message={message}
         confirmLabel={t('stage.closeMissing')}
         trigger={<Button type="button" size="xs" variant="outline">{t('stage.closeMissing')}</Button>}
