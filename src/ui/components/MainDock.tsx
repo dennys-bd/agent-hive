@@ -29,7 +29,7 @@ import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
-import { shownRun } from '@/lib/center-layout';
+import { shownFile, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { useRememberFocus } from '@/lib/session-focus';
@@ -49,9 +49,9 @@ export interface MainDockProps {
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
   automation?(openActivity: (taskId: string) => void): ReactNode;
-  // The window's footer (#225), from the Dashboard, handed the store id of the activity the center shows; inside the openers, so a failed
-  // checker opens its console channel. Absent (the terminal's harness): no footer
-  footer?(shownActivityId: string | undefined): ReactNode;
+  // The window's footer (#225), from the Dashboard, handed the shown activity's store id and the focused file tab's path (#295); inside the
+  // openers, so a failed checker opens its console channel. Absent (the terminal's harness): no footer
+  footer?(shownActivityId: string | undefined, shownFile: string | undefined): ReactNode;
   header?(shell: HeaderShell): ReactNode; // the window's header (#533, #221), from the Dashboard, handed what its three columns show; absent (the terminal's harness): no header
   liveActivities?: State['activities']; // #629: state.activities, what the workers point at; absent (the terminal's harness): none
   slept?: State['slept']; // #672: the runs that sleep, kept as tabs; absent (the terminal's harness): none
@@ -382,7 +382,7 @@ export function MainDock(props: MainDockProps) {
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>
-      {footer?.(shownIdOf(selection))}
+      {footer?.(shownIdOf(selection), shownIdOf(selection) === undefined ? undefined : shownFile(layouts.layout))}
       {quick.dialogs}
       {searchClose.dialog}
       {newIn && newActivity?.({ ...newIn, onStarted: openStarted, onClose: () => setNewIn(undefined) })}

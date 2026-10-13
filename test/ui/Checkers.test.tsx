@@ -10,9 +10,9 @@ import { EDITOR_DEFAULTS } from '../../src/types';
 
 const A = 'a-I1';
 const LOG = { channel: 'lsp:hive:ts', run: 'r1' };
-const checkers = (activityId: string | undefined, openConsole = vi.fn(), openLanguage = vi.fn()) => render(
+const checkers = (activityId: string | undefined, openConsole = vi.fn(), openLanguage = vi.fn(), path: string | null = 'a.ts') => render(
   <ConsoleContext.Provider value={openConsole}>
-    <EditorLanguagesContext.Provider value={{ editor: EDITOR_DEFAULTS, openLanguage }}><Checkers activityId={activityId} /></EditorLanguagesContext.Provider>
+    <EditorLanguagesContext.Provider value={{ editor: EDITOR_DEFAULTS, openLanguage }}><Checkers activityId={activityId} path={path ?? undefined} /></EditorLanguagesContext.Provider>
   </ConsoleContext.Provider>,
 );
 
@@ -31,7 +31,10 @@ test('one item per entry: ready by name with the working dot, starting with inic
   act(() => {
     store.setClient('k', A, 'typescript-language-server', { phase: 'starting' });
     store.setClient('b', A, 'biome', { phase: 'ready' }, undefined, 'biome');
+    store.bindFile(A, 'a.ts', 'k', 'typescript');
+    store.bindFile(A, 'a.ts', 'b', 'typescript');
     store.checkStarted(A, 'tsc', '');
+    store.bindChecks(A, 'a.ts', ['tsc']);
   });
   checkers(A);
   expect(screen.getByText('typescript-language-server · iniciando').querySelector('span')).toHaveClass('bg-empty');
@@ -44,7 +47,9 @@ test('a failed item with a log is a button that opens its channel in the console
   const openConsole = vi.fn();
   act(() => {
     store.setClient('k', A, 'typescript-language-server', { phase: 'failed', reason: 'spawn node ENOENT' }, LOG);
+    store.bindFile(A, 'a.ts', 'k', 'typescript');
     store.setCheck(A, 'tsc', { state: 'failed', reason: 'exit code 2' }, '');
+    store.bindChecks(A, 'a.ts', ['tsc']);
   });
   checkers(A, openConsole);
   const failed = screen.getByRole('button', { name: 'typescript-language-server falhou' });
@@ -69,4 +74,19 @@ test('the language\'s server absent reads sem language server with instalar…, 
   expect(screen.queryByText(/eslint/)).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'instalar typescript-language-server…' }));
   expect(openLanguage).toHaveBeenCalledWith('typescript');
+});
+
+test('the group renders nothing without a shown file, and only the file\'s own items with one (#295)', () => {
+  act(() => {
+    store.setClient('k', A, 'typescript-language-server', { phase: 'ready' });
+    store.bindFile(A, 'a.ts', 'k', 'typescript');
+    store.setClient('p', A, 'pyright', { phase: 'ready' });
+    store.bindFile(A, 'b.py', 'p', 'python');
+  });
+  const none = checkers(A, vi.fn(), vi.fn(), null);
+  expect(none.container).toBeEmptyDOMElement();
+  none.unmount();
+  checkers(A);
+  expect(screen.getByText('typescript-language-server')).toBeInTheDocument();
+  expect(screen.queryByText('pyright')).not.toBeInTheDocument();
 });

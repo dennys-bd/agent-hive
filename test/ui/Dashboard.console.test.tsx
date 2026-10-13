@@ -223,11 +223,13 @@ test('a console tab keeps its own channel: a pick in the drawer leaves it, and i
   expect(readView('centerLayouts')).toMatchObject({ A: { root: { tabs: expect.arrayContaining([{ kind: 'console', channel: SETUP.id }]) } } });
 });
 
-test('the footer\'s checkers follow the activity the center shows, its problems button counts every activity without one, and ⌘⇧M opens the drawer on problemas (#225)', async () => {
+test('the footer\'s checkers follow the focused file tab of the activity the center shows, its problems button counts every activity without one, and ⌘⇧M opens the drawer on problemas (#225, #295)', async () => {
   const user = userEvent.setup();
+  writeView('centerLayouts', { A: { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'console' }, { kind: 'file', path: 'a.py' }], active: 1 }, focused: 'g1' } });
   render(dashboard());
   act(() => {
     store.setCheck(activityIdOf('A'), 'tsc', { state: 'failed', reason: 'exit code 2' }, '');
+    store.bindChecks(activityIdOf('A'), 'a.py', ['tsc']);
     store.setCheck(activityIdOf('A'), 'mypy', { state: 'done', scope: 'file', diagnostics: [{ path: 'a.py', line: 1, column: 1, severity: 'error', message: 'bad' }] }, 'a.py');
   });
   showFlow();
@@ -236,6 +238,8 @@ test('the footer\'s checkers follow the activity the center shows, its problems 
   await user.click(screen.getByRole('button', { name: 'atividades' }));
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A'));
   expect(within(footer()).getByText('tsc falhou')).toHaveAttribute('title', 'exit code 2');
+  await user.click(within(screen.getByRole('tablist', { name: 'abas' })).getAllByRole('tab')[0]); // back on a console tab: no checkers
+  expect(within(footer()).queryByText('tsc falhou')).not.toBeInTheDocument();
   fireEvent.keyDown(document.body, { key: 'M', ctrlKey: true, shiftKey: true });
   expect(within(drawer()!).getByRole('radio', { name: 'problemas' })).toHaveAttribute('aria-checked', 'true');
   expect(within(drawer()!).getByText('bad')).toBeInTheDocument();

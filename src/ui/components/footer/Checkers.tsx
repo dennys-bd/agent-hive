@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { useOpenConsole } from '@/hooks/use-console';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { t } from '@/i18n';
-import { type ActivitySource, activityStatus } from '@/lib/diagnostics-store';
+import { type ActivitySource, fileStatus } from '@/lib/diagnostics-store';
 
 const ITEM = 'flex shrink-0 items-center gap-1.5 whitespace-nowrap';
 const Dot = ({ tone }: { tone: string }) => <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${tone}`} />;
@@ -44,11 +44,11 @@ function Item({ source }: { source: ActivitySource }) {
   return <span className={ITEM}><Dot tone="bg-working" />{source.name}</span>;
 }
 
-/** The footer's checkers (#225, handoff §3.4): every live language server, checker server and command-line checker of the activity the
- * center shows, one item each; nothing without an activity. */
-export function Checkers({ activityId }: { activityId?: string }) {
+/** The footer's checkers (#225, handoff §3.4, #295): the language servers, checker servers and command-line checkers that run for the file in
+ * focus in the center, one item each; nothing without an activity or while the focused tab is not a file. */
+export function Checkers({ activityId, path }: { activityId?: string; path?: string }) {
   useDiagnostics();
-  const sources = activityId === undefined ? [] : activityStatus(activityId);
+  const sources = activityId === undefined || path === undefined ? [] : fileStatus(activityId, path);
   if (sources.length === 0) return null;
   return <div className="flex shrink-0 items-center gap-2.5 rounded-sm px-2 py-px hover:bg-accent">{sources.map((s) => <Item key={s.name} source={s} />)}</div>;
 }

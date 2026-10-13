@@ -169,6 +169,13 @@ export function shownRun(layout: CenterLayout | undefined): string | undefined {
   return ref.panes?.focused ?? ref.ptyId;
 }
 
+/** The file in focus (#295): the focused group's shown tab's path when it is a file; what the footer's checkers follow. */
+export function shownFile(layout: CenterLayout | undefined): string | undefined {
+  const focused = layout === undefined ? undefined : groupsOf(layout.root).find((group) => group.id === layout.focused);
+  const ref = focused?.tabs[focused.active];
+  return ref?.kind === 'file' ? ref.path : undefined;
+}
+
 /** The layout without that tab: an emptied group goes and its split collapses; undefined once no tab is left. */
 export const closeRef = (layout: CenterLayout, key: string): CenterLayout | undefined =>
   settle(rebuild(layout.root, (group) => nonEmpty(withoutKey(group, key))), layout.focused);

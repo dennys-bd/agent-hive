@@ -308,10 +308,10 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
         // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
         // signal and the worker cap stay in the flow sidebar (redesign 09)
-        footer={(shown) => (
+        footer={(shown, file) => (
           <Footer
             state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />}
-            checkers={<Checkers activityId={shown} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
+            checkers={<Checkers activityId={shown} path={file} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
           />
         )}
         header={(shell) => <Header shell={shell} state={state} effective={limits} />}
