@@ -25,4 +25,25 @@ export const MIGRATIONS: readonly string[] = [
     read_at TEXT, PRIMARY KEY (source, node_id));
   CREATE INDEX pulls_by_number ON pulls (source, repository, number);
   UPDATE sync_scopes SET cursor = NULL, etag = NULL WHERE kind = 'issues';`,
+  // #187: the PR page's own rows. Reviews keep the replace rule (submitted_at for updated_at); a head's checks are replaced whole. The refill:
+  // every PR poll part and the batch read again with the new fields, and every repos row with methods
+  `CREATE TABLE pull_reviews (source TEXT NOT NULL, node_id TEXT NOT NULL, pull_node_id TEXT NOT NULL, repository TEXT NOT NULL, author TEXT,
+    state TEXT NOT NULL, body TEXT NOT NULL, submitted_at TEXT NOT NULL, written_at INTEGER, PRIMARY KEY (source, node_id));
+  CREATE INDEX pull_reviews_by_pull ON pull_reviews (source, pull_node_id, submitted_at);
+  CREATE TABLE pull_checks (source TEXT NOT NULL, pull_node_id TEXT NOT NULL, position INTEGER NOT NULL, name TEXT NOT NULL, state TEXT NOT NULL,
+    url TEXT, started_at TEXT, at TEXT, PRIMARY KEY (source, pull_node_id, position));
+  ALTER TABLE pulls ADD COLUMN head_ref TEXT NOT NULL DEFAULT '';
+  ALTER TABLE pulls ADD COLUMN base_ref TEXT NOT NULL DEFAULT '';
+  ALTER TABLE pulls ADD COLUMN head_owner TEXT NOT NULL DEFAULT '';
+  ALTER TABLE pulls ADD COLUMN base_owner TEXT NOT NULL DEFAULT '';
+  ALTER TABLE pulls ADD COLUMN commits INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE pulls ADD COLUMN additions INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE pulls ADD COLUMN deletions INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE pulls ADD COLUMN requested TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE pulls ADD COLUMN closes TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE pulls ADD COLUMN awaiting TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE repos ADD COLUMN methods TEXT NOT NULL DEFAULT '[]';
+  UPDATE sync_scopes SET cursor = NULL, etag = NULL WHERE kind LIKE 'pull/%';
+  UPDATE sync_scopes SET etag = NULL WHERE kind = 'repo';
+  UPDATE pulls SET read_at = NULL;`,
 ];

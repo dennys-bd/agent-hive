@@ -45,7 +45,7 @@ export const ISSUE_ROW: IssueRow = {
   source: SOURCE, nodeId: 'I_12', repository: REPO, number: 12, kind: 'issue', state: 'closed', title: 'T12', body: 'b', author: 'bia',
   labels: ['bug'], assignees: ['bia', 'caio'], createdAt: CREATED, updatedAt: T1, closedAt: T1, comments: 1,
 };
-export const REPO_ROW: RepoRow = { source: SOURCE, repository: REPO, url: 'https://github.com/acme/hive', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: T1 };
+export const REPO_ROW: RepoRow = { source: SOURCE, repository: REPO, url: 'https://github.com/acme/hive', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: T1, methods: ['merge', 'squash'] };
 export const REST_COMMENT = {
   url: 'https://api.github.com/repos/acme/hive/issues/comments/5', html_url: COMMENT_URL,
   issue_url: 'https://api.github.com/repos/acme/hive/issues/12', id: 5, node_id: 'IC_5', user: { login: 'bia', id: 7 }, created_at: COMMENTED, updated_at: COMMENTED, body: 'c',
@@ -69,6 +69,7 @@ export const ok = (body: unknown, extra: { next?: string; etag?: string; quota?:
 export const REST_REPO = {
   id: 1, node_id: 'R_1', full_name: 'acme/hive', html_url: 'https://github.com/acme/hive', fork: false, has_issues: true, pushed_at: T1,
   permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+  allow_merge_commit: true, allow_squash_merge: true, allow_rebase_merge: false,
 };
 export const restLabel = (name: string): Record<string, unknown> => ({ id: name.length, node_id: `LA_${name}`, name, color: 'ededed', default: false });
 /** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */

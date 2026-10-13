@@ -1,31 +1,29 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
-import type { PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import type { MergeMethod, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
 import { pullTablesOf } from './pull-tables.js';
 import type { CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PullRead, PullToRead, RepoRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
-import { nullable, type Row, text, written } from './sql.js';
+import { inTransaction, issueOf, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
 export const READ_MODEL_FILE = 'read-model.sqlite';
 const FILE_MODE = 0o600; // as credentials.json: the bodies of private repositories' issues live here
 const MEMORY = ':memory:';
-const WRITE_WINDOW_MS = 30_000;
 const SIDE_FILES = ['', '-wal', '-shm'] as const;
-const KEY: readonly string[] = ['source', 'node_id'];
 const ISSUE_COLUMNS = ['source', 'node_id', 'repository', 'number', 'kind', 'state', 'title', 'body', 'author', 'labels', 'assignees', 'created_at', 'updated_at', 'closed_at', 'comments'];
 const COMMENT_COLUMNS = ['source', 'node_id', 'issue_node_id', 'repository', 'url', 'author', 'body', 'created_at', 'updated_at'];
 const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
 const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 const NO_LIMIT = -1; // SQLite's LIMIT -1: every row
 // The changed-row guard of upsertSql without its updated_at rule: a repository has no updated_at, and only the sync writes it
-const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at)
-  VALUES ($source, $repository, $url, $canPush, $issuesEnabled, $forkParent, $pushedAt)
+const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at, methods)
+  VALUES ($source, $repository, $url, $canPush, $issuesEnabled, $forkParent, $pushedAt, $methods)
   ON CONFLICT (source, repository) DO UPDATE SET url = excluded.url, can_push = excluded.can_push, issues_enabled = excluded.issues_enabled,
-    fork_parent = excluded.fork_parent, pushed_at = excluded.pushed_at
-  WHERE (excluded.url, excluded.can_push, excluded.issues_enabled, excluded.fork_parent, excluded.pushed_at)
-    IS NOT (repos.url, repos.can_push, repos.issues_enabled, repos.fork_parent, repos.pushed_at)`;
+    fork_parent = excluded.fork_parent, pushed_at = excluded.pushed_at, methods = excluded.methods
+  WHERE (excluded.url, excluded.can_push, excluded.issues_enabled, excluded.fork_parent, excluded.pushed_at, excluded.methods)
+    IS NOT (repos.url, repos.can_push, repos.issues_enabled, repos.fork_parent, repos.pushed_at, repos.methods)`;
 const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open') AS open_issues,
   COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'closed') AS closed_issues, COUNT(*) FILTER (WHERE kind = 'pr' AND state = 'open') AS open_prs,
   MAX(updated_at) AS last FROM issues WHERE source = ? AND repository = ?`;
@@ -82,30 +80,6 @@ export interface ReadModel {
 export interface OpenOptions { now?: () => number; migrations?: readonly string[] }
 
 type Sqlite = typeof DatabaseSync;
-const paramOf = (column: string): string => column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
-
-// The replace rule (#178): a newer updated_at always wins. On a tie a write wins, and a sync page wins unless the stored row was written
-// less than WRITE_WINDOW_MS ago by the daemon's clock: a page read before a write can carry the write's own second. An identical row
-// (written_at aside) writes nothing, so a quiet page costs no disk write.
-function upsertSql(table: string, columns: readonly string[]): string {
-  const compared = columns.filter((c) => !KEY.includes(c));
-  const set = [...compared, 'written_at'].map((c) => `${c} = excluded.${c}`).join(', ');
-  return `INSERT INTO ${table} (${columns.join(', ')}, written_at) VALUES (${columns.map((c) => `$${paramOf(c)}`).join(', ')}, $writtenAt)
-  ON CONFLICT (source, node_id) DO UPDATE SET ${set}
-  WHERE (${compared.map((c) => `excluded.${c}`).join(', ')}) IS NOT (${compared.map((c) => `${table}.${c}`).join(', ')})
-    AND (excluded.updated_at > ${table}.updated_at OR (excluded.updated_at = ${table}.updated_at
-      AND (excluded.written_at IS NOT NULL OR ${table}.written_at IS NULL OR $now - ${table}.written_at >= ${WRITE_WINDOW_MS})))`;
-}
-
-function issueOf(row: Row): IssueRow {
-  return {
-    source: text(row, 'source'), nodeId: text(row, 'node_id'), repository: text(row, 'repository'), number: Number(row.number),
-    kind: row.kind === 'pr' ? 'pr' : 'issue', state: row.state === 'closed' ? 'closed' : 'open', title: text(row, 'title'), body: text(row, 'body'),
-    author: nullable(row, 'author'), labels: JSON.parse(text(row, 'labels')) as string[], assignees: JSON.parse(text(row, 'assignees')) as string[],
-    createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'), closedAt: nullable(row, 'closed_at'), comments: Number(row.comments),
-  };
-}
-
 function commentOf(row: Row): CommentRow {
   return {
     source: text(row, 'source'), nodeId: text(row, 'node_id'), issueNodeId: text(row, 'issue_node_id'), repository: text(row, 'repository'),
@@ -122,32 +96,14 @@ function prOf(row: Row): ProjectPr {
   };
 }
 
-// A savepoint, not BEGIN: setClosingPrs and removeIssue open their own, and a caller may already hold db.transaction around them
-function inTransaction<T>(db: DatabaseSync, run: () => T): T {
-  db.exec('SAVEPOINT read_model');
-  try {
-    const result = run();
-    db.exec('RELEASE read_model');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK TO read_model');
-    db.exec('RELEASE read_model');
-    throw err;
-  }
-}
-
 function upsertsOf(db: DatabaseSync, now: () => number): Pick<ReadModel, 'upsertIssue' | 'upsertComment' | 'setScope'> {
   const issue = db.prepare(upsertSql('issues', ISSUE_COLUMNS));
   const comment = db.prepare(upsertSql('comments', COMMENT_COLUMNS));
   const scope = db.prepare(UPSERT_SCOPE);
-  const stamp = (origin: UpsertOrigin): { now: number; writtenAt: number | null } => {
-    const at = now();
-    return { now: at, writtenAt: origin === 'write' ? at : null };
-  };
   return {
     // every key of the row is one named parameter; labels and assignees travel as JSON arrays
-    upsertIssue: (row, origin) => written(issue.run({ ...row, labels: JSON.stringify(row.labels), assignees: JSON.stringify(row.assignees), ...stamp(origin) })),
-    upsertComment: (row, origin) => written(comment.run({ ...row, ...stamp(origin) })),
+    upsertIssue: (row, origin) => written(issue.run({ ...row, labels: JSON.stringify(row.labels), assignees: JSON.stringify(row.assignees), ...stamp(now(), origin) })),
+    upsertComment: (row, origin) => written(comment.run({ ...row, ...stamp(now(), origin) })),
     setScope: (source, repository, kind, value) => { scope.run({ source, repository, kind, ...value }); },
   };
 }
@@ -223,6 +179,7 @@ function repoOf(row: Row): RepoRow {
   return {
     source: text(row, 'source'), repository: text(row, 'repository'), url: text(row, 'url'), canPush: Number(row.can_push) === 1,
     issuesEnabled: Number(row.issues_enabled) === 1, forkParent: nullable(row, 'fork_parent'), pushedAt: nullable(row, 'pushed_at'),
+    methods: JSON.parse(text(row, 'methods')) as MergeMethod[],
   };
 }
 
@@ -235,7 +192,7 @@ function repoTablesOf(db: DatabaseSync): Pick<ReadModel, 'setRepo' | 'repo' | 's
   const labels = (source: string, repository: string): string[] => names.all(source, repository).map((row) => text(row, 'name'));
   return {
     // node:sqlite binds no boolean
-    setRepo: (row) => written(upsert.run({ ...row, canPush: row.canPush ? 1 : 0, issuesEnabled: row.issuesEnabled ? 1 : 0 })),
+    setRepo: (row) => written(upsert.run({ ...row, canPush: row.canPush ? 1 : 0, issuesEnabled: row.issuesEnabled ? 1 : 0, methods: JSON.stringify(row.methods) })),
     repo: (source, repository) => {
       const row = repo.get(source, repository);
       return row === undefined ? undefined : repoOf(row);

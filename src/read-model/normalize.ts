@@ -1,7 +1,7 @@
 import { ACTIONS_APP, checkState, decisionOf, isObject, mergeState, rowChecks } from '../pr-checks.js';
 import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
-import type { PrCheck, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
+import type { MergeMethod, PrCheck, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
 import type { CommentRow, IssueRow, PullChecks, PullFlags, RepoRow } from './rows.js';
 
 // The wire is untrusted (#178): every field read is checked, and anything that is not GitHub's shape throws instead of storing half a row
@@ -130,6 +130,9 @@ function githubUrlOf(obj: Json, key: string): string {
   return url;
 }
 
+// GitHub's merge settings (#187): answered with push rights only; a null or a missing flag is not allowed
+const METHOD_FLAGS: ReadonlyArray<[MergeMethod, string]> = [['merge', 'allow_merge_commit'], ['squash', 'allow_squash_merge'], ['rebase', 'allow_rebase_merge']];
+
 /** `GET /repos/{o}/{r}` as its row (#181): no `permissions` (a read without push rights shown) cannot push; only a fork has `parent`. */
 export function repoFromRest(source: string, repository: string, json: unknown): RepoRow {
   const repo = objectOf(json, 'repository');
@@ -138,6 +141,7 @@ export function repoFromRest(source: string, repository: string, json: unknown):
   return {
     source, repository, url: githubUrlOf(repo, 'html_url'), canPush: permissions === undefined ? false : flagOf(permissions, 'push'),
     issuesEnabled: flagOf(repo, 'has_issues'), forkParent: parent === undefined ? null : textOf(parent, 'full_name'), pushedAt: nullableText(repo, 'pushed_at'),
+    methods: METHOD_FLAGS.flatMap(([method, flag]) => (repo[flag] === true ? [method] : [])),
   };
 }
 
