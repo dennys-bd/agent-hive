@@ -6,11 +6,12 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-m
 import {
   awaitingFromRest, checkItemsFromRest, pullFromGql, pullPageFromRest, pullsFromGql, repoFromRest, reviewFromGql, reviewsFromRest, WireError,
 } from '../../src/read-model/normalize.js';
-import type { CheckRow, PullPage, ReviewRow } from '../../src/read-model/rows.js';
+import type { CheckRow, PrPage, PullPage, ReviewRow } from '../../src/read-model/rows.js';
 import { awaitingPath, batchQuery, checkPath, pollOne, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { EMPTY_REPORT } from '../../src/read-model/sync.js';
 import type { Gql } from '../../src/types.js';
+import { approvalsOf, prDataOf } from '../../src/read-model/views.js';
 import { tempDir } from '../temp-dir.js';
 import { commentRow, github, GQL_PR, GQL_REVIEW, HEAD, issueRow, NO_REST, pagesAt, REF, RUN_OK, roundDeps, tempModel, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
 
@@ -224,4 +225,54 @@ test('the batch asks and stores the issues each PR closes (#187)', async (t) => 
   await syncPulls(roundDeps(db, NO_REST, gql), REF);
   assert.deepEqual(db.prPage(SOURCE, REPO, 5)?.pull?.closes, CLOSES);
   assert.match(batchQuery(1), /closingIssuesReferences\(first: 10\) \{ nodes \{ number url repository \{ nameWithOwner \} \} \}/);
+});
+
+const AT = '2026-09-30T10:00:00Z';
+
+test('prDataOf builds the page\'s PrData from the model as #758\'s PR_QUERY fixture had it, files, threads and the on-open values aside (#187)', async () => {
+  const db = await memory();
+  const key = { ...pullKey(7), nodeId: 'PR_1' };
+  db.setRepo(REPO_ROW);
+  db.upsertIssue(prIssueRow(7, AT, { nodeId: 'PR_1', title: 'The PR', body: 'The description', createdAt: AT }), 'sync');
+  db.setPullPoll(key, { headSha: HEAD, mergeState: 'clean', checks: 'success' });
+  db.setPullRead(key, { decision: 'approved', readAt: AT });
+  db.setPullPage(key, { headRef: 'feature', baseRef: 'main', headOwner: 'bia', baseOwner: 'acme', commits: 2, additions: 10, deletions: 3, requested: [] });
+  db.setPullChecks(key, [{ name: 'test', state: 'success', url: null, startedAt: null, at: AT }]);
+  db.upsertReview({ source: SOURCE, nodeId: 'R1', pullNodeId: 'PR_1', repository: REPO, author: 'caio', state: 'APPROVED', body: 'ship it', submittedAt: AT }, 'sync');
+  db.upsertComment({ ...commentRow('IC1', 'PR_1', AT), author: null, body: 'thanks' }, 'sync');
+  const found = db.prPage(SOURCE, REPO, 7);
+  assert.ok(found);
+  assert.deepEqual(prDataOf(found, 'ana'), {
+    url: 'https://github.com/acme/hive/pull/7', id: 'PR_1', number: 7, title: 'The PR', state: 'open', isDraft: false, mergeState: 'clean', head: HEAD,
+    methods: ['merge', 'squash'], viewer: 'ana', body: 'The description', author: 'bia', createdAt: AT, updatedAt: AT, headRef: 'feature', baseRef: 'main',
+    commits: 2, additions: 10, deletions: 3, decision: 'approved', approvals: 1, canEdit: true, canPush: true, headOwner: 'bia', baseOwner: 'acme',
+    checks: { state: 'success', at: AT, items: [{ name: 'test', state: 'success', at: AT }] },
+    reviews: [{ id: 'R1', author: 'caio', at: AT, kind: 'approved', text: 'ship it' }], comments: [{ id: 'IC1', author: 'ghost', at: AT, text: 'thanks' }],
+    reviewRequests: [], closes: [],
+  });
+});
+
+test('approvals follow each reviewer\'s latest opinion; a dismissed review is no event; with no pulls row the defaults, and the author edits, compared without case (#187)', () => {
+  const r = (id: string, author: string, state: ReviewRow['state'], at: string): ReviewRow => ({ source: SOURCE, nodeId: id, pullNodeId: 'PR_7', repository: REPO, author, state, body: '', submittedAt: at });
+  const reviews = [
+    r('R1', 'caio', 'APPROVED', T1), r('R2', 'caio', 'CHANGES_REQUESTED', T2), r('R3', 'dana', 'APPROVED', T1), r('R4', 'dana', 'COMMENTED', T2),
+    r('R5', 'erin', 'APPROVED', T1), r('R6', 'erin', 'DISMISSED', T2),
+  ];
+  assert.equal(approvalsOf(reviews), 1, 'dana alone: a comment is no opinion');
+  const bare: PrPage = { issue: prIssueRow(7, T1), pull: undefined, reviews, comments: [], checks: [], repo: undefined };
+  const data = prDataOf(bare, 'Bia');
+  assert.deepEqual(data.reviews.map((e) => [e.id, e.kind]), [['R1', 'approved'], ['R2', 'changes'], ['R3', 'approved'], ['R4', 'commented'], ['R5', 'approved']]);
+  assert.deepEqual([data.canEdit, data.canPush, data.methods, data.head, data.mergeState, 'checks' in data], [true, false, [], '', 'unknown', false]);
+});
+
+test('workflows awaiting alone make a pending box with no item; a user request naming the login is the viewer\'s, a team request never (#187)', async () => {
+  const db = await memory();
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  db.setPullAwaiting(pullKey(7), ['CI']);
+  db.setPullPage(pullKey(7), page({ requested: [{ reviewer: 'ana', team: false }, { reviewer: 'core', team: true }] }));
+  const found = db.prPage(SOURCE, REPO, 7);
+  assert.ok(found);
+  const data = prDataOf(found, 'ANA');
+  assert.deepEqual(data.checks, { state: 'pending', items: [], awaiting: ['CI'] });
+  assert.deepEqual(data.reviewRequests, [{ reviewer: 'ana', team: false, viewer: true }, { reviewer: 'core', team: true, viewer: false }]);
 });
