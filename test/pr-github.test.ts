@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COMMENT_MUTATION, EDIT_MUTATION, isReviewEvent, MERGE_MUTATION, mergeBlocker, mergeState, mergeVariables, parseHead, parsePrChecks, parsePrData, PR_CHECKS_QUERY,
-  PR_HEAD_QUERY, PR_QUERY, prDiffArgs, PrNotFound, readView, REPLY_MUTATION, RESOLVE_MUTATION, REVIEW_MUTATION, reviewVariables, threadAnchor, timelineOf,
-  UNRESOLVE_MUTATION,
+  PR_HEAD_QUERY, PR_QUERY, parseThreads, PR_THREADS_QUERY, prDiffArgs, PrNotFound, readView, REPLY_MUTATION, requestTimesOf, RESOLVE_MUTATION, REVIEW_MUTATION, reviewVariables,
+  threadAnchor, timelineArgs, timelineOf, UNRESOLVE_MUTATION, withRequestTimes,
 } from '../src/pr-github.js';
 import type { Gql } from '../src/types.js';
 
@@ -234,4 +234,23 @@ test('PR_QUERY asks the issues the PR closes; parsePrData maps them to closes in
   ]);
   assert.deepEqual(parsePrData(answer()).closes, [], 'no connection: []');
   assert.deepEqual(parsePrData(answer({ closingIssuesReferences: null })).closes, [], 'a null connection: []');
+});
+
+test('parseThreads reads the head and the threads, skipping one it cannot read and naming why; past 100 it says truncated; a null resource is PrNotFound (#187)', () => {
+  const skipped: string[] = [];
+  const read = parseThreads({ resource: { headRefOid: HEAD, reviewThreads: { totalCount: 140, nodes: [threadNode({ path: 42 }), threadNode({ id: 'T2' })] } } }, (reason) => skipped.push(reason));
+  assert.deepEqual([read.head, read.threads.map((thread) => thread.id), read.truncated, skipped.length], [HEAD, ['T2'], true, 1]);
+  assert.throws(() => parseThreads({ resource: null }), PrNotFound);
+  assert.match(PR_THREADS_QUERY, /^query\(\$url: URI!\) \{ resource\(url: \$url\) \{ \.\.\. on PullRequest \{ headRefOid reviewThreads\(first: 100\)/);
+});
+
+test('requestTimesOf reads each review_requested line gh printed, a user\'s or a team\'s, dropping one it cannot read; withRequestTimes puts the latest on each request (#67, #187)', () => {
+  const EARLY = '2026-09-29T10:00:00Z';
+  const lines = [{ at: EARLY, user: 'ana', team: null }, { at: AT, user: 'ana', team: null }, { at: EARLY, user: null, team: 'core' }, { at: 5, user: 'caio' }]
+    .map((line) => JSON.stringify(line)).concat('junk').join('\n');
+  const times = requestTimesOf(lines);
+  assert.deepEqual(times, [{ reviewer: 'ana', team: false, at: EARLY }, { reviewer: 'ana', team: false, at: AT }, { reviewer: 'core', team: true, at: EARLY }]);
+  const requests = [{ reviewer: 'ana', team: false, viewer: true }, { reviewer: 'core', team: true, viewer: false }, { reviewer: 'caio', team: false, viewer: false }];
+  assert.deepEqual(withRequestTimes(requests, times), [{ ...requests[0], at: AT }, { ...requests[1], at: EARLY }, requests[2]]);
+  assert.deepEqual(timelineArgs('acme/app', 7).slice(0, 3), ['api', 'repos/acme/app/issues/7/timeline?per_page=100', '--paginate']);
 });

@@ -50,7 +50,7 @@ import { registerProjectRoutes } from './server-project.js';
 import { registerBlockerRoutes } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
-import { accessFor } from './read-model/access.js';
+import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
 import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
@@ -154,6 +154,8 @@ export interface ServerDeps {
   settingsGql?: (auth: GithubAuth) => Gql;
   /** #180: hive mode's read model, opened by bootHive; absent (setup mode, a failed open, every server test) no read sync runs. */
   readModel?: ReadModel;
+  /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
+  readAccess?: () => Promise<ReadAccess | undefined>;
 }
 
 export interface HiveServer {
@@ -1121,10 +1123,6 @@ export function createServer(deps: ServerDeps): HiveServer {
   };
   const deliverReview = deps.deliverReview ?? createDeliver({ state: () => live?.state, dispatch, started: pool.started, write });
   registerReviewThreadRoutes(app, { requireLive, reviews, notifyReview, log, deliver: deliverReview });
-  // The PR page (#592, #758): its read and review file, then its writes to GitHub, under the repository GET /repositories lists
-  const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh };
-  registerPrRoutes(app, prDeps);
-  registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerOpenRoute(app, taskDeps); // POST /tasks/:id/open and /activities/:id/open, whose first worktree setup runs in the console (#351)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
@@ -1144,7 +1142,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
-  const readAccess = () => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log });
+  const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }));
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
@@ -1155,6 +1153,11 @@ export function createServer(deps: ServerDeps): HiveServer {
     readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch, notify: notifyReadModel },
   };
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
+  // The PR page (#592, #758): its read and review file, then its writes to GitHub; its reads answer from the read model and its writes upsert
+  // their answer (#187), so it registers after the read loop
+  const prDeps = { requireLive, dispatch, log, exec, prReviews, notifyPrReview, gql: prGql, gqlJson: cliGqlJson(gh), gh, ...repoModel };
+  registerPrRoutes(app, prDeps);
+  registerPrGithubRoutes(app, prDeps); // comment, review, reply, resolve, merge (#592)
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 
   // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held

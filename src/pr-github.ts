@@ -40,6 +40,9 @@ export const PR_QUERY = `query($url: URI!, $head: String!, $open: Boolean!) { vi
  * and its state, since only an open PR is compared (#849). */
 export const PR_HEAD_QUERY = 'query($url: URI!) { resource(url: $url) { ... on PullRequest { headRefOid headRefName state } } }';
 
+/** The threads alone (#187): what the read model does not hold, with the head they were read at, for the page's head guard. */
+export const PR_THREADS_QUERY = `query($url: URI!) { resource(url: $url) { ... on PullRequest { headRefOid reviewThreads(first: ${PR_PAGE}) { totalCount nodes { ${THREAD_FIELDS} } } } } }`;
+
 /** A link GitHub answers no PR for (#592). */
 export class PrNotFound extends Error {
   constructor() {
@@ -94,6 +97,45 @@ function threadOf(node: unknown): PrThread {
 const METHOD_FLAGS: ReadonlyArray<[MergeMethod, string]> = [['merge', 'mergeCommitAllowed'], ['squash', 'squashMergeAllowed'], ['rebase', 'rebaseMergeAllowed']];
 const methodsOf = (repository: unknown): MergeMethod[] =>
   METHOD_FLAGS.flatMap(([method, flag]) => (isObject(repository) && repository[flag] === true ? [method] : []));
+
+/** PR_THREADS_QUERY's answer (#187): the head, each thread it can read, and whether GitHub holds more than PR_PAGE. */
+export function parseThreads(data: unknown, skip: (reason: string) => void = () => undefined): { head: string; threads: PrThread[]; truncated: boolean } {
+  const pr = isObject(data) ? data.resource : undefined;
+  if (!isObject(pr)) throw new PrNotFound();
+  return { head: text(pr.headRefOid, 'headRefOid'), threads: readable(nodesOf(pr.reviewThreads), threadOf, skip), truncated: isCut(pr.reviewThreads) };
+}
+
+// One compact JSON line per review_requested event: when, and the user or the team it named
+const TIMELINE_FILTER = '.[] | select(.event == "review_requested") | {at: .created_at, user: .requested_reviewer.login, team: .requested_team.slug} | tojson';
+
+/** The `gh api` argv of a PR's review_requested events (#67, #187), every page: their times exist only on the timeline. */
+export const timelineArgs = (repository: string, number: number): string[] =>
+  ['api', `repos/${repository}/issues/${number}/timeline?per_page=100`, '--paginate', '--jq', TIMELINE_FILTER];
+
+type RequestTime = Pick<PrReviewRequest, 'reviewer' | 'team'> & { at: string };
+
+// One line gh printed, or none when it is not a request this code can read
+function requestTimeOf(line: string): RequestTime | undefined {
+  try {
+    const event: unknown = JSON.parse(line);
+    if (!isObject(event) || typeof event.at !== 'string') return undefined;
+    if (typeof event.team === 'string' && event.team !== '') return { reviewer: event.team, team: true, at: event.at };
+    return typeof event.user === 'string' && event.user !== '' ? { reviewer: event.user, team: false, at: event.at } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** timelineArgs' output as request times (#187), oldest first as the timeline reads; a line it cannot read is dropped. */
+export const requestTimesOf = (output: string): RequestTime[] => output.split('\n').flatMap((line) => requestTimeOf(line) ?? []);
+
+/** Each pending request with the latest time the timeline has for that reviewer (#67, #187); none when it has none. */
+export function withRequestTimes(requests: PrReviewRequest[], times: RequestTime[]): PrReviewRequest[] {
+  return requests.map((request) => {
+    const at = times.filter((t) => t.reviewer === request.reviewer && t.team === request.team).at(-1)?.at;
+    return at === undefined ? request : { ...request, at };
+  });
+}
 
 const REVIEW_KINDS: Record<string, PrReviewEvent['kind']> = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes', COMMENTED: 'commented' };
 

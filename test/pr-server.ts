@@ -4,12 +4,16 @@ import { mkdir } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Logger } from '../src/log.js';
 import { initialState } from '../src/orchestrator.js';
+import { openReadModel, type ReadModel } from '../src/read-model/db.js';
+import type { RestGet } from '../src/read-model/rest.js';
+import { type IssueRow, type PullKey, type PullPage, sourceOf } from '../src/read-model/rows.js';
 import { prNumber, prRepo } from '../src/pull-requests.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
 import type { Task, Exec, PrReviewFile, Stage } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { tempHive } from './fakes.js';
+import { NO_GQL } from './read-model/fixtures.js';
 import { send, settingsBody } from './review-server.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { savedActivityId, withKeptRecord, withWork } from './fixtures/work.js';
@@ -21,6 +25,27 @@ export const HEAD = 'a'.repeat(40);
 export const AT = '2026-09-30T10:00:00Z';
 export const DIFF = ['diff --git a/a.txt b/a.txt', '--- a/a.txt', '+++ b/a.txt', '@@ -1 +1 @@', '-one', '+two', ''].join('\n');
 export const ANCHOR = { path: 'a.txt', side: 'new', start: 1, end: 1, excerpt: ['two'] };
+/** The read model's source in these tests (#187): the login the fake gh names as viewer. */
+export const PR_SOURCE = sourceOf('github.com', 'ana');
+const REPOSITORY = 'acme/app';
+// Every REST read answering 304 (#187): GitHub unchanged since the round, so a page's refetch writes nothing
+const UNCHANGED: RestGet = async () => ({ status: 304 });
+export const prKey = (n: number): PullKey => ({ source: PR_SOURCE, nodeId: `PR_${n}`, repository: REPOSITORY, number: n });
+/** What pulls/{n} told the round of every seeded PR (#187): fakeGh's PR fields. */
+export const PR_PAGE_ROW: PullPage = { headRef: 'feature', baseRef: 'main', headOwner: 'acme', baseOwner: 'acme', commits: 1, additions: 1, deletions: 1, requested: [] };
+
+/** PR n of acme/app as the round stored it (#187): open at HEAD and clean, with fakeGh's page fields; `extra` overrides its issues row. */
+export function seedPr(db: ReadModel, n: number, extra: Partial<IssueRow> = {}): void {
+  const key = prKey(n);
+  db.upsertIssue({
+    ...key, kind: 'pr', state: 'open', title: 'The PR', body: 'The description', author: 'bia', labels: [], assignees: [], createdAt: AT, updatedAt: AT,
+    closedAt: null, comments: 0, ...extra,
+  }, 'sync');
+  db.setPullFlags({ ...key, draft: false, mergedAt: null });
+  db.setPullPoll(key, { headSha: HEAD, mergeState: 'clean', checks: null });
+  db.setPullPage(key, PR_PAGE_ROW);
+}
+
 // fila awaits approval (#268), so a merge there approves; feito is where the approved task goes
 const STAGES: Stage[] = [{ name: 'fila', from: {}, prompt: 'Task {id}', approval: true }, { name: 'feito', from: {} }];
 
@@ -30,14 +55,14 @@ export const thread = (extra: Record<string, unknown> = {}): Record<string, unkn
   subjectType: 'LINE', comments: { totalCount: 1, nodes: [{ id: 'C1', body: 'why?', createdAt: AT, author: { login: 'bia' } }] }, ...extra,
 });
 
-/** What gh answers (#592, #758): `pr` for the PR query and the checks' poll, `heads` for the head queries in turn (each read of the PR asks it
- * twice: before the PR query and after the diff), `diff`, and `failWith` refusing every mutation. `git` answers
+/** What gh answers (#592, #758): `pr` for the threads query and the writes' guard, `heads` for the head each threads query answers in turn (#187), `diff`, and `failWith` refusing every mutation. `git` answers
  * `git merge-tree` (#758); any other git call answers nothing. Every gh call is recorded, a mutation with the JSON it wrote to stdin. */
 export interface FakeGh {
   calls: { args: string[]; input?: unknown }[]; pr: Record<string, unknown>; heads: string[]; diff: string; failWith?: string; onMutation?: () => Promise<void>;
   git?: (args: string[]) => { stdout: string };
   compare?: string; ci?: Record<string, unknown>; // compare: REST's compare across forks; ci: the CI read's alias (#854)
   readFailWith?: string; missing?: boolean; // readFailWith: GitHub refuses the PR query; missing: the head query finds no PR, a 404 (#849)
+  rest?: RestGet; timeline?: string; // #187: the read model's REST (default: all 304) and what gh prints for the timeline
 }
 
 export function fakeGh(): FakeGh {
@@ -66,23 +91,23 @@ function ghOf(gh: FakeGh): Exec {
       if (gh.failWith !== undefined) throw new Error(`gh api graphql: ${gh.failWith}`);
       return json({ ok: true });
     }
+    if (args[1]?.includes('/timeline')) return { stdout: gh.timeline ?? '' };
     if (args[1]?.includes('/compare/')) return { stdout: gh.compare ?? '{}' };
     if (args[1] !== 'graphql') return { stdout: gh.diff };
     const query = args.find((arg) => arg.startsWith('query=')) ?? '';
     if (query.includes('reviewThreads')) {
       if (gh.readFailWith !== undefined) throw new Error(`gh api graphql: ${gh.readFailWith}`); // what gh prints when GitHub answers errors (#849)
-      return json({ viewer: { login: 'ana' }, resource: gh.pr });
+      return json({ viewer: { login: 'ana' }, resource: gh.missing ? null : { ...gh.pr, headRefOid: gh.heads.shift() ?? gh.pr.headRefOid } });
     }
     if (query.includes('requiredStatusCheckContexts')) return json({ p0: gh.ci ?? null }); // the CI read (#834, #854)
-    if (query.includes('statusCheckRollup')) return json({ resource: gh.pr }); // the checks' poll
     if (query.includes('headRefOid')) {
-      return json({ resource: gh.missing ? null : { headRefOid: gh.heads.shift() ?? gh.pr.headRefOid, headRefName: gh.pr.headRefName, state: gh.pr.state } });
+      return json({ resource: gh.missing ? null : { headRefOid: gh.pr.headRefOid, headRefName: gh.pr.headRefName, state: gh.pr.state } });
     }
     return json({});
   };
 }
 
-export interface Prs { base: string; home: string; server: HiveServer }
+export interface Prs { base: string; home: string; server: HiveServer; db: ReadModel }
 
 /** A Comb with no source and two local tasks in fila (#592): 1 awaits approval and holds PR, 2 holds PR2. gh is `gh`. With `worktree`, task 1's
  * worktree is on disk (#758). */
@@ -98,12 +123,16 @@ export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { workt
   const work = { id: savedActivityId(1), approval: { since: '2026-09-30T09:00:00.000Z' }, ...(worktree ? { slug: 'hive-1-task', worktree: path } : {}) };
   const one = withWork({ ...initialState(0), localCount: 2, tasks }, 'local:1', work, { prs: [{ url: PR, state: 'open' }] });
   await saveState(home, withKeptRecord(one, 'local:2', 'r2', { prs: [{ url: PR2, state: 'open' }] }));
-  const server = createServer({ secret: SECRET, home, exec: ghOf(gh), ...(log ? { log } : {}) });
+  const { db } = await openReadModel(':memory:'); // server.close() closes it
+  db.setRepo({ source: PR_SOURCE, repository: REPOSITORY, url: 'https://github.com/acme/app', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: null, methods: ['merge', 'squash'] });
+  for (const n of [7, 8, 9]) seedPr(db, n);
+  const readAccess = async () => ({ source: PR_SOURCE, rest: (path: string, etag?: string) => (gh.rest ?? UNCHANGED)(path, etag), gql: NO_GQL });
+  const server = createServer({ secret: SECRET, home, exec: ghOf(gh), readModel: db, readAccess, ...(log ? { log } : {}) });
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   assert.equal((await send(base, 'POST', '/settings', settingsBody(repo, STAGES))).status, 200);
-  return { base, home, server };
+  return { base, home, server, db };
 }
 
 /** The data of the first `name` event /events streams while `act` runs (#592). */

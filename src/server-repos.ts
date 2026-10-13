@@ -205,17 +205,17 @@ function inQuotaBackoff(ctx: RepoContext, res: Response): boolean {
   return true;
 }
 
-interface Reading { model: RepoReadModel; source: string }
+export interface Reading { model: RepoReadModel; source: string }
 
-// The read model and whose rows to read, or undefined once the 503 is out: a read never falls back to GitHub (#181)
-async function readingOf(ctx: RepoContext, res: Response): Promise<Reading | undefined> {
-  const model = ctx.deps.readModel;
+/** The read model and whose rows to read, or undefined once the 503 is out: a read never falls back to GitHub (#181). Shared with the PR page (#187). */
+export async function readingOf(deps: Pick<RepoRouteDeps, 'readModel' | 'log'>, res: Response): Promise<Reading | undefined> {
+  const model = deps.readModel;
   if (model === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: MODEL_CLOSED_MESSAGE });
   let source: string | undefined;
   try {
     source = await model.source();
   } catch (err) {
-    ctx.deps.log.error(`repositories: the read model's source could not be read: ${err instanceof Error ? err.message : String(err)}`); // the text stays in the log: a store error may name a path
+    deps.log.error(`repositories: the read model's source could not be read: ${err instanceof Error ? err.message : String(err)}`); // the text stays in the log: a store error may name a path
   }
   if (source === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: NO_LOGIN_MESSAGE });
   return { model, source };
@@ -225,7 +225,7 @@ type NamedReading = Reading & { repository: string; ref: RepoRef };
 
 async function namedReading(ctx: RepoContext, req: Request, res: Response): Promise<NamedReading | undefined> {
   const found = await named(ctx, req, res);
-  const reading = found && (await readingOf(ctx, res));
+  const reading = found && (await readingOf(ctx.deps, res));
   return found && reading ? { ...reading, repository: found.repository, ref: found.ref } : undefined;
 }
 
@@ -254,7 +254,7 @@ async function issuePage(res: Response, reading: NamedReading, number: number): 
 function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories', async (_req: Request, res: Response) => {
     const found = await listed(ctx, res);
-    const reading = found && (await readingOf(ctx, res));
+    const reading = found && (await readingOf(ctx.deps, res));
     if (found && reading) res.json(found.refs.map((ref) => summaryOf(reading.model.db, reading.source, ref)));
   });
   app.get('/repositories/:owner/:name/issues', async (req: Request, res: Response) => {
