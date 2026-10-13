@@ -23,7 +23,7 @@ test('the plugin ships the manifest, the five skills, the ten agents and the two
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
   assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, and the skeleton of a screen');
-  assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs'], 'scripts/ holds the plugin\'s checks and imports');
+  assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
   for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md'], `skills/${skill} is one file`);
@@ -54,6 +54,7 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
     join(PLUGIN, 'reference', 'design.md'),
     join(PLUGIN, 'reference', 'skeleton.hv.html'),
     join(PLUGIN, 'scripts', 'check-hv.mjs'),
+    join(PLUGIN, 'scripts', 'import-dc.mjs'),
     ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md')),
     ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
   ];
