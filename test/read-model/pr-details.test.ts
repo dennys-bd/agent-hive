@@ -88,6 +88,19 @@ test('checkItemsFromRest lists the check runs then the status contexts as the pa
   ]);
 });
 
+test('checkItemsFromRest keeps only https links: a javascript:, an http: or an unparseable target is no link, a non-GitHub host is fine (#187)', () => {
+  const runs = [{ check_runs: [
+    { name: 'a', status: 'completed', conclusion: 'success', details_url: 'javascript:alert(1)', started_at: T1, completed_at: T2 },
+    { name: 'b', status: 'completed', conclusion: 'success', details_url: 'http://ci.example/1', started_at: T1, completed_at: T2 },
+    { name: 'c', status: 'completed', conclusion: 'success', details_url: 'not a url', started_at: T1, completed_at: T2 },
+  ] }];
+  const status = [{ statuses: [
+    { context: 'd', state: 'success', target_url: 'javascript:alert(1)', created_at: T2 }, { context: 'e', state: 'success', target_url: 'http://ci.example/2', created_at: T2 },
+    { context: 'f', state: 'success', target_url: 'https://ci.example/3', created_at: T2 },
+  ] }];
+  assert.deepEqual(checkItemsFromRest(runs, status).map((item) => item.url), [null, null, null, null, null, 'https://ci.example/3']);
+});
+
 test('awaitingFromRest names each workflow awaiting approval once (#187)', () => {
   assert.deepEqual(awaitingFromRest([{ total_count: 3, workflow_runs: [{ name: 'CI' }, { name: 'CI' }, { name: 'Lint' }] }]), ['CI', 'Lint']);
   assert.throws(() => awaitingFromRest([{}]), WireError);

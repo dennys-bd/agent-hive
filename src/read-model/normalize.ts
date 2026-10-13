@@ -284,10 +284,16 @@ export function pullFromGql(source: string, repository: string, json: unknown): 
   return { issue, flags: { source, nodeId: issue.nodeId, repository, number: issue.number, draft: flagOf(pr, 'isDraft'), mergedAt: nullableText(pr, 'mergedAt') } };
 }
 
-// An empty link is none, as checkOf's filled
+// A check's link reaches the UI as an href, and a status context's target_url is any app's text: only https stays, so a javascript: or http:
+// link is none. An empty or unparseable one is none too, as checkOf's filled
 const linkOf = (json: Json, key: string): string | null => {
   const value = nullableText(json, key);
-  return value === '' ? null : value;
+  if (value === null || value === '') return null;
+  try {
+    return new URL(value).protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
 };
 
 /** The head's check runs, then its status contexts, as rows (#187), read as checkOf read them over GraphQL: a run not completed is pending,
