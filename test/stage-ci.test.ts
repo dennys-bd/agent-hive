@@ -337,3 +337,30 @@ test('a failed wait\'s try names every failed check as its cause and the log\'s 
   const [{ cause, error, n, stage }] = live(state)?.tryLog ?? [];
   assert.deepEqual({ cause, error, n, stage }, { cause: 'build, test', error: 'build log', n: 1, stage: 'review' });
 });
+
+const conflicting = (checks: CiCheck[] = []): CiPrRead => ({ ...pr(checks), base: 'main', conflicting: true });
+const CONFLICT = 'PR #7 conflicts with main: update the branch from main and resolve the conflicts, then push.';
+
+test('a read where a PR conflicts with its base fails the wait at once: a failed transition takes the task with the conflict as its cause; no re-run, no log fetch (#264)', () => {
+  const back: Transition = { from: 'ci', to: 'review', when: 'verdict', verdict: 'failed', maxTries: 2 };
+  const waiting = polled({ rerunOnce: true }, { transitions: [...chained([ci(), REVIEW]).transitions, back] }).state;
+  const { state, effects } = read(waiting, [conflicting([check('build', 'failure', { runId: 11 })])]);
+  assert.equal(effectOf(effects, 'ciRerun'), undefined);
+  assert.equal(effectOf(effects, 'ciCollect'), undefined);
+  assert.deepEqual([state.tasks[0].stage, live(state)?.ci, live(state)?.stopped, outputOf(state)], ['review', undefined, undefined, CONFLICT]);
+  const [{ cause, stage }] = live(state)?.tryLog ?? [];
+  assert.deepEqual({ cause, stage }, { cause: 'conflict with main', stage: 'review' });
+});
+
+test('without a failed transition a conflict stops the task with CI failed: conflict with <base>, even past the timeout; no base read names the base branch; a PR not conflicting keeps waiting (#264)', () => {
+  const s = polled({ timeout: '10m' }).state;
+  const stopped = read(s, [conflicting()]).state;
+  assert.deepEqual([stopped.tasks[0].stage, live(stopped)?.ci, live(stopped)?.stopped, live(stopped)?.error], ['ci', undefined, true, 'CI failed: conflict with main']);
+  assert.deepEqual(resultOf(stopped, ID)?.ci, { verdict: 'failed', output: CONFLICT });
+  const late = new Date(Date.parse(live(s)?.ci?.since ?? '') + 11 * 60_000).toISOString();
+  assert.equal(live(read(s, [conflicting()], late).state)?.error, 'CI failed: conflict with main', 'the conflict is the cause, not the timeout');
+  const { base: _base, ...unread } = conflicting();
+  assert.equal(outputOf(read(s, [unread]).state), 'PR #7 conflicts with the base branch: update the branch from the base branch and resolve the conflicts, then push.');
+  const waiting = read(s, [{ ...pr([check('build', 'pending')]), base: 'main' }]);
+  assert.deepEqual([waiting.effects, waiting.state.tasks[0].stage, live(waiting.state)?.ci?.total, live(waiting.state)?.stopped], [[], 'ci', 1, undefined]);
+});
