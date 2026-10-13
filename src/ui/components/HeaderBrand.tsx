@@ -31,7 +31,7 @@ export function HeaderBrand({ state, effective }: HeaderBrandProps) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={`${t('header.brand')} · ${workers}`} title={brandTitle(effective.signal, signalEffect(effective.signal, state.signals))} className="flex min-w-0 items-center gap-1.5 rounded-sm [-webkit-app-region:no-drag]">
+        <button type="button" aria-label={`${t('header.brand')} · ${workers}`} title={brandTitle(effective.signal, signalEffect(effective.signal, state.signals))} className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 [-webkit-app-region:no-drag]">
           <HiveMark signal={effective.signal} />
           <span className="font-semibold text-[13px]">{t('header.brand')}</span>
           <span className="truncate text-muted-foreground text-xs">{` · ${workers}`}</span>

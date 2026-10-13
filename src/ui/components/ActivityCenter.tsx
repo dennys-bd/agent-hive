@@ -91,7 +91,7 @@ function useCloseKey(activity: Activity, layout: CenterLayout | undefined, ops: 
   }), [activity, layout, ops, settings, openRun, close, confirmLoss]);
 }
 
-/** The picked activity as the window's center (#457, #458): its layout's tree (its bar moved to the window header, #221) of groups, split side by
+/** The picked activity as the window's center (#457, #458): its layout's tree of groups (its bar moved to the window header, #221), split side by
  * side and one above the other by the tab menu or a drag, each group a tab strip over its tabs' views (runs' terminals and the task's diffs).
  * With no tab left, the strip keeps only its + over the activity's home (#759). A run's terminal is an attach of its own, so the Terminal panel may show the same run at
  * once. A tab moved to another group remounts there, still one attach per run in the layout. */
