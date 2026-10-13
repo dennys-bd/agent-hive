@@ -42,3 +42,19 @@ test('the issue page does not read again on labels or repo, nor on another repos
   });
   expect(fetchMock).not.toHaveBeenCalledWith(PATH);
 });
+
+test('a pending patch shows over the issue, outlives a reload during its write, and leaves once settled (#183)', async () => {
+  const hook = await opened();
+  fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ...ISSUE, title: 'Renamed' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  const shown = () => {
+    const { load } = hook.result.current;
+    return load.kind === 'issue' ? [load.issue.title, load.issue.labels] : undefined;
+  };
+  let settle = (): void => undefined;
+  act(() => { settle = hook.result.current.optimistic((issue) => ({ ...issue, labels: [...issue.labels, 'docs'] })); });
+  expect(shown()).toEqual(['Pager breaks', ['docs']]);
+  await act(async () => { await hook.result.current.reload(); });
+  expect(shown()).toEqual(['Renamed', ['docs']]);
+  act(() => settle());
+  expect(shown()).toEqual(['Renamed', []]);
+});

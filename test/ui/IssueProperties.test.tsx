@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { IssueProperties, type IssuePropertiesProps } from '@/components/IssueProperties';
+import type { Optimistic } from '@/hooks/use-issue';
 import { setLanguage } from '@/i18n';
 import type { IssuePage, ItemField, ProjectItem, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -42,9 +43,10 @@ const FIELDS: ItemField[] = [
 const withFields = (other: () => Response) => async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
   (String(input) === FIELDS_PATH && init?.method !== 'POST' ? jsonRes({ fields: FIELDS }) : other());
 const terms = (): (string | null)[] => [...document.body.querySelectorAll('dt')].map((d) => d.textContent);
+const NO_PATCH: Optimistic = () => () => undefined;
 const renderProps = (props: Partial<IssuePropertiesProps> = {}) => {
   const onChanged = vi.fn(async () => {});
-  render(<IssueProperties issue={ISSUE} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={onChanged} {...props} />);
+  render(<IssueProperties issue={ISSUE} state={STATE} workspace="site" meta="acme/site" onGoTo={vi.fn()} onChanged={onChanged} optimistic={NO_PATCH} {...props} />);
   return onChanged;
 };
 
