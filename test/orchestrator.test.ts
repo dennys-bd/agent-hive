@@ -2756,7 +2756,7 @@ test('a Stop adds its delta to the task\'s usage.tokens and writes the transcrip
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
   const turn = (state: State, tokens: number): State => reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens }).state;
   const one = turn(started, 1000);
-  assert.deepEqual([usageN(one, 1), sessionsN(one, 1)?.[0].tokens], [{ tokens: 1000, ms: 0, waitingMs: 0 }, 1000]);
+  assert.deepEqual([usageN(one, 1), sessionsN(one, 1)?.[0].tokens], [{ tokens: 1000, ms: 0, waitingMs: 0, parts: [{ stage: 'spec', agent: 'claude', tokens: 1000, ms: 0, waitingMs: 0 }] }, 1000]);
   const two = turn(one, 1500);
   assert.deepEqual([usageN(two, 1)?.tokens, sessionsN(two, 1)?.[0].tokens], [1500, 1500]);
   assert.deepEqual(two.usage.map((s) => s.tokens), [1000, 500], 'the budget and the task count the same deltas');
@@ -2839,7 +2839,7 @@ test('boot closes each dead run at its last hook, not at the restart, so the hou
 
 test('a delete activity that drops the sessions keeps the task\'s totals, like its PRs (#236, #248)', () => {
   const first = polled(base(1, DELETE_STAGES), [listed(1, 'Done')]).state; // in done, 5d to go: the test marks it deleting itself
-  const usage = { tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE };
+  const usage = { tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE, parts: [{ tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE }] };
   const deleting: State = withMade(withLive({
     ...first, deleteActivity: { session: true, transcripts: true, nonAutoTasks: false },
   }, 1, { worktree: WORKTREE, deleting: true, sessionId: 'kept-session-id-0001' }), 1, { sessions: [keptSession('kept-session-id-0001')], usage });

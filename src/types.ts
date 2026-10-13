@@ -382,10 +382,21 @@ export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const RESERVED_ENV_NAMES = ['HIVE_PTY_ID', 'HIVE_PORT', 'HIVE_SECRET_FILE', 'HIVE_SECRET', 'TMPDIR'] as const;
 
 /** What every worker run on a task added up to (#248). The running workers' time is added on display (taskTotals). */
+/** One stage and agent's share of a task's usage (#617). stage absent: a free session, or, with no agent either, usage saved before
+ * the breakdown. agent absent with a stage: a commands stage, which runs no agent. */
+export interface UsagePart {
+  stage?: string;
+  agent?: AgentId;
+  tokens: number;
+  ms: number;
+  waitingMs: number;
+}
+
 export interface TaskUsage {
-  tokens: number; // every turn's delta, running runs included
+  tokens: number; // every turn's delta, running runs included: the sum of `parts`
   ms: number; // wall clock of every finished run
   waitingMs: number; // the part of `ms` the worker spent in waiting
+  parts: UsagePart[]; // #617: first-appearance order, at most one per (stage, agent)
 }
 
 /** Where the task's latest stage run started (#283): Restart brings the worktree back to `commit`, which refs/hive/<slug>/stage-start keeps alive. */
@@ -648,6 +659,9 @@ export interface Worker {
   backoff?: WorkerBackoff; // #805: set with status backoff while the run waits out an API error
   apiErrors?: number; // #805: consecutive transient failures since the last Stop, 1..BACKOFF_RETRIES; a rate-limit wait adds none
   agent?: AgentId; // #925: what its run runs, set with the run; absent only on a commands stage's worker, which runs no agent
+  stage?: string; // #617: the stage this run counts its usage for, set with the run and moved by an in-place continuation; absent on a free session
+  foldedMs?: number; // #617: the run's time already folded into the stages an in-place continuation left; runShare counts past it
+  foldedWaitingMs?: number; // #617: the waiting inside foldedMs
 }
 
 /** A line of the menu bar's list (#192): what GET /ptys returns per live pty (#570), a worker's run or a terminal (#283). */

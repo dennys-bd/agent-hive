@@ -567,7 +567,7 @@ export const closeWait = (worker: Worker, now: number): Pick<Worker, 'waitedMs'>
   (worker.waitingSince === undefined ? {} : { waitedMs: runTime(worker, now).waitingMs });
 
 /** What a task without `usage` reads as (#248): nothing recorded yet. */
-export const NO_USAGE: TaskUsage = { tokens: 0, ms: 0, waitingMs: 0 };
+export const NO_USAGE: TaskUsage = { tokens: 0, ms: 0, waitingMs: 0, parts: [] };
 
 /** A session named by the title its turn end read (#489); none leaves its name as it was. */
 export const titled = (session: Session, title?: string): Session => (title === undefined ? session : { ...session, name: title });

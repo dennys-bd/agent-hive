@@ -283,7 +283,7 @@ test('after a delete activity a result file\'s click opens nothing and posts not
 test('the total row counts every run on the task: working time with the waiting left out, a running session included, and the tokens; zero while nothing is recorded (#248, redesign 06)', () => {
   const MINUTE = 60_000;
   const ago = (ms: number): string => new Date(Date.now() - ms).toISOString();
-  const recorded = rec({ usage: { tokens: 3_400_000, ms: 90 * MINUTE, waitingMs: 30 * MINUTE } });
+  const recorded = rec({ usage: { tokens: 3_400_000, ms: 90 * MINUTE, waitingMs: 30 * MINUTE, parts: [{ tokens: 3_400_000, ms: 90 * MINUTE, waitingMs: 30 * MINUTE }] } });
   const running: Worker = { ...worker, status: 'waiting', startedAt: ago(12 * MINUTE), waitingSince: ago(2 * MINUTE) };
   const total = (): Element | null => screen.getByText('total', { selector: 'dt' }).nextElementSibling;
   const { unmount } = render(<Panel state={movedWork({ ...state, workers: [running], activityRecords: recorded })} initial={TASK} />);

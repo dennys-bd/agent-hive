@@ -151,7 +151,7 @@ export function occupy(state: State, index: number, queued: Task, stage: Stage, 
   // Codex); a continue is the activity's own. Either way the session records this stage and this use (#236)
   const sessionId = session === 'new' ? (AGENTS[agent].canChooseSessionId ? randomUUID() : undefined) : work.sessionId;
   const worker: Worker = {
-    id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, agent, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
+    id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, agent, stage: stage.name, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
     ...sessionBaseline(born.state, task, sessionId), // a resumed transcript already holds its old turns (#248)
     ...(born.state.workers[index].draining ? { draining: true } : {}),
   };

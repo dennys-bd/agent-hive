@@ -16,7 +16,7 @@ const task = (id: string, title: string, project: string, stage = 'dev'): WithWo
   item: { itemId: `I${id}`, id, title, body: '', url: '' }, stage, boardColumn: 'Ready', auto: true, workspace: project,
 });
 // The task's record (#629): 1h30 of work recorded
-const records = (id: string): ActivityRecord[] => [{ id: `a-${id}`, taskIds: [`I${id}`], sessions: [], usage: { tokens: 0, ms: 95 * 60_000, waitingMs: 5 * 60_000 } }];
+const records = (id: string): ActivityRecord[] => [{ id: `a-${id}`, taskIds: [`I${id}`], sessions: [], usage: { tokens: 0, ms: 95 * 60_000, waitingMs: 5 * 60_000, parts: [{ tokens: 0, ms: 95 * 60_000, waitingMs: 5 * 60_000 }] } }];
 // Task 1 runs its stage and a session the user opened, plus a shell; task 2 has its worktree and nothing running (redesign 03)
 const worker: TaskActivity = {
   kind: 'task', task: task('1', 'Task 1', 'hive'), status: 'waiting', worker: true, records: records('1'), record: records('1')[0],

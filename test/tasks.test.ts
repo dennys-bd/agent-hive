@@ -678,16 +678,16 @@ test('runTime: the wall clock since the start and the waiting, the finished wait
 
 test('taskTotals: zeros for a task with nothing recorded; the stored usage plus, for every worker running on the task, its time and its waiting so far; tokens as stored (#248)', () => {
   const MINUTE = 60_000;
-  assert.deepEqual(taskTotals({ workers: [], ...NO_WORK }, task(1, DEV), NOW), { tokens: 0, ms: 0, waitingMs: 0 });
+  assert.deepEqual(taskTotals({ workers: [], ...NO_WORK }, task(1, DEV), NOW), { tokens: 0, ms: 0, waitingMs: 0, parts: [] });
   // #629: the usage is the records', summed: a deleted activity's and the live one's
-  const usage = (tokens: number, ms: number, waitingMs: number): ActivityRecord => ({ id: `r${tokens}`, taskIds: ['item1'], sessions: [], usage: { tokens, ms, waitingMs } });
+  const usage = (tokens: number, ms: number, waitingMs: number): ActivityRecord => ({ id: `r${tokens}`, taskIds: ['item1'], sessions: [], usage: { tokens, ms, waitingMs, parts: [{ tokens, ms, waitingMs }] } });
   const activityRecords = [usage(1000, HOUR / 2, 0), usage(2000, HOUR / 2, MINUTE)];
   const workers: Worker[] = [
     { id: 's1', status: 'waiting', activityId: activityIdOf('item1'), startedAt: ago(HOUR), waitedMs: MINUTE, waitingSince: ago(2 * MINUTE) },
     { id: 's2', status: 'working', activityId: activityIdOf('item2'), startedAt: ago(DAY) }, // another task's
     { id: 's3', status: 'empty' },
   ];
-  assert.deepEqual(taskTotals({ workers, activities: TASK_WORK.activities, activityRecords: [...activityRecords, ...TASK_WORK.activityRecords] }, task(1, DEV), NOW), { tokens: 3000, ms: 2 * HOUR, waitingMs: 4 * MINUTE });
+  assert.deepEqual(taskTotals({ workers, activities: TASK_WORK.activities, activityRecords: [...activityRecords, ...TASK_WORK.activityRecords] }, task(1, DEV), NOW), { tokens: 3000, ms: 2 * HOUR, waitingMs: 4 * MINUTE, parts: [{ tokens: 3000, ms: 2 * HOUR, waitingMs: 4 * MINUTE }] });
 });
 
 test('a stopped task is neither a candidate nor a due delete activity; entering any stage drops the mark (#283)', () => {

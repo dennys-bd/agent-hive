@@ -2,8 +2,8 @@ import { isPrUrl, isSessionId, isUuid } from './orchestrator.js';
 import { PR_STATES } from './pull-requests.js';
 import { cleanTitle } from './usage.js';
 import { localActivityId } from './activities.js';
-import { savedAgent } from './agents.js';
-import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type Checkpoint, type CheckpointEnd } from './types.js';
+import { knownAgent, savedAgent } from './agents.js';
+import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -23,9 +23,25 @@ export const isTaskBase = (value: unknown): value is TaskBase =>
 
 export const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// A task's totals (#248): kept only with all three counts, copied field by field; anything else reads as nothing recorded.
-export const isTaskUsage = (value: unknown): value is TaskUsage =>
+// A task's totals (#248): kept only with all three counts; anything else reads as nothing recorded. Its parts are read apart (#617)
+export const isTaskUsage = (value: unknown): value is Record<string, unknown> & Omit<TaskUsage, 'parts'> =>
   isJsonObject(value) && isCount(value.tokens) && isCount(value.ms) && isCount(value.waitingMs);
+
+// #617: a part in the shape the reducer writes, copied field by field: a stage only as text, an agent only one AGENT_IDS has. Anything else drops the part alone
+function savedPart(value: unknown): UsagePart[] {
+  if (!isTaskUsage(value)) return [];
+  const { stage, agent } = value;
+  const known = knownAgent(agent);
+  if ((stage !== undefined && typeof stage !== 'string') || (agent !== undefined && known === undefined)) return [];
+  return [{ ...(typeof stage === 'string' ? { stage } : {}), ...(known === undefined ? {} : { agent: known }), tokens: value.tokens, ms: value.ms, waitingMs: value.waitingMs }];
+}
+
+// #617: a usage saved before the breakdown is one part holding its whole total, with neither stage nor agent, so the parts still add up to it
+function savedUsage(value: unknown): Pick<ActivityRecord, 'usage'> {
+  if (!isTaskUsage(value)) return {};
+  const { tokens, ms, waitingMs } = value;
+  return { usage: { tokens, ms, waitingMs, parts: Array.isArray(value.parts) ? value.parts.flatMap(savedPart) : [{ tokens, ms, waitingMs }] } };
+}
 
 // #283: a starting commit reaches git's argv as Restart's target, so only a hex sha is kept.
 const COMMIT = /^[0-9a-f]{7,64}$/;
@@ -211,7 +227,7 @@ export function savedRecordFields(value: Record<string, unknown>): Omit<Activity
     ...(typeof slug === 'string' && SLUG.test(slug) ? { slug } : {}),
     sessions: Array.isArray(sessions) ? sessions.flatMap(savedSession) : [],
     ...(isJsonObject(result) ? { result } : {}), ...(prs.length > 0 ? { prs } : {}),
-    ...(isTaskUsage(usage) ? { usage: { tokens: usage.tokens, ms: usage.ms, waitingMs: usage.waitingMs } } : {}),
+    ...savedUsage(usage),
     ...savedStageRuns(value.stageRuns),
   };
 }

@@ -66,7 +66,7 @@ function normalizeWorker(worker: Worker): Worker {
   // apart any more. A copy's mark (copyOf, #587) is kept only in its shape, so boot can remove the temporary transcript of a run it closes;
   // the server's boot then trusts it only when its dir is its own worker's (trustedCopies), so a forged file cannot point the removal anywhere.
   if (status === undefined || (worker as Worker & { manual?: unknown }).manual === true || (status !== 'empty' && !isUuid(worker.runId))) return { id: worker.id, status: 'empty' };
-  const { id, runId, activityId, draining, tokens, startedAt, lastEvent, question, sessionId, freeSession, waitedMs, seenAt, waitingSince, apiErrors } = worker;
+  const { id, runId, activityId, draining, tokens, startedAt, lastEvent, question, sessionId, freeSession, waitedMs, seenAt, waitingSince, apiErrors, stage, foldedMs, foldedWaitingMs } = worker;
   const kept = {
     runId: isUuid(runId) ? runId : undefined, activityId: typeof activityId === 'string' ? activityId : undefined, // #629
     draining, tokens, startedAt, question,
@@ -76,6 +76,8 @@ function normalizeWorker(worker: Worker): Worker {
     waitedMs: isCount(waitedMs) ? waitedMs : undefined, seenAt: isDate(seenAt) ? seenAt : undefined, waitingSince: isDate(waitingSince) ? waitingSince : undefined,
     copyOf: copyMarkOf(worker.copyOf),
     backoff: backoffOf(worker.backoff), apiErrors: isFailureCount(apiErrors) ? apiErrors : undefined, // #805
+    stage: typeof stage === 'string' ? stage : undefined, foldedMs: isCount(foldedMs) ? foldedMs : undefined, // #617: boot closes the run with them
+    foldedWaitingMs: isCount(foldedWaitingMs) ? foldedWaitingMs : undefined,
     agent: status !== 'empty' && isUuid(runId) ? savedAgent(worker.agent) : undefined, // #925: a worker with a run ran an agent (one saved before it ran Claude); a commands worker has no run
   };
   return { id, status, ...Object.fromEntries(Object.entries(kept).filter(([, v]) => v !== undefined)) };
