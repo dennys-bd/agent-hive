@@ -11,7 +11,7 @@ import { PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { type Logger, shortId } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { PLAN_LIMITS_INTERVAL_MS } from '../src/rate-limits.js';
-import { shutdownCommand } from '../src/platform-commands.js';
+import { keepAwakeCommand, shutdownCommand } from '../src/platform-commands.js';
 import { HOUR_MS } from '../src/usage.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { prStatesQuery } from '../src/pull-requests.js';
@@ -30,7 +30,7 @@ import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_MAX, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED, DISCARD_FAILED } from '../src/types.js';
-import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure } from './fakes.js';
+import { AUTH, STAGES, combConfig, type FakeSpawnOptions, GITHUB_ENTRY, onOwnStages, OPTIONS, fakeSourceFactory, fakeLog, WORKSPACE, type FakePty, fakePtys, fakeSpawn, fakeKeepAwakeSpawn, type FakeWorker, getFreePort, launchFlag, move, plainArgs, workspacesAt, tempHive, chained, claudePlan, claudePlanFailure } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -2255,6 +2255,60 @@ test('the shutdown effect runs the platform\'s shutdown command through the inje
   assert.equal(calls.length, 2, 're-arming retries');
   assert.equal(server.getState()?.error, 'Shutdown failed: Not authorized to shut down.');
   assert.equal(server.getState()?.shutdown, undefined);
+});
+
+test('POST /keep-awake sets and clears keepAwake behind the UI header; while set the daemon holds one keep-awake process, released on off and on close; anything but a boolean is a 400 (#226)', async (t) => {
+  const { spawn, children } = fakeKeepAwakeSpawn();
+  const { base, server } = await start(t, BODY, undefined, {}, { keepAwakeSpawn: spawn });
+  const plain = await hiveFetch(`${base}/keep-awake`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"on":true}' });
+  assert.equal(plain.status, 403);
+  const bad = await postJson(`${base}/keep-awake`, { on: 'x' });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await json(bad), { error: 'on must be a boolean' });
+  assert.equal(server.getState()?.keepAwake, undefined);
+  assert.equal(children.length, 0);
+
+  assert.deepEqual(await json(postJson(`${base}/keep-awake`, { on: true })), { ok: true });
+  assert.equal(server.getState()?.keepAwake, true);
+  assert.deepEqual(children.map((c) => [c.file, c.args]), [keepAwakeCommand(process.platform, process.pid)]);
+  await server.dispatch({ type: 'tick' });
+  assert.equal(children.length, 1, 'another reduction spawns nothing more');
+
+  assert.equal((await postJson(`${base}/keep-awake`, { on: false })).status, 200);
+  assert.equal(server.getState()?.keepAwake, undefined);
+  assert.equal(children[0].kills, 1);
+
+  assert.equal((await postJson(`${base}/keep-awake`, { on: true })).status, 200);
+  await server.close();
+  assert.equal(children[1].kills, 1, 'close() releases it');
+});
+
+test('a keep-awake process that dies while wanted shows Keep awake failed in the bar and turns the flag off, so a new click retries (#226)', async (t) => {
+  const { spawn, children } = fakeKeepAwakeSpawn();
+  const [file] = keepAwakeCommand(process.platform, process.pid);
+  const { base, server } = await start(t, BODY, undefined, {}, { keepAwakeSpawn: spawn });
+  assert.equal((await postJson(`${base}/keep-awake`, { on: true })).status, 200);
+  children[0].emit('exit', 1, null);
+  await waitFor(() => server.getState()?.error === `Keep awake failed: ${file} exited (1)`);
+  assert.equal(server.getState()?.keepAwake, undefined);
+  assert.equal(children.length, 1, 'no respawn while the failure is reported');
+  assert.equal((await postJson(`${base}/keep-awake`, { on: true })).status, 200);
+  assert.equal(children.length, 2);
+});
+
+test('the shutdown releases keep awake before the shutdown command runs (#226)', async (t) => {
+  const [shutdownFile] = shutdownCommand(process.platform);
+  const { spawn, children } = fakeKeepAwakeSpawn();
+  const killsAtShutdown: number[] = [];
+  const exec: Exec = async (called) => {
+    if (called === shutdownFile) killsAtShutdown.push(children[0]?.kills ?? -1);
+    return { stdout: '' };
+  };
+  const { base, server } = await start(t, idle(), undefined, {}, { exec, keepAwakeSpawn: spawn }); // nothing runs: arming shuts down at once
+  assert.equal((await postJson(`${base}/keep-awake`, { on: true })).status, 200);
+  assert.equal((await postJson(`${base}/shutdown`, { armed: true })).status, 200);
+  assert.deepEqual(killsAtShutdown, [1]);
+  assert.equal(server.getState()?.keepAwake, undefined);
 });
 
 test('after every poll one gh query reads the state of every open PR (#207): a failure is logged and every PR keeps its state; the worker\'s status never moves (#663); no open PR, no call', async (t) => {

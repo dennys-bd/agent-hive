@@ -140,6 +140,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'setRateLimitWait': return `setRateLimitWait ${event.minutes}`; // #805
     case 'setDefaultAgent': return `setDefaultAgent ${event.agent}`; // #925
     case 'setApprovalMinutes': return `setApprovalMinutes ${event.minutes}`;
+    case 'setKeepAwake': return `setKeepAwake ${event.on ? 'on' : 'off'}`; // #226
     case 'setShutdown': return `setShutdown ${event.armed ? 'on' : 'off'}`;
     case 'tick': return 'tick';
     case 'setStages': return `setStages ${describeStages(event.stages)}`;

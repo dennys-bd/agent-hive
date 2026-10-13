@@ -99,7 +99,7 @@ const bootedWork = ({ deleting: _deleting, setup: _setup, commands, ci, ...activ
  * - A task whose Stop was held for approval (#268) is neither stopped nor listed: it still awaits the user.
  */
 export function boot(state: State): Reduced {
-  const { shutdown: _shutdown, cleanStop, ...rest } = state;
+  const { shutdown: _shutdown, keepAwake: _keepAwake, cleanStop, ...rest } = state; // #226: a Mac that never sleeps without the user knowing is the worst case
   const occupied = state.workers.filter((s) => s.status !== 'empty' && s.runId !== undefined);
   const crashed = cleanStop ? [] : occupied.filter((s) => !holding(s)).flatMap((s) => {
     const task = s.freeSession ? undefined : taskOfWorker(state, s);

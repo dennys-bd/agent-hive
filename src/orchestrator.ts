@@ -125,6 +125,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setRateLimitWait': return none({ ...state, rateLimitWaitMinutes: event.minutes }); // no fill: the ceiling starts no job (#805)
     case 'setDefaultAgent': return none({ ...state, defaultAgent: event.agent }); // no fill: the default picks no task, only what a run records (#925)
     case 'setApprovalMinutes': return none({ ...state, approvalMinutes: event.minutes }); // no fill: the window starts no job (#268)
+    case 'setKeepAwake': return none(setKeepAwake(state, event.on)); // no fill: keeping the machine awake starts no job (#226)
     case 'setShutdown': return fill(none(setShutdown(state, event.armed))); // arming no longer caps the signal (#727); the fill runs as after any setting
     case 'tick': return none(state); // nothing by itself: the final step reads the clock (#233)
     case 'setStages': return fill(setStages(state, event.stages, event.transitions));
@@ -628,6 +629,12 @@ function setShutdown(state: State, armed: boolean): State {
   return armed ? { ...state, shutdown: state.shutdown ?? { armedAt: new Date().toISOString() } } : off;
 }
 
+// The footer's keep awake (#226): the server's holder follows this flag after every reduction
+function setKeepAwake(state: State, on: boolean): State {
+  const { keepAwake: _keepAwake, ...off } = state;
+  return on ? { ...state, keepAwake: true } : off;
+}
+
 // Shut down when done (#233), after every reduction while armed: a worker waiting for the user past its window is closed as by Stop (#283)
 // (the kill; the worker frees on the exit), and once no worker is occupied the mode ends with the shutdown effect, emitted once.
 // Tasks in flight with no worker (budget, cap) hold nothing: nothing runs, so nothing would finish.
@@ -640,7 +647,7 @@ function drainForShutdown(reduced: Reduced, now: number): Reduced {
     return { state: next.state, effects: [...r.effects, ...next.effects] };
   }, reduced);
   if (occupiedCount(closed.state.workers) > 0) return closed;
-  const { shutdown: _shutdown, ...off } = closed.state;
+  const { shutdown: _shutdown, keepAwake: _keepAwake, ...off } = closed.state; // #226: keep awake ends with the shutdown it was waiting for
   return { state: off, effects: [...closed.effects, { type: 'shutdown' }] };
 }
 

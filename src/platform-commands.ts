@@ -12,6 +12,15 @@ export function shutdownCommand(platform: NodeJS.Platform): PlatformCommand {
   throw new Error(`Shutdown is not supported on ${platform}`);
 }
 
+/** Keep awake (#226): the command holds the power assertion until it is killed, and ends on its own when the daemon's pid does, so a crash
+ *  leaves nothing behind. caffeinate -di keeps the display and the machine awake. Linux's idle:sleep keeps the machine awake but does not
+ *  guarantee the display stays on: a known gap, the titles keep the handoff's wording. */
+export function keepAwakeCommand(platform: NodeJS.Platform, pid: number): PlatformCommand {
+  if (platform === 'darwin') return ['caffeinate', ['-di', '-w', String(pid)]];
+  if (platform === 'linux') return ['systemd-inhibit', ['--what=idle:sleep', '--why=Agent Hive keep awake', 'tail', `--pid=${pid}`, '-f', '/dev/null']];
+  throw new Error(`Keep awake is not supported on ${platform}`);
+}
+
 /** The files tree's reveal (#629). xdg-open opens the folder itself instead of selecting it in its parent as open -R does: D-Bus
  *  FileManager1.ShowItems would select it, but it depends on the file manager and needs a fallback. A file would be launched by xdg-open,
  *  so for one (#818) it opens the file's folder. */

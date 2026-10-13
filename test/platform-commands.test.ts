@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { revealCommand, shutdownCommand, trashCommand } from '../src/platform-commands.js';
+import { keepAwakeCommand, revealCommand, shutdownCommand, trashCommand } from '../src/platform-commands.js';
 
 test('shutdownCommand is osascript on macOS and systemctl poweroff on Linux (#233, #658)', () => {
   assert.deepEqual(shutdownCommand('darwin'), ['osascript', ['-e', 'tell application "System Events" to shut down']]);
@@ -29,4 +29,10 @@ test('trashCommand is /usr/bin/trash on macOS and gio trash on Linux, each path 
   assert.deepEqual(trashCommand('darwin', paths), ['/usr/bin/trash', paths]);
   assert.deepEqual(trashCommand('linux', paths), ['gio', ['trash', '--', ...paths]]);
   assert.throws(() => trashCommand('win32', paths), { message: 'Trash is not supported on win32' });
+});
+
+test('keepAwakeCommand is caffeinate -di on macOS and systemd-inhibit idle:sleep on Linux, each ending with the given pid; any other platform throws (#226)', () => {
+  assert.deepEqual(keepAwakeCommand('darwin', 4242), ['caffeinate', ['-di', '-w', '4242']]);
+  assert.deepEqual(keepAwakeCommand('linux', 4242), ['systemd-inhibit', ['--what=idle:sleep', '--why=Agent Hive keep awake', 'tail', '--pid=4242', '-f', '/dev/null']]);
+  assert.throws(() => keepAwakeCommand('win32', 4242), { message: 'Keep awake is not supported on win32' });
 });

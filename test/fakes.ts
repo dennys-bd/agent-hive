@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
@@ -10,6 +11,7 @@ import { citedColumns, onSource } from '../src/tasks.js';
 import { initialState } from '../src/orchestrator.js';
 import { saveState } from '../src/state-store.js';
 import type { Logger } from '../src/log.js';
+import type { KeepAwakeSpawn } from '../src/keep-awake.js';
 import type { GqlJson } from '../src/sources/github-gql.js';
 import type { EventLog, RecordInput } from '../src/events.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
@@ -334,3 +336,27 @@ export function fakePtys(): { spawnPty: SpawnPty; ptys: FakePty[] } {
 export const claudePlan = (rateLimits?: RateLimits): PlanLimitsReport => ({ readings: rateLimits === undefined ? [] : [{ agent: 'claude', rateLimits }], failures: [] });
 /** A plan-limits reader's answer with Claude failing for `reason` (#929). */
 export const claudePlanFailure = (reason: string): PlanLimitsReport => ({ readings: [], failures: [{ agent: 'claude', reason }] });
+
+/** A keep-awake child (#226): records its argv and its kills; a kill exits it at once, as SIGTERM ends caffeinate. */
+export class FakeKeepAwakeChild extends EventEmitter {
+  kills = 0;
+  constructor(readonly file: string, readonly args: readonly string[]) {
+    super();
+  }
+  kill(): boolean {
+    this.kills += 1;
+    this.emit('exit', null, 'SIGTERM');
+    return true;
+  }
+}
+
+/** The holder's spawn (#226), every child it started in order. */
+export function fakeKeepAwakeSpawn(): { spawn: KeepAwakeSpawn; children: FakeKeepAwakeChild[] } {
+  const children: FakeKeepAwakeChild[] = [];
+  const spawn: KeepAwakeSpawn = (file, args) => {
+    const child = new FakeKeepAwakeChild(file, args);
+    children.push(child);
+    return child;
+  };
+  return { spawn, children };
+}

@@ -448,6 +448,12 @@ test('loadState never comes back armed: a saved shutdown is dropped before boot 
   assert.equal((await loadState(dir)).shutdown, undefined);
 });
 
+test('loadState never comes back awake: a saved keepAwake is dropped before boot runs (#226)', async (t) => {
+  const dir = await tempDir(t, '');
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), keepAwake: true }));
+  assert.equal('keepAwake' in (await loadState(dir)), false);
+});
+
 test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s tokens only as a count, and a worker\'s waitedMs, seenAt and waitingSince only in the shape the reducer writes: boot closes the run with them (#248)', async (t) => {
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };

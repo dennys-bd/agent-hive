@@ -33,6 +33,7 @@ import { createPrReviewStore, droppedPrReviews } from './pr-review-store.js';
 import { createPtyHost, NO_PTY, type SpawnPty } from './pty-host.js';
 import { bracketedPaste } from './pty-paste.js';
 import { createBackoffTimers } from './backoff-timers.js';
+import { createKeepAwake, type KeepAwakeSpawn, spawnKeepAwake } from './keep-awake.js';
 import { syncsFor, effectiveLimits, isChildSession, reduce, SIGNALS } from './orchestrator.js';
 import { shutdownCommand } from './platform-commands.js';
 import { POLL_INTERVAL_MS, shouldPoll } from './polling.js';
@@ -106,6 +107,7 @@ const FORBIDDEN_ORIGIN_MESSAGE = 'origem não permitida';
 const FORBIDDEN_SECRET_MESSAGE = 'segredo inválido';
 const SIGNAL_MESSAGE = `signal must be one of: ${SIGNALS.join(', ')}`;
 const ARMED_MESSAGE = 'armed must be true or false';
+const ON_MESSAGE = 'on must be a boolean';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'StopFailure', 'SessionEnd']; // the only stable points to read a transcript; a failed turn's tokens count too (#805)
 
 export type SourceFactory = (spec: SourceSpec) => Source; // one entry's spec (#180)
@@ -136,6 +138,7 @@ export interface ServerDeps {
   /** The agent CLIs this machine has, detected on boot (#516). Absent (tests) means every agent is available. */
   agents?: AgentAvailability[];
   exec?: Exec; // git for the spawn's worktree, the deleteActivity effect and the task routes, gh for the PR states (#207); tests inject a fake and see the calls
+  keepAwakeSpawn?: KeepAwakeSpawn; // #226: the keep-awake child's spawn; tests inject a fake, the default starts caffeinate / systemd-inhibit
   /** The Hive's own reading of the plan limits; absent (every test) means it never reads. main.ts / run.ts inject the real one. */
   readPlanLimits?: PlanLimitsReader;
   /** What POST /stop schedules once its answer is out: run.ts closes the server and exits. Absent (tests, an embedded server) → 501. */
@@ -265,6 +268,19 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #805: one timer per run waiting out an API error; its retryDue carries the until it was armed for
   const backoffs = createBackoffTimers((ptyId, until) => void dispatch({ type: 'retryDue', ptyId, until }));
 
+  // #226: the keep-awake process follows State.keepAwake after every reduction. A failure turns the flag off before it is reported: the
+  // error's own dispatch would otherwise sync a still-set flag and spawn again (an unsupported platform would loop).
+  const keepAwake = createKeepAwake({
+    spawn: deps.keepAwakeSpawn ?? spawnKeepAwake,
+    pid: process.pid,
+    platform: process.platform,
+    onFailure: (err) => {
+      void dispatch({ type: 'setKeepAwake', on: false })
+        .then(() => fail('Keep awake failed', err))
+        .catch((e) => log.error(`keep awake: ${errorMessage(e)}`));
+    },
+  });
+
   function eventsPayload(): EventsPayload {
     return live ? { ...live.state, effective: effectiveLimits(live.state, Date.now()) } : { configured: false };
   }
@@ -348,6 +364,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const runtime = live.runtime;
     live = { runtime, state: result.state };
     backoffs.sync(result.state.workers); // #805: a new wait arms its timer, a resumed or gone run's goes
+    keepAwake.sync(result.state.keepAwake === true); // #226: every path that sets or clears it; before the effects, so the shutdown's drain releases it first
     dropReviews(prev, result.state, event);
     // Transitions are derived here, not in the reducer: one place covers every rule, current or future, and the reducer stays pure.
     for (const line of describeChanges(prev, result.state)) log.info(line);
@@ -1065,6 +1082,18 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.json({ ok: true });
   });
 
+  // The footer's keep awake (#226): one click on or off, no confirm. dispatch syncs the holder from the state.
+  app.post('/keep-awake', async (req: Request, res: Response) => {
+    if (!requireLive(res)) return;
+    const on = (req.body as { on?: unknown }).on;
+    if (typeof on !== 'boolean') {
+      res.status(HTTP_BAD_REQUEST).json({ error: ON_MESSAGE });
+      return;
+    }
+    await dispatch({ type: 'setKeepAwake', on });
+    res.json({ ok: true });
+  });
+
   // POST /rules/disable and /rules/enable (#297): the strip's desligar and religar, behind the same host / origin middleware
   registerRuleRoutes(app, { requireLive, dispatch });
 
@@ -1257,6 +1286,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
     held.releaseAll(); // #268: no timer outlives the server, no held Stop hangs
     backoffs.close(); // #805: no retry outlives the server
+    keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     await lsp.stopAll(); // #780: no language server outlives the Hive
     const server = httpServer;

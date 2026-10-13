@@ -165,11 +165,11 @@ function migrated(parsed: State & { localSessions?: unknown }, saved: Task[], ta
 }
 
 // Files written before the signal or the budget existed lack these fields; anything unknown reads as the default. A saved shutdown is
-// dropped here, not only by boot: the live state is built before boot runs, and a restart must never come back armed (#233). A `terminal`
+// dropped here, not only by boot: the live state is built before boot runs, and a restart must never come back armed (#233), nor awake (#226). A `terminal`
 // from before #378 goes: the rest is spread. A file from before #570 has slots and shells, never read (no migration): its runs are lost, its
 // tasks stay, and it gets its cap (MAX_CONCURRENT_DEFAULT when it has none) in free workers, since boot never re-runs setMax.
 function normalize(parsed: State, scope?: WorkspaceNames): State {
-  const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, auto: _auto, ...rest } = parsed as State & { auto?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
+  const { maxConcurrent: savedMax, rateLimits, terminals, cleanStop, crash, slots: _slots, shells: _shells, cleanup: _cleanup, boardQuota: _quota, lastPolledAt: _polled, boardProject: _default, queue: _queue, shutdown: _shutdown, keepAwake: _keepAwake, columns: _columns, terminal: _terminal, localSessions: _localSessions, slept: _slept, auto: _auto, ...rest } = parsed as State & { auto?: unknown; localSessions?: unknown; slept?: unknown; slots?: unknown; shells?: unknown; cleanup?: unknown; queue?: unknown; boardProject?: unknown; boardQuota?: unknown; lastPolledAt?: unknown; columns?: unknown; terminal?: unknown };
   const maxConcurrent = isCount(savedMax) ? Math.min(Math.floor(savedMax), MAX_CONCURRENT_MAX) : MAX_CONCURRENT_DEFAULT; // #727: the state is the cap's one source, so a bad value must not crash every boot
   const saved = Array.isArray(parsed.tasks) ? parsed.tasks.map(renamedStage).filter(isTask) : [];
   const tasks = saved.map(normalizeTask);
