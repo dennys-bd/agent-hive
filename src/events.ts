@@ -20,7 +20,8 @@ export type FinishVia = 'move' | 'archive' | 'remove' | 'delete' | 'none';
 // stop: the user's; agent_stop: a stop with no cause, hive_stop's or a command's timeout
 export type StageOutcome = 'done' | 'approval' | 'stop' | 'agent_stop' | 'killed' | 'failed' | 'exit';
 export type RefusalCode = 'unknown_worker' | 'bad_result' | 'bad_verdict' | 'bad_url' | 'bad_question' | 'duplicate_of' | 'cannot_close' | 'no_session'
-  | 'bad_reply' | 'unknown_thread' | 'not_participant' | 'thread_resolved' | 'event' | MemoryRefusalCode; // #797: hive_remember's and hive_applied's
+  | 'bad_reply' | 'unknown_thread' | 'not_participant' | 'thread_resolved' | 'event' | 'block_with_reason' | 'cannot_block' | 'not_blocked' | 'block_refused'
+  | MemoryRefusalCode; // #797: hive_remember's and hive_applied's
 export type StepKind = 'COPY' | 'RUN' | 'LOAD' | 'DEL';
 
 /** What joins a record to the rest (#742): each present only when it applies. session_id is Claude Code's, so its transcript joins by it.

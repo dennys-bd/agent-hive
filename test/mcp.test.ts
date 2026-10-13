@@ -357,6 +357,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
   mountMcp(app, {
     exec: async () => ({ stdout: '' }),
     live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
+    relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, events, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
@@ -487,4 +488,18 @@ test('hive_create_task resolves its source like POST /tasks: absent is comb.crea
   const res = await hiveFetch(`${base}/tasks`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ title: 'Nope', stage: 'fila', source: 'board' }) });
   assert.deepEqual(await res.json(), { error: noCreateMessage('board') }, 'the route answers the same words');
   assert.equal(server.getState()!.tasks.filter((c) => c.created).length, 2);
+});
+
+test('hive_stop with block on a hive task writes the relation through blockerSet and leaves the task blocked, not stopped, and not refilled (#294)', async (t) => {
+  const { base, server, ptyId: first } = await start(t);
+  await server.dispatch({ type: 'stop', ptyId: first });
+  await server.dispatch({ type: 'exit', ptyId: first });
+  await server.dispatch({ type: 'createTask', title: 'Local', body: '', stage: 'fila', prefix: 'HIVE', auto: true });
+  const ptyId = worker0(server).runId!;
+  await server.dispatch({ type: 'createTask', title: 'Blocker', body: '', stage: 'later', prefix: 'HIVE', auto: true }); // later has no prompt: never a run
+  assert.deepEqual(await call(await connect(t, base, ptyId), 'hive_stop', { block: ['HIVE-2'] }), { text: 'ok', isError: false });
+  await server.dispatch({ type: 'exit', ptyId });
+  const local = server.getState()!.tasks.find((c) => c.item.id === 'HIVE-1')!;
+  assert.deepEqual([local.item.blockedBy, activityOf(server.getState()!, local.item.itemId)?.stopped], [['HIVE-2'], undefined]);
+  assert.equal(server.getState()!.workers.some((w) => w.status !== 'empty'), false, 'the fill does not take it back while blocked');
 });
