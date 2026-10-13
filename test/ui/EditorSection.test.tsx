@@ -157,8 +157,8 @@ test('a server\'s chips and a formatter\'s switch and args go into the body as t
 test('a pick in the Settings search opens editor on that language (#780)', async () => {
   const user = userEvent.setup();
   render(<Settings info={editorInfo()} onSaved={vi.fn()} />);
-  await user.type(screen.getByRole('searchbox', { name: t('settings.search') }), 'pyright');
-  await user.click(within(screen.getByRole('group', { name: 'linguagens encontradas' })).getByRole('button', { name: /pyright/ }));
+  await user.type(screen.getByRole('combobox', { name: t('settings.search') }), 'pyright');
+  await user.click(within(screen.getByRole('listbox', { name: t('settings.search') })).getByRole('option', { name: /pyright/ }));
   expect(screen.getByRole('region', { name: 'Python' })).toBeInTheDocument();
 });
 
@@ -174,8 +174,8 @@ test('a pick in the search while a filter hides the language clears the filter a
   render(<Settings info={editorInfo()} onSaved={vi.fn()} />);
   await openEditor(user);
   await user.type(screen.getByRole('searchbox', { name: 'filtrar linguagens' }), '.rs');
-  await user.type(screen.getByRole('searchbox', { name: t('settings.search') }), 'pyright');
-  await user.click(within(screen.getByRole('group', { name: 'linguagens encontradas' })).getByRole('button', { name: /pyright/ }));
+  await user.type(screen.getByRole('combobox', { name: t('settings.search') }), 'pyright');
+  await user.click(within(screen.getByRole('listbox', { name: t('settings.search') })).getByRole('option', { name: /pyright/ }));
   expect(screen.getByRole('searchbox', { name: 'filtrar linguagens' })).toHaveValue('');
   expect(screen.getByRole('option', { name: /^Python/ })).toHaveAttribute('aria-selected', 'true');
 });

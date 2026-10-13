@@ -896,7 +896,8 @@ const en = {
   'settings.back': 'back', // #510
   'settings.nav': 'sections',
   'settings.search': 'search settings',
-  'settings.search.none': 'no setting matches',
+  'settings.search.none': 'no settings found',
+  'settings.search.navigate': '↑↓ navigate', 'settings.search.open': '↵ open', 'settings.search.close': 'esc close', // #689
   'settings.unsaved.one': '1 unsaved change in {sections}',
   'settings.unsaved.other': '{n} unsaved changes in {sections}',
   'settings.section.workspaces': 'workspaces',
@@ -1114,8 +1115,6 @@ const en = {
   'settings.checkers.usesHive': "no workspace has its own: uses the Hive's", 'settings.checkers.installOrAdd': 'install it, or add it to the project',
   'settings.checkers.detected': "detected in the workspace · the Hive doesn't install it", 'settings.checkers.none': 'no supported checker for this language',
   'settings.checkers.args': 'extra arguments, one per line', 'settings.checkers.argsOf': 'extra arguments of {name}',
-  'settings.search.editor.languages': 'editor › languages', 'settings.search.editor.server': 'editor › {language} · language server', 'settings.search.editor.formatter': 'editor › {language} · formatter',
-  'settings.search.editor.results': 'languages found',
   'settings.format.onSave': 'format on save',
   'settings.format.onSaveHint': 'save runs the file through the first formatter enabled and found for its language',
   'settings.format.enabled': 'use {id}',
@@ -1622,6 +1621,7 @@ const en = {
   'shortcuts.search': 'search',
   'shortcuts.searchOperations': 'search commands', // #584
   'shortcuts.searchTasks': 'search tasks', // #542
+  'shortcuts.searchSettings': 'search settings', // #689
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
@@ -1698,6 +1698,7 @@ const en = {
   'shortcuts.scope.files': 'files tree',
   'shortcuts.scope.flow': 'flow',
   'shortcuts.scope.dialogs': 'dialogs and feedback',
+  'shortcuts.scope.settings': 'settings',
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
   'shortcutMap.title': 'shortcuts', // #639: the shortcut map's dialog
   'shortcutMap.edit': 'edit in settings › shortcuts',
@@ -2799,6 +2800,7 @@ const pt: Record<MessageKey, string> = {
   'settings.nav': 'seções',
   'settings.search': 'buscar configuração',
   'settings.search.none': 'nenhuma configuração encontrada',
+  'settings.search.navigate': '↑↓ navegar', 'settings.search.open': '↵ abrir', 'settings.search.close': 'esc fechar', // #689
   'settings.unsaved.one': '1 alteração não salva em {sections}',
   'settings.unsaved.other': '{n} alterações não salvas em {sections}',
   'settings.section.workspaces': 'workspaces',
@@ -3016,8 +3018,6 @@ const pt: Record<MessageKey, string> = {
   'settings.checkers.usesHive': 'nenhum workspace tem o seu: usa o do Hive', 'settings.checkers.installOrAdd': 'instale, ou adicione ao projeto',
   'settings.checkers.detected': 'detectado no workspace · o Hive não instala', 'settings.checkers.none': 'nenhum checker suportado para esta linguagem',
   'settings.checkers.args': 'argumentos extras, um por linha', 'settings.checkers.argsOf': 'argumentos extras de {name}',
-  'settings.search.editor.languages': 'editor › linguagens', 'settings.search.editor.server': 'editor › {language} · language server', 'settings.search.editor.formatter': 'editor › {language} · formatador',
-  'settings.search.editor.results': 'linguagens encontradas',
   'settings.format.onSave': 'formatar ao salvar',
   'settings.format.onSaveHint': 'salvar passa o arquivo pelo primeiro formatador ativado e encontrado para a linguagem dele',
   'settings.format.enabled': 'usar {id}',
@@ -3522,6 +3522,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.search': 'buscar',
   'shortcuts.searchOperations': 'buscar comandos', // #584
   'shortcuts.searchTasks': 'buscar tarefas', // #542
+  'shortcuts.searchSettings': 'buscar configuração', // #689
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
@@ -3598,6 +3599,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.files': 'árvore de arquivos',
   'shortcuts.scope.flow': 'fluxo',
   'shortcuts.scope.dialogs': 'diálogos e feedback',
+  'shortcuts.scope.settings': 'configurações',
   'shortcuts.soon': '(em breve)',
   'shortcutMap.title': 'atalhos',
   'shortcutMap.edit': 'editar em configurações › atalhos',
@@ -3823,12 +3825,18 @@ export function setLanguage(language: Language): void {
 /** A count in the current language's digits (#797): 4.000 in pt, 4,000 in en. */
 export const formatCount = (n: number): string => n.toLocaleString(LOCALE[current]);
 
-/** The text for `key` in the current language; `{name}` placeholders are filled from `vars` and left alone when there is none. */
-export function t(key: MessageKey, vars?: Record<string, string | number>): string {
-  const text = MESSAGES[current][key];
+/** The language `t` renders in (#689: the Settings search must read the same one). */
+export const currentLanguage = (): Language => current;
+
+/** `key`'s text in `language`, `{name}` placeholders filled from `vars` (#689: the Settings search reads the current language and English at once). */
+export function tIn(language: Language, key: MessageKey, vars?: Record<string, string | number>): string {
+  const text = MESSAGES[language][key];
   if (!vars) return text; // the prompt hint carries literal {id} / {number}: untouched
   return text.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
 }
+
+/** The text for `key` in the current language; `{name}` placeholders are filled from `vars` and left alone when there is none. */
+export function t(key: MessageKey, vars?: Record<string, string | number>): string { return tIn(current, key, vars); }
 
 export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[status]);
 

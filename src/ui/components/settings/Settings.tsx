@@ -2,7 +2,7 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/Confirm';
-import { SectionContent } from '@/components/settings/SectionContent';
+import { SectionContent, settingsEntries } from '@/components/settings/SectionContent';
 import type { TransitionFocus } from '@/components/settings/StageEditor';
 import { SettingsFooter } from '@/components/settings/SettingsFooter';
 import { SettingsNav } from '@/components/settings/SettingsNav';
@@ -12,6 +12,8 @@ import { getJson, postJson } from '@/lib/api';
 import type { NewSource } from '@/lib/flow-sources';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
 import { withMemoryCap } from '@/lib/memory-cap';
+import { landOn } from '@/lib/settings-jump';
+import type { SettingEntry } from '@/lib/settings-search';
 import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/settings-sections';
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
 import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-stages';
@@ -48,6 +50,18 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   const hasGithub = draft.sources.some((b) => b.type === 'github');
   const source = view.section === 'flow' ? draft.sources.find((b) => b.id === view.source) : undefined; // a removed or reverted row reads as the list
   const pageRef = useRef<HTMLDivElement>(null);
+  const [jump, setJump] = useState<{ anchor: string; n: number }>(); // #689: the setting a pick lands on; n lands again on the same one
+  const scroller = useRef<HTMLDivElement>(null);
+  function pickEntry(entry: SettingEntry): void {
+    setView(entry.view);
+    setJump((j) => ({ anchor: entry.anchor, n: (j?.n ?? 0) + 1 }));
+  }
+  // #689: one frame after the pick renders: a stage's selection (StageEditor's effect) lands one render after the view
+  useEffect(() => {
+    if (jump === undefined) return undefined;
+    const frame = requestAnimationFrame(() => landOn(jump.anchor, scroller.current));
+    return () => cancelAnimationFrame(frame);
+  }, [jump]);
 
   function applyEdit(patch: Partial<SettingsDraft>): void {
     setDraft((d) => ({ ...d, ...patch }));
@@ -64,6 +78,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
 
   const changed = unsavedKeys(saved, draft);
   const offered = info.configured ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.filter((s) => s !== 'maintenance'); // worktrees only once configured (#181)
+  const entries = settingsEntries(draft, offered);
 
   // Esc, ← back and Cancel all route here: no change leaves (or reverts) at once, a change asks first.
   function requestLeave(): void {
@@ -210,13 +225,13 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
         <span className="font-semibold text-lg leading-none">{t('settings.title')}</span>
       </header>
       <div className="flex min-h-0 flex-1">
-        <SettingsNav offered={offered} current={view.section} onPick={(section) => setView({ section })} onPickLanguage={(language) => setView({ section: 'editor', language })} />
+        <SettingsNav offered={offered} current={view.section} entries={entries} onPick={(section) => setView({ section })} onPickEntry={pickEntry} />
         <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto px-12 py-8">
+          <div ref={scroller} className="flex-1 overflow-y-auto px-12 py-8">
             <SectionContent
               key={revision} section={view.section} language={view.language} onLanguage={(language) => setView({ section: 'editor', language })} draft={draft} info={info} state={state} error={error} source={source} onChange={applyEdit} onCapSaved={capSaved}
               flow={{
-                options, githubProjects, github, filterOptions, focus,
+                options, githubProjects, github, filterOptions, focus, stage: view.stage === undefined ? undefined : { id: view.stage, n: jump?.n ?? 0 },
                 onConnectGithub: () => void connect(), onLoadProjects: (row) => void loadProjects(row), onLoadColumns: (row) => void loadColumns(draft, row),
                 onOpenSource: (id) => setView({ section: 'flow', source: id }), onAddSource: addSource, onOpenRules: () => setView({ section: 'rules' }),
               }}

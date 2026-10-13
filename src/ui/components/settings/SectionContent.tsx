@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react';
-import { AppSection } from '@/components/settings/AppSection';
-import { EditorSection } from '@/components/settings/EditorSection';
-import { ExecutionSection } from '@/components/settings/ExecutionSection';
-import { FlowSection, type FlowProps } from '@/components/settings/FlowSection';
-import { RulesTab } from '@/components/settings/RulesTab';
-import { ShortcutsTab } from '@/components/settings/ShortcutsTab';
-import { WorkspacesSection } from '@/components/settings/WorkspacesSection';
-import { WorktreesTab } from '@/components/settings/WorktreesTab';
+import { AppSection, searchEntries as appEntries } from '@/components/settings/AppSection';
+import { EditorSection, searchEntries as editorSectionEntries } from '@/components/settings/EditorSection';
+import { ExecutionSection, searchEntries as executionEntries } from '@/components/settings/ExecutionSection';
+import { FlowSection, type FlowProps, searchEntries as flowEntries } from '@/components/settings/FlowSection';
+import { RulesTab, searchEntries as rulesEntries } from '@/components/settings/RulesTab';
+import { ShortcutsTab, searchEntries as shortcutsEntries } from '@/components/settings/ShortcutsTab';
+import { WorkspacesSection, searchEntries as workspacesEntries } from '@/components/settings/WorkspacesSection';
+import { WorktreesTab, searchEntries as maintenanceEntries } from '@/components/settings/WorktreesTab';
 import { Button } from '@/components/ui/button';
 import { LOCALE, t } from '@/i18n';
+import type { SettingEntry } from '@/lib/settings-search';
 import type { SettingsSection } from '@/lib/settings-sections';
 import { type SourceDraft, emptyWorkspace, type SettingsDraft } from '@/lib/settings-form';
 import type { LanguageId, SettingsInfo, State } from '../../../types';
@@ -74,4 +75,13 @@ function body(section: SettingsSection, source: SourceDraft | undefined, { draft
     case 'shortcuts': return <ShortcutsTab shortcuts={draft.shortcuts} onChange={(shortcuts) => onChange({ shortcuts })} />;
     case 'maintenance': return <WorktreesTab state={state} />;
   }
+}
+
+/** Every entry of the Settings search (#689), in nav order: each section's module declares its own; a Record, so a new section fails tsc until it does. */
+export function settingsEntries(draft: SettingsDraft, offered: readonly SettingsSection[]): SettingEntry[] {
+  const bySection: Record<SettingsSection, () => SettingEntry[]> = {
+    workspaces: () => workspacesEntries(draft), flow: () => flowEntries(draft), execution: executionEntries, rules: rulesEntries,
+    app: appEntries, editor: editorSectionEntries, shortcuts: shortcutsEntries, maintenance: maintenanceEntries,
+  };
+  return offered.flatMap((section) => bySection[section]());
 }

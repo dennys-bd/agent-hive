@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { type MessageKey, t } from '@/i18n';
+import { settingAnchor } from '@/lib/settings-search';
 import type { AgentAvailability, AgentId, Command, StageAction } from '../../../types';
 import { entryKey, entryKeys, entryLabel, fromKeys, isGateDraft, type StageDraft } from '@/lib/settings-stages';
 
@@ -21,9 +22,9 @@ import { entryKey, entryKeys, entryLabel, fromKeys, isGateDraft, type StageDraft
 export interface BlockProps { id: string; stage: StageDraft; onUpdate(patch: Partial<StageDraft>): void }
 
 /** A labelled field with its muted hint under it. */
-export function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+export function Field({ id, anchor, label, hint, children }: { id: string; anchor?: string; label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
+    <div id={anchor} className="flex min-w-0 flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
       {children}
       {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
@@ -36,17 +37,17 @@ export function StageEnter({ id, stage, sources, onUpdate }: BlockProps & { sour
   const options = sources.flatMap((b) => b.options.map((o) => entryKey(b.id, o)));
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_10rem]">
-      <Field id={`${id}-from`} label={t('settings.stages.from')} hint={t('settings.stages.from.hint')}>
+      <Field id={`${id}-from`} anchor={settingAnchor('settings.stages.from', stage.id)} label={t('settings.stages.from')} hint={t('settings.stages.from.hint')}>
         <MultiSelect
           ariaLabel={t('settings.stages.from')} value={entryKeys(stage.from, sources)} options={options} placeholder={t('settings.stages.from.add')}
           labelOf={(key) => entryLabel(key, sources)} onChange={(keys) => onUpdate({ from: fromKeys(keys) })}
         />
       </Field>
-      <Field id={`${id}-after`} label={t('settings.stages.after')} hint={t('settings.stages.after.hint')}>
+      <Field id={`${id}-after`} anchor={settingAnchor('settings.stages.after', stage.id)} label={t('settings.stages.after')} hint={t('settings.stages.after.hint')}>
         <Input id={`${id}-after`} placeholder={t('settings.stages.after.placeholder')} defaultValue={stage.after} onChange={(e) => onUpdate({ after: e.target.value })} />
       </Field>
       {/* #475, #755: a delete-activity or a commands stage runs no worker, so it has no cap to set */}
-      <Field id={`${id}-maxWorkers`} label={t('settings.stages.maxWorkers')} hint={t('settings.stages.maxWorkers.hint')}>
+      <Field id={`${id}-maxWorkers`} anchor={settingAnchor('settings.stages.maxWorkers', stage.id)} label={t('settings.stages.maxWorkers')} hint={t('settings.stages.maxWorkers.hint')}>
         <Input
           id={`${id}-maxWorkers`} type="number" min={0} step={1} placeholder={t('settings.stages.maxWorkers.none')} disabled={stage.action !== ''}
           defaultValue={stage.maxWorkers} onChange={(e) => onUpdate({ maxWorkers: e.target.value })}
@@ -72,7 +73,7 @@ const picked = (value: string): Partial<StageDraft> =>
 function ActionSelect({ id, stage, onUpdate }: BlockProps) {
   const value: ActionValue = isGateDraft(stage) ? 'gate' : stage.action === '' ? 'prompt' : stage.action;
   return (
-    <Field id={`${id}-action`} label={t('settings.stages.action')} hint={stage.action === 'deleteActivity' ? t('settings.stages.action.deleteActivity.hint') : undefined}>
+    <Field id={`${id}-action`} anchor={settingAnchor('settings.stages.action', stage.id)} label={t('settings.stages.action')} hint={stage.action === 'deleteActivity' ? t('settings.stages.action.deleteActivity.hint') : undefined}>
       <Select value={value} onValueChange={(v) => onUpdate(picked(v))}>
         <SelectTrigger id={`${id}-action`} className="w-full"><SelectValue>{t(ACTION_LABEL[value])}</SelectValue></SelectTrigger>
         <SelectContent>
@@ -93,13 +94,13 @@ export interface AgentProps { agents: readonly AgentAvailability[]; defaultAgent
 function WorkerFields({ id, stage, onUpdate, agents, defaultAgent }: BlockProps & AgentProps) {
   return (
     <>
-      <Field id={`${id}-agent`} label={t('settings.stages.agent')}>
+      <Field id={`${id}-agent`} anchor={settingAnchor('settings.stages.agent', stage.id)} label={t('settings.stages.agent')}>
         <AgentSelect id={`${id}-agent`} value={stage.agent} agents={agents} defaultAgent={defaultAgent} onChange={(agent) => onUpdate({ agent })} />
       </Field>
-      <Field id={`${id}-model`} label={t('settings.stages.model')} hint={t('settings.stages.model.hint')}>
+      <Field id={`${id}-model`} anchor={settingAnchor('settings.stages.model', stage.id)} label={t('settings.stages.model')} hint={t('settings.stages.model.hint')}>
         <Input id={`${id}-model`} placeholder={t('settings.stages.model.placeholder')} defaultValue={stage.model} onChange={(e) => onUpdate({ model: e.target.value })} />
       </Field>
-      <Field id={`${id}-session`} label={t('settings.stages.session')}>
+      <Field id={`${id}-session`} anchor={settingAnchor('settings.stages.session', stage.id)} label={t('settings.stages.session')}>
         <Select value={stage.session} onValueChange={(v) => onUpdate({ session: v as StageDraft['session'] })}>
           <SelectTrigger id={`${id}-session`} className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -113,9 +114,9 @@ function WorkerFields({ id, stage, onUpdate, agents, defaultAgent }: BlockProps 
 }
 
 /** A stage's switch with its label, and its muted hint under it (#268, #692). */
-function StageSwitch({ id, label, hint, checked, disabled = false, onChange }: { id: string; label: string; hint: string; checked: boolean; disabled?: boolean; onChange(checked: boolean): void }) {
+function StageSwitch({ id, anchor, label, hint, checked, disabled = false, onChange }: { id: string; anchor: string; label: string; hint: string; checked: boolean; disabled?: boolean; onChange(checked: boolean): void }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div id={anchor} className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
         <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} />
         <Label htmlFor={id}>{label}</Label>
@@ -147,18 +148,18 @@ export function StageRun({ id, stage, onUpdate, agents, defaultAgent, commands, 
       {isGate && (
         <>
           <p className="text-muted-foreground text-xs">{t('settings.stages.gate.note')}</p>
-          <StageSwitch id={`${id}-approval`} label={t('settings.stages.approval')} hint={t('settings.stages.approval.hint')} checked disabled onChange={() => undefined} />
+          <StageSwitch id={`${id}-approval`} anchor={settingAnchor('settings.stages.approval', stage.id)} label={t('settings.stages.approval')} hint={t('settings.stages.approval.hint')} checked disabled onChange={() => undefined} />
         </>
       )}
       {runsPrompt && (
         <>
-          <Field id={`${id}-prompt`} label={t('settings.stages.prompt')} hint={t('settings.stages.prompt.hint')}>
+          <Field id={`${id}-prompt`} anchor={settingAnchor('settings.stages.prompt', stage.id)} label={t('settings.stages.prompt')} hint={t('settings.stages.prompt.hint')}>
             <Textarea id={`${id}-prompt`} rows={3} spellCheck={false} defaultValue={stage.prompt} onChange={(e) => onUpdate({ prompt: e.target.value })} />
           </Field>
-          <StageSwitch id={`${id}-approval`} label={t('settings.stages.approval')} hint={t('settings.stages.approval.hint')} checked={stage.approval} onChange={(approval) => onUpdate({ approval })} />
+          <StageSwitch id={`${id}-approval`} anchor={settingAnchor('settings.stages.approval', stage.id)} label={t('settings.stages.approval')} hint={t('settings.stages.approval.hint')} checked={stage.approval} onChange={(approval) => onUpdate({ approval })} />
           {/* #692: a continued session already holds the previous stage's work, so the parser refuses a handoff there */}
           <StageSwitch
-            id={`${id}-handoff`} label={t('settings.stages.handoff')} checked={stage.handoff && handoffAllowed} disabled={!handoffAllowed}
+            id={`${id}-handoff`} anchor={settingAnchor('settings.stages.handoff', stage.id)} label={t('settings.stages.handoff')} checked={stage.handoff && handoffAllowed} disabled={!handoffAllowed}
             hint={t(handoffHint)} onChange={(handoff) => onUpdate({ handoff })}
           />
         </>

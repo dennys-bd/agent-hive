@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { t, tPlural } from '@/i18n';
 import { type CommandDraft, emptyCommand, emptyEnvRow, overrides } from '@/lib/settings-commands';
 import type { WorkspaceDraft, SettingsDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 
 interface CommandsEditorProps { draft: SettingsDraft; onChange(patch: Partial<SettingsDraft>): void }
 interface CommandRowProps {
@@ -17,7 +18,7 @@ interface CommandRowProps {
 
 // #755, handoff "8 · por workspace": the second column is a stack of lines, so the row aligns its cells at the top
 const GRID = 'grid grid-cols-[8rem_minmax(0,1fr)_7rem_8rem_4.5rem_2rem] items-start gap-3 px-3 py-2';
-const COLUMNS = ['name', 'impls', 'timeout', 'env', 'menu'] as const;
+export const COLUMNS = ['name', 'impls', 'timeout', 'env', 'menu'] as const;
 
 // The variables cell (#511): with none, `+ variável` adds a row and opens the panel; with some, their count toggles it.
 function VariablesCell({ row, expanded, onChange, onToggle }: Pick<CommandRowProps, 'row' | 'expanded' | 'onChange' | 'onToggle'>) {
@@ -88,7 +89,7 @@ export function CommandsEditor({ draft, onChange }: CommandsEditorProps) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-col rounded-md border">
         <div className={`${GRID} border-b text-muted-foreground text-xs`}>
-          {COLUMNS.map((col) => <span key={col} className={col === 'menu' ? 'text-center' : undefined}>{t(`settings.commands.col.${col}`)}</span>)}
+          {COLUMNS.map((col) => <span key={col} id={settingAnchor(`settings.commands.col.${col}`)} className={col === 'menu' ? 'text-center' : undefined}>{t(`settings.commands.col.${col}`)}</span>)}
           <span />
         </div>
         {commands.map((row, i) => (

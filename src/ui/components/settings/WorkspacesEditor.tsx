@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import type { WorkspaceDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 import type { State } from '../../../types';
 import { workspaceNameFor } from '../../../tasks';
 
@@ -28,13 +29,13 @@ function chooseFolder(pick: (path: string) => void): void {
 }
 
 interface ScriptFieldsProps {
-  script: 'setup' | 'teardown'; n: number; text: string; timeout: string; placeholder: string; timeoutPlaceholder: string;
+  script: 'setup' | 'teardown'; n: number; context: string; text: string; timeout: string; placeholder: string; timeoutPlaceholder: string;
   onText(text: string): void; onTimeout(timeout: string): void;
 }
 
 // A workspace's worktree script (#299, #654): the setup run once in each new worktree, or the teardown run in it before the Hive removes it;
 // beside it each RUN's timeout as a timeout text (#511, empty = no limit); under both, the instructions it takes.
-function ScriptFields({ script, n, text, timeout, placeholder, timeoutPlaceholder, onText, onTimeout }: ScriptFieldsProps) {
+function ScriptFields({ script, n, context, text, timeout, placeholder, timeoutPlaceholder, onText, onTimeout }: ScriptFieldsProps) {
   const id = useId();
   const label = t(`settings.workspaces.${script}`);
   // one visible label for both timeouts (#654); the accessible name adds the script's, so the two inputs never share one
@@ -42,14 +43,14 @@ function ScriptFields({ script, n, text, timeout, placeholder, timeoutPlaceholde
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[minmax(0,1fr)_9rem] items-start gap-3">
-        <div className="flex flex-col gap-2">
+        <div id={settingAnchor(`settings.workspaces.${script}`, context)} className="flex flex-col gap-2">
           <Label htmlFor={`${id}-text`}>{label}</Label>
           <Textarea
             id={`${id}-text`} aria-label={`${label} ${n}`} rows={4} spellCheck={false} className="font-mono text-xs"
             value={text} placeholder={placeholder} onChange={(e) => onText(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-2">
+        <div id={settingAnchor('settings.workspaces.stepTimeout', `${context}-${script}`)} className="flex flex-col gap-2">
           <Label htmlFor={`${id}-timeout`}>{timeoutLabel}</Label>
           <Input
             id={`${id}-timeout`} aria-label={`${label}: ${timeoutLabel} ${n}`} className="font-mono" type="text"
@@ -67,9 +68,9 @@ function ScriptFields({ script, n, text, timeout, placeholder, timeoutPlaceholde
 }
 
 // A titled group of a card (#348, #692, #749): its heading and hint on one baseline, then its editor.
-export function CardGroup({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+export function CardGroup({ title, hint, anchor, children }: { title: string; hint: string; anchor?: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 border-t pt-4">
+    <div id={anchor} className="flex flex-col gap-3 border-t pt-4">
       <div className="flex items-baseline gap-3">
         <h3 className="shrink-0 whitespace-nowrap font-semibold text-sm">{title}</h3>
         <span className="text-muted-foreground text-xs">{hint}</span>
@@ -85,17 +86,17 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
   const name = row.name.trim() || t('settings.workspaces.card', { n }); // not the name field's own label, which it would shadow
   const remove = t('settings.workspaces.remove', { n });
   return (
-    <section aria-label={name} className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
+    <section id={settingAnchor('settings.workspaces', row.id)} aria-label={name} className="flex flex-col gap-5 rounded-xl border bg-card p-5 shadow-sm">
       <div className="grid grid-cols-[auto_12.5rem_minmax(0,1fr)_auto_auto] items-end gap-3">
-        <div className="flex flex-col gap-2">
+        <div id={settingAnchor('settings.workspaces.color', row.id)} className="flex flex-col gap-2">
           <Label htmlFor={`${id}-color`}>{t('settings.workspaces.color')}</Label>
           <WorkspaceColorPicker id={`${id}-color`} value={row.color} onChange={(color) => onChange({ color })} />
         </div>
-        <div className="flex flex-col gap-2">
+        <div id={settingAnchor('settings.workspaces.name', row.id)} className="flex flex-col gap-2">
           <Label htmlFor={`${id}-name`}>{t('settings.workspaces.name')}</Label>
           <Input id={`${id}-name`} aria-label={`${t('settings.workspaces.name')} ${n}`} value={row.name} onChange={(e) => onChange({ name: e.target.value })} />
         </div>
-        <div className="flex flex-col gap-2">
+        <div id={settingAnchor('settings.workspaces.path', row.id)} className="flex flex-col gap-2">
           <Label htmlFor={`${id}-path`}>{t('settings.workspaces.path')}</Label>
           <Input id={`${id}-path`} aria-label={`${t('settings.workspaces.path')} ${n}`} className="font-mono" value={row.path} placeholder="/path/to/repo" onChange={(e) => onChange({ path: e.target.value })} />
         </div>
@@ -103,28 +104,28 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
         <Button type="button" variant="ghost" size="icon" aria-label={remove} title={remove} disabled={!canRemove} onClick={onRemove}><XIcon /></Button>
       </div>
       {/* #854: where the workers' worktrees start from and where their PRs go */}
-      <CardGroup title={t('settings.fork.group')} hint={t('settings.fork.hint')}>
+      <CardGroup title={t('settings.fork.group')} hint={t('settings.fork.hint')} anchor={settingAnchor('settings.fork.group', row.id)}>
         <WorkspaceFork row={row} saved={saved} state={state} onChange={onChange} />
       </CardGroup>
       <ScriptFields
-        script="setup" n={n} text={row.setup} timeout={row.setupTimeout} placeholder={'COPY .env\nRUN pnpm install'} timeoutPlaceholder="5m"
+        script="setup" n={n} context={row.id} text={row.setup} timeout={row.setupTimeout} placeholder={'COPY .env\nRUN pnpm install'} timeoutPlaceholder="5m"
         onText={(setup) => onChange({ setup })} onTimeout={(setupTimeout) => onChange({ setupTimeout })}
       />
       <ScriptFields
-        script="teardown" n={n} text={row.teardown} timeout={row.teardownTimeout} placeholder="RUN docker compose down" timeoutPlaceholder="2m"
+        script="teardown" n={n} context={row.id} text={row.teardown} timeout={row.teardownTimeout} placeholder="RUN docker compose down" timeoutPlaceholder="2m"
         onText={(teardown) => onChange({ teardown })} onTimeout={(teardownTimeout) => onChange({ teardownTimeout })}
       />
       {/* #348: exported before every command run in it, under a command's own */}
-      <CardGroup title={t('settings.env.group')} hint={t('settings.env.hint')}>
+      <CardGroup title={t('settings.env.group')} hint={t('settings.env.hint')} anchor={settingAnchor('settings.env.group', row.id)}>
         <EnvEditor label={t('settings.workspaceEnv', { workspace: row.name.trim() })} rows={row.env} onChange={(env) => onChange({ env })} />
       </CardGroup>
       {/* #692: how the plugin's new-* skills work here, read through hive_conventions */}
-      <CardGroup title={t('settings.conventions.group')} hint={t('settings.conventions.hint')}>
+      <CardGroup title={t('settings.conventions.group')} hint={t('settings.conventions.hint')} anchor={settingAnchor('settings.conventions.group', row.id)}>
         <ConventionsEditor label={t('settings.workspaceConventions', { workspace: row.name.trim() })} rows={row.conventions} onChange={(conventions) => onChange({ conventions })} />
       </CardGroup>
       {/* #797: the memory's usage and its dialog, saved at once through its own routes, never the draft: workers write the same file. #115: the
           dialog also saves the total limit, and hands it back for the draft */}
-      <CardGroup title={t('settings.memory.group')} hint={t('settings.memory.hint')}>
+      <CardGroup title={t('settings.memory.group')} hint={t('settings.memory.hint')} anchor={settingAnchor('settings.memory.group', row.id)}>
         <MemorySection workspace={row.name.trim()} saved={saved} onCapSaved={onCapSaved} />
       </CardGroup>
     </section>

@@ -5,6 +5,7 @@ import { WorkspaceScopePicker } from '@/components/settings/WorkspaceScopePicker
 import { CardGroup } from '@/components/settings/WorkspacesEditor';
 import { t } from '@/i18n';
 import type { LanguageDraft } from '@/lib/settings-format';
+import { settingAnchor } from '@/lib/settings-search';
 import { type LanguageDef, serverDef } from '../../../languages';
 import type { CheckerState, EditorInstalls, FormatterState, InstallAction, InstallTarget } from '../../../types';
 
@@ -43,17 +44,17 @@ export function LanguageDetail(props: LanguageDetailProps) {
   const { language, draft, names, states, onChange } = props;
   const name = t(`editor.language.${language.id}`);
   return (
-    <section aria-label={name} className="flex min-w-0 flex-col gap-4 p-5">
+    <section id={settingAnchor('settings.languages', language.id)} aria-label={name} className="flex min-w-0 flex-col gap-4 p-5">
       <header className="flex items-baseline gap-3">
         <h3 className="font-semibold text-lg leading-none">{name}</h3>
         <span className="font-mono text-muted-foreground text-xs">{language.extensions.join(' ')}</span>
       </header>
-      {language.syntax !== undefined && <CardGroup title={t('settings.syntax')} hint={t('settings.syntax.hint')}><SyntaxRow {...props} /></CardGroup>}
-      {language.id !== 'other' && <CardGroup title={t('settings.server')} hint={t('settings.server.hint')}><ServerRow {...props} /></CardGroup>}
-      <CardGroup title={t('settings.formatters')} hint={t('settings.formatters.hint')}>
+      {language.syntax !== undefined && <CardGroup title={t('settings.syntax')} hint={t('settings.syntax.hint')} anchor={settingAnchor('settings.syntax', language.id)}><SyntaxRow {...props} /></CardGroup>}
+      {language.id !== 'other' && <CardGroup title={t('settings.server')} hint={t('settings.server.hint')} anchor={settingAnchor('settings.server', language.id)}><ServerRow {...props} /></CardGroup>}
+      <CardGroup title={t('settings.formatters')} hint={t('settings.formatters.hint')} anchor={settingAnchor('settings.formatters', language.id)}>
         <FormattersEditor language={language} draft={draft} names={names} states={states} onChange={onChange} />
       </CardGroup>
-      <CardGroup title={t('settings.checkers')} hint={t('settings.checkers.hint')}>
+      <CardGroup title={t('settings.checkers')} hint={t('settings.checkers.hint')} anchor={settingAnchor('settings.checkers', language.id)}>
         <CheckersSection language={language} draft={draft} names={names} installs={props.installs} states={props.checkerStates} onAct={props.onAct} onChange={onChange} />
       </CardGroup>
     </section>
