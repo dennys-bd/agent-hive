@@ -364,3 +364,15 @@ test('without a failed transition a conflict stops the task with CI failed: conf
   const waiting = read(s, [{ ...pr([check('build', 'pending')]), base: 'main' }]);
   assert.deepEqual([waiting.effects, waiting.state.tasks[0].stage, live(waiting.state)?.ci?.total, live(waiting.state)?.stopped], [[], 'ci', 1, undefined]);
 });
+
+test('ci.ended says failed for a failure a transition routes and for one that stops the task, and passed for a pass (#264)', () => {
+  const ended = (s: State, prs: CiPrRead[]): unknown[] => {
+    const event = readOf(s, prs);
+    return deriveEvents(s, reduce(s, event).state, event, Date.now()).flatMap((r) => (r.event === 'ci.ended' ? [[r.verdict, r.level]] : []));
+  };
+  const back: Transition = { from: 'ci', to: 'review', when: 'verdict', verdict: 'failed' };
+  const routing = polled({}, { transitions: [...chained([ci(), REVIEW]).transitions, back] }).state;
+  assert.deepEqual(ended(routing, [conflicting()]), [['failed', 'warn']]);
+  assert.deepEqual(ended(polled().state, [conflicting()]), [['failed', 'warn']]);
+  assert.deepEqual(ended(polled().state, [pr([check('build', 'success')])]), [['passed', 'info']]);
+});
