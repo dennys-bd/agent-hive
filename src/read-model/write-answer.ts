@@ -1,8 +1,9 @@
 import type { ReadModel, SyncKind } from './db.js';
-import type { CommentRow, IssueRow } from './rows.js';
+import { rowStands } from './sync.js';
+import type { CommentRow, IssueRow, PullFlags, ReviewRow } from './rows.js';
 
-/** A write's confirmed answer as rows (#183): what its mutation asked back, normalized. */
-export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[] }
+/** A write's confirmed answer as rows (#183, #187): what its mutation asked back, normalized; a PR write's review and flags too. */
+export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[]; reviews?: ReviewRow[]; pullFlags?: PullFlags[] }
 
 /** The model, and the readModel event the sync sends (#180): a write's rows reload every other open view of the repository. */
 export interface WriteAnswerDeps { db: ReadModel; notify(repository: string, kinds: SyncKind[]): void }
@@ -15,7 +16,16 @@ export function applyWriteAnswer(deps: WriteAnswerDeps, repository: string, answ
     // map, then includes: every row is upserted, not only up to the first that writes
     const issues = (answer.issues ?? []).map((row) => db.upsertIssue(row, 'write'));
     const comments = (answer.comments ?? []).map((row) => db.upsertComment(row, 'write'));
-    return [...(issues.includes(true) ? ['issues' as const] : []), ...(comments.includes(true) ? ['comments' as const] : [])];
+    // a PR's flags follow its row (#187): one whose row the replace rule refused keeps the newer flags the stored row came with
+    const wroteNode = new Map((answer.issues ?? []).map((row, i) => [row.nodeId, { row, wrote: issues[i] === true }]));
+    const stands = (flags: PullFlags): boolean => {
+      const entry = wroteNode.get(flags.nodeId);
+      return entry === undefined || rowStands(db, flags.source, entry.row, entry.wrote);
+    };
+    const pulls = [...(answer.reviews ?? []).map((row) => db.upsertReview(row, 'write')), ...(answer.pullFlags ?? []).filter(stands).map((flags) => db.setPullFlags(flags))];
+    return [
+      ...(issues.includes(true) ? ['issues' as const] : []), ...(comments.includes(true) ? ['comments' as const] : []), ...(pulls.includes(true) ? ['pulls' as const] : []),
+    ];
   });
   if (kinds.length > 0) deps.notify(repository, kinds);
   return kinds;

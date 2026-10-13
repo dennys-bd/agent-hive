@@ -1,31 +1,30 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
-import type { PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import { prDetailsOf } from './pr-details.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PullRead, PullToRead, RepoRow, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
-import { nullable, type Row, text, written } from './sql.js';
+import { inTransaction, issueOf, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
 export const READ_MODEL_FILE = 'read-model.sqlite';
 const FILE_MODE = 0o600; // as credentials.json: the bodies of private repositories' issues live here
 const MEMORY = ':memory:';
-const WRITE_WINDOW_MS = 30_000;
 const SIDE_FILES = ['', '-wal', '-shm'] as const;
-const KEY: readonly string[] = ['source', 'node_id'];
 const ISSUE_COLUMNS = ['source', 'node_id', 'repository', 'number', 'kind', 'state', 'title', 'body', 'author', 'labels', 'assignees', 'created_at', 'updated_at', 'closed_at', 'comments'];
 const COMMENT_COLUMNS = ['source', 'node_id', 'issue_node_id', 'repository', 'url', 'author', 'body', 'created_at', 'updated_at'];
 const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
 const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 const NO_LIMIT = -1; // SQLite's LIMIT -1: every row
 // The changed-row guard of upsertSql without its updated_at rule: a repository has no updated_at, and only the sync writes it
-const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at)
-  VALUES ($source, $repository, $url, $canPush, $issuesEnabled, $forkParent, $pushedAt)
+const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at, methods)
+  VALUES ($source, $repository, $url, $canPush, $issuesEnabled, $forkParent, $pushedAt, $methods)
   ON CONFLICT (source, repository) DO UPDATE SET url = excluded.url, can_push = excluded.can_push, issues_enabled = excluded.issues_enabled,
-    fork_parent = excluded.fork_parent, pushed_at = excluded.pushed_at
-  WHERE (excluded.url, excluded.can_push, excluded.issues_enabled, excluded.fork_parent, excluded.pushed_at)
-    IS NOT (repos.url, repos.can_push, repos.issues_enabled, repos.fork_parent, repos.pushed_at)`;
+    fork_parent = excluded.fork_parent, pushed_at = excluded.pushed_at, methods = excluded.methods
+  WHERE (excluded.url, excluded.can_push, excluded.issues_enabled, excluded.fork_parent, excluded.pushed_at, excluded.methods)
+    IS NOT (repos.url, repos.can_push, repos.issues_enabled, repos.fork_parent, repos.pushed_at, repos.methods)`;
 const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open') AS open_issues,
   COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'closed') AS closed_issues, COUNT(*) FILTER (WHERE kind = 'pr' AND state = 'open') AS open_prs,
   MAX(updated_at) AS last FROM issues WHERE source = ? AND repository = ?`;
@@ -34,8 +33,8 @@ const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor,
 
 /** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). `pulls`: a PR's own fields changed (#186). */
 export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'pulls';
-/** A part of an open PR's poll (#186): pulls/{n}, then its head's check runs, combined status and check suites. */
-export type PullPart = 'pr' | 'runs' | 'status' | 'suites';
+/** A part of a PR's poll (#186, #187): pulls/{n}, its head's check runs, combined status and check suites, and its reviews. */
+export type PullPart = 'pr' | 'runs' | 'status' | 'suites' | 'reviews';
 /** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
  * whose cursor holds the part's own reading, so a 304 still has it. kind is TEXT: no migration. */
 export type ScopeKind = SyncKind | 'reconcile' | `pull/${number}/${PullPart}`;
@@ -52,7 +51,7 @@ export interface ReadModel {
   upsertIssue(row: IssueRow, origin: UpsertOrigin): boolean; // whether it wrote
   upsertComment(row: CommentRow, origin: UpsertOrigin): boolean;
   setClosingPrs(source: string, issueNodeId: string, prs: ProjectPr[]): void; // replaces the set
-  removeIssue(source: string, nodeId: string): void; // its comments and links with it
+  removeIssue(source: string, nodeId: string): void; // its comments, links, pulls row, reviews and checks with it
   removeComment(source: string, nodeId: string): void;
   scope(source: string, repository: string, kind: ScopeKind): SyncScope | undefined;
   setScope(source: string, repository: string, kind: ScopeKind, scope: SyncScope): void;
@@ -63,6 +62,7 @@ export interface ReadModel {
   labels(source: string, repository: string): string[]; // by name
   counts(source: string, repository: string): RepoCounts;
   issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
+  issueByNode(source: string, nodeId: string): IssueRow | undefined; // #187: an issue's or a PR's row, as stored
   nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's
   comments(source: string, issueNodeId: string): CommentRow[]; // oldest first
   nodeIds(source: string, repository: string, table: 'issues' | 'comments'): string[];
@@ -74,6 +74,13 @@ export interface ReadModel {
   prs(source: string, repository: string, state: PrState, filter?: PrFilter): PrRow[]; // newest update first
   prCounts(source: string, repository: string, author?: string): RepoPrs['counts'];
   removeScopes(source: string, repository: string, prefix: string): void;
+  setPullPage(key: PullKey, page: PullPage): boolean; // #187: the page's own rows; each writer answers whether it wrote
+  setPullChecks(key: PullKey, checks: CheckRow[]): boolean; // replaces the set
+  setPullAwaiting(key: PullKey, workflows: string[]): boolean;
+  setPullCloses(key: PullKey, closes: PrClosingIssue[]): boolean;
+  upsertReview(row: ReviewRow, origin: UpsertOrigin): boolean;
+  pullAt(source: string, repository: string, number: number): OpenPull | undefined; // a PR's, open or not
+  prPage(source: string, repository: string, number: number): PrPage | undefined; // never an issue
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -82,30 +89,6 @@ export interface ReadModel {
 export interface OpenOptions { now?: () => number; migrations?: readonly string[] }
 
 type Sqlite = typeof DatabaseSync;
-const paramOf = (column: string): string => column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
-
-// The replace rule (#178): a newer updated_at always wins. On a tie a write wins, and a sync page wins unless the stored row was written
-// less than WRITE_WINDOW_MS ago by the daemon's clock: a page read before a write can carry the write's own second. An identical row
-// (written_at aside) writes nothing, so a quiet page costs no disk write.
-function upsertSql(table: string, columns: readonly string[]): string {
-  const compared = columns.filter((c) => !KEY.includes(c));
-  const set = [...compared, 'written_at'].map((c) => `${c} = excluded.${c}`).join(', ');
-  return `INSERT INTO ${table} (${columns.join(', ')}, written_at) VALUES (${columns.map((c) => `$${paramOf(c)}`).join(', ')}, $writtenAt)
-  ON CONFLICT (source, node_id) DO UPDATE SET ${set}
-  WHERE (${compared.map((c) => `excluded.${c}`).join(', ')}) IS NOT (${compared.map((c) => `${table}.${c}`).join(', ')})
-    AND (excluded.updated_at > ${table}.updated_at OR (excluded.updated_at = ${table}.updated_at
-      AND (excluded.written_at IS NOT NULL OR ${table}.written_at IS NULL OR $now - ${table}.written_at >= ${WRITE_WINDOW_MS})))`;
-}
-
-function issueOf(row: Row): IssueRow {
-  return {
-    source: text(row, 'source'), nodeId: text(row, 'node_id'), repository: text(row, 'repository'), number: Number(row.number),
-    kind: row.kind === 'pr' ? 'pr' : 'issue', state: row.state === 'closed' ? 'closed' : 'open', title: text(row, 'title'), body: text(row, 'body'),
-    author: nullable(row, 'author'), labels: JSON.parse(text(row, 'labels')) as string[], assignees: JSON.parse(text(row, 'assignees')) as string[],
-    createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'), closedAt: nullable(row, 'closed_at'), comments: Number(row.comments),
-  };
-}
-
 function commentOf(row: Row): CommentRow {
   return {
     source: text(row, 'source'), nodeId: text(row, 'node_id'), issueNodeId: text(row, 'issue_node_id'), repository: text(row, 'repository'),
@@ -122,32 +105,14 @@ function prOf(row: Row): ProjectPr {
   };
 }
 
-// A savepoint, not BEGIN: setClosingPrs and removeIssue open their own, and a caller may already hold db.transaction around them
-function inTransaction<T>(db: DatabaseSync, run: () => T): T {
-  db.exec('SAVEPOINT read_model');
-  try {
-    const result = run();
-    db.exec('RELEASE read_model');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK TO read_model');
-    db.exec('RELEASE read_model');
-    throw err;
-  }
-}
-
 function upsertsOf(db: DatabaseSync, now: () => number): Pick<ReadModel, 'upsertIssue' | 'upsertComment' | 'setScope'> {
   const issue = db.prepare(upsertSql('issues', ISSUE_COLUMNS));
   const comment = db.prepare(upsertSql('comments', COMMENT_COLUMNS));
   const scope = db.prepare(UPSERT_SCOPE);
-  const stamp = (origin: UpsertOrigin): { now: number; writtenAt: number | null } => {
-    const at = now();
-    return { now: at, writtenAt: origin === 'write' ? at : null };
-  };
   return {
     // every key of the row is one named parameter; labels and assignees travel as JSON arrays
-    upsertIssue: (row, origin) => written(issue.run({ ...row, labels: JSON.stringify(row.labels), assignees: JSON.stringify(row.assignees), ...stamp(origin) })),
-    upsertComment: (row, origin) => written(comment.run({ ...row, ...stamp(origin) })),
+    upsertIssue: (row, origin) => written(issue.run({ ...row, labels: JSON.stringify(row.labels), assignees: JSON.stringify(row.assignees), ...stamp(now(), origin) })),
+    upsertComment: (row, origin) => written(comment.run({ ...row, ...stamp(now(), origin) })),
     setScope: (source, repository, kind, value) => { scope.run({ source, repository, kind, ...value }); },
   };
 }
@@ -159,6 +124,8 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
   const dropComments = db.prepare('DELETE FROM comments WHERE source = ? AND issue_node_id = ?');
   const dropComment = db.prepare('DELETE FROM comments WHERE source = ? AND node_id = ?');
   const dropPull = db.prepare('DELETE FROM pulls WHERE source = ? AND node_id = ?');
+  const dropReviews = db.prepare('DELETE FROM pull_reviews WHERE source = ? AND pull_node_id = ?');
+  const dropChecks = db.prepare('DELETE FROM pull_checks WHERE source = ? AND pull_node_id = ?');
   return {
     // The links have their own write: a linked PR moving does not bump the issue's updated_at, so they live outside the replace rule
     setClosingPrs: (source, issueNodeId, prs) => inTransaction(db, () => {
@@ -168,6 +135,8 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
     removeIssue: (source, nodeId) => inTransaction(db, () => {
       dropComments.run(source, nodeId);
       dropLinks.run(source, nodeId);
+      dropReviews.run(source, nodeId);
+      dropChecks.run(source, nodeId);
       dropPull.run(source, nodeId);
       dropIssue.run(source, nodeId);
     }),
@@ -189,11 +158,12 @@ function viewsOf(db: DatabaseSync): (source: string, rows: Row[]) => IssueView[]
   };
 }
 
-function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
+function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'issueByNode' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
   const scope = db.prepare('SELECT cursor, etag, synced_at FROM sync_scopes WHERE source = ? AND repository = ? AND kind = ?');
   const issues = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND kind = 'issue' AND state = ? ORDER BY updated_at DESC, number DESC LIMIT ?");
   const issue = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND number = ? AND kind = 'issue'");
   const nodeId = db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ? AND number = ?');
+  const byNode = db.prepare('SELECT * FROM issues WHERE source = ? AND node_id = ?');
   const comments = db.prepare('SELECT * FROM comments WHERE source = ? AND issue_node_id = ? ORDER BY created_at');
   const ids = {
     issues: db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ?'),
@@ -210,6 +180,10 @@ function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue'
       const row = issue.get(source, repository, number);
       return row === undefined ? undefined : views(source, [row])[0];
     },
+    issueByNode: (source, nodeId) => {
+      const row = byNode.get(source, nodeId);
+      return row === undefined ? undefined : issueOf(row);
+    },
     nodeIdOf: (source, repository, number) => {
       const row = nodeId.get(source, repository, number);
       return row === undefined ? undefined : text(row, 'node_id');
@@ -223,6 +197,7 @@ function repoOf(row: Row): RepoRow {
   return {
     source: text(row, 'source'), repository: text(row, 'repository'), url: text(row, 'url'), canPush: Number(row.can_push) === 1,
     issuesEnabled: Number(row.issues_enabled) === 1, forkParent: nullable(row, 'fork_parent'), pushedAt: nullable(row, 'pushed_at'),
+    methods: JSON.parse(text(row, 'methods')) as MergeMethod[],
   };
 }
 
@@ -235,7 +210,7 @@ function repoTablesOf(db: DatabaseSync): Pick<ReadModel, 'setRepo' | 'repo' | 's
   const labels = (source: string, repository: string): string[] => names.all(source, repository).map((row) => text(row, 'name'));
   return {
     // node:sqlite binds no boolean
-    setRepo: (row) => written(upsert.run({ ...row, canPush: row.canPush ? 1 : 0, issuesEnabled: row.issuesEnabled ? 1 : 0 })),
+    setRepo: (row) => written(upsert.run({ ...row, canPush: row.canPush ? 1 : 0, issuesEnabled: row.issuesEnabled ? 1 : 0, methods: JSON.stringify(row.methods) })),
     repo: (source, repository) => {
       const row = repo.get(source, repository);
       return row === undefined ? undefined : repoOf(row);
@@ -287,8 +262,11 @@ function restrict(path: string): void {
 }
 
 function modelOf(db: DatabaseSync, now: () => number): ReadModel {
+  const reads = readsOf(db);
+  const repos = repoTablesOf(db);
   return {
-    ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), ...repoTablesOf(db), ...countsOf(db), ...pullTablesOf(db),
+    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db),
+    ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
   };
 }

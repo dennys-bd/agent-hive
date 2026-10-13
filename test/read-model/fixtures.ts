@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
+import { checkPath, pullPath, reviewsPath } from '../../src/read-model/pulls.js';
+import type { RefetchDeps } from '../../src/read-model/reconcile.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
@@ -45,7 +47,7 @@ export const ISSUE_ROW: IssueRow = {
   source: SOURCE, nodeId: 'I_12', repository: REPO, number: 12, kind: 'issue', state: 'closed', title: 'T12', body: 'b', author: 'bia',
   labels: ['bug'], assignees: ['bia', 'caio'], createdAt: CREATED, updatedAt: T1, closedAt: T1, comments: 1,
 };
-export const REPO_ROW: RepoRow = { source: SOURCE, repository: REPO, url: 'https://github.com/acme/hive', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: T1 };
+export const REPO_ROW: RepoRow = { source: SOURCE, repository: REPO, url: 'https://github.com/acme/hive', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: T1, methods: ['merge', 'squash'] };
 export const REST_COMMENT = {
   url: 'https://api.github.com/repos/acme/hive/issues/comments/5', html_url: COMMENT_URL,
   issue_url: 'https://api.github.com/repos/acme/hive/issues/12', id: 5, node_id: 'IC_5', user: { login: 'bia', id: 7 }, created_at: COMMENTED, updated_at: COMMENTED, body: 'c',
@@ -69,6 +71,7 @@ export const ok = (body: unknown, extra: { next?: string; etag?: string; quota?:
 export const REST_REPO = {
   id: 1, node_id: 'R_1', full_name: 'acme/hive', html_url: 'https://github.com/acme/hive', fork: false, has_issues: true, pushed_at: T1,
   permissions: { admin: false, maintain: false, push: true, triage: true, pull: true },
+  allow_merge_commit: true, allow_squash_merge: true, allow_rebase_merge: false,
 };
 export const restLabel = (name: string): Record<string, unknown> => ({ id: name.length, node_id: `LA_${name}`, name, color: 'ededed', default: false });
 /** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */
@@ -83,6 +86,23 @@ export const restPr = (n: number, updatedAt: string, mergedAt: string | null = n
 export const restComment = (id: string, issue: number, updatedAt: string): Record<string, unknown> => ({
   ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,
 });
+
+/** GET pulls/{n} as the poll reads it (#186, #187): the head, the merge state and the page's fields. */
+export const restPull = (n: number, sha: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  number: n, head: { sha, ref: 'feature', repo: { owner: { login: 'bia' } } }, base: { ref: 'main', repo: { owner: { login: 'acme' } } }, mergeable_state: 'clean',
+  commits: 1, additions: 1, deletions: 1, requested_reviewers: [], requested_teams: [], ...extra,
+});
+/** One item of pulls/{n}/reviews (#187); a pending review has no submitted_at. */
+export const restReview = (id: string, login: string | null, state: string, submittedAt: string | null = T1): Record<string, unknown> => ({
+  id: 1, node_id: id, user: login === null ? null : { login }, state, body: `body ${id}`, submitted_at: submittedAt,
+});
+/** PR 7 as PR_ROW_FIELDS answers it (#187): merged at T2. */
+export const GQL_PR = {
+  id: 'PR_7', number: 7, title: 'T7', body: 'b', state: 'MERGED', isDraft: false, mergedAt: T2, createdAt: CREATED, updatedAt: T2, closedAt: T2,
+  author: { login: 'bia' }, labels: { nodes: [{ name: 'bug' }] }, assignees: { nodes: [{ login: 'bia' }, { login: 'caio' }] }, comments: { totalCount: 1 },
+};
+/** A review as REVIEW_ROW_FIELDS answers it (#187). */
+export const GQL_REVIEW = { id: 'PRR_1', author: { login: 'caio' }, state: 'APPROVED', body: 'ship it', submittedAt: T2 };
 
 /** A RestGet answering `answers` in order, recording every [path, etag] it was asked. */
 export function fakeRest(answers: RestAnswer[]): { rest: RestGet; calls: [string, string | undefined][] } {
@@ -127,3 +147,34 @@ export function fakeLinks(nodes: GhPullRequest[] = []): { gql: Gql; calls: unkno
 export const NO_GQL: Gql = async () => {
   throw new Error('a read called GraphQL');
 };
+
+/** A REST page of the poll's fake GitHub (#186): its body and the ETag it answers 304 to. */
+export interface Page { body: unknown; etag: string }
+export const RUN_OK = { name: 'test', status: 'completed', conclusion: 'success' };
+export const RUNS_OK: Page = { body: { total_count: 1, check_runs: [RUN_OK] }, etag: 'ER1' };
+
+/** What GitHub answers the poll of PR n at head sha (#186, #187): pulls/{n}, the three check parts, and no review. */
+export const pagesAt = (sha: string, runs: Page = RUNS_OK, n = 7): Record<string, Page> => ({
+  [pullPath(REPO, n)]: { body: restPull(n, sha), etag: `EP-${sha.slice(0, 1)}` },
+  [checkPath(REPO, sha, 'runs')]: runs,
+  [checkPath(REPO, sha, 'status')]: { body: { state: 'pending', statuses: [] }, etag: 'ES' },
+  [checkPath(REPO, sha, 'suites')]: { body: { total_count: 0, check_suites: [] }, etag: 'EU' },
+  [reviewsPath(REPO, n)]: { body: [], etag: 'EV' },
+});
+
+/** GitHub over `pages`: a 304 to a page's own ETag, as GitHub does; a path it lacks fails as the transport does. Every [path, etag] recorded. */
+export function github(pages: Record<string, Page>): { rest: RestGet; calls: [string, string | undefined][] } {
+  const calls: [string, string | undefined][] = [];
+  const rest: RestGet = async (path, etag) => {
+    calls.push([path, etag]);
+    const page = pages[path];
+    if (page === undefined) throw new Error(`github rest: HTTP 404 for ${path}`);
+    return etag === page.etag ? { status: 304 } : ok(page.body, { etag: page.etag });
+  };
+  return { rest, calls };
+}
+
+export const NO_REST: RestGet = async (path) => {
+  throw new Error(`unexpected ${path}`);
+};
+export const roundDeps = (db: ReadModel, rest: RestGet, gql: Gql = NO_GQL): RefetchDeps => ({ db, rest, gql, source: SOURCE, now: NOW });

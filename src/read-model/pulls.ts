@@ -1,8 +1,9 @@
 import { SUITE_FIELDS } from '../pr-checks.js';
+import { CLOSES_FIELDS } from '../pr-github.js';
 import type { RepoRef } from '../repos/repositories.js';
 import type { PrMergeState } from '../types.js';
 import type { PullPart, ScopeKind } from './db.js';
-import { pullFromRest, pullsFromGql, rollupOf, runsReading, statusReading, suitesReading, type PullGql } from './normalize.js';
+import { awaitingFromRest, checkItemsFromRest, pullFromRest, pullPageFromRest, pullsFromGql, reviewsFromRest, rollupOf, runsReading, statusReading, suitesReading, type PullGql } from './normalize.js';
 import type { RefetchDeps } from './reconcile.js';
 import { readAll } from './repo-scopes.js';
 import type { OpenPull, PullToRead } from './rows.js';
@@ -11,16 +12,20 @@ import { prAuthorOf } from './views.js';
 
 /** The batch's cap (#186): GitHub looks up at most 100 nodes in one query. */
 export const BATCH_SIZE = 100;
-type CheckPart = Exclude<PullPart, 'pr'>;
+type CheckPart = Exclude<PullPart, 'pr' | 'reviews'>;
 const CHECK_PARTS: readonly CheckPart[] = ['runs', 'status', 'suites'];
 const CHECK_PATHS: Record<CheckPart, string> = { runs: 'check-runs', status: 'status', suites: 'check-suites' };
 const READINGS: Record<CheckPart, (bodies: unknown[]) => string | null> = { runs: runsReading, status: statusReading, suites: suitesReading };
-// What the list read of a PR over GraphQL before (#758, #854)
-const PULL_FIELDS = 'id reviewDecision mergeStateStatus '
+// What the list read of a PR over GraphQL before (#758, #854), and the issues it closes, which REST has not (#187)
+const PULL_FIELDS = `id reviewDecision mergeStateStatus ${CLOSES_FIELDS} `
   + `headCommit: commits(last: 1) { nodes { commit { ${SUITE_FIELDS} statusCheckRollup { state } } } }`;
 
 export const pullPath = (repository: string, number: number): string => `repos/${repository}/pulls/${number}`;
 export const checkPath = (repository: string, sha: string, part: CheckPart): string => `repos/${repository}/commits/${sha}/${CHECK_PATHS[part]}?per_page=100`;
+export const reviewsPath = (repository: string, number: number): string => `repos/${repository}/pulls/${number}/reviews?per_page=100`;
+// sha is pullFromRest's, checked as a SHA before any path takes it
+export const awaitingPath = (repository: string, sha: string): string => `repos/${repository}/actions/runs?head_sha=${sha}&status=action_required&per_page=100`;
+const plus = (a: SyncReport['requests'], b: SyncReport['requests']): SyncReport['requests'] => ({ 200: a[200] + b[200], 304: a[304] + b[304] });
 const partKind = (number: number, part: PullPart): ScopeKind => `pull/${number}/${part}` as const;
 
 /** The batch's query for `count` PRs (#186): one aliased node lookup each, since a Gql variable is a scalar, never a list. */
@@ -41,7 +46,9 @@ function storeBatch(deps: SyncDeps, repository: string, due: PullToRead[], read:
     if (node === undefined) return wrote;
     const key = { source: deps.source, nodeId: pr.nodeId, repository, number: pr.number };
     const settled = pr.isOpen ? {} : { settled: { mergeState: node.mergeState, checks: node.checks } };
-    return deps.db.setPullRead(key, { decision: node.decision, readAt: pr.updatedAt, ...settled }) || wrote;
+    const read = deps.db.setPullRead(key, { decision: node.decision, readAt: pr.updatedAt, ...settled });
+    const closes = deps.db.setPullCloses(key, node.closes);
+    return read || closes || wrote;
   }, false));
 }
 
@@ -93,25 +100,82 @@ async function readChecks(deps: SyncDeps, repository: string, pr: OpenPull, head
   return reads;
 }
 
-// One open PR (#186): pulls/{n}, then its head's runs, status and suites, each conditional. Nothing is written until all four answered, so
-// a failure leaves the PR's scopes and row as they were; a part's scope is written only on a 200, so a quiet round writes nothing
-async function pollPull(deps: SyncDeps, repository: string, pr: OpenPull): Promise<SyncReport> {
-  const { db, source } = deps;
-  const etag = pr.headSha === null ? null : (db.scope(source, repository, partKind(pr.number, 'pr'))?.etag ?? null);
-  const pull = await conditional(deps, pullPath(repository, pr.number), etag);
-  const head = headOf(pr, pull);
-  const checks = await readChecks(deps, repository, pr, head.headSha);
-  const parts: PartRead[] = [{ ...pull, part: 'pr', reading: null }, ...checks];
-  const syncedAt = deps.now().toISOString();
-  const [runs, status, suites] = checks.map((read) => read.reading);
-  const wrote = db.transaction(() => {
-    for (const read of parts) {
-      if (read.bodies !== undefined) db.setScope(source, repository, partKind(pr.number, read.part), { cursor: read.reading, etag: read.etag, syncedAt });
+// The ETag a part is asked with: pulls/{n}'s only once a head is stored, since a 304 there needs one
+function savedEtag(deps: SyncDeps, repository: string, pr: OpenPull, part: 'pr' | 'reviews'): string | null {
+  if (part === 'pr' && pr.headSha === null) return null;
+  return deps.db.scope(deps.source, repository, partKind(pr.number, part))?.etag ?? null;
+}
+
+const isItemPart = (read: PartRead): read is PartRead & { part: 'runs' | 'status' } => read.part === 'runs' || read.part === 'status';
+
+// The check items come from two parts with their own ETags (#187): when one answered 200 and the other 304, the other is read again without
+// its ETag, so the items are stored whole from both bodies. One more request, and only when a check changed
+async function completeItems(deps: SyncDeps, repository: string, sha: string, reads: PartRead[]): Promise<PartRead[]> {
+  if (!reads.some((read) => isItemPart(read) && read.bodies !== undefined)) return reads;
+  const completed: PartRead[] = [];
+  for (const read of reads) {
+    if (!isItemPart(read) || read.bodies !== undefined) {
+      completed.push(read);
+      continue;
     }
-    return db.setPullPoll({ source, nodeId: pr.nodeId, repository, number: pr.number }, { ...head, checks: rollupOf(runs, status, suites) });
-  });
-  const requests = parts.reduce((sum, read) => ({ 200: sum[200] + read.requests[200], 304: sum[304] + read.requests[304] }), { 200: 0, 304: 0 });
+    const again = await conditional(deps, checkPath(repository, sha, read.part), null);
+    const reading = again.bodies === undefined ? read.reading : READINGS[read.part](again.bodies);
+    completed.push({ ...again, part: read.part, reading, requests: plus(read.requests, again.requests) });
+  }
+  return completed;
+}
+
+// The workflows awaiting approval (#187): read only on a suites 200 that awaits; a 304 keeps the stored names (undefined), any other 200 clears them
+async function awaitingRead(deps: SyncDeps, repository: string, sha: string, checks: PartRead[]): Promise<{ names?: string[]; requests: SyncReport['requests'] }> {
+  const suites = checks.find((read) => read.part === 'suites');
+  const none = { 200: 0, 304: 0 };
+  if (suites?.bodies === undefined) return { requests: none };
+  if (suites.reading !== 'awaiting') return { names: [], requests: none };
+  const read = await conditional(deps, awaitingPath(repository, sha), null);
+  return { ...(read.bodies === undefined ? {} : { names: awaitingFromRest(read.bodies) }), requests: read.requests };
+}
+
+interface PollRead { head: { headSha: string; mergeState: PrMergeState }; parts: PartRead[]; awaiting?: string[] }
+
+// One transaction: each part's scope on a 200, then the poll's columns, the page, the items (only from both item bodies), the awaiting names
+// and the reviews. Every writer runs; whether any wrote
+function storePoll(deps: SyncDeps, repository: string, pr: OpenPull, read: PollRead): boolean {
+  const { db, source } = deps;
+  const key = { source, nodeId: pr.nodeId, repository, number: pr.number };
+  const syncedAt = deps.now().toISOString();
+  for (const part of read.parts) if (part.bodies !== undefined) db.setScope(source, repository, partKind(pr.number, part.part), { cursor: part.reading, etag: part.etag, syncedAt });
+  const partOf = (name: PullPart): PartRead | undefined => read.parts.find((part) => part.part === name);
+  const [pull, runs, status, reviews] = (['pr', 'runs', 'status', 'reviews'] as const).map((name) => partOf(name)?.bodies);
+  const [runsReading, statusReading, suitesReading] = CHECK_PARTS.map((name) => partOf(name)?.reading ?? null);
+  const wrote = [
+    db.setPullPoll(key, { ...read.head, checks: rollupOf(runsReading, statusReading, suitesReading) }),
+    pull !== undefined && db.setPullPage(key, pullPageFromRest(pull[0])),
+    runs !== undefined && status !== undefined && db.setPullChecks(key, checkItemsFromRest(runs, status)),
+    read.awaiting !== undefined && db.setPullAwaiting(key, read.awaiting),
+    ...(reviews === undefined ? [] : reviewsFromRest(source, repository, pr.nodeId, reviews).map((row) => db.upsertReview(row, 'sync'))),
+  ];
+  return wrote.includes(true);
+}
+
+// One PR (#186, #187): pulls/{n}, its head's runs, status and suites, the awaiting names when a suite awaits, and its reviews, each
+// conditional. Nothing is written until every read answered, so a failure leaves the PR's scopes and rows as they were
+async function pollPull(deps: SyncDeps, repository: string, pr: OpenPull): Promise<SyncReport> {
+  const pull = await conditional(deps, pullPath(repository, pr.number), savedEtag(deps, repository, pr, 'pr'));
+  const head = headOf(pr, pull);
+  const checks = await completeItems(deps, repository, head.headSha, await readChecks(deps, repository, pr, head.headSha));
+  const awaiting = await awaitingRead(deps, repository, head.headSha, checks);
+  const reviews = await conditional(deps, reviewsPath(repository, pr.number), savedEtag(deps, repository, pr, 'reviews'));
+  const parts: PartRead[] = [{ ...pull, part: 'pr', reading: null }, ...checks, { ...reviews, part: 'reviews', reading: null }];
+  const wrote = deps.db.transaction(() => storePoll(deps, repository, pr, { head, parts, ...(awaiting.names === undefined ? {} : { awaiting: awaiting.names }) }));
+  const requests = [...parts.map((part) => part.requests), awaiting.requests].reduce(plus, { 200: 0, 304: 0 });
   return { kinds: wrote ? ['pulls'] : [], requests };
+}
+
+/** One PR's poll for its page's refetch (#187), open or not; none when the model holds no PR at that number. */
+export async function pollOne(deps: SyncDeps, repository: string, number: number): Promise<SyncReport> {
+  throwIfStopped(deps);
+  const pr = deps.db.pullAt(deps.source, repository, number);
+  return pr === undefined ? EMPTY_REPORT : pollPull(deps, repository, pr);
 }
 
 /** The round's PR part (#186), after the issue scopes: the GraphQL batch of the PRs whose updated_at moved, the REST poll of each open PR,

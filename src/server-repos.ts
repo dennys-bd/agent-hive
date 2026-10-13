@@ -125,7 +125,7 @@ async function pollOwner(ctx: RepoContext, { state, repository, number }: Target
 }
 
 // A write's confirmed answer as rows, under the source the reads use: the source is read only once GitHub took the write (#183)
-type AnswerOf = (source: string) => WriteAnswer;
+export type AnswerOf = (source: string) => WriteAnswer;
 
 const issueAnswer = (repository: string, issue: unknown): AnswerOf => (source) => ({ issues: [issueFromGql(source, repository, issue)] });
 
@@ -135,16 +135,17 @@ const commentAnswer = (repository: string, answer: CommentAnswer): AnswerOf => (
   return { issues: [issue], comments: [commentFromGql(source, repository, issue.nodeId, answer.comment)] };
 };
 
-// The answer into the read model, so the next GET shows it (#183). GitHub already took the write: a failure here (a malformed answer, the
-// store) is only logged, and the next round brings the row. No model or no login: nothing stored, the sync catches up
-async function storeAnswer(ctx: RepoContext, repository: string, answerOf: AnswerOf | undefined): Promise<void> {
-  const model = ctx.deps.readModel;
+/** A write's answer into the read model, so the next GET shows it (#183, #187). GitHub already took the write: a failure here (a malformed
+ * answer, the store) is only logged, and the next round brings the row. No model or no login: nothing stored, the sync catches up. Shared by
+ * the issue page's writes and the PR page's. */
+export async function storeWriteAnswer(deps: Pick<RepoRouteDeps, 'readModel' | 'log'>, repository: string, answerOf: AnswerOf | undefined): Promise<void> {
+  const model = deps.readModel;
   if (model === undefined || answerOf === undefined) return;
   try {
     const source = await model.source();
     if (source !== undefined) applyWriteAnswer(model, repository, answerOf(source));
   } catch (err) {
-    ctx.deps.log.error(`repositories: the answer of a write on ${repository} was not stored: ${err instanceof Error ? err.message : String(err)}`);
+    deps.log.error(`repositories: the answer of a write on ${repository} was not stored: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -158,7 +159,7 @@ async function write(ctx: RepoContext, res: Response, target: Target, run: () =>
   } catch (err) {
     return refuse(res, refusalOf(err));
   }
-  await storeAnswer(ctx, target.repository, answerOf);
+  await storeWriteAnswer(ctx.deps, target.repository, answerOf);
   res.json({ ok: true });
   if (pollAfter) {
     pollOwner(ctx, target).catch((err: unknown) => {
@@ -205,17 +206,17 @@ function inQuotaBackoff(ctx: RepoContext, res: Response): boolean {
   return true;
 }
 
-interface Reading { model: RepoReadModel; source: string }
+export interface Reading { model: RepoReadModel; source: string }
 
-// The read model and whose rows to read, or undefined once the 503 is out: a read never falls back to GitHub (#181)
-async function readingOf(ctx: RepoContext, res: Response): Promise<Reading | undefined> {
-  const model = ctx.deps.readModel;
+/** The read model and whose rows to read, or undefined once the 503 is out: a read never falls back to GitHub (#181). Shared with the PR page (#187). */
+export async function readingOf(deps: Pick<RepoRouteDeps, 'readModel' | 'log'>, res: Response): Promise<Reading | undefined> {
+  const model = deps.readModel;
   if (model === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: MODEL_CLOSED_MESSAGE });
   let source: string | undefined;
   try {
     source = await model.source();
   } catch (err) {
-    ctx.deps.log.error(`repositories: the read model's source could not be read: ${err instanceof Error ? err.message : String(err)}`); // the text stays in the log: a store error may name a path
+    deps.log.error(`repositories: the read model's source could not be read: ${err instanceof Error ? err.message : String(err)}`); // the text stays in the log: a store error may name a path
   }
   if (source === undefined) return void refuse(res, { status: HTTP_SERVICE_UNAVAILABLE, message: NO_LOGIN_MESSAGE });
   return { model, source };
@@ -225,7 +226,7 @@ type NamedReading = Reading & { repository: string; ref: RepoRef };
 
 async function namedReading(ctx: RepoContext, req: Request, res: Response): Promise<NamedReading | undefined> {
   const found = await named(ctx, req, res);
-  const reading = found && (await readingOf(ctx, res));
+  const reading = found && (await readingOf(ctx.deps, res));
   return found && reading ? { ...reading, repository: found.repository, ref: found.ref } : undefined;
 }
 
@@ -254,7 +255,7 @@ async function issuePage(res: Response, reading: NamedReading, number: number): 
 function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories', async (_req: Request, res: Response) => {
     const found = await listed(ctx, res);
-    const reading = found && (await readingOf(ctx, res));
+    const reading = found && (await readingOf(ctx.deps, res));
     if (found && reading) res.json(found.refs.map((ref) => summaryOf(reading.model.db, reading.source, ref)));
   });
   app.get('/repositories/:owner/:name/issues', async (req: Request, res: Response) => {

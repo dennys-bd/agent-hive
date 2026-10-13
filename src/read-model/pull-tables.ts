@@ -1,8 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { prLink } from '../pull-requests.js';
-import type { PrMergeState, PrReviewDecision, PrRow, PrState } from '../types.js';
+import type { PrClosingIssue, PrMergeState, PrReviewDecision, PrRow, PrState } from '../types.js';
 import type { ReadModel } from './db.js';
-import type { PullChecks, PullKey } from './rows.js';
+import type { OpenPull, PullChecks, PullKey, PullPage, PullRow } from './rows.js';
 import { nullable, type Row, text, written } from './sql.js';
 
 // The pulls table (#186): each writer is an upsert of its own columns with the changed-row guard, so a quiet round writes nothing. Every read
@@ -32,6 +32,8 @@ const COUNTS = `SELECT COUNT(*) FILTER (WHERE ${LIST_STATE} = 'open') AS open_co
   COUNT(*) FILTER (WHERE ${LIST_STATE} = 'closed') AS closed_count ${PR_ROWS}`;
 const TO_READ = `SELECT i.node_id, i.number, i.state, i.updated_at ${PR_ROWS} AND (p.read_at IS NULL OR i.updated_at > p.read_at) ORDER BY i.number`;
 const OPEN = `SELECT i.node_id, i.number, p.head_sha, p.merge_state ${PR_ROWS} AND i.state = 'open' ORDER BY i.number`;
+const AT = `SELECT i.node_id, i.number, p.head_sha, p.merge_state FROM issues i LEFT JOIN pulls p ON p.source = i.source AND p.node_id = i.node_id
+  WHERE i.source = $source AND i.repository = $repository AND i.number = $number AND i.kind = 'pr'`;
 // substr, not LIKE: a prefix is matched as written
 const DROP_SCOPES = 'DELETE FROM sync_scopes WHERE source = $source AND repository = $repository AND substr(kind, 1, length($prefix)) = $prefix';
 const NO_LIMIT = -1; // SQLite's LIMIT -1: every row
@@ -40,11 +42,11 @@ const CHECKS: readonly PullChecks[] = ['success', 'failure', 'pending', 'awaitin
 const DECISIONS: readonly PrReviewDecision[] = ['approved', 'changes', 'pending'];
 const LIST_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
 
-type PullTables = Pick<ReadModel, 'setPullFlags' | 'setPullRead' | 'setPullPoll' | 'removeScopes' | 'prs' | 'prCounts' | 'pullsToRead' | 'openPulls'>;
+type PullTables = Pick<ReadModel, 'setPullFlags' | 'setPullRead' | 'setPullPoll' | 'removeScopes' | 'prs' | 'prCounts' | 'pullsToRead' | 'openPulls' | 'pullAt'>;
 
 const mergeStateOf = (value: unknown): PrMergeState => MERGE_STATES.find((s) => s === value) ?? 'unknown';
 // node:sqlite refuses a named parameter the statement lacks: only the key's four
-const keyOf = (key: PullKey): Record<string, string | number> => ({ source: key.source, nodeId: key.nodeId, repository: key.repository, number: key.number });
+export const keyOf = (key: PullKey): Record<string, string | number> => ({ source: key.source, nodeId: key.nodeId, repository: key.repository, number: key.number });
 const scoped = (source: string, repository: string, author: string | undefined): Record<string, string | null> => ({ source, repository, author: author ?? null });
 
 // The stored values are the module's own writes; one outside its type reads as none
@@ -56,6 +58,23 @@ function prRowOf(repository: string, row: Row): PrRow {
     url: prLink(repository, number), number, title: text(row, 'title'), state: LIST_STATES.find((s) => s === row.list_state) ?? 'closed',
     isDraft: row.draft === 1, mergeState: mergeStateOf(row.merge_state), updatedAt: text(row, 'updated_at'),
     ...(checks === undefined ? {} : { checks }), ...(decision === undefined ? {} : { decision }),
+  };
+}
+
+const openPullOf = (row: Row): OpenPull => ({
+  nodeId: text(row, 'node_id'), number: Number(row.number), headSha: nullable(row, 'head_sha'), mergeState: mergeStateOf(row.merge_state),
+});
+
+/** A pulls row as stored (#187): the module's own writes; a value outside its type reads as none. */
+export function pullOf(row: Row): PullRow {
+  return {
+    source: text(row, 'source'), nodeId: text(row, 'node_id'), repository: text(row, 'repository'), number: Number(row.number),
+    draft: row.draft === 1, mergedAt: nullable(row, 'merged_at'), headSha: nullable(row, 'head_sha'), mergeState: mergeStateOf(row.merge_state),
+    checks: CHECKS.find((c) => c === row.checks) ?? null, decision: DECISIONS.find((d) => d === row.decision) ?? null, readAt: nullable(row, 'read_at'),
+    headRef: text(row, 'head_ref'), baseRef: text(row, 'base_ref'), headOwner: text(row, 'head_owner'), baseOwner: text(row, 'base_owner'),
+    commits: Number(row.commits), additions: Number(row.additions), deletions: Number(row.deletions),
+    requested: JSON.parse(text(row, 'requested')) as PullPage['requested'], closes: JSON.parse(text(row, 'closes')) as PrClosingIssue[],
+    awaiting: JSON.parse(text(row, 'awaiting')) as string[],
   };
 }
 
@@ -78,11 +97,12 @@ function writesOf(db: DatabaseSync): Pick<PullTables, 'setPullFlags' | 'setPullR
   };
 }
 
-function readsOf(db: DatabaseSync): Pick<PullTables, 'prs' | 'prCounts' | 'pullsToRead' | 'openPulls'> {
+function readsOf(db: DatabaseSync): Pick<PullTables, 'prs' | 'prCounts' | 'pullsToRead' | 'openPulls' | 'pullAt'> {
   const rows = db.prepare(ROWS);
   const counts = db.prepare(COUNTS);
   const toRead = db.prepare(TO_READ);
   const open = db.prepare(OPEN);
+  const at = db.prepare(AT);
   return {
     prs: (source, repository, state, filter = {}) =>
       rows.all({ ...scoped(source, repository, filter.author), state, limit: filter.limit ?? NO_LIMIT }).map((row) => prRowOf(repository, row)),
@@ -93,9 +113,11 @@ function readsOf(db: DatabaseSync): Pick<PullTables, 'prs' | 'prCounts' | 'pulls
     pullsToRead: (source, repository, author) => toRead.all(scoped(source, repository, author)).map((row) => ({
       nodeId: text(row, 'node_id'), number: Number(row.number), isOpen: row.state === 'open', updatedAt: text(row, 'updated_at'),
     })),
-    openPulls: (source, repository, author) => open.all(scoped(source, repository, author)).map((row) => ({
-      nodeId: text(row, 'node_id'), number: Number(row.number), headSha: nullable(row, 'head_sha'), mergeState: mergeStateOf(row.merge_state),
-    })),
+    openPulls: (source, repository, author) => open.all(scoped(source, repository, author)).map(openPullOf),
+    pullAt: (source, repository, number) => {
+      const row = at.get({ source, repository, number });
+      return row === undefined ? undefined : openPullOf(row);
+    },
   };
 }
 

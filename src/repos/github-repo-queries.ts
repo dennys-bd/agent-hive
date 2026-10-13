@@ -9,6 +9,10 @@ export const ISSUE_ROW_FIELDS = 'id number title body state createdAt updatedAt 
   + `labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } }`;
 /** What addComment asks back of a comment (#178, #183). */
 export const COMMENT_ROW_FIELDS = 'id url body createdAt updatedAt author { login }';
+/** What a PR write asks GitHub back of the PR (#187): its issues row's fields, and the flags its pulls row keeps. */
+export const PR_ROW_FIELDS = `${ISSUE_ROW_FIELDS} isDraft mergedAt`;
+/** What a review write asks back of the review it made (#187). */
+export const REVIEW_ROW_FIELDS = 'id author { login } state body submittedAt';
 const PR_LIMIT = 10; // ponytail: an issue closed by more PRs shows its first 10, as in the native view (#756)
 const CLOSING_PRS = `closedByPullRequestsReferences(first: ${PR_LIMIT}, includeClosedPrs: true) { nodes { number url state merged isDraft statusCheckRollup { state } } }`;
 

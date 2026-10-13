@@ -12,7 +12,7 @@ import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
 import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
-import { deferred, fakeLinks, fakeRest, issueRow, NO_GQL, NOW, ok, REF, REPO, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
+import { deferred, fakeLinks, fakeRest, github, HEAD, issueRow, NO_GQL, NOW, ok, pagesAt, REF, REPO, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, restPr, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
 
 const OTHER = 'acme/other';
 const listing = (repository: string): string[] => [`repos/${repository}/issues?state=all&per_page=100`, `repos/${repository}/issues/comments?per_page=100`];
@@ -386,4 +386,49 @@ test('a failing labels scope does not stop the repos row; a round stopped before
   const calls: string[] = [];
   const stopped = await syncRepository({ db, rest: async (path) => { calls.push(path); return ok([]); }, gql: NO_GQL, source: SOURCE, now: NOW, isStopped: () => true }, REF);
   assert.deepEqual([calls, stopped.error], [[], undefined]);
+});
+
+test('a PR\'s refetch also polls it, in one readModel event; again passes the cooldown a second read within 10 s meets (#187)', async (t) => {
+  const db = await tempModel(t);
+  const gh = github({
+    ...pagesAt(HEAD), 'repos/acme/hive/issues/7': { body: restPr(7, T1), etag: 'EI7' }, 'repos/acme/hive/issues/7/comments?per_page=100': { body: [], etag: 'EC7' },
+  });
+  const { loop, notified } = loopOn(db, gh.rest);
+  assert.equal(await loop.refetch(REPO, 7), 'changed');
+  assert.equal(db.prPage(SOURCE, REPO, 7)?.pull?.headSha, HEAD);
+  assert.deepEqual(notified, [[REPO, ['pulls']]]);
+  assert.equal(await loop.refetch(REPO, 7), 'skipped');
+  const asked = gh.calls.length;
+  assert.equal(await loop.refetch(REPO, 7, { again: true }), 'unchanged');
+  assert.ok(gh.calls.length > asked, 'again ran it');
+});
+
+test('a stop that lands between a PR\'s refetch and its poll ends the poll without an error line: a stop is no failure (#187)', async (t) => {
+  const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE));
+  const gh = github({
+    ...pagesAt(HEAD), 'repos/acme/hive/issues/7': { body: restPr(7, T1), etag: 'EI7' }, 'repos/acme/hive/issues/7/comments?per_page=100': { body: [], etag: 'EC7' },
+  });
+  const gate = deferred();
+  const called = deferred();
+  let gated = false;
+  const rest: RestGet = async (path, etag) => {
+    if (gated) {
+      called.resolve();
+      await gate.promise;
+    }
+    return gh.rest(path, etag);
+  };
+  const errors: string[] = [];
+  const { loop } = loopOn(db, rest, { log: { ...quiet, error: (line: string): void => { errors.push(line); } } });
+  assert.equal(await loop.refetch(REPO, 7), 'changed');
+  gated = true;
+  const before = gh.calls.length;
+  const again = loop.refetch(REPO, 7, { again: true });
+  await called.promise;
+  const stopped = loop.stop();
+  gate.resolve();
+  await Promise.all([again, stopped]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(gh.calls.slice(before).filter(([path]) => path.includes('/pulls/')), [], 'the stopped poll asked GitHub nothing');
+  db.close();
 });

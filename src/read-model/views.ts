@@ -1,8 +1,10 @@
+import { prLink } from '../pull-requests.js';
 import { issueUrl } from '../repos/issue-task.js';
 import type { RepoRef } from '../repos/repositories.js';
-import type { IssuePage, PrState, RepoIssue, RepoIssues, RepoPrs, RepoSummary, TaskComment } from '../types.js';
+import type { IssuePage, PrCheck, PrChecks, PrData, PrReviewEvent, PrState, RepoIssue, RepoIssues, RepoPrs, RepoSummary, TaskComment } from '../types.js';
 import type { ReadModel } from './db.js';
-import { type CommentRow, type IssueView, sourceLogin } from './rows.js';
+import { worstOf } from './normalize.js';
+import { type CheckRow, type CommentRow, type IssueView, type PrPage, type PullRow, type ReviewRow, sourceLogin } from './rows.js';
 
 /** The issue list's cap (#757, #181): as the native view's; past it the list says truncated. */
 export const REPO_ISSUE_LIMIT = 1000;
@@ -74,5 +76,76 @@ export function prsOf(db: ReadModel, source: string, ref: RepoRef, state: PrStat
   return {
     rows: db.prs(source, ref.repository, state, { author, limit: PR_LIST_LIMIT }), counts, truncated: counts[state] > PR_LIST_LIMIT,
     canPush: db.repo(source, ref.repository)?.canPush ?? false, syncedAt: db.scope(source, ref.repository, 'issues')?.syncedAt ?? null,
+  };
+}
+
+const CONVERSATION_LIMIT = 100; // as the page's timeline read (#758): the last 100 reviews and comments
+const OPINIONS: readonly ReviewRow['state'][] = ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'];
+const REVIEW_KINDS: Partial<Record<ReviewRow['state'], PrReviewEvent['kind']>> = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes', COMMENTED: 'commented' };
+// A PR no poll or flag reached yet reads these, as the list's defaults (#186)
+const NO_PULL: Omit<PullRow, 'source' | 'nodeId' | 'repository' | 'number'> = {
+  draft: false, mergedAt: null, headSha: null, mergeState: 'unknown', checks: null, decision: null, readAt: null,
+  headRef: '', baseRef: '', headOwner: '', baseOwner: '', commits: 0, additions: 0, deletions: 0, requested: [], closes: [], awaiting: [],
+};
+
+/** What the model holds of a PR's page (#187): every PrData field but the ones read on open. */
+export type StoredPr = Omit<PrData, 'files' | 'threads' | 'truncated' | 'conflicts' | 'behindBy'>;
+
+// GitHub logins ignore case
+const sameLogin = (a: string | null, b: string): boolean => a !== null && a.toLowerCase() === b.toLowerCase();
+
+/** How many reviewers approve (#187): those whose latest approval, change request or dismissal is an approval, as latestOpinionatedReviews.
+ * The reviews come oldest first, so a later entry replaces an earlier one. */
+export function approvalsOf(reviews: ReviewRow[]): number {
+  const lastOpinion = new Map(reviews.filter((r) => OPINIONS.includes(r.state)).map((r) => [r.author ?? GHOST, r.state]));
+  return [...lastOpinion.values()].filter((state) => state === 'APPROVED').length;
+}
+
+const checkOf = (row: CheckRow): PrCheck => ({
+  name: row.name, state: row.state, ...(row.url === null ? {} : { url: row.url }), ...(row.at === null ? {} : { at: row.at }),
+  ...(row.startedAt === null ? {} : { startedAt: row.startedAt }),
+});
+
+// The head's checks (#187): the worst item's state, pending when only workflows await; none with neither, as the page showed
+function checksOf(rows: CheckRow[], awaiting: string[]): PrChecks | undefined {
+  if (rows.length === 0 && awaiting.length === 0) return undefined;
+  const items = rows.map(checkOf);
+  const at = latest(items.map((c) => c.at));
+  return { state: worstOf(items.map((c) => c.state)) ?? 'pending', items, ...(at === undefined ? {} : { at }), ...(awaiting.length === 0 ? {} : { awaiting }) };
+}
+
+// The timeline's reviews and general comments (#758), each a stored row; a dismissed review is no event the page shows
+function conversationOf(page: PrPage): Pick<StoredPr, 'reviews' | 'comments' | 'approvals'> {
+  const reviews = page.reviews.flatMap((r): PrReviewEvent[] => {
+    const kind = REVIEW_KINDS[r.state];
+    return kind === undefined ? [] : [{ id: r.nodeId, author: r.author ?? GHOST, at: r.submittedAt, kind, text: r.body }];
+  });
+  const comments = page.comments.slice(-CONVERSATION_LIMIT).map((c) => ({ id: c.nodeId, author: c.author ?? GHOST, at: c.createdAt, text: c.body }));
+  return { reviews: reviews.slice(-CONVERSATION_LIMIT), comments, approvals: approvalsOf(page.reviews) };
+}
+
+// The pulls row's part of the page: the poll's, the batch's and pulls/{n}'s fields
+function pullFieldsOf(page: PrPage, login: string): Omit<StoredPr, 'url' | 'id' | 'number' | 'title' | 'state' | 'body' | 'author' | 'createdAt' | 'updatedAt' | 'methods' | 'viewer' | 'canPush' | 'canEdit' | 'reviews' | 'comments' | 'approvals'> {
+  const pull = page.pull ?? NO_PULL;
+  const checks = checksOf(page.checks, pull.awaiting);
+  return {
+    isDraft: pull.draft, mergeState: pull.mergeState, head: pull.headSha ?? '', headRef: pull.headRef, baseRef: pull.baseRef, headOwner: pull.headOwner,
+    baseOwner: pull.baseOwner, commits: pull.commits, additions: pull.additions, deletions: pull.deletions, closes: pull.closes,
+    reviewRequests: pull.requested.map((r) => ({ ...r, viewer: !r.team && sameLogin(r.reviewer, login) })),
+    ...(pull.decision === null ? {} : { decision: pull.decision }), ...(checks === undefined ? {} : { checks }),
+  };
+}
+
+/** One PR's page from the model (#187): the issues row's title, body, author and dates, the pulls row's fields, the reviews and comments, the
+ * checks, and the repos row's methods and push rights. viewer is the source's login; canEdit is push rights or the PR being the login's. */
+export function prDataOf(page: PrPage, login: string): StoredPr {
+  const { issue, repo } = page;
+  const canPush = repo?.canPush ?? false;
+  const mergedAt = page.pull?.mergedAt ?? null;
+  return {
+    url: prLink(issue.repository, issue.number), id: issue.nodeId, number: issue.number, title: issue.title,
+    state: issue.state === 'open' ? 'open' : (mergedAt === null ? 'closed' : 'merged'), body: issue.body, author: issue.author ?? GHOST,
+    createdAt: issue.createdAt, updatedAt: issue.updatedAt, methods: repo?.methods ?? [], viewer: login, canPush, canEdit: canPush || sameLogin(issue.author, login),
+    ...pullFieldsOf(page, login), ...conversationOf(page),
   };
 }
