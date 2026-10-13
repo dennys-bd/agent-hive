@@ -1,12 +1,13 @@
 // The Hive's keys over the editor pane (#717): a key a global or an activity's shortcut binds acts in the Hive, never in Monaco, as a
-// terminal's keys do (#448). Every other key, the flow's ⌘F among them (Monaco's find), stays the editor's.
+// terminal's keys do (#448). Every other key, and the EDITOR_KEYS, stay the editor's.
 import { SHORTCUTS } from '../../shortcut-registry';
 import type { KeyLike } from '../../shortcuts';
 import type { OperationId } from '../../types';
 import { pressed } from '@/lib/shortcut-bindings';
 
-/** The Hive keys that stay the editor's inside it (#780): ⌘. is Monaco's quick fix; sleepSession keeps it everywhere else. */
-export const EDITOR_KEYS: readonly OperationId[] = ['sleepSession'];
+/** The Hive keys that stay the editor's inside it: ⌘. is Monaco's quick fix, sleepSession keeps it everywhere else (#780); ⌘F is
+ * Monaco's find, findInTerminal keeps it in a terminal (#254). */
+export const EDITOR_KEYS: readonly OperationId[] = ['sleepSession', 'findInTerminal'];
 const isInEditor = (target: EventTarget | null): boolean => target instanceof Element && target.closest('.monaco-editor') !== null;
 /** Whether shortcut `id` yields to the editor at `target` (#780). */
 export const isEditorKey = (id: OperationId, target: EventTarget | null): boolean => EDITOR_KEYS.includes(id) && isInEditor(target);
