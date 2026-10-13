@@ -2,7 +2,8 @@ import { act as run, render, renderHook, screen, waitFor, within } from '@testin
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PrChecks } from '@/components/PrChecks';
-import { CHECKS_POLL_MS, usePr } from '@/hooks/use-pr';
+import { usePr } from '@/hooks/use-pr';
+import { emitReadModelEvent } from '@/lib/review-events';
 import { setLanguage } from '@/i18n';
 import { AT, fakePrHive, type FakePrHive, PR, prCalls, prData, ROUTE } from './pr-harness';
 
@@ -34,32 +35,38 @@ test('a failed check turns the mark to ✕ and says how many failed; a running o
   expect(screen.queryByRole('region', { name: 'checks' })).toBeNull();
 });
 
-test('a pending check reads …/checks every 30 s while shown and its checks land in the PR; with nothing pending, nothing is read (#758)', async () => {
+const CHECKS_READ = { mergeState: 'clean', updatedAt: AT, checks: { state: 'success', items: [{ name: 'test', state: 'success' }] } };
+const shownChecks = (load: ReturnType<typeof usePr>['load']): string | undefined => (load.status === 'ready' ? load.pr.checks?.state : undefined);
+
+test('a readModel event naming issues or pulls of the PR\'s repository reads …/checks and lands its checks; another repository or kind reads nothing; nothing is polled on a timer (#187)', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   hive.pr = prData({ checks: PENDING });
-  hive.answers[`GET ${ROUTE}/checks`] = { status: 200, body: { mergeState: 'clean', updatedAt: AT, checks: { state: 'success', items: [{ name: 'test', state: 'success' }] } } };
+  hive.answers[`GET ${ROUTE}/checks`] = { status: 200, body: CHECKS_READ };
   const { result } = renderHook(() => usePr(PR, true));
   await waitFor(() => expect(result.current.load.status).toBe('ready'));
+  await run(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(gets(`${ROUTE}/checks`), 'no timer').toBe(0);
+  await run(async () => {
+    emitReadModelEvent({ repository: 'acme/other', kinds: ['pulls'] });
+    emitReadModelEvent({ repository: 'acme/app', kinds: ['comments', 'labels', 'repo'] });
+  });
   expect(gets(`${ROUTE}/checks`)).toBe(0);
-  await run(async () => { await vi.advanceTimersByTimeAsync(CHECKS_POLL_MS); });
-  await waitFor(() => expect(result.current.load.status === 'ready' ? result.current.load.pr.checks?.state : undefined).toBe('success'));
+  await run(async () => { emitReadModelEvent({ repository: 'acme/app', kinds: ['pulls'] }); });
+  await waitFor(() => expect(shownChecks(result.current.load)).toBe('success'));
   expect(gets(ROUTE), 'the same updatedAt: no whole read').toBe(1);
-  await run(async () => { await vi.advanceTimersByTimeAsync(CHECKS_POLL_MS * 2); });
-  expect(gets(`${ROUTE}/checks`), 'nothing pending any more').toBe(1);
 });
 
-test('a poll whose updatedAt is newer reads the PR whole; a hidden page neither reads nor polls (#758)', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+test('an event whose checks carry a newer updatedAt reads the PR whole; a hidden page reads nothing on an event (#187)', async () => {
   hive.pr = prData({ checks: PENDING });
-  hive.answers[`GET ${ROUTE}/checks`] = { status: 200, body: { mergeState: 'clean', updatedAt: '2026-10-07T09:00:00.000Z', checks: PENDING } };
+  hive.answers[`GET ${ROUTE}/checks`] = { status: 200, body: { ...CHECKS_READ, updatedAt: '2026-10-07T09:00:00.000Z' } };
   const shown = renderHook(() => usePr(PR, true));
   await waitFor(() => expect(gets(ROUTE)).toBe(1));
-  await run(async () => { await vi.advanceTimersByTimeAsync(CHECKS_POLL_MS); });
+  await run(async () => { emitReadModelEvent({ repository: 'acme/app', kinds: ['issues'] }); });
   await waitFor(() => expect(gets(ROUTE)).toBe(2));
   shown.unmount();
   hive.calls.splice(0);
   renderHook(() => usePr(PR, false));
-  await run(async () => { await vi.advanceTimersByTimeAsync(CHECKS_POLL_MS * 2); });
+  await run(async () => { emitReadModelEvent({ repository: 'acme/app', kinds: ['pulls'] }); });
   expect(gets(ROUTE) + gets(`${ROUTE}/checks`)).toBe(0);
 });
 
