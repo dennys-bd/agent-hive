@@ -120,7 +120,7 @@ async function pollOwner(ctx: RepoContext, { state, repository, number }: Target
 
 // A write's answer: { ok: true } once GitHub took it; the poll when `pollAfter` runs after the answer, so a slow or failing poll never
 // turns a write GitHub took into a refusal; its failure the refusal it maps to
-async function write(ctx: RepoContext, res: Response, target: Target, run: () => Promise<void>, pollAfter: boolean): Promise<void> {
+async function write(ctx: RepoContext, res: Response, target: Target, run: () => Promise<unknown>, pollAfter: boolean): Promise<void> {
   if (inQuotaBackoff(ctx, res)) return;
   try {
     await run();

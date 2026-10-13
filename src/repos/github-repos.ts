@@ -14,6 +14,11 @@ export function repositoryOf<T>(data: unknown, repository: string): T {
   return repo;
 }
 
+// A field deep in a mutation's answer, raw: the read model's normalizers check its shape (#183)
+function pathOf(data: unknown, ...keys: string[]): unknown {
+  return keys.reduce<unknown>((value, key) => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>)[key] : undefined), data);
+}
+
 /** The issue changed on GitHub since the page read it (#757): the edit is refused and nothing is written. */
 export class IssueChanged extends Error {
   constructor() {
@@ -33,12 +38,12 @@ export async function issueState(gql: GqlJson, repository: string, number: numbe
 /** A title or description edit (#757): only the fields sent. */
 export interface IssueEdit { title?: string; body?: string }
 
-/** The edit, unless GitHub's updatedAt is not the one the page read: IssueChanged then. ponytail: the check reads then writes, so an edit
- * landing between the two is overwritten; updateIssue takes no expected updatedAt. */
-export async function editIssue(gql: GqlJson, repository: string, number: number, edit: IssueEdit, updatedAt: string): Promise<void> {
+/** The edit, unless GitHub's updatedAt is not the one the page read: IssueChanged then. Answers the edited issue, raw (#183). ponytail: the
+ * check reads then writes, so an edit landing between the two is overwritten; updateIssue takes no expected updatedAt. */
+export async function editIssue(gql: GqlJson, repository: string, number: number, edit: IssueEdit, updatedAt: string): Promise<unknown> {
   const issue = await issueState(gql, repository, number);
   if (issue.updatedAt !== updatedAt) throw new IssueChanged();
-  await gql(UPDATE_ISSUE, { id: issue.id, ...edit });
+  return pathOf(await gql(UPDATE_ISSUE, { id: issue.id, ...edit }), 'updateIssue', 'issue');
 }
 
 // The repository's labels, name -> id, in GitHub's order by name; serves setLabels
@@ -56,8 +61,9 @@ export class UnknownLabel extends Error {
   }
 }
 
-/** Adds and removes labels on the issue by name (#757), each list in one call; an empty list sends nothing. Labels check no updatedAt. */
-export async function setLabels(gql: GqlJson, repository: string, number: number, add: string[], remove: string[]): Promise<void> {
+/** Adds and removes labels on the issue by name (#757), each list in one call; an empty list sends nothing. Labels check no updatedAt.
+ * Answers the last mutation's labelable, raw (#183): it holds both changes; undefined when nothing was sent. */
+export async function setLabels(gql: GqlJson, repository: string, number: number, add: string[], remove: string[]): Promise<unknown> {
   const ids = await labelIds(gql, repository);
   const idOf = (name: string): string => {
     const id = ids.get(name);
@@ -67,12 +73,17 @@ export async function setLabels(gql: GqlJson, repository: string, number: number
   const adding = add.map(idOf);
   const removing = remove.map(idOf);
   const { id } = await issueState(gql, repository, number);
-  if (adding.length > 0) await gql(ADD_LABELS, { id, labels: adding });
-  if (removing.length > 0) await gql(REMOVE_LABELS, { id, labels: removing });
+  const added = adding.length > 0 ? pathOf(await gql(ADD_LABELS, { id, labels: adding }), 'addLabelsToLabelable', 'labelable') : undefined;
+  if (removing.length === 0) return added;
+  return pathOf(await gql(REMOVE_LABELS, { id, labels: removing }), 'removeLabelsFromLabelable', 'labelable');
 }
 
+/** What addComment answers (#183), raw: the new comment, and the issue whose count and updatedAt it moved. */
+export interface CommentAnswer { comment: unknown; issue: unknown }
+
 /** A comment on the issue (#757), posted with the Hive's login. */
-export async function comment(gql: GqlJson, repository: string, number: number, body: string): Promise<void> {
+export async function comment(gql: GqlJson, repository: string, number: number, body: string): Promise<CommentAnswer> {
   const { id } = await issueState(gql, repository, number);
-  await gql(ADD_COMMENT, { id, body });
+  const data = await gql(ADD_COMMENT, { id, body });
+  return { comment: pathOf(data, 'addComment', 'commentEdge', 'node'), issue: pathOf(data, 'addComment', 'subject') };
 }

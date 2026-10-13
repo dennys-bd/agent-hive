@@ -1,4 +1,3 @@
-import { ASSIGNEE_LIMIT, LABEL_LIMIT } from '../repos/github-repo-queries.js';
 import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
 import type { ProjectPr } from '../types.js';
@@ -13,12 +12,6 @@ export class WireError extends Error {
     this.name = 'WireError';
   }
 }
-
-/** What a write asks GitHub back of an issue (#178): every field of its row, with the repository views' limits. */
-export const ISSUE_ROW_FIELDS = 'id number title body state createdAt updatedAt closedAt author { login } comments { totalCount } '
-  + `labels(first: ${LABEL_LIMIT}) { nodes { name } } assignees(first: ${ASSIGNEE_LIMIT}) { nodes { login } }`;
-/** What addComment asks back of a comment (#178). */
-export const COMMENT_ROW_FIELDS = 'id url body createdAt updatedAt author { login }';
 
 function objectOf(value: unknown, what: string): Json {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new WireError(what);
@@ -87,7 +80,7 @@ export function commentFromRest(source: string, repository: string, json: unknow
   return issueNodeId === undefined ? undefined : { ...row, issueNodeId };
 }
 
-/** An issue as ISSUE_ROW_FIELDS answers it: a GraphQL Issue is never a PR. */
+/** An issue as ISSUE_ROW_FIELDS (github-repo-queries.ts) answers it: a GraphQL Issue is never a PR. */
 export function issueFromGql(source: string, repository: string, json: unknown): IssueRow {
   const issue = objectOf(json, 'issue');
   const state = textOf(issue, 'state');
@@ -102,7 +95,7 @@ export function issueFromGql(source: string, repository: string, json: unknown):
   };
 }
 
-/** A comment as COMMENT_ROW_FIELDS answers it, under the issue the mutation named. */
+/** A comment as COMMENT_ROW_FIELDS (github-repo-queries.ts) answers it, under the issue the mutation named. */
 export function commentFromGql(source: string, repository: string, issueNodeId: string, json: unknown): CommentRow {
   const comment = objectOf(json, 'comment');
   return {
