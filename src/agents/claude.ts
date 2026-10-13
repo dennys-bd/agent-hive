@@ -8,6 +8,10 @@ import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
 
 const MODEL_FLAG = '--model'; // what a stage's modelo is passed behind, as typed (#516)
 const PROTOCOL_FLAG = '--append-system-prompt-file'; // the Hive's protocol (#167): appended to Claude Code's own system prompt, never replacing it
+const AGENT_FLAG = '--agent'; // #257: the plugin agent a free session runs as, hive:<name>
+
+// #257: before the model, as the dialog's runs line shows it
+const agentWords = ({ specializedAgent }: AgentRun): string[] => (specializedAgent === undefined ? [] : [AGENT_FLAG, specializedAgent.name]);
 
 const flag = (name: string, value: string | undefined): LaunchArg[] => (value === undefined ? [] : [[name, value]]);
 
@@ -30,7 +34,7 @@ const copyWords = (from: string, id: string, name: string | undefined): string[]
 export const claudeRunner: AgentRunner = {
   // CLAUDECODE: a Hive started from inside Claude Code would stop the child from starting; CLAUDE_CODE_CHILD_SESSION turns its transcript off
   hostEnv: ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'],
-  launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
+  launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...agentWords(run), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)

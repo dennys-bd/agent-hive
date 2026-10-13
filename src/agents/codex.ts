@@ -53,13 +53,20 @@ const pluginOverrides = (home: string): LaunchArg[] => [
     override(`agents.${CODEX_PLUGIN}:${role.name}`, `{description=${tomlString(role.description)},config_file=${tomlString(roleFile(home, role.name))}}`)),
 ];
 
+// The Hive's protocol, then a specialized agent's own instructions after a blank line (#257): Codex has no flag that runs a session as an
+// agent, so the agent's body is appended to the same developer block. Neither: no override
+function developerOverride({ protocolText, specializedAgent }: AgentRun): LaunchArg[] {
+  const parts = [protocolText, specializedAgent?.instructions].filter((part): part is string => part !== undefined);
+  return parts.length === 0 ? [] : [override('developer_instructions', tomlString(parts.join('\n\n')))];
+}
+
 /** Every -c override of a run, in launch's order. */
 export const overrides = (run: AgentRun): LaunchArg[] => [
   ...CODEX_HOOK_EVENTS.map((event) => hookOverride(event, run.port)),
   ...(run.withHive ? mcpOverrides(run) : []),
   ...pluginOverrides(dirname(run.pluginDir)), // every run, local or not, as Claude's --plugin-dir; the home is <home>/plugin's parent (#100)
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
-  ...(run.protocolText === undefined ? [] : [override('developer_instructions', tomlString(run.protocolText))]),
+  ...developerOverride(run),
   override('check_for_update_on_startup', 'false'), // the update screen takes the first keys: an Enter runs npm install -g (§13)
   // nor the folder-trust screen, for a worktree Codex never saw. The path goes in the value: Codex splits a -c key on every '.', quoted or
   // not, and every worktree path holds .hive

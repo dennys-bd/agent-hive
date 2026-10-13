@@ -117,3 +117,11 @@ test('Claude owns a .jsonl directly in its transcript dir and, with a session id
   assert.equal(runners.claude.ownsTranscript(`/cfg/projects/-repo-x/${ID}.jsonl`, '/repo', ID, env), false);
   assert.deepEqual(await runners.claude.sessionFiles('/repo', ID, env), [own, `/cfg/projects/-repo/${ID}`]);
 });
+
+test('a specialized agent goes behind --agent, after the agent\'s args and before --model; none adds nothing (#257)', () => {
+  const run: AgentRun = { ...RUN, model: 'opus', session: { id: ID, resume: false }, extraArgs: EXTRA, specializedAgent: { name: 'hive:designer', instructions: 'Design.' } };
+  assert.deepEqual(runners.claude.launch(run).slice(-8), [...EXTRA, '--agent', 'hive:designer', '--model', 'opus', '--session-id', ID]);
+  const { specializedAgent: _gone, ...plain } = run;
+  assert.deepEqual(runners.claude.launch(plain).slice(-6), [...EXTRA, '--model', 'opus', '--session-id', ID]);
+  assert.equal(runners.claude.launch(plain).includes('--agent'), false);
+});

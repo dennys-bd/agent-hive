@@ -22,8 +22,9 @@ export function parseAgentArgs(value: unknown): Record<AgentId, string[]> {
   return Object.fromEntries(AGENT_IDS.map((id) => [id, listOf(id)])) as Record<AgentId, string[]>;
 }
 
-// A Claude alias, with or without its 1M context, or a claude- id (#927): Codex maps none of them, and its API answers a 400 with no Stop (finding §4, §11)
-const CLAUDE_MODEL = /^(?:(?:opus|sonnet|haiku)(?:\[1m\])?|claude-.*)$/;
+/** A Claude alias, with or without its 1M context, or a claude- id (#927): Codex maps none of them, and its API answers a 400 with no Stop
+ * (finding §4, §11). Exported for the open routes, which refuse it on a Codex session (#257). */
+export const CLAUDE_MODEL = /^(?:(?:fable|opus|sonnet|haiku)(?:\[1m\])?|claude-.*)$/;
 
 /** #927: a stage whose agent (its own, else the default) is codex and whose model is Claude's is refused by field. The Hive has no list of
  * Codex models to check against otherwise. parseConfig runs it once defaultAgent is parsed, as checkResumedAgents. */
