@@ -6,3 +6,4 @@ dist
 .claude/ideate.json
 .DS_Store
 /docs/
+graphify-out/
