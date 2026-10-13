@@ -240,8 +240,8 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
           {view.section !== 'maintenance' && <SettingsFooter changed={changed} saving={saving} savableUnchanged={!info.configured} saveError={saveError} onRevert={() => setConfirm('revert')} onSave={() => void save()} />}
         </main>
       </div>
-      <Confirm open={confirm !== undefined} onOpenChange={(open) => { if (!open) setConfirm(undefined); }} message={t('settings.discard.message')} confirmLabel={t('settings.discard.confirm')} onConfirm={discard} />
-      <Confirm open={moves !== undefined} onOpenChange={(open) => { if (!open) setMoves(undefined); }} message={deletionMessage(moves ?? [])} confirmLabel={t('settings.stages.deleteMoves.confirm')} onConfirm={() => void save(true)} />
+      <Confirm open={confirm !== undefined} onOpenChange={(open) => { if (!open) setConfirm(undefined); }} title={t('confirm.title.discardSettings')} message={t('settings.discard.message')} confirmLabel={t('settings.discard.confirm')} onConfirm={discard} />
+      <Confirm open={moves !== undefined} onOpenChange={(open) => { if (!open) setMoves(undefined); }} title={t('confirm.title.deleteStages')} message={deletionMessage(moves ?? [])} confirmLabel={t('settings.stages.deleteMoves.confirm')} onConfirm={() => void save(true)} />
     </div>
     </WorkspaceColorsContext.Provider>
   );

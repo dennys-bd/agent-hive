@@ -171,6 +171,7 @@ function MissingActions({ task }: { task: Task }) {
   return (
     <>
       <Confirm
+        title={t('confirm.title.closeTask')}
         message={t('confirm.closeMissing')}
         confirmLabel={t('task.close')}
         trigger={<Button type="button" size="xs" variant="outline">{t('task.close')}</Button>}

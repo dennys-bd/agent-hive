@@ -30,7 +30,7 @@ test('right-click › executar reads Parar <nome> for the command live on the ta
   expect(await screen.findByRole('menuitem', { name: 'Run API' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('menuitem', { name: 'Parar Run Frontend' }));
   const dialog = screen.getByRole('alertdialog');
-  expect(dialog).toHaveTextContent('Parar essa execução? O processo termina e a sessão fica salva.');
+  expect(dialog).toHaveTextContent('parar essa execução? O processo termina e a sessão fica salva.');
   fireEvent.click(within(dialog).getByRole('button', { name: 'parar' }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/ptys/W9/stop', expect.objectContaining({ method: 'POST' })));
 });

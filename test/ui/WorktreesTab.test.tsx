@@ -87,12 +87,14 @@ test('× confirms with the orphan text and posts the slug route; a deleteActivit
   render(<WorktreesTab />);
   await screen.findByText('hive/9-gone');
   await user.click(trashOf(ORPHAN));
+  expect(dialog()).toHaveAccessibleName('Apagar worktree'); // no task owns it: not an activity
   expect(dialog()).toHaveTextContent('branch: hive/9-gone');
   expect(dialog()).toHaveTextContent('tarefa: sem tarefa');
   expect(dialog()).toHaveTextContent('Nenhuma tarefa é dona dela');
   await user.click(within(dialog()).getByRole('button', { name: t('detail.deleteActivity') }));
   await waitFor(() => expect(gets()).toBe(2));
   await user.click(trashOf(FAILED));
+  expect(dialog()).toHaveAccessibleName('Excluir atividade');
   expect(dialog()).toHaveTextContent('branch: hive/3-done');
   expect(dialog()).toHaveTextContent('tarefa: #3 Done');
   expect(dialog()).toHaveTextContent(REFUSAL);
@@ -112,7 +114,7 @@ test('apagar órfãs confirms with the count and posts each cleanable orphan wit
   const cleanAllButton = screen.getByRole('button', { name: t('worktrees.cleanOrphans') });
   expect(cleanAllButton).toBeEnabled();
   await user.click(cleanAllButton);
-  expect(dialog()).toHaveTextContent('Remover 2 worktrees órfãs sem forçar?');
+  expect(dialog()).toHaveTextContent('remover 2 worktrees órfãs sem forçar?');
   await user.click(within(dialog()).getByRole('button', { name: t('worktrees.cleanOrphans') }));
   expect(await screen.findByText('removidas: hive-9-gone')).toBeInTheDocument();
   expect(screen.getByText(`o git recusou hive-3-done: ${REFUSAL}`)).toBeInTheDocument();

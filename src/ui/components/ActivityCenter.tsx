@@ -70,7 +70,7 @@ function useTabClose(activity: Activity, layout: CenterLayout | undefined, ops: 
   const confirm = (
     <Confirm
       open={asking !== undefined} onOpenChange={(isOpen) => { if (!isOpen) setAsking(undefined); }}
-      message={t('editor.discardConfirm')} confirmLabel={t('editor.discard')} onConfirm={() => { if (asking) now(asking); }}
+      title={t('confirm.title.discardEdits')} message={t('editor.discardConfirm')} confirmLabel={t('editor.discard')} onConfirm={() => { if (asking) now(asking); }}
     />
   );
   return { close, confirm };
@@ -115,7 +115,7 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
   useSplitTerminalKeys(activity, layout, ops); // ⌘D / ⌘⇧D split the focused run tab inside itself (#641)
   const newFile = (): void => ops.open({ kind: 'untitled', n: models.nextUntitled() });
   const newSessionDialog = useNewRunKeys(activity, newFile); // #257: the dialog its key and the +'s nova sessão… open
-  const loss = useConfirmLoss(); // #696: the agent confirm before a terminal's tab sleeps it
+  const loss = useConfirmLoss(activity); // #696: the agent confirm before a terminal's tab sleeps it
   const closer = useTabClose(activity, layout, ops, loss.confirm);
   useCloseKey(activity, layout, ops, closer.close, loss.confirm);
   // #759: with no tab the strip keeps only its + (nothing to split, no group to drop on, so no data-center-strip), over the activity's home

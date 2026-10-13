@@ -133,6 +133,7 @@ function useDeleteTask(task: Task, runs: Runs): { item: ReactNode; dialog: React
     <Confirm
       open
       onOpenChange={(open) => { if (!open) setIsConfirming(false); }}
+      title={t('confirm.title.deleteTask')}
       message={t('confirm.removeLocal')}
       confirmLabel={t('task.delete.confirm')}
       onConfirm={() => void act(`/tasks/${encodeURIComponent(task.item.itemId)}/close`)}

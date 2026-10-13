@@ -46,7 +46,7 @@ test('right-click › excluir tarefa…: absent on a board task; last on a Hive 
   expect(remove.previousElementSibling).toHaveTextContent(/^excluir atividade…/);
   await user.click(remove);
   const dialog = screen.getByRole('alertdialog');
-  expect(dialog).toHaveTextContent('Excluir esta tarefa? Ela sai do Hive de vez, e a worktree e a branch dela vão junto.');
+  expect(dialog).toHaveTextContent('excluir esta tarefa? Ela sai do Hive de vez, e a worktree e a branch dela vão junto.');
   fireEvent.click(within(dialog).getByRole('button', { name: 'excluir' }));
   await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/local%3A1/close', expect.objectContaining({ method: 'POST', body: undefined })));
 });

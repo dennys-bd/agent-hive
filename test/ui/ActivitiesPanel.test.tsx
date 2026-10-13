@@ -284,7 +284,8 @@ test('excluir todas… confirms the list, deletes each activity in turn, skips t
   expect(dialog).toHaveTextContent('#6 Task 6');
   expect(dialog).toHaveTextContent('Não podem ser excluídas, executam no checkout: #5 Task 5'); // toHaveTextContent folds the newline into a space
   expect(posts()).toEqual([]);
-  await user.click(within(dialog).getByRole('button', { name: 'excluir atividades finalizadas' }));
+  expect(dialog).toHaveAccessibleName('Excluir atividades finalizadas');
+  await user.click(within(dialog).getByRole('button', { name: 'excluir' }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Estas atividades ficaram:\n#6 Task 6: worktree has changes', { className: 'whitespace-pre-line', duration: Infinity }));
   expect(posts()).toEqual(['/activities/a-4/delete', '/activities/a-6/delete']);
   expect(vi.mocked(fetch).mock.calls.find(([url]) => String(url) === '/activities/a-4/delete')?.[1]?.body).toBeUndefined(); // never forced

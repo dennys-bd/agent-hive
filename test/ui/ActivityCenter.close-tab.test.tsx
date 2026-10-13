@@ -109,6 +109,7 @@ test('an agent the shim missed in the terminal asks first: nothing sleeps until 
   await user.click(screen.getByRole('button', { name: 'Fechar Terminal' }));
   const dialog = await screen.findByRole('alertdialog');
   expect(dialog).toHaveTextContent('um agente que o Hive não capturou executa num terminal: a conversa dele se perde quando o terminal dorme.');
+  expect(within(dialog).getByText('Terminal · #1 Task 1')).toBeInTheDocument();
   expect(stops()).toEqual([]);
   await user.click(within(dialog).getByRole('button', { name: 'dormir' }));
   await waitFor(() => expect(stops()).toEqual(['/ptys/W3/stop']));

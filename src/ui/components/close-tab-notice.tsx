@@ -40,14 +40,15 @@ export const stopRun = (ptyId: string): Promise<boolean> =>
 /** A sleeping run's tab closed (#672): its kept transcript goes. */
 export const forgetRun = (ptyId: string): void => void act(`/ptys/${encodeURIComponent(ptyId)}/scrollback`, undefined, 'DELETE');
 
-/** What asks before a terminal sleeps when an agent the shim missed runs in it (#696): the center's confirm dialog. */
-export type ConfirmLoss = (sleep: () => void) => void;
+/** What asks before a terminal sleeps when an agent the shim missed runs in it (#696): the center's confirm dialog, told which terminal so it
+ * can name it (#75). */
+export type ConfirmLoss = (sleep: () => void, ptyId: string) => void;
 
 /** A terminal put to sleep from its tab or its keep notice (#696): stopped at once, or after confirmLoss when an agent the shim missed runs
  * there. Its stop reads its cwd first (the server's readCwd). */
 export function sleepTerminal(ptyId: string, confirmLoss: ConfirmLoss): void {
   const sleep = (): void => void stopRun(ptyId);
-  void strayAgents(ptyId).then((count) => (count === 0 ? sleep() : confirmLoss(sleep)));
+  void strayAgents(ptyId).then((count) => (count === 0 ? sleep() : confirmLoss(sleep, ptyId)));
 }
 
 /** Where a notice says a session is (#614, #672): the task's label, or local. */

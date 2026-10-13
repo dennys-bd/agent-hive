@@ -1,6 +1,7 @@
 import { type ReactNode, useRef } from 'react';
 import type { AgentId, EffectiveLimits, State } from '../../types';
 import { AgentUsage, PLAN_AGENTS } from '@/components/footer/AgentUsage';
+import { workersLine } from '@/components/HeaderBrand';
 import { PowerButtons } from '@/components/footer/PowerButtons';
 import { RulesButton } from '@/components/footer/RulesButton';
 import { useFooterStep } from '@/lib/footer-steps';
@@ -32,7 +33,7 @@ export function Footer({ state, effective, locale, onEditRules, checkers, proble
         {problems !== undefined && <span aria-hidden="true" className="h-3.5 w-px bg-border" />}
         {consoleChip}
         <span aria-hidden="true" className="h-3.5 w-px bg-border" />
-        <PowerButtons keepAwake={state.keepAwake === true} armed={state.shutdown !== undefined} />
+        <PowerButtons keepAwake={state.keepAwake === true} armed={state.shutdown !== undefined} signal={effective.signal} workers={workersLine(state, effective)} />
       </div>
     </footer>
   );

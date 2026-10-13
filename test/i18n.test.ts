@@ -481,3 +481,41 @@ test('the rules button\'s and panel\'s copy reads as the spec writes it, in both
     'the most restrictive fired rule wins, in any measure.',
   ]);
 });
+
+test('the confirmations\' copy (#75): sentence-case titles with no question mark, lowercase messages and buttons, in both languages; shutdown says the computer', () => {
+  const titles = [
+    'confirm.title.stopRun', 'confirm.title.closeTask', 'confirm.title.closeTasks', 'confirm.title.deleteTask', 'confirm.title.trash',
+    'confirm.title.discardEdits', 'confirm.title.discardSettings', 'confirm.title.deleteActivity', 'confirm.title.cleanOrphans',
+    'confirm.title.deleteStages', 'confirm.title.sleep', 'confirm.title.shutdown', 'confirm.title.forceDelete', 'activities.deleteAll.title',
+  ] as const;
+  const lowercase = [
+    'confirm.close', 'confirm.closeMissing', 'confirm.closeMissingAll', 'confirm.removeLocal', 'confirm.deleteActivity', 'confirm.deleteActivity.lead',
+    'confirm.deleteActivity.nothing', 'confirm.removeOrphanWorktree', 'confirm.cleanOrphans', 'confirm.forceDeleteActivity', 'confirm.shutdown',
+    'confirm.agentLost', 'editor.discardConfirm', 'settings.discard.message', 'settings.stages.deleteMoves.message', 'files.trashOne', 'files.trashMany',
+    'activities.deleteAll.text', 'settings.cancel', 'detail.closeWorker', 'task.close', 'stage.closeMissing', 'task.delete.confirm', 'files.trash',
+    'editor.discard', 'detail.deleteActivity', 'activities.deleteAll.confirm', 'worktrees.cleanOrphans', 'settings.discard.confirm',
+    'settings.stages.deleteMoves.confirm', 'task.force', 'session.sleep', 'shutdown.arm',
+  ] as const;
+  for (const language of ['en', 'pt'] as const) {
+    for (const key of titles) assert.match(MESSAGES[language][key], /^\p{Lu}[^?]*$/u, `${language}.${key}`);
+    for (const key of lowercase) assert.match(MESSAGES[language][key], /^\p{Ll}/u, `${language}.${key}`);
+  }
+  assert.deepEqual(
+    [MESSAGES.en['confirm.title.shutdown'], MESSAGES.en['confirm.shutdown'], MESSAGES.en['shutdown.arm']],
+    ['Shut down when done', 'shut the computer down when the workers finish?', 'shut down when done'],
+  );
+  assert.deepEqual(
+    [MESSAGES.pt['confirm.title.shutdown'], MESSAGES.pt['confirm.shutdown'], MESSAGES.pt['shutdown.arm']],
+    ['Desligar ao terminar', 'desligar o computador quando os workers terminarem?', 'desligar ao terminar'],
+  );
+  assert.deepEqual([MESSAGES.en['confirm.title.forceDelete'], MESSAGES.pt['confirm.title.forceDelete']], ['Force the removal', 'Forçar remoção']);
+  assert.deepEqual([MESSAGES.en['confirm.title.sleep'], MESSAGES.pt['confirm.title.sleep']], ['Sleep session', 'Dormir sessão']);
+  assert.deepEqual([MESSAGES.en['confirm.title.cleanOrphans'], MESSAGES.pt['confirm.title.cleanOrphans']], ['Delete orphan worktrees', 'Apagar worktrees órfãs']);
+});
+
+test('the link confirm\'s copy (#75): a sentence-case title with no question mark, lowercase buttons; its own cancel is gone', () => {
+  const keys = ['link.confirm.title', 'link.confirm.trust', 'link.confirm.open'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['Open link', 'always trust {host}', 'open']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['Abrir link', 'sempre confiar em {host}', 'abrir']);
+  assert.equal('link.confirm.cancel' in MESSAGES.en || 'link.confirm.cancel' in MESSAGES.pt, false);
+});

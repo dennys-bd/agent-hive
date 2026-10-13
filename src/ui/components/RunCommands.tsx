@@ -16,6 +16,7 @@ export function useCommandStop(): { ask(ptyId: string): void; dialog: ReactNode 
     <Confirm
       open
       onOpenChange={(open) => { if (!open) setPending(undefined); }}
+      title={t('confirm.title.stopRun')}
       message={t('confirm.close')}
       confirmLabel={t('detail.closeWorker')}
       onConfirm={() => void act(`/ptys/${encodeURIComponent(pending)}/stop`)}

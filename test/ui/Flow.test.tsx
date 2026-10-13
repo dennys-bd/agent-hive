@@ -53,11 +53,11 @@ test('a missing task offers fechar / manter; fechar asks once, with no worktree 
   await user.click(screen.getByRole('button', { name: 'manter' }));
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/keep', expect.objectContaining({ method: 'POST' }));
   await user.click(screen.getByRole('button', { name: 'fechar' }));
-  expect(screen.getByRole('alertdialog')).toHaveTextContent('Fechar essa tarefa? A sessão termina e a tarefa sai do Hive.');
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('fechar essa tarefa? A sessão termina e a tarefa sai do Hive.');
   await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'fechar' }));
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/close', expect.objectContaining({ method: 'POST', body: undefined }));
-  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
 });
 
 test('a running task shows abrir and no iniciar; a blocked task and a stage without prompt show no button (#542)', () => {
