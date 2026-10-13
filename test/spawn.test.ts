@@ -174,10 +174,11 @@ test('ptyCommand quotes every arg so a model or id with a quote cannot break out
   assert.ok(cmd.includes("'--model' 'o'\\''ps'"), cmd);
 });
 
+const TERMINAL_SHELL = `case "\${HIVE_SHELL_DIR:+\${SHELL##*/}}" in zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;; bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;; fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;; *) "\${SHELL:-sh}" ;; esac`; // #259
 test('ptyCommand for a terminal: cd into the worktree, the user\'s shell, then the exit trailer with the pty id; a path with a quote and a space stays one argument (#283)', () => {
   assert.equal(
     ptyCommand({ ...LAUNCH, terminal: true, cwd: "/Users/me/it's repo/.hive/worktrees/hive-1-x" }),
-    `cd '/Users/me/it'\\''s repo/.hive/worktrees/hive-1-x' && "\${SHELL:-sh}"; curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @"$HIVE_SECRET_FILE" --noproxy '*' >/dev/null`,
+    `cd '/Users/me/it'\\''s repo/.hive/worktrees/hive-1-x' && ${TERMINAL_SHELL}; curl -s -m 2 -X POST http://127.0.0.1:4242/hooks/exit -H 'x-hive-pty: W1' -H @"$HIVE_SECRET_FILE" --noproxy '*' >/dev/null`,
   );
 });
 
@@ -196,7 +197,7 @@ test('ptyCommand for a run command: its env exported and quoted, the command thr
     ptyCommand({ ...shell, run: { command: `echo 'hi' && echo "$GREETING"`, env: { GREETING: "it's $(whoami)" } } }),
     `cd '/wt' && export GREETING='it'\\''s $(whoami)' && ${echo} 'echo '\\''hi'\\'' && echo "$GREETING"' && "\${SHELL:-sh}" -c 'echo '\\''hi'\\'' && echo "$GREETING"'; ${closing}; ${trailer}; ${exit}`,
   );
-  assert.equal(ptyCommand(shell), `cd '/wt' && "\${SHELL:-sh}"; ${trailer}`);
+  assert.equal(ptyCommand(shell), `cd '/wt' && ${TERMINAL_SHELL}; ${trailer}`);
 });
 
 test('ptyCommand without promptPath starts claude with no prompt argument and still ends with the exit trailer; a manual session\'s argv has no model (#164)', () => {
@@ -357,8 +358,8 @@ test('HANDOFF_PROMPT asks the session for hive_done with its handoff (#692)', ()
   assert.match(HANDOFF_PROMPT, /hive_done with \{ "handoff": "<text>" \}/);
 });
 
-test('a terminal\'s env names its own history file and puts the Hive\'s bin dir first on PATH, where the claude shim is (#696)', () => {
-  assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin'), { HISTFILE: '/h/terminals/T1.history', PATH: '/h/bin:/usr/bin:/bin' });
+test('a terminal\'s env names its own history file, puts the Hive\'s bin dir first on PATH, where the shims are, and names the init files\' folder (#696, #259)', () => {
+  assert.deepEqual(terminalEnv('/h', 'T1', '/usr/bin:/bin'), { HISTFILE: '/h/terminals/T1.history', PATH: '/h/bin:/usr/bin:/bin', HIVE_SHELL_DIR: '/h/shell' });
   assert.equal(terminalEnv('/h', 'T1', '').PATH, '/h/bin');
 });
 
