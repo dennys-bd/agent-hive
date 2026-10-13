@@ -150,3 +150,14 @@ test('the design agents read the references through the plugin root variable, si
     assert.ok(text.includes(`${PLUGIN_ROOT}/reference/design.md`), `agents/${agent} does not read the design rules from the plugin root`);
   }
 });
+
+test('the design check is the plugin\'s script, the designer imports through import-dc.mjs and starts from the skeleton, and the reviewer runs the check (#241)', async () => {
+  const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
+  assert.ok(design.includes(`node "${PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"`), 'design.md runs the check script');
+  assert.doesNotMatch(design, /grep -nEi/, 'the grep check is gone');
+  for (const heading of ['### Tweaks', '### The skeleton']) assert.ok(design.includes(heading), `design.md has ${heading}`);
+  const designer = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  for (const part of [`${PLUGIN_ROOT}/scripts/import-dc.mjs`, `${PLUGIN_ROOT}/reference/skeleton.hv.html`, '| import |']) assert.ok(designer.includes(part), `designer.md names ${part}`);
+  const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
+  assert.ok(reviewer.includes(`${PLUGIN_ROOT}/scripts/check-hv.mjs`), 'the reviewer may run the check script');
+});
