@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { activityOf, activityOfWorker, ensureLocal, localActivityId, localWorkspaceOf, recordOf, recordTaskId, recordWithSession, withRecord } from './activities.js';
 import { touchFreeSession } from './record-kit.js';
+import { withLaunch } from './launch-pick.js';
 import { canOpenSession, taskId, runningFirst, titled } from './tasks.js';
 import { hasDirectory, localSessionsOf, continuableLocal } from './local-sessions.js';
 import { ensureActivity, none, type Reduced } from './reducer-kit.js';
@@ -111,6 +112,7 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
   const worker: Worker = {
     id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent: session.agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, sessionId, freeSession: true,
     ...(session.tokens === undefined ? {} : { tokens: session.tokens }),
+    ...withLaunch(session.launch), // #257: a continue runs with what the session was opened with
   };
   const used = localSessionsOf(state, workspace).map((s) => (s.id === sessionId ? { ...s, lastUsedAt: startedAt } : s));
   const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, used);
@@ -120,16 +122,16 @@ export function openLocalSession(state: State, { activityId, sessionId }: Extrac
 /** A new session in a workspace's local activity (#590): a free session of its own, past the signal, the cap and the budget, as a copy
  * into the local is (#587), minus the fork. Its entry is appended at the start, or at its first SessionStart for an agent that picks its own
  * id (#931, recordCapturedSession); forgetFailedLocal and forgetUnopenedLocal drop it if it never opens. */
-export function newLocalSession(state: State, { activityId, agent: asked }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
+export function newLocalSession(state: State, { activityId, agent: asked, launch }: Extract<LocalEvent, { type: 'newLocalSession' }>): Reduced {
   const workspace = localWorkspaceOf(activityId) ?? '';
   if (!state.workspaces.includes(workspace)) return none(state);
   const agent = asked ?? liveDefaultAgent(state); // #925: the local route's kind, else the default
   const sessionId = AGENTS[agent].canChooseSessionId ? randomUUID() : undefined; // #931: Codex's comes with its first SessionStart
   const startedAt = new Date().toISOString();
   const held = sessionId === undefined ? {} : { sessionId };
-  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, ...held, freeSession: true };
+  const worker: Worker = { id: randomUUID(), runId: randomUUID(), activityId: localActivityId(workspace), agent, status: 'working', startedAt, lastEvent: { kind: 'manualStart' }, ...held, freeSession: true, ...withLaunch(launch) };
   const sessions = localSessionsOf(state, workspace);
-  const created: Session[] = sessionId === undefined ? [] : [{ id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent }];
+  const created: Session[] = sessionId === undefined ? [] : [{ id: sessionId, startedAt, stages: [], lastUsedAt: startedAt, agent, ...withLaunch(launch) }];
   const next = withLocal({ ...state, workers: [...state.workers, worker] }, workspace, [...sessions, ...created]);
   return { state: next, effects: [{ type: 'spawnSession', worker, activity: localActivity(next, workspace), ...held, continues: false }] };
 }

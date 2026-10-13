@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { isLocalActivityId, taskOfActivity } from './activities.js';
 import { ranAgent } from './agents.js';
 import { localSessionsOf } from './local-sessions.js';
+import { withLaunch } from './launch-pick.js';
 import { touchFreeSession } from './record-kit.js';
 import { none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
 import { withLocal } from './session-copy.js';
 import { canOpenSession, LOCAL_SLUG } from './tasks.js';
-import type { Activity, AgentId, Effect, HiveEvent, Session, State, Terminal, Worker } from './types.js';
+import type { Activity, AgentId, Effect, HiveEvent, LaunchPick, Session, State, Terminal, Worker } from './types.js';
 
 // Kept terminals (#696), out of runs.ts: a terminal sleeps with no pty, keeps its cwd and wakes in the same id until it is forgotten. A
 // command's run (#300) is the console's, never kept. Pure: every function returns new objects.
@@ -91,24 +92,24 @@ export function forgetTerminal(state: State, { terminalId }: Extract<HiveEvent, 
   return { state: { ...state, terminals: state.terminals.filter((t) => t !== terminal) }, effects: [{ type: 'dropTerminalFiles', terminalId }] };
 }
 
-/** Where a captured session is recorded (#590, #812): the task's sessions, free as openSession's, or the workspace's local ones, with its agent.
- * Undefined when that place is gone: a local activity's workspace out of the Comb, a task activity with no task. A free run that starts with
- * no id (a captured Codex, #932) is recorded here at its first SessionStart. */
-export function recordCapturedSession(state: State, activity: Activity, sessionId: string, at: string, agent: AgentId): State | undefined {
+/** Where a captured session is recorded (#590, #812): the task's sessions, free as openSession's, or the workspace's local ones, with its agent
+ * and the picks it was opened with (#257). Undefined when that place is gone: a local activity's workspace out of the Comb, a task activity with no task. A free run that starts with
+ * no id (a captured Codex, #932, or a Codex opened from a menu or the dialog, #931) is recorded here at its first SessionStart. */
+export function recordCapturedSession(state: State, activity: Activity, sessionId: string, at: string, agent: AgentId, launch?: LaunchPick): State | undefined {
   if (activity.kind === 'local') {
     if (!state.workspaces.includes(activity.workspace)) return undefined;
-    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent };
+    const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent, ...withLaunch(launch) };
     return withLocal(state, activity.workspace, [...localSessionsOf(state, activity.workspace), created]);
   }
   const task = taskOfActivity(state, activity.id);
-  return task && touchFreeSession(state, task, sessionId, at, agent);
+  return task && touchFreeSession(state, task, sessionId, at, agent, launch);
 }
 
 // The captured worker in its activity, its session recorded; one with no id yet (#932) waits for its SessionStart, still refused where
 // recordCapturedSession would find no place
 function withCapturedSession(state: State, activity: Activity, worker: Worker, at: string): State | undefined {
   const held: State = { ...state, workers: [...state.workers, worker] };
-  if (worker.sessionId !== undefined) return recordCapturedSession(held, activity, worker.sessionId, at, ranAgent(worker));
+  if (worker.sessionId !== undefined) return recordCapturedSession(held, activity, worker.sessionId, at, ranAgent(worker), worker.launch);
   const hasPlace = activity.kind === 'local' ? state.workspaces.includes(activity.workspace) : taskOfActivity(state, activity.id) !== undefined;
   return hasPlace ? held : undefined;
 }
