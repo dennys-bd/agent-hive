@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf } from '../src/tasks.js';
+import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -258,20 +258,22 @@ const writtenDone = (age: number, extra: Partial<WithWork> = {}): WithWork =>
 const seenIn = (column: string, title = 'Task 1'): SourceItem => ({ item: { ...item(1), title }, column });
 
 test('mergeTasks over a column write: the written column clears the mark, a stale one inside the window is ignored while the item refreshes, an expired mark or a third column lets a stopped task follow (#889)', () => {
-  const [confirmed] = merge([writtenDone(30_000)], STAGES, [seenIn('Done')], NO_RUNS, AT_NOW);
+  const [confirmed] = merge([writtenDone(10_000)], STAGES, [seenIn('Done')], NO_RUNS, AT_NOW);
   assert.deepEqual([confirmed.stage, confirmed.boardColumn, confirmed.columnWrite, confirmed.enteredAt], ['done', 'Done', undefined, ago(HOUR)]);
-  const [stale] = merge([writtenDone(30_000, { missing: true })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
+  const [stale] = merge([writtenDone(10_000, { missing: true })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
   assert.deepEqual([stale.stage, stale.boardColumn, stale.enteredAt], ['done', 'Done', ago(HOUR)], 'a read from before the write: no move back');
-  assert.deepEqual(stale.columnWrite, { column: 'Done', stale: ['Ready'], at: ago(30_000) }, 'the mark waits for the source to show the write');
+  assert.deepEqual(stale.columnWrite, { column: 'Done', stale: ['Ready'], at: ago(10_000) }, 'the mark waits for the source to show the write');
   assert.deepEqual([stale.item.title, stale.missing], ['Renamed', undefined], 'everything but the column refreshes');
+  const [held] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS - 1)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
+  assert.deepEqual([held.stage, held.boardColumn], ['done', 'Done'], 'just under the window (#191: 30 s) the write still holds');
   const [expired] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
   assert.deepEqual([expired.stage, expired.boardColumn, expired.columnWrite], ['dev', 'Ready', undefined], 'past the window the source wins, as over a failed write');
-  const [third] = merge([writtenDone(30_000)], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
+  const [third] = merge([writtenDone(10_000)], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
   assert.deepEqual([third.stage, third.boardColumn, third.columnWrite], ['now', 'Now', undefined], 'a column the write never replaced is a human move');
 });
 
 test('a running task keeps its written boardColumn through a stale read; a third column still overwrites it without moving the task (#889)', () => {
-  const running = writtenDone(30_000, { workerId: 's1' });
+  const running = writtenDone(10_000, { workerId: 's1' });
   const [stale] = merge([running], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
   assert.deepEqual([stale.stage, stale.boardColumn, stale.columnWrite?.column], ['done', 'Done', 'Done'], 'today the stale value overwrote it');
   const [third] = merge([running], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
@@ -766,4 +768,11 @@ test('worktreeRows: a worktree whose kept activity has no task in the flow is ke
   const state = { ...kept, stages: STAGES, deleteActivity: DELETE_ACTIVITY_DEFAULTS };
   assert.deepEqual(worktreeRows([row], state, 'hive'), [{ ...row, workspace: 'hive', orphan: 'kept' }]);
   assert.equal(worktreeRows([row], state, 'site')[0].orphan, 'noTask');
+});
+
+test('taskLabel reads #<id> with no trailing space for a lean task, #<id> <title> once it has one, and no # for a created task (#191)', () => {
+  const lean: Task = { item: { itemId: 'item1', id: '1', title: '', body: '', url: '', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  assert.equal(taskLabel(lean), '#1');
+  assert.equal(taskLabel({ ...lean, item: item(1) }), '#1 Task 1');
+  assert.equal(taskLabel({ ...lean, created: true, item: { ...lean.item, id: 'HIVE-1', title: 'T' } }), 'HIVE-1 T');
 });

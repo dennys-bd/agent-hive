@@ -499,7 +499,10 @@ export const canCloseMissing = (task: Task, state: WorkersState): boolean =>
   && !inAction(activityOf(state, taskId(task)));
 
 /** How a task is named on screen: `#12 Title` for a source task, `HIVE-3 Title` for a local one (#132): there is no issue number to point at. */
-export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => `${task.created ? '' : '#'}${task.item.id} ${task.item.title}`;
+export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => {
+  const id = `${task.created ? '' : '#'}${task.item.id}`;
+  return task.item.title === '' ? id : `${id} ${task.item.title}`; // #191: a lean task before its first poll has no title
+};
 
 /** Stopped tasks in an action stage whose delay has passed (#755: was dueDeletions), in source order, that no session run holds: a manual
  * Claude session on a task that is not manual (#208) runs inside the worktree, and git never removes one with a session inside; a terminal

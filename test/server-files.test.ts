@@ -96,6 +96,7 @@ test('after a delete activity the record id still lists the result\'s files from
 const sourceIssue = (n: number, repository: string, id = String(n)): Task => task({
   item: { itemId: `gh:${n}`, id, title: `Issue ${n}`, body: '', url: `https://github.com/${repository}/issues/${n}`, source: 'gh', facets: { assignees: [], labels: [], repository, fields: {} } },
   created: undefined,
+  orphan: true, // #191: a listed task is saved lean and this hive has no read model to hydrate it, so its item stays whole
 });
 const NO_REF = { error: 'no task or issue for this reference' };
 const BAD_REF = { error: 'ref must be #N or PREFIX-N' };

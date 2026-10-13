@@ -6,7 +6,7 @@ import type { ItemStore } from '../../src/read-model/items.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import { ITEM_FIELDS, ITEMS, PROBE, PROJECT_FIELDS, type GhItemFieldsNode, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql } from '../../src/types.js';
-import { combConfig, fakeGql, FILTER } from '../fakes.js';
+import { combConfig, fakeGql, fakeLog, FILTER } from '../fakes.js';
 import { SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
 
 // The GitHub adapter with a read model (#190): what each poll sends, and what a write stores
@@ -119,4 +119,46 @@ test('with a store, a field write stores its re-read item, and a poll read befor
   await source.resolveFields();
   await source.setField?.('PVTI_1', 'Status', 'In review');
   assert.deepEqual((await source.listItems()).map((task) => [task.item.itemId, task.column]), [['PVTI_1', 'In review']]);
+});
+
+test('stored() answers the stored listing as the SourceItems listItems builds from it, with no gql call (#191)', async () => {
+  const items = await memoryStore();
+  const { gql } = fakeGql({ probe: probeAt(T1), items: page([node(1, 'Ready'), node(2, 'In progress')]), relations: {} });
+  const listed = await createSource(SPEC, { gql, items }).listItems();
+  const offline = fakeGql({}); // every call rejects: a restart with the model and no network
+  const restarted = createSource(SPEC, { gql: offline.gql, items });
+  assert.equal(listed.length, 2);
+  assert.deepEqual(await restarted.stored?.(), listed);
+  assert.deepEqual(offline.calls, []);
+});
+
+test('stored() answers [] with no item store, with no account, and for an @me owner it cannot resolve without the network (#191)', async () => {
+  const { gql, calls } = fakeGql({});
+  assert.deepEqual(await createSource(SPEC, { gql }).stored?.(), []);
+  assert.deepEqual(await createSource(SPEC, { gql, items: { ...(await memoryStore()), source: async () => undefined } }).stored?.(), []);
+  const mine = parseConfig(combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER } }));
+  assert.deepEqual(await createSource(sourceSpec(mine, mine.comb.sources[0]), { gql, items: await memoryStore() }).stored?.(), []);
+  assert.deepEqual(calls, []);
+});
+
+test('with a store, setColumn stores its re-read item as a write answer: a poll read before the write, with an older updatedAt, leaves the task in the written column (#191)', async () => {
+  const before = node(1, 'Ready', T1); // the listing GitHub still served when the poll read it
+  const source = createSource(SPEC, { gql: writeGql([reread('In review', T2)], [before]), items: await memoryStore() });
+  await source.resolveFields();
+  await source.setColumn('PVTI_1', 'In review');
+  assert.deepEqual((await source.listItems()).map((task) => [task.item.itemId, task.column]), [['PVTI_1', 'In review']]);
+});
+
+test('without a store setColumn sends only the mutation; with one, a failed re-read is logged and the write still resolves (#191)', async () => {
+  const { gql, calls } = fakeGql({ fields: FIELDS, setOption: {} });
+  const bare = createSource(SPEC, { gql });
+  await bare.resolveFields();
+  await bare.setColumn('PVTI_1', 'In review');
+  assert.deepEqual(names(calls), ['fields', 'setOption']);
+
+  const { log, lines } = fakeLog();
+  const stored = createSource(SPEC, { gql: writeGql([], []), items: await memoryStore(), log }); // ITEM_FIELDS answers no node
+  await stored.resolveFields();
+  await stored.setColumn('PVTI_1', 'In review');
+  assert.ok(lines.some((l) => l.startsWith('ERROR item PVTI_1: the column write was not re-read for the read model')), lines.join('\n'));
 });

@@ -6,7 +6,7 @@ import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
-import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView } from './types.js';
+import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, SourceItem } from './types.js';
 
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
@@ -62,7 +62,7 @@ function shownRelate(relate: NonNullable<Source['relate']>, own: (itemId: string
 export function namespaced(entry: SourceConfig, adapter: Source): Source {
   const prefix = `${entry.name}:`;
   const own = (itemId: string): string => (itemId.startsWith(prefix) ? itemId.slice(prefix.length) : itemId);
-  const shown = entry.prefix ?? entry.name;
+  const shownPrefix = entry.prefix ?? entry.name;
   const named = (id: string): string => `${prefix}${id}`;
   // #28: the tree links name items too, so they carry the same prefix as itemId; an absent key stays absent
   const tree = ({ parent, children, closedChildren }: Item): Partial<Item> => ({
@@ -70,12 +70,13 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(children === undefined ? {} : { children: children.map(named) }),
     ...(closedChildren === undefined ? {} : { closedChildren: closedChildren.map(named) }),
   });
-  const ids = blockerIds(entry.qualifyId, shown);
+  const ids = blockerIds(entry.qualifyId, shownPrefix);
   const item = (t: Item): Item => ({
     ...t, ...tree(t), ...(t.blockers ? { blockers: ids.shownBlockers(t.blockers) } : {}),
-    itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shown}-${t.id}` } : {}),
+    itemId: named(t.itemId), source: entry.name, ...(entry.qualifyId ? { id: `${shownPrefix}-${t.id}` } : {}),
   });
-  const { comments, project, fieldsOf, setField, create, relate, findBlockers } = adapter;
+  const { comments, project, fieldsOf, setField, create, relate, findBlockers, stored } = adapter;
+  const shown = (list: SourceItem[]): SourceItem[] => list.map((c) => ({ ...c, item: item(c.item) })); // #191: listItems' and stored's one mapping
   // #756: the native view's rows under the same namespaced ids the listed tasks carry, so a row finds its task; the id stays the issue number
   const rows = (view: ProjectView): ProjectView => ({ ...view, items: view.items.map((i) => ({ ...i, itemId: `${prefix}${i.itemId}` })) });
   // #686: a write's answer under the ids the listed tasks carry: the row as the native view's, the entry as listItems' own
@@ -84,7 +85,8 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
   });
   return {
     ...adapter,
-    listItems: async () => (await adapter.listItems()).map((c) => ({ ...c, item: item(c.item) })),
+    listItems: async () => shown(await adapter.listItems()),
+    ...(stored ? { stored: async () => shown(await stored()) } : {}),
     setColumn: (itemId, column) => adapter.setColumn(own(itemId), column),
     apply: (itemId, action) => adapter.apply(own(itemId), action),
     ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => `${prefix}${await create(fields)}` } : {}),

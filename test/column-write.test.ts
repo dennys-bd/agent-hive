@@ -34,3 +34,10 @@ test('staleRead holds only a stale column, and only for less than COLUMN_WRITE_T
   assert.equal(staleRead(damaged, 'CI', AT), false, 'a mark without its stale list holds nothing and does not throw');
   assert.deepEqual(withColumnWrite(damaged, 'Done', AT).columnWrite?.stale, ['CI'], 'and a write over it starts afresh');
 });
+
+test('the window is 30 s, #178\'s written_at window: the Hive\'s own write is in the read model, so it covers only an answer that failed to store (#191)', () => {
+  const marked = withColumnWrite(TASK, 'In review', AT);
+  assert.equal(COLUMN_WRITE_TIMEOUT_MS, 30_000);
+  assert.equal(staleRead(marked, 'CI', after(29_999)), true, 'just under 30 s');
+  assert.equal(staleRead(marked, 'CI', after(30_000)), false, 'at 30 s');
+});

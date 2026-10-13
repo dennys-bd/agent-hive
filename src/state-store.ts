@@ -9,7 +9,7 @@ import { isCount, isDate, isJsonObject, isStringArray, loadActivity, loadRecord,
 import { MOVED_TASK_KEYS, migrateLocals, migrateWork, migrateWorker } from './state-migrate.js';
 import type { WorkspaceNames } from './tasks.js';
 import { copyDisabledRule, isDisabledRule } from './usage-rules.js';
-import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
+import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type Item, type Task, type Terminal, type Signal, type Worker, type WorkerEvent, type WorkerEventKind, type State, type Status, type UsageRule, type UsageSample } from './types.js';
 
 const STATE_FILE = 'state.json';
 
@@ -136,13 +136,17 @@ function placeOf(saved: Record<string, unknown>): Pick<Task, 'created'> {
   return created === true ? { created: true as const } : {};
 }
 
+// #191: a listed task's item is saved lean ({ itemId, id, source }): its title, body and url read as '' until boot hydrates it or a poll
+// lists it. A full item of an older file loads as it is, and the next save slims it
+const loadedItem = (item: Item): Item => ({ title: '', body: '', url: '', ...(item as Partial<Item>) }) as Item; // the file may hold less than Item says
+
 // A task from before #570 carries slotId: dropped, not read as workerId (no migration).
 function normalizeTask(task: Task): Task {
   const saved = task as unknown as Record<string, unknown>;
   const { enteredAt, workspace, created: _created, auto: _auto, manual: _manual, viewing: _viewing, slotId: _slotId, ...rest } = task as Task & { manual?: unknown; prUrl?: unknown; viewing?: unknown; slotId?: unknown };
   const strings = Object.fromEntries(Object.entries({ enteredAt, workspace }).filter(([, v]) => typeof v === 'string'));
   const unmoved = Object.fromEntries(Object.entries(rest).filter(([key]) => !MOVED_TASK_KEYS.includes(key))) as typeof rest; // #629: the activity's and the record's now
-  return { ...unmoved, ...strings, auto: autoOf(saved), ...placeOf(saved) }; // #573
+  return { ...unmoved, item: loadedItem(unmoved.item), ...strings, auto: autoOf(saved), ...placeOf(saved) }; // #573
 }
 
 // #629: the activities and their records, each through its guard. An activity whose record did not load goes with it (nothing could read
@@ -225,10 +229,21 @@ export async function loadState(hiveDir: string, scope?: WorkspaceNames): Promis
   return initialState(MAX_CONCURRENT_DEFAULT);
 }
 
+/** A task as state.json holds it (#191): a listed one's item cut to what names it. */
+type SavedTask = Omit<Task, 'item'> & { item: Pick<Item, 'itemId' | 'id' | 'source'> };
+
+// #191: the read model holds a listed task's source fields and boot hydrates them back, so the file keeps only what names the item. A
+// created task's data is the Hive's own, and a missing or orphan one has no model row left, so those keep their whole item
+function leanTask(task: Task): Task | SavedTask {
+  if (task.created || task.missing || task.orphan) return task;
+  const { itemId, id, source } = task.item;
+  return { ...task, item: { itemId, id, ...(source === undefined ? {} : { source }) } };
+}
+
 export async function saveState(hiveDir: string, state: State): Promise<void> {
   const path = join(hiveDir, STATE_FILE);
   const tmp = `${path}.tmp`;
   const { slept: _slept, ...saved } = state; // #672: the sleeping runs die with the Hive, so they are never saved
-  await writeFile(tmp, JSON.stringify(saved, null, 2));
+  await writeFile(tmp, JSON.stringify({ ...saved, tasks: saved.tasks.map(leanTask) }, null, 2));
   await rename(tmp, path);
 }
