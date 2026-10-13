@@ -152,6 +152,7 @@ test('a middle-click on a tab\'s X closes it too: the whole tab, its X and its u
   expect(fireEvent.mouseDown(close, { button: 1 })).toBe(false);
   fireEvent(close, new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true }));
   expect(strips().flat()).not.toContain('Claude · abcdef12');
+  expect(showCloseTabNotice).toHaveBeenCalledTimes(1); // one close, not the X's and the tab's
 });
 
 test('a right-click on a tab\'s X opens the tab\'s menu (#255)', async () => {

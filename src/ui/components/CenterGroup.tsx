@@ -166,6 +166,15 @@ function copySourceOf(activity: Activity, ptyId: string): CopySource | undefined
   return kept && { activityId: activity.activity.id, sessionId: kept.session.id }; // the local record (#629)
 }
 
+// An opened or picked tab scrolls into a full strip's view (#255)
+function useShownInView(isShown: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isShown) ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [isShown]);
+  return ref;
+}
+
 interface CenterTabProps { item: CenterTabRef; index: number; group: TabGroup; groups: TabGroup[]; activity: Activity; ops: CenterOps; drag: CenterDrag; onClose(item: CenterTabRef): void; onWake(ptyId: string): void }
 
 // One tab (#458): its dot and text show it, its X or a middle-click closes it (#612), and it drags (center-drag.ts). Right-click: split
@@ -190,10 +199,7 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
   const run = item.kind === 'run' ? activity.runs.find((r) => r.ptyId === item.ptyId) : undefined; // an agent's tab offers copiar para… (#587); a terminal's does not
   const source = run !== undefined && run.kind !== 'terminal' ? copySourceOf(activity, run.ptyId) : undefined;
   const drop = drag.landing?.kind === 'strip' && drag.landing.group === group.id && drag.landing.target === key ? 'before' : undefined;
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { // an opened or picked tab scrolls into a full strip's view (#255)
-    if (isShown) ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [isShown]);
+  const ref = useShownInView(isShown);
   // The whole tab answers a middle-click and a right-click (#255): its X, its pill and its underline sit outside the tab button
   return (
     <ContextMenu>
