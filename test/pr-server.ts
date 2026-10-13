@@ -62,6 +62,7 @@ export interface FakeGh {
   git?: (args: string[]) => { stdout: string };
   compare?: string; ci?: Record<string, unknown>; // compare: REST's compare across forks; ci: the CI read's alias (#854)
   readFailWith?: string; missing?: boolean; // readFailWith: GitHub refuses the PR query; missing: the head query finds no PR, a 404 (#849)
+  answer?: (query: string) => unknown; // #187: what a mutation answers by its query; { ok: true } otherwise
   rest?: RestGet; timeline?: string; // #187: the read model's REST (default: all 304) and what gh prints for the timeline
 }
 
@@ -89,7 +90,7 @@ function ghOf(gh: FakeGh): Exec {
     if (args.includes('--input')) {
       await gh.onMutation?.(); // something else happening while GitHub takes the write
       if (gh.failWith !== undefined) throw new Error(`gh api graphql: ${gh.failWith}`);
-      return json({ ok: true });
+      return json(gh.answer?.(String((JSON.parse(opts?.input ?? '{}') as { query?: unknown }).query)) ?? { ok: true });
     }
     if (args[1]?.includes('/timeline')) return { stdout: gh.timeline ?? '' };
     if (args[1]?.includes('/compare/')) return { stdout: gh.compare ?? '{}' };
@@ -100,9 +101,7 @@ function ghOf(gh: FakeGh): Exec {
       return json({ viewer: { login: 'ana' }, resource: gh.missing ? null : { ...gh.pr, headRefOid: gh.heads.shift() ?? gh.pr.headRefOid } });
     }
     if (query.includes('requiredStatusCheckContexts')) return json({ p0: gh.ci ?? null }); // the CI read (#834, #854)
-    if (query.includes('headRefOid')) {
-      return json({ resource: gh.missing ? null : { headRefOid: gh.pr.headRefOid, headRefName: gh.pr.headRefName, state: gh.pr.state } });
-    }
+    if (query.includes('viewerPermission')) return json({ viewer: { login: 'ana' }, resource: gh.missing ? null : gh.pr }); // the writes' guard (#187)
     return json({});
   };
 }
@@ -156,3 +155,9 @@ export async function until(check: () => Promise<boolean>): Promise<void> {
 /** GET …/pulls/:number/review's answer (#592, #758). */
 export const reviewFileOf = async (base: string, url = PR): Promise<PrReviewFile> =>
   (await hiveFetch(`${base}/repositories/${prRepo(url)}/pulls/${prNumber(url)}/review`)).json() as Promise<PrReviewFile>;
+
+/** PR 7 as PR_ROW_FIELDS answers it (#187): the seeded row; `extra` overrides any field. */
+export const GQL_PR_7 = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  id: 'PR_7', number: 7, title: 'The PR', body: 'The description', state: 'OPEN', isDraft: false, mergedAt: null, createdAt: AT, updatedAt: AT, closedAt: null,
+  author: { login: 'bia' }, labels: { nodes: [] }, assignees: { nodes: [] }, comments: { totalCount: 0 }, ...extra,
+});

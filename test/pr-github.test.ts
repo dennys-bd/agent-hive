@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {
   COMMENT_MUTATION, EDIT_MUTATION, isReviewEvent, MERGE_MUTATION, mergeBlocker, mergeState, mergeVariables, parseHead, parsePrChecks, parsePrData, PR_CHECKS_QUERY,
   PR_HEAD_QUERY, PR_QUERY, parseThreads, PR_THREADS_QUERY, prDiffArgs, PrNotFound, readView, REPLY_MUTATION, requestTimesOf, RESOLVE_MUTATION, REVIEW_MUTATION, reviewVariables,
-  threadAnchor, timelineArgs, timelineOf, UNRESOLVE_MUTATION, withRequestTimes,
+  parseGuard, PR_GUARD_QUERY, threadAnchor, timelineArgs, timelineOf, UNRESOLVE_MUTATION, withRequestTimes,
 } from '../src/pr-github.js';
+import { COMMENT_ROW_FIELDS, PR_ROW_FIELDS, REVIEW_ROW_FIELDS } from '../src/repos/github-repo-queries.js';
 import type { Gql } from '../src/types.js';
 
 const LINK = 'https://github.com/acme/app/pull/7';
@@ -253,4 +254,20 @@ test('requestTimesOf reads each review_requested line gh printed, a user\'s or a
   const requests = [{ reviewer: 'ana', team: false, viewer: true }, { reviewer: 'core', team: true, viewer: false }, { reviewer: 'caio', team: false, viewer: false }];
   assert.deepEqual(withRequestTimes(requests, times), [{ ...requests[0], at: AT }, { ...requests[1], at: EARLY }, requests[2]]);
   assert.deepEqual(timelineArgs('acme/app', 7).slice(0, 3), ['api', 'repos/acme/app/issues/7/timeline?per_page=100', '--paginate']);
+});
+
+test('parseGuard reads what the writes check: id, state, head, updatedAt, author, viewer, push rights and methods; a null resource is PrNotFound (#187)', () => {
+  const resource = {
+    id: 'PR_1', state: 'OPEN', headRefOid: HEAD, updatedAt: AT, author: null, baseRepository: { viewerPermission: 'READ' },
+    repository: { mergeCommitAllowed: false, squashMergeAllowed: true, rebaseMergeAllowed: true },
+  };
+  assert.deepEqual(parseGuard({ viewer: { login: 'ana' }, resource }), { id: 'PR_1', state: 'open', head: HEAD, updatedAt: AT, author: 'ghost', viewer: 'ana', canPush: false, methods: ['squash', 'rebase'] });
+  assert.throws(() => parseGuard({ viewer: null, resource: null }), PrNotFound);
+  assert.ok(!PR_GUARD_QUERY.includes('reviewThreads') && !PR_GUARD_QUERY.includes('timelineItems'), 'lean: no threads, no timeline');
+});
+
+test('each PR write asks back the PR\'s row, and the comment or the review it made (#187)', () => {
+  for (const query of [REVIEW_MUTATION, EDIT_MUTATION, COMMENT_MUTATION, MERGE_MUTATION]) assert.ok(query.includes(PR_ROW_FIELDS), query.slice(0, 40));
+  assert.ok(REVIEW_MUTATION.includes(`pullRequestReview { ${REVIEW_ROW_FIELDS} pullRequest { ${PR_ROW_FIELDS} } }`));
+  assert.ok(COMMENT_MUTATION.includes(`commentEdge { node { ${COMMENT_ROW_FIELDS} } }`));
 });

@@ -4,11 +4,12 @@ import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { activityOf, prsOf } from '../src/activities.js';
 import { COMMENT_MUTATION, EDIT_MUTATION, MERGE_MUTATION, REPLY_MUTATION, RESOLVE_MUTATION, REVIEW_MUTATION, UNRESOLVE_MUTATION } from '../src/pr-github.js';
-import { PR_BODY_MAX } from '../src/types.js';
+import { type PrData, PR_BODY_MAX } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 import { workId } from './fixtures/work.js';
-import { ANCHOR, AT, fakeGh, type FakeGh, HEAD, PR, PR2, reviewFileOf, startPrs } from './pr-server.js';
+import { ANCHOR, AT, fakeGh, type FakeGh, GQL_PR_7, HEAD, PR, PR2, PR_SOURCE, reviewFileOf, startPrs } from './pr-server.js';
 import { send } from './review-server.js';
+import { hiveFetch } from './secret-client.js';
 
 // What reached gh's stdin (#592): the mutations, in order
 const mutations = (gh: FakeGh): unknown[] => gh.calls.flatMap((c) => (c.input === undefined ? [] : [c.input]));
@@ -229,9 +230,52 @@ test('mergear on a PR closed without a merge is still 409 and sends nothing (#84
 test('a mutation GitHub refuses still answers its message beside the button, and leaves it in hive.log by the PR\'s number (#849)', async (t) => {
   const gh = fakeGh();
   const { log, lines } = fakeLog();
-  const { base } = await startPrs(t, gh, log);
+  const { base, db } = await startPrs(t, gh, log);
   gh.failWith = 'Required status check "test" is expected';
   const refused = await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD });
   assert.deepEqual([refused.status, await refused.json()], [502, { error: 'gh api graphql: Required status check "test" is expected' }]);
   assert.deepEqual(lines.filter((line) => line.startsWith('WARN pr #7:')), ['WARN pr #7: GitHub refused the write: gh api graphql: Required status check "test" is expected']);
+  assert.deepEqual([db.prPage(PR_SOURCE, 'acme/app', 7)?.issue.state, db.prPage(PR_SOURCE, 'acme/app', 7)?.pull?.mergedAt], ['open', null], 'a refused write leaves the model as it was');
+});
+
+const LATER = ['2026-09-30T11:00:00Z', '2026-09-30T12:00:00Z', '2026-09-30T13:00:00Z', '2026-09-30T14:00:00Z', '2026-09-30T15:00:00Z'];
+const pageOf = async (base: string): Promise<PrData> => (await hiveFetch(`${base}${PATH}`)).json() as Promise<PrData>;
+
+test('a comment, a review and a merge upsert their answer: the next GET shows them with no sync round (#187)', async (t) => {
+  const gh = fakeGh();
+  const { base } = await startPrs(t, gh);
+  gh.answer = (query) => {
+    if (query === COMMENT_MUTATION) {
+      const comment = { id: 'IC_9', url: `${PR}#issuecomment-9`, body: 'thanks', createdAt: LATER[0], updatedAt: LATER[0], author: { login: 'ana' } };
+      return { addComment: { commentEdge: { node: comment }, subject: GQL_PR_7({ updatedAt: LATER[0], comments: { totalCount: 1 } }) } };
+    }
+    if (query === REVIEW_MUTATION) {
+      return { addPullRequestReview: { pullRequestReview: { id: 'PRR_1', author: { login: 'ana' }, state: 'APPROVED', body: '', submittedAt: LATER[1], pullRequest: GQL_PR_7({ updatedAt: LATER[1] }) } } };
+    }
+    if (query === MERGE_MUTATION) return { mergePullRequest: { pullRequest: GQL_PR_7({ state: 'MERGED', mergedAt: LATER[2], closedAt: LATER[2], updatedAt: LATER[2] }) } };
+    return undefined;
+  };
+  assert.equal((await send(base, 'POST', `${PATH}/comments`, { body: 'thanks' })).status, 200);
+  assert.deepEqual((await pageOf(base)).comments, [{ id: 'IC_9', author: 'ana', at: LATER[0], text: 'thanks' }]);
+  assert.equal((await send(base, 'POST', `${PATH}/review`, { head: HEAD, event: 'approve' })).status, 200);
+  const reviewed = await pageOf(base);
+  assert.deepEqual([reviewed.reviews, reviewed.approvals], [[{ id: 'PRR_1', author: 'ana', at: LATER[1], kind: 'approved', text: '' }], 1]);
+  assert.equal((await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD })).status, 200);
+  assert.equal((await pageOf(base)).state, 'merged');
+});
+
+test('a title edit and an inline comment upsert their answer too (#187)', async (t) => {
+  const gh = fakeGh();
+  const { base } = await startPrs(t, gh);
+  gh.answer = (query) => {
+    if (query === EDIT_MUTATION) return { updatePullRequest: { pullRequest: GQL_PR_7({ title: 'New title', updatedAt: LATER[3] }) } };
+    if (query === REVIEW_MUTATION) {
+      return { addPullRequestReview: { pullRequestReview: { id: 'PRR_2', author: { login: 'ana' }, state: 'COMMENTED', body: '', submittedAt: LATER[4], pullRequest: GQL_PR_7({ updatedAt: LATER[4] }) } } };
+    }
+    return undefined;
+  };
+  assert.equal((await send(base, 'POST', PATH, { title: 'New title', updatedAt: AT })).status, 200);
+  assert.equal((await pageOf(base)).title, 'New title');
+  assert.equal((await send(base, 'POST', `${PATH}/comment`, { head: HEAD, anchor: ANCHOR, text: 'why?' })).status, 200);
+  assert.deepEqual((await pageOf(base)).reviews.map((r) => [r.id, r.kind]), [['PRR_2', 'commented']]);
 });

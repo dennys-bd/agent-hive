@@ -125,7 +125,7 @@ async function pollOwner(ctx: RepoContext, { state, repository, number }: Target
 }
 
 // A write's confirmed answer as rows, under the source the reads use: the source is read only once GitHub took the write (#183)
-type AnswerOf = (source: string) => WriteAnswer;
+export type AnswerOf = (source: string) => WriteAnswer;
 
 const issueAnswer = (repository: string, issue: unknown): AnswerOf => (source) => ({ issues: [issueFromGql(source, repository, issue)] });
 
@@ -135,16 +135,17 @@ const commentAnswer = (repository: string, answer: CommentAnswer): AnswerOf => (
   return { issues: [issue], comments: [commentFromGql(source, repository, issue.nodeId, answer.comment)] };
 };
 
-// The answer into the read model, so the next GET shows it (#183). GitHub already took the write: a failure here (a malformed answer, the
-// store) is only logged, and the next round brings the row. No model or no login: nothing stored, the sync catches up
-async function storeAnswer(ctx: RepoContext, repository: string, answerOf: AnswerOf | undefined): Promise<void> {
-  const model = ctx.deps.readModel;
+/** A write's answer into the read model, so the next GET shows it (#183, #187). GitHub already took the write: a failure here (a malformed
+ * answer, the store) is only logged, and the next round brings the row. No model or no login: nothing stored, the sync catches up. Shared by
+ * the issue page's writes and the PR page's. */
+export async function storeWriteAnswer(deps: Pick<RepoRouteDeps, 'readModel' | 'log'>, repository: string, answerOf: AnswerOf | undefined): Promise<void> {
+  const model = deps.readModel;
   if (model === undefined || answerOf === undefined) return;
   try {
     const source = await model.source();
     if (source !== undefined) applyWriteAnswer(model, repository, answerOf(source));
   } catch (err) {
-    ctx.deps.log.error(`repositories: the answer of a write on ${repository} was not stored: ${err instanceof Error ? err.message : String(err)}`);
+    deps.log.error(`repositories: the answer of a write on ${repository} was not stored: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
@@ -158,7 +159,7 @@ async function write(ctx: RepoContext, res: Response, target: Target, run: () =>
   } catch (err) {
     return refuse(res, refusalOf(err));
   }
-  await storeAnswer(ctx, target.repository, answerOf);
+  await storeWriteAnswer(ctx.deps, target.repository, answerOf);
   res.json({ ok: true });
   if (pollAfter) {
     pollOwner(ctx, target).catch((err: unknown) => {

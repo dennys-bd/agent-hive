@@ -1,6 +1,7 @@
 // The PR page's GitHub side (#592, #758): the GraphQL documents and the parsing of their answers. Pure: every user value (link, node id,
 // text, path, line, method, head) travels as a variable, never inside a query's text. No node module either: the UI reads mergeBlocker from here.
 import { AWAITING_ROLLUP, canPushOf, countOf, decisionOf, isObject, mergeState, nodesOf, prChecksOf, prStateOf, readable } from './pr-checks.js';
+import { COMMENT_ROW_FIELDS, PR_ROW_FIELDS, REVIEW_ROW_FIELDS } from './repos/github-repo-queries.js';
 import type { Gql, LineAnchor, MergeMethod, PrChecksRead, PrClosingIssue, PrComment, PrData, PrDraft, PrIssueComment, PrMergeState, PrReviewEvent, PrReviewEventInput, PrReviewRequest, PrThread } from './types.js';
 
 export { mergeState };
@@ -97,6 +98,25 @@ function threadOf(node: unknown): PrThread {
 const METHOD_FLAGS: ReadonlyArray<[MergeMethod, string]> = [['merge', 'mergeCommitAllowed'], ['squash', 'squashMergeAllowed'], ['rebase', 'rebaseMergeAllowed']];
 const methodsOf = (repository: unknown): MergeMethod[] =>
   METHOD_FLAGS.flatMap(([method, flag]) => (isObject(repository) && repository[flag] === true ? [method] : []));
+
+/** What a write checks before it goes out (#187): GitHub's current answer for the guards (open, head, own PR, push rights, methods). */
+export type PrGuard = Pick<PrData, 'id' | 'state' | 'head' | 'updatedAt' | 'author' | 'viewer' | 'canPush' | 'methods'>;
+export const PR_GUARD_QUERY = 'query($url: URI!) { viewer { login } resource(url: $url) { ... on PullRequest { id state headRefOid updatedAt author { login } '
+  + 'baseRepository { viewerPermission } repository { mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed } } } }';
+
+/** PR_GUARD_QUERY's answer (#187): a null resource is PrNotFound, anything that is no PR an error. */
+export function parseGuard(data: unknown): PrGuard {
+  const answer = isObject(data) ? data : {};
+  const pr = answer.resource;
+  if (!isObject(pr)) throw new PrNotFound();
+  const state = prStateOf(pr.state);
+  if (state === undefined) throw new Error('not a pull request answer');
+  const base = isObject(pr.baseRepository) ? pr.baseRepository : {};
+  return {
+    id: text(pr.id, 'id'), state, head: text(pr.headRefOid, 'headRefOid'), updatedAt: text(pr.updatedAt, 'updatedAt'), author: loginOf(pr.author),
+    viewer: isObject(answer.viewer) && typeof answer.viewer.login === 'string' ? answer.viewer.login : '', canPush: canPushOf(base.viewerPermission), methods: methodsOf(pr.repository),
+  };
+}
 
 /** PR_THREADS_QUERY's answer (#187): the head, each thread it can read, and whether GitHub holds more than PR_PAGE. */
 export function parseThreads(data: unknown, skip: (reason: string) => void = () => undefined): { head: string; threads: PrThread[]; truncated: boolean } {
@@ -290,17 +310,18 @@ export const isMergeMethod = (value: unknown): value is MergeMethod => MERGE_MET
 
 /** One review of the user's (#592, #758): a comment, an approval or a change request, its summary and every draft as a thread. */
 export const REVIEW_MUTATION = 'mutation($pr: ID!, $head: GitObjectID!, $event: PullRequestReviewEvent!, $body: String, $threads: [DraftPullRequestReviewThread]) '
-  + '{ addPullRequestReview(input: { pullRequestId: $pr, commitOID: $head, body: $body, event: $event, threads: $threads }) { pullRequestReview { id } } }';
+  + `{ addPullRequestReview(input: { pullRequestId: $pr, commitOID: $head, body: $body, event: $event, threads: $threads }) { pullRequestReview { ${REVIEW_ROW_FIELDS} pullRequest { ${PR_ROW_FIELDS} } } } }`;
 /** The page's title and description (#758): a variable left out leaves its field as it is. */
 export const EDIT_MUTATION = 'mutation($pr: ID!, $title: String, $body: String) '
-  + '{ updatePullRequest(input: { pullRequestId: $pr, title: $title, body: $body }) { pullRequest { id } } }';
+  + `{ updatePullRequest(input: { pullRequestId: $pr, title: $title, body: $body }) { pullRequest { ${PR_ROW_FIELDS} } } }`;
 /** A general comment on the PR (#758), issue-style. */
-export const COMMENT_MUTATION = 'mutation($pr: ID!, $body: String!) { addComment(input: { subjectId: $pr, body: $body }) { clientMutationId } }';
+export const COMMENT_MUTATION = 'mutation($pr: ID!, $body: String!) '
+  + `{ addComment(input: { subjectId: $pr, body: $body }) { commentEdge { node { ${COMMENT_ROW_FIELDS} } } subject { ... on PullRequest { ${PR_ROW_FIELDS} } } } }`;
 export const REPLY_MUTATION = 'mutation($thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) { comment { id } } }';
 export const RESOLVE_MUTATION = 'mutation($thread: ID!) { resolveReviewThread(input: { threadId: $thread }) { thread { id } } }';
 export const UNRESOLVE_MUTATION = 'mutation($thread: ID!) { unresolveReviewThread(input: { threadId: $thread }) { thread { id } } }';
 export const MERGE_MUTATION = 'mutation($pr: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) '
-  + '{ mergePullRequest(input: { pullRequestId: $pr, mergeMethod: $method, expectedHeadOid: $head }) { pullRequest { state } } }';
+  + `{ mergePullRequest(input: { pullRequestId: $pr, mergeMethod: $method, expectedHeadOid: $head }) { pullRequest { ${PR_ROW_FIELDS} } } }`;
 
 const SIDE = { old: 'LEFT', new: 'RIGHT' } as const;
 
