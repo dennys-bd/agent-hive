@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { useHiveState } from '@/hooks/use-hive-state';
 import { onConsoleChange } from '@/lib/console-events';
 import { onEditorInstall } from '@/lib/editor-install-events';
-import { onPrReviewEvent, onReviewEvent } from '@/lib/review-events';
+import { onPrReviewEvent, onReadModelEvent, onReviewEvent } from '@/lib/review-events';
 
 class FakeSource {
   static last: FakeSource | undefined;
@@ -56,5 +56,30 @@ test('a console event reaches the console listeners, never the State (#780)', ()
   FakeSource.last?.listeners.console?.(new MessageEvent('console', { data: '{"type":"console"}' }));
   expect(heard).toHaveBeenCalledTimes(1);
   expect(result.current.state).toBeUndefined();
+  stop();
+});
+
+test('a named readModel event reaches the read model listeners with its repository and kinds, never the State (#182)', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const heard = vi.fn();
+  const stop = onReadModelEvent(heard);
+  const { result } = renderHook(() => useHiveState());
+  FakeSource.last?.listeners.readModel?.(new MessageEvent('readModel', { data: '{"type":"readModel","repository":"acme/site","kinds":["issues","comments"]}' }));
+  expect(heard).toHaveBeenCalledWith({ repository: 'acme/site', kinds: ['issues', 'comments'] });
+  expect(result.current.state).toBeUndefined();
+  stop();
+});
+
+test('a readModel event whose repository is no string or whose kinds are no string array is dropped (#182)', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const heard = vi.fn();
+  const stop = onReadModelEvent(heard);
+  renderHook(() => useHiveState());
+  const malformed = [
+    { repository: 7, kinds: ['issues'] }, { kinds: ['issues'] }, { repository: 'acme/site' },
+    { repository: 'acme/site', kinds: 'issues' }, { repository: 'acme/site', kinds: ['issues', 3] },
+  ];
+  for (const data of malformed) FakeSource.last?.listeners.readModel?.(new MessageEvent('readModel', { data: JSON.stringify({ type: 'readModel', ...data }) }));
+  expect(heard).not.toHaveBeenCalled();
   stop();
 });

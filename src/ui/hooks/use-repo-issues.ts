@@ -3,9 +3,19 @@ import { toast } from 'sonner';
 import type { RepoIssues } from '../../types';
 import { readQuotaJson } from '@/hooks/use-project';
 import { repoPath } from '@/hooks/use-repositories';
+import { onReadModelEvent } from '@/lib/review-events';
 
 // The last answer of each route, for the page's life (#757, #758): a list opened again shows at once, then reads again
 const cache = new Map<string, unknown>();
+
+const LIST_KINDS: readonly string[] = ['issues']; // the list shows only issue rows (#182)
+
+/** Reads again when the daemon says the read model changed `repository`'s rows in one of `kinds` (#182): a local read, so no debounce. */
+export function useReadModelReload(repository: string, kinds: readonly string[], reload: () => Promise<void>): void {
+  useEffect(() => onReadModelEvent((change) => {
+    if (change.repository === repository && change.kinds.some((kind) => kinds.includes(kind))) void reload();
+  }), [repository, kinds, reload]);
+}
 
 /** One of a repository's lists (#757, #758), read on opening, on a path change and on each reload (atualizar); never polled. The cached
  * answer shows meanwhile; a failure keeps it and toasts, and an answer an older read overtook is dropped. reload never rejects. */
@@ -33,9 +43,10 @@ export function useRepoRead<T>(path: string): { data?: T; isLoading: boolean; re
   return { data: held.path === path ? held.data : (cache.get(path) as T | undefined), isLoading, reload };
 }
 
-/** A repository's issues in one state (#757). */
+/** A repository's issues in one state (#757), read again on its repository's issue changes (#182). */
 export function useRepoIssues(repository: string, state: RepoIssues['state']): { issues?: RepoIssues; isLoading: boolean; reload(): Promise<void> } {
   const { data, isLoading, reload } = useRepoRead<RepoIssues>(`${repoPath(repository)}/issues?state=${state}`);
+  useReadModelReload(repository, LIST_KINDS, reload);
   return { issues: data, isLoading, reload };
 }
 

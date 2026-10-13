@@ -5,11 +5,13 @@ import { useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import type { RepoSummary } from '../../types';
 import { readQuotaJson } from '@/hooks/use-project';
+import { onReadModelEvent } from '@/lib/review-events';
 import { readView, writeView } from '@/lib/view-state';
 
 export const RECENT_SHOWN = 5; // handoff 02: the recent rows before +N
 
 let repositories: RepoSummary[] = [];
+let latestRead = 0; // #182: a burst of readModel events overlaps reads; only the newest one lands
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener);
@@ -18,11 +20,14 @@ const subscribe = (listener: () => void): (() => void) => {
 
 /** GET /repositories into the page's list (#757); anything but a list reads as none. A failure keeps the last list and toasts; never rejects. */
 export async function reloadRepositories(): Promise<void> {
+  latestRead += 1;
+  const read = latestRead;
   try {
-    const read = await readQuotaJson<unknown>('/repositories');
-    repositories = Array.isArray(read) ? (read as RepoSummary[]) : [];
+    const answer = await readQuotaJson<unknown>('/repositories');
+    if (read !== latestRead) return; // an older read overtaken by a newer one, which lands or toasts itself
+    repositories = Array.isArray(answer) ? (answer as RepoSummary[]) : [];
   } catch (err) {
-    toast.error(err instanceof Error ? err.message : String(err));
+    if (read === latestRead) toast.error(err instanceof Error ? err.message : String(err));
     return;
   }
   for (const listener of listeners) listener();
@@ -35,6 +40,10 @@ export const useRepositories = (): RepoSummary[] => useSyncExternalStore(subscri
 export function resetRepositories(): void {
   repositories = [];
 }
+
+// #182: a summary's counts and last activity derive from the issue rows and its PR count from the repo rows, so any change reads the list
+// again. Subscribed once at load and never dropped: it lives as long as the page, as the list it fills; resetRepositories leaves it
+onReadModelEvent(() => { void reloadRepositories(); });
 
 const isNames = (value: unknown): value is string[] => Array.isArray(value) && value.every((name) => typeof name === 'string');
 

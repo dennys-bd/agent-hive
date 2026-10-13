@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import type { RepoSummary } from '../../types';
 import { Button } from '@/components/ui/button';
+import { Syncing } from '@/components/ui/spinner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RECENT_SHOWN, reloadRepositories, repoGroups, usePinned, useRepositories } from '@/hooks/use-repositories';
 import { t } from '@/i18n';
@@ -36,7 +37,7 @@ function RepoMenu({ repo, isPinned, onPin }: Pick<RepoRowProps, 'repo' | 'isPinn
 
 // A repository's row (handoff 02): the workspace's square, the name, the open PRs, the ⋯; under it the workspace and the last activity. A
 // fork's pair (#854) names each in full; the original says so, the fork hangs under it with ↳. A div, not a button: the ⋯ is a button of its
-// own inside it, as on a source's row
+// own inside it, as on a source's row. A repository the model never synced (#182) shows the syncing mark in place of its open PRs.
 function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
   const isFork = repo.role === 'fork';
   const when = repo.lastActivity === undefined ? [] : [relativeTime(repo.lastActivity)];
@@ -52,7 +53,7 @@ function RepoRow({ repo, isSelected, isPinned, onPick, onPin }: RepoRowProps) {
         {isFork && <span aria-hidden="true" className="-mr-0.5 w-2.5 text-muted-foreground text-xs">↳</span>}
         <WorkspaceSquare name={repo.workspace} />
         <span className="min-w-0 flex-1 truncate">{repo.role === undefined ? repoName(repo.repository) : repo.repository}</span>
-        <span className="w-6 text-right text-muted-foreground text-xs tabular-nums">{repo.openPrs}</span>
+        <span className="w-6 text-right text-muted-foreground text-xs tabular-nums">{repo.syncedAt === null ? <Syncing /> : repo.openPrs}</span>
         <RepoMenu repo={repo} isPinned={isPinned} onPin={onPin} />
       </span>
       <span className={`${isFork ? 'pl-[34px]' : 'pl-4'} text-muted-foreground text-xs`}>{second.join(' · ')}</span>

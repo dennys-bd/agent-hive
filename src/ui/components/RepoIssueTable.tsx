@@ -6,6 +6,7 @@ import { ForkEmpty } from '@/components/ForkEmpty';
 import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoIssueRow } from '@/components/RepoIssueRow';
+import { Syncing } from '@/components/ui/spinner';
 import { useRepoIssues } from '@/hooks/use-repo-issues';
 import { reloadRepositories } from '@/hooks/use-repositories';
 import { type MessageKey, t } from '@/i18n';
@@ -26,15 +27,17 @@ const matches = (issue: RepoIssue, term: string): boolean => term === '' || issu
 
 interface SubbarProps { summary: RepoSummary; value: IssueState; onChange(state: IssueState): void; issues?: RepoIssues; isLoading: boolean }
 
-// The subbar (handoff 02): abertas N / fechadas N with GitHub's counts from the summary, lendo… only while nothing is cached, the cap when hit
+// The subbar (handoff 02): abertas N / fechadas N with GitHub's counts from the summary, lendo… only while nothing is cached, the cap when
+// hit. A list the model never synced (#182) shows the syncing mark in place of each N, silent there since the body announces it: a 0 would read as no issues
 function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
+  const isSyncing = issues?.syncedAt === null;
   const item = (id: IssueState, label: MessageKey, n: number) => (
     // biome-ignore lint/a11y/useSemanticElements: a styled segment button; a native radio cannot take this look, and the group keeps its role for a screen reader (#757)
     <button
       key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)}
       className={`rounded-[5px] px-2.5 py-0.5 font-medium text-xs ${value === id ? 'bg-background text-foreground' : 'text-muted-foreground'}`}
     >
-      {t(label)} <span className="font-normal text-muted-foreground">{n}</span>
+      {t(label)} <span className="font-normal text-muted-foreground">{isSyncing ? <Syncing isRepeat /> : n}</span>
     </button>
   );
   return (
@@ -50,7 +53,9 @@ function Subbar({ summary, value, onChange, issues, isLoading }: SubbarProps) {
 
 // The table (handoff 02): a 34px header on card with a handle on each column's left edge, 40px rows, the dividers down to the footer, then
 // the footer's X de N and the ↵ hint. Widths are saved per repository; the box fills the pane
-function IssueGrid({ repository, rows, total, state, onOpen }: { repository: string; rows: RepoIssue[]; total: number; state: State; onOpen?(issue: RepoIssue): void }) {
+interface IssueGridProps { repository: string; rows: RepoIssue[]; total: number; state: State; isSyncing: boolean; onOpen?(issue: RepoIssue): void }
+
+function IssueGrid({ repository, rows, total, state, isSyncing, onOpen }: IssueGridProps) {
   const [saved, setSaved] = useState(() => readRepoListWidths(repository, 'issues'));
   const { widths, onDrag, onResize } = useColumnWidths(saved, (next) => {
     setSaved(next);
@@ -70,7 +75,9 @@ function IssueGrid({ repository, rows, total, state, onOpen }: { repository: str
             </tr>
           </thead>
           <tbody className="block">
-            {rows.map((issue) => (
+            {isSyncing ? ( // #182: never synced, so no rows yet; one row says so instead of an empty table
+              <tr className="grid h-10 items-center px-3"><td><Syncing /></td></tr>
+            ) : rows.map((issue) => (
               <RepoIssueRow key={issue.number} issue={issue} task={taskOfIssue(state.tasks, issue.url)} columns={template} state={state} onOpen={onOpen} />
             ))}
           </tbody>
@@ -106,7 +113,7 @@ export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository }: 
       ) : (
         <>
           <Subbar summary={summary} value={issueState} onChange={setIssueState} issues={issues} isLoading={isLoading} />
-          <IssueGrid repository={summary.repository} rows={rows} total={issues?.total ?? 0} state={state} onOpen={onOpen} />
+          <IssueGrid repository={summary.repository} rows={rows} total={issues?.total ?? 0} state={state} isSyncing={issues?.syncedAt === null} onOpen={onOpen} />
         </>
       )}
     </div>

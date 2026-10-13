@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { emitConsoleChange } from '@/lib/console-events';
 import { emitEditorInstall } from '@/lib/editor-install-events';
-import { emitPrReviewEvent, emitReviewEvent } from '@/lib/review-events';
+import { emitPrReviewEvent, emitReadModelEvent, emitReviewEvent } from '@/lib/review-events';
 import type { EditorInstallEvent, EffectiveLimits, EventsPayload, State } from '../../types.js';
 
 const RERENDER_MS = 30_000;
+const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
 /** Owns the EventSource: one State per event, rendered whole. `tick` moves the elapsed() readings between events. */
 export function useHiveState(): { state: State | undefined; effective: EffectiveLimits | undefined; connected: boolean; tick: number } {
@@ -29,6 +30,10 @@ export function useHiveState(): { state: State | undefined; effective: Effective
     source.addEventListener('prReview', (event) => { // a PR's review file changed (#592): the PR page on that link reads it again
       const { url } = JSON.parse((event as MessageEvent<string>).data) as { url?: unknown };
       if (typeof url === 'string') emitPrReviewEvent(url);
+    });
+    source.addEventListener('readModel', (event) => { // a sync changed a repository's rows (#182): the views on it read again
+      const { repository, kinds } = JSON.parse((event as MessageEvent<string>).data) as { repository?: unknown; kinds?: unknown };
+      if (typeof repository === 'string' && isStrings(kinds)) emitReadModelEvent({ repository, kinds });
     });
     source.addEventListener('editorInstall', (event) => { // an install's state changed (#780): Settings and the language servers follow it
       const parsed = JSON.parse((event as MessageEvent<string>).data) as Partial<EditorInstallEvent>;

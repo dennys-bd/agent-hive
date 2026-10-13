@@ -1,14 +1,15 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { FlowRepositories } from '@/components/FlowRepositories';
 import { resetRepositories } from '@/hooks/use-repositories';
 import { setLanguage } from '@/i18n';
+import { emitReadModelEvent } from '@/lib/review-events';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { RepoSummary } from '../../src/types';
 
 const repo = (name: string, day: number): RepoSummary => ({
-  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: null, lastActivity: `2026-10-0${day}T09:00:00Z`,
+  repository: `acme/${name}`, url: `https://github.com/acme/${name}`, workspace: 'hive', openPrs: day, openIssues: 0, closedIssues: 0, canPush: true, issuesEnabled: true, syncedAt: '2026-10-05T09:00:00Z', lastActivity: `2026-10-0${day}T09:00:00Z`,
 });
 // newest first by last activity: g f e d c b a
 const LIST = [repo('a', 1), repo('b', 2), repo('c', 3), repo('d', 4), repo('e', 5), repo('f', 6), repo('g', 7)];
@@ -144,4 +145,37 @@ test('a fork whose original is another pair\'s fork still shows: each row is pla
   render(<FlowRepositories onPick={vi.fn()} />);
   await screen.findByTitle('up/p');
   expect(rowNames()).toEqual(['up/p', 'me/b', 'me/c']);
+});
+
+test('any readModel event reads the repositories again, whatever its repository or kinds (#182)', async () => {
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/g');
+  listed = [...LIST, repo('h', 8)];
+  act(() => emitReadModelEvent({ repository: 'acme/elsewhere', kinds: ['labels'] }));
+  expect(await screen.findByTitle('acme/h')).toBeInTheDocument();
+});
+
+test('a row whose repository the model never synced shows sincronizando… in place of its open PRs (#182)', async () => {
+  listed = [{ ...repo('a', 1), syncedAt: null }, repo('b', 2)];
+  render(<FlowRepositories onPick={vi.fn()} />);
+  await screen.findByTitle('acme/a');
+  expect(within(screen.getByTitle('acme/a')).getByRole('status', { name: 'sincronizando…' })).toHaveClass('text-muted-foreground');
+  expect(within(screen.getByTitle('acme/a')).queryByText('1')).not.toBeInTheDocument();
+  expect(within(screen.getByTitle('acme/b')).queryByRole('status')).not.toBeInTheDocument();
+  expect(within(screen.getByTitle('acme/b')).getByText('2')).toHaveClass('tabular-nums');
+});
+
+test('a read overtaken by a newer one is dropped, so a burst of events never lands an older list (#182)', async () => {
+  let release: (() => void) | undefined;
+  fetchMock.mockImplementationOnce(async () => {
+    await new Promise<void>((resolve) => { release = resolve; });
+    return new Response(JSON.stringify([repo('old', 1)]), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  render(<FlowRepositories onPick={vi.fn()} />); // the mount's read waits
+  listed = [repo('new', 2)];
+  await act(async () => emitReadModelEvent({ repository: 'acme/new', kinds: ['issues'] }));
+  expect(await screen.findByTitle('acme/new')).toBeInTheDocument();
+  await act(async () => release?.());
+  expect(screen.queryByTitle('acme/old')).not.toBeInTheDocument();
+  expect(screen.getByTitle('acme/new')).toBeInTheDocument();
 });
