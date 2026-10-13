@@ -1,19 +1,19 @@
 import { prsOf } from '../../activities';
 import { nextPr } from '../../pull-requests';
-import type { IssuePage, State, Task } from '../../types';
+import type { IssuePage, State, Task, TaskComment } from '../../types';
 import { Editable, fieldSaver } from '@/components/Editable';
 import { IssueCommentBox } from '@/components/IssueCommentBox';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
 import { AssigneeCell, PrCell, taskPrs } from '@/components/ProjectRow';
 import { useOpenPr } from '@/components/terminal-tabs';
 import { useNavScroll } from '@/hooks/use-back-stack';
-import { issuePath } from '@/hooks/use-issue';
+import { type IssuePatch, issuePath, type Optimistic } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
 
 const MUTED = 'text-muted-foreground';
 
-export interface IssueBodyProps { issue: IssuePage; task?: Task; state: State; meta: string; onChanged(): Promise<void> }
+export interface IssueBodyProps { issue: IssuePage; task?: Task; state: State; meta: string; onChanged(): Promise<void>; optimistic: Optimistic }
 
 // The PR line (handoff 01): a task's own PRs (#698), abrir PR › to its next open one; an issue out of the flow, the PRs that close it, abrir
 // PR › to the first open one. Its page through the dock's opener (#758), GitHub outside a Dashboard. No PR: no line
@@ -36,6 +36,25 @@ function PrLine({ issue, task, state }: { issue: IssuePage; task?: Task; state: 
   );
 }
 
+const PENDING_URL = 'pending:'; // a pending comment's url (#183): TaskComment has no flag, and GitHub's urls are https
+
+// A comment GitHub has not answered yet (#183): its body, one more in the count; the Hive's login is not known here, so no author
+function pendingComment(body: string): IssuePatch {
+  const url = `${PENDING_URL}${crypto.randomUUID()}`; // the list's key: two pending comments with one body stay two
+  return (issue) => ({ ...issue, comments: [...issue.comments, { author: '', createdAt: '', body, url }], commentCount: issue.commentCount + 1 });
+}
+
+function CommentHead({ comment }: { comment: TaskComment }) {
+  if (comment.url.startsWith(PENDING_URL)) return <span className={MUTED}>{t('issue.comment.sending')}</span>;
+  return (
+    <>
+      <AssigneeCell logins={[comment.author]} />
+      <span className="font-medium">{comment.author}</span>
+      <span className={MUTED}>{relativeTime(comment.createdAt)}</span>
+    </>
+  );
+}
+
 // comentários · N (handoff 01): the first 100, oldest first; past them, a link to the rest on GitHub
 function Comments({ issue }: { issue: IssuePage }) {
   const more = issue.commentCount - issue.comments.length;
@@ -46,9 +65,7 @@ function Comments({ issue }: { issue: IssuePage }) {
       {issue.comments.map((comment) => (
         <article key={comment.url} className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2 text-xs">
-            <AssigneeCell logins={[comment.author]} />
-            <span className="font-medium">{comment.author}</span>
-            <span className={MUTED}>{relativeTime(comment.createdAt)}</span>
+            <CommentHead comment={comment} />
           </div>
           <div className="text-[13px] leading-5"><IssueMarkdown text={comment.body} /></div>
         </article>
@@ -60,7 +77,7 @@ function Comments({ issue }: { issue: IssuePage }) {
 
 /** The issue page's center (#757, handoff 01): the title and the meta line, then the PR line, the description and the comments. The title
  * and the description edit in place; the box under the comments posts one. */
-export function IssueBody({ issue, task, state, meta, onChanged }: IssueBodyProps) {
+export function IssueBody({ issue, task, state, meta, onChanged, optimistic }: IssueBodyProps) {
   const save = fieldSaver(issuePath(issue.repository, issue.number), t('issue.changed'), onChanged);
   const scroller = useNavScroll(); // #911: mounts once the issue is read, when its pending scroll applies
   return (
@@ -84,7 +101,7 @@ export function IssueBody({ issue, task, state, meta, onChanged }: IssueBodyProp
         </section>
         <hr />
         <Comments issue={issue} />
-        <IssueCommentBox path={`${issuePath(issue.repository, issue.number)}/comments`} repository={issue.repository} onPosted={onChanged} />
+        <IssueCommentBox path={`${issuePath(issue.repository, issue.number)}/comments`} repository={issue.repository} onPosted={onChanged} onPending={(body) => optimistic(pendingComment(body))} />
       </div>
     </div>
   );

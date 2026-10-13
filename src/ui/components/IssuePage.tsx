@@ -39,7 +39,7 @@ export function IssuePage(props: IssuePageProps) {
       {header(reload)}
       {issue ? (
         <div className="flex min-h-0 flex-1">
-          <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} />
+          <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} optimistic={optimistic} />
         </div>
       ) : <p className="px-3.5 py-2 text-muted-foreground text-xs">{line}</p>}
       <DetailSlot>

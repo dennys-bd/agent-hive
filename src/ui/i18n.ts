@@ -1684,6 +1684,7 @@ const en = {
   'issue.changed': 'the issue changed on GitHub; reloaded. your draft is still in the field.', 'issue.comment.placeholder': 'comment on the issue…', // #757: the issue page's comment box and labels
   'issue.comment.footer': 'posts to {repository} · github',
   'issue.comment.send': 'comment',
+  'issue.comment.sending': 'sending…', // #183: a comment GitHub has not answered yet, in place of its author and time
   'issue.labels.add': 'add label',
   'issue.labels.failed': 'labels could not be read',
   'issue.labels.remove': 'remove {label}',
@@ -3505,6 +3506,7 @@ const pt: Record<MessageKey, string> = {
   'issue.changed': 'a issue mudou no GitHub; recarregada. seu rascunho continua no campo.',  'issue.comment.placeholder': 'comentar na issue…',
   'issue.comment.footer': 'publica em {repository} · github',
   'issue.comment.send': 'comentar',
+  'issue.comment.sending': 'enviando…',
   'issue.labels.add': 'adicionar label',
   'issue.labels.failed': 'não foi possível ler as labels',
   'issue.labels.remove': 'remover {label}',

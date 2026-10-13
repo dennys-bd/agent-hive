@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { IssuePage } from '@/components/IssuePage';
@@ -97,4 +97,19 @@ test('a label change shows at once while its write is out and rolls back when Gi
   expect(screen.getByRole('checkbox', { name: 'docs' })).toBeChecked();
   settle(jsonRes({ error: 'GitHub refused' }, 502));
   await waitFor(() => expect(screen.getByRole('checkbox', { name: 'docs' })).not.toBeChecked());
+});
+
+test('a comment shows as enviando… while its write is out; a refusal removes it and keeps the draft (#183)', async () => {
+  const user = userEvent.setup();
+  const settle = holdPosts();
+  renderPage();
+  await user.type(await screen.findByRole('textbox', { name: 'comentar na issue…' }), 'Looks good');
+  await user.click(screen.getByRole('button', { name: /^comentar/ }));
+  const comments = within(await screen.findByRole('region', { name: 'comentários · 1' }));
+  expect(comments.getByText('Looks good')).toBeInTheDocument();
+  expect(comments.getByText('enviando…')).toBeInTheDocument();
+  settle(jsonRes({ error: 'GitHub refused' }, 502));
+  expect(await screen.findByRole('region', { name: 'comentários · 0' })).toBeInTheDocument();
+  expect(screen.queryByText('enviando…')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'comentar na issue…' })).toHaveValue('Looks good');
 });
