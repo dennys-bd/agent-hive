@@ -585,6 +585,7 @@ const en = {
   'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
   'design.theme': 'design theme', 'design.theme.dark': 'dark', 'design.theme.light': 'light',
+  'design.tweaks': 'tweaks', 'design.tweaks.more': 'more…', 'design.tweaks.close': 'close', 'design.tweaks.invalid': 'the hv-tweaks block is invalid',
   // #113: the design comments panel
   'design.comments': 'comments', 'design.comments.toggle': 'show or hide the comments', 'design.comments.hide': 'hide',
   'design.tab.open': 'open · {n}', 'design.tab.resolved': 'resolved · {n}', 'design.area': 'area · {w}×{h}', 'design.composer.cancel': 'esc cancels',
@@ -2434,6 +2435,7 @@ const pt: Record<MessageKey, string> = {
   'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
+  'design.tweaks': 'tweaks', 'design.tweaks.more': 'mais…', 'design.tweaks.close': 'fechar', 'design.tweaks.invalid': 'o bloco hv-tweaks é inválido',
   'design.comments': 'comentários', 'design.comments.toggle': 'mostrar ou esconder os comentários', 'design.comments.hide': 'esconder',
   'design.tab.open': 'abertos · {n}', 'design.tab.resolved': 'resolvidos · {n}', 'design.area': 'área · {w}×{h}', 'design.composer.cancel': 'esc cancela',
   'design.comment': 'comentar', 'design.comment.toggle': 'comentar · C', 'design.removed': 'elemento removido', 'design.pin': 'comentário {n}',
