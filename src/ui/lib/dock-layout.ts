@@ -46,6 +46,16 @@ export const DEFAULT_DOCK_LAYOUT: DockLayout = {
 
 export const clampSideSize = (side: Side, size: number): number => Math.min(SIDE_BOUNDS[side].max, Math.max(SIDE_BOUNDS[side].min, size));
 
+/** The share of the frame the center keeps while both sides are open (#295), percent of the frame as the sides' sizes are. */
+export const CENTER_MIN = 20;
+
+// The room `side` has (#295): what the other side leaves of the frame past CENTER_MIN, in the tightest of `views` where it is open; Infinity
+// where it is open in none. 70 + 70 is 140% of the frame, which no min-w-0 can fit
+function roomFor(layout: DockLayout, views: readonly ViewId[], side: Side): number {
+  const other: Side = side === 'left' ? 'right' : 'left';
+  return Math.min(...views.filter((view) => layout.open[view][other]).map((view) => 100 - CENTER_MIN - layout.sizes[view][other]));
+}
+
 // A locked panel (#458) stays where it is: the same layout back
 export const moveTo = (layout: DockLayout, panel: PanelId, side: Side): DockLayout =>
   (isLocked(panel) ? layout : { ...layout, docks: { ...layout.docks, [panel]: side } });
@@ -60,14 +70,15 @@ function setIn<T>(byView: Record<ViewId, Record<Side, T>>, targets: readonly Vie
 }
 
 /** `change` on `side` (#821): in `view` alone while the side is kept per view, else in every view, so the two stay equal and the side behaves as
- * one shared state. A size is clamped to its side's bounds. Already as asked: the same layout back, so the dock does not render. */
+ * one shared state. A size is clamped to its side's bounds and, while the other side is open, to what keeps the center at CENTER_MIN (#295). Already as asked: the same layout back, so the dock does not render. */
 export function withSide(layout: DockLayout, view: ViewId, side: Side, change: SideChange, isPerView: boolean): DockLayout {
   const targets = isPerView ? [view] : VIEWS;
   if ('open' in change) {
     const isSame = targets.every((v) => layout.open[v][side] === change.open);
     return isSame ? layout : { ...layout, open: setIn(layout.open, targets, side, change.open) };
   }
-  const size = clampSideSize(side, change.size);
+  // Never under the side's own bound: readDockLayout refuses a size out of it and would put back the defaults whole
+  const size = Math.max(SIDE_BOUNDS[side].min, Math.min(clampSideSize(side, change.size), roomFor(layout, targets, side)));
   return targets.every((v) => layout.sizes[v][side] === size) ? layout : { ...layout, sizes: setIn(layout.sizes, targets, side, size) };
 }
 

@@ -69,7 +69,7 @@ test('Detalhes sits alone in the right panel beside the center; its tab\'s menu 
   expect(saved()).toMatchObject({ docks: { detail: 'left' } });
 });
 
-test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wider, clamped to 15..70, saved in the view state and read back on the next mount (#342, #484)', async () => {
+test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wider, clamped to 15 and to what leaves the center 20%, saved in the view state and read back on the next mount (#342, #484, #295)', async () => {
   const user = userEvent.setup();
   const { unmount } = render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
@@ -83,12 +83,12 @@ test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wi
   await user.keyboard('{ArrowRight}'.repeat(5));
   expect(separator()).toHaveAttribute('aria-valuenow', '15'); // floored
   await user.keyboard('{ArrowLeft}'.repeat(12));
-  expect(separator()).toHaveAttribute('aria-valuenow', '70'); // ceiled
+  expect(separator()).toHaveAttribute('aria-valuenow', '50'); // the left open at 30 leaves the center 20% (#295)
   unmount();
   render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
-  expect(separator()).toHaveAttribute('aria-valuenow', '70');
-  expect(group('right')).toHaveStyle({ flexBasis: '70%' });
+  expect(separator()).toHaveAttribute('aria-valuenow', '50');
+  expect(group('right')).toHaveStyle({ flexBasis: '50%' });
 });
 
 test('the first run opens the center on Home and the left panel on the Atividades tab, with Automação mounted beside it holding the signal toggle, the worker cap, the shut-down toggle and the sources; the right stays closed, the footer holds no signal and the header brand\'s mark does (#452, #456, #457, #746)', () => {
