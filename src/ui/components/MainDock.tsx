@@ -41,6 +41,8 @@ export interface DetailView { isShown: boolean; onClose(): void; nav: DetailNav 
 export interface MainDockProps {
   fileLinks: boolean; fontFamily: string; workspaces: string[]; tasks: Task[]; workers: Worker[];
   terminals: Terminal[]; // every live terminal (#283, #292): a task's plain terminal makes it an activity (#457)
+  // #229: "ver no fluxo" goes through the Dashboard's path to a task (its source's flow, no page, the task selected); absent: the selection alone
+  showTask?(taskId: string): void;
   selected?: Selection; onSelect(selection: Selection): void; // the app's task selection: a picked activity selects its task for Detalhes (#457)
   detail(view: DetailView): ReactNode; children: ReactNode;
   consoleChannels?: ConsoleChannels; // the daemon's console channels (#353), read by the Dashboard; absent (the terminal's harness): no console
@@ -269,7 +271,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * a run's terminal a tab of its activity's center. Each side is a panel that opens and closes (#452). The center follows the left panel's
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
-  const { selected, onSelect, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
+  const { selected, onSelect, showTask, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
   const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
@@ -314,8 +316,9 @@ export function MainDock(props: MainDockProps) {
   const openStart = (start: StartRequest = {}): void => (newActivity === undefined ? activateTab('automation') : setNewIn(start));
   const openNewActivity = (workspace?: string): void => openStart({ workspace });
   const showFlow = (taskId: string): void => {
-    onSelect({ taskId });
     activateTab('automation');
+    if (showTask) showTask(taskId);
+    else onSelect({ taskId });
   };
   const searchClose = useSearchClose(current, layouts, openUserRun);
   // Markdown: Open Preview (#697) and Git: Open Changes (#668): the focused editor names its activity by id; the tab opens in the focused group,
@@ -352,7 +355,7 @@ export function MainDock(props: MainDockProps) {
     center: selection.center,
     canOpenActivity: isLive,
     openActivity: open,
-    showFlow: () => activateTab('automation'),
+    showFlow: () => (selected?.taskId === undefined ? activateTab('automation') : showFlow(selected.taskId)),
   };
   const activitiesNav: ActivitiesNav = {
     newActivity: openNewActivity, addWorkspace: onAddWorkspace,
