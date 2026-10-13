@@ -1,9 +1,10 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
-import type { MergeMethod, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import { prDetailsOf } from './pr-details.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PullRead, PullToRead, RepoRow, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
 import { inTransaction, issueOf, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
 
@@ -50,7 +51,7 @@ export interface ReadModel {
   upsertIssue(row: IssueRow, origin: UpsertOrigin): boolean; // whether it wrote
   upsertComment(row: CommentRow, origin: UpsertOrigin): boolean;
   setClosingPrs(source: string, issueNodeId: string, prs: ProjectPr[]): void; // replaces the set
-  removeIssue(source: string, nodeId: string): void; // its comments and links with it
+  removeIssue(source: string, nodeId: string): void; // its comments, links, pulls row, reviews and checks with it
   removeComment(source: string, nodeId: string): void;
   scope(source: string, repository: string, kind: ScopeKind): SyncScope | undefined;
   setScope(source: string, repository: string, kind: ScopeKind, scope: SyncScope): void;
@@ -72,6 +73,13 @@ export interface ReadModel {
   prs(source: string, repository: string, state: PrState, filter?: PrFilter): PrRow[]; // newest update first
   prCounts(source: string, repository: string, author?: string): RepoPrs['counts'];
   removeScopes(source: string, repository: string, prefix: string): void;
+  setPullPage(key: PullKey, page: PullPage): boolean; // #187: the page's own rows; each writer answers whether it wrote
+  setPullChecks(key: PullKey, checks: CheckRow[]): boolean; // replaces the set
+  setPullAwaiting(key: PullKey, workflows: string[]): boolean;
+  setPullCloses(key: PullKey, closes: PrClosingIssue[]): boolean;
+  upsertReview(row: ReviewRow, origin: UpsertOrigin): boolean;
+  pullAt(source: string, repository: string, number: number): OpenPull | undefined; // a PR's, open or not
+  prPage(source: string, repository: string, number: number): PrPage | undefined; // never an issue
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -115,6 +123,8 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
   const dropComments = db.prepare('DELETE FROM comments WHERE source = ? AND issue_node_id = ?');
   const dropComment = db.prepare('DELETE FROM comments WHERE source = ? AND node_id = ?');
   const dropPull = db.prepare('DELETE FROM pulls WHERE source = ? AND node_id = ?');
+  const dropReviews = db.prepare('DELETE FROM pull_reviews WHERE source = ? AND pull_node_id = ?');
+  const dropChecks = db.prepare('DELETE FROM pull_checks WHERE source = ? AND pull_node_id = ?');
   return {
     // The links have their own write: a linked PR moving does not bump the issue's updated_at, so they live outside the replace rule
     setClosingPrs: (source, issueNodeId, prs) => inTransaction(db, () => {
@@ -124,6 +134,8 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
     removeIssue: (source, nodeId) => inTransaction(db, () => {
       dropComments.run(source, nodeId);
       dropLinks.run(source, nodeId);
+      dropReviews.run(source, nodeId);
+      dropChecks.run(source, nodeId);
       dropPull.run(source, nodeId);
       dropIssue.run(source, nodeId);
     }),
@@ -244,8 +256,11 @@ function restrict(path: string): void {
 }
 
 function modelOf(db: DatabaseSync, now: () => number): ReadModel {
+  const reads = readsOf(db);
+  const repos = repoTablesOf(db);
   return {
-    ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), ...repoTablesOf(db), ...countsOf(db), ...pullTablesOf(db),
+    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db),
+    ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
   };
 }

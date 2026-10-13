@@ -6,9 +6,10 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-m
 import {
   awaitingFromRest, checkItemsFromRest, pullFromGql, pullPageFromRest, pullsFromGql, repoFromRest, reviewFromGql, reviewsFromRest, WireError,
 } from '../../src/read-model/normalize.js';
+import type { CheckRow, PullPage, ReviewRow } from '../../src/read-model/rows.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { tempDir } from '../temp-dir.js';
-import { GQL_PR, GQL_REVIEW, HEAD, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { commentRow, GQL_PR, GQL_REVIEW, HEAD, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const memory = async (): Promise<ReadModel> => (await openReadModel(':memory:')).db;
 
@@ -104,4 +105,63 @@ test('pullsFromGql reads the issues each PR closes, dropping a node the page cou
   const closes = { nodes: [{ number: 12, url: 'https://github.com/acme/hive/issues/12', repository: { nameWithOwner: 'acme/hive' } }, { number: '9' }, null] };
   const [read] = pullsFromGql({ p0: { id: 'PR_7', reviewDecision: null, mergeStateStatus: 'CLEAN', headCommit: { nodes: [] }, closingIssuesReferences: closes } });
   assert.deepEqual(read?.closes, [{ repository: 'acme/hive', number: 12, url: 'https://github.com/acme/hive/issues/12' }]);
+});
+
+const WINDOW_MS = 30_000; // #178's written_at window
+const CLOSES = [{ repository: REPO, number: 12, url: 'https://github.com/acme/hive/issues/12' }];
+const page = (extra: Partial<PullPage> = {}): PullPage => ({
+  headRef: 'feature', baseRef: 'main', headOwner: 'caio', baseOwner: 'acme', commits: 2, additions: 10, deletions: 3, requested: [{ reviewer: 'bia', team: false }], ...extra,
+});
+const check = (name: string, state: CheckRow['state'] = 'success'): CheckRow => ({ name, state, url: null, startedAt: null, at: T1 });
+const review = (id: string, author: string | null, state: ReviewRow['state'], submittedAt = T1, body = ''): ReviewRow =>
+  ({ source: SOURCE, nodeId: id, pullNodeId: 'PR_7', repository: REPO, author, state, body, submittedAt });
+
+test('the page writers set only their own columns and write only on a change; prPage reads the PR row, its pulls row, reviews, comments, checks and repos row (#187)', async () => {
+  const db = await memory();
+  db.setRepo(REPO_ROW);
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  db.upsertComment(commentRow('IC_1', 'PR_7'), 'sync');
+  assert.deepEqual([db.setPullPage(pullKey(7), page()), db.setPullPage(pullKey(7), page())], [true, false]);
+  assert.deepEqual([db.setPullCloses(pullKey(7), CLOSES), db.setPullCloses(pullKey(7), CLOSES)], [true, false]);
+  assert.deepEqual([db.setPullAwaiting(pullKey(7), ['CI']), db.setPullAwaiting(pullKey(7), ['CI'])], [true, false]);
+  db.setPullFlags({ ...pullKey(7), draft: true, mergedAt: null });
+  db.upsertReview(review('R2', 'caio', 'APPROVED', T2), 'sync');
+  db.upsertReview(review('R1', 'bia', 'COMMENTED', T1), 'sync');
+  db.setPullChecks(pullKey(7), [check('test'), check('lint', 'failure')]);
+  const found = db.prPage(SOURCE, REPO, 7);
+  assert.deepEqual(found?.issue, prIssueRow(7, T1));
+  assert.deepEqual([found?.pull?.draft, found?.pull?.headOwner, found?.pull?.requested, found?.pull?.closes, found?.pull?.awaiting], [true, 'caio', [{ reviewer: 'bia', team: false }], CLOSES, ['CI']]);
+  assert.deepEqual(found?.reviews.map((r) => r.nodeId), ['R1', 'R2'], 'oldest first');
+  assert.deepEqual([found?.comments.map((c) => c.nodeId), found?.checks.map((c) => c.name), found?.repo], [['IC_1'], ['test', 'lint'], REPO_ROW]);
+});
+
+test('prPage answers none for an issue or a missing number, and no pulls row for a PR never polled; pullAt finds a PR open or not (#187)', async () => {
+  const db = await memory();
+  db.upsertIssue(issueRow(1, T1), 'sync');
+  db.upsertIssue(prIssueRow(5, T1, { state: 'closed', closedAt: T1 }), 'sync');
+  assert.deepEqual([db.prPage(SOURCE, REPO, 1), db.prPage(SOURCE, REPO, 9), db.prPage(SOURCE, REPO, 5)?.pull], [undefined, undefined, undefined]);
+  assert.deepEqual(db.pullAt(SOURCE, REPO, 5), { nodeId: 'PR_5', number: 5, headSha: null, mergeState: 'unknown' });
+  assert.deepEqual([db.pullAt(SOURCE, REPO, 1), db.pullAt(OTHER_SOURCE, REPO, 5)], [undefined, undefined]);
+});
+
+test('setPullChecks replaces the set whole and writes nothing for an identical one; removeIssue takes the PR\'s reviews and checks (#187)', async () => {
+  const db = await memory();
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  assert.deepEqual([db.setPullChecks(pullKey(7), [check('test'), check('lint')]), db.setPullChecks(pullKey(7), [check('test'), check('lint')])], [true, false]);
+  assert.equal(db.setPullChecks(pullKey(7), [check('e2e', 'pending')]), true);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 7)?.checks, [check('e2e', 'pending')]);
+  db.upsertReview(review('R1', 'caio', 'APPROVED'), 'sync');
+  db.removeIssue(SOURCE, 'PR_7');
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  assert.deepEqual([db.prPage(SOURCE, REPO, 7)?.checks, db.prPage(SOURCE, REPO, 7)?.reviews], [[], []]);
+});
+
+test('a review keeps #178\'s replace rule: a sync read before a write does not undo it inside the window; past it the sync wins (#187)', async () => {
+  const clock = { now: 1_000 };
+  const { db } = await openReadModel(':memory:', { now: () => clock.now });
+  assert.equal(db.upsertReview(review('R1', 'caio', 'APPROVED', T1, 'written'), 'write'), true);
+  clock.now += WINDOW_MS - 1;
+  assert.equal(db.upsertReview(review('R1', 'caio', 'APPROVED', T1, 'stale'), 'sync'), false);
+  clock.now += 1;
+  assert.equal(db.upsertReview(review('R1', 'caio', 'APPROVED', T1, 'edited'), 'sync'), true, 'past the window the sync is the truth again');
 });
