@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignPane } from '@/components/DesignPane';
+import { showCommentsPanel } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
 import { rememberFocus } from '@/lib/session-focus';
 import { FRAME_NAME, fromBridge, mintFrame, PATH, RECT, REVIEW } from './design-review';
@@ -13,6 +14,7 @@ const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark', tweaks: {} };
 
 let hive: FakeHive;
 beforeEach(() => {
+  showCommentsPanel(true);
   setLanguage('pt');
   document.documentElement.dataset.theme = 'dark';
   hive = fakeHive();

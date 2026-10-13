@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignPane } from '@/components/DesignPane';
+import { showCommentsPanel } from '@/hooks/use-design-pins';
 import { composerStyle, PIN_GAP, PIN_SIZE, pinStyle } from '@/components/DesignPins';
 import { setLanguage } from '@/i18n';
 import { FRAME_NAME, fromBridge, mintFrame, PATH, pinsAt, RECT, REVIEW, stubScrollIntoView, unstubScrollIntoView } from './design-review';
@@ -9,6 +10,7 @@ import { activityOf, fakeHive, type FakeHive, withSessions } from './diff-harnes
 
 let hive: FakeHive;
 beforeEach(() => {
+  showCommentsPanel(true);
   setLanguage('pt');
   document.documentElement.dataset.theme = 'dark';
   hive = fakeHive();

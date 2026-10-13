@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignPane } from '@/components/DesignPane';
+import { showCommentsPanel } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 import type { ReviewFile, Task } from '../../src/types';
@@ -46,6 +47,7 @@ function framePosts(): (type: string) => Record<string, unknown>[] {
 }
 
 beforeEach(() => {
+  showCommentsPanel(false); // the state when the Hive opens (#241)
   setLanguage('pt');
   document.documentElement.dataset.theme = 'dark';
   mint = () => jsonResponse({ url: FRAME_URL });
@@ -212,16 +214,15 @@ test('a task\'s pane shows the comments beside the canvas; the bar\'s button and
   const button = screen.getByRole('button', { name: 'comentários' });
   await waitFor(() => expect(button).toHaveTextContent('4'));
   expect(button).toHaveAttribute('title', 'mostrar ou esconder os comentários');
+  expect([button.getAttribute('aria-pressed'), panel()]).toEqual(['false', null]); // closed when the Hive opens (#241)
+  await user.click(button);
   expect([button.getAttribute('aria-pressed'), panel() !== null]).toEqual(['true', true]);
-  await user.click(button);
-  expect([button.getAttribute('aria-pressed'), panel()]).toEqual(['false', null]);
-  await user.click(button);
-  expect(panel()).not.toBeNull();
   await user.click(within(panel() as HTMLElement).getByRole('button', { name: 'esconder' }));
   expect(panel()).toBeNull();
 });
 
 test('⌘⇧↵ in the pane sends this file\'s drafts to the recipient in one submit (#113)', async () => {
+  showCommentsPanel(true);
   review = REVIEW;
   render(pane());
   await screen.findByText('a draft');
@@ -231,13 +232,24 @@ test('⌘⇧↵ in the pane sends this file\'s drafts to the recipient in one su
 });
 
 test('⌘⇧↵ sends nothing while the comments panel is hidden (#113)', async () => {
-  const user = userEvent.setup();
   review = REVIEW;
   render(pane());
-  await screen.findByText('a draft');
-  await user.click(screen.getByRole('button', { name: 'comentários' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'comentários' })).toHaveTextContent('4'));
   fireEvent.keyDown(region(), SEND_KEYS);
   expect(fetchMock.mock.calls.filter(([url]) => url === '/tasks/I1/review/submit')).toEqual([]);
+});
+
+test('the comments panel starts closed and keeps the last choice across two mounted panes, by the bar\'s button or the panel\'s × (#241)', async () => {
+  const user = userEvent.setup();
+  review = REVIEW;
+  render(<>{pane()}<DesignPane activity={activity} path={PATH} label="second" active /></>);
+  const panels = (): HTMLElement[] => screen.queryAllByRole('complementary', { name: 'comentários' });
+  const [first, second] = await screen.findAllByRole('button', { name: 'comentários' });
+  expect([first.getAttribute('aria-pressed'), second.getAttribute('aria-pressed'), panels().length]).toEqual(['false', 'false', 0]);
+  await user.click(first);
+  expect([second.getAttribute('aria-pressed'), panels().length]).toEqual(['true', 2]);
+  await user.click(within(panels()[1]).getByRole('button', { name: 'esconder' }));
+  expect([first.getAttribute('aria-pressed'), panels().length]).toEqual(['false', 0]);
 });
 
 test('a local activity\'s pane has no comments button nor panel, and reads no review (#113)', async () => {
@@ -250,6 +262,7 @@ test('a local activity\'s pane has no comments button nor panel, and reads no re
 });
 
 test('the comentar toggle and C post comment-mode and turn the canvas to a crosshair; C in a text field does nothing; the bridge\'s c and Esc reach the same mode (#114)', async () => {
+  showCommentsPanel(true);
   const user = userEvent.setup();
   review = REVIEW;
   render(pane());
@@ -273,6 +286,7 @@ test('the comentar toggle and C post comment-mode and turn the canvas to a cross
 });
 
 test('after every ready the pane sends the file\'s comments, open and resolved, as anchors, and its comment mode (#114)', async () => {
+  showCommentsPanel(true);
   review = REVIEW;
   render(pane());
   await screen.findByTitle(NAME);
@@ -285,6 +299,7 @@ test('after every ready the pane sends the file\'s comments, open and resolved, 
 });
 
 test('an item click posts scroll-to with its id, and the pins after it scroll the canvas to that pin (#114)', async () => {
+  showCommentsPanel(true);
   const user = userEvent.setup();
   review = REVIEW;
   const scrolled = stubScrollIntoView();
@@ -301,6 +316,7 @@ test('an item click posts scroll-to with its id, and the pins after it scroll th
 });
 
 test('an item whose rect came back null shows elemento removido; one with no answer yet shows nothing (#114)', async () => {
+  showCommentsPanel(true);
   review = REVIEW;
   render(pane());
   await screen.findByTitle(NAME);

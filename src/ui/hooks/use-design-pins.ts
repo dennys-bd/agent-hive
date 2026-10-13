@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type RefObject, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { type AnchorEntry, isAnchorList, type Pin, type Rect } from '../../design-anchor.js';
 import type { DesignTarget } from '../../types.js';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
@@ -84,6 +84,22 @@ export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas
   return { rects, reload, scrollTo };
 }
 
+// The comments panel's open state (#241): one for every design pane, closed when the Hive opens, then the last choice wherever it came
+// from (the bar's button, the panel's ×, a pin). In memory only, as the session in focus (lib/session-focus.ts)
+let isPanelOpen = false;
+const panelListeners = new Set<() => void>();
+const subscribePanel = (listener: () => void): (() => void) => {
+  panelListeners.add(listener);
+  return () => { panelListeners.delete(listener); };
+};
+
+/** Shows or hides the comments panel of every design pane (#241). */
+export function showCommentsPanel(shown: boolean): void {
+  if (isPanelOpen === shown) return;
+  isPanelOpen = shown;
+  for (const listener of panelListeners) listener();
+}
+
 /** What a design pane's comments show and do (#114). takeKey: c and Escape, from the pane's keydown or the bridge's key message; true: taken. */
 export interface CommentCanvas {
   isCommenting: boolean; target?: DesignTarget; selection?: CommentSelection; tab: CommentTab; isPanelShown: boolean;
@@ -98,7 +114,7 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
   const [target, setTarget] = useState<DesignTarget>();
   const [selection, setSelection] = useState<CommentSelection>();
   const [tab, setTab] = useState<CommentTab>('open');
-  const [isPanelShown, setPanelShown] = useState(true); // shown at mount; the mounted pane's own, never stored (#113)
+  const isPanelShown = useSyncExternalStore(subscribePanel, () => isPanelOpen);
   // Either way drops the composer. A saved comment leaves the mode on: several in a row is the common case
   const toggle = (): void => {
     setCommenting((on) => !on);
@@ -115,11 +131,11 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
   // A pin shows its item: the panel shown, on the tab that lists it
   const selectPin = (id: string): void => {
     setTab(model?.resolved.some((c) => c.id === id) ? 'resolved' : 'open');
-    setPanelShown(true);
+    showCommentsPanel(true);
     setSelection({ id, isFromPin: true });
   };
   return {
-    isCommenting, target, selection, tab, isPanelShown, toggle, takeKey, selectPin, setTab, setPanelShown,
+    isCommenting, target, selection, tab, isPanelShown, toggle, takeKey, selectPin, setTab, setPanelShown: showCommentsPanel,
     aim: (next) => { if (isCommenting) setTarget(next); }, // a new anchor re-aims an open composer, its text kept
     close: () => setTarget(undefined),
     closeIf: (aimed) => setTarget((now) => (now === aimed ? undefined : now)), // a slow save must not close a composer re-aimed meanwhile
