@@ -63,7 +63,7 @@ export interface FakeGh {
   compare?: string; ci?: Record<string, unknown>; // compare: REST's compare across forks; ci: the CI read's alias (#854)
   readFailWith?: string; missing?: boolean; // readFailWith: GitHub refuses the PR query; missing: the head query finds no PR, a 404 (#849)
   answer?: (query: string) => unknown; // #187: what a mutation answers by its query; { ok: true } otherwise
-  rest?: RestGet; timeline?: string; // #187: the read model's REST (default: all 304) and what gh prints for the timeline
+  rest?: RestGet; timeline?: string; timelineFailWith?: string; // #187: the read model's REST (default: all 304) and what gh prints for the timeline
 }
 
 export function fakeGh(): FakeGh {
@@ -92,7 +92,10 @@ function ghOf(gh: FakeGh): Exec {
       if (gh.failWith !== undefined) throw new Error(`gh api graphql: ${gh.failWith}`);
       return json(gh.answer?.(String((JSON.parse(opts?.input ?? '{}') as { query?: unknown }).query)) ?? { ok: true });
     }
-    if (args[1]?.includes('/timeline')) return { stdout: gh.timeline ?? '' };
+    if (args[1]?.includes('/timeline')) {
+      if (gh.timelineFailWith !== undefined) throw new Error(gh.timelineFailWith);
+      return { stdout: gh.timeline ?? '' };
+    }
     if (args[1]?.includes('/compare/')) return { stdout: gh.compare ?? '{}' };
     if (args[1] !== 'graphql') return { stdout: gh.diff };
     const query = args.find((arg) => arg.startsWith('query=')) ?? '';

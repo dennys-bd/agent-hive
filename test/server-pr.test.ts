@@ -65,6 +65,20 @@ test('GET …/pulls/:number whose head differs after a refetch that failed answe
   assert.deepEqual([res.status, (await res.json() as PrData).head], [200, newer]);
 });
 
+test('GET …/pulls/:number leaves a debug line by the PR\'s number, never its link, when the compare or the timeline fails (#187)', async (t) => {
+  const gh = fakeGh();
+  const { log, lines } = fakeLog();
+  const { base, db } = await startPrs(t, gh, log);
+  db.setPullPage(prKey(7), { ...PR_PAGE_ROW, requested: [{ reviewer: 'ana', team: false }] });
+  gh.compare = 'not json';
+  gh.timelineFailWith = 'gh api: HTTP 502';
+  assert.equal((await prOf(base)).status, 200);
+  const debug = lines.filter((line) => line.startsWith('DEBUG pr #7:'));
+  assert.equal(debug.filter((line) => line.includes('compare')).length, 1);
+  assert.equal(debug.filter((line) => line.includes('timeline')).length, 1);
+  assert.ok(debug.every((line) => line.includes('Error') && !line.includes(PR)), debug.join('\n'));
+});
+
 test('GET …/pulls/:number answers the fields from the model even when every refetch fails; GitHub is read only for the threads, the diff and the compare (#187)', async (t) => {
   const gh = fakeGh();
   gh.rest = async () => { throw new Error('gh api: HTTP 502'); };

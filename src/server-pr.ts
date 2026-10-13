@@ -112,25 +112,30 @@ function cappedFiles(text: string): FileDiff[] {
   return parseDiff(text).map(withHash);
 }
 
+// An error's class only: its message may carry gh's output, and the log line names the PR by number
+const errorName = (err: unknown): string => (err instanceof Error ? err.name : typeof err);
+
 // How far the base moved past the head (#854, #187): REST's compare, for every open PR now that no GraphQL read asks it. A deleted fork has no
 // head to compare; a failure is no number
-async function behindOf(deps: Pick<PrRouteDeps, 'gh'>, url: string, data: StoredPr): Promise<Pick<PrData, 'behindBy'>> {
+async function behindOf(deps: Pick<PrRouteDeps, 'gh' | 'log'>, url: string, data: StoredPr): Promise<Pick<PrData, 'behindBy'>> {
   if (data.state !== 'open' || data.headOwner === '') return {};
   try {
     const compare = JSON.parse(await deps.gh(['api', `repos/${prRepo(url)}/compare/${encodeURIComponent(data.baseRef)}...${encodeURIComponent(data.headOwner)}:${encodeURIComponent(data.headRef)}`])) as { behind_by?: unknown };
     return typeof compare.behind_by === 'number' ? { behindBy: compare.behind_by } : {};
-  } catch {
+  } catch (err) {
+    deps.log.debug(`pr #${prNumber(url)}: the compare was not read (${errorName(err)})`);
     return {};
   }
 }
 
 // When each pending request was made (#67, #187): the timeline's review_requested events, read only when a request is pending; a failure only
 // drops the times
-async function requestsOf(deps: Pick<PrRouteDeps, 'gh'>, url: string, data: StoredPr): Promise<PrReviewRequest[]> {
+async function requestsOf(deps: Pick<PrRouteDeps, 'gh' | 'log'>, url: string, data: StoredPr): Promise<PrReviewRequest[]> {
   if (data.reviewRequests.length === 0) return [];
   try {
     return withRequestTimes(data.reviewRequests, requestTimesOf(await deps.gh(timelineArgs(prRepo(url), Number(prNumber(url))))));
-  } catch {
+  } catch (err) {
+    deps.log.debug(`pr #${prNumber(url)}: the timeline was not read (${errorName(err)})`);
     return data.reviewRequests;
   }
 }
