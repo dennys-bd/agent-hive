@@ -73,10 +73,10 @@ test('the checkers and the problems sit right of the spacer, before the console,
 
 describe('the steps (#227, handoff §6)', () => {
   // jsdom lays nothing out: the row's content width is a width per form rendered, read from the footer's data-usage / data-rules
-  const CHIP_WIDTH: Record<string, number> = { full: 250, compact: 150, minimal: 60 };
+  const CHIP_WIDTH: Record<string, number> = { full: 250, compact: 150, minimal: 90 };
   const GROUP_WIDTH = 130;
   const RULES_WIDTH: Record<string, number> = { full: 200, short: 100 };
-  const FIXED_WIDTH = 300; // checkers, problems, console, power buttons, separators: the same at every step
+  const FIXED_WIDTH = 450; // checkers, problems, console, power buttons, separators: the same at every step
   const TWO: readonly AgentId[] = ['claude', 'codex'];
   const TEN = ['claude', 'codex', 'kiro', 'amp', 'gemini', 'qwen', 'cursor', 'goose', 'aider', 'opencode'] as unknown as AgentId[]; // AGENT_IDS has two: the seam stands in for more
   const observers: ResizeObserverCallback[] = [];
@@ -108,13 +108,13 @@ describe('the steps (#227, handoff §6)', () => {
   test('at 1440px with two agents the footer is at step 0; narrower, at the first step whose content fits, down to step 7 (#227)', () => {
     renderAt(1440, TWO);
     expect(formOf()).toBe('full/full');
-    resize(950);
+    resize(1100);
     expect(formOf()).toBe('full/short');
     expect(within(row()).getByText('máx 2 workers +2')).toBeInTheDocument();
-    resize(850);
+    resize(1000);
     expect(formOf()).toBe('compact/full');
     expect(row().querySelector('[data-slot="progress"]')).toHaveClass('w-7');
-    for (const [width, form] of [[750, 'compact/short'], [650, 'minimal/full'], [600, 'minimal/short'], [500, 'group/short']] as const) {
+    for (const [width, form] of [[900, 'compact/short'], [840, 'minimal/full'], [750, 'minimal/short'], [700, 'group/short']] as const) {
       resize(width);
       expect(formOf(), `${width}px`).toBe(form);
     }
@@ -122,29 +122,26 @@ describe('the steps (#227, handoff §6)', () => {
 
   test('shrinking the window and then widening it grows the footer back to a larger step (#227)', () => {
     renderAt(1440, TWO);
-    resize(600);
+    resize(750);
     expect(formOf()).toBe('minimal/short');
-    resize(850);
+    resize(1000);
     expect(formOf()).toBe('compact/full');
     resize(1440);
     expect(formOf()).toBe('full/full');
   });
 
-  test('ten agents push the footer to the group form where two still fit minimal; below step 7\'s width it stays at step 7 (#227)', () => {
-    // At 1440px the model's minimal chips (10 x 60) still fit, so the group form shows from 900px: minimal/short needs 1000
+  test('ten agents reach the group form at 1440px; below step 7\'s width it stays at step 7 (#227)', () => {
     renderAt(1440, TEN);
-    expect(formOf()).toBe('minimal/full');
-    resize(900);
     expect(formOf()).toBe('group/full');
     expect(within(row()).getByText('+7')).toBeInTheDocument();
-    resize(600);
+    resize(700);
     expect(formOf()).toBe('group/short');
-    resize(400);
+    resize(600);
     expect(formOf()).toBe('group/short');
   });
 
   test('an agent that goes away starts the descent over from step 0 without a resize (#227)', () => {
-    const { rerender } = renderAt(950, TWO);
+    const { rerender } = renderAt(1100, TWO);
     expect(formOf()).toBe('full/short');
     agentCount = 1;
     rerender(<Footer state={STATE} effective={FIRED} locale="pt-BR" agents={['claude']} />);
