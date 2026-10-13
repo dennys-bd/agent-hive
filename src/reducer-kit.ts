@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { AGENTS, ranAgent, stageAgentIn } from './agents.js';
 import { activityOf, resultOf, taskOfWorker, withActivity } from './activities.js';
 import { sessionBaseline, touchSession, withRun, withStageRun } from './record-kit.js';
-import { handoverRun } from './task-runs.js';
+import { withLaunch } from './launch-pick.js';
+import { handoverRun, pickedRun } from './task-runs.js';
 import { resumableBy } from './transitions.js';
 import { withColumnWrite } from './column-write.js';
 import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, runTime, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
@@ -136,23 +137,26 @@ function resultField(state: State, task: Task): { result?: Record<string, unknow
 // Every start, by hand or through fill, then puts the stage's running tasks on top with this one last among them (#117): the source is not told.
 // Every stage run drops the stopped mark (#283): the fill never picks a stopped task, so only a start by hand gets here with one.
 // A resume passes its own policy (#283): continue, whatever the stage says. A transition's handover (#134) names the session and the prompt,
-// from the fill, a start or Continue alike.
+// from the fill, a start or Continue alike. A manual start's picks (#290) name the agent, the session and the launch of this run; they are never
+// stored for a later spawn.
 export function occupy(state: State, index: number, queued: Task, stage: Stage, kind: WorkerEventKind, run: SpawnRun = 'stage', policy?: SessionPolicy): Reduced {
   const born = ensureActivity(state, queued);
   if (!born) return none(state); // the fill and a start only pass a task that resolves to a workspace
-  const answer = handoverRun(born.activity); // #134: a transition's handover decides the session and the prompt, whoever started the run
-  const work = answer?.activity ?? born.activity;
+  const picked = pickedRun(born.activity); // #290: a manual start's picks, never next to a handover (withRunPick); off the activity from here
+  const answer = handoverRun(picked.activity); // #134: a transition's handover decides the session and the prompt, whoever started the run
+  const work = answer?.activity ?? picked.activity;
   const task = queued;
   const startedAt = new Date().toISOString();
-  const agent = stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
+  const agent = picked.pick?.agent ?? stageAgentIn(born.state, stage); // #925: what the worker runs and what a new session records
   const continues = stage.session === 'continue' && work.sessionId !== undefined && resumableBy(born.state, task, work.sessionId, agent); // #925: never another agent's session
-  const session = answer?.policy ?? policy ?? (continues ? 'continue' : 'new');
+  const session = answer?.policy ?? policy ?? picked.policy ?? (continues ? 'continue' : 'new');
   // A new run is a new session under an id the Hive chose (#164), or none until its first SessionStart for an agent that picks its own (#927,
   // Codex); a continue is the activity's own. Either way the session records this stage and this use (#236)
   const sessionId = session === 'new' ? (AGENTS[agent].canChooseSessionId ? randomUUID() : undefined) : work.sessionId;
   const worker: Worker = {
     id: born.state.workers[index].id, runId: randomUUID(), activityId: born.activity.id, agent, stage: stage.name, status: 'working', startedAt, lastEvent: { kind }, done: undefined,
     ...sessionBaseline(born.state, task, sessionId), // a resumed transcript already holds its old turns (#248)
+    ...withLaunch(picked.pick?.launch), // #290: the run's picks; none leaves the model to runModel and the args to the config
     ...(born.state.workers[index].draining ? { draining: true } : {}),
   };
   const written = sourceWrites(task, onSource(stage.onStart, task.item.source)); // the task's own source only (#180)

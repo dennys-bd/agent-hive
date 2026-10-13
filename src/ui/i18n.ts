@@ -355,9 +355,20 @@ const en = {
   'start.preparing': 'preparing the worktree', // the Start and open dialogs' submit while the worktree setup runs (#351)
   'start.stacked': 'tell the worker of {id} · stacked PR',
   'start.agent': 'agent',
-  'start.agentByStage': 'set per stage',
   'start.next': 'next',
   'start.stopsAt': 'stops at',
+  'run.label': 'run', // #290: the Start dialog's run (handoff design_handoff_iniciar)
+  'run.customize': 'customize',
+  'run.title': '{stage} run',
+  'run.stageDefault': 'stage default',
+  'run.restore': 'restore default',
+  'run.changed': 'changed',
+  'run.note': 'applies to this run only. the next stages use what the flow sets.',
+  'run.sessionIs': 'session {session}',
+  'run.model.stage': 'stage default · {model}',
+  'run.session.previous': 'same as the previous stage',
+  'run.session.previousHint': 'continues the {stage} session · {agent} · asleep for {time}',
+  'run.session.other': 'another session of the activity…',
   'activities.new': 'new activity…', // redesign 03: the sidebar's + menus
   'activities.newHint': 'pick a task or create one',
   'activities.newIn': 'new activity in {name}',
@@ -444,6 +455,11 @@ const en = {
   'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
   'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
   'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
+  'runPick.refused.agent': '"agent" must be an agent installed on this machine', // #290: the start route's run picks
+  'runPick.refused.session': '"session" must be new, previous or a session of the task that agent recorded',
+  'runPick.refused.action': 'a stage that runs no agent takes no "agent", "session", "model", "specializedAgent" or "args"',
+  'runPick.refused.handover': 'the transition already decides the task\'s next run: no "agent", "session", "model", "specializedAgent" or "args"',
+  'runPick.refused.continue': 'only a start takes "agent", "session", "model", "specializedAgent" or "args": a continue resumes the stage\'s session as it ran',
   'activity.stop.pick': 'pick a session to put to sleep', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'active sessions · {n}',
   'activity.stop.focused': 'focused',
@@ -1343,7 +1359,6 @@ const en = {
   'task.dragRunning': 'stop the stage to move it to another stage',
   'task.workspace': 'workspace',
   'task.setupStep': 'preparing: {detail}', // the worktree setup's running step, on the task (#351)
-  'task.setupLogs': 'show log', // the task's and the Start dialog's button to the setup's console run (#351)
   'stageCommands.running': 'running {name} · {n}/{total}', // #755: a commands stage's command, on the task and in its status box
   'stageCommands.viewOutput': 'view output', // #755: its locked console tab
   'stageCommands.failed': 'checks failed: {list}', // #755: the stage's failure: each failed command with its code
@@ -2276,9 +2291,20 @@ const pt: Record<MessageKey, string> = {
   'start.preparing': 'preparando a worktree',
   'start.stacked': 'avisar o worker de {id} · PR empilhado',
   'start.agent': 'agente',
-  'start.agentByStage': 'definido por etapa',
   'start.next': 'próximas',
   'start.stopsAt': 'para em',
+  'run.label': 'execução', // #290: the Start dialog's run (handoff design_handoff_iniciar)
+  'run.customize': 'personalizar',
+  'run.title': 'execução de {stage}',
+  'run.stageDefault': 'padrão da etapa',
+  'run.restore': 'restaurar padrão',
+  'run.changed': 'alterado',
+  'run.note': 'vale só para esta execução. as próximas etapas usam o que está configurado no fluxo.',
+  'run.sessionIs': 'sessão {session}',
+  'run.model.stage': 'padrão da etapa · {model}',
+  'run.session.previous': 'mesma da etapa anterior',
+  'run.session.previousHint': 'continua a sessão de {stage} · {agent} · dormindo há {time}',
+  'run.session.other': 'outra sessão da atividade…',
   'activities.new': 'nova atividade…', // redesign 03: the sidebar's + menus
   'activities.newHint': 'escolha uma tarefa ou crie uma nova',
   'activities.newIn': 'nova atividade em {name}',
@@ -2365,6 +2391,11 @@ const pt: Record<MessageKey, string> = {
   'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
   'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
   'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
+  'runPick.refused.agent': '"agent" precisa ser um agente instalado nesta máquina', // #290: the start route's run picks
+  'runPick.refused.session': '"session" precisa ser new, previous ou uma sessão da tarefa registrada por esse agente',
+  'runPick.refused.action': 'uma etapa que não executa agente não aceita "agent", "session", "model", "specializedAgent" nem "args"',
+  'runPick.refused.handover': 'a transição já decide a próxima execução da tarefa: sem "agent", "session", "model", "specializedAgent" nem "args"',
+  'runPick.refused.continue': 'só um início aceita "agent", "session", "model", "specializedAgent" ou "args": continuar retoma a sessão da etapa como ela executou',
   'activity.stop.pick': 'escolher a sessão para dormir', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'sessões ativas · {n}',
   'activity.stop.focused': 'em foco',
@@ -3259,7 +3290,6 @@ const pt: Record<MessageKey, string> = {
   'task.dragRunning': 'pare a etapa pra mover para outra etapa',
   'task.workspace': 'workspace',
   'task.setupStep': 'preparando: {detail}',
-  'task.setupLogs': 'ver log',
   'stageCommands.running': 'executando {name} · {n}/{total}',
   'stageCommands.viewOutput': 'ver saída',
   'stageCommands.failed': 'checks falharam: {list}',

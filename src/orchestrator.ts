@@ -1,6 +1,6 @@
 
 import { canCloseMissing, inAction, canRunIn, canMoveToStage, canSetWorkspace, canRemoveCreated, canDeleteActivity, taskId, closesAt, stageOf, dueActions, enter, isBlocked, isGate, markRemoved, mergeTasks, moveTask, nothingToDelete, onSource, renameSources, replaceSegment, resetOrder, resolveWorkspace, seenOne, sessionsOf, workersOf } from './tasks.js';
-import { withBase, withLocal } from './task-runs.js';
+import { withBase, withLocal, withRunPick } from './task-runs.js';
 import { withColumnWrite } from './column-write.js';
 import { activityOf, activityOfWorker, resultOf, liveTaskId, pruneWork, recordTaskId, slugOf, taskOfActivity, taskOfWorker, withActivity, withForkSync, withLocalActivities } from './activities.js';
 import { forgetFailedFreeRun, forgetFailedSession, keepRecord, touchSession, withDecompositionIssue, withPr, withResult, withTurn } from './record-kit.js';
@@ -8,7 +8,7 @@ import { AGENTS, liveDefaultAgent, ranAgent } from './agents.js';
 import { decompositionWritten } from './decomposition.js';
 import { mergeRateLimits } from './rate-limits.js';
 import { withPrStates } from './pull-requests.js';
-import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item } from './types.js';
+import type { Activity, ActivityRecord, SourceSync, Task, TaskBase, TaskPr, PrSlice, Stage, Transition, Effect, HiveEvent, HookPayload, RateLimits, Signal, Worker, State, Status, Item, RunPick } from './types.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, SPAWN_FAILED } from './types.js';
 import { pruneUsage } from './usage.js';
 import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './usage-rules.js';
@@ -165,7 +165,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setSources': return none({ ...state, syncs: syncsFor(state.syncs, event.sources) }); // a removed source's tasks go missing at the next poll
     case 'renameSources': return none(renameSources(state, event.renames)); // a save that renamed sources (#278): no fill; setSources and the poll follow
     case 'renameStages': return none(renameStages(state, event.renames)); // #861: no fill; setStages follows, and a running task reads its renamed stage at once
-    case 'start': return start(state, event.itemId, event.base, event.workspace, event.local); // no fill: nothing loosened, so nothing else could open
+    case 'start': return start(state, event.itemId, event.base, event.workspace, event.local, event.runPick); // no fill: nothing loosened, so nothing else could open
     case 'continue': return continueStage(state, recordTaskId(state, event.activityId)); // no fill: nothing loosened (#283); a deleted activity's record too (#629)
     case 'restarting': return restarting(state, liveTaskId(state, event.activityId)); // no fill: a mark only (#283)
     case 'restart': return restart(state, liveTaskId(state, event.activityId), event.branch); // idem (#283)
@@ -232,7 +232,7 @@ function setRateLimits(state: State, { agent, ptyId, rateLimits, replace = false
 // behind (#116). The popup's base (#131) is written before occupy, so the spawn effect carries it; null (the popup's default) drops a saved
 // one; absent (a task with a worktree, started with no popup) keeps it. A task with no workspace starts nothing; the popup's workspace is saved
 // with the start (#179).
-function start(state: State, itemId: string, taskBase?: TaskBase | null, workspace?: string, local?: boolean): Reduced {
+function start(state: State, itemId: string, taskBase?: TaskBase | null, workspace?: string, local?: boolean, runPick?: RunPick): Reduced {
   const found = state.tasks.find((c) => taskId(c) === itemId);
   const placed = found && workspace !== undefined ? withWorkspace(state, found, workspace) : found && { state, task: found }; // the popup's choice (#179)
   const task = placed?.task;
@@ -250,7 +250,7 @@ function start(state: State, itemId: string, taskBase?: TaskBase | null, workspa
   if (taken) return none(taken); // before a worker opens over the cap (#116)
   const born = ensureActivity(retried, task);
   if (!born) return none(state);
-  const chosen = withActivity(born.state, withLocal(withBase(born.activity, taskBase), local)); // the popup's base and switch (#131, #444), on the activity so the spawn carries them
+  const chosen = withActivity(born.state, withRunPick(withLocal(withBase(born.activity, taskBase), local), isCommands ? undefined : runPick)); // the popup's base and switch (#131, #444) and the run picks (#290), on the activity so the spawn carries them
   if (isCommands) { // #755, #727: its commands run in the worktree the base and switch decide, holding a free worker or one over the cap (#116)
     const { state: opened, index } = takeWorker(chosen);
     return startCommands(opened, task, index, 'manualStart');

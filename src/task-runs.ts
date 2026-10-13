@@ -3,7 +3,7 @@ import { activityOf, keptTerminalsIn, localActivityId } from './activities.js';
 import { withLaunch } from './launch-pick.js';
 import { localSessionsOf } from './local-sessions.js';
 import { canOpenSession, inAction, taskId, stageOf, isBlocked, isGate, onSource, resolveWorkspace, sessionsOf, terminalsOf, workersOf } from './tasks.js';
-import type { Activity, AgentId, LaunchPick, Task, TaskBase, Session, DiffScope, SessionPolicy, Terminal, Worker, SpawnRun, State } from './types.js';
+import type { Activity, AgentId, LaunchPick, RunPick, Task, TaskBase, Session, DiffScope, SessionPolicy, Terminal, Worker, SpawnRun, State } from './types.js';
 
 /** What a task offers (#283), the one place the UI and the routes read it: nothing, its running stage, Start, or an object: Continue when
  * `continue` is true, Restart when `restart` is; with `continue: false` the UI offers Start beside Restart (#812). `live` names the run that
@@ -59,6 +59,26 @@ export function handoverRun(activity: Activity): { activity: Activity; run: Spaw
     ? { activity: rest, run: 'stage', policy: 'new', prompt: handover.prompt }
     : { activity: { ...rest, sessionId: handover.sessionId }, run: 'continue', policy: 'continue', prompt: handover.prompt };
 }
+
+/** A manual start's picks on the activity (#290), for the occupy of the same reduction: none asked, or a handover that already decides the
+ * session and the prompt (#134), writes nothing. */
+export const withRunPick = (activity: Activity, runPick: RunPick | undefined): Activity =>
+  (runPick === undefined || activity.handover !== undefined ? activity : { ...activity, runPick });
+
+/** The picks a stage run spawns with (#290), taken off the activity: the session they ask for (a new one, or `resume`'s, which becomes the
+ * activity's sessionId), or no policy when they leave it to the stage. */
+export function pickedRun(activity: Activity): { activity: Activity; pick?: RunPick; policy?: SessionPolicy } {
+  const { runPick, ...rest } = activity;
+  if (runPick === undefined) return { activity: rest };
+  if (runPick.resume === undefined) return { activity: rest, pick: runPick };
+  return runPick.resume === null
+    ? { activity: rest, pick: runPick, policy: 'new' }
+    : { activity: { ...rest, sessionId: runPick.resume }, pick: runPick, policy: 'continue' };
+}
+
+/** Whether executar etapas posts a start (#290): Start, or Start beside Restart after a free run (#812); a Continue resumes the stage's session
+ * instead. What offers personalizar and what the start route admits picks on. */
+export const startsFresh = (mode: StartMode): boolean => mode === 'start' || (typeof mode === 'object' && !mode.continue);
 
 /**
  * What the task offers (#283). None for a blocked, missing, deleting or leaving (#286) task and a stage with nothing to run (no prompt, no deleteActivity action; a

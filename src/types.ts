@@ -573,6 +573,7 @@ export interface Activity {
   worktree?: string; branch?: string; worktreeGone?: true;
   local?: true; // runs in the workspace's checkout (#444), set by a start's popup
   base?: TaskBase; // #131, set by a start's popup
+  runPick?: RunPick; // #290: a manual start's picks, written by start and taken off by the occupy of the same reduction
   setup?: TaskSetup; deleting?: true; // never survive a boot
   commands?: StageCommands; // #755: a commands stage in flight: the task is running; persisted so the boot stops it, never past the boot
   ci?: StageCi; // #834: a wait-for-CI stage in flight: no worker, no process; persisted, so the wait goes on after a boot
@@ -663,7 +664,7 @@ export interface Worker {
   backoff?: WorkerBackoff; // #805: set with status backoff while the run waits out an API error
   apiErrors?: number; // #805: consecutive transient failures since the last Stop, 1..BACKOFF_RETRIES; a rate-limit wait adds none
   agent?: AgentId; // #925: what its run runs, set with the run; absent only on a commands stage's worker, which runs no agent
-  launch?: LaunchPick; // #257: what this free run launches with: its open's picks, or its resumed session's
+  launch?: LaunchPick; // #257, #290: what this run launches with: a free run's open or resumed session's picks, or a manual stage run's picks
   stage?: string; // #617: the stage this run counts its usage for, set with the run and moved by an in-place continuation; absent on a free session
   foldedMs?: number; // #617: the run's time already folded into the stages an in-place continuation left; runShare counts past it
   foldedWaitingMs?: number; // #617: the waiting inside foldedMs
@@ -756,6 +757,14 @@ export interface LaunchPick {
   model?: string; // behind --model (Claude) or -m (Codex)
   specializedAgent?: string; // a Hive plugin agent, hive:<name>
   args?: string[]; // after config.agentArgs[agent]
+}
+
+/** What a manual start asks its stage run to launch with (#290), checked by the start route. Absent fields are the stage's own: no agent is the
+ * stage's agent, no session its session policy, no model what runModel resolves without a pick. */
+export interface RunPick {
+  agent?: AgentId;
+  resume?: string | null; // a session id of the task to resume; null = a new session; absent = the stage's session policy
+  launch?: LaunchPick; // model, specialized agent, args (#257)
 }
 
 /** One model a list of GET /launch-options offers (#257). hint: the muted right-hand text (e.g. "opus 5.5"). */
@@ -1377,7 +1386,7 @@ export type HiveEvent =
   | { type: 'quit' } // the server's close(), before its kills (#283): their exits are ignored and the next boot resumes the tasks in flight
   | { type: 'dismissCrash' } // the crash popup closed (#283)
   | { type: 'error'; message?: string }
-  | { type: 'start'; itemId: string; base?: TaskBase | null; workspace?: string; local?: boolean } // the human override on a stopped task: past the signal, the cap and the budget; over the cap it opens a draining worker (#116); base = the popup's choice, null = its default (drops a saved one), absent = keep (#131); workspace = the popup's choice for a task with none (#179); local = the popup's switch, absent = keep (#444)
+  | { type: 'start'; itemId: string; base?: TaskBase | null; workspace?: string; local?: boolean; runPick?: RunPick } // the human override on a stopped task: past the signal, the cap and the budget; over the cap it opens a draining worker (#116); base = the popup's choice, null = its default (drops a saved one), absent = keep (#131); workspace = the popup's choice for a task with none (#179); local = the popup's switch, absent = keep (#444); runPick = the dialog's run picks, never stored for a later spawn (#290)
   | { type: 'continue'; activityId: string } // Continue (#283, #570): the stage's latest session again, with the continue prompt; past the signal, the cap and the budget
   | { type: 'restarting'; activityId: string } // Restart's git is about to run (#283): the task is marked deleting, so nothing else starts on it meanwhile
   | { type: 'restart'; activityId: string; branch?: string } // Restart (#283): the stage's prompt in a new session once the server reset the worktree; branch = the one it created

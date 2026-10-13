@@ -1,19 +1,23 @@
-import { type KeyboardEvent, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
-import { startMode } from '../../task-runs';
-import { canOpenSession, defaultSession, HIVE_SOURCE, stageOf } from '../../tasks';
-import { DISCARD_FAILED, type AgentId, type Task, type OpenResult, type State } from '../../types';
+import { startMode, startsFresh } from '../../task-runs';
+import { canOpenSession, HIVE_SOURCE } from '../../tasks';
+import { DISCARD_FAILED, type Task, type OpenResult, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { DefaultAgentContext } from '@/components/NewRunButton';
 import { TaskPicker } from '@/components/TaskPicker';
 import { SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
-import { BaseField, FreeFields, modeAfterKey, ModeToggle, NEW_SESSION, StagesBox, type StartMode } from '@/components/StartFields';
+import { RunFields, type RunFieldsProps } from '@/components/RunFields';
+import { RunCustomize, RunSummary } from '@/components/RunSummary';
+import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { usePendingTask, useAutoStart } from '@/hooks/use-pending-task';
+import { isChanged, openBody, resumedLaunch, type RunPicks, type RunPickState, startBody, useRunPick } from '@/hooks/use-run-pick';
 import { baseBody, type BaseChoice, useStartBase } from '@/hooks/use-start-base';
 import { t } from '@/i18n';
 import { postJson } from '@/lib/api';
@@ -37,28 +41,23 @@ const taskPath = (itemId: string): string => `/tasks/${encodeURIComponent(itemId
 // Candidates: every task the Hive holds, but those leaving it or gone from their source
 const pickable = (state: State): Task[] => state.tasks.filter((c) => !c.missing && !c.leaving && !activityOf(state, c.item.itemId)?.deleting);
 
-// executar etapas: the stage's start with the base chosen, or its continue once the stage already ran (#283). A task this dialog created
+// executar etapas: the stage's start with the base chosen and the run picks (#290: {} while they are the stage's), or its continue once the
+// stage already ran (#283), which resumes the stage's session as it ran. A task this dialog created
 // was created with auto off, so the fill left it alone until now; the start taken, it becomes a task like any other and the flow goes on (redesign 11)
-async function runStages(task: Task, state: State, base: BaseChoice, created: boolean): Promise<void> {
+async function runStages(task: Task, state: State, base: BaseChoice, created: boolean, picks: Record<string, unknown>): Promise<void> {
   const path = taskPath(task.item.itemId);
   const work = workIdOf(state, task.item.itemId); // the live activity, else a deleted one's record whose session the continue resumes (#629)
   const mode = startMode(task, state);
   if (typeof mode === 'object' && mode.continue && work !== undefined) await postJson(`/activities/${encodeURIComponent(work)}/continue`, { size: shownSize() }); // #812: after a free run, a start
-  else await postJson(`${path}/start`, { ...baseBody(base), size: shownSize() });
+  else await postJson(`${path}/start`, { ...baseBody(base), ...picks, size: shownSize() });
   if (created) await act(`${path}/auto`, { auto: true });
 }
 
-// sessão livre: the agent opened on the task with no prompt (#925: the field's agent, the default preselected), a new session or a resumed one. The caller attaches the run it answers,
-// unless the dialog closed meanwhile (#351)
-function openFree(task: Task, base: BaseChoice, session: string, agent: AgentId): Promise<OpenResult> {
-  const body = { kind: agent, ...(session === NEW_SESSION ? {} : { continueId: session }), ...baseBody(base), size: shownSize() };
+// sessão livre: the agent opened on the task with no prompt, a new session with its explicit picks or a resumed one with its record's (#257,
+// #290). The caller attaches the run it answers, unless the dialog closed meanwhile (#351)
+function openFree(task: Task, state: State, base: BaseChoice, picks: RunPicks): Promise<OpenResult> {
+  const body = { ...openBody(picks, task, state), ...baseBody(base), size: shownSize() };
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
-}
-
-// The session a task preselects: the one its stage's session policy would resume on a normal start (#237), else a new one
-function initialSession(state: State, itemId: string | undefined): string {
-  const task = state.tasks.find((c) => c.item.itemId === itemId);
-  return task === undefined ? NEW_SESSION : (defaultSession(task, state, stageOf(state.stages, task.stage)) ?? NEW_SESSION);
 }
 
 // The stage a task created here enters: the first stage with a prompt, so executar etapas has something to run
@@ -125,19 +124,13 @@ function useCreateRow(state: State, workspace: string | undefined, done: { curre
   return { choices, created, held, create, pickTask };
 }
 
-// The pick (or the task created here), the mode and the session that follow it
+// The pick (or the task created here) and the mode; the run picks follow the pick on their own (useRunPick)
 function useTaskPick(state: State, taskId: string | undefined, initialMode: StartMode, setError: (message: string | undefined) => void) {
   const [picked, setPicked] = useState(taskId);
   const [mode, setMode] = useState<StartMode>(() => (nothingToRun(state, taskId) ? 'free' : initialMode)); // #774: not an effect, no frame on stages
-  const [session, setSession] = useState(() => initialSession(state, taskId));
-  const defaultAgent = useContext(DefaultAgentContext); const [agent, setAgent] = useState<AgentId>(defaultAgent);
   const task = state.tasks.find((c) => c.item.itemId === picked);
-  const pick = (itemId: string): void => {
-    setPicked(itemId);
-    setError(undefined);
-    setSession(initialSession(state, itemId));
-  };
-  return { picked, setPicked, mode, setMode, session, setSession, agent, setAgent, pick, task };
+  const pick = (itemId: string): void => { setPicked(itemId); setError(undefined); };
+  return { picked, setPicked, mode, setMode, pick, task };
 }
 
 function useStart({ state, taskId, initialMode = 'stages', workspace, title, onStarted, onActivity, onClose }: StartDialogProps) {
@@ -148,14 +141,15 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const done = useRef(false); // started or closed: a late answer changes nothing
   const heldIds = useRef(new Set<string>()); // the source tasks the held entry became: created with auto off, like the hive ones
   const onError = useCallback((message: string) => setError(message), []);
-  const { picked, setPicked, mode, setMode, session, setSession, agent, setAgent, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const { picked, setPicked, mode, setMode, pick, task } = useTaskPick(state, taskId, initialMode, setError);
+  const run = useRunPick(state, task, useContext(DefaultAgentContext));
   const base = useStartBase(picked, onError);
   const { choices, created, held, create, pickTask } = useCreateRow(state, workspace, done, onError, pick, () => setPicked(undefined));
   useCreateOnOpen(taskId === undefined ? title : undefined, create);
   const isBlocked = held.entry === undefined && blocker(task, state, mode, base.choice);
   const close = (): void => {
     if (isCreating) return;
-    // created here and never started: they go. A start on its way (ver log closes too) keeps its task
+    // created here and never started: they go. A start on its way keeps its task
     if (!done.current) created.drop(pending ? picked : undefined);
     done.current = true;
     onClose();
@@ -177,8 +171,8 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     held.clearAwaiting(); setPending(true); setError(undefined);
     const itemId = task.item.itemId;
     const isCreated = created.has(itemId) || heldIds.current.has(itemId); // created with auto off either way: the start turns it on
-    const run = mode === 'stages' ? runStages(task, state, base.choice, isCreated) : openFree(task, base.choice, session, agent);
-    run.then((opened) => {
+    const request = mode === 'stages' ? runStages(task, state, base.choice, isCreated, startBody(run.picks, run.initial)) : openFree(task, state, base.choice, run.picks);
+    request.then((opened) => {
       if (done.current) return; // closed meanwhile: nothing attaches it, the task carries the session (#351)
       done.current = true;
       created.drop(itemId);
@@ -194,7 +188,36 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     });
   };
   useAutoStart(held.awaiting, task, isBlocked || pending || done.current, () => { held.clearAwaiting(); submit(); });
-  return { task, picked, mode, setMode, session, setSession, agent, setAgent, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry };
+  return { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick: pickTask, create, close, submit, choices, held: held.entry };
+}
+
+// Whether personalizar is offered (#290): only on a start; never on a continue, whose session is fixed, nor while a handover decides the run (#134)
+const isCustomizable = (task: Task | undefined, state: State): boolean =>
+  task !== undefined && startsFresh(startMode(task, state)) && activityOf(state, task.item.itemId)?.handover === undefined;
+
+// The run fields with the agents' lists (#290), fetched once when they first show: the stages box alone asks for nothing
+function RunFieldsLoaded(props: Omit<RunFieldsProps, 'options'>) {
+  return <RunFields {...props} options={useLaunchOptions()} />;
+}
+
+// The run part of the dialog (#290): the stages box in executar etapas, the run fields in sessão livre. Only a stage run resolves an empty
+// model through the stage (stageModel); a free session's is the agent's default
+function RunSection({ id, mode, task, state, run }: { id: string; mode: StartMode; task?: Task; state: State; run: RunPickState }) {
+  const fields = (initial?: RunPicks): ReactNode => (
+    <RunFieldsLoaded id={id} task={task} state={state} picks={run.picks} initial={initial} onPicks={run.set}
+      stageModel={mode === 'stages' ? run.stageModel : undefined}
+      locked={mode === 'free' && task !== undefined ? resumedLaunch(run.picks, task, state) : undefined} />
+  );
+  if (mode === 'free') return fields();
+  const canCustomize = isCustomizable(task, state);
+  return (
+    <>
+      <StagesBox task={task} stages={state.stages} run={<RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={run.isCustomizing} onToggle={run.setCustomizing} />} />
+      {canCustomize && run.isCustomizing && task && (
+        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore}>{fields(run.initial)}</RunCustomize>
+      )}
+    </>
+  );
 }
 
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the
@@ -204,7 +227,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
 export function StartDialog(props: StartDialogProps) {
   const { state, taskId } = props;
   const id = useId();
-  const { task, picked, mode, setMode, session, setSession, agent, setAgent, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held } = useStart(props);
+  const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held } = useStart(props);
   const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined : t('start.noStages', { stage: task.stage });
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
   const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId)) setMode('free'); };
@@ -233,13 +256,13 @@ export function StartDialog(props: StartDialogProps) {
         )}
         <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
         <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
-        {mode === 'stages' ? <StagesBox task={task} stages={state.stages} /> : <FreeFields id={id} task={task} state={state} session={session} agent={agent} onSession={setSession} onAgent={setAgent} />}
+        <RunSection id={id} mode={mode} task={task} state={state} run={run} />
         {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>
           <SetupSubmit
             label={<>{label}<ButtonKeyHint id="confirm" /></>}
-            pending={pending} setup={task && activityOf(state, task.item.itemId)?.setup} disabled={isBlocked} onSubmit={submit} onOpenLog={close}
+            pending={pending} setup={task && activityOf(state, task.item.itemId)?.setup} disabled={isBlocked} onSubmit={submit}
           />
         </DialogFooter>
       </DialogContent>

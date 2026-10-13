@@ -15,7 +15,6 @@ import { Confirm } from '@/components/Confirm';
 import { ciProgress, ciTone } from '@/components/CiProgress';
 import { SyncLine } from '@/components/ForkSyncNotice';
 import { commandsProgress, isStartFailure, StageOutputButton, taskError } from '@/components/CommandsProgress';
-import { SetupLogsButton } from '@/components/SetupProgress';
 import { TreeProgress } from '@/components/TreeProgress';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { StartDialog } from '@/components/StartDialog';
@@ -235,8 +234,6 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
   const status = taskStatus(task, state);
   const tries = triesText(task, state);
   const { tone } = status;
-  const live = activityOf(state, task.item.itemId);
-  const setup = live?.setup;
   const ring = isSelected ? `ring-2 ${TONE_RING[tone ?? 'empty']}` : '';
   // #34: a parent never runs while it waits, so it carries no auto badge; the highlight wins over the status border and the selected ring.
   // #36: the highlight is the details' tree row under the pointer, one source for every card, the list panel's included
@@ -268,7 +265,6 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
         {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
-        {setup && <SetupLogsButton consoleId={setup.consoleId} />}
         <StageOutputButton task={task} state={state} />
         <span className="ml-auto flex shrink-0 items-center gap-1.5">{task.missing ? <MissingActions task={task} /> : <TaskButton task={task} state={state} onOpen={onOpen} />}</span>
       </div>

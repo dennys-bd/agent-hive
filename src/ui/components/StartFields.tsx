@@ -1,15 +1,12 @@
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
-import { useState } from 'react';
-import { agentName, knownAgent } from '../../agents';
+import { type ReactNode, useState } from 'react';
 import type { KeyLike } from '../../shortcuts';
-import { worktreeSessions } from '../../tasks';
-import { AGENT_IDS, type AgentId, type BaseOptions, type Session, type Task, type Stage, type State } from '../../types';
+import type { BaseOptions, Task, Stage } from '../../types';
 import { WorkspaceSelect } from '@/components/WorkspaceSelect';
 import { Button } from '@/components/ui/button';
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type BaseChoice, stackedOn } from '@/hooks/use-start-base';
@@ -151,62 +148,15 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** What executar etapas will do: each stage's own agent, the stages ahead, and where the task stops for the user. */
-export function StagesBox({ task, stages }: { task?: Task; stages: Stage[] }) {
+/** What executar etapas will do: the run (#290), the stages ahead, and where the task stops for the user. */
+export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run: ReactNode }) {
   const path = task === undefined ? undefined : stagePath(task.stage, stages);
   const stop = path?.stop === undefined ? '—' : path.approval ? `${path.stop} · ${statusText('approval')}` : path.stop;
   return (
     <div className="grid grid-cols-[72px_1fr] gap-x-2 gap-y-1 rounded-md border p-2.5 text-xs">
-      <Row label={t('start.agent')} value={t('start.agentByStage')} />
+      {run}
       <Row label={t('start.next')} value={path && path.next.length > 0 ? path.next.join(' → ') : '—'} />
       <Row label={t('start.stopsAt')} value={stop} />
-    </div>
-  );
-}
-
-interface Choice { value: string; label: string }
-
-export const NEW_SESSION = 'new'; // Radix Select rejects value=""; a session id is a uuid, never "new"
-const SHORT_ID = 8;
-
-const when = (iso: string): string => (iso === '' ? '—' : new Date(iso).toLocaleString());
-
-// A row's stage part: a free session named first, before any stage a feedback run gave it (#812); — for a session with neither
-const stageOfRow = (s: Session): string => [s.free ? t('detail.freeSession') : undefined, s.stages.at(-1)].filter((p) => p !== undefined).join(' · ') || '—';
-
-// new, then every session the task may resume in its worktree (#164, #208; a repo one opens from the sidebar), newest first (#237)
-function sessionChoices(task: Task, state: State): Choice[] {
-  const sessions = [...worktreeSessions(task, state)].reverse();
-  return [
-    { value: NEW_SESSION, label: t('session.new') },
-    ...sessions.map((s) => ({ value: s.id, label: t('session.row', { id: s.id.slice(0, SHORT_ID), stage: stageOfRow(s), time: when(s.startedAt) }) })),
-  ];
-}
-
-function SelectField({ id, label, value, choices, onChange }: { id: string; label: string; value: string; choices: Choice[]; onChange(value: string): void }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
-        <SelectContent>{choices.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-interface FreeFieldsProps { id: string; task?: Task; state: State; session: string; agent: AgentId; onSession(session: string): void; onAgent(agent: AgentId): void }
-
-/** sessão livre: the agent (every agent, the default preselected, #925) and the session, new or one to resume, side by side. */
-export function FreeFields({ id, task, state, session, agent, onSession, onAgent }: FreeFieldsProps) {
-  const sessions = task === undefined ? [] : sessionChoices(task, state);
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <SelectField
-        id={`${id}-agent`} label={t('start.agent')} value={agent} choices={AGENT_IDS.map((a) => ({ value: a, label: agentName(a) }))}
-        onChange={(value) => { const picked = knownAgent(value); if (picked !== undefined) onAgent(picked); }}
-      />
-      <SelectField id={`${id}-session`} label={t('session.pick')} value={session} choices={sessions.length > 0 ? sessions : [{ value: session, label: t('session.new') }]} onChange={onSession} />
     </div>
   );
 }
