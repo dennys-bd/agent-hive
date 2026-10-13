@@ -7,7 +7,7 @@ import { loadState, saveState } from '../src/state-store.js';
 import { activityOf, localActivityId, prsOf, recordOf, recordsOf, resultOf } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { sessionsOf } from '../src/tasks.js';
-import { APPROVAL_MINUTES_DEFAULT, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, type SleptRun, type Task, type TaskPr, type DisabledRule, type Worker } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, MAX_CONCURRENT_DEFAULT, MAX_CONCURRENT_MAX, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, type Item, type SleptRun, type Task, type TaskPr, type DisabledRule, type Worker } from '../src/types.js';
 import { savedActivityId, savedTasks, withKeptRecord, withLocal, withWork, } from './fixtures/work.js';
 import { tempDir } from './temp-dir.js';
 import { loadRecord, savedPrs } from '../src/state-guards.js';
@@ -23,6 +23,10 @@ const savedRecord = (id: string, fields: Record<string, unknown>) => ({ id, task
 // The activity a saved run or terminal works in, with its record (#629): loadState keeps an occupied worker and a terminal only on a loaded one
 const OWNER = savedActivityId(9);
 const owned = { activities: [{ id: OWNER, kind: 'task' as const, workspace: 'hive', slug: 'hive-1-t' }], activityRecords: [savedRecord(OWNER, {})] };
+// #191: a listed task as the next load reads its lean save: what names its item, and '' for the three strings
+const asLoaded = (task: Task): Task => ({
+  ...task, item: { itemId: task.item.itemId, id: task.item.id, title: '', body: '', url: '', ...(task.item.source === undefined ? {} : { source: task.item.source }) },
+});
 
 test('loadState returns initialState when nothing is saved', async (t) => {
   const dir = await tempDir(t, '');
@@ -465,7 +469,7 @@ test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s t
   const good = withKeptRecord({ ...initialState(0), ...owned, workers: [worker], tasks: [task] }, 'I1', 'r1', { usage, sessions: [{ ...session, tokens: 1200 }] }); // #629: the record's
   await saveState(dir, good);
   const loaded = await loadState(dir);
-  assert.deepEqual([loaded.workers[0], loaded.tasks, loaded.activityRecords], [worker, [task], good.activityRecords], 'a save and a load keep them');
+  assert.deepEqual([loaded.workers[0], loaded.tasks, loaded.activityRecords], [worker, [asLoaded(task)], good.activityRecords], 'a save and a load keep them');
   const badUsage = [{ ...usage, ms: -1 }, { ...usage, tokens: '5' }, { tokens: 1, ms: 1 }, null, 'x'];
   const activityRecords = [...badUsage.map((u, i) => savedRecord(`r${i}`, { usage: u })), savedRecord('rs', { sessions: [{ ...session, tokens: -1 }, { ...session, tokens: '9' }] })];
   const workers = [{ ...worker, waitedMs: -5, seenAt: 'yesterday', waitingSince: 7, stage: 7, foldedMs: -1, foldedWaitingMs: 'x' }];
@@ -484,7 +488,7 @@ test('loadState keeps an activity\'s worktreeGone and a session\'s repo and free
   const state = withKeptRecord(withWork({ ...initialState(1), tasks: [task] }, 'I1', { ...live, worktreeGone: true }), 'I1', 'r1', { sessions: [{ ...session, repo: true, free: true }] });
   await saveState(dir, state);
   const loaded = await loadState(dir);
-  assert.deepEqual([loaded.tasks, loaded.activities, loaded.activityRecords], [[task], state.activities, state.activityRecords], 'a restart keeps both: the session button stays hidden, a repo session still opens in the main repo');
+  assert.deepEqual([loaded.tasks, loaded.activities, loaded.activityRecords], [[asLoaded(task)], state.activities, state.activityRecords], 'a restart keeps both: the session button stays hidden, a repo session still opens in the main repo');
   const values = [false, 'yes', 1, null];
   const activities = values.map((v, i) => ({ ...live, id: uuid(i + 2), worktreeGone: v }));
   const activityRecords = values.map((v, i) => savedRecord(uuid(i + 2), { sessions: [{ ...session, repo: v, free: v }] }));
@@ -575,7 +579,7 @@ test('loadState keeps stopped only as true, a stageStart only with a stage and a
   const good = savedTasks({ ...initialState(0), terminals: [terminal], cleanStop: true, crash }, [{ ...task, stopped: true, stageStart }], () => 'hive-1-t');
   await saveState(dir, good);
   const loaded = await loadState(dir);
-  assert.deepEqual([loaded.tasks, loaded.activities, loaded.terminals, loaded.cleanStop, loaded.crash], [[task], good.activities, [terminal], true, crash]);
+  assert.deepEqual([loaded.tasks, loaded.activities, loaded.terminals, loaded.cleanStop, loaded.crash], [[asLoaded(task)], good.activities, [terminal], true, crash]);
   const activities = [{ ...live, id: uuid(1), stopped: 'yes', stageStart: { stage: 'dev', commit: '--upload-pack=x' } }, { ...live, id: uuid(2), stageStart: 'dev' }];
   const onFirst = { ...terminal, activityId: uuid(1) };
   const terminals = [{ ...onFirst, terminalId: '.*' }, { ...onFirst, activityId: 7 }, { ...onFirst, extra: 1 }];
@@ -732,7 +736,7 @@ test('loadState reads a state.json in the #569 shape as it is (#569)', async (t)
     terminals: [{ terminalId: uuid(2), activityId: OWNER, startedAt: at, cwd: '/repo' }], crash: { at, tasks: ['I1'] },
   };
   await saveState(dir, state);
-  assert.deepEqual(await loadState(dir), state, 'a new-shaped file loads unchanged');
+  assert.deepEqual(await loadState(dir), { ...state, tasks: state.tasks.map(asLoaded) }, 'a new-shaped file loads unchanged, its listed items lean (#191)');
 });
 
 test('saveState then loadState round-trips activities and records (#629)', async (t) => {
@@ -742,7 +746,7 @@ test('saveState then loadState round-trips activities and records (#629)', async
   const worked = withWork({ ...initialState(1), workspaces: ['hive'], tasks: [task] }, 'board:item1', { id: uuid(1), slug: 'hive-1-t', worktree: '/w/1', branch: 'hive/1-t' }, { sessions: [session], result: { spec: 'a.md' } });
   const state = withLocal(worked, 'hive');
   await saveState(dir, state);
-  assert.deepEqual(await loadState(dir), state);
+  assert.deepEqual(await loadState(dir), { ...state, tasks: state.tasks.map(asLoaded) });
 });
 
 test('loadState drops an activity or a record that fails its guard, an activity without its record, and a record nothing needs (#629)', async (t) => {
@@ -912,4 +916,43 @@ test('loadState keeps a disable\'s agent and drops one naming an unknown agent (
   const disabledRules = [{ source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'codex' }, { source: 'week', percent: 90, until: { kind: 'manual' }, agent: 'gemini' }];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), disabledRules }));
   assert.deepEqual((await loadState(dir)).disabledRules, [disabledRules[0]]);
+});
+
+test('saveState writes a listed task\'s item as itemId, id and source alone, and a created, a missing and an orphan task whole; every other task field stays (#191)', async (t) => {
+  const dir = await tempDir(t, '');
+  const at = '2026-10-13T10:00:00.000Z';
+  const full: Item = {
+    itemId: 'board:I1', id: '1', title: 'T', body: 'b', url: 'https://github.com/o/r/issues/1', source: 'board', blockedBy: ['2'],
+    facets: { assignees: ['bia'], labels: ['hive'], fields: {} }, blockers: { blockedBy: [{ id: '2', title: 'T2', state: 'open' }], blocking: [] },
+  };
+  const listed: Task = { item: full, stage: 'dev', boardColumn: 'Ready', auto: true, pinned: true, enteredAt: at, columnWrite: { column: 'Ready', stale: ['Todo'], at } };
+  const created: Task = { ...listed, item: { ...full, itemId: 'board:I2' }, created: true };
+  const missing: Task = { ...listed, item: { ...full, itemId: 'board:I3' }, missing: true };
+  const orphan: Task = { ...listed, item: { ...full, itemId: 'board:I4' }, orphan: true };
+  await saveState(dir, { ...initialState(1), tasks: [listed, created, missing, orphan] });
+  const written = (JSON.parse(await readFile(join(dir, 'state.json'), 'utf8')) as { tasks: Task[] }).tasks;
+  assert.deepEqual(written[0], { ...listed, item: { itemId: 'board:I1', id: '1', source: 'board' } }, 'no title, body, url, facets, blockers or blockedBy');
+  assert.deepEqual(written.slice(1), [created, missing, orphan], 'no model row backs them: their items stay whole');
+});
+
+test('loadState reads a lean item with \'\' for its title, body and url and a full one of before #191 as it is; save, load, save is stable (#191)', async (t) => {
+  const dir = await tempDir(t, '');
+  const lean = { item: { itemId: 'board:I1', id: '1', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  const full: Task = { item: { itemId: 'board:I2', id: '2', title: 'T', body: 'b', url: 'https://github.com/o/r/issues/2', source: 'board', blockedBy: ['1'] }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(1), tasks: [lean, full] }));
+  const loaded = await loadState(dir);
+  assert.deepEqual(loaded.tasks, [{ ...lean, item: { ...lean.item, title: '', body: '', url: '' } }, full], 'isTask reads only itemId: a lean item loads');
+  await saveState(dir, loaded);
+  const once = await readFile(join(dir, 'state.json'), 'utf8');
+  await saveState(dir, await loadState(dir));
+  assert.equal(await readFile(join(dir, 'state.json'), 'utf8'), once);
+});
+
+test('a lean task with no facets, blockers, blockedBy or epic goes through a poll event without throwing, and the poll fills its item (#191)', async (t) => {
+  const dir = await tempDir(t, '');
+  const lean = { item: { itemId: 'board:I1', id: '1', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), stages: [{ name: 'dev', from: { board: ['Ready'] } }], syncs: { board: {} }, tasks: [lean] }));
+  const listed: Item = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1', source: 'board' };
+  const { state } = reduce(await loadState(dir), { type: 'poll', source: 'board', items: [{ item: listed, column: 'Ready' }] });
+  assert.deepEqual(state.tasks.map((task) => task.item), [listed]);
 });

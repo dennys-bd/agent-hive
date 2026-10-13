@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf } from '../src/tasks.js';
+import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -766,4 +766,11 @@ test('worktreeRows: a worktree whose kept activity has no task in the flow is ke
   const state = { ...kept, stages: STAGES, deleteActivity: DELETE_ACTIVITY_DEFAULTS };
   assert.deepEqual(worktreeRows([row], state, 'hive'), [{ ...row, workspace: 'hive', orphan: 'kept' }]);
   assert.equal(worktreeRows([row], state, 'site')[0].orphan, 'noTask');
+});
+
+test('taskLabel reads #<id> with no trailing space for a lean task, #<id> <title> once it has one, and no # for a created task (#191)', () => {
+  const lean: Task = { item: { itemId: 'item1', id: '1', title: '', body: '', url: '', source: 'board' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+  assert.equal(taskLabel(lean), '#1');
+  assert.equal(taskLabel({ ...lean, item: item(1) }), '#1 Task 1');
+  assert.equal(taskLabel({ ...lean, created: true, item: { ...lean.item, id: 'HIVE-1', title: 'T' } }), 'HIVE-1 T');
 });
