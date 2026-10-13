@@ -202,7 +202,7 @@ test('the bar shows the server starting, its name once ready, failed with ver lo
   expect(openConsole).toHaveBeenCalledWith('lsp:hive:ts', 'r1', true);
   act(() => store.setClient('k', A, 'typescript-language-server', { phase: 'absent', reason: 'not installed' }));
   expect(screen.getByText('sem language server')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'instalar typescript-language-server' }));
+  await user.click(screen.getByRole('button', { name: 'instalar typescript-language-server…' }));
   expect(openLanguage).toHaveBeenCalledWith('typescript');
   act(() => store.setClient('k', A, 'typescript-language-server', { phase: 'off' }));
   expect(screen.queryByTestId('server-status')).not.toBeInTheDocument();
