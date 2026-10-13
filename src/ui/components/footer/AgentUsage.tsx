@@ -1,8 +1,9 @@
 import { ChevronDownIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { planLimitAgents } from '../../../agents';
 import type { AgentId, PlanReadings, RateLimits, State } from '../../../types';
 import { act } from '@/components/actions';
+import { UsagePanel } from '@/components/footer/UsagePanel';
 import { AgentMark, percentTone, RefreshButton, UsageMeter } from '@/components/footer/UsageParts';
 import { t } from '@/i18n';
 import { chipTitle, highestPercent, topAgent, usageWindows } from '@/lib/agent-usage';
@@ -72,7 +73,8 @@ function UsageGroupButton({ agents, readings, isOpen, onToggle }: GroupProps) {
 interface AgentUsageProps { state: Pick<State, 'rateLimits'>; form: UsageForm; agents?: readonly AgentId[] } // agents: the tests' seam
 
 /** The footer's usage group (#223): a chip per agent with plan limits, with or without a reading, or the group form's one button. It owns
- * the clock, the agents being read and whether the panel is open, so a chip's ↻ and the panel's spin together. */
+ * the clock, the agents being read and whether the panel is open, so a chip's ↻ and the panel's spin together.
+ * A click toggles the usage panel, rendered here so it anchors to the footer (relative), not to the group. */
 export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProps) {
   const [now, setNow] = useState(() => Date.now());
   const [isOpen, setIsOpen] = useState(false);
@@ -83,6 +85,7 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
     return () => clearInterval(id);
   }, []);
   const toggle = (): void => setIsOpen((open) => !open);
+  const close = useCallback(() => setIsOpen(false), []); // stable: the panel's listeners and focus hand-back hang on it
   const refresh = (agent?: AgentId): void => {
     const asked = agent === undefined ? agents : [agent];
     setRefreshing((current) => new Set([...current, ...asked]));
@@ -98,6 +101,7 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
         : agents.map((agent) => (
           <UsageChip key={agent} agent={agent} reading={readings[agent]} now={now} form={form} isOpen={isOpen} isSpinning={refreshing.has(agent)} onToggle={toggle} onRefresh={refresh} />
         ))}
+      {isOpen && <UsagePanel agents={agents} readings={readings} now={now} refreshing={refreshing} onRefresh={refresh} onClose={close} />}
     </div>
   );
 }
