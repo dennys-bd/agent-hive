@@ -521,7 +521,8 @@ test('executar etapas shows the run the stage would launch; personalizar opens i
   const onClose = vi.fn();
   render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
   await screen.findByRole('combobox', { name: 'origin/main' });
-  expect(screen.getByText('claude · padrão do claude · sessão nova')).toBeInTheDocument();
+  const summary = screen.getByText('claude · padrão do claude · sessão nova');
+  expect(summary.parentElement?.querySelector('svg')).toHaveClass('text-agent-claude'); // the mark in its agent's colour, as the agent field shows it
   await user.click(screen.getByRole('button', { name: /personalizar/ }));
   const block = within(screen.getByRole('region', { name: 'execução de backlog' }));
   expect(block.getByText('padrão da etapa')).toBeInTheDocument();
