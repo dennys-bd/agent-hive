@@ -1,5 +1,5 @@
 import { XIcon } from 'lucide-react';
-import { type CSSProperties, type MouseEvent, useState, useSyncExternalStore } from 'react';
+import { type CSSProperties, type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { CenterDrag, Landing } from '@/components/center-drag';
 import { type ConsoleSelection, ConsolePanel } from '@/components/ConsolePanel';
 import { type CloseTabSettings, type ConfirmLoss, forgetRun, noticeInput, noticeOn, showCloseTabNotice, sleepsOnClose, sleepTerminal, stopRun } from '@/components/close-tab-notice';
@@ -79,12 +79,13 @@ function TabDot({ item, activity }: { item: CenterTabRef; activity: Activity }) 
   return <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${dotOf(item, activity)}`} />;
 }
 
-// The drop line in a strip, tab-drag's own (#440) turned on its side: 2px of bg-primary left of the tab the dragged one lands before, or
-// after the last tab for the end
-const LINE_BEFORE = "before:absolute before:inset-y-0 before:-left-0.5 before:hidden before:w-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block";
+// The drop line in a strip, tab-drag's own (#440) turned on its side: 2px of bg-primary at the left edge of the tab the dragged one lands
+// before (inside it, or the scrolling strip would clip the first tab's, #255), or after the last tab for the end
+const LINE_BEFORE = "before:absolute before:inset-y-0 before:left-0 before:hidden before:w-0.5 before:content-[''] before:bg-primary data-[drop=before]:before:block";
 const LINE_END = "after:hidden after:w-0.5 after:self-stretch after:content-[''] after:bg-primary data-[drop=end]:after:block";
-// A tab (redesign 04): padded, a border on its right; the shown one on task with a 2px foreground line at its foot
-const TAB = 'relative flex items-center gap-1.5 border-r px-3 text-xs';
+// A tab (redesign 04): padded, a border on its right; the shown one on task with a 2px foreground line at its foot. It never shrinks: a full
+// strip scrolls sideways instead (#255)
+const TAB = 'relative flex shrink-0 items-center gap-1.5 whitespace-nowrap border-r px-3 text-xs';
 const SHOWN_TAB = 'bg-card text-foreground shadow-[inset_0_-2px_0_var(--foreground)]';
 const MIDDLE_BUTTON = 1; // MouseEvent.button of the wheel button
 const RUN_INSET = 'pl-2.5 py-2'; // with PtyTab's own p-1, the handoff's 14px left of the xterm; none on the right, where its own scrollbar decides how close it comes
@@ -165,6 +166,15 @@ function copySourceOf(activity: Activity, ptyId: string): CopySource | undefined
   return kept && { activityId: activity.activity.id, sessionId: kept.session.id }; // the local record (#629)
 }
 
+// An opened or picked tab scrolls into a full strip's view (#255)
+function useShownInView(isShown: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isShown) ref.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [isShown]);
+  return ref;
+}
+
 interface CenterTabProps { item: CenterTabRef; index: number; group: TabGroup; groups: TabGroup[]; activity: Activity; ops: CenterOps; drag: CenterDrag; onClose(item: CenterTabRef): void; onWake(ptyId: string): void }
 
 // One tab (#458): its dot and text show it, its X or a middle-click closes it (#612), and it drags (center-drag.ts). Right-click: split
@@ -189,34 +199,37 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
   const run = item.kind === 'run' ? activity.runs.find((r) => r.ptyId === item.ptyId) : undefined; // an agent's tab offers copiar para… (#587); a terminal's does not
   const source = run !== undefined && run.kind !== 'terminal' ? copySourceOf(activity, run.ptyId) : undefined;
   const drop = drag.landing?.kind === 'strip' && drag.landing.group === group.id && drag.landing.target === key ? 'before' : undefined;
+  const ref = useShownInView(isShown);
+  // The whole tab answers a middle-click and a right-click (#255): its X, its pill and its underline sit outside the tab button
   return (
-    <div data-tab-key={key} data-drop={drop} className={`${TAB} ${isShown ? SHOWN_TAB : 'text-muted-foreground'} ${LINE_BEFORE} ${drag.dragged === key ? 'opacity-50' : ''}`}>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: a middle-click is a pointer shortcut for the tab's X, which stays the keyboard's way to close */}
+        <div ref={ref} data-tab-key={key} data-drop={drop} onMouseDown={onMouseDown} onAuxClick={onAuxClick} className={`${TAB} ${isShown ? SHOWN_TAB : 'text-muted-foreground'} ${LINE_BEFORE} ${drag.dragged === key ? 'opacity-50' : ''}`}>
           <button
             type="button" role="tab" aria-selected={isShown} title={'path' in item ? item.path : undefined} className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            onClick={() => { ops.select(group.id, index); if (isAsleep) onWake(key); }} onMouseDown={onMouseDown} onAuxClick={onAuxClick} {...drag.handlers(key, group.id)}
+            onClick={() => { ops.select(group.id, index); if (isAsleep) onWake(key); }} {...drag.handlers(key, group.id)}
           >
             <TabDot item={item} activity={activity} />
             <span className={tone}>{text}</span>
           </button>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem disabled={isAlone} onSelect={() => land({ kind: 'edge', group: group.id, edge: 'right' })}>{t('center.splitRight')}</ContextMenuItem>
-          <ContextMenuItem disabled={isAlone} onSelect={() => land({ kind: 'edge', group: group.id, edge: 'bottom' })}>{t('center.splitDown')}</ContextMenuItem>
-          {groups.filter((other) => other.id !== group.id).map((other) => (
-            <ContextMenuItem key={other.id} onSelect={() => land({ kind: 'middle', group: other.id })}>
-              {`${t('center.moveTo')} · ${refText(other.tabs[other.active], activity)}`}
-            </ContextMenuItem>
-          ))}
-          {source && <CopyToSub source={source} kit={CONTEXT_KIT} separated />}
-          <ContextMenuSeparator />
-          <ContextMenuItem onSelect={close}>{t('center.close')}</ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-      {item.kind === 'design' && activity.kind === 'task' && <DesignCountPill taskId={activity.task.item.itemId} path={item.path} />}
-      <Button type="button" size="icon-xs" variant="ghost" className="size-4" aria-label={`${t('center.close')} ${text}`} onClick={close}><XIcon /></Button>
-    </div>
+          {item.kind === 'design' && activity.kind === 'task' && <DesignCountPill taskId={activity.task.item.itemId} path={item.path} />}
+          <Button type="button" size="icon-xs" variant="ghost" className="size-4" aria-label={`${t('center.close')} ${text}`} onClick={close}><XIcon /></Button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem disabled={isAlone} onSelect={() => land({ kind: 'edge', group: group.id, edge: 'right' })}>{t('center.splitRight')}</ContextMenuItem>
+        <ContextMenuItem disabled={isAlone} onSelect={() => land({ kind: 'edge', group: group.id, edge: 'bottom' })}>{t('center.splitDown')}</ContextMenuItem>
+        {groups.filter((other) => other.id !== group.id).map((other) => (
+          <ContextMenuItem key={other.id} onSelect={() => land({ kind: 'middle', group: other.id })}>
+            {`${t('center.moveTo')} · ${refText(other.tabs[other.active], activity)}`}
+          </ContextMenuItem>
+        ))}
+        {source && <CopyToSub source={source} kit={CONTEXT_KIT} separated />}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={close}>{t('center.close')}</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -287,7 +300,7 @@ export function CenterGroup({ group, activity, groups, focused, ops, drag, fileL
   return (
     <section data-center-group={group.id} data-focused={focused === group.id ? 'true' : undefined} onPointerDownCapture={focus} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div data-center-strip className="flex h-[34px] shrink-0 items-stretch border-b">
-        <div role="tablist" aria-label={t('terminal.panel.tabs')} aria-orientation="horizontal" data-drop={isEnd ? 'end' : undefined} className={`flex min-w-0 items-stretch ${LINE_END}`}>
+        <div role="tablist" aria-label={t('terminal.panel.tabs')} aria-orientation="horizontal" data-drop={isEnd ? 'end' : undefined} className={`flex min-w-0 items-stretch overflow-x-auto overflow-y-hidden ${LINE_END}`}>
           {group.tabs.map((item, index) => <CenterTab key={refKey(item)} item={item} index={index} group={group} groups={groups} activity={activity} ops={ops} drag={drag} onClose={onClose} onWake={onWake} />)}
         </div>
         {/* Beside the tablist, never in it: ARIA allows only tabs there, as DockGroup keeps its actions (#491). Right after the tabs
