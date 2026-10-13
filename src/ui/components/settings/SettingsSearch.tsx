@@ -60,7 +60,7 @@ export function SettingsSearch({ entries, onPick }: { entries: readonly SettingE
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       setActive(Math.max(0, Math.min(matches.length - 1, current + (e.key === 'ArrowDown' ? 1 : -1))));
-    } else if (e.key === 'Enter' && matches.length > 0) {
+    } else if (e.key === 'Enter' && matches.length > 0 && !e.nativeEvent.isComposing) {
       e.preventDefault();
       pick(matches[current]);
     } else if (e.key === 'Escape') {
@@ -72,7 +72,7 @@ export function SettingsSearch({ entries, onPick }: { entries: readonly SettingE
 
   return (
     <div className="relative">
-      <Input ref={input} role="combobox" aria-label={t('settings.search')} placeholder={t('settings.search')} aria-autocomplete="list" aria-controls={listId}
+      <Input ref={input} role="combobox" aria-label={t('settings.search')} placeholder={t('settings.search')} aria-autocomplete="list" aria-controls={isOpen && matches.length > 0 ? listId : undefined}
         aria-expanded={isOpen} aria-activedescendant={isOpen && matches.length > 0 ? `${listId}-${current}` : undefined} value={query} className="pr-14"
         onChange={(e) => { setQuery(e.target.value); setActive(0); }} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} onKeyDown={onKeyDown} />
       {query === '' && <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center"><KeyHint id="searchSettings" /></span>}
