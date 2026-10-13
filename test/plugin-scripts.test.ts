@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -38,6 +38,10 @@ const BLOCKS: unknown[] = [
   {}, VALID, null, [], { Bad: { type: 'boolean', default: true } }, { a: { options: [], default: 'x' } }, { a: { options: ['x', 'x'], default: 'x' } },
   { a: { options: ['x'], default: 'y' } }, { a: { type: 'number', default: 5, min: 10, max: 0 } }, { a: { type: 'number', default: 1, step: 0 } },
   { a: { type: 'color', default: 'red' } }, { a: { type: 'text', default: 't'.repeat(201) } }, { a: { type: 'boolean', default: true, group: 1 } },
+  { ['a'.repeat(65)]: { type: 'boolean', default: true } }, { ['a'.repeat(64)]: { type: 'boolean', default: true } },
+  { a: { options: Array.from({ length: 65 }, (_, i) => `o${i}`), default: 'o0' } }, { a: { options: Array.from({ length: 64 }, (_, i) => `o${i}`), default: 'o0' } },
+  { a: { options: ['x'.repeat(201)], default: 'x'.repeat(201) } }, { a: { type: 'boolean', default: true, group: 'g'.repeat(201) } },
+  { a: { type: 'boolean', default: true, group: 'g'.repeat(200) } },
   Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`t${i}`, { type: 'boolean', default: false }])),
 ];
 
@@ -70,10 +74,20 @@ test('check-hv.mjs\'s tweak rules answer as src/design-tweaks.ts does on the sam
   for (const raw of BLOCKS) assert.deepEqual(script.parseTweaks(raw), parseTweaks(raw), JSON.stringify(raw)?.slice(0, 80));
 });
 
+test('the tweak rules refuse a name past 64, more than 64 options, and an option or group past 200, and take the limits themselves (#241)', () => {
+  const ok = (raw: unknown): boolean => (parseTweaks(raw) as { ok: boolean }).ok;
+  const options = (n: number): string[] => Array.from({ length: n }, (_, i) => `o${i}`);
+  assert.deepEqual([ok({ ['a'.repeat(64)]: { type: 'boolean', default: true } }), ok({ ['a'.repeat(65)]: { type: 'boolean', default: true } })], [true, false]);
+  assert.deepEqual([ok({ a: { options: options(64), default: 'o0' } }), ok({ a: { options: options(65), default: 'o0' } })], [true, false]);
+  assert.deepEqual([ok({ a: { options: ['x'.repeat(200)], default: 'x'.repeat(200) } }), ok({ a: { options: ['x'.repeat(201)], default: 'x'.repeat(201) } })], [true, false]);
+  assert.deepEqual([ok({ a: { type: 'boolean', default: true, group: 'g'.repeat(200) } }), ok({ a: { type: 'boolean', default: true, group: 'g'.repeat(201) } })], [true, false]);
+});
+
 interface Prop { prop: string; editor?: string; options?: string[]; default: unknown }
 interface BrowserDeps { env: Record<string, string | undefined>; platform: string; home: string; isExecutable(path: string): Promise<boolean>; list(dir: string): Promise<string[]> }
 interface ImportDc {
   readProps(html: string): Prop[]; draftBlock(props: Prop[]): Record<string, unknown>; snapshotsOf(props: Prop[]): { file: string; prop?: string; value?: unknown }[];
+  chromeArgs(profile: string, page: string): string[]; siblingScripts(dir: string): Promise<string[]>; dropCollisions(props: Prop[], warn: (line: string) => void): Prop[];
   withValue(html: string, prop: string, value: unknown): string; stripped(html: string): string; coloursOf(html: string): string; findBrowser(deps: BrowserDeps): Promise<string | undefined>;
 }
 const attr = (text: string): string => text.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
@@ -124,4 +138,33 @@ test('import-dc.mjs looks for the browser on PATH, then the system Chrome, then 
   assert.equal(await dc.findBrowser(deps([system, newest])), system);
   assert.equal(await dc.findBrowser(deps([older, newest])), newest);
   assert.equal(await dc.findBrowser(deps([])), undefined);
+});
+
+test('import-dc.mjs refuses every host but unpkg.com, IP literals and loopback included, by a dead proxy beside the host rules (#241)', async () => {
+  const dc = await load<ImportDc>('import-dc.mjs');
+  const args = dc.chromeArgs('/p/profile', '/p/export.dc.html');
+  assert.ok(args.includes('--proxy-server=http://127.0.0.1:9'));
+  assert.ok(args.includes('--proxy-bypass-list=unpkg.com;<-loopback>'));
+  assert.ok(args.some((arg) => arg.startsWith('--host-resolver-rules=MAP * ~NOTFOUND')));
+  assert.ok(!args.includes('--no-sandbox'));
+  assert.equal(args.at(-1), pathToFileURL('/p/export.dc.html').href);
+});
+
+test('import-dc.mjs copies only the regular .js files beside the export: not a folder named x.js, not a symbolic link (#241)', async (t) => {
+  const dc = await load<ImportDc>('import-dc.mjs');
+  const folder = await tempDir(t, 'dc-');
+  await writeFile(join(folder, 'support.js'), '');
+  await writeFile(join(folder, 'notes.txt'), '');
+  await mkdir(join(folder, 'x.js'));
+  await symlink(join(folder, 'support.js'), join(folder, 'link.js'));
+  assert.deepEqual(await dc.siblingScripts(folder), ['support.js']);
+});
+
+test('import-dc.mjs keeps the first of two props that name the same tweak and says so on stderr (#241)', async () => {
+  const dc = await load<ImportDc>('import-dc.mjs');
+  const warnings: string[] = [];
+  const props = [{ prop: 'pageTitle', default: 'a' }, { prop: 'page-title', default: 'b' }, { prop: 'count', default: 3 }];
+  assert.deepEqual(dc.dropCollisions(props, (line) => warnings.push(line)).map((p) => p.prop), ['pageTitle', 'count']);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /page-title.*page-title|pageTitle/);
 });

@@ -10,6 +10,9 @@ export const TWEAK_NAME = /^[a-z][a-z0-9-]*$/;
 export const TWEAKS_MAX = 32;
 /** The longest text value (#241), so an anchor stays small. */
 export const TWEAK_TEXT_MAX = 200;
+/** The longest tweak name and the most options of an enum (#241), so an anchor stays small. */
+export const TWEAK_NAME_MAX = 64;
+export const TWEAK_OPTIONS_MAX = 64;
 
 type Grouped = { group?: string };
 export type TweakDef =
@@ -41,6 +44,8 @@ function optionsOf(raw: unknown): string[] | string {
   if (!Array.isArray(raw) || raw.length === 0 || !raw.every((option): option is string => typeof option === 'string' && option !== '')) {
     return 'options must be a non-empty list of non-empty strings';
   }
+  if (raw.length > TWEAK_OPTIONS_MAX) return `at most ${TWEAK_OPTIONS_MAX} options`;
+  if (raw.some((option) => option.length > TWEAK_TEXT_MAX)) return `an option is at most ${TWEAK_TEXT_MAX} characters`;
   return new Set(raw).size === raw.length ? raw : 'options must be unique';
 }
 
@@ -56,6 +61,7 @@ function boundsOf(raw: Record<string, unknown>): Bounds | string {
 function shapeOf(raw: Record<string, unknown>): TweakShape | string {
   const { type, group } = raw;
   if (group !== undefined && typeof group !== 'string') return 'group must be a string';
+  if (group !== undefined && group.length > TWEAK_TEXT_MAX) return `group is at most ${TWEAK_TEXT_MAX} characters`;
   const grouped = group === undefined ? {} : { group };
   if (type === undefined || type === 'enum') {
     const options = optionsOf(raw.options);
@@ -69,6 +75,7 @@ function shapeOf(raw: Record<string, unknown>): TweakShape | string {
 
 function defOf(name: string, raw: unknown): ({ name: string } & TweakDef) | string {
   if (!TWEAK_NAME.test(name)) return `"${name}" is not a tweak name: [a-z][a-z0-9-]*`;
+  if (name.length > TWEAK_NAME_MAX) return `"${name.slice(0, 16)}…" is longer than ${TWEAK_NAME_MAX} characters`;
   if (!isRecord(raw)) return `${name}: a definition is an object`;
   const shape = shapeOf(raw);
   if (typeof shape === 'string') return `${name}: ${shape}`;

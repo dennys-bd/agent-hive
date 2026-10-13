@@ -298,7 +298,7 @@ Screenshot into a `mktemp -d` folder outside the repositories, with no
 network and a throwaway profile, never `--no-sandbox`:
 
 ```bash
-chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolver-rules="MAP * ~NOTFOUND" --window-size=390,2400 --screenshot="$tmp/<screen>-390.png" "file://<absolute path>"
+chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolver-rules="MAP * ~NOTFOUND" --proxy-server=http://127.0.0.1:9 --proxy-bypass-list="<-loopback>" --window-size=390,2400 --screenshot="$tmp/<screen>-390.png" "file://<absolute path>"
 ```
 
 Screenshot each enum option once, and each boolean the other way: copy the

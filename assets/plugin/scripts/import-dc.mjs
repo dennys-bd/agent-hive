@@ -11,8 +11,12 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
 const run = promisify(execFile);
-// The export's runtime (support.js) loads its React and Babel from unpkg, SRI-pinned: every other host is refused (the user's choice, spec "Rendering an export")
+// The export's runtime (support.js) loads its React and Babel from unpkg, SRI-pinned: every other host is refused (the user's choice, spec "Rendering an export").
+// Two layers, since the host rules alone do not stop a URL written as an IP literal: they refuse every name but unpkg.com, and a dead proxy takes
+// every request that is not for unpkg.com. `<-loopback>` removes Chrome's implicit bypass, so 127.0.0.1 and localhost go to the dead proxy too.
 const HOST_RULES = 'MAP * ~NOTFOUND, EXCLUDE unpkg.com';
+const DEAD_PROXY = 'http://127.0.0.1:9';
+const PROXY_BYPASS = 'unpkg.com;<-loopback>';
 const RENDER_MS = 10_000; // virtual time for the runtime to load and render before the DOM is dumped
 const TIMEOUT_MS = 60_000;
 const DOM_MAX = 64 * 1024 * 1024;
@@ -52,10 +56,24 @@ export function readProps(html) {
   return [...declared, ...used.values()];
 }
 
-const tweakName = (prop) => {
+/** The props without a second one that names the same tweak (#241): the first stays, and `warn` hears of each one dropped. */
+export function dropCollisions(props, warn) {
+  const seen = new Map();
+  return props.filter((p) => {
+    const name = tweakName(p.prop);
+    if (!seen.has(name)) {
+      seen.set(name, p.prop);
+      return true;
+    }
+    warn(`import-dc: "${p.prop}" and "${seen.get(name)}" are both the tweak "${name}"; "${p.prop}" is left out`);
+    return false;
+  });
+}
+
+function tweakName(prop) {
   const kebab = prop.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase().replace(/[^a-z0-9-]+/g, '-');
   return /^[a-z]/.test(kebab) ? kebab : `p-${kebab}`;
-};
+}
 
 function defOf({ editor, options, default: value }) {
   if (Array.isArray(options) && options.length > 0 && options.every((o) => typeof o === 'string' && o !== '')) {
@@ -136,19 +154,26 @@ const hostDeps = () => ({
   isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false), list: (dir) => readdir(dir).catch(() => []),
 });
 
+/** The export's sibling scripts (#241): regular files only, so a folder named x.js or a link out of the folder is not followed. */
+export async function siblingScripts(dir) {
+  return (await readdir(dir, { withFileTypes: true })).filter((entry) => entry.isFile() && entry.name.endsWith('.js')).map((entry) => entry.name);
+}
+
+/** The browser's argv (#241): headless, a profile of its own, and the network held to unpkg.com. Never a shell and never --no-sandbox. */
+export const chromeArgs = (profile, page) => [
+  '--headless', '--no-first-run', '--disable-gpu', `--user-data-dir=${profile}`, `--host-resolver-rules=${HOST_RULES}`,
+  `--proxy-server=${DEAD_PROXY}`, `--proxy-bypass-list=${PROXY_BYPASS}`, `--virtual-time-budget=${RENDER_MS}`, '--dump-dom', pathToFileURL(page).href,
+];
+
 // The export is copied with its sibling scripts into a throwaway folder, so the runtime finds support.js and the user's folder stays untouched
 async function render(browser, exportPath, html) {
   const tmp = await mkdtemp(join(tmpdir(), 'import-dc-'));
   try {
-    const beside = (await readdir(dirname(exportPath))).filter((name) => name.endsWith('.js'));
+    const beside = await siblingScripts(dirname(exportPath));
     await Promise.all(beside.map((name) => copyFile(join(dirname(exportPath), name), join(tmp, name))));
     const page = join(tmp, 'export.dc.html');
     await writeFile(page, html);
-    // execFile with an argv array, never a shell; and never --no-sandbox
-    const { stdout } = await run(browser, [
-      '--headless', '--no-first-run', '--disable-gpu', `--user-data-dir=${join(tmp, 'profile')}`, `--host-resolver-rules=${HOST_RULES}`,
-      `--virtual-time-budget=${RENDER_MS}`, '--dump-dom', pathToFileURL(page).href,
-    ], { maxBuffer: DOM_MAX, timeout: TIMEOUT_MS });
+    const { stdout } = await run(browser, chromeArgs(join(tmp, 'profile'), page), { maxBuffer: DOM_MAX, timeout: TIMEOUT_MS });
     return stripped(stdout);
   } finally {
     await rm(tmp, { recursive: true, force: true });
@@ -161,7 +186,7 @@ async function main([exportPath, out]) {
     return 1;
   }
   const html = await readFile(exportPath, 'utf8');
-  const props = readProps(html);
+  const props = dropCollisions(readProps(html), (line) => console.error(line));
   await mkdir(out, { recursive: true });
   await writeFile(join(out, 'tweaks.json'), `${JSON.stringify(draftBlock(props), null, 2)}\n`);
   await writeFile(join(out, 'colours.txt'), coloursOf(html));
