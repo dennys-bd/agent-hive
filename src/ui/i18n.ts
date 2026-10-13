@@ -110,6 +110,23 @@ const en = {
   'usage.hour': 'hour',
   'usage.day': 'day',
   'usage.raw': 'current usage: {hour}/h · {day}/day',
+  'usage.window.fiveHour': '5h', // #223: the footer chip's short window labels; the panel says window.*
+  'usage.window.week': 'wk',
+  'usage.window.thirtyDay': '30d',
+  'usage.panel.title': 'agent usage',
+  'usage.panel.count.one': '{n} agent',
+  'usage.panel.count.other': '{n} agents',
+  'usage.refreshAll': '↻ all',
+  'usage.refreshOne': 'refresh {agent} · read {ago}',
+  'usage.refreshNone': 'refresh {agent} · no reading',
+  'usage.resets': 'resets {time}',
+  'usage.read': 'read {ago}',
+  'usage.noReading': 'no reading',
+  'usage.ago.now': 'just now',
+  'usage.ago.minutes': '{n} min ago',
+  'usage.ago.hours': '{n} h ago',
+  'usage.ago.days': '{n} d ago',
+  'usage.close': 'close',
   'window.session': 'session',
   'window.week': 'week',
   'window.thirtyDay': '30 days', // #929: Codex's free plan window
@@ -1944,6 +1961,23 @@ const pt: Record<MessageKey, string> = {
   'usage.hour': 'hora',
   'usage.day': 'dia',
   'usage.raw': 'consumo atual: {hour}/h · {day}/dia',
+  'usage.window.fiveHour': '5h',
+  'usage.window.week': 'sem',
+  'usage.window.thirtyDay': '30d',
+  'usage.panel.title': 'uso dos agentes',
+  'usage.panel.count.one': '{n} agente',
+  'usage.panel.count.other': '{n} agentes',
+  'usage.refreshAll': '↻ todos',
+  'usage.refreshOne': 'atualizar {agent} · lido {ago}',
+  'usage.refreshNone': 'atualizar {agent} · sem leitura',
+  'usage.resets': 'reinicia {time}',
+  'usage.read': 'lido {ago}',
+  'usage.noReading': 'sem leitura',
+  'usage.ago.now': 'agora',
+  'usage.ago.minutes': 'há {n} min',
+  'usage.ago.hours': 'há {n} h',
+  'usage.ago.days': 'há {n} d',
+  'usage.close': 'fechar',
   'window.session': 'sessão',
   'window.week': 'semana',
   'window.thirtyDay': '30 dias',
@@ -3690,7 +3724,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
