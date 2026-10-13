@@ -5,9 +5,10 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* Not colors: the same in both themes, so they stay out of theme.css. The window insets (#295): the macOS window buttons' space in a window;
-   under data-fullscreen (useFullScreen: full screen, and always off macOS) the header's 12px and Settings' rail edge, ViewRail's 44px. */
+   under data-fullscreen (useFullScreen: full screen, and always off macOS) the header's 12px, and 4px for Settings, which puts voltar's arrow
+   (a sm button's 10px padding, then the 16px icon) centred on 22px, where the header's panel-left and the rail's icons sit. */
 :root { --radius: 0.5rem; --window-inset: 84px; --settings-inset: 84px; }
-:root[data-fullscreen] { --window-inset: 12px; --settings-inset: 44px; }
+:root[data-fullscreen] { --window-inset: 12px; --settings-inset: 4px; }
 
 @theme inline {
   --color-background: var(--background);

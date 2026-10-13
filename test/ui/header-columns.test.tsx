@@ -25,10 +25,10 @@ test('after a resize both columns follow the groups (#221)', () => {
   });
 });
 
-test('a collapsed left side leaves the window buttons\' 72px block in a window and no column in full screen; a right column not shown takes no width (#221, #295)', () => {
+test('a collapsed left side leaves the window buttons\' 92px block in a window and the rail\'s 44px in full screen; a right column not shown takes no width (#221, #295)', () => {
   const closed = layout({ left: 30, right: 30 }, { left: false, right: true });
-  expect(headerColumns(closed, true, false)).toEqual({ left: '72px', right: 'calc((100% - 44px) * 30 / 100)' });
-  expect(headerColumns(closed, true, true)).toEqual({ left: null, right: 'calc((100% - 44px) * 30 / 100)' });
+  expect(headerColumns(closed, true, false)).toEqual({ left: '92px', right: 'calc((100% - 44px) * 30 / 100)' });
+  expect(headerColumns(closed, true, true)).toEqual({ left: '44px', right: 'calc((100% - 44px) * 30 / 100)' });
   expect(headerColumns(layout({ left: 30, right: 30 }), false, false)).toEqual({ left: 'calc(44px + (100% - 44px) * 30 / 100)', right: undefined });
 });
 

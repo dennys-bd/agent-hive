@@ -4,5 +4,5 @@
 // its left column, not on itself: its columns' % widths need a header with no padding.
 export const WINDOW_DRAG = 'h-11 select-none [-webkit-app-region:drag]';
 export const WINDOW_INSET = 'pl-(--window-inset)';
-// Settings' header (#295): in full screen it moves left only as far as the rail's edge, never over the rail's column
+// Settings' header (#295): in full screen voltar's arrow sits where the rail's icons and the header's panel-left do
 export const SETTINGS_CHROME = `${WINDOW_DRAG} pl-(--settings-inset)`;

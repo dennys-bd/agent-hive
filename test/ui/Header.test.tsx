@@ -52,10 +52,10 @@ test('left side open, in a window and in full screen: the left column, bordered,
   }
 });
 
-test('left side closed in a window: a 72px block holding only the window buttons\' space, with no border; the center starts with panel-left, a divider and the ⬢, and hive · workers leaves the header (#295)', () => {
+test('left side closed in a window: a 92px block holding the window buttons\' space and a gap, with no border; the center starts with panel-left, a divider and the ⬢, and hive · workers leaves the header (#295)', () => {
   render(header(shellOf({ layout: LEFT_CLOSED })));
   const left = column('left') as HTMLElement;
-  expect(left.style.width).toBe('72px');
+  expect(left.style.width).toBe('92px');
   expect(left).not.toHaveClass('border-r');
   expect(left).toBeEmptyDOMElement();
   const center = column('center') as HTMLElement;
@@ -67,12 +67,24 @@ test('left side closed in a window: a 72px block holding only the window buttons
   expect(within(banner()).queryByText(/workers/)).not.toBeInTheDocument();
 });
 
-test('left side closed in full screen: no left column; the header starts 12px in with panel-left, the divider and the ⬢ (#295)', () => {
+test('left side closed in full screen: a left column the rail\'s width holds panel-left over the rail\'s icons, its border on the rail\'s; the center leads with the ⬢ (#295)', () => {
   render(header(shellOf({ layout: LEFT_CLOSED }), limits('green'), true));
-  expect(column('left')).toBeNull();
+  const left = column('left') as HTMLElement;
+  expect(left.style.width).toBe('44px');
+  expect(left).toHaveClass('border-r', 'justify-center');
+  expect(left.firstElementChild).toBe(screen.getByRole('button', { name: 'abrir lateral' }));
   expect(column('center')).toHaveClass('pl-3');
-  expect(column('center')?.firstElementChild).toBe(screen.getByRole('button', { name: 'abrir lateral' }));
-  expect(mark()).toBeInTheDocument();
+  expect(column('center')?.firstElementChild).toBe(mark());
+});
+
+test('hovering the open brand opens the popover too, and the pointer leaving closes it (#295)', async () => {
+  const user = userEvent.setup();
+  render(header());
+  await user.hover(brand());
+  const popover = await screen.findByRole('dialog', { name: 'hive' });
+  expect(within(popover).getByText('workers 1/5')).toBeInTheDocument();
+  await user.unhover(brand());
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });
 
 test('the brand\'s title names the signal and what it holds back, a green holding nothing back has no middle part, and no "click to change"; the closed ⬢ carries the same; the mark takes the signal\'s colour (#221, #533, #295)', () => {

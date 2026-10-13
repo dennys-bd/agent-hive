@@ -89,7 +89,7 @@ test('--agent-codex is declared in both themes, apart from green, yellow and red
 
 const INDEX = source('ui/index.css').replace(/\/\*[\s\S]*?\*\//g, '');
 
-test('the window insets: 84px for the header and for Settings in a window; under data-fullscreen, 12px and the rail\'s 44px (#295)', () => {
+test('the window insets: 84px for the header and for Settings in a window; under data-fullscreen, 12px and 4px, voltar\'s arrow over the rail\'s icons (#295)', () => {
   assert.deepEqual(Object.fromEntries(block(':root', INDEX)), { '--radius': '0.5rem', '--window-inset': '84px', '--settings-inset': '84px' });
-  assert.deepEqual(Object.fromEntries(block(':root[data-fullscreen]', INDEX)), { '--window-inset': '12px', '--settings-inset': '44px' });
+  assert.deepEqual(Object.fromEntries(block(':root[data-fullscreen]', INDEX)), { '--window-inset': '12px', '--settings-inset': '4px' });
 });

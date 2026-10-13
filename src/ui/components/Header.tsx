@@ -39,23 +39,24 @@ function LeftToggle({ isOpen, className }: { isOpen: boolean; className?: string
   return <SideButton Icon={PanelLeftIcon} label={label} keys={binding('toggleLeft')} className={className} onClick={() => runShortcut('toggleLeft')} />;
 }
 
-// The left side closed (header-estados.md): panel-left, a divider the header's full height, then the ⬢ alone. The center has no left border
-// then: the divider is the only line
-function ClosedLead({ state, effective }: BrandProps) {
+// The left side closed in a window (header-estados.md): panel-left, a divider the header's full height, then the ⬢ alone. The center has no
+// left border then: the divider is the only line. In full screen panel-left sits in the left column, over the rail, and the ⬢ leads alone
+function ClosedLead({ state, effective, isFullScreen }: BrandProps & { isFullScreen: boolean }) {
   return (
     <>
-      <LeftToggle isOpen={false} />
-      <span aria-hidden="true" className="mx-1.5 w-px self-stretch bg-border" />
+      {!isFullScreen && <LeftToggle isOpen={false} />}
+      {!isFullScreen && <span aria-hidden="true" className="mx-1.5 w-px self-stretch bg-border" />}
       <HeaderBrand state={state} effective={effective} isCompact />
     </>
   );
 }
 
-// The left column (#221, #295): open, the brand and panel-left behind the window inset (84px, 12px in full screen); closed out of full screen,
-// the 72px block holding only the window buttons' space; closed in full screen, none
-function LeftColumn({ width, isOpen, state, effective }: BrandProps & { width: string | null; isOpen: boolean }) {
-  if (width === null) return null;
-  if (!isOpen) return <div data-header-column="left" style={{ width }} className="shrink-0" />;
+// The left column (#221, #295): open, the brand and panel-left behind the window inset (84px, 12px in full screen). Closed in a window, the
+// block holding only the window buttons' space; closed in full screen, the rail's width with panel-left over the rail's icons and the rail's
+// border as the divider
+function LeftColumn({ width, isOpen, isFullScreen, state, effective }: BrandProps & { width: string; isOpen: boolean; isFullScreen: boolean }) {
+  if (!isOpen && !isFullScreen) return <div data-header-column="left" style={{ width }} className="shrink-0" />;
+  if (!isOpen) return <div data-header-column="left" style={{ width }} className="flex shrink-0 items-center justify-center border-r"><LeftToggle isOpen={false} /></div>;
   return (
     <div data-header-column="left" style={{ width }} className={`flex shrink-0 items-center gap-2 overflow-hidden border-r pr-2 ${WINDOW_INSET}`}>
       <HeaderBrand state={state} effective={effective} />
@@ -85,18 +86,19 @@ function RightColumn({ width, panes }: { width?: string; panes: HeaderShell['pan
 }
 
 /** The window's top bar (#533, #221, #295): three columns whose borders fall on the panes' borders below, from the shown view's layout. Left,
- * per header-estados.md's four states: the brand and panel-left with the left side open; closed, the window buttons' 72px block (none in full
- * screen), then panel-left, a divider and the ⬢ at the center's start. Center, the activity's bar, empty without one; right, the right panes'
+ * per header-estados.md's four states: the brand and panel-left with the left side open; closed, the window buttons' block then panel-left, a divider and the ⬢
+ * at the center's start; closed in full screen, panel-left over the rail, then the ⬢. Center, the activity's bar, empty without one; right, the right panes'
  * icons while the right group holds Detalhes, else panel-right. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
 export function Header({ shell, state, effective }: HeaderProps) {
-  const widths = headerColumns(shell.layout, shell.rightShown, useIsFullScreen());
+  const isFullScreen = useIsFullScreen();
+  const widths = headerColumns(shell.layout, shell.rightShown, isFullScreen);
   const isLeftOpen = shell.layout.open.left;
   const registerSlot = useHeaderSlotRef();
   return (
     <header className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
-      <LeftColumn width={widths.left} isOpen={isLeftOpen} state={state} effective={effective} />
-      <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${widths.left === null ? 'pl-3' : ''}`}>
-        {!isLeftOpen && <ClosedLead state={state} effective={effective} />}
+      <LeftColumn width={widths.left} isOpen={isLeftOpen} isFullScreen={isFullScreen} state={state} effective={effective} />
+      <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${!isLeftOpen && isFullScreen ? 'pl-3' : ''}`}>
+        {!isLeftOpen && <ClosedLead state={state} effective={effective} isFullScreen={isFullScreen} />}
         {/* #295: no activity bar, the slot the flow's bar portals into; an element of its own, so React keeps the closed lead before it */}
         {shell.bar ?? <div ref={registerSlot} data-header-slot className="flex h-full min-w-0 flex-1 items-center" />}
       </div>

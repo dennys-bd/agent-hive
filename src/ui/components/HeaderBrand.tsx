@@ -56,7 +56,7 @@ function PopoverBody({ state, effective, workers }: Omit<HeaderBrandProps, 'isCo
 
 type Opener = 'hover' | 'focus';
 
-// The closed ⬢'s popover (#295): it opens on hover, and on focus and click so the keyboard reaches it; it closes once the pointer has left both
+// The brand's popover (#295): it opens on hover, and on focus and click so the keyboard reaches it; it closes once the pointer has left both
 // the ⬢ and the popover, on Escape and on a click outside (radix). A hover never moves the focus, neither into the popover nor back to the ⬢
 // at its close; the focus a keyboard close hands back to the ⬢ must not open it again
 function useHoverOpen() {
@@ -93,40 +93,41 @@ function useHoverOpen() {
   return { isOpen, setIsOpen, trigger, content };
 }
 
-// The left side closed (header-estados.md): the ⬢ alone in a 24×24 target, the mark itself unchanged
-function CompactBrand({ title, signal, children }: { title: string; signal: Signal; children: ReactNode }) {
+interface BrandPopoverProps { label: string; title: string; className: string; children: ReactNode; body: ReactNode }
+
+// The brand's popover (#295): hover, focus or click on either trigger opens it, the open brand's and the closed ⬢'s alike
+function BrandPopover({ label, title, className, children, body }: BrandPopoverProps) {
   const hover = useHoverOpen();
   return (
     <Popover open={hover.isOpen} onOpenChange={hover.setIsOpen}>
       <PopoverTrigger asChild {...hover.trigger}>
-        <button type="button" aria-label={t('header.brand')} title={title} className={`flex size-6 shrink-0 items-center justify-center rounded-[6px] hover:bg-accent ${FOCUS_RING} ${NO_DRAG}`}>
-          <HiveMark signal={signal} />
-        </button>
+        <button type="button" aria-label={label} title={title} className={`${className} ${FOCUS_RING} ${NO_DRAG}`}>{children}</button>
       </PopoverTrigger>
-      <PopoverContent {...CONTENT} aria-label={t('header.brand')} {...hover.content}>{children}</PopoverContent>
+      <PopoverContent {...CONTENT} aria-label={t('header.brand')} {...hover.content}>{body}</PopoverContent>
     </Popover>
   );
 }
 
 /** The header's brand (#221, #295): open, the mark in the effective signal's colour, hive, then the workers (#227: the footer no longer counts
- * them), opened by a click; compact (the left side closed), the mark alone, opened by hover, focus or click. Both open the same popover, with
- * the workers and the signal toggle; ⌘⌥1–3 still set the signal. */
+ * them); compact (the left side closed), the mark alone in a 24×24 target, the mark itself unchanged. Both open the same popover on hover,
+ * focus or click, with the workers and the signal toggle; ⌘⌥1–3 still set the signal. */
 export function HeaderBrand({ state, effective, isCompact = false }: HeaderBrandProps) {
   const workers = workersLine(state, effective);
   const title = brandTitle(effective.signal, signalEffect(effective.signal, state.signals));
   const body = <PopoverBody state={state} effective={effective} workers={workers} />;
-  if (isCompact) return <CompactBrand title={title} signal={effective.signal}>{body}</CompactBrand>;
+  if (isCompact) {
+    return (
+      <BrandPopover label={t('header.brand')} title={title} body={body} className="flex size-6 shrink-0 items-center justify-center rounded-[6px] hover:bg-accent">
+        <HiveMark signal={effective.signal} />
+      </BrandPopover>
+    );
+  }
   // aria-label: the two spans would read "hive· workers" as a name, and the title is the longer hint
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button type="button" aria-label={`${t('header.brand')} · ${workers}`} title={title} className={`flex h-6 min-w-0 items-center gap-1.5 rounded-sm ${FOCUS_RING} ${NO_DRAG}`}>
-          <HiveMark signal={effective.signal} />
-          <span className="font-semibold text-[13px]">{t('header.brand')}</span>
-          <span className="truncate text-muted-foreground text-xs">{` · ${workers}`}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent {...CONTENT} aria-label={t('header.brand')}>{body}</PopoverContent>
-    </Popover>
+    <BrandPopover label={`${t('header.brand')} · ${workers}`} title={title} body={body} className="flex h-6 min-w-0 items-center gap-1.5 rounded-sm">
+      <HiveMark signal={effective.signal} />
+      <span className="font-semibold text-[13px]">{t('header.brand')}</span>
+      <span className="truncate text-muted-foreground text-xs">{` · ${workers}`}</span>
+    </BrandPopover>
   );
 }
