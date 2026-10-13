@@ -3823,12 +3823,18 @@ export function setLanguage(language: Language): void {
 /** A count in the current language's digits (#797): 4.000 in pt, 4,000 in en. */
 export const formatCount = (n: number): string => n.toLocaleString(LOCALE[current]);
 
-/** The text for `key` in the current language; `{name}` placeholders are filled from `vars` and left alone when there is none. */
-export function t(key: MessageKey, vars?: Record<string, string | number>): string {
-  const text = MESSAGES[current][key];
+/** The language `t` renders in (#689: the Settings search must read the same one). */
+export const currentLanguage = (): Language => current;
+
+/** `key`'s text in `language`, `{name}` placeholders filled from `vars` (#689: the Settings search reads the current language and English at once). */
+export function tIn(language: Language, key: MessageKey, vars?: Record<string, string | number>): string {
+  const text = MESSAGES[language][key];
   if (!vars) return text; // the prompt hint carries literal {id} / {number}: untouched
   return text.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
 }
+
+/** The text for `key` in the current language; `{name}` placeholders are filled from `vars` and left alone when there is none. */
+export function t(key: MessageKey, vars?: Record<string, string | number>): string { return tIn(current, key, vars); }
 
 export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[status]);
 

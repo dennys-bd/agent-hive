@@ -12,7 +12,8 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 /** Maintenance's actions run at once (#181): no draft field lives there. */
 export type FormSection = Exclude<SettingsSection, 'maintenance'>;
 /** Where the page is (#514): a section, and inside flow optionally one source's detail, by row id; language (#780): editor opens on it. */
-export interface SettingsView { section: SettingsSection; source?: string; language?: LanguageId }
+/** `stage` is a stage's draft row id (#689). */
+export interface SettingsView { section: SettingsSection; source?: string; language?: LanguageId; stage?: string }
 
 // A Record over every draft key: a new SettingsDraft field fails tsc until it is given a section.
 export const SECTION_OF: Record<keyof SettingsDraft, FormSection> = {
@@ -51,7 +52,7 @@ export const unsavedKeys = (saved: SettingsDraft, draft: SettingsDraft): (keyof 
 export const unsavedSections = (keys: readonly (keyof SettingsDraft)[]): FormSection[] =>
   SETTINGS_SECTIONS.filter((s): s is FormSection => keys.some((key) => SECTION_OF[key] === s));
 
-const fold = (text: string): string => text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+export const fold = (text: string): string => text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 
 /** The offered sections whose label, hint or a field label holds the query; all of them for an empty query. */
 export function matchingSections(query: string, offered: readonly SettingsSection[]): SettingsSection[] {
