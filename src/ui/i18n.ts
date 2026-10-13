@@ -388,6 +388,8 @@ const en = {
   'activity.new': 'New terminal or session', // #491: the activity center's +
   'activity.new.title': 'new session in {task}', // #536: the +'s menu
   'activity.new.file': 'file',
+  'activity.new.default': 'default', // #257: after the default agent's name in the +
+  'activity.new.session': 'new session…', // #257: opens the new session dialog
   'editor.untitled': 'Untitled-{n}',
   'editor.untitled.noBridge': 'saving a new file needs the Hive window, not a browser',
   'activity.new.diff': 'diff',
@@ -1624,6 +1626,8 @@ const en = {
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
   'shortcuts.openDiff': 'stage diff',
+  'shortcuts.newSessionDialog': 'new session…', // #257
+  'shortcuts.newFile': 'new file', // #257
   'shortcuts.sleepAll': 'sleep all sessions',
   'shortcuts.treeNewFile': 'new file',
   'shortcuts.treeNewFolder': 'new folder',
@@ -2290,6 +2294,8 @@ const pt: Record<MessageKey, string> = {
   'activity.new': 'Novo terminal ou sessão', // #491: the activity center's +
   'activity.new.title': 'nova sessão em {task}', // #536: the +'s menu
   'activity.new.file': 'arquivo',
+  'activity.new.default': 'padrão', // #257: after the default agent's name in the +
+  'activity.new.session': 'nova sessão…', // #257: opens the new session dialog
   'editor.untitled': 'Sem título-{n}',
   'editor.untitled.noBridge': 'salvar um arquivo novo precisa da janela do Hive, não de um navegador',
   'activity.new.diff': 'diff',
@@ -3520,6 +3526,8 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
   'shortcuts.openDiff': 'diff da etapa',
+  'shortcuts.newSessionDialog': 'nova sessão…', // #257
+  'shortcuts.newFile': 'novo arquivo', // #257
   'shortcuts.sleepAll': 'dormir todas as sessões',
   'shortcuts.treeNewFile': 'novo arquivo',
   'shortcuts.treeNewFolder': 'nova pasta',

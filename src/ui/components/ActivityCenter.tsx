@@ -113,7 +113,8 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
   const onSplit = useSplit(activity, layout, ops); // one pending split for the whole center: the menu's and the key's (#536)
   useSplitSameKey(activity, layout, onSplit);
   useSplitTerminalKeys(activity, layout, ops); // ⌘D / ⌘⇧D split the focused run tab inside itself (#641)
-  useNewRunKeys(activity);
+  const newFile = (): void => ops.open({ kind: 'untitled', n: models.nextUntitled() });
+  const newSessionDialog = useNewRunKeys(activity, newFile); // #257: the dialog its key and the +'s nova sessão… open
   const loss = useConfirmLoss(); // #696: the agent confirm before a terminal's tab sleeps it
   const closer = useTabClose(activity, layout, ops, loss.confirm);
   useCloseKey(activity, layout, ops, closer.close, loss.confirm);
@@ -121,7 +122,7 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
   const body = layout === undefined
     ? (
       <>
-        <div className="flex h-[34px] shrink-0 items-stretch border-b"><NewRunButton activity={activity} onNewFile={() => ops.open({ kind: 'untitled', n: models.nextUntitled() })} /></div>
+        <div className="flex h-[34px] shrink-0 items-stretch border-b"><NewRunButton activity={activity} onNewFile={newFile} /></div>
         <ActivityHome activity={activity} onOpenRun={onOpenRun} />
       </>
     )
@@ -133,5 +134,5 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
         />
       </div>
     );
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}{closer.confirm}{loss.dialog}</div>;
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}{closer.confirm}{loss.dialog}{newSessionDialog}</div>;
 }

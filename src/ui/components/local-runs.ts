@@ -1,11 +1,11 @@
 import { localActivityId } from '../../activities';
-import type { OpenResult, Session, Worker } from '../../types';
+import type { LaunchPick, OpenResult, Session, Worker } from '../../types';
 import { act } from '@/components/actions';
 import { shownSize } from '@/lib/xterm-setup';
 import type { NewRunKind } from '@/components/NewRunButton';
 import { type OpenRun, localRunTab } from '@/components/terminal-tabs';
 
-interface LocalRunOptions { onRun?(ptyId: string): void; onNoRun?(): void }
+interface LocalRunOptions { onRun?(ptyId: string): void; onNoRun?(): void; launch?: LaunchPick } // launch: the new session dialog's picks (#257)
 
 const localBase = (workspace: string): string => `/activities/${encodeURIComponent(localActivityId(workspace))}`;
 
@@ -18,11 +18,12 @@ function post(route: string, body: Record<string, unknown>, workspace: string, t
   });
 }
 
-/** A terminal (#292) or an agent's new session (#590) in the workspace's local activity; the session's kind names its agent (#925). A refusal
- * is act's toast; a spawn failure answers no run and opens nothing (#292). onRun hears the run once it is opened (#536). */
+/** A terminal (#292) or an agent's new session (#590) in the workspace's local activity; the session's kind names its agent (#925), and the
+ * new session dialog's picks ride with it (#257). A refusal is act's toast; a spawn failure answers no run and opens nothing (#292). onRun
+ * hears the run once it is opened (#536). */
 export function openLocalRun(workspace: string, kind: NewRunKind, open?: OpenRun, options: LocalRunOptions = {}): void {
   if (kind === 'terminal') post(`${localBase(workspace)}/shell`, {}, workspace, 'terminal', open, options);
-  else post(`${localBase(workspace)}/sessions`, { kind }, workspace, 'session', open, options);
+  else post(`${localBase(workspace)}/sessions`, { kind, ...options.launch }, workspace, 'session', open, options);
 }
 
 /** A local session (#587) continued in a new run: the route reads the session, so it runs that session's own agent (#925); no kind is sent. */

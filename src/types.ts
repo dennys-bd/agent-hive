@@ -1160,7 +1160,7 @@ export interface CombConfig {
 export type OperationId =
   | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
-  | 'newTerminal' | 'newSession' | 'openDiff' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
+  | 'newTerminal' | 'newSession' | 'newSessionDialog' | 'openDiff' | 'newFile' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
