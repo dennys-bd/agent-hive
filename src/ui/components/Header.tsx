@@ -3,6 +3,7 @@ import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
 import { Button } from '@/components/ui/button';
 import { keyTitle } from '@/components/ViewRail';
+import { useIsFullScreen } from '@/hooks/use-full-screen';
 import type { HeaderShell, RightPane } from '@/hooks/use-header-shell';
 import { t } from '@/i18n';
 import { runShortcut } from '@/lib/dock-layout';
@@ -10,7 +11,8 @@ import { headerColumns } from '@/lib/header-columns';
 import { binding } from '@/lib/shortcut-bindings';
 import { WINDOW_DRAG, WINDOW_INSET } from '@/lib/window-chrome';
 
-interface HeaderProps { shell: HeaderShell; state: State; effective: EffectiveLimits }
+interface BrandProps { state: State; effective: EffectiveLimits }
+interface HeaderProps extends BrandProps { shell: HeaderShell }
 
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
 const NO_DRAG = '[-webkit-app-region:no-drag]';
@@ -27,6 +29,37 @@ function SideButton({ Icon, label, keys, disabled, className = '', onClick }: Si
     <Button type="button" variant="ghost" size="icon" aria-label={label} title={keyTitle(label, keys)} disabled={disabled} onClick={onClick} className={`${ICON_BUTTON} text-muted-foreground ${className}`}>
       <Icon aria-hidden="true" className="size-4" />
     </Button>
+  );
+}
+
+// panel-left, the toggleLeft key's own operation: the left column's end while the side is open, the center's start while it is closed
+function LeftToggle({ isOpen, className }: { isOpen: boolean; className?: string }) {
+  const label = t(isOpen ? 'header.collapseLeft' : 'header.expandLeft');
+  return <SideButton Icon={PanelLeftIcon} label={label} keys={binding('toggleLeft')} className={className} onClick={() => runShortcut('toggleLeft')} />;
+}
+
+// The left side closed (header-estados.md): panel-left, a divider the header's full height, then the ⬢ alone. The center has no left border
+// then: the divider is the only line
+function ClosedLead({ state, effective }: BrandProps) {
+  return (
+    <>
+      <LeftToggle isOpen={false} />
+      <span aria-hidden="true" className="mx-1.5 w-px self-stretch bg-border" />
+      <HeaderBrand state={state} effective={effective} isCompact />
+    </>
+  );
+}
+
+// The left column (#221, #295): open, the brand and panel-left behind the window inset (84px, 12px in full screen); closed out of full screen,
+// the 72px block holding only the window buttons' space; closed in full screen, none
+function LeftColumn({ width, isOpen, state, effective }: BrandProps & { width: string | null; isOpen: boolean }) {
+  if (width === null) return null;
+  if (!isOpen) return <div data-header-column="left" style={{ width }} className="shrink-0" />;
+  return (
+    <div data-header-column="left" style={{ width }} className={`flex shrink-0 items-center gap-2 overflow-hidden border-r pr-2 ${WINDOW_INSET}`}>
+      <HeaderBrand state={state} effective={effective} />
+      <LeftToggle isOpen className="ml-auto" />
+    </div>
   );
 }
 
@@ -50,19 +83,20 @@ function RightColumn({ width, panes }: { width?: string; panes: HeaderShell['pan
   );
 }
 
-/** The window's top bar (#533, #221): three columns whose borders fall on the panes' borders below, from the shown view's layout. Left, the
- * brand and panel-left; center, the activity's bar, empty without one; right, the right panes' icons while the right group holds Detalhes,
- * else panel-right. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
+/** The window's top bar (#533, #221, #295): three columns whose borders fall on the panes' borders below, from the shown view's layout. Left,
+ * per header-estados.md's four states: the brand and panel-left with the left side open; closed, the window buttons' 72px block (none in full
+ * screen), then panel-left, a divider and the ⬢ at the center's start. Center, the activity's bar, empty without one; right, the right panes'
+ * icons while the right group holds Detalhes, else panel-right. The view switch moved to the rail (#220), the agents' usage to the footer (#223). */
 export function Header({ shell, state, effective }: HeaderProps) {
-  const widths = headerColumns(shell.layout, shell.rightShown);
-  const leftLabel = t(shell.layout.open.left ? 'header.collapseLeft' : 'header.expandLeft');
+  const widths = headerColumns(shell.layout, shell.rightShown, useIsFullScreen());
+  const isLeftOpen = shell.layout.open.left;
   return (
     <header className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
-      <div data-header-column="left" style={{ width: widths.left }} className={`flex shrink-0 items-center gap-2 overflow-hidden border-r pr-2 ${WINDOW_INSET}`}>
-        <HeaderBrand state={state} effective={effective} />
-        <SideButton Icon={PanelLeftIcon} label={leftLabel} keys={binding('toggleLeft')} className="ml-auto" onClick={() => runShortcut('toggleLeft')} />
+      <LeftColumn width={widths.left} isOpen={isLeftOpen} state={state} effective={effective} />
+      <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${widths.left === null ? 'pl-3' : ''}`}>
+        {!isLeftOpen && <ClosedLead state={state} effective={effective} />}
+        {shell.bar}
       </div>
-      <div data-header-column="center" className="flex min-w-0 flex-1 items-center">{shell.bar}</div>
       {shell.rightShown ? <RightColumn width={widths.right} panes={shell.panes} /> : (
         <div className="flex shrink-0 items-center pr-2">
           <SideButton Icon={PanelRightIcon} label={t('header.openRight')} keys={binding('toggleRight')} disabled={!shell.canOpenRight} onClick={() => runShortcut('toggleRight')} />

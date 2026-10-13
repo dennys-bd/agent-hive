@@ -1,7 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Header } from '@/components/Header';
+import { FullScreenContext } from '@/hooks/use-full-screen';
 import type { HeaderShell } from '@/hooks/use-header-shell';
 import { setLanguage } from '@/i18n';
 import { onPanelKey, type ViewLayout } from '@/lib/dock-layout';
@@ -21,10 +22,13 @@ const STATE: State = { ...stateOf([]), maxConcurrent: 5, workers: [{ id: 's1', s
 const limits = (signal: Signal, maxWorkers?: number): EffectiveLimits => ({
   signal, ...(maxWorkers === undefined ? {} : { maxWorkers }), floor: { signal: 'green' }, signalRules: [], capRules: [], disabledRules: [], stageCaps: {}, stageCapRules: {},
 });
-const header = (shell: HeaderShell = shellOf(), effective: EffectiveLimits = limits('green')) => <Header shell={shell} state={STATE} effective={effective} />;
+const header = (shell: HeaderShell = shellOf(), effective: EffectiveLimits = limits('green'), isFullScreen = false) => (
+  <FullScreenContext.Provider value={isFullScreen}><Header shell={shell} state={STATE} effective={effective} /></FullScreenContext.Provider>
+);
 const banner = (): HTMLElement => screen.getByRole('banner');
 const column = (name: 'left' | 'center' | 'right'): HTMLElement | null => banner().querySelector<HTMLElement>(`[data-header-column="${name}"]`);
 const brand = (): HTMLElement => screen.getByRole('button', { name: 'hive · workers 1/5' });
+const mark = (): HTMLElement => screen.getByRole('button', { name: 'hive' }); // the closed side's ⬢ (#295)
 
 beforeEach(() => setLanguage('pt'));
 afterEach(() => setShortcuts({}));
@@ -34,6 +38,41 @@ test('the brand reads hive · workers {active}/{max} in the left column, the max
   expect(column('left')).toContainElement(brand());
   rerender(header(shellOf(), limits('green', 2)));
   expect(screen.getByRole('button', { name: 'hive · workers 1/2' })).toBeInTheDocument();
+});
+
+test('left side open, in a window and in full screen: the left column, bordered, holds the brand and panel-left with the window inset; the center starts bare (#221, #295)', () => {
+  for (const isFullScreen of [false, true]) {
+    const { unmount } = render(header(shellOf(), limits('green'), isFullScreen));
+    const left = column('left') as HTMLElement;
+    expect(left).toHaveClass('border-r', 'pl-(--window-inset)'); // index.css: 84px in a window, 12px under data-fullscreen
+    expect(left).toContainElement(brand());
+    expect(within(left).getByRole('button', { name: 'recolher lateral' })).toBeInTheDocument();
+    expect(within(column('center') as HTMLElement).queryAllByRole('button')).toEqual([]);
+    unmount();
+  }
+});
+
+test('left side closed in a window: a 72px block holding only the window buttons\' space, with no border; the center starts with panel-left, a divider and the ⬢, and hive · workers leaves the header (#295)', () => {
+  render(header(shellOf({ layout: LEFT_CLOSED })));
+  const left = column('left') as HTMLElement;
+  expect(left.style.width).toBe('72px');
+  expect(left).not.toHaveClass('border-r');
+  expect(left).toBeEmptyDOMElement();
+  const center = column('center') as HTMLElement;
+  const [open, divider, hex] = Array.from(center.children);
+  expect(open).toBe(screen.getByRole('button', { name: 'abrir lateral' }));
+  expect(divider).toHaveClass('w-px', 'self-stretch', 'bg-border'); // the header's full height
+  expect(hex).toBe(mark());
+  expect(center).not.toHaveClass('border-l');
+  expect(within(banner()).queryByText(/workers/)).not.toBeInTheDocument();
+});
+
+test('left side closed in full screen: no left column; the header starts 12px in with panel-left, the divider and the ⬢ (#295)', () => {
+  render(header(shellOf({ layout: LEFT_CLOSED }), limits('green'), true));
+  expect(column('left')).toBeNull();
+  expect(column('center')).toHaveClass('pl-3');
+  expect(column('center')?.firstElementChild).toBe(screen.getByRole('button', { name: 'abrir lateral' }));
+  expect(mark()).toBeInTheDocument();
 });
 
 test('the brand\'s title names the signal and what it holds back, a green holding nothing back has no middle part; the mark takes the signal\'s colour (#221, #533)', () => {
@@ -119,4 +158,9 @@ test('no view switch and no usage; the header drags the window and each of its o
   const buttons = within(banner()).getAllByRole('button');
   expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['hive · workers 1/5', 'recolher lateral', 'arquivos', 'detalhes']);
   for (const button of buttons) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
+  cleanup();
+  render(header(shellOf({ layout: LEFT_CLOSED })));
+  const closed = within(banner()).getAllByRole('button');
+  expect(closed.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['abrir lateral', 'hive', 'arquivos', 'detalhes']);
+  for (const button of closed) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
 });

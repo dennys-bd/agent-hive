@@ -12,20 +12,26 @@ test('the rail is the 44px the left column adds to its share of the frame (#221)
 });
 
 test('at the default sizes the left column spans the rail and the left group, the right column the right group (#221)', () => {
-  expect(headerColumns(layout({ left: 30, right: 30 }), true)).toEqual({
+  expect(headerColumns(layout({ left: 30, right: 30 }), true, false)).toEqual({
     left: 'calc(44px + (100% - 44px) * 30 / 100)',
     right: 'calc((100% - 44px) * 30 / 100)',
   });
 });
 
 test('after a resize both columns follow the groups (#221)', () => {
-  expect(headerColumns(layout({ left: 45, right: 20 }), true)).toEqual({
+  expect(headerColumns(layout({ left: 45, right: 20 }), true, false)).toEqual({
     left: 'calc(44px + (100% - 44px) * 45 / 100)',
     right: 'calc((100% - 44px) * 20 / 100)',
   });
 });
 
-test('a collapsed left side leaves the left column to its content; a right column not shown takes no width (#221)', () => {
-  expect(headerColumns(layout({ left: 30, right: 30 }, { left: false, right: true }), true)).toEqual({ left: undefined, right: 'calc((100% - 44px) * 30 / 100)' });
-  expect(headerColumns(layout({ left: 30, right: 30 }), false)).toEqual({ left: 'calc(44px + (100% - 44px) * 30 / 100)', right: undefined });
+test('a collapsed left side leaves the window buttons\' 72px block in a window and no column in full screen; a right column not shown takes no width (#221, #295)', () => {
+  const closed = layout({ left: 30, right: 30 }, { left: false, right: true });
+  expect(headerColumns(closed, true, false)).toEqual({ left: '72px', right: 'calc((100% - 44px) * 30 / 100)' });
+  expect(headerColumns(closed, true, true)).toEqual({ left: null, right: 'calc((100% - 44px) * 30 / 100)' });
+  expect(headerColumns(layout({ left: 30, right: 30 }), false, false)).toEqual({ left: 'calc(44px + (100% - 44px) * 30 / 100)', right: undefined });
+});
+
+test('open, the left column is the same calc in a window and in full screen: only its inset changes, in CSS (#295)', () => {
+  expect(headerColumns(layout({ left: 45, right: 20 }), true, true)).toEqual(headerColumns(layout({ left: 45, right: 20 }), true, false));
 });
