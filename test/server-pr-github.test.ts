@@ -7,7 +7,7 @@ import { COMMENT_MUTATION, EDIT_MUTATION, MERGE_MUTATION, REPLY_MUTATION, RESOLV
 import { type PrData, PR_BODY_MAX } from '../src/types.js';
 import { fakeLog } from './fakes.js';
 import { workId } from './fixtures/work.js';
-import { ANCHOR, AT, fakeGh, type FakeGh, GQL_PR_7, HEAD, PR, PR2, PR_SOURCE, reviewFileOf, startPrs } from './pr-server.js';
+import { ANCHOR, AT, fakeGh, type FakeGh, GQL_PR_7, HEAD, PR, PR2, PR3, PR_SOURCE, reviewFileOf, startPrs } from './pr-server.js';
 import { send } from './review-server.js';
 import { hiveFetch } from './secret-client.js';
 
@@ -92,6 +92,23 @@ test('mergear on a task awaiting approval merges with the method at the head, ma
   assert.deepEqual(mutations(gh), [{ query: MERGE_MUTATION, variables: { pr: 'PR_1', head: HEAD, method: 'SQUASH' } }]);
   const task = server.getState()?.tasks.find((c) => c.item.itemId === 'local:1');
   assert.deepEqual([prsOf(server.getState()!, 'local:1'), activityOf(server.getState()!, 'local:1')?.approval, task?.stage], [[{ url: PR, state: 'merged' }], undefined, 'feito']);
+});
+
+test('mergear approves only when it merges the task\'s last open PR: the first of two keeps the task awaiting, the second approves it (#261)', async (t) => {
+  const gh = fakeGh();
+  const { base, server } = await startPrs(t, gh, undefined, { prs: [{ url: PR, state: 'open' }, { url: PR3, state: 'open' }] });
+  const stageOf = (): unknown => server.getState()?.tasks.find((c) => c.item.itemId === 'local:1')?.stage;
+  assert.equal((await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD })).status, 200);
+  assert.deepEqual([activityOf(server.getState()!, 'local:1')?.approval !== undefined, stageOf()], [true, 'fila']);
+  assert.equal((await send(base, 'POST', '/repositories/acme/app/pulls/10/merge', { method: 'squash', head: HEAD })).status, 200);
+  assert.deepEqual([prsOf(server.getState()!, 'local:1').map((p) => p.state), stageOf()], [['merged', 'merged'], 'feito']);
+});
+
+test('mergear approves when the task\'s other PRs are closed: a PR closed without merging does not hold it back (#261)', async (t) => {
+  const gh = fakeGh();
+  const { base, server } = await startPrs(t, gh, undefined, { prs: [{ url: PR, state: 'open' }, { url: PR3, state: 'closed' }] });
+  assert.equal((await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD })).status, 200);
+  assert.equal(server.getState()?.tasks.find((c) => c.item.itemId === 'local:1')?.stage, 'feito');
 });
 
 test('mergear on a task not awaiting approval only marks the PR merged; a method the repository refuses is 400 and merges nothing (#592)', async (t) => {

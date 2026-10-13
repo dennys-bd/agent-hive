@@ -10,7 +10,7 @@ import { type IssueRow, type PullKey, type PullPage, sourceOf } from '../src/rea
 import { prNumber, prRepo } from '../src/pull-requests.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { saveState } from '../src/state-store.js';
-import type { Task, Exec, PrReviewFile, Stage } from '../src/types.js';
+import type { Task, Exec, PrReviewFile, Stage, TaskPr } from '../src/types.js';
 import { worktreePath } from '../src/worktree.js';
 import { tempHive } from './fakes.js';
 import { NO_GQL } from './read-model/fixtures.js';
@@ -21,6 +21,7 @@ import { savedActivityId, withKeptRecord, withWork } from './fixtures/work.js';
 export const PR = 'https://github.com/acme/app/pull/7'; // task 1's, awaiting approval
 export const PR2 = 'https://github.com/acme/app/pull/9'; // task 2's
 export const OTHER_PR = 'https://github.com/acme/app/pull/8'; // on no task
+export const PR3 = 'https://github.com/acme/app/pull/10'; // task 1's second, when a test gives it one (#261)
 export const HEAD = 'a'.repeat(40);
 export const AT = '2026-09-30T10:00:00Z';
 export const DIFF = ['diff --git a/a.txt b/a.txt', '--- a/a.txt', '+++ b/a.txt', '@@ -1 +1 @@', '-one', '+two', ''].join('\n');
@@ -111,9 +112,9 @@ function ghOf(gh: FakeGh): Exec {
 
 export interface Prs { base: string; home: string; server: HiveServer; db: ReadModel }
 
-/** A Comb with no source and two local tasks in fila (#592): 1 awaits approval and holds PR, 2 holds PR2. gh is `gh`. With `worktree`, task 1's
- * worktree is on disk (#758). */
-export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { worktree = false }: { worktree?: boolean } = {}): Promise<Prs> {
+/** A Comb with no source and two local tasks in fila (#592): 1 awaits approval and holds PR (or `prs`, #261), 2 holds PR2. gh is `gh`. With
+ * `worktree`, task 1's worktree is on disk (#758). */
+export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { worktree = false, prs = [{ url: PR, state: 'open' }] }: { worktree?: boolean; prs?: TaskPr[] } = {}): Promise<Prs> {
   const { home, repo } = await tempHive(t);
   const path = worktreePath(repo, 'hive-1-task');
   if (worktree) await mkdir(path, { recursive: true });
@@ -123,7 +124,7 @@ export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { workt
   const tasks = [task(1, {}), task(2, {})];
   // #629: the PRs are the records', the approval task 1's live activity's
   const work = { id: savedActivityId(1), approval: { since: '2026-09-30T09:00:00.000Z' }, ...(worktree ? { slug: 'hive-1-task', worktree: path } : {}) };
-  const one = withWork({ ...initialState(0), localCount: 2, tasks }, 'local:1', work, { prs: [{ url: PR, state: 'open' }] });
+  const one = withWork({ ...initialState(0), localCount: 2, tasks }, 'local:1', work, { prs });
   await saveState(home, withKeptRecord(one, 'local:2', 'r2', { prs: [{ url: PR2, state: 'open' }] }));
   const { db } = await openReadModel(':memory:'); // server.close() closes it
   db.setRepo({ source: PR_SOURCE, repository: REPOSITORY, url: 'https://github.com/acme/app', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: null, methods: ['merge', 'squash'] });
