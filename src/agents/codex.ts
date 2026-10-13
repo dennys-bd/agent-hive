@@ -92,8 +92,10 @@ function hookPayload(raw: HookPayload): HookPayload | undefined {
 export const codexRunner: AgentRunner = {
   hostEnv: [MCP_SECRET_ENV], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
-  copy: () => undefined, // #933
-  clear: () => undefined, // #933
+  // A fork is a new Codex id holding the source's turns (§7), under the same overrides as a launch. No -m: a copy runs no stage, as
+  // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
+  copy: (run, from) => ['fork', from, ...overrides(run), TRUST_FLAG, ...run.extraArgs],
+  clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear, §8), as Claude's
   // its shim (#932), then the plugin and the roles (#934). The run inherits the Hive's CODEX_HOME, so it reads this copy
   prepareHome: async (home) => { await installShim(home, AGENTS.codex); await prepareCodexHome(home, process.env); },
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file

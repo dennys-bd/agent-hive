@@ -215,3 +215,15 @@ test('a codex capture in a local terminal records a local session of the workspa
   const claude = capture(onDev({}), localActivityId('hive'), 'claude', S3);
   assert.deepEqual([capturedRun(claude)?.sessionId, localSessionsOf(claude, 'hive').at(-1)?.id], [S3, S3]);
 });
+
+test('a codex stage run\'s /clear through its runner: a turn, SessionEnd reason=other, SessionStart source=clear with a new id, a turn: the worker, the activity and the session record are on the new id (#933, finding §8)', () => {
+  const { state: opened, ptyId } = codexRun();
+  const startedAt = runOf(opened, ptyId)?.startedAt;
+  const turn = (state: State, id: string): State =>
+    [CODEX_TURN.UserPromptSubmit, CODEX_TURN.Stop].reduce((acc, body) => codexHooked(acc, ptyId, { ...body, session_id: id }).state, state);
+  const first = codexHooked(turn(opened, CODEX_SESSION), ptyId, codexHook('SessionEnd', { reason: 'other' })).state;
+  const cleared = turn(codexHooked(first, ptyId, codexHook('SessionStart', { session_id: S3, source: 'clear' })).state, S3);
+  assert.deepEqual([runOf(cleared, ptyId)?.sessionId, runOf(cleared, ptyId)?.status, activityOf(cleared, ITEM.itemId)?.sessionId], [S3, 'waiting', S3]);
+  assert.deepEqual(sessionsOf(cleared, ITEM.itemId).find((s) => s.id === S3), { id: S3, startedAt, stages: ['dev'], lastUsedAt: startedAt, agent: OTHER });
+  assert.equal(sessionsOf(cleared, ITEM.itemId).some((s) => s.id === CODEX_SESSION), false, 'replaced, not appended (#655)');
+});

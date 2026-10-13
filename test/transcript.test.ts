@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { adoptTranscript, copyTranscript, dropCopiedTranscript, findTranscript, removeTranscripts } from '../src/transcript.js';
 import { transcriptDir } from '../src/agents/claude-transcript.js';
 import { tempDir } from './temp-dir.js';
-import { CHILD, DAY, OTHER, SESSION, subagent, TWO_TURNS, writeRollout } from './codex-rollouts.js';
+import { CHILD, CWD, DAY, OTHER, SESSION, subagent, TWO_TURNS, writeRollout } from './codex-rollouts.js';
 
 test('removeTranscripts deletes each listed session\'s <id>.jsonl and <id>/ in the transcript dir of the worktree and nothing else there; a file already gone is a debug line; an id that is not a session id is skipped (#236)', async (t) => {
   const env = { CLAUDE_CONFIG_DIR: await tempDir(t, 'claude-') };
@@ -124,8 +124,16 @@ test('removeTranscripts removes a Codex session\'s rollout and its subagent\'s w
   assert.deepEqual(lines, []);
 });
 
-test('an agent without a transcript dir (Codex): adoptTranscript, findTranscript and copyTranscript answer none (#929)', async () => {
-  assert.equal(await adoptTranscript('/repo/.hive/worktrees/hive-1-t', '/repo', SESSION, 'codex'), false);
-  assert.equal(await findTranscript(['/repo'], SESSION, 'codex'), undefined);
-  assert.equal(await copyTranscript(['/repo'], '/repo2', SESSION, 'codex'), 'missing');
+test('an agent without a transcript dir (Codex): adoptTranscript moves nothing; findTranscript answers its own rollout, matched by id and cwd, before its subagent\'s; copyTranscript answers same and writes nothing, missing with no rollout (#929, #933)', async (t) => {
+  const home = await tempDir(t, 'codex-');
+  const env = { CODEX_HOME: home };
+  const own = await writeRollout(home, DAY, SESSION, TWO_TURNS);
+  await writeRollout(home, '2026/10/13', CHILD, subagent(CHILD, SESSION));
+  assert.equal(await adoptTranscript(CWD, '/repo', SESSION, 'codex', env), false);
+  assert.equal(await findTranscript(['/repo', CWD], SESSION, 'codex', env), own, 'the cwd its session_meta names, in the cwds\' order');
+  assert.equal(await findTranscript(['/repo'], SESSION, 'codex', env), undefined, 'a cwd its session_meta does not name');
+  const before = await readdir(join(home, 'sessions'), { recursive: true });
+  assert.equal(await copyTranscript([CWD], '/repo2', SESSION, 'codex', env), 'same', 'codex fork reads the source by id from anywhere');
+  assert.deepEqual(await readdir(join(home, 'sessions'), { recursive: true }), before, 'no second rollout');
+  assert.deepEqual([await copyTranscript([CWD], '/repo2', OTHER, 'codex', env), await copyTranscript([CWD], '/repo2', 'bad id', 'codex', env)], ['missing', 'missing']);
 });

@@ -17,6 +17,7 @@ import { worktreePath } from '../src/worktree.js';
 import { AUTH, GITHUB_ENTRY, WORKSPACE, workspacesAt, STAGES, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, plainArgs, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
+import { DAY, SESSION, sessionMeta, writeRollout } from './codex-rollouts.js';
 import { NO_PROCESS_LIST } from './process-list.js';
 
 // Copy (#587) end to end: the routes, the reducer and the pool's launch. maxConcurrent 0: every run below is a session the test opened.
@@ -259,4 +260,35 @@ test('a deleted activity\'s kept session still copies, opens and clears under /a
   await waitFor(() => server.getState()!.workers.every((w) => w.status === 'empty'));
   assert.equal((await postJson(`${base}/activities/${old}/sessions/${source}/clear`)).status, 200);
   assert.deepEqual(recordOf(server.getState()!, old)?.sessions, []);
+});
+
+// #933: a Codex session of the first activity, ended, its rollout under a CODEX_HOME of the test's own (no transcript dir per cwd, #929)
+async function codexSource(t: TestContext, two: Two): Promise<void> {
+  const home = await tempDir(t, 'codex-');
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = home;
+  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
+  await two.server.dispatch({ type: 'openSession', activityId: workId(two.server.getState()!, 'local:1'), agent: 'codex' });
+  const run = two.workers.at(-1)!;
+  await two.server.dispatch({ type: 'hook', ptyId: run.launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: SESSION, cwd: two.one, source: 'startup' } });
+  run.handlers.onExit();
+  await waitFor(() => two.server.getState()!.workers.length === 0);
+  await writeRollout(home, DAY, SESSION, [sessionMeta(SESSION, undefined, two.one)]);
+}
+
+test('a Codex session copies with codex fork <id>: its rollout found by id, nothing copied, no copyOf mark; the fork\'s SessionStart names the copy\'s entry, the dialog\'s name kept (#933)', async (t) => {
+  const two = await twoActivities(t);
+  await codexSource(t, two);
+  const { base, server, workers } = two;
+  const path = `${base}${workPath(server, 'local:1')}/sessions/${SESSION}/copy`;
+  const summary = await getJson(`${path}?toActivity=${encodeURIComponent(workId(server.getState()!, 'local:2'))}`);
+  assert.equal(summary.status, 200, 'the rollout is found: the dialog opens');
+  assert.equal((await postJson(path, { to: { activityId: workId(server.getState()!, 'local:2') }, name: 'no dois', notice: false })).status, 200);
+  const { launch } = workers.at(-1)!;
+  assert.deepEqual([launch.cwd, launch.agent?.command, plainArgs(launch).slice(0, 2)], [two.two, 'codex', ['fork', SESSION]]);
+  assert.equal(server.getState()!.workers.at(-1)!.copyOf, undefined, 'nothing placed, nothing to drop');
+  assert.deepEqual(await readdir(transcriptDir(two.two)).catch(() => []), []);
+  const FORK = 'f0f0f0f0-0000-4000-8000-000000000001';
+  await server.dispatch({ type: 'hook', ptyId: launch.ptyId, payload: { hook_event_name: 'SessionStart', session_id: FORK, cwd: two.two, source: 'fork' } });
+  assert.deepEqual(sessionsOf(server.getState()!, 'local:2').map((s) => [s.id, s.name, s.agent]), [[FORK, 'no dois', 'codex']]);
 });
