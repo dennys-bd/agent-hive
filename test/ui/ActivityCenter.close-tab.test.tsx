@@ -145,3 +145,26 @@ test('a middle-click on a tab closes it as its X does, its mousedown default pre
   expect(strips().flat()).not.toContain('Claude · abcdef12');
   expect(lastNotice()).toMatchObject({ run: SESSION });
 });
+
+test('a middle-click on a tab\'s X closes it too: the whole tab, its X and its underline, answers (#255)', () => {
+  renderCenter(KEEP, openSession);
+  const close = screen.getByRole('button', { name: 'Fechar Claude · abcdef12' });
+  expect(fireEvent.mouseDown(close, { button: 1 })).toBe(false);
+  fireEvent(close, new MouseEvent('auxclick', { button: 1, bubbles: true, cancelable: true }));
+  expect(strips().flat()).not.toContain('Claude · abcdef12');
+});
+
+test('a right-click on a tab\'s X opens the tab\'s menu (#255)', async () => {
+  renderCenter(KEEP, openSession);
+  await userEvent.setup().pointer({ keys: '[MouseRight]', target: screen.getByRole('button', { name: 'Fechar Claude · abcdef12' }) });
+  expect(await screen.findByRole('menuitem', { name: 'Fechar' })).toBeInTheDocument();
+});
+
+test('the shown tab scrolls into view, on open and on a switch (#255)', async () => {
+  const scrolled: string[] = [];
+  vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) { scrolled.push(this.getAttribute('data-tab-key') ?? ''); });
+  renderCenter(KEEP, openSession);
+  expect(scrolled.at(-1)).toContain('W2');
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Claude' }));
+  expect(scrolled.at(-1)).toContain('W1');
+});
