@@ -4,12 +4,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { activityOfWorker, taskOfWorker } from './activities.js';
-import { taskWorkspace, workspaceByName } from './config.js';
+import { taskOfWorker } from './activities.js';
+import { taskWorkspace } from './config.js';
 import { correlationOf } from './event-derive.js';
-import { forkRepos, workspaceBase } from './fork.js';
 import type { Correlation, EventLog, RecordInput, RefusalCode } from './events.js';
-import { systemLanguage } from './language.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, type MemoryStore, whyProblem, withEntry, withUse } from './memory.js';
 import { liveRecord } from './record-kit.js';
 import { stageOf, taskId } from './tasks.js';
@@ -18,9 +16,8 @@ import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
 import { appendMessage, markAgentResolved, type ReviewStore } from './review-store.js';
 import { createTask } from './create-task.js';
-import { gitOrWords } from './worktree.js';
-import { remoteHead } from './worktree-base.js';
-import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type Config, type Conventions, type Language, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, type PrTarget, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Worker, type Workspace } from './types.js';
+import { conventionsAnswer, forkConventions, workerWorkspace } from './mcp-conventions.js';
+import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type Config, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, REVIEW_TEXT_MAX, type ReviewMessage, type State } from './types.js';
 
 const SERVER_INFO = { name: 'hive', version: '1.0.0' }; // Claude Code names the tools mcp__hive__<tool>
 const RESULT_MAX_BYTES = 64 * 1024; // serialized, UTF-8
@@ -252,42 +249,6 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
     deps.notifyReview(owner);
     return reply(OK);
   }));
-}
-
-/** Where a fork workspace's PRs go (#854): the target, the two repositories (owner/name), the remote the work starts from and the effective base. */
-export interface ForkConventions { pr: PrTarget; original: string; fork: string; baseRemote: string; base: string }
-
-/** What hive_conventions answers (#692): only the conventions set in the Hive, the Hive's language, the worker's stage with its approval, and a
- * fork workspace's PR target (#854). */
-export interface ConventionsAnswer { conventions: Conventions; hiveLanguage: Language; approval: boolean; stage?: string; fork?: ForkConventions }
-
-// The workspace a worker runs in (#692): its task's, or a local activity's own
-function workerWorkspace(state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb'>, worker: Worker): Workspace | undefined {
-  const task = taskOfWorker(state, worker);
-  return task ? taskWorkspace(config, task) : workspaceByName(config, activityOfWorker(state, worker)?.workspace);
-}
-
-/** hive_conventions' answer for `worker` (#692): the conventions of its task's workspace, or of a local activity's own. The stage and its
- * approval only for a stage run: a free or a local session runs no stage. `fork` only when given (#854). */
-export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb' | 'language'>, worker: Worker, fork?: ForkConventions): ConventionsAnswer {
-  const task = taskOfWorker(state, worker);
-  const workspace = workerWorkspace(state, config, worker);
-  const stage = task && !worker.freeSession ? stageOf(state.stages, task.stage) : undefined;
-  return {
-    conventions: workspace?.conventions ?? {}, hiveLanguage: config.language ?? systemLanguage(), approval: stage?.approval === true,
-    ...(stage ? { stage: stage.name } : {}), ...(fork ? { fork } : {}),
-  };
-}
-
-/** A fork workspace's PR target as the skills read it (#854): none for a workspace that is not a fork or whose remotes are off GitHub. The base
- * is the workspace's own, else config.baseBranch, else the base remote's HEAD, else main. */
-export async function forkConventions(exec: Exec, workspace: Workspace | undefined, config: Pick<Config, 'baseBranch'>): Promise<ForkConventions | undefined> {
-  if (!workspace?.fork) return undefined;
-  const repos = await forkRepos(exec, workspace);
-  if (!repos) return undefined;
-  const { remote, branch } = workspaceBase(config, workspace);
-  const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, exec), remote));
-  return { pr: workspace.fork.pr, original: repos.original, fork: repos.fork, baseRemote: remote, base };
 }
 
 // hive_conventions (#692): what the plugin's new-* skills read first. Any skill may call it; it only reads.
