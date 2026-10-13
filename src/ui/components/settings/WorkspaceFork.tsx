@@ -10,6 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useRemotes } from '@/hooks/use-remotes';
 import { t } from '@/i18n';
 import type { WorkspaceDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 import { isForkSync, isPrTarget, repositoryOf, SUGGESTED_FORK, SUGGESTED_REMOTE, suggestsFork, withPrTarget } from '@/lib/settings-fork';
 
 const HINT = 'text-muted-foreground text-xs';
@@ -39,13 +40,13 @@ function ForkSuggestion({ original, onChange }: { original: string; onChange: Ch
 }
 
 // Item 1: é uma fork. On, the first remote that is not origin is the original's, PRs to it
-function ForkSwitch({ fork, remotes, onChange }: { fork: Fork | false | null; remotes: GitRemote[]; onChange: Change }) {
+function ForkSwitch({ fork, remotes, context, onChange }: { fork: Fork | false | null; remotes: GitRemote[]; context: string; onChange: Change }) {
   const id = useId();
   const hasUpstream = remotes.some((r) => r.name === SUGGESTED_REMOTE);
   const hint = fork ? 'settings.fork.on' : hasUpstream ? 'settings.fork.offUpstream' : 'settings.fork.off';
   const turnOn = (): Fork => ({ remote: remotes.find((r) => r.name !== 'origin')?.name ?? SUGGESTED_REMOTE, pr: 'original' });
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+    <div id={settingAnchor('settings.fork.isFork', context)} className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
       <Switch id={id} className="row-span-2 self-center" aria-label={t('settings.fork.isForkAria')} checked={Boolean(fork)} onCheckedChange={(on) => onChange(on ? turnOn() : false)} />
       <Label htmlFor={id}>{t('settings.fork.isFork')}</Label>
       <p className={`col-start-2 ${HINT}`}>{t(hint)}</p>
@@ -54,7 +55,7 @@ function ForkSwitch({ fork, remotes, onChange }: { fork: Fork | false | null; re
 }
 
 // Items 1 and 2: the original's remote and where the workers' PRs go
-function ForkFields({ fork, remotes, onChange }: { fork: Fork; remotes: GitRemote[]; onChange: Change }) {
+function ForkFields({ fork, remotes, context, onChange }: { fork: Fork; remotes: GitRemote[]; context: string; onChange: Change }) {
   const id = useId();
   const original = repositoryOf(remotes, fork.remote);
   const own = repositoryOf(remotes, 'origin');
@@ -62,7 +63,7 @@ function ForkFields({ fork, remotes, onChange }: { fork: Fork; remotes: GitRemot
   const options = names.includes(fork.remote) ? names : [fork.remote, ...names];
   return (
     <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
-      <div className="flex flex-col gap-2">
+      <div id={settingAnchor('settings.fork.remote', context)} className="flex flex-col gap-2">
         <Label htmlFor={`${id}-remote`}>{t('settings.fork.remote')}</Label>
         <Select value={fork.remote} onValueChange={(remote) => onChange({ ...fork, remote })}>
           <SelectTrigger id={`${id}-remote`} className="w-full font-mono"><SelectValue /></SelectTrigger>
@@ -70,7 +71,7 @@ function ForkFields({ fork, remotes, onChange }: { fork: Fork; remotes: GitRemot
         </Select>
         <span className={`font-mono ${HINT}`}>{t('settings.fork.remoteLine', { remote: fork.remote, original, fork: own })}</span>
       </div>
-      <div className="flex flex-col gap-2">
+      <div id={settingAnchor('settings.fork.pr', context)} className="flex flex-col gap-2">
         <Label id={`${id}-pr`}>{t('settings.fork.pr')}</Label>
         <ToggleGroup type="single" variant="outline" size="sm" aria-labelledby={`${id}-pr`} value={fork.pr} onValueChange={(pr) => { if (isPrTarget(pr)) onChange(withPrTarget(fork, pr)); }}>
           {PR_TARGETS.map((pr) => <ToggleGroupItem key={pr} value={pr}>{t(`settings.fork.pr.${pr}`)}</ToggleGroupItem>)}
@@ -82,10 +83,10 @@ function ForkFields({ fork, remotes, onChange }: { fork: Fork; remotes: GitRemot
 }
 
 // Items 3, 6 and 7: how the fork keeps up; the manual sync, or the last automatic one
-function ForkSyncFields({ fork, workspace, saved, state, onChange }: { fork: Synced; workspace: string; saved: boolean; state?: State; onChange: Change }) {
+function ForkSyncFields({ fork, workspace, context, saved, state, onChange }: { fork: Synced; workspace: string; context: string; saved: boolean; state?: State; onChange: Change }) {
   const id = useId();
   return (
-    <div className="flex flex-col gap-2">
+    <div id={settingAnchor('settings.fork.sync', context)} className="flex flex-col gap-2">
       <Label id={`${id}-sync`}>{t('settings.fork.sync')}</Label>
       <ToggleGroup type="single" variant="outline" size="sm" aria-labelledby={`${id}-sync`} value={fork.sync} onValueChange={(sync) => { if (isForkSync(sync)) onChange({ ...fork, sync }); }}>
         {FORK_SYNCS.map((sync) => <ToggleGroupItem key={sync} value={sync}>{t(`settings.fork.sync.${sync}`)}</ToggleGroupItem>)}
@@ -107,9 +108,9 @@ export function WorkspaceFork({ row, saved, state, onChange }: WorkspaceForkProp
   return (
     <div className="flex flex-col gap-3">
       {suggestsFork(fork, remotes) && <ForkSuggestion original={repositoryOf(remotes, SUGGESTED_REMOTE)} onChange={set} />}
-      <ForkSwitch fork={fork} remotes={remotes} onChange={set} />
-      {fork && <ForkFields fork={fork} remotes={remotes} onChange={set} />}
-      {fork && fork.pr !== 'original' && <ForkSyncFields fork={fork} workspace={row.name.trim()} saved={saved} state={state} onChange={set} />}
+      <ForkSwitch fork={fork} remotes={remotes} context={row.id} onChange={set} />
+      {fork && <ForkFields fork={fork} remotes={remotes} context={row.id} onChange={set} />}
+      {fork && fork.pr !== 'original' && <ForkSyncFields fork={fork} context={row.id} workspace={row.name.trim()} saved={saved} state={state} onChange={set} />}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useState } from 'react';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Button } from '@/components/ui/button';
 import { t, type MessageKey } from '@/i18n';
+import { cardEntries, type SettingEntry, settingAnchor } from '@/lib/settings-search';
 import { isMac } from '@/lib/shortcut-bindings';
 import { type FixedShortcut, SHORTCUT_MAP, SHORTCUT_SCOPES, type ShortcutDef, type ShortcutScope, shortcutDef } from '../../../shortcut-registry';
 import { bindingFromEvent, defaultBinding, displayBinding, displayKeys, effectiveBindings, fixedKeys, takesTerminalKey } from '../../../shortcuts';
@@ -72,9 +73,9 @@ const ROW_GRID = 'm-0 grid grid-cols-[minmax(0,1fr)_10rem_auto_2.5rem] items-cen
 
 // A row whose keys cannot change here (#585): a fixed key, or a soon shortcut's planned key. Its name (with "(soon)" while the operation does
 // not exist yet) and its keys; no record, reset or off. A soon row is muted whole, so its key reads as reserved, not live.
-function StaticRow({ name, keys, isSoon }: { name: string; keys: string; isSoon: boolean }) {
+function StaticRow({ name, anchor, keys, isSoon }: { name: string; anchor: string; keys: string; isSoon: boolean }) {
   return (
-    <fieldset aria-label={name} className={`${ROW_GRID} ${isSoon ? 'text-muted-foreground' : ''}`}>
+    <fieldset id={anchor} aria-label={name} className={`${ROW_GRID} ${isSoon ? 'text-muted-foreground' : ''}`}>
       <span className="text-sm">{isSoon ? `${name} ${t('shortcuts.soon')}` : name}</span>
       <span className="justify-self-start px-2.5 py-1 font-mono text-xs tracking-widest">{keys}</span>
       <span />
@@ -90,7 +91,7 @@ function ShortcutRow({ def, binding, onSet }: ShortcutRowProps) {
   const name = t(def.label);
   const warns = binding !== null && def.inTerminal && takesTerminalKey(binding, isMac());
   return (
-    <fieldset aria-label={name} className={ROW_GRID}>
+    <fieldset id={settingAnchor(def.label)} aria-label={name} className={ROW_GRID}>
       <div className="flex flex-col">
         <span className="text-sm">{name}</span>
         {warns && <span className="text-muted-foreground text-xs">{t('shortcuts.terminalWarning')}</span>}
@@ -113,8 +114,8 @@ export function ShortcutsTab({ shortcuts, onChange }: ShortcutsTabProps) {
   const mac = isMac();
   const bindings = effectiveBindings(shortcuts, mac);
   const rowOf = (row: ShortcutDef | FixedShortcut): ReactNode => {
-    if ('keys' in row) return <StaticRow key={`fixed:${row.id}`} name={t(row.label)} keys={displayKeys(fixedKeys(row, mac), mac)} isSoon={row.soon === true} />;
-    if (row.soon) return <StaticRow key={row.id} name={t(row.label)} keys={displayBinding(defaultBinding(row, mac) ?? '', mac)} isSoon />;
+    if ('keys' in row) return <StaticRow key={`fixed:${row.id}`} name={t(row.label)} anchor={settingAnchor(row.label)} keys={displayKeys(fixedKeys(row, mac), mac)} isSoon={row.soon === true} />;
+    if (row.soon) return <StaticRow key={row.id} name={t(row.label)} anchor={settingAnchor(row.label)} keys={displayBinding(defaultBinding(row, mac) ?? '', mac)} isSoon />;
     return <ShortcutRow key={row.id} def={row} binding={bindings[row.id]} onSet={(next) => onChange(withBinding(shortcuts, row.id, next, mac))} />;
   };
   return (
@@ -127,4 +128,9 @@ export function ShortcutsTab({ shortcuts, onChange }: ShortcutsTabProps) {
       ))}
     </div>
   );
+}
+
+/** Settings › shortcuts' entries of the Settings search (#689): each scope's card and every row of the map under it. */
+export function searchEntries(): SettingEntry[] {
+  return SHORTCUT_SCOPES.flatMap((scope) => cardEntries('shortcuts', SCOPE_KEY[scope], SHORTCUT_MAP.filter((r) => r.scope === scope).map((r) => r.label)));
 }

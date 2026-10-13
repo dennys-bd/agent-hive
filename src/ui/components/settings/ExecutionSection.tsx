@@ -1,6 +1,6 @@
 import { AgentSelect } from '@/components/settings/AgentSelect';
 import { CHILD, FIELD, FIELD_LABEL, FIELD_ROW } from '@/components/settings/field-row';
-import { SessionsTable } from '@/components/settings/SessionsTable';
+import { SESSION_SYNONYMS, SessionsTable } from '@/components/settings/SessionsTable';
 import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { SettingSwitch } from '@/components/settings/SettingSwitch';
 import { WorkspaceBases } from '@/components/settings/WorkspaceBases';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { t } from '@/i18n';
 import type { SettingsDraft } from '@/lib/settings-form';
+import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/lib/settings-search';
 import { agentName } from '../../../agents';
 import { AGENT_IDS, type AgentAvailability, type DeleteActivityScope } from '../../../types';
 
@@ -54,7 +55,7 @@ function AgentArgsFields({ draft, onChange }: Pick<ExecutionSectionProps, 'draft
   return (
     <div className="flex flex-col gap-3 border-t px-5 py-4">
       {AGENT_IDS.map((agent) => (
-        <div key={agent} className={FIELD}>
+        <div key={agent} id={settingAnchor('settings.agentArgs', agent)} className={FIELD}>
           <Label htmlFor={`settings-agent-args-${agent}`} className={FIELD_LABEL}>{t('settings.agentArgs', { agent: agentName(agent) })}</Label>
           <Textarea
             id={`settings-agent-args-${agent}`} rows={3} className="font-mono" value={draft.agentArgs[agent]}
@@ -107,7 +108,7 @@ export function ExecutionSection({ draft, agents, onChange, onOpenFlow }: Execut
       <SessionsGroup draft={draft} onChange={onChange} />
       <SettingsGroup title="settings.group.branches" hint="settings.group.branches.hint">
         <div className={FIELD_ROW}>
-          <div className={FIELD}>
+          <div id={settingAnchor('settings.branch')} className={FIELD}>
             <Label htmlFor="settings-branch" className={FIELD_LABEL}>{t('settings.branch')}</Label>
             <Input id="settings-branch" defaultValue={draft.branch} placeholder="hive/{id}-{title}" onChange={(e) => onChange({ branch: e.target.value })} />
             <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
@@ -115,7 +116,7 @@ export function ExecutionSection({ draft, agents, onChange, onOpenFlow }: Execut
               {BRANCH_TOKENS.map((token) => <Badge key={token} variant="outline" className="font-mono">{token}</Badge>)}
             </div>
           </div>
-          <div className={FIELD}>
+          <div id={settingAnchor('settings.baseBranch')} className={FIELD}>
             <Label htmlFor="settings-base-branch" className={FIELD_LABEL}>{t('settings.baseBranch')}</Label>
             <Input id="settings-base-branch" defaultValue={draft.baseBranch} placeholder={t('settings.baseBranch.auto')} onChange={(e) => onChange({ baseBranch: e.target.value })} />
             <p className="text-muted-foreground text-xs">{t('settings.baseBranch.hint')}</p>
@@ -128,4 +129,19 @@ export function ExecutionSection({ draft, agents, onChange, onOpenFlow }: Execut
       </SettingsGroup>
     </>
   );
+}
+
+/** Settings › execution's entries of the Settings search (#689). */
+export function searchEntries(): SettingEntry[] {
+  return [
+    settingEntry('settings.defaultAgent', 'execution'),
+    ...AGENT_IDS.map((agent): SettingEntry => ({
+      label: { key: 'settings.agentArgs', vars: { agent: agentName(agent) } }, path: ['settings.section.execution', 'settings.defaultAgent'],
+      view: { section: 'execution' }, anchor: settingAnchor('settings.agentArgs', agent),
+    })),
+    settingEntry('settings.group.waiting', 'execution'),
+    ...SESSION_SYNONYMS.map(([row, keys]) => settingEntry(`settings.sessions.${row}`, 'execution', 'settings.group.waiting', keys)),
+    ...cardEntries('execution', 'settings.group.branches', ['settings.branch', 'settings.baseBranch', 'settings.baseBranch.perWorkspace']),
+    ...cardEntries('execution', 'settings.deleteActivity', ['settings.deleteActivity.session', 'settings.deleteActivity.transcripts', 'settings.deleteActivity.nonAutoTasks']),
+  ];
 }

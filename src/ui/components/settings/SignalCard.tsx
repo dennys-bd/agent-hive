@@ -3,6 +3,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { type MessageKey, t } from '@/i18n';
+import { settingAnchor } from '@/lib/settings-search';
 import { behaviourOf, clamped, isOrdered } from '../../../signals';
 import {
   NEW_TASKS, SIGNAL_ON_OPEN, STARTED_BEHAVIOURS, type NewTasks, type RuleSignal, type Signal, type SignalBehaviour, type SignalOnOpen,
@@ -118,7 +119,7 @@ export function SignalCard({ signals, onChange }: SignalCardProps) {
   return (
     <SettingsGroup title="settings.signal.title" hint="settings.signal.description">
       <BehaviourTable signals={signals} onChange={onChange} />
-      <div className="flex max-w-[22rem] flex-col gap-1">
+      <div id={settingAnchor('settings.signal.onOpen')} className="flex max-w-[22rem] flex-col gap-1">
         <Label htmlFor="settings-signal-on-open">{t('settings.signal.onOpen')}</Label>
         <Select value={signals.onOpen} onValueChange={(v) => onChange({ ...signals, onOpen: v as SignalOnOpen })}>
           <SelectTrigger id="settings-signal-on-open" className="w-full"><SelectValue /></SelectTrigger>

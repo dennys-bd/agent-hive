@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { triggerLabel } from '@/lib/flow-labels';
-import { type StageDraft, withEntry } from '@/lib/settings-stages';
+import { contextEntries, named, type SettingEntry, settingAnchor } from '@/lib/settings-search';
+import { isGateDraft, type StageDraft, withEntry } from '@/lib/settings-stages';
 import type { TransitionDraft } from '@/lib/settings-transitions';
 import { END, type Command } from '../../../types';
 
@@ -22,7 +23,7 @@ function BlockHeading({ n, title, hint }: { n: number; title: string; hint: stri
   );
 }
 
-const Block = ({ children }: { children: ReactNode }) => <div className="flex flex-col gap-3 border-t pt-4">{children}</div>;
+const Block = ({ anchor, children }: { anchor: string; children: ReactNode }) => <div id={anchor} className="flex flex-col gap-3 border-t pt-4">{children}</div>;
 
 const tagsOf = (d: TransitionDraft): string[] =>
   [...(d.maxTries.trim() === '' ? [] : [`${d.maxTries.trim()}x`]), ...(d.prompt.trim() === '' ? [] : [t('settings.transitions.tag.prompt')]), ...(d.session === 'new' ? [t('settings.transitions.tag.newSession')] : [])];
@@ -77,7 +78,7 @@ export function StageDetail(props: StageDetailProps) {
   return (
     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5">
       <div className="flex items-end gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1 md:max-w-80">
+        <div id={settingAnchor('settings.stages.name', stage.id)} className="flex min-w-0 flex-1 flex-col gap-1 md:max-w-80">
           <Label htmlFor={`${id}-name`}>{t('settings.stages.name')}</Label>
           <Input id={`${id}-name`} defaultValue={stage.name} onChange={(e) => onUpdate({ name: e.target.value })} />
         </div>
@@ -87,15 +88,33 @@ export function StageDetail(props: StageDetailProps) {
           <Button type="button" variant="ghost" size="sm" onClick={onRemove}>{t('settings.stages.remove')}</Button>
         </div>
       </div>
-      <Block><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} onUpdate={onUpdate} /></Block>
-      <Block>
+      <Block anchor={settingAnchor('settings.stages.enter', stage.id)}><BlockHeading n={1} title={t('settings.stages.enter')} hint={t('settings.stages.enter.hint')} /><StageEnter id={id} stage={stage} sources={sources} onUpdate={onUpdate} /></Block>
+      <Block anchor={settingAnchor('settings.stages.run', stage.id)}>
         <BlockHeading n={2} title={t('settings.stages.run')} hint={t('settings.stages.run.hint')} />
         <StageRun id={id} stage={stage} agents={agents} defaultAgent={defaultAgent} commands={commands} workspaces={workspaces} onUpdate={onUpdate} />
       </Block>
-      <Block>
+      <Block anchor={settingAnchor('settings.stages.exits', stage.id)}>
         <BlockHeading n={3} title={t('settings.stages.exits')} hint={t('settings.stages.exits.hint')} />
         <Exits stage={stage} stages={stages} transitions={transitions} sources={sources} onUpdate={onUpdate} onSelect={onSelectTransition} onAdd={onAddTransition} />
       </Block>
     </div>
   );
+}
+
+/** A stage's entries of the Settings search (#689): itself, then each block and field under the same conditions the detail renders them. */
+export function stageEntries(stage: StageDraft): SettingEntry[] {
+  const view = { section: 'flow', stage: stage.id } as const;
+  const path = ['settings.section.flow', 'settings.stages', named(stage.name, 'settings.stages.unnamed')] as const;
+  const gate = isGateDraft(stage);
+  const runsPrompt = stage.action === '' && !gate;
+  const itself = { label: path[2], path: path.slice(0, 2), view, anchor: settingAnchor('settings.stages.name', stage.id) };
+  return [
+    itself,
+    ...contextEntries([
+      'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.run', 'settings.stages.action',
+      ...(runsPrompt ? (['settings.stages.agent', 'settings.stages.model', 'settings.stages.session', 'settings.stages.prompt', 'settings.stages.approval', 'settings.stages.handoff'] as const) : []),
+      ...(gate ? (['settings.stages.approval'] as const) : []),
+      'settings.stages.exits',
+    ], view, path, stage.id),
+  ];
 }

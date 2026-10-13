@@ -7,12 +7,13 @@ import { WorkspaceScopePicker } from '@/components/settings/WorkspaceScopePicker
 import { t } from '@/i18n';
 import { type CustomFormatterDraft, DEFAULT_FORMATTER_DRAFT, emptyCustomFormatter, type FormatterDraft, type LanguageDraft } from '@/lib/settings-format';
 import { type Detection, detectionOf, listOf } from '@/lib/settings-languages';
+import { settingAnchor } from '@/lib/settings-search';
 import { formattersOf } from '../../../formatters';
 import type { LanguageDef } from '../../../languages';
 import type { FormatterId, FormatterState } from '../../../types';
 
 interface FormattersEditorProps { language: LanguageDef; draft: LanguageDraft; names: readonly string[]; states?: FormatterState[]; onChange(draft: LanguageDraft): void }
-interface SupportedRowProps { n: number; id: FormatterId; setting: FormatterDraft; state?: FormatterState; names: readonly string[]; onChange(setting: FormatterDraft): void }
+interface SupportedRowProps { n: number; id: FormatterId; anchor: string; setting: FormatterDraft; state?: FormatterState; names: readonly string[]; onChange(setting: FormatterDraft): void }
 interface CustomRowProps { n: number; row: CustomFormatterDraft; names: readonly string[]; onChange(patch: Partial<CustomFormatterDraft>): void; onRemove(): void }
 const ROW = 'grid grid-cols-[1.25rem_9rem_minmax(0,1fr)_auto_13rem_2rem] items-center gap-2';
 const SUB = 'grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2';
@@ -24,9 +25,9 @@ function DetectionText({ detection }: { detection: Detection }) {
   return <span className="text-muted-foreground text-xs">{t(detection.kind === 'off' ? 'settings.install.off' : 'settings.formatters.notFound')}</span>;
 }
 
-function SupportedRow({ n, id, setting, state, names, onChange }: SupportedRowProps) {
+function SupportedRow({ n, id, anchor, setting, state, names, onChange }: SupportedRowProps) {
   return (
-    <fieldset aria-label={id} className="flex min-w-0 flex-col gap-2 border-b px-3 py-2.5">
+    <fieldset id={anchor} aria-label={id} className="flex min-w-0 flex-col gap-2 border-b px-3 py-2.5">
       <div className={ROW}>
         <span className="text-muted-foreground text-xs">{n}</span>
         <span className="font-mono text-sm">{id}</span>
@@ -81,7 +82,7 @@ export function FormattersEditor({ language, draft, names, states, onChange }: F
         <CustomRow key={row.id} n={i + 1} row={row} names={names} onChange={(patch) => updateCustom(row.id, patch)} onRemove={() => onChange({ ...draft, custom: custom.filter((c) => c.id !== row.id) })} />
       ))}
       {supported.map((id, i) => (
-        <SupportedRow key={id} n={custom.length + i + 1} id={id} setting={draft.formatters[id] ?? DEFAULT_FORMATTER_DRAFT} state={states?.find((s) => s.id === id)} names={names} onChange={setSupported(id)} />
+        <SupportedRow key={id} anchor={settingAnchor('settings.formatters', `${language.id}-${id}`)} n={custom.length + i + 1} id={id} setting={draft.formatters[id] ?? DEFAULT_FORMATTER_DRAFT} state={states?.find((s) => s.id === id)} names={names} onChange={setSupported(id)} />
       ))}
       {supported.length === 0 && <p className="border-b px-3 py-2.5 text-muted-foreground text-xs">{t('settings.formatters.none')}</p>}
       <div className="px-3 py-2">

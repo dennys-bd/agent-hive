@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { statusText, t, tPlural } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
+import { type SettingEntry, settingEntry } from '@/lib/settings-search';
 import { taskState } from '@/lib/task-state';
 import { taskId, isLive } from '../../../tasks';
 import type { State, WorktreeRow } from '../../../types';
@@ -182,4 +183,9 @@ export function WorktreesTab({ state }: { state?: Slice }) {
       {rows && <p className="border-t px-5 py-4 text-muted-foreground text-xs">{t('worktrees.footer')}</p>}
     </SettingsGroup>
   );
+}
+
+/** Settings › maintenance's entries of the Settings search (#689). */
+export function searchEntries(): SettingEntry[] {
+  return [settingEntry('settings.group.orphans', 'maintenance', undefined, 'worktrees.cleanOrphans')];
 }

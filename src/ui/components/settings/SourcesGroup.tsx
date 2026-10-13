@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { t } from '@/i18n';
 import { sourceSummary, type NewSource, TYPE_LABEL } from '@/lib/flow-sources';
 import type { SourceDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 import { DEFAULT_PREFIX, HIVE_SOURCE } from '../../../tasks';
 import type { GithubAuth, ProjectSummary } from '../../../types';
 
@@ -23,10 +24,10 @@ interface SourcesGroupProps {
 function LocalRow({ prefix, hiveSource, canTurnOff, onPrefix, onHiveSource }: { prefix: string; hiveSource: boolean; canTurnOff: boolean; onPrefix(prefix: string): void; onHiveSource(on: boolean): void }) {
   const [live, setLive] = useState(prefix);
   return (
-    <div data-testid="local-row" className="grid grid-cols-[10rem_auto_1fr_auto] items-center gap-4 border-t px-5 py-3">
+    <div id={settingAnchor('settings.sources.local')} data-testid="local-row" className="grid grid-cols-[10rem_auto_1fr_auto] items-center gap-4 border-t px-5 py-3">
       <span className="truncate font-medium text-sm">{t('settings.sources.local')}</span>
       <Badge variant="outline">{t('settings.sources.type.local')}</Badge>
-      <div className="flex min-w-0 items-center gap-2">
+      <div id={settingAnchor('settings.prefix')} className="flex min-w-0 items-center gap-2">
         <span className="truncate text-muted-foreground text-xs">{t('settings.sources.local.hint')}</span>
         <Input
           className="w-24" aria-label={t('settings.prefix')} defaultValue={prefix}
@@ -47,7 +48,7 @@ function LocalRow({ prefix, hiveSource, canTurnOff, onPrefix, onHiveSource }: { 
 function CreateInRow({ sources, hiveSource, createIn, onCreateIn }: Pick<SourcesGroupProps, 'sources' | 'hiveSource' | 'createIn' | 'onCreateIn'>) {
   const id = useId();
   return (
-    <div className="flex items-center gap-4 border-t px-5 py-3">
+    <div id={settingAnchor('settings.sources.createIn')} className="flex items-center gap-4 border-t px-5 py-3">
       <Label htmlFor={id} className="w-40 shrink-0">{t('settings.sources.createIn')}</Label>
       <Select value={createIn} onValueChange={onCreateIn}>
         <SelectTrigger id={id} className="w-56"><SelectValue /></SelectTrigger>

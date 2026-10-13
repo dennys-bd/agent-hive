@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { type MessageKey, t } from '@/i18n';
 import { isMinutes, type SettingsDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { displayBinding } from '../../../shortcuts';
 import { APPROVAL_HOLD_MAX_MIN, CLOSE_TAB_ACTIONS, type CloseTabAction, RATE_LIMIT_WAIT_MAX, SHUTDOWN_IDLE_MAX } from '../../../types';
@@ -14,7 +15,7 @@ import { APPROVAL_HOLD_MAX_MIN, CLOSE_TAB_ACTIONS, type CloseTabAction, RATE_LIM
 const ROW = 'grid min-h-13 grid-cols-[minmax(0,1fr)_24rem_4rem] items-center gap-4 px-3 py-2';
 const MUTED = 'text-muted-foreground text-xs';
 
-type SessionRowName = 'closeSession' | 'closeStage' | 'closeTerminal' | 'sleep' | 'sleepAll' | 'auto' | 'idle' | 'approval' | 'rateLimit';
+export type SessionRowName = 'closeSession' | 'closeStage' | 'closeTerminal' | 'sleep' | 'sleepAll' | 'auto' | 'idle' | 'approval' | 'rateLimit';
 type CloseTabOptions = Record<CloseTabAction, MessageKey>;
 
 // The session rows keep #614's words; a terminal's tab gets its own, since those talk about a session (#778).
@@ -26,14 +27,21 @@ const TERMINAL_OPTIONS: CloseTabOptions = { keep: 'settings.closeTab.terminal.ke
 const labelOf = (base: string, row: SessionRowName): string => `${base}-${row}`;
 const warnHeaderOf = (base: string): string => `${base}-warn`;
 
+/** Each row's old field label (#689): the Settings search still finds a row by it. */
+export const SESSION_SYNONYMS: ReadonlyArray<[SessionRowName, MessageKey]> = [
+  ['closeSession', 'settings.closeSessionTab'], ['closeStage', 'settings.closeStageTab'], ['closeTerminal', 'settings.closeTerminalTab'],
+  ['sleep', 'settings.sleepNotice'], ['sleepAll', 'settings.sleepAllNotice'], ['auto', 'settings.sleepAutoNotice'],
+  ['idle', 'settings.shutdownIdle'], ['approval', 'settings.approvalMinutes'], ['rateLimit', 'settings.rateLimitWait'],
+];
+
 interface SessionsTableProps { draft: SettingsDraft; onChange(patch: Partial<SettingsDraft>): void }
 interface RowsProps extends SessionsTableProps { base: string }
 
-function Row({ className, children }: { className: string; children: ReactNode }) {
+function Row({ id, className, children }: { id?: string; className: string; children: ReactNode }) {
   return (
     // biome-ignore lint/a11y/useSemanticElements: a <tr> cannot be its own grid, which every row needs; the role keeps the table for a screen reader (#778)
     // biome-ignore lint/a11y/useFocusableInteractive: a row is not a widget; nothing on it takes the focus but its own controls (#778)
-    <div role="row" className={className}>{children}</div>
+    <div role="row" id={id} className={className}>{children}</div>
   );
 }
 
@@ -61,7 +69,7 @@ interface SessionRowProps { base: string; row: SessionRowName; sub?: string; hel
 function SessionRow({ base, row, sub, help, what, warn }: SessionRowProps) {
   const situation = t(`settings.sessions.${row}`);
   return (
-    <Row className={`${ROW} border-t`}>
+    <Row id={settingAnchor(`settings.sessions.${row}`)} className={`${ROW} border-t`}>
       <Cell className="flex min-w-0 flex-col gap-0.5">
         <span className="flex items-center gap-1.5">
           <span id={labelOf(base, row)} className="text-sm">{situation}</span>

@@ -2,6 +2,7 @@ import { SettingsGroup } from '@/components/settings/SettingsGroup';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
+import { settingAnchor } from '@/lib/settings-search';
 import type { GithubAuth, GithubAuthStatus } from '../../../types';
 
 interface GithubRowProps { auth: GithubAuth; github?: GithubAuthStatus; sourceNames: string[]; onConnect(): void; onAuthChange(auth: GithubAuth): void; onOpenQuota(): void }
@@ -48,14 +49,14 @@ function GithubRow({ auth, github, sourceNames, onConnect, onAuthChange, onOpenQ
 }
 
 // a source's detail links here (#524): its connection line opens the list scrolled to this group
-export const CONNECTIONS_ANCHOR = 'settings-connections';
+export const CONNECTIONS_ANCHOR = settingAnchor('settings.connections');
 
 /** conexões (#524): replaces the old "GitHub access" card. One row per service the Hive can reach — only GitHub today, so
  * `+ conexão` stays disabled until a second service exists. */
 export function ConnectionsGroup(props: GithubRowProps) {
   return (
     <SettingsGroup
-      anchor={CONNECTIONS_ANCHOR} title="settings.connections" hint="settings.connections.hint" flush
+      title="settings.connections" hint="settings.connections.hint" flush
       action={<Button type="button" variant="ghost" size="sm" disabled>{t('settings.connections.add')}</Button>}
     >
       <GithubRow {...props} />

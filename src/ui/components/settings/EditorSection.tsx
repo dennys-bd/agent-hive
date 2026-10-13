@@ -9,7 +9,9 @@ import { useCheckerStates, useFormatterStates } from '@/hooks/use-formatter-stat
 import { t } from '@/i18n';
 import { type EditorDraft, emptyLanguageDraft, type LanguageDraft } from '@/lib/settings-format';
 import type { SettingsDraft } from '@/lib/settings-form';
-import { LANGUAGES, languageDef } from '../../../languages';
+import { contextEntries, type SettingEntry, type SettingText, settingAnchor, settingEntry } from '@/lib/settings-search';
+import { formattersOf } from '../../../formatters';
+import { LANGUAGES, type LanguageDef, languageDef } from '../../../languages';
 import type { LanguageId } from '../../../types';
 
 interface EditorSectionProps { draft: SettingsDraft; language?: LanguageId; onLanguage(language: LanguageId): void; onChange(patch: Partial<SettingsDraft>): void }
@@ -18,7 +20,7 @@ interface FormatOnSaveProps { names: readonly string[]; value: EditorDraft['form
 // formatar ao salvar (#780): one switch for the Hive
 function FormatOnSaveCard({ names, value, onChange }: FormatOnSaveProps) {
   return (
-    <section aria-label={t('settings.format.onSave')} className="grid grid-cols-[auto_minmax(0,1fr)_20rem] items-center gap-4 rounded-xl border bg-card px-5 py-4 shadow-sm">
+    <section id={settingAnchor('settings.format.onSave')} aria-label={t('settings.format.onSave')} className="grid grid-cols-[auto_minmax(0,1fr)_20rem] items-center gap-4 rounded-xl border bg-card px-5 py-4 shadow-sm">
       <Switch id="format-on-save" aria-label={t('settings.format.onSave')} checked={value.enabled} onCheckedChange={(enabled) => onChange({ ...value, enabled })} />
       <div className="flex flex-col gap-1">
         <Label htmlFor="format-on-save">{t('settings.format.onSave')}</Label>
@@ -48,4 +50,29 @@ export function EditorSection({ draft, language = LANGUAGES[0].id, onLanguage, o
       </SettingsGroup>
     </>
   );
+}
+
+// A language's entries (#689): it lands on its detail (Note 11), then its cards, its server and each supported formatter by name.
+function languageEntries(def: LanguageDef): SettingEntry[] {
+  const view = { section: 'editor', language: def.id } as const;
+  const name = `editor.language.${def.id}` as const;
+  const path: readonly SettingText[] = ['settings.section.editor', name];
+  const cards = [
+    ...(def.syntax === undefined ? [] : (['settings.syntax'] as const)),
+    ...(def.id === 'other' ? [] : (['settings.server'] as const)),
+    'settings.formatters', 'settings.checkers',
+  ] as const;
+  const serverEntry: SettingEntry[] = def.id !== 'other' && def.server !== undefined
+    ? [{ label: { raw: def.server }, path: [...path, 'settings.server'], view, anchor: settingAnchor('settings.server', def.id) }] : [];
+  return [
+    { label: name, path: ['settings.section.editor', 'settings.languages'], view, anchor: settingAnchor('settings.languages', def.id) },
+    ...contextEntries(cards, view, path, def.id),
+    ...serverEntry,
+    ...formattersOf(def.id).map((id): SettingEntry => ({ label: { raw: id }, path: [...path, 'settings.formatters'], view, anchor: settingAnchor('settings.formatters', `${def.id}-${id}`) })),
+  ];
+}
+
+/** Settings › editor's entries of the Settings search (#689). */
+export function searchEntries(): SettingEntry[] {
+  return [settingEntry('settings.format.onSave', 'editor'), settingEntry('settings.languages', 'editor'), ...LANGUAGES.flatMap(languageEntries)];
 }

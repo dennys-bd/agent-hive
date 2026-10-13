@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/label';
 import { useRemotes } from '@/hooks/use-remotes';
 import { t } from '@/i18n';
 import type { SettingsDraft, WorkspaceDraft } from '@/lib/settings-form';
+import { settingAnchor } from '@/lib/settings-search';
 import { repositoryOf } from '@/lib/settings-fork';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
@@ -36,7 +37,7 @@ function BaseRow({ row, general, onChange }: { row: WorkspaceDraft; general: str
 export function WorkspaceBases({ draft, onChange }: { draft: SettingsDraft; onChange(patch: Partial<SettingsDraft>): void }) {
   const set = (id: string, baseBranch: string): void => onChange({ workspaces: draft.workspaces.map((w) => (w.id === id ? { ...w, baseBranch } : w)) });
   return (
-    <div className="flex flex-col gap-2">
+    <div id={settingAnchor('settings.baseBranch.perWorkspace')} className="flex flex-col gap-2">
       <Label>{t('settings.baseBranch.perWorkspace')}</Label>
       {draft.workspaces.map((row) => <BaseRow key={row.id} row={row} general={draft.baseBranch} onChange={(baseBranch) => set(row.id, baseBranch)} />)}
       <p className="text-muted-foreground text-xs">{t('settings.baseBranch.note')}</p>

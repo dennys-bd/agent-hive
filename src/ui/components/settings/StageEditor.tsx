@@ -16,8 +16,11 @@ export interface StageSource { id: string; name: string; type: SourceFields['typ
 /** A transition a refused save points at (#918); n changes on every refusal, so the same one is selected again after the user moved away. */
 export interface TransitionFocus { transition: string; n: number }
 
+/** A stage the Settings search opens (#689); n changes on every pick, so the same stage is selected again after the user moved away. */
+export interface StageFocus { id: string; n: number }
+
 interface Flow { stages: StageDraft[]; transitions: TransitionDraft[] }
-interface StageEditorProps extends AgentProps, Flow { sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; onChange(next: Flow): void }
+interface StageEditorProps extends AgentProps, Flow { sources: StageSource[]; commands: Command[]; workspaces: string[]; focus?: TransitionFocus; stage?: StageFocus; onChange(next: Flow): void }
 
 // + etapa and + transição in the card's header (#887, 6b); + transição needs a stage to leave from
 function StageActions({ onAddStage, onAddTransition, canAddTransition }: { onAddStage(): void; onAddTransition(): void; canAddTransition: boolean }) {
@@ -41,20 +44,24 @@ function patched({ stages, transitions }: Flow, index: number, patch: Partial<St
 }
 
 // The chart's selection (#134). A refused save's focus (#918) selects its transition when the id is still in the list
-function useSelection(stages: readonly StageDraft[], transitions: readonly TransitionDraft[], focus?: TransitionFocus): [ChartSelection, (next: ChartSelection) => void] {
-  const [selection, setSelection] = useState<ChartSelection>({ kind: 'stage', id: stages[0]?.id ?? '' });
+function useSelection(stages: readonly StageDraft[], transitions: readonly TransitionDraft[], focus?: TransitionFocus, stage?: StageFocus): [ChartSelection, (next: ChartSelection) => void] {
+  const [selection, setSelection] = useState<ChartSelection>({ kind: 'stage', id: stage?.id ?? stages[0]?.id ?? '' });
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on n alone: a new refusal moves the selection, an edit of the list does not
   useEffect(() => {
     if (focus !== undefined && transitions.some((d) => d.id === focus.transition)) setSelection({ kind: 'transition', id: focus.transition });
   }, [focus?.n]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on n alone: a new pick moves the selection, an edit of the list does not
+  useEffect(() => {
+    if (stage !== undefined && stages.some((s) => s.id === stage.id)) setSelection({ kind: 'stage', id: stage.id });
+  }, [stage?.n]);
   return [selection, setSelection];
 }
 
 /** Settings › fluxo's etapas card (#134, 6b; its own card since #887): + etapa and + transição in the header, the load hint, the chart, its
  * legend, then the selected stage's or transition's editor. Every update is immutable; the selection is local, and a stale id (a reverted draft)
  * reads as the first stage. A refused save's focus selects its transition (#918). */
-export function StageEditor({ stages, transitions, sources, commands, workspaces, agents, defaultAgent, focus, onChange }: StageEditorProps) {
-  const [selection, setSelection] = useSelection(stages, transitions, focus);
+export function StageEditor({ stages, transitions, sources, commands, workspaces, agents, defaultAgent, focus, stage: picked, onChange }: StageEditorProps) {
+  const [selection, setSelection] = useSelection(stages, transitions, focus, picked);
   const transition = selection.kind === 'transition' ? transitions.find((d) => d.id === selection.id) : undefined;
   const index = Math.max(0, stages.findIndex((s) => s.id === (selection.kind === 'stage' ? selection.id : transition?.from)));
   const stage = stages[index];

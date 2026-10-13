@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { t, type MessageKey } from '@/i18n';
 import type { SettingsDraft } from '@/lib/settings-form';
+import { cardEntries, type SettingEntry, settingAnchor, settingEntry } from '@/lib/settings-search';
 import { CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, NOTIFICATION_KINDS, ON_CLOSE, THEMES, type FileIcons, type FileIconScope, type FileIconSet, type Language, type NotificationKind, type NotificationSettings, type OnClose, type SidebarsPerView, type Theme } from '../../../types';
 
 interface AppSectionProps {
@@ -25,7 +26,7 @@ const FILE_ICON_SCOPE_KEY: Record<FileIconScope, MessageKey> = { all: 'settings.
 // What closing the last window does (#513): one choice where two switches could contradict each other. The viewer applies a save at once.
 function OnCloseSelect({ value, onChange }: { value: OnClose; onChange(onClose: OnClose): void }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div id={settingAnchor('settings.onClose')} className="flex flex-col gap-2">
       <Label htmlFor="settings-on-close">{t('settings.onClose')}</Label>
       <Select value={value} onValueChange={(v) => onChange(v as OnClose)}>
         <SelectTrigger id="settings-on-close" className="w-full"><SelectValue /></SelectTrigger>
@@ -41,7 +42,7 @@ interface NotificationsFieldsProps { value: NotificationSettings; onChange(notif
 // event, no restart. A fieldset carries role="group" natively (as SignalRuler does).
 function NotificationsFields({ value, onChange }: NotificationsFieldsProps) {
   return (
-    <fieldset aria-label={t('settings.notifications')} className="m-0 flex min-w-0 flex-col gap-3 border-0 border-t p-0 pt-4">
+    <fieldset id={settingAnchor('settings.notifications')} aria-label={t('settings.notifications')} className="m-0 flex min-w-0 flex-col gap-3 border-0 border-t p-0 pt-4">
       <div className="flex flex-col gap-0.5">
         <span className="font-medium text-sm leading-none">{t('settings.notifications')}</span>
         <p className="text-muted-foreground text-xs">{t('settings.notifications.hint')}</p>
@@ -58,7 +59,7 @@ interface ThemeSelectProps { value: Theme; onChange(theme: Theme): void }
 // The UI's colors (#296): system follows macOS live, light and dark force one. The main window applies a save at once; an open terminal window on its next open.
 function ThemeSelect({ value, onChange }: ThemeSelectProps) {
   return (
-    <div className="flex flex-col gap-1">
+    <div id={settingAnchor('settings.theme')} className="flex flex-col gap-1">
       <Label htmlFor="settings-theme">{t('settings.theme')}</Label>
       <Select value={value} onValueChange={(v) => onChange(v as Theme)}>
         <SelectTrigger id="settings-theme" className="w-full"><SelectValue /></SelectTrigger>
@@ -79,14 +80,14 @@ function FileIconsFields({ value, onChange }: FileIconsFieldsProps) {
   return (
     <div className="flex flex-col gap-3 border-t pt-4">
       <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1">
+        <div id={settingAnchor('settings.fileIcons')} className="flex flex-col gap-1">
           <Label htmlFor="settings-file-icons">{t('settings.fileIcons')}</Label>
           <Select value={value.set} onValueChange={(v) => onChange({ ...value, set: v as FileIconSet })}>
             <SelectTrigger id="settings-file-icons" className="w-full"><SelectValue /></SelectTrigger>
             <SelectContent>{FILE_ICON_SETS.map((set) => <SelectItem key={set} value={set}>{t(FILE_ICON_SET_KEY[set])}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-1">
+        <div id={settingAnchor('settings.fileIcons.scope')} className="flex flex-col gap-1">
           <Label htmlFor="settings-file-icons-scope">{t('settings.fileIcons.scope')}</Label>
           <Select value={value.scope} disabled={isOff} onValueChange={(v) => onChange({ ...value, scope: v as FileIconScope })}>
             <SelectTrigger id="settings-file-icons-scope" className="w-full"><SelectValue /></SelectTrigger>
@@ -106,7 +107,7 @@ interface TerminalFontFieldProps { value: string; onChange(font: string): void }
 // window on its next open.
 function TerminalFontField({ value, onChange }: TerminalFontFieldProps) {
   return (
-    <div className={FIELD}>
+    <div id={settingAnchor('settings.terminalFont')} className={FIELD}>
       <Label htmlFor="settings-terminal-font" className={FIELD_LABEL}>{t('settings.terminalFont')}</Label>
       <Input id="settings-terminal-font" defaultValue={value} placeholder={t('settings.terminalFont.placeholder')} onChange={(e) => onChange(e.target.value)} />
       <p className="text-muted-foreground text-xs">{t('settings.terminalFont.hint')}</p>
@@ -139,7 +140,7 @@ export function AppSection({ draft, onChange }: AppSectionProps) {
     <div className="grid grid-cols-2 gap-4">
       <SettingsGroup title="settings.group.appearance">
         <div className="grid grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1">
+          <div id={settingAnchor('settings.language')} className="flex flex-col gap-1">
             <Label htmlFor="settings-language">{t('settings.language')}</Label>
             <Select value={draft.language} onValueChange={(v) => onChange({ language: v as Language })}>
               <SelectTrigger id="settings-language" className="w-full"><SelectValue /></SelectTrigger>
@@ -161,7 +162,7 @@ export function AppSection({ draft, onChange }: AppSectionProps) {
         <div className={FIELD_ROW}>
           <TerminalFontField value={draft.terminalFont} onChange={(terminalFont) => onChange({ terminalFont })} />
           {/* #353: how many lines each console channel keeps; a save applies to the next output */}
-          <div className={FIELD}>
+          <div id={settingAnchor('settings.consoleLines')} className={FIELD}>
             <Label htmlFor="settings-console-lines" className={FIELD_LABEL}>{t('settings.consoleLines')}</Label>
             <Input id="settings-console-lines" type="number" min={CONSOLE_LINES_MIN} max={CONSOLE_LINES_MAX} step={1} defaultValue={draft.consoleLines} onChange={(e) => onChange({ consoleLines: e.target.value })} />
             <p className="text-muted-foreground text-xs">{t('settings.consoleLines.hint')}</p>
@@ -172,4 +173,15 @@ export function AppSection({ draft, onChange }: AppSectionProps) {
       <SidebarsPerViewGroup value={draft.sidebarsPerView} onChange={(sidebarsPerView) => onChange({ sidebarsPerView })} />
     </div>
   );
+}
+
+/** Settings › app's entries of the Settings search (#689). */
+export function searchEntries(): SettingEntry[] {
+  return [
+    ...cardEntries('app', 'settings.group.appearance', ['settings.language', 'settings.theme', 'settings.fileIcons', 'settings.fileIcons.scope', 'settings.fileIcons.muted']),
+    ...cardEntries('app', 'settings.group.window', ['settings.onClose', 'settings.notifications', ...NOTIFICATION_KINDS.map((k) => NOTIFICATION_KEY[k])]),
+    ...cardEntries('app', 'settings.group.terminal', ['settings.terminalFont', 'settings.consoleLines']),
+    settingEntry('settings.trustedDomains', 'app'),
+    ...cardEntries('app', 'settings.sidebarsPerView', ['settings.sidebarsPerView.left', 'settings.sidebarsPerView.right', 'settings.sidebarsPerView.rightTab']),
+  ];
 }
