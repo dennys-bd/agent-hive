@@ -6,6 +6,7 @@ import { savedLaunch } from '../src/launch-pick.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { savedSession } from '../src/state-guards.js';
+import { liveRuns } from '../src/task-runs.js';
 import { sessionsOf } from '../src/tasks.js';
 import type { Effect, LaunchPick, Session, State } from '../src/types.js';
 import { CODEX_SESSION, CODEX_TURN } from './fixtures/codex-hooks.js';
@@ -82,4 +83,12 @@ test('a saved session keeps its launch only in the shape the open routes admit, 
   assert.deepEqual(savedLaunch({ args: Array.from({ length: 33 }, () => '-v') }), {});
   assert.deepEqual(savedLaunch({ model: 'm'.repeat(101) }), {});
   assert.deepEqual(savedLaunch({ args: [] }), {});
+});
+
+test('a live run carries its worker\'s picks, so its pane header can name them; a run with none has no key (#257)', () => {
+  const state = onDev();
+  const opened = reduce(state, { type: 'openSession', activityId: workId(state, ITEM.itemId), agent: 'claude', launch: PICK }).state;
+  assert.deepEqual(liveRuns(opened.tasks[0], opened).map((r) => r.launch), [PICK]);
+  const plain = reduce(state, { type: 'openSession', activityId: workId(state, ITEM.itemId), agent: 'claude' }).state;
+  assert.equal(liveRuns(plain.tasks[0], plain).some((r) => 'launch' in r), false);
 });

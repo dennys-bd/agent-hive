@@ -26,10 +26,11 @@ export function paneContext(task: Task, live: LiveActivity | undefined, state: P
 export const activityPane = (activity: Activity, state: Pick<State, 'stages' | 'workspaces' | 'sourceWorkspaces' | 'tasks'>): PaneContext =>
   (activity.kind === 'local' ? { folder: activity.workspace } : paneContext(activity.task, activity.activity, state));
 
-interface Header { name: string; parts: string[]; status?: Status; branch?: string }
+interface Header { name: string; parts: string[]; status?: Status; branch?: string; specializedAgent?: string }
 
 // An agent names itself, then the model and the folder, with its session's status; a terminal its kind (the UI never learns the shell's
-// name) and the folder, with no status since a terminal reports none (#192); a diff, the console or a run already gone only its label
+// name) and the folder, with no status since a terminal reports none (#192); a diff, the console or a run already gone only its label; a run
+// opened with picks names its own model and its specialized agent (#257)
 function headerOf(item: CenterTabRef, label: string, activity: Activity, context: PaneContext): Header {
   // A diff (#591): `diff`, the task, and its branch in mono when it has one
   if (item.kind === 'diff' && activity.kind === 'task') return { name: t('diff.pane'), parts: [taskLabel(activity.task)], branch: activity.activity.branch };
@@ -42,9 +43,10 @@ function headerOf(item: CenterTabRef, label: string, activity: Activity, context
   if (run === undefined) return { name: label, parts: [] };
   const folder = context.folder === undefined ? [] : [context.folder];
   if (run.kind === 'terminal') return { name: t('activities.menu.terminal'), parts: folder, ...(sleeping === undefined ? {} : { status: 'empty' as const }) }; // #696: sleeping, muted
-  const model = context.model === undefined ? [] : [context.model];
+  const model = run.launch?.model ?? context.model; // #257: the model the run was opened with, over the stage's
   const status = sleeping === undefined ? runStatus(activity, run.ptyId) : 'empty'; // a sleeping run reads sleeping, muted (#672)
-  return { name: agentName(ranAgent(run)), parts: [...model, ...folder], status };
+  const specializedAgent = run.launch?.specializedAgent;
+  return { name: agentName(ranAgent(run)), parts: [...(model === undefined ? [] : [model]), ...folder], status, ...(specializedAgent === undefined ? {} : { specializedAgent }) };
 }
 
 interface PaneHeaderProps { item: CenterTabRef; label: string; activity: Activity; context: PaneContext }
@@ -52,12 +54,13 @@ interface PaneHeaderProps { item: CenterTabRef; label: string; activity: Activit
 /** A pane's header (redesign 04, #536): 26px of muted 12px text over the group's shown tab, the name in foreground and the status on the
  * right. */
 export function PaneHeader({ item, label, activity, context }: PaneHeaderProps) {
-  const { name, parts, status, branch } = headerOf(item, label, activity, context);
+  const { name, parts, status, branch, specializedAgent } = headerOf(item, label, activity, context);
   return (
     <div data-pane-header className="flex h-[26px] shrink-0 items-center gap-2 px-3 text-muted-foreground text-xs">
       <span className="shrink-0 text-foreground">{name}</span>
       {parts.length > 0 && <span className="min-w-0 truncate">{parts.join(' · ')}</span>}
       {branch !== undefined && <><span aria-hidden="true">·</span><span className="min-w-0 truncate font-mono">{branch}</span></>}
+      {specializedAgent !== undefined && <><span aria-hidden="true">·</span><span className="min-w-0 truncate font-mono">{specializedAgent}</span></>}
       {/* empty here is a held approval run or a sleeping one (#663, #672): it reads sleeping like its line */}
       {status !== undefined && <span className="ml-auto flex"><StatusWord status={status} emptyWord="session.sleeping" /></span>}
     </div>

@@ -1,8 +1,9 @@
 import { AGENTS, ranAgent } from './agents.js';
 import { activityOf, keptTerminalsIn, localActivityId } from './activities.js';
+import { withLaunch } from './launch-pick.js';
 import { localSessionsOf } from './local-sessions.js';
 import { canOpenSession, inAction, taskId, stageOf, isBlocked, isGate, onSource, resolveWorkspace, sessionsOf, terminalsOf, workersOf } from './tasks.js';
-import type { Activity, AgentId, Task, TaskBase, Session, DiffScope, SessionPolicy, Terminal, Worker, SpawnRun, State } from './types.js';
+import type { Activity, AgentId, LaunchPick, Task, TaskBase, Session, DiffScope, SessionPolicy, Terminal, Worker, SpawnRun, State } from './types.js';
 
 /** What a task offers (#283), the one place the UI and the routes read it: nothing, its running stage, Start, or an object: Continue when
  * `continue` is true, Restart when `restart` is; with `continue: false` the UI offers Start beside Restart (#812). `live` names the run that
@@ -125,7 +126,7 @@ const TERMINAL = 'Terminal';
 /** One live run on a task (#283): what the pickers list and the terminal panel and an activity open (#251, #457): its label, what runs in
  * it (#489: its agent · the session's name or id, the agent alone before the id is known, Terminal or Terminal <n> for a plain terminal, a run command's name, #300),
  * and its kind. */
-export interface LiveRun { ptyId: string; label: string; kind: RunKind; session?: string; terminalId?: string; agent?: AgentId } // agent: what an agent run runs (#925), absent on a terminal; session: a worker run's name or short id, once known; terminalId: a captured session's run lives in this terminal's pty (#696)
+export interface LiveRun { ptyId: string; label: string; kind: RunKind; session?: string; terminalId?: string; agent?: AgentId; launch?: LaunchPick } // agent: what an agent run runs (#925), absent on a terminal; session: a worker run's name or short id, once known; terminalId: a captured session's run lives in this terminal's pty (#696); launch: a free run's picks, which its pane header names (#257)
 
 /** A session as a run names it (#489, #590): its /rename title, else the head of its id. */
 export const sessionLabel = ({ id, name }: Pick<Session, 'id' | 'name'>): string => name ?? id.slice(0, RUN_LABEL);
@@ -139,15 +140,18 @@ export function namedRun(ptyId: string, id: string | undefined, sessions: Sessio
   return name === undefined ? run : { ...run, session: name };
 }
 
-// A captured session's run (#696) names the terminal it lives in: what its line opens
-const inTerminal = (run: LiveRun, worker: Worker): LiveRun => (worker.terminalId === undefined ? run : { ...run, terminalId: worker.terminalId });
+// What a run takes from its worker: a captured session's run (#696) names the terminal it lives in, what its line opens; a free run opened
+// with picks carries them, for its pane header (#257)
+const fromWorker = (run: LiveRun, worker: Worker): LiveRun => ({
+  ...run, ...(worker.terminalId === undefined ? {} : { terminalId: worker.terminalId }), ...withLaunch(worker.launch),
+});
 
 // A worker's run: the stage run learns its session id late (the activity's sessionId has it from the spawn). A /rename names it once a turn
 // end read it (#489).
 function workerRun(activity: Activity | undefined, worker: Worker, sessions: Session[]): LiveRun[] {
   if (!worker.runId) return [];
   const id = worker.sessionId ?? (worker.freeSession ? undefined : activity?.sessionId);
-  return [inTerminal(namedRun(worker.runId, id, sessions, worker.freeSession ? 'session' : 'stage', ranAgent(worker)), worker)];
+  return [fromWorker(namedRun(worker.runId, id, sessions, worker.freeSession ? 'session' : 'stage', ranAgent(worker)), worker)];
 }
 
 /** A terminal's name (#489): a run command's own (#300); a plain one is Terminal, numbered in the order they opened once its activity keeps
@@ -176,7 +180,7 @@ export function liveRuns(task: Task, state: Pick<State, 'workers' | 'terminals' 
  * then its terminals. */
 export function localRuns(workspace: string, state: Pick<State, 'workers' | 'terminals' | 'activityRecords'>): LiveRun[] {
   const kept = localSessionsOf(state, workspace);
-  const sessions = state.workers.flatMap((w) => (w.status !== 'empty' && w.activityId === localActivityId(workspace) && w.runId !== undefined ? [inTerminal(namedRun(w.runId, w.sessionId, kept, 'session', ranAgent(w)), w)] : []));
+  const sessions = state.workers.flatMap((w) => (w.status !== 'empty' && w.activityId === localActivityId(workspace) && w.runId !== undefined ? [fromWorker(namedRun(w.runId, w.sessionId, kept, 'session', ranAgent(w)), w)] : []));
   const shells = keptTerminalsIn(state.terminals, localActivityId(workspace)); // #696: numbered among the kept ones
   const live = shells.filter((t) => t.asleep === undefined);
   return [...sessions, ...live.map((t): LiveRun => ({ ptyId: t.terminalId, label: terminalLabel(t, shells), kind: 'terminal' }))];
