@@ -43,10 +43,13 @@ export function designBridge(helpers: AnchorHelpers): () => void {
     outline: bridgeOverlay('outline'), area: bridgeOverlay('area'),
   };
   let height = -1;
+  let width = -1;
+  // the width lets the pane widen its frame for a window screen wider than the viewport (#241)
   const postSize = (): void => {
-    if (root.scrollHeight === height) return;
+    if (root.scrollHeight === height && root.scrollWidth === width) return;
     height = root.scrollHeight;
-    post({ type: 'size', height });
+    width = root.scrollWidth;
+    post({ type: 'size', height, width });
   };
   // with no anchor there is no pin to move: a scroll then posts nothing
   const refreshPins = (): void => {
@@ -54,9 +57,11 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   };
   const pointer = (event: MouseEvent): void => bridgePointer(bridge, event);
   window.addEventListener('message', (event: MessageEvent<unknown>) => bridgeMessage(bridge, event), { signal });
-  // ready on every load: the parent reloads the frame on a version change and marks it reloaded at the ready that follows
+  // ready on every load: the parent reloads the frame on a version change and marks it reloaded at the ready that follows. The tweaks block
+  // after it: the parent sends its values at ready, then settles them against the block that follows (#241)
   window.addEventListener('load', () => {
     post({ type: 'ready' });
+    postTweaks(post);
     postSize();
   }, { signal });
   // capture: scroll does not bubble, and an inner scroller moves the pins as much as the page does
@@ -149,10 +154,34 @@ function scrollToAnchor(bridge: BridgeState, id: string): void {
   schedulePins(bridge);
 }
 
+/** The design's hv-tweaks block, raw (#241): the pane parses and checks it, since the frame's content is untrusted. No block, no message. */
+function postTweaks(post: (message: Record<string, unknown>) => void): void {
+  const block = document.getElementById('hv-tweaks');
+  if (block === null) return;
+  let schema: unknown;
+  try {
+    schema = JSON.parse(block.textContent ?? '');
+  } catch {
+    post({ type: 'tweaks', schema: null, error: 'json' });
+    return;
+  }
+  post({ type: 'tweaks', schema });
+}
+
+/** A tweak's value where the design reacts to it (#241): data-tweak-<name> on the root for CSS, hv:tweak for a script. The name pattern is
+ *  design-tweaks.ts's TWEAK_NAME, inlined: the frame's script has no imports. The value is not checked against the schema: the pane sends
+ *  only fitting ones. */
+function applyTweak(name: unknown, value: unknown): void {
+  if (typeof name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(name)) return;
+  if (typeof value !== 'string' && typeof value !== 'boolean' && !(typeof value === 'number' && Number.isFinite(value))) return;
+  document.documentElement.setAttribute(`data-tweak-${name}`, String(value));
+  window.dispatchEvent(new CustomEvent('hv:tweak', { detail: { name, value } }));
+}
+
 function bridgeMessage(bridge: BridgeState, event: MessageEvent<unknown>): void {
   const data = event.data;
   if (event.source !== window.parent || typeof data !== 'object' || data === null) return; // the design itself may post too
-  const { hive, type, theme, on, anchors, id } = data as Record<string, unknown>;
+  const { hive, type, theme, on, anchors, id, name, value } = data as Record<string, unknown>;
   if (hive !== 'design') return;
   if (type === 'theme' && (theme === 'dark' || theme === 'light')) {
     document.documentElement.style.colorScheme = theme;
@@ -164,6 +193,8 @@ function bridgeMessage(bridge: BridgeState, event: MessageEvent<unknown>): void 
     schedulePins(bridge);
   } else if (type === 'scroll-to' && typeof id === 'string') {
     scrollToAnchor(bridge, id);
+  } else if (type === 'tweak') {
+    applyTweak(name, value);
   }
 }
 
@@ -222,7 +253,7 @@ function bridgeKey(bridge: BridgeState, event: KeyboardEvent): void {
 // Joined beside the anchor functions, as siblings in the frame's one script
 const BRIDGE_FUNCTIONS = [
   bridgeOverlay, placeOverlay, dragRect, setCommentMode, schedulePins, scrollToAnchor, bridgeMessage, bridgePointer, pointerMove,
-  pointerUp, bridgeKey, designBridge,
+  pointerUp, bridgeKey, postTweaks, applyTweak, designBridge,
 ];
 
 /** The bridge as the inline script the design frame route puts into every HTML page it serves (#108): inline, so it needs no route.

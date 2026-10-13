@@ -52,4 +52,13 @@ test('the real bridgeScript body runs in jsdom with every function it reaches jo
     { hive: 'design', type: 'anchor', anchor: { kind: 'area', rect: { x: 0, y: 0, width: 10, height: 10 } } },
     { hive: 'design', type: 'key', key: 'c' },
   ]);
+  // #241: the joined applyTweak and postTweaks run too
+  design({ type: 'tweak', name: 'layout', value: 'list' });
+  expect(document.documentElement.getAttribute('data-tweak-layout')).toBe('list');
+  document.body.insertAdjacentHTML('beforeend', '<script type="application/json" id="hv-tweaks">{}</script>');
+  window.dispatchEvent(new Event('load'));
+  expect(errors).toEqual([]);
+  expect(posted.mock.calls.slice(-3).map(([data]) => data)).toEqual([
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: {} }, { hive: 'design', type: 'size', height: 0, width: 0 },
+  ]);
 });
