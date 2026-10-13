@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react';
 import { mainRef, useCenterLayouts } from '@/hooks/use-center-layouts';
 import { activitiesOf, activityKey, isTask, type LocalActivity, type TaskActivity } from '@/lib/activities';
 import { readView, resetViewState } from '@/lib/view-state';
-import type { Task, Session, SleptRun, Terminal, Worker } from '../../src/types';
+import type { Task, Session, SleptRun, Stage, Terminal, Worker } from '../../src/types';
 import { activityIdOf, localPairOf, localPairs, movedWork, withLocal, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 import { initialState } from '../../src/orchestrator';
 import { localActivityId } from '../../src/activities';
@@ -188,4 +188,13 @@ test('an activity whose only run slept before its first prompt sleeps: the run k
   ];
   const [local, own] = activitiesOf(withPointedWork({ tasks: [sleepy], workers: [], terminals: [], workspaces: ['hive'], ...localPairs(['hive']), slept }));
   expect([own?.sleeping, local?.sleeping]).toEqual([true, true]);
+});
+
+test('a task queued in its prompt stage, with a handover, an open PR, no worker and auto on, is not review once the stages are given; without them it still reads review (#264)', () => {
+  const queued: WithWork = { ...task(1), worktree: '/w/1', handover: { prompt: 'CI failed' } };
+  const record = { id: 'a-I1', taskIds: ['I1'], sessions: [], prs: [{ url: 'https://github.com/o/r/pull/7', state: 'open' as const }] };
+  const slice = movedWork({ tasks: [queued], workers: [], terminals: [], workspaces: [], activities: [], activityRecords: [record] });
+  const stages: Stage[] = [{ name: 'dev', from: { board: ['Ready'] }, prompt: '/hive-build {url}' }];
+  expect(activitiesOf(slice).filter(isTask).map((a) => a.status)).toEqual(['review']);
+  expect(activitiesOf({ ...slice, stages }).filter(isTask).map((a) => a.status)).toEqual(['empty']);
 });

@@ -1,5 +1,5 @@
 import { apiErrorOf, decideStopFailure } from './api-errors.js';
-import { activityOf, activityOfWorker, recordOf, taskOfActivity, taskOfWorker } from './activities.js';
+import { activityOf, activityOfWorker, recordOf, resultOf, taskOfActivity, taskOfWorker } from './activities.js';
 import { textRef, type Correlation, type FinishVia, type GoneReason, type MoveBy, type RecordInput, type RunKind, type StageOutcome } from './events.js';
 import type { StageRunEnd } from './human-signals.js';
 import { effectiveLimits } from './orchestrator.js';
@@ -305,15 +305,19 @@ function apiErrorRecords(prev: State, event: HiveEvent, now: number): RecordInpu
 }
 
 // A wait for CI (#834): its end with a verdict (a read or the failed logs; a Stop is no verdict and writes none), with how long it waited, and
-// the first read whose required fell back to all. Derived from the activity's ci before and after, as describeChanges derives hive.log's lines
+// the first read whose required fell back to all. Derived from the activity's ci before and after, as describeChanges derives hive.log's lines.
+// #264: a failure a transition routes leaves the activity unstopped, so the verdict failCi wrote on the task's result counts too
 function ciRecords(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
   if (event.type !== 'ciRead' && event.type !== 'ciClock' && event.type !== 'ciFailed') return [];
   const before = prev.activities.find((a) => a.id === event.activityId)?.ci;
   if (before === undefined) return [];
   const after = next.activities.find((a) => a.id === event.activityId);
-  const ids = correlationOf(prev, undefined, taskOfActivity(prev, event.activityId));
+  const task = taskOfActivity(prev, event.activityId);
+  const ids = correlationOf(prev, undefined, task);
   if (after?.ci !== undefined) return after.ci.fellBack && !before.fellBack ? [{ event: 'ci.fallback', level: 'info', ...ids }] : [];
-  const failed = after?.stopped === true;
+  const result = task === undefined ? undefined : resultOf(next, taskId(task))?.ci;
+  const routed = typeof result === 'object' && result !== null && 'verdict' in result && result.verdict === 'failed';
+  const failed = after?.stopped === true || routed;
   return [{ event: 'ci.ended', level: failed ? 'warn' : 'info', ...ids, verdict: failed ? 'failed' : 'passed', duration_ms: since(before.since, now) }];
 }
 

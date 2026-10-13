@@ -1,6 +1,6 @@
 import { taskOfActivity, withActivity } from './activities.js';
 import { type CiVerdict, ciVerdict, cleanName } from './ci-checks.js';
-import { prRepo } from './pull-requests.js';
+import { prNumber, prRepo } from './pull-requests.js';
 import { withResult } from './record-kit.js';
 import { ensureActivity, none, type Reduced, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { onSource, stageOf } from './tasks.js';
@@ -135,12 +135,26 @@ function failedRead(state: State, { activity, ci, at }: Read, stage: Stage, fail
   return { state: withActivity(state, { ...activity, ci: { ...ci, reran, rerunAt: at } }), effects: [{ type: 'ciRerun', activityId: activity.id, runs }] };
 }
 
-/** One read of the wait's PRs (#834): the timeout first, then the verdict. A wait fetching its logs, an unknown activity and a Quit ignore it.
- * The first read whose required fell back marks it, so the event log says so once. */
+// #264: GitHub runs no checks on a PR that conflicts with its base, so waiting could only time out: one cause and one line per conflicting PR.
+// cleanName: the base is GitHub's text and reaches the cause and the Dev prompt, so it keeps no control character and no line break
+function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string } | undefined {
+  const found = prs.filter((p) => p.conflicting === true);
+  if (found.length === 0) return undefined;
+  const baseOf = (p: CiPrRead): string => cleanName(p.base ?? 'the base branch');
+  return {
+    names: found.map((p) => `conflict with ${baseOf(p)}`),
+    output: found.map((p) => `PR #${prNumber(p.url)} conflicts with ${baseOf(p)}: update the branch from ${baseOf(p)} and resolve the conflicts, then push.`).join('\n'),
+  };
+}
+
+/** One read of the wait's PRs (#834): a conflict first (#264), then the timeout, then the verdict. A wait fetching its logs, an unknown
+ * activity and a Quit ignore it. The first read whose required fell back marks it, so the event log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
   const stage = wait && stageOf(state.stages, wait.ci.stage);
   if (!wait || !stage || wait.ci.collecting) return none(state);
+  const conflict = conflictOf(prs); // before the verdict, so a conflicting read marks no fellBack; no re-run and no logs: there are no runs
+  if (conflict) return failCi(state, wait, conflict.output, conflict.names);
   const verdict = ciVerdict(sinceRerun(wait.ci, prs, at), stage);
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
   if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));

@@ -61,7 +61,7 @@ export const activityKey = (target: RunTarget): string => (target.kind === 'loca
 /** Whether a new run may open in it (#590): a local activity always; a task by the rule Abrir sessão reads (#491). */
 export const canOpenIn = (target: RunTarget): boolean => target.kind === 'local' || canOpenSession(target.task, target.activity);
 
-export type Slice = Pick<State, 'tasks' | 'workers' | 'terminals' | 'workspaces' | 'activities' | 'activityRecords' | 'slept'>;
+export type Slice = Pick<State, 'tasks' | 'workers' | 'terminals' | 'workspaces' | 'activities' | 'activityRecords' | 'slept'> & Partial<Pick<State, 'stages'>>; // #264: stages let taskState see the queue, so a queued task with an open PR is not review
 
 // ISO timestamps order as strings
 const newest = (times: string[]): string | undefined =>
