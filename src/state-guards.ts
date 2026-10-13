@@ -1,7 +1,7 @@
 import { isPrUrl, isSessionId, isUuid } from './orchestrator.js';
 import { PR_STATES } from './pull-requests.js';
 import { cleanTitle } from './usage.js';
-import { localActivityId } from './activities.js';
+import { addUsage, localActivityId } from './activities.js';
 import { knownAgent, savedAgent } from './agents.js';
 import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
 
@@ -36,11 +36,16 @@ function savedPart(value: unknown): UsagePart[] {
   return [{ ...(typeof stage === 'string' ? { stage } : {}), ...(known === undefined ? {} : { agent: known }), tokens: value.tokens, ms: value.ms, waitingMs: value.waitingMs }];
 }
 
-// #617: a usage saved before the breakdown is one part holding its whole total, with neither stage nor agent, so the parts still add up to it
+// #617: what the kept parts do not cover (a usage saved before the breakdown, or a part the load dropped) reads as one part with neither
+// stage nor agent, so the parts still add up to the total; nothing left over adds no line
 function savedUsage(value: unknown): Pick<ActivityRecord, 'usage'> {
   if (!isTaskUsage(value)) return {};
   const { tokens, ms, waitingMs } = value;
-  return { usage: { tokens, ms, waitingMs, parts: Array.isArray(value.parts) ? value.parts.flatMap(savedPart) : [{ tokens, ms, waitingMs }] } };
+  const parts = Array.isArray(value.parts) ? value.parts.flatMap(savedPart) : [];
+  const left = (total: number, key: 'tokens' | 'ms' | 'waitingMs'): number => Math.max(0, total - parts.reduce((sum, p) => sum + p[key], 0));
+  const rest = { tokens: left(tokens, 'tokens'), ms: left(ms, 'ms'), waitingMs: left(waitingMs, 'waitingMs') };
+  const covered = rest.tokens === 0 && rest.ms === 0 && rest.waitingMs === 0;
+  return { usage: { ...(covered ? { parts } : addUsage({ tokens: 0, ms: 0, waitingMs: 0, parts }, {}, rest)), tokens, ms, waitingMs } };
 }
 
 // #283: a starting commit reaches git's argv as Restart's target, so only a hex sha is kept.

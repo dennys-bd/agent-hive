@@ -381,7 +381,6 @@ export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * in a workspace's or a command's env, so a run's launch.env can never replace one and a save that tries names the problem. */
 export const RESERVED_ENV_NAMES = ['HIVE_PTY_ID', 'HIVE_PORT', 'HIVE_SECRET_FILE', 'HIVE_SECRET', 'TMPDIR'] as const;
 
-/** What every worker run on a task added up to (#248). The running workers' time is added on display (taskTotals). */
 /** One stage and agent's share of a task's usage (#617). stage absent: a free session, or, with no agent either, usage saved before
  * the breakdown. agent absent with a stage: a commands stage, which runs no agent. */
 export interface UsagePart {
@@ -392,6 +391,7 @@ export interface UsagePart {
   waitingMs: number;
 }
 
+/** What every worker run on a task added up to (#248). The running workers' time is added on display (taskTotals). */
 export interface TaskUsage {
   tokens: number; // every turn's delta, running runs included: the sum of `parts`
   ms: number; // wall clock of every finished run
