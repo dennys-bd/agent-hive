@@ -120,3 +120,23 @@ test('with a store, a field write stores its re-read item, and a poll read befor
   await source.setField?.('PVTI_1', 'Status', 'In review');
   assert.deepEqual((await source.listItems()).map((task) => [task.item.itemId, task.column]), [['PVTI_1', 'In review']]);
 });
+
+test('stored() answers the stored listing as the SourceItems listItems builds from it, with no gql call (#191)', async () => {
+  const items = await memoryStore();
+  const { gql } = fakeGql({ probe: probeAt(T1), items: page([node(1, 'Ready'), node(2, 'In progress')]), relations: {} });
+  const listed = await createSource(SPEC, { gql, items }).listItems();
+  const offline = fakeGql({}); // every call rejects: a restart with the model and no network
+  const restarted = createSource(SPEC, { gql: offline.gql, items });
+  assert.equal(listed.length, 2);
+  assert.deepEqual(await restarted.stored?.(), listed);
+  assert.deepEqual(offline.calls, []);
+});
+
+test('stored() answers [] with no item store, with no account, and for an @me owner it cannot resolve without the network (#191)', async () => {
+  const { gql, calls } = fakeGql({});
+  assert.deepEqual(await createSource(SPEC, { gql }).stored?.(), []);
+  assert.deepEqual(await createSource(SPEC, { gql, items: { ...(await memoryStore()), source: async () => undefined } }).stored?.(), []);
+  const mine = parseConfig(combConfig({ source: { type: 'github', owner: '@me', number: 6, filter: FILTER } }));
+  assert.deepEqual(await createSource(sourceSpec(mine, mine.comb.sources[0]), { gql, items: await memoryStore() }).stored?.(), []);
+  assert.deepEqual(calls, []);
+});

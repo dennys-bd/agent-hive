@@ -1720,6 +1720,7 @@ export interface IssuePage extends RepoIssue {
 export interface Source {
   resolveFields(): Promise<void>; // every column name the config cites exists on the source
   listItems(): Promise<SourceItem[]>; // tasks in any cited column, in source order
+  stored?(): Promise<SourceItem[]>; // #191: the listing the read model holds, read with no network call; [] when there is none
   setColumn(itemId: string, column: string): Promise<void>;
   apply(itemId: string, action: ItemAction): Promise<void>; // what a stage's onStart / a transition's sources ask beyond a move (#286, #515); rejects for an action its type's SOURCE_ACTIONS entry lacks
   settingsOptions(): Promise<string[]>; // status values available, for the settings form

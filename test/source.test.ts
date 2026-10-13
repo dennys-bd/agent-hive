@@ -783,3 +783,14 @@ test('listItems reads the issue\'s createdAt into the item; an issue without one
   const tasks = await createSource(config, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
   assert.deepEqual(tasks.map((c) => c.item.createdAt), ['2026-09-01T10:00:00Z', undefined]);
 });
+
+test('namespaced maps stored as it maps listItems: the same prefixed ids, source, qualified id and tree names; no stored, none (#191)', async () => {
+  const listed = [{ item: { itemId: 'PVTI_2', id: '2', title: 'T', body: '', url: '', parent: 'PVTI_1' }, column: 'Ready' }];
+  const bare: Source = { resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => listed };
+  const entry: SourceConfig = { name: 'work', qualifyId: true, prefix: 'W', type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS };
+  assert.equal(namespaced(entry, bare).stored, undefined);
+  const wrapped = namespaced(entry, { ...bare, stored: async () => listed });
+  const stored = await wrapped.stored?.();
+  assert.deepEqual(stored, await wrapped.listItems());
+  assert.deepEqual([stored?.[0].item.itemId, stored?.[0].item.id, stored?.[0].item.parent], ['work:PVTI_2', 'W-2', 'work:PVTI_1']);
+});

@@ -16,7 +16,7 @@ import { createProjectIssue, repositoryNodeId } from './github-create.js';
 import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
 import { applyRelations, createItemsSync, fetchRelations, readProbe } from './github-items-sync.js';
-import type { ItemStore } from '../read-model/items.js';
+import { readListing, type ItemStore, type ListingKey } from '../read-model/items.js';
 import { readProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -219,8 +219,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
   // under their epics, then the filter and the hidden epics. The tree links (#28) are read over every node first, before a column or a filter
-  // drops one: a child filtered out or in another column is still a child
-  function keep(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): SourceItem[] {
+  // drops one: a child filtered out or in another column is still a child. #191: the boot read skips the filter, which may need `me`
+  function keep(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items), filtered = true): SourceItem[] {
     const names = new Set(cited.map((c) => c.column));
     const tasks = new Map(items.flatMap<[GhItemNode, SourceItem]>((item) => {
       const task = issueItem(item, names, source.taskProps, links.get(item.id));
@@ -228,7 +228,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     }));
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
     return groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
-      if (!matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
+      if (filtered && !matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
       const epic = isEpicItem(item.content);
       if (epics === 'hide' && epic) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
       const task = tasks.get(item);
@@ -255,6 +255,12 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     lastNodes = nodes;
   }
 
+  // #191: the listing a login's poll stores, and what the boot read reads back
+  const keyOf = (rows: string, who: string): ListingKey => {
+    const project = `${who}/${number}`;
+    return { source: rows, project, scope: query === undefined ? project : `${project} ${query}` };
+  };
+
   // #190: with a store and a login, the model's listing after a probe; without either (headless, setup mode, no login), the wire's, as before
   async function listItems(): Promise<SourceItem[]> {
     const rows = await items?.source();
@@ -264,10 +270,19 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
       return listed(nodes);
     }
     login ??= await ownerLogin(owner, gql);
-    const project = `${login}/${number}`;
-    const read = await sync.list({ source: rows, project, scope: query === undefined ? project : `${project} ${query}` });
+    const read = await sync.list(keyOf(rows, login));
     remember(read.nodes);
     return blockedOut(await sync.relate(rows, keep(read.nodes), read.relations));
+  }
+
+  // #191: the model's listing with no network call: the poll's item steps without the filter (`me` may need the network), and the stored
+  // relations alone. No store, no account, or an `@me` owner not resolved yet: nothing, and the tasks wait for the first poll
+  async function stored(): Promise<SourceItem[]> {
+    const rows = await items?.source();
+    const offline = login ?? (owner === ME ? undefined : owner);
+    if (items === undefined || rows === undefined || offline === undefined) return [];
+    const read = readListing(items.db, keyOf(rows, offline));
+    return applyRelations(keep(read.nodes, treeLinks(read.nodes), false), read.relations);
   }
 
   async function setColumn(itemId: string, column: string): Promise<void> {
@@ -370,7 +385,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return readItemFields(gql, itemId, resolved.projectId);
   }
   return {
-    resolveFields, listItems, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
+    resolveFields, listItems, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
     setField: written(setField), relate: written(relate), findBlockers: searchBlockers, quota: async () => lastQuota,
   };
 }
