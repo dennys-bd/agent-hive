@@ -21,7 +21,7 @@ const openFile = vi.fn<OpenFile>(() => true);
 const board = { files: [] as string[] };
 const writeClipboardFiles = vi.fn(async (paths: string[]) => { board.files = paths; });
 const clipboardFiles = vi.fn(async () => board.files);
-const side = (activity: TaskActivity | LocalActivity = target) => <FileOpenerContext.Provider value={openFile}><ActivitySide target={activity} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
+const side = (activity: TaskActivity | LocalActivity = target) => <FileOpenerContext.Provider value={openFile}><ActivitySide target={activity} tab="files" isShown /></FileOpenerContext.Provider>;
 const posted = (): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === 'POST' ? [`${url} ${String(init.body ?? '')}`] : []));
 const moveLine = (sources: string[], into: string, copy: boolean, id = 'a-I1'): string => `/activities/${encodeURIComponent(id)}/tree/move ${JSON.stringify({ sources, into, copy })}`;
 const fire = async (kind: 'copy' | 'cut' | 'paste', el: Element): Promise<void> => { await act(async () => { fireEvent[kind](el); }); };

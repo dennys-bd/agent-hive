@@ -176,16 +176,16 @@ function CenterWithConsole(args: CenterArgs) {
 }
 
 interface DetailArgs {
-  current?: Activity; isShown: boolean; sideTab: SideTab; setSideTab(tab: SideTab): void; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
+  current?: Activity; isShown: boolean; sideTab: SideTab; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
 }
 
-// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos | detalhes
-// in a header of its own on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
-function detailPanel({ current, isShown, sideTab, setSideTab, detail, onClose, nav }: DetailArgs): DockPanel {
+// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes, as the header's icons pick (#221),
+// on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
+function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: DetailArgs): DockPanel {
   const title = t('dock.detail');
   if (current === undefined) return { id: 'detail', title, body: detail({ isShown, onClose, nav }) };
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
-  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} onTab={setSideTab} />;
+  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
 }
 
@@ -370,7 +370,7 @@ export function MainDock(props: MainDockProps) {
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
     activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),
     ...automationPanel,
-    detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, setSideTab, detail, onClose: closeDetail, nav }),
+    detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),
   ];
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;

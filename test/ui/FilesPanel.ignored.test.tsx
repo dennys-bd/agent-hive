@@ -27,7 +27,7 @@ const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   return folder ? json(folder) : new Response(null, { status: 204 });
 });
 const openFile = vi.fn<OpenFile>(() => true);
-const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
+const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown /></FileOpenerContext.Provider>;
 const urls = (): string[] => fetchMock.mock.calls.map(([url]) => url);
 
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); openFile.mockClear(); vi.stubGlobal('fetch', fetchMock); });

@@ -15,7 +15,7 @@ const activityOf = (itemId: string): TaskActivity =>
 const TREE: TaskTree = { root: '/wt', files: ['src/a.ts', 'README.md', '.env'], marks: {}, folders: [], ignored: { files: [], folders: [] } };
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (url.endsWith('/tree') ? json(TREE) : new Response(null, { status: 204 })));
-const side = (itemId = 'I1') => <ActivitySide key={itemId} target={activityOf(itemId)} tab="files" isShown onTab={vi.fn()} />;
+const side = (itemId = 'I1') => <ActivitySide key={itemId} target={activityOf(itemId)} tab="files" isShown />;
 const toggleHidden = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
   await user.click(screen.getByRole('button', { name: 'mais ações' }));
   await user.click(screen.getByRole('menuitemcheckbox', { name: 'mostrar arquivos ocultos' }));

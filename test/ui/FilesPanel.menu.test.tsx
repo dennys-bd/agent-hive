@@ -26,7 +26,7 @@ const openFile = vi.fn<OpenFile>(() => true);
 const openRun = vi.fn();
 const side = (activity: TaskActivity | LocalActivity = target) => (
   <RunOpenerContext.Provider value={openRun}>
-    <FileOpenerContext.Provider value={openFile}><ActivitySide target={activity} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>
+    <FileOpenerContext.Provider value={openFile}><ActivitySide target={activity} tab="files" isShown /></FileOpenerContext.Provider>
   </RunOpenerContext.Provider>
 );
 const posted = (): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === 'POST' ? [`${url} ${String(init.body ?? '')}`] : []));
