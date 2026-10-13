@@ -23,7 +23,7 @@ function Home({ commands, flow = <main>fluxo</main> }: { commands: string[]; flo
       liveActivities={work.activities} activityRecords={work.activityRecords}
       search={{ state: stateOf([taskA], { workers: [working], commands: { hive: commands } }) }}
       onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>}
-      header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      header={() => <header />}
     >
       {flow}
     </MainDock>

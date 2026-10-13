@@ -15,6 +15,7 @@ import { Home } from '@/components/Home';
 import { LocalMenu } from '@/components/LocalMenu';
 import { type SearchHost, useQuickActions } from '@/components/quick-actions';
 import { useSleptNotices } from '@/components/sleep-notice';
+import { DockBody } from '@/components/ViewRail';
 import {
   DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
 } from '@/components/terminal-tabs';
@@ -28,8 +29,9 @@ import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
 import { shownRun } from '@/lib/center-layout';
+import { pendingSessions } from '@/lib/home';
 import { useRememberFocus } from '@/lib/session-focus';
-import { onPanelKey, onShortcutKey, onViewKey, type PanelId, shownBySide } from '@/lib/dock-layout';
+import { onPanelKey, onShortcutKey, onViewKey, type PanelId, runShortcut, shownBySide } from '@/lib/dock-layout';
 
 /** What MainDock hands the detail's body (#452): whether Detalhes is the shown tab of an open panel, how to close the panel holding it,
  * and where it sits (redesign 06). */
@@ -371,14 +373,18 @@ export function MainDock(props: MainDockProps) {
     ...automationPanel,
     detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, setSideTab, detail, onClose: closeDetail, nav }),
   ];
+  // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
+  const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
   const content = (
     <>
       {header?.(selection.center, activateTab)}
-      <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
-        <ConsoleChannelsContext.Provider value={consoleChannels}>
-          <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} bar={bar} pane={pane} />
-        </ConsoleChannelsContext.Provider>
-      </DockFrame>
+      <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
+        <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
+          <ConsoleChannelsContext.Provider value={consoleChannels}>
+            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} bar={bar} pane={pane} />
+          </ConsoleChannelsContext.Provider>
+        </DockFrame>
+      </DockBody>
       {quick.dialogs}
       {searchClose.dialog}
       {newIn && newActivity?.({ ...newIn, onStarted: openStarted, onClose: () => setNewIn(undefined) })}
