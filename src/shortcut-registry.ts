@@ -45,6 +45,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('newActivity', { mac: 'CmdOrCtrl+N', other: 'CmdOrCtrl+Shift+N' }, 'global'),
   row('runCommand', { mac: 'CmdOrCtrl+R', other: 'CmdOrCtrl+Shift+R' }, 'global'),
   row('toggleConsole', { mac: 'CmdOrCtrl+J', other: 'CmdOrCtrl+Shift+J' }, 'global'),
+  row('problems', both('CmdOrCtrl+Shift+M'), 'global'), // #225: the drawer's problems tab; inside a dialog the key is switchStartMode's
   fixed('signal', 'global', { mac: digits('CmdOrCtrl+Alt+', 1, 3), other: digits('CmdOrCtrl+Shift+', 1, 3) }),
   row('toggleLeft', { mac: 'CmdOrCtrl+B', other: 'CmdOrCtrl+Shift+B' }, 'global'),
   row('toggleRight', { mac: 'CmdOrCtrl+Shift+B', other: 'CmdOrCtrl+Alt+Shift+B' }, 'global'),
@@ -121,6 +122,10 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),
   fixed('cancel', 'dialogs', same(['Escape'])),
 ];
+
+/** The global keys that do nothing with the focus in a dialog (#225), so a dialog's own key may hold the same binding: problems' ⌘⇧M is
+ * the Start dialog's switchStartMode there. Their listener refuses a key inside a dialog (isInDialog, ConsoleDrawer). */
+export const YIELDS_TO_DIALOGS: readonly OperationId[] = ['problems'];
 
 export const SHORTCUTS: readonly ShortcutDef[] = SHORTCUT_MAP.filter((r): r is ShortcutDef => !('keys' in r));
 export const FIXED_SHORTCUTS: readonly FixedShortcut[] = SHORTCUT_MAP.filter((r): r is FixedShortcut => 'keys' in r);

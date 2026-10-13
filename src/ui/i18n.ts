@@ -1599,6 +1599,7 @@ const en = {
   'shortcuts.treeCopyRelativePath': 'copy relative path',
   'shortcuts.treeCopyCheckoutPath': 'copy path from checkout',
   'shortcuts.toggleConsole': 'open or close the console',
+  'shortcuts.problems': 'problems',
   'shortcuts.confirm': 'confirm: run stages, open a session, send and start now', // #585: was feedbackStart (#446)
   'shortcuts.feedbackQueue': 'send in order',
   'shortcuts.reset': 'reset',
@@ -3458,6 +3459,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.treeCopyRelativePath': 'copiar caminho relativo',
   'shortcuts.treeCopyCheckoutPath': 'copiar caminho a partir do checkout',
   'shortcuts.toggleConsole': 'abrir ou fechar o console',
+  'shortcuts.problems': 'problemas',
   'shortcuts.confirm': 'confirmar: executar etapas, abrir sessão, enviar e começar agora',
   'shortcuts.feedbackQueue': 'enviar na ordem',
   'shortcuts.reset': 'restaurar',

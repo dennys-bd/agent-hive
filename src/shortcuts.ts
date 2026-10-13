@@ -2,7 +2,7 @@
 // defaults per platform live in shortcut-registry.ts (#585). Shared by main (the app menu's accelerators), the main window's page, the terminal
 // window, the settings form and the config parser, so it has no Node or Electron import: the UI bundles it. A binding is an Electron accelerator
 // (CmdOrCtrl is Cmd on macOS, Ctrl elsewhere), stored normalized so equal bindings compare equal.
-import { FIXED_SHORTCUTS, type FixedShortcut, type ShortcutDef, type ShortcutScope, SHORTCUTS, shortcutDef } from './shortcut-registry.js';
+import { FIXED_SHORTCUTS, type FixedShortcut, type ShortcutDef, type ShortcutScope, SHORTCUTS, shortcutDef, YIELDS_TO_DIALOGS } from './shortcut-registry.js';
 import type { OperationId, Shortcuts } from './types.js';
 
 export type Bindings = Record<OperationId, string | null>;
@@ -119,7 +119,11 @@ export function effectiveBindings(shortcuts: Shortcuts, isMac: boolean): Binding
 const isFilesAndActivities = (a: ShortcutScope, b: ShortcutScope): boolean => (a === 'files' && b === 'activities') || (a === 'activities' && b === 'files');
 const scopesMeet = (a: ShortcutScope, b: ShortcutScope): boolean => a === b || a === 'global' || b === 'global' || isFilesAndActivities(a, b);
 
-interface Held { binding: string; scope: ShortcutScope }
+interface Held { binding: string; scope: ShortcutScope; id?: OperationId }
+
+// #225: a global key that does nothing inside a dialog leaves its binding to the dialog's own keys
+const yieldsTo = (a: Held, b: Held): boolean => b.scope === 'dialogs' && a.id !== undefined && YIELDS_TO_DIALOGS.includes(a.id);
+const meet = (a: Held, b: Held): boolean => a.binding === b.binding && scopesMeet(a.scope, b.scope) && !yieldsTo(a, b) && !yieldsTo(b, a);
 
 // Every fixed key that is a binding, canonical. A bare letter or Escape is none, so no shortcut can take it anyway
 function fixedHeld(isMac: boolean): (Held & { fixed: FixedShortcut })[] {
@@ -138,9 +142,10 @@ export function collisions(shortcuts: Shortcuts, isMac: boolean): Collision[] {
     return binding === null ? [] : [{ id: def.id, scope: def.scope, binding: canonicalBinding(binding, isMac) }];
   });
   const fixed = fixedHeld(isMac);
-  return on.flatMap(({ id, scope, binding }, i): Collision[] => {
+  return on.flatMap((held, i): Collision[] => {
+    const { id, binding } = held;
     if (RESERVED.includes(binding)) return [[id, 'reserved']];
-    const meets = (other: Held): boolean => other.binding === binding && scopesMeet(scope, other.scope);
+    const meets = (other: Held): boolean => meet(held, other);
     return [
       ...on.slice(i + 1).filter(meets).map((other): Collision => [id, other.id]),
       ...fixed.filter(meets).map((other): Collision => [id, other.fixed]),

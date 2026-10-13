@@ -123,7 +123,7 @@ test('confirm and feedbackQueue keep one default on every platform, never in a t
 test('the registry is the map: the five scopes in order, every row in its scope, the soon ones marked, and inTerminal for the global and activity keys (#585)', () => {
   assert.deepEqual([...new Set(SHORTCUT_MAP.map((row) => row.scope))], [...SHORTCUT_SCOPES], 'contiguous, in scope order');
   const rows = (scope: ShortcutScope): string[] => SHORTCUT_MAP.filter((row) => row.scope === scope).map((row) => ('keys' in row ? `fixed:${row.id}` : row.id));
-  assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
+  assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'problems', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
@@ -270,4 +270,14 @@ test('goBack (#911): ⌘[ on macOS and Alt+Left elsewhere, a flow key never in a
   assert.equal(bindingFromEvent(key({ key: 'ArrowLeft', code: 'ArrowLeft', altKey: true }), OTHER), 'Alt+Left');
   assert.deepEqual([displayBinding('CmdOrCtrl+[', MAC), displayBinding('Alt+Left', OTHER)], ['⌘[', 'Alt+←']);
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
+});
+
+test('problems is a global key on ⌘⇧M on every platform; switchStartMode keeps the same keys in the dialogs, and the two never collide since problems yields inside a dialog (#225)', () => {
+  assert.deepEqual([shortcutDef('problems').scope, pair('problems')], ['global', ['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+M']]);
+  assert.deepEqual([shortcutDef('switchStartMode').scope, pair('switchStartMode')], ['dialogs', ['CmdOrCtrl+Shift+M', 'CmdOrCtrl+Shift+M']]);
+  assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
+  assert.deepEqual(parseShortcuts({}, MAC), {});
+  assert.deepEqual(collisions({ problems: 'CmdOrCtrl+Enter' }, MAC), [], 'a dialog key: problems does nothing in a dialog');
+  assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+Shift+M' }, MAC), [['toggleConsole', 'problems'], ['toggleConsole', 'switchStartMode']], 'any other global key still meets both');
+  assert.deepEqual(collisions({ problems: 'CmdOrCtrl+K' }, MAC), [['problems', 'clear']], 'it still meets the activities');
 });

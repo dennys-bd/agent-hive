@@ -14,7 +14,7 @@ test('the four scopes come in Settings\' order; the global one lists its live sh
   expect(sections.map((s) => s.scope)).toEqual([...SHORTCUT_SCOPES]);
   expect(labels(sections.slice(0, 1))).toEqual([
     'shortcuts.viewActivities', 'shortcuts.viewFlow', 'shortcuts.search', 'shortcuts.searchOperations', 'shortcuts.newActivity', 'shortcuts.runCommand',
-    'shortcuts.toggleConsole', 'shortcuts.fixed.signal', 'shortcuts.toggleLeft', 'shortcuts.toggleRight', 'shortcuts.fixed.settings',
+    'shortcuts.toggleConsole', 'shortcuts.problems', 'shortcuts.fixed.signal', 'shortcuts.toggleLeft', 'shortcuts.toggleRight', 'shortcuts.fixed.settings',
     'shortcuts.shortcutMap', 'shortcuts.fullScreen', 'shortcuts.closeWindow', 'shortcuts.fixed.quit',
   ]);
   expect(sections[0].rows[0]).toEqual({ label: 'shortcuts.viewActivities', keys: '⌘1' });
