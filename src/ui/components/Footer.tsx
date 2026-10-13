@@ -1,88 +1,33 @@
 import { ChevronDownIcon } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import { liveDefaultAgent } from '../../agents';
-import type { DisabledRuleStatus, DisableUntil, EffectiveLimits, State, UsageRule } from '../../types';
+import type { DisabledRuleStatus, EffectiveLimits, State, UsageRule } from '../../types';
 import { workerCount } from '../../worker-count';
-import { act } from '@/components/actions';
 import { AgentUsage } from '@/components/footer/AgentUsage';
+import { PauseRulePopover } from '@/components/footer/PauseRulePopover';
 import { PowerButtons } from '@/components/footer/PowerButtons';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { type MessageKey, t } from '@/i18n';
+import { t } from '@/i18n';
 import { firedRules, ruleKey, ruleLabel } from '@/lib/rule-effects';
 import { signalEffect } from '@/lib/signal-effect';
-import { clock, countdown, nextMorning, type PauseChoice, pauseUntil, ruleTarget, timeLeft, windowResetsAt } from '@/lib/usage';
+import { timeLeft } from '@/lib/usage';
 
 interface FooterProps { state: State; effective: EffectiveLimits; locale: string; onEditRules?(): void; console?: ReactNode } // console: its chip (redesign 05)
 
 // The footer's chips and buttons share the 1px 8px chip box of the handoff (02), on the ui Button so focus and hover come with it.
 const CHIP = 'h-auto gap-1.5 rounded-sm px-2 py-px text-xs font-normal text-foreground';
 
-function MenuItem({ onClick, hint, muted, children }: { onClick(): void; hint?: string; muted?: boolean; children: ReactNode }) {
-  return (
-    <Button
-      type="button" variant="ghost" onClick={onClick}
-      className={`h-auto w-full justify-between rounded-sm px-2 py-1.5 text-[13px] font-normal ${muted ? 'text-muted-foreground' : ''}`}
-    >
-      <span>{children}</span>
-      {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-    </Button>
-  );
-}
-
-// personalizado… (02): a native date and time field, posted only once it is in the future.
-function CustomPause({ onPause }: { onPause(until: DisableUntil): void }) {
-  const [value, setValue] = useState('');
-  const at = Date.parse(value); // datetime-local has no offset, so it parses as local time
-  const valid = Number.isFinite(at) && at > Date.now();
-  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) onPause({ kind: 'at', at: new Date(at).toISOString() }); };
-  return (
-    <form onSubmit={submit} className="flex items-center gap-1 px-1 py-1">
-      <Input type="datetime-local" aria-label={t('pause.customLabel')} value={value} onChange={(e) => setValue(e.target.value)} className="h-7 text-xs" />
-      <Button type="submit" size="xs" disabled={!valid}>{t('pause.customApply')}</Button>
-    </form>
-  );
-}
-
-const FIXED: { choice: Exclude<PauseChoice, 'reset' | 'tomorrow'>; key: MessageKey }[] = [
-  { choice: 'quarter', key: 'pause.quarter' }, { choice: 'hour', key: 'pause.hour' }, { choice: 'fourHours', key: 'pause.fourHours' },
-];
-
 interface RuleChipProps { rule: UsageRule; paused: boolean; state: State; locale: string; onEditRules?(): void }
 
-/** A rule's chip and its pausar regra popover (02): the horizons, personalizado…, retomar agora while paused, and a way to the rules. */
+/** A rule's chip around its pausar regra popover; goes with the chips in the footer's last step (#224). */
 function RuleChip({ rule, paused, state, locale, onEditRules }: RuleChipProps) {
-  const [open, setOpen] = useState(false);
-  const [custom, setCustom] = useState(false);
-  const now = Date.now();
-  const resetAt = windowResetsAt(state, rule); // #929: its own agent's window
-  const close = () => { setOpen(false); setCustom(false); };
-  const pause = (until: DisableUntil) => { close(); void act('/rules/disable', { ...ruleTarget(rule), until }); };
-  const resume = () => { close(); void act('/rules/enable', ruleTarget(rule)); };
   return (
-    <Popover open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline" className={`${CHIP} ${paused ? 'text-muted-foreground line-through' : ''}`}>
-          {ruleLabel(rule, liveDefaultAgent(state))}
-          <ChevronDownIcon className="size-3 text-muted-foreground" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="flex w-[244px] flex-col p-1">
-        <div className="px-2 pt-1.5 pb-1 text-xs text-muted-foreground">{t('pause.title')}</div>
-        {paused && <MenuItem onClick={resume}>{t('pause.resume')}</MenuItem>}
-        <MenuItem onClick={() => pause(pauseUntil('reset', now))} hint={resetAt && countdown(resetAt, now)}>{t('pause.reset')}</MenuItem>
-        {FIXED.map(({ choice, key }) => <MenuItem key={choice} onClick={() => pause(pauseUntil(choice, now))}>{t(key)}</MenuItem>)}
-        <MenuItem onClick={() => pause(pauseUntil('tomorrow', now))} hint={clock(nextMorning(now).toISOString(), locale)}>{t('pause.tomorrow')}</MenuItem>
-        {custom ? <CustomPause onPause={pause} /> : <MenuItem onClick={() => setCustom(true)}>{t('pause.custom')}</MenuItem>}
-        {onEditRules && (
-          <>
-            <div className="-mx-1 my-1 h-px bg-border" />
-            <MenuItem muted onClick={() => { close(); onEditRules(); }}>{t('pause.edit')}</MenuItem>
-          </>
-        )}
-      </PopoverContent>
-    </Popover>
+    <PauseRulePopover rule={rule} paused={paused} state={state} locale={locale} onEditRules={onEditRules}>
+      <Button type="button" variant="outline" className={`${CHIP} ${paused ? 'text-muted-foreground line-through' : ''}`}>
+        {ruleLabel(rule, liveDefaultAgent(state))}
+        <ChevronDownIcon className="size-3 text-muted-foreground" />
+      </Button>
+    </PauseRulePopover>
   );
 }
 
