@@ -62,6 +62,7 @@ export interface ReadModel {
   labels(source: string, repository: string): string[]; // by name
   counts(source: string, repository: string): RepoCounts;
   issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
+  issueByNode(source: string, nodeId: string): IssueRow | undefined; // #187: an issue's or a PR's row, as stored
   nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's
   comments(source: string, issueNodeId: string): CommentRow[]; // oldest first
   nodeIds(source: string, repository: string, table: 'issues' | 'comments'): string[];
@@ -157,11 +158,12 @@ function viewsOf(db: DatabaseSync): (source: string, rows: Row[]) => IssueView[]
   };
 }
 
-function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
+function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue' | 'issueByNode' | 'nodeIdOf' | 'comments' | 'nodeIds'> {
   const scope = db.prepare('SELECT cursor, etag, synced_at FROM sync_scopes WHERE source = ? AND repository = ? AND kind = ?');
   const issues = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND kind = 'issue' AND state = ? ORDER BY updated_at DESC, number DESC LIMIT ?");
   const issue = db.prepare("SELECT * FROM issues WHERE source = ? AND repository = ? AND number = ? AND kind = 'issue'");
   const nodeId = db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ? AND number = ?');
+  const byNode = db.prepare('SELECT * FROM issues WHERE source = ? AND node_id = ?');
   const comments = db.prepare('SELECT * FROM comments WHERE source = ? AND issue_node_id = ? ORDER BY created_at');
   const ids = {
     issues: db.prepare('SELECT node_id FROM issues WHERE source = ? AND repository = ?'),
@@ -177,6 +179,10 @@ function readsOf(db: DatabaseSync): Pick<ReadModel, 'scope' | 'issues' | 'issue'
     issue: (source, repository, number) => {
       const row = issue.get(source, repository, number);
       return row === undefined ? undefined : views(source, [row])[0];
+    },
+    issueByNode: (source, nodeId) => {
+      const row = byNode.get(source, nodeId);
+      return row === undefined ? undefined : issueOf(row);
     },
     nodeIdOf: (source, repository, number) => {
       const row = nodeId.get(source, repository, number);

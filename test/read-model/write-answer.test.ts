@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openReadModel, type SyncKind } from '../../src/read-model/db.js';
 import { applyWriteAnswer, type WriteAnswerDeps } from '../../src/read-model/write-answer.js';
-import { COMMENT_ROW, ISSUE_ROW, REPO, SOURCE, T1, T2 } from './fixtures.js';
+import { syncScope } from '../../src/read-model/sync.js';
+import { COMMENT_ROW, fakeRest, ISSUE_ROW, NOW, ok, REPO, restPr, SOURCE, T1, T2 } from './fixtures.js';
 
 const WINDOW_MS = 30_000; // #178's written_at window
 const WRITTEN = { ...ISSUE_ROW, title: 'written', updatedAt: T2 };
@@ -56,4 +57,32 @@ test('a review answer and a merge answer upsert their rows with origin write and
   const page = deps.db.prPage(SOURCE, REPO, 7);
   assert.deepEqual([page?.reviews.map((r) => r.nodeId), page?.issue.state, page?.pull?.mergedAt], [['PRR_1'], 'closed', T2]);
   assert.deepEqual(notified.map(([, kinds]) => kinds), [['issues', 'pulls'], ['issues', 'pulls']]);
+});
+
+test('a sync page read before the merge, with a tied updated_at inside the window, sets back neither the row nor merged_at; past the window it does (#187)', async () => {
+  const clock = { now: 1_000 };
+  const { deps } = await model(clock);
+  applyWriteAnswer(deps, REPO, { issues: [MERGED], pullFlags: [{ ...KEY, draft: false, mergedAt: T2 }] });
+  clock.now += WINDOW_MS - 1;
+  const before = restPr(7, T2); // open, merged_at null: read before the merge, in the merge's own second
+  const page = (): Promise<{ kinds: SyncKind[] }> => syncScope({ db: deps.db, rest: fakeRest([ok([before])]).rest, source: SOURCE, now: NOW }, REPO, 'issues');
+  assert.deepEqual((await page()).kinds, []);
+  const kept = deps.db.prPage(SOURCE, REPO, 7);
+  assert.deepEqual([kept?.issue.state, kept?.pull?.mergedAt], ['closed', T2]);
+  clock.now += 1;
+  deps.db.setScope(SOURCE, REPO, 'issues', { cursor: null, etag: null, syncedAt: null });
+  assert.deepEqual((await page()).kinds, ['issues', 'pulls'], 'past the window the sync is the truth again, flags with it');
+});
+
+test('a PR item whose row is already stored identical still writes its flags: the refill of an unchanged row (#187)', async () => {
+  const { deps } = await model({ now: 1_000 });
+  const item = restPr(5, T1, T1);
+  const sync = { db: deps.db, rest: fakeRest([ok([item])]).rest, source: SOURCE, now: NOW };
+  await syncScope(sync, REPO, 'issues');
+  deps.db.removeIssue(SOURCE, 'PR_5'); // the flags go with the row; the row comes back identical below
+  await syncScope({ ...sync, rest: fakeRest([ok([item])]).rest }, REPO, 'issues');
+  deps.db.setScope(SOURCE, REPO, 'issues', { cursor: null, etag: null, syncedAt: null });
+  deps.db.setPullFlags({ source: SOURCE, nodeId: 'PR_5', repository: REPO, number: 5, draft: true, mergedAt: null }); // drifted
+  assert.deepEqual((await syncScope({ ...sync, rest: fakeRest([ok([item])]).rest }, REPO, 'issues')).kinds, ['pulls']);
+  assert.equal(deps.db.prPage(SOURCE, REPO, 5)?.pull?.mergedAt, T1);
 });

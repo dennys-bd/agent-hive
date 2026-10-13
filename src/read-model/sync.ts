@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import type { ReadModel, SyncKind, SyncScope } from './db.js';
 import { commentFromRest, issueFromRest, pullFlagsFromRest } from './normalize.js';
 import type { RestGet } from './rest.js';
@@ -64,10 +65,13 @@ function rowOf(deps: SyncDeps, repository: string, kind: ListKind, item: unknown
 }
 
 /** A PR item's own flags beside its issues row (#186), written wherever a PR item is read: the issues scope, the full listing and the
- * refetch. Whether they changed; an issue item has none. */
-export function storePullFlags(deps: SyncDeps, repository: string, item: unknown): boolean {
+ * refetch. Only for a row that stands as read (#187): just written, or stored identical. A row the replace rule refused (a write's answer
+ * inside its window) keeps that write's flags, so a page read before a merge cannot set merged_at back. Whether they changed. */
+export function storePullFlags(deps: SyncDeps, repository: string, item: unknown, row: IssueRow, wrote: boolean): boolean {
   const flags = pullFlagsFromRest(deps.source, repository, item);
-  return flags !== undefined && deps.db.setPullFlags(flags);
+  if (flags === undefined) return false;
+  if (!wrote && !isDeepStrictEqual(deps.db.issueByNode(deps.source, row.nodeId), row)) return false;
+  return deps.db.setPullFlags(flags);
 }
 
 interface PageStored { last: string | undefined; blocked: boolean; wrote: boolean; pulls: boolean }
@@ -85,7 +89,7 @@ function storePage(deps: SyncDeps, repository: string, kind: ListKind, items: un
       if (row === undefined) return { last, blocked: true, wrote, pulls };
       const written = 'number' in row ? db.upsertIssue(row, 'sync') : db.upsertComment(row, 'sync');
       wrote = wrote || written;
-      if ('number' in row) pulls = storePullFlags(deps, repository, item) || pulls;
+      if ('number' in row) pulls = storePullFlags(deps, repository, item, row, written) || pulls;
       last = row.updatedAt;
     }
     return { last, blocked: false, wrote, pulls };

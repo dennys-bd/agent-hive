@@ -59,8 +59,8 @@ export async function reconcile(deps: SyncDeps, repository: string): Promise<Syn
     const goneComments = db.nodeIds(source, repository, 'comments').filter((id) => !keptComments.has(id));
     for (const id of goneIssues) db.removeIssue(source, id);
     for (const id of goneComments) db.removeComment(source, id);
-    // #186: every PR item is in hand, so its flags cost no request; map, not some: each item is written
-    const flagsChanged = issues.items.map((item) => storePullFlags(deps, repository, item)).some(Boolean);
+    // #186: every PR item is in hand, so its flags cost no request; map, not some: each item is written. The listing upserts no row (#187)
+    const flagsChanged = issues.items.map((item) => storePullFlags(deps, repository, item, issueFromRest(source, repository, item), false)).some(Boolean);
     return [
       ...(goneIssues.length > 0 ? ['issues' as const] : []), ...(goneComments.length > 0 ? ['comments' as const] : []),
       ...(flagsChanged ? ['pulls' as const] : []),
@@ -117,11 +117,11 @@ function storeRefetch(deps: SyncDeps, before: Snapshot, issue: IssueRow, comment
   const { db, source } = deps;
   const kept = new Set(comments.map((c) => c.nodeId));
   return db.transaction(() => {
-    db.upsertIssue(issue, 'sync');
+    const wrote = db.upsertIssue(issue, 'sync');
     for (const comment of comments) db.upsertComment(comment, 'sync');
     for (const old of before.comments) if (!kept.has(old.nodeId)) db.removeComment(source, old.nodeId);
     if (prs !== undefined) db.setClosingPrs(source, issue.nodeId, prs);
-    return storePullFlags(deps, issue.repository, item);
+    return storePullFlags(deps, issue.repository, item, issue, wrote);
   });
 }
 
