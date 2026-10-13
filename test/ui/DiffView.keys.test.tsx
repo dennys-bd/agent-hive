@@ -16,11 +16,11 @@ test('] and [ move the open file, V marks it, only while the focus is in the pan
   await within(screen.getByRole('region', { name: LABEL })).findByRole('region', { name: 'src/a.ts' });
   await user.click(within(list()).getAllByRole('button')[0]);
   await user.keyboard(']');
-  expect(current()).toMatch(/^Mb\.ts/);
+  expect(current()).toMatch(/^b\.ts/);
   await user.keyboard('[[');
-  expect(current()).toMatch(/^Msrc\/a\.ts/);
+  expect(current()).toMatch(/^a\.ts/);
   await user.keyboard('[[');
-  expect(current()).toMatch(/^Aimg\/logo\.png/);
+  expect(current()).toMatch(/^logo\.png/);
   await user.keyboard('v');
   expect(callsTo(hive, 'POST', '/tasks/I1/review/reviewed')[0].body).toMatchObject({ path: 'img/logo.png', reviewed: true });
   await user.click(within(list()).getByRole('textbox', { name: 'filtrar arquivos' }));

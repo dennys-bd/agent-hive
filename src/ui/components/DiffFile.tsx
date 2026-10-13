@@ -9,13 +9,19 @@ import { type CommentTarget, useReviewSurface } from '@/components/review-surfac
 import { Button } from '@/components/ui/button';
 import { t } from '@/i18n';
 import type { LineSelect, LineSelection } from '@/hooks/use-diff-pane';
-import { type Counts, countsOf, type DiffLayout } from '@/lib/diff-rows';
+import { type Counts, countsOf, type DiffLayout, splitPath } from '@/lib/diff-rows';
 import { endsAt } from '@/lib/review-view';
 import type { SurfaceDraft } from '@/lib/surface';
 
-/** `+a −d` with each sign in its status colour (#591): a file's, a row's and the bar's. */
-export function CountsText({ counts }: { counts: Counts }) {
-  return <span className="font-mono"><span className="text-working">+{counts.add}</span> <span className="text-destructive">−{counts.del}</span></span>;
+/** `+a −d` with each sign in its status colour (#591): a file's, a row's and the bar's. A zero side is left out (#853); className sizes it. */
+export function CountsText({ counts, className = 'font-mono' }: { counts: Counts; className?: string }) {
+  return (
+    <span className={`tabular-nums ${className}`}>
+      {counts.add > 0 && <span className="text-working">+{counts.add}</span>}
+      {counts.add > 0 && counts.del > 0 && ' '}
+      {counts.del > 0 && <span className="text-destructive">−{counts.del}</span>}
+    </span>
+  );
 }
 
 /** A file's name as its header shows it (#270): `old → new` on a rename. */
@@ -62,13 +68,49 @@ function DraftNote({ draft }: { draft: SurfaceDraft }) {
   );
 }
 
+// The path as the card's header shows it (#853): the folder muted, the name semibold; a rename keeps `old → new` whole, as before
+function FileName({ file }: { file: FileDiff }) {
+  if (file.oldPath !== undefined) return <span className="min-w-0 truncate">{filePath(file)}</span>;
+  const { dir, name } = splitPath(file.path);
+  return <span className="min-w-0 truncate"><span className="text-muted-foreground">{dir}</span><span className="font-semibold">{name}</span></span>;
+}
+
+// revisado's 12px square (#853): empty on the empty token's border, or filled muted-foreground with a ✓
+const CHECK = 'flex size-3 shrink-0 items-center justify-center rounded-[3px] text-[10px] leading-none';
+function ReviewedCheck({ isOn }: { isOn: boolean }) {
+  return <span aria-hidden="true" data-slot="reviewed-check" className={`${CHECK} ${isOn ? 'bg-muted-foreground text-background' : 'border border-empty'}`}>{isOn ? '✓' : ''}</span>;
+}
+
+interface FileHeaderProps { file: FileDiff; collapsed: boolean; isReviewed: boolean; onToggle(): void; onReviewed(): void }
+
+// A card's 40px header (#853): chevron, path, counts, abrir arquivo in ring when the pane has it, revisado with its square and V
+function FileHeader({ file, collapsed, isReviewed, onToggle, onReviewed }: FileHeaderProps) {
+  const surface = useReviewSurface();
+  return (
+    <header className={`sticky top-0 z-10 flex h-10 items-center gap-2.5 bg-card px-3.5 text-[13px] ${collapsed ? '' : 'border-b'}`}>
+      <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground" aria-expanded={!collapsed} aria-label={t(collapsed ? 'diff.expand' : 'diff.collapse')} onClick={onToggle}>
+        {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+      </Button>
+      <FileName file={file} />
+      {file.binary ? <span className="text-muted-foreground text-xs">{t('diff.binary')}</span> : <CountsText counts={countsOf(file.hunks)} className="text-xs" />}
+      <span className="ml-auto flex items-center gap-2.5">
+        {file.status !== 'deleted' && surface.openFile !== undefined && (
+          <button type="button" className="text-ring text-xs hover:underline" onClick={() => surface.openFile?.(file)}>{t('diff.openFile')}</button>
+        )}
+        <Button type="button" size="xs" variant="outline" aria-pressed={isReviewed} onClick={onReviewed}>
+          <ReviewedCheck isOn={isReviewed} />{t('diff.reviewed')}<span aria-hidden="true" className="font-normal text-muted-foreground">V</span>
+        </Button>
+      </span>
+    </header>
+  );
+}
+
 interface DiffFileProps {
   file: FileDiff; id: string; layout: DiffLayout; collapsed: boolean; isReviewed: boolean; onToggle(): void; onReviewed(): void;
   lines: LineSelect; target?: CommentTarget; onCloseBox(): void;
 }
 
-/** One file of a review pane (#591, #592): a 38px header (chevron, path, counts, abrir arquivo when the pane has it, revisado), then at its top
- * what lost its lines and GitHub's file conversations, then its hunks unless collapsed or binary. */
+/** One file of a review pane as a card (#591, #592, #853): its 40px header, then at its top what lost its lines and GitHub's file conversations, then its hunks unless collapsed or binary. */
 export function DiffFile({ file, id, layout, collapsed, isReviewed, onToggle, onReviewed, lines, target, onCloseBox }: DiffFileProps) {
   const surface = useReviewSurface();
   const conversations = surface.conversations(file);
@@ -91,25 +133,11 @@ export function DiffFile({ file, id, layout, collapsed, isReviewed, onToggle, on
     );
   };
   return (
-    <section id={id} aria-label={file.path} className="border-b">
-      <header className="sticky top-0 z-10 flex h-[38px] items-center gap-2 border-b bg-background px-2">
-        <Button type="button" size="icon-xs" variant="ghost" aria-expanded={!collapsed} aria-label={t(collapsed ? 'diff.expand' : 'diff.collapse')} onClick={onToggle}>
-          {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-        </Button>
-        <span className="min-w-0 truncate font-mono">{filePath(file)}</span>
-        {file.binary ? <span className="text-muted-foreground">{t('diff.binary')}</span> : <CountsText counts={countsOf(file.hunks)} />}
-        <span className="ml-auto flex items-center gap-2">
-          {file.status !== 'deleted' && surface.openFile !== undefined && (
-            <button type="button" className="text-muted-foreground hover:underline" onClick={() => surface.openFile?.(file)}>{t('diff.openFile')}</button>
-          )}
-          <Button type="button" size="xs" variant={isReviewed ? 'secondary' : 'outline'} aria-pressed={isReviewed} onClick={onReviewed}>
-            {t('diff.reviewed')}<span aria-hidden="true" className="text-muted-foreground">V</span>
-          </Button>
-        </span>
-      </header>
+    <section id={id} aria-label={file.path} className="shrink-0 overflow-clip rounded-lg border">
+      <FileHeader file={file} collapsed={collapsed} isReviewed={isReviewed} onToggle={onToggle} onReviewed={onReviewed} />
       {!collapsed && top.map((c) => <div key={c.id} className="px-2"><Conversation conversation={c} isOutdated={c.outdated} /></div>)}
       {!collapsed && !file.binary && (
-        <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
+        <table className="w-full table-fixed border-collapse font-mono text-xs leading-[22px]">
           <DiffCols layout={layout} />
           <tbody>{file.hunks.map((hunk, index) => <HunkRows key={hunk.header} hunk={hunk} layout={layout} view={hunkView(file, index, layout, lines, below, !surface.readOnly)} />)}</tbody>
         </table>

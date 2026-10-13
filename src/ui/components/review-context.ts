@@ -23,7 +23,7 @@ export function useReviewPane(): ReviewPane {
 }
 
 /** A comment box and a conversation's task (#591): on task, border, radius-lg. */
-export const BOX = 'my-1 max-w-[640px] rounded-lg border bg-card p-2 font-sans text-[13px] leading-[19px]';
+export const BOX = 'my-1 max-w-[620px] rounded-lg border bg-card p-2 font-sans text-[13px] leading-[19px]';
 
 export const lineLabel = (anchor: Pick<LineAnchor, 'start' | 'end'>): string =>
   (anchor.start === anchor.end ? t('review.line', { n: anchor.start }) : t('review.lines', { start: anchor.start, end: anchor.end }));

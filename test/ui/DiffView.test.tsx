@@ -13,16 +13,17 @@ const bar = (): HTMLElement => screen.getByRole('toolbar', { name: 'barra do dif
 const list = (): HTMLElement => screen.getByRole('navigation', { name: 'arquivos do diff' });
 const rows = (): string[] => within(list()).getAllByRole('button').map((b) => b.textContent ?? '');
 
-test('the pane draws the bar\'s totals, a 280px list (mark, dir muted, name, counts) with the first file open, and each file\'s section (#591)', async () => {
+test('the pane draws the bar\'s totals, a 280px list (folder rows, names in their status colour, counts) with the first file open, and each file\'s card (#591, #853)', async () => {
   renderPane();
   expect(within(pane()).getByText('carregando…')).toBeInTheDocument();
   await within(pane()).findByRole('region', { name: 'src/a.ts' });
   expect(callsTo(hive, 'GET', '/activities/a-I1/diff?scope=worktree')).toHaveLength(1);
   expect(bar()).toHaveTextContent('3 arquivos · +1 −1');
   expect(list()).toHaveClass('w-[280px]', 'border-r');
-  expect(rows()).toEqual(['Msrc/a.ts+1 −1', 'Mb.ts+0 −0', 'Aimg/logo.png']);
-  expect(within(list()).getByText('src/')).toHaveClass('text-muted-foreground');
-  expect(within(list()).getByText('A')).toHaveClass('text-working');
+  expect(rows()).toEqual(['a.tsmodificado+1 −1', 'b.tsrenomeado', 'logo.pngadicionado']);
+  expect(within(list()).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['⌄src', 'a.tsmodificado+1 −1', 'b.tsrenomeado', '⌄img', 'logo.pngadicionado']);
+  expect(within(list()).getByText('src').closest('li')).toHaveClass('text-muted-foreground');
+  expect(within(list()).getByText('logo.png')).toHaveClass('text-working');
   expect(within(list()).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'true');
   expect(within(pane()).getByText('a-old.ts → b.ts')).toBeInTheDocument();
 });
@@ -32,7 +33,7 @@ test('the filter keeps the paths holding its text, any case; a row click opens t
   renderPane();
   await within(pane()).findByRole('region', { name: 'src/a.ts' });
   await user.type(within(list()).getByRole('textbox', { name: 'filtrar arquivos' }), 'LOGO');
-  expect(rows()).toEqual(['Aimg/logo.png']);
+  expect(rows()).toEqual(['logo.pngadicionado']);
   await user.click(within(list()).getByRole('button'));
   expect(within(list()).getByRole('button')).toHaveAttribute('aria-current', 'true');
 });

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { countsOf, splitRows } from '@/lib/diff-rows';
+import { countsOf, hunkContext, splitPath, splitRows } from '@/lib/diff-rows';
 import type { DiffHunk, DiffLine } from '../../src/types';
 
 const ctx = (o: number, n: number, text: string): DiffLine => ({ kind: 'context', text, old: o, new: n });
@@ -21,4 +21,13 @@ test('splitRows leaves empty cells on the shorter side: a longer deleted run, a 
 
 test('countsOf adds and deletes across hunks (#591)', () => {
   expect(countsOf([hunk(del(1, 'x'), add(1, 'X')), hunk(add(5, 'Y'))])).toEqual({ add: 2, del: 1 });
+});
+
+test('hunkContext keeps the function git printed after the range, and the whole header when there is none; splitPath splits folder and name (#853)', () => {
+  expect(hunkContext('@@ -181,7 +181,7 @@ function withBefore(a) {')).toBe('function withBefore(a) {');
+  expect(hunkContext('@@ -1,2 +1,2 @@ intro')).toBe('intro');
+  expect(hunkContext('@@ -1 +1 @@')).toBe('@@ -1 +1 @@');
+  expect(hunkContext('@@ -1 +1 @@   ')).toBe('@@ -1 +1 @@   ');
+  expect(splitPath('src/ui/a.ts')).toEqual({ dir: 'src/ui/', name: 'a.ts' });
+  expect(splitPath('a.ts')).toEqual({ dir: '', name: 'a.ts' });
 });

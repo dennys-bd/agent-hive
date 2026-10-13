@@ -77,3 +77,9 @@ test('side by side, the half holding the box or a conversation takes its line\'s
   document.body.innerHTML = '';
   expect(tints(placeOf(renderThread('split', anchor('old', 2, 'two'))).cells)).toEqual(['bg-destructive/30', 'bg-destructive/12', '']);
 });
+
+test('what shows under a line is a card box at most 620px wide (#853)', () => {
+  expect(renderBox('unified', anchor('new', 2, '2'))).toHaveClass('max-w-[620px]', 'rounded-lg', 'border', 'bg-card');
+  document.body.innerHTML = '';
+  expect(renderThread('unified', anchor('new', 1, 'one'))).toHaveClass('max-w-[620px]');
+});
