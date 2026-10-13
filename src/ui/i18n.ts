@@ -414,6 +414,7 @@ const en = {
   'copy.otherWorkspace': 'that activity is in another workspace',
   'activity.new.opensAs': 'agent opens as',
   'activity.new.chat': 'chat',
+  'launch.pluginUnreadable': 'the Hive plugin\'s agents could not be read:', // #257: GET /launch-options and the open routes, the reason follows
   'activity.stop.pick': 'pick a session to put to sleep', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'active sessions · {n}',
   'activity.stop.focused': 'focused',
@@ -2288,6 +2289,7 @@ const pt: Record<MessageKey, string> = {
   'copy.otherWorkspace': 'essa atividade é de outro workspace',
   'activity.new.opensAs': 'agente abre como',
   'activity.new.chat': 'chat',
+  'launch.pluginUnreadable': 'os agentes do plugin do Hive não puderam ser lidos:', // #257: GET /launch-options and the open routes, the reason follows
   'activity.stop.pick': 'escolher a sessão para dormir', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'sessões ativas · {n}',
   'activity.stop.focused': 'em foco',

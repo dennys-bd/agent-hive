@@ -758,6 +758,20 @@ export interface LaunchPick {
   args?: string[]; // after config.agentArgs[agent]
 }
 
+/** One model a list of GET /launch-options offers (#257). hint: the muted right-hand text (e.g. "opus 5.5"). */
+export interface LaunchOption { id: string; hint?: string }
+
+/** One agent's picks the new session dialog offers (#257). */
+export interface AgentLaunchOptions {
+  aliases: LaunchOption[]; // Codex: []
+  versions: LaunchOption[];
+  specializedAgents: { name: string; description: string }[]; // hive:<name>, sorted by file
+  args: string[]; // config.agentArgs[agent]: the dialog's "added to the global ones" and "runs" lines
+}
+
+/** GET /launch-options (#257). */
+export type LaunchOptions = Record<AgentId, AgentLaunchOptions>;
+
 /** One file of a task's result the panel links (#258). */
 export interface TaskFile {
   key: string; // the result key, e.g. spec
