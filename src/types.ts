@@ -657,6 +657,7 @@ export interface Worker {
   waitingSince?: string; // ISO; stamped when the worker enters waiting, kept while it stays there, dropped on any other status (#233)
   waitedMs?: number; // the finished waiting intervals of this run, added as the worker leaves waiting (#248)
   seenAt?: string; // ISO, the last hook of this run: where boot closes it (#248)
+  blocked?: true; // #294: hive_stop's block, set with its kill: its exit leaves the activity unstopped, the blockers gate the restart
   ending?: SleepCause; // #672: why the Hive asked this run to end (a sleep, a sleep all, the idle shutdown), set with its kill, read on its end
   forgotten?: true; // #672: its sleeping tab closed before it exited: its end records nothing
   terminalId?: string; // #696: a free session the claude shim captured, whose run lives in this terminal's pty
@@ -1372,7 +1373,7 @@ export type HiveEvent =
   | { type: 'renameStages'; renames: Record<string, string> } // #861: a save that renamed stages: old name → new name, one simultaneous map; dispatched by reconfigure after renameSources, before setStages
   | { type: 'hook'; ptyId: string; payload: HookPayload; branch?: string; tokens?: number; title?: string } // tokens and title: the server's turn-end read (#248, #489)
   | { type: 'exit'; ptyId: string }
-  | { type: 'stop'; ptyId: string; close?: CloseAction; cause?: 'manual' | 'all' } // the only way a user ends a run (#283): a stage run leaves its task stopped; the worker frees on the exit. close: hive_stop's reason (#314), written to the task's item after the kill. cause: the sleep it is (#672), absent for hive_stop and a command's timeout
+  | { type: 'stop'; ptyId: string; close?: CloseAction; cause?: 'manual' | 'all'; block?: true } // the only way a user ends a run (#283): a stage run leaves its task stopped; the worker frees on the exit. close: hive_stop's reason (#314), written to the task's item after the kill. cause: the sleep it is (#672), absent for hive_stop and a command's timeout. block: hive_stop's block (#294): the activity is not stopped, the blockers gate the fill
   | { type: 'forgetSlept'; ptyId: string } // a sleeping run's tab closed (#672): its record and its transcript go
   | { type: 'quit' } // the server's close(), before its kills (#283): their exits are ignored and the next boot resumes the tasks in flight
   | { type: 'dismissCrash' } // the crash popup closed (#283)

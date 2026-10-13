@@ -750,8 +750,8 @@ function taskDeleted(state: State, id: string): Reduced {
 
 // A session's stop frees its worker only on the exit, which fills (#283); a commands run's stop frees it here with no exit to follow, so it
 // fills now or the worker idles until the next event (#727)
-function stopped(state: State, { ptyId, close, cause }: Extract<HiveEvent, { type: 'stop' }>): Reduced {
-  const halted = stop(state, ptyId, close, cause);
+function stopped(state: State, { ptyId, close, cause, block }: Extract<HiveEvent, { type: 'stop' }>): Reduced {
+  const halted = stop(state, ptyId, close, cause, block);
   return state.activities.some((a) => a.commands?.ptyId === ptyId) ? fill(halted) : halted;
 }
 
