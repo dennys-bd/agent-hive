@@ -19,7 +19,7 @@ import { DockBody } from '@/components/ViewRail';
 import {
   DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
 } from '@/components/terminal-tabs';
-import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext } from '@/hooks/use-console';
+import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import type { BackEntry } from '@/hooks/use-back-stack';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -99,19 +99,6 @@ function useDockedRuns(open: OpenRun): void {
 const NO_STAGES: Stage[] = [];
 const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
-
-// A run command's start (#353): the console switches to the command's channel and the new run, and the list is read again, since the
-// channel may be new. The footer's chip shows it; the drawer opens only when asked (redesign 05), as a setup's ver log does.
-function useConsoleOpener(channels?: ConsoleChannels): OpenConsole {
-  const select = channels?.select;
-  const refresh = channels?.refresh;
-  const setOpen = channels?.setOpen;
-  return useCallback((channel: string, ptyId: string, show?: boolean) => {
-    select?.({ channel, ptyId });
-    refresh?.();
-    if (show) setOpen?.(true);
-  }, [select, refresh, setOpen]);
-}
 
 interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean }
 

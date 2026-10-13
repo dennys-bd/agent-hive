@@ -1,7 +1,7 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react';
 import type { ChannelStatus } from '../../console';
 import { ConsolePanel } from '@/components/ConsolePanel';
-import { type ConsoleChannels, shownChannel } from '@/hooks/use-console';
+import { type ConsoleChannels, type ConsoleTab, shownChannel } from '@/hooks/use-console';
 import { t } from '@/i18n';
 import { onShortcutKey } from '@/lib/dock-layout';
 import { readView, writeView } from '@/lib/view-state';
@@ -19,7 +19,7 @@ export function ConsoleChip({ console: channels }: { console: ConsoleChannels })
   const text = channel === undefined ? t('console.title') : t('console.chip', { command: commandName(channel.label) });
   return (
     <button
-      type="button" aria-expanded={channels.isOpen} onClick={() => channels.setOpen(!channels.isOpen)}
+      type="button" aria-expanded={channels.isOpen && channels.tab === 'console'} onClick={() => channels.show('console')}
       className="flex items-center gap-1.5 rounded-sm bg-muted px-2 py-px text-foreground text-xs"
     >
       <span aria-hidden="true" className={`size-1.5 rounded-full ${DOT[channel?.status ?? 'done']}`} />
@@ -112,12 +112,11 @@ interface ConsoleDrawerProps { console: ConsoleChannels; fontFamily: string; onO
  * Cmd+J (toggleConsole) or a setup's ver log; Escape, esc, the chip or Cmd+J close it. Its top handle resizes it (see useHeight). abrir como aba moves the console into a tab of the activity's grid and closes
  * the drawer; with no grid there (fluxo, or no activity picked) it shows disabled. */
 export function ConsoleDrawer({ console: channels, fontFamily, onOpenTab }: ConsoleDrawerProps) {
-  const { isOpen, setOpen } = channels;
-  const close = useCallback(() => setOpen(false), [setOpen]);
+  const { isOpen, close, show } = channels;
   const [height, setHeight] = useHeight();
   const section = useRef<HTMLElement>(null);
   useCloseKey(isOpen, close);
-  useEffect(() => onShortcutKey([[true, 'toggleConsole']], () => setOpen(!isOpen)), [isOpen, setOpen]);
+  useEffect(() => onShortcutKey<ConsoleTab>([['console', 'toggleConsole']], show), [show]);
   if (!isOpen) return null;
   const openTab = onOpenTab === undefined ? undefined : (): void => { onOpenTab(); close(); };
   return (
