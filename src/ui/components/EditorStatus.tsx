@@ -1,7 +1,8 @@
+import { ProblemCounts } from '@/components/footer/ProblemsButton';
 import { Button } from '@/components/ui/button';
 import { useEditorLanguages } from '@/components/editor-languages';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
-import { t, tPlural } from '@/i18n';
+import { t } from '@/i18n';
 import { type Counts, fileCounts, fileServer, fileSources, type Source } from '@/lib/diagnostics-store';
 import { STATUS_DOT } from '@/lib/status';
 import type { FormatLog } from '../../types';
@@ -10,23 +11,7 @@ interface ServerStatusProps { activityId: string; path: string; onViewLog?(log: 
 interface ProblemsButtonProps { activityId: string; path: string; isOpen: boolean; onToggle(): void }
 
 const Dot = ({ tone }: { tone: string }) => <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${tone}`} />;
-const COUNTS: { key: keyof Counts; family: 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos'; tone: string }[] = [
-  { key: 'errors', family: 'editor.diag.errors', tone: 'text-destructive' },
-  { key: 'warnings', family: 'editor.diag.warnings', tone: 'text-waiting' },
-  { key: 'infos', family: 'editor.diag.infos', tone: 'text-review' },
-];
 const hasCounts = (counts: Counts): boolean => counts.errors + counts.warnings + counts.infos > 0;
-
-/** Problem counts (#780, #782): each non-zero one in its status colour, the separators muted. The bar's button and the list's header. */
-export function ProblemCounts({ counts }: { counts: Counts }) {
-  return (
-    <>
-      {COUNTS.filter(({ key }) => counts[key] > 0).map(({ key, family, tone }, i) => (
-        <span key={key} className="flex items-center gap-1.5">{i > 0 && <span aria-hidden>·</span>}<span className={tone}>{tPlural(family, counts[key], { n: counts[key] })}</span></span>
-      ))}
-    </>
-  );
-}
 
 // ver log beside a failed source, when there is a console to open it in (none outside a Dashboard)
 function ViewLog({ log, onViewLog }: { log?: FormatLog; onViewLog?(log: FormatLog): void }) {

@@ -1,6 +1,6 @@
 import { ChevronDownIcon, ChevronRightIcon, CircleXIcon, InfoIcon, TriangleAlertIcon, XIcon } from 'lucide-react';
 import { type KeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
-import { ProblemCounts } from '@/components/EditorStatus';
+import { ProblemCounts } from '@/components/footer/ProblemsButton';
 import { Button } from '@/components/ui/button';
 import { toneOf, useDiagnostics } from '@/hooks/use-diagnostics';
 import { t } from '@/i18n';
