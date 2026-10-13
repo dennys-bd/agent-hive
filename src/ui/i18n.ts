@@ -415,6 +415,12 @@ const en = {
   'activity.new.opensAs': 'agent opens as',
   'activity.new.chat': 'chat',
   'launch.pluginUnreadable': 'the Hive plugin\'s agents could not be read:', // #257: GET /launch-options and the open routes, the reason follows
+  'launch.refused.terminal': '"kind" terminal takes no "model", "specializedAgent" or "args"', // #257: the open routes' refusals name the field
+  'launch.refused.continue': 'a "continueId" resume runs with what its session was opened with: no "model", "specializedAgent" or "args"',
+  'launch.refused.model': '"model" must be 1 to 100 letters, digits or . _ : [ ] / -, not starting with -',
+  'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
+  'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
+  'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
   'activity.stop.pick': 'pick a session to put to sleep', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'active sessions · {n}',
   'activity.stop.focused': 'focused',
@@ -2290,6 +2296,12 @@ const pt: Record<MessageKey, string> = {
   'activity.new.opensAs': 'agente abre como',
   'activity.new.chat': 'chat',
   'launch.pluginUnreadable': 'os agentes do plugin do Hive não puderam ser lidos:', // #257: GET /launch-options and the open routes, the reason follows
+  'launch.refused.terminal': '"kind" terminal não aceita "model", "specializedAgent" nem "args"', // #257: the open routes' refusals name the field
+  'launch.refused.continue': 'uma retomada ("continueId") executa com o que a sessão abriu: sem "model", "specializedAgent" nem "args"',
+  'launch.refused.model': '"model" precisa ter de 1 a 100 letras, dígitos ou . _ : [ ] / -, sem começar com -',
+  'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
+  'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
+  'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
   'activity.stop.pick': 'escolher a sessão para dormir', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'sessões ativas · {n}',
   'activity.stop.focused': 'em foco',

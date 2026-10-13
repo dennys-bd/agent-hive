@@ -1,17 +1,20 @@
-// The new session dialog's lists (#257): GET /launch-options, read each time the dialog opens. Task 4 adds the open routes' checkLaunch and
-// the spawn's launchRun here, out of server-open.ts and server-spawn.ts.
+// The new session dialog's lists (#257), GET /launch-options, and the checks of a free session's picks: the open routes' checkLaunch and the
+// spawn's launchRun, out of server-open.ts and server-spawn.ts.
 import type { Express, Request, Response } from 'express';
 import { AGENTS } from './agents.js';
+import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
+import { CLAUDE_MODEL } from './config-agent-args.js';
 import { pluginSource } from './hooks-settings.js';
-import { isLaunchModel } from './launch-pick.js';
+import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import type { Logger } from './log.js';
 import { isRecord } from './rate-limits.js';
-import type { TaskRouteDeps } from './server-tasks.js';
-import type { AgentId, Exec, Language, LaunchOption, LaunchOptions } from './types.js';
+import type { Refusal, TaskRouteDeps } from './server-tasks.js';
+import type { AgentId, Exec, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
 import { MESSAGES } from './ui/i18n.js';
 
+const HTTP_BAD_REQUEST = 400;
 const HTTP_SERVER_ERROR = 500;
 const CODEX_MODELS_TIMEOUT_MS = 10_000; // a hung CLI never holds the dialog's lists: Codex's stay empty
 
@@ -76,4 +79,57 @@ export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDep
       res.status(HTTP_SERVER_ERROR).json({ error: pluginMessage(err, deps.language()) });
     }
   });
+}
+
+type LaunchRefusal = 'terminal' | 'continue' | 'model' | 'codexModel' | 'specializedAgent' | 'args';
+const refusal = (key: LaunchRefusal, language: Language): Refusal => ({ status: HTTP_BAD_REQUEST, message: MESSAGES[language][`launch.refused.${key}`] });
+
+/** A request's picks (#257), as the open routes take them: none is the defaults ({}); any on a terminal (`agent` undefined) or a resume, or
+ * one out of shape, is a 400 naming the field. A Claude model on a Codex session is refused as a codex stage's is (#927). `roles` holds the
+ * plugin's hive:<name> agents. */
+export function checkLaunch(body: unknown, agent: AgentId | undefined, roles: readonly string[], language: Language): { launch?: LaunchPick } | Refusal {
+  const { model, specializedAgent, args, continueId } = (isRecord(body) ? body : {}) as Record<string, unknown>;
+  if (model === undefined && specializedAgent === undefined && args === undefined) return {};
+  if (agent === undefined) return refusal('terminal', language);
+  if (continueId !== undefined) return refusal('continue', language);
+  if (model !== undefined && !isLaunchModel(model)) return refusal('model', language);
+  if (agent === 'codex' && isLaunchModel(model) && CLAUDE_MODEL.test(model)) return refusal('codexModel', language);
+  if (specializedAgent !== undefined && !(typeof specializedAgent === 'string' && roles.includes(specializedAgent))) return refusal('specializedAgent', language);
+  if (args !== undefined && !isLaunchArgs(args)) return refusal('args', language);
+  const launch: LaunchPick = {
+    ...(isLaunchModel(model) ? { model } : {}),
+    ...(typeof specializedAgent === 'string' ? { specializedAgent } : {}),
+    ...(isLaunchArgs(args) && args.length > 0 ? { args } : {}),
+  };
+  return Object.keys(launch).length === 0 ? {} : { launch };
+}
+
+/** checkLaunch at an open route (#257): the plugin's agents are read only when the request names one; a plugin it cannot read is a 500 with
+ * the reason. */
+export function askedLaunch(body: unknown, agent: AgentId | undefined, language: Language): { launch?: LaunchPick } | Refusal {
+  const isNamed = isRecord(body) && body.specializedAgent !== undefined;
+  try {
+    return checkLaunch(body, agent, isNamed ? specializedAgents().map((a) => a.name) : [], language);
+  } catch (err) {
+    return { status: HTTP_SERVER_ERROR, message: pluginMessage(err, language) };
+  }
+}
+
+/** What a free session's picks add to its run (#257): the model, the config's args then its own, and its specialized agent with the body
+ * Codex gets as instructions; or why it cannot start: an agent the plugin no longer has, or a plugin it cannot read. The picks are checked
+ * again (savedLaunch): a worker loaded from a hand-edited state.json never puts an option where a value goes. */
+export function launchRun(launch: LaunchPick | undefined, configArgs: readonly string[], roles: () => readonly SpecializedAgent[] = specializedAgents): Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> | { refusal: string } {
+  const kept = savedLaunch(launch).launch;
+  const base = { ...(kept?.model === undefined ? {} : { model: kept.model }), extraArgs: [...configArgs, ...(kept?.args ?? [])] };
+  const name = kept?.specializedAgent;
+  if (name === undefined) return base;
+  let found: SpecializedAgent | undefined;
+  try {
+    found = roles().find((a) => a.name === name);
+  } catch (err) {
+    return { refusal: `the Hive plugin's agents could not be read: ${errorMessage(err)}` };
+  }
+  return found === undefined
+    ? { refusal: `specialized agent ${name} is no longer in the Hive plugin` }
+    : { ...base, specializedAgent: { name: found.name, instructions: found.instructions } };
 }

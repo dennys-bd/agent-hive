@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
-import { parseCodexModels, specializedAgents } from '../src/launch-options.js';
+import { launchRun, parseCodexModels, specializedAgents } from '../src/launch-options.js';
 import type { Exec, LaunchOptions } from '../src/types.js';
 import { send, settingsBody, startReviews } from './review-server.js';
 
@@ -57,4 +57,20 @@ test('a codex debug models that fails or prints no JSON gives Codex no models an
     assert.deepEqual(options.codex.versions, []);
     assert.deepEqual(options.claude.versions, [...CLAUDE_VERSIONS]);
   }
+});
+
+test('launchRun puts the config\'s args before the session\'s, the model, and the agent with its instructions; no picks adds only the config\'s (#257)', () => {
+  const roles = () => [{ name: 'hive:designer', description: 'Designs.', instructions: 'Design.' }];
+  assert.deepEqual(launchRun({ model: 'opus', specializedAgent: 'hive:designer', args: ['--verbose'] }, ['--permission-mode', 'auto'], roles), {
+    model: 'opus', extraArgs: ['--permission-mode', 'auto', '--verbose'], specializedAgent: { name: 'hive:designer', instructions: 'Design.' },
+  });
+  assert.deepEqual(launchRun(undefined, ['--permission-mode', 'auto'], roles), { extraArgs: ['--permission-mode', 'auto'] });
+  assert.deepEqual(launchRun({ model: '--settings', args: ['ok'] }, [], roles), { extraArgs: ['ok'] }, 'a value out of shape never reaches the argv');
+});
+
+test('launchRun refuses an agent the plugin no longer has, or a plugin it cannot read, naming why (#257)', () => {
+  const roles = () => [{ name: 'hive:designer', description: 'Designs.', instructions: 'Design.' }];
+  assert.deepEqual(launchRun({ specializedAgent: 'hive:gone' }, [], roles), { refusal: 'specialized agent hive:gone is no longer in the Hive plugin' });
+  const broken = (): never => { throw new Error('designer.md: no frontmatter between two --- lines'); };
+  assert.deepEqual(launchRun({ specializedAgent: 'hive:designer' }, [], broken), { refusal: 'the Hive plugin\'s agents could not be read: designer.md: no frontmatter between two --- lines' });
 });

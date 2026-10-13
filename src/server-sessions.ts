@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import { activityOf, isLocalActivityId, localWorkspaceOf, taskOfActivity } from './activities.js';
 import { activityParam, keptTarget, liveTarget } from './activity-routes.js';
-import { knownAgent } from './agents.js';
+import { knownAgent, liveDefaultAgent } from './agents.js';
+import { askedLaunch } from './launch-options.js';
 import { canRunCommand } from './task-runs.js';
 import { continuable } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName } from './config.js';
@@ -32,7 +33,7 @@ const AGENT_KIND_MESSAGE = `kind precisa ser um destes agentes: ${AGENT_IDS.join
 export const FOLDER_BODY_MESSAGE = 'folder must be a non-empty string'; // #818
 export const COPY_PENDING_MESSAGE = 'uma cópia desta sessão ainda está abrindo'; // copyPending (#587)
 
-type OpenDeps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'log'>;
+type OpenDeps = Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'log' | 'language'>;
 
 const refuse = (res: Response, refusal: Refusal): void => {
   res.status(refusal.status).json({ error: refusal.message });
@@ -108,8 +109,8 @@ function registerShellRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive
   });
 }
 
-// A new claude session in a workspace's local activity (#590). A task's activity opens its sessions through /open.
-function registerNewLocalRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started'>): void {
+// A new session in a workspace's local activity (#590), with the new session dialog's picks (#257). A task's activity opens its sessions through /open.
+function registerNewLocalRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'dispatch' | 'started' | 'language'>): void {
   app.post('/activities/:id/sessions', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
@@ -121,7 +122,9 @@ function registerNewLocalRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireL
     const { kind } = (req.body ?? {}) as { kind?: unknown };
     const agent = knownAgent(kind); // #925: absent = the default agent
     if (kind !== undefined && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: AGENT_KIND_MESSAGE });
-    await answerOpen(deps, await deps.dispatch({ type: 'newLocalSession', activityId: activity.id, ...(agent === undefined ? {} : { agent }) }, sizeIn(req.body)), res);
+    const picked = askedLaunch(req.body, agent ?? liveDefaultAgent(current.state), deps.language()); // #257: a Claude model is refused on a default codex too
+    if ('status' in picked) return refuse(res, picked);
+    await answerOpen(deps, await deps.dispatch({ type: 'newLocalSession', activityId: activity.id, ...(agent === undefined ? {} : { agent }), ...picked }, sizeIn(req.body)), res);
   });
 }
 

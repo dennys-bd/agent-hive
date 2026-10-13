@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { activityOf } from '../src/activities.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { sessionsOf } from '../src/tasks.js';
 import { AGENT_IDS, type AgentId, type Exec } from '../src/types.js';
-import { fakeSpawn } from './fakes.js';
-import { send, startReviews } from './review-server.js';
+import { specializedAgents } from '../src/launch-options.js';
+import { fakeSpawn, plainArgs } from './fakes.js';
+import { SESSION_A, send, startReviews } from './review-server.js';
 
 // task 1 of startReviews has its worktree on disk: an open starts its session at once
 const OPEN = '/tasks/local%3A1/open';
@@ -86,4 +88,71 @@ test('a new codex session on a task opens with no session id: codex runs with no
   const worker = state.workers.find((w) => w.freeSession);
   assert.deepEqual([worker?.agent, worker?.sessionId], ['codex', undefined]);
   assert.equal(sessionsOf(state, 'local:1').some((s) => s.agent === 'codex'), false);
+});
+
+// A spawn failure is dispatched without awaiting, like a real process event: poll the state until it settles
+async function until(check: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !check(); i += 1) await sleep(5);
+  assert.ok(check(), 'condition not met in time');
+}
+
+test('an open with a model, a specialized agent and args runs claude with them after the global args, and its session keeps them (#257)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base, server } = await startReviews(t, { launchPty: spawn });
+  const pick = { model: 'opus', specializedAgent: 'hive:designer', args: ['--verbose'] };
+  assert.equal((await send(base, 'POST', OPEN, { kind: 'claude', ...pick })).status, 200);
+  const worker = server.getState()!.workers.find((w) => w.freeSession);
+  assert.deepEqual(plainArgs(workers[0].launch), ['--verbose', '--agent', 'hive:designer', '--model', 'opus', '--session-id', worker?.sessionId]);
+  assert.deepEqual(worker?.launch, pick);
+  assert.deepEqual(sessionsOf(server.getState()!, 'local:1').find((s) => s.id === worker?.sessionId)?.launch, pick);
+});
+
+test('a codex open with a model and a specialized agent runs codex with -m and the agent\'s instructions after the protocol (#257)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base } = await startReviews(t, { launchPty: spawn });
+  assert.equal((await send(base, 'POST', OPEN, { kind: 'codex', model: 'gpt-5.6-terra', specializedAgent: 'hive:designer' })).status, 200);
+  assert.deepEqual(plainArgs(workers[0].launch).slice(-2), ['-m', 'gpt-5.6-terra']);
+  const argv = workers[0].launch.agent?.argv ?? [];
+  const developer = argv.flatMap((arg) => (typeof arg !== 'string' && arg[1].startsWith('developer_instructions=') ? [JSON.parse(arg[1].slice('developer_instructions='.length)) as string] : []))[0];
+  const designer = specializedAgents().find((a) => a.name === 'hive:designer');
+  assert.ok(designer && developer?.endsWith(`\n\n${designer.instructions}`), 'the protocol first, then the agent');
+});
+
+test('each pick out of shape, on a terminal or on a resume is a 400 naming its field and opens nothing (#257)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base } = await startReviews(t, { launchPty: spawn });
+  const cases: [Record<string, unknown>, RegExp][] = [
+    [{ kind: 'terminal', model: 'opus' }, /"kind"/],
+    [{ kind: 'claude', continueId: SESSION_A, args: ['--verbose'] }, /"continueId"/],
+    [{ kind: 'claude', model: '-x' }, /"model"/],
+    [{ kind: 'claude', model: 'has space' }, /"model"/],
+    [{ kind: 'claude', model: 'm'.repeat(101) }, /"model"/],
+    [{ kind: 'claude', model: 7 }, /"model"/],
+    [{ kind: 'codex', model: 'opus' }, /"model"/],
+    [{ kind: 'codex', model: 'fable[1m]' }, /"model"/],
+    [{ kind: 'claude', specializedAgent: 'hive:nope' }, /"specializedAgent"/],
+    [{ kind: 'claude', specializedAgent: 'ecc:planner' }, /"specializedAgent"/],
+    [{ kind: 'claude', args: '--verbose' }, /"args"/],
+    [{ kind: 'claude', args: Array.from({ length: 33 }, () => '-v') }, /"args"/],
+    [{ kind: 'claude', args: [''] }, /"args"/],
+    [{ kind: 'claude', args: ['x'.repeat(201)] }, /"args"/],
+    [{ kind: 'claude', args: ['a\u0000b'] }, /"args"/],
+  ];
+  for (const [body, field] of cases) {
+    const res = await send(base, 'POST', OPEN, body);
+    const { error } = (await res.json()) as { error: string };
+    assert.equal(res.status, 400, JSON.stringify(body));
+    assert.match(error, field, JSON.stringify(body));
+  }
+  assert.equal(workers.length, 0);
+});
+
+test('a session whose recorded specialized agent left the plugin fails its spawn, naming the agent (#257)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { server } = await startReviews(t, { launchPty: spawn });
+  const activityId = activityOf(server.getState()!, 'local:1')?.id ?? '';
+  await server.dispatch({ type: 'openSession', activityId, agent: 'claude', launch: { specializedAgent: 'hive:gone' } });
+  await until(() => (server.getState()!.error ?? '').includes('hive:gone'));
+  assert.equal(workers.length, 0);
+  assert.equal(server.getState()!.workers.some((w) => w.freeSession && w.status !== 'empty'), false);
 });
