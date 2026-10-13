@@ -36,7 +36,8 @@ function tools(o: { buildFails?: boolean; badShot?: boolean } = {}): ReturnType<
     }
     if (call.file === 'claude') return JSON.stringify({ is_error: false, result: JSON.stringify(JUDGED) });
     if (cmd.startsWith('git ls-remote')) return `abc123sha\trefs/heads/${BRANCH}\n`;
-    if (cmd.startsWith('git diff --name-only')) return 'docs/superpowers/specs/2026-10-02-monitor-design.md\n';
+    if (cmd.startsWith('git branch --list')) return 'hive/MABC123-1-grid\n'; // the docs clone's task branches (#79)
+    if (cmd.startsWith('git diff --name-only')) return 'agent/hive/specs/2026-10-02-monitor-design.md\n';
     if (cmd.startsWith('git diff')) return '+change\n';
     if (cmd.startsWith('git show')) return '# Spec written by /hive-spec with superpowers:brainstorming\n';
     return '';
@@ -51,12 +52,12 @@ async function setup(t: TestContext) {
   const screen = join(dir, 'seed-screens', '4a.png');
   await writeFile(screen, 'png');
   await writeJson(join(dir, TOKEN, 'metrics.json'), failedMetrics(TOKEN, NIGHT.toISOString(), 'x'));
-  return { dir, ctx: { dir, baseline: 'base1', token: TOKEN, seed: { ...SEED, screens: [screen] }, judgeModel: 'claude-fable-5-1' } };
+  return { dir, ctx: { dir, baseline: 'base1', docsBaseline: 'dbase1', token: TOKEN, seed: { ...SEED, screens: [screen] }, judgeModel: 'claude-fable-5-1' } };
 }
 
 function depsOf(dir: string, run: Run, launch: Launch, events: string[]): EvalDeps {
   return {
-    run, launch, log: () => undefined, repoRoot: '/repo', chromiumPath: '/pw/chromium/chrome', tmpRoot: join(dir, 'tmp'),
+    run, docs: run, launch, log: () => undefined, repoRoot: '/repo', chromiumPath: '/pw/chromium/chrome', tmpRoot: join(dir, 'tmp'),
     boot: async (home) => { events.push('boot'); return { home, address: { port: 4321, secret: SECRET }, child: fakeChild().child }; },
     stop: async () => { events.push('stop'); },
   };

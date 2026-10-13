@@ -38,9 +38,9 @@ export function requireExperimentId(id: string): string {
   return id;
 }
 
-export interface NewManifest { id: string; source: string; baseline: string; seedHash: string; runs: number; now: Date }
-export const newManifest = ({ id, source, baseline, seedHash, runs, now }: NewManifest): Manifest =>
-  ({ id, source, baseline, seedHash, runs, createdAt: now.toISOString(), attempts: [] });
+export interface NewManifest { id: string; source: string; baseline: string; docsSource: string; docsBaseline: string; seedHash: string; runs: number; now: Date }
+export const newManifest = ({ id, source, baseline, docsSource, docsBaseline, seedHash, runs, now }: NewManifest): Manifest =>
+  ({ id, source, baseline, docsSource, docsBaseline, seedHash, runs, createdAt: now.toISOString(), attempts: [] });
 
 const ofSlot = (ref: RunRef) => (a: Attempt): boolean => a.arm === ref.arm && a.n === ref.n;
 export const latest = (m: Manifest, ref: RunRef): Attempt | undefined => m.attempts.filter(ofSlot(ref)).at(-1);
@@ -80,9 +80,9 @@ const isAttempt = (a: unknown): boolean => {
 
 export function parseManifest(raw: unknown): Manifest {
   const m = raw as Partial<Manifest> | null;
-  // id names a folder, source and baseline reach git's argv: each keeps the shape the harness wrote
-  const ok = typeof m?.id === 'string' && EXPERIMENT_ID.test(m.id) && typeof m.source === 'string' && isPlainRef(m.source)
-    && typeof m.baseline === 'string' && isPlainRef(m.baseline) && typeof m.seedHash === 'string'
+  // id names a folder, the shas reach git's argv: each keeps the shape the harness wrote
+  const refs = [m?.source, m?.baseline, m?.docsSource, m?.docsBaseline];
+  const ok = typeof m?.id === 'string' && EXPERIMENT_ID.test(m.id) && refs.every((r) => typeof r === 'string' && isPlainRef(r)) && typeof m.seedHash === 'string'
     && Number.isInteger(m.runs) && typeof m.createdAt === 'string' && Array.isArray(m.attempts) && m.attempts.every(isAttempt);
   if (!ok) throw new Error('manifest.json is not an experiment manifest');
   return m as Manifest;

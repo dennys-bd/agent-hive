@@ -12,7 +12,9 @@ export interface Attempt { token: string; arm: Arm; n: number; startedAt: string
 export interface Manifest {
   id: string;
   source: string; // the sha of the ref the experiment was made from, for the record
-  baseline: string; // the orphan commit every run starts from: the source's tree without the experiment, with the handoff
+  baseline: string; // the orphan commit every run starts from: the source's tree without the experiment
+  docsSource: string; // the sha of the docs clone's origin/main, for the record (#79)
+  docsBaseline: string; // in the docs clone: its tree without any doc that names the experiment, with the handoff
   seedHash: string;
   runs: number; // pairs
   createdAt: string;

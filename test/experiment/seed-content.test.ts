@@ -31,7 +31,7 @@ test('tasks.json has the eight deliveries in order, each with its own section an
   for (const task of tasks) {
     assert.ok(task.body.endsWith(deliverySection(handoff, task.delivery)), task.key);
     assert.ok(task.body.includes('answers every question'));
-    for (const path of ['docs/handoff_monitor/README.md', 'docs/handoff_monitor/Monitor Redesign.dc.html', 'docs/handoff_monitor/png/', 'docs/design-handoff/00-LEIA-ANTES.md']) assert.ok(task.body.includes(path), `${task.key} names ${path}`);
+    for (const path of ['docs/agent/handoff_monitor/README.md', 'docs/agent/handoff_monitor/Monitor Redesign.dc.html', 'docs/agent/handoff_monitor/png/', 'docs/agent/design-handoff/00-LEIA-ANTES.md']) assert.ok(task.body.includes(path), `${task.key} names ${path}`);
     for (const other of tasks.filter((t) => t !== task)) assert.ok(!task.body.includes(`## ${other.delivery} · `), `${task.key} carries ${other.key}`);
   }
   assert.equal(new Set(tasks.map((t) => t.title)).size, 8);
@@ -121,10 +121,13 @@ test('nothing a worker reads tells it this is an experiment, in either arm (#105
   }
 });
 
-test('the lint config the baseline carries names no experiment path, and ignores the copied handoff by a neutral glob (#105)', async () => {
-  const biome = await readFile(join(SEED_DIR, '..', '..', '..', '..', 'biome.json'), 'utf8');
+test('the lint config the baseline carries names no experiment path, and leaves docs/ to the ignore file (#105, #79)', async () => {
+  const repo = join(SEED_DIR, '..', '..', '..', '..');
+  const biome = await readFile(join(repo, 'biome.json'), 'utf8');
   assert.ok(!/experiment|seeds\//i.test(biome), 'biome.json names the harness'); // "test" is ordinary there: its overrides target the test files
-  assert.ok(biome.includes('"!docs/handoff_*"'), 'docs/handoff_monitor in the baseline holds the designer support.js, which lint must skip');
+  // The handoff, with the designer's support.js, sits in the docs worktree: lint skips it because git ignores docs/
+  assert.ok(biome.includes('"useIgnoreFile": true') && !biome.includes('docs/'), biome);
+  assert.ok((await readFile(join(repo, '.gitignore'), 'utf8')).split('\n').includes('/docs/'));
 });
 
 test('the Merge prompt says origin is a local repository on this machine, so its push and fetch never reach GitHub (#105)', async () => {

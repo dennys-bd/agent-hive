@@ -8,8 +8,8 @@ import { extractJson, JUDGE_TIMEOUT_MS, judgeArgs, parseClicks, parseJudge, runC
 import type { RunningDaemon } from './daemon-runner.js';
 import { buildEnv, type Run } from './exec.js';
 import { pngsIn, readJson, writeJson } from './files.js';
-import { addedDocs, addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree, showFile } from './git.js';
-import { runBranch } from './plan.js';
+import { addWorktree, fetchBranch, fullDiff, remoteSha, removeWorktree, runDocs } from './git.js';
+import { runBranch, runPrefix } from './plan.js';
 import { judgePrompt, testerPrompt } from './prompts.js';
 import { writeHome } from './run-home.js';
 import { materializeSample, type Seed } from './seed.js';
@@ -23,9 +23,9 @@ const RUN_JS = join('dist', 'src', 'run.js'); // the run branch's own daemon
 const SOCKETS_PREFIX = '/tmp/hive-pw-';
 const DASHBOARD_SHOT = 'dashboard.png';
 
-export interface EvalContext { dir: string; baseline: string; token: string; seed: Seed; judgeModel: string }
+export interface EvalContext { dir: string; baseline: string; docsBaseline: string; token: string; seed: Seed; judgeModel: string }
 export interface EvalDeps {
-  run: Run; launch: Launch; log(line: string): void; boot(home: string, runJs: string): Promise<RunningDaemon>; stop(daemon: RunningDaemon): Promise<void>;
+  run: Run; docs: Run; launch: Launch; log(line: string): void; boot(home: string, runJs: string): Promise<RunningDaemon>; stop(daemon: RunningDaemon): Promise<void>;
   repoRoot: string; chromiumPath: string; tmpRoot: string; // the OS temp dir: the reviewers' folders sit away from the experiment and its manifest
 }
 interface Paths { worktree: string; home: string; screens: string; metrics: string; evaluation: string; clicks: string; judge: string; bundle: string }
@@ -124,7 +124,9 @@ async function judgeRun(ctx: EvalContext, paths: Paths, booted: boolean, deps: E
   const metrics = await readJson<Metrics>(paths.metrics);
   if (!metrics) throw new Error(`${ctx.token}: no ${FILES.metrics} to judge`);
   const branch = runBranch(ctx.token);
-  const docs = await Promise.all((await addedDocs(deps.run, ctx.baseline, branch)).map(async ({ kind, path }) => ({ kind, text: await showFile(deps.run, branch, path) })));
+  const docs = await runDocs(deps.docs, ctx.docsBaseline, runPrefix(ctx.token));
+  // Only committed docs are read: a spec left uncommitted went with its worktree, and the judge would not know it is missing
+  if (docs.length === 0) deps.log(`${ctx.token}: no spec or plan committed on its docs branches`);
   const files = bundleFiles({
     handoffShots: ctx.seed.screens, runShots: booted ? await pngsIn(paths.screens, (name) => name !== DASHBOARD_SHOT) : [],
     clicks: booted ? await readJson<Click[]>(paths.clicks) : undefined, docs, diff: await fullDiff(deps.run, ctx.baseline, branch), metrics,

@@ -29,6 +29,9 @@ export const execRun: Run = async (file, args, opts = {}) => {
   return { stdout };
 };
 
+/** The same runner, each call in `cwd` unless it names its own: the docs clone's git calls go through the one serialGit (#79). */
+export const inDir = (run: Run, cwd: string): Run => (file, args, opts = {}) => run(file, args, { ...opts, cwd: opts.cwd ?? cwd });
+
 /** The harness's own git calls, one at a time (#105, the user): both runs of a pair share one repository, so branch, push and worktree
  *  calls must not race. Other commands pass straight through. ponytail: a per-call lock; the daemons' own git relies on git's lock files. */
 export function serialGit(run: Run): Run {

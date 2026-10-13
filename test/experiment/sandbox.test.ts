@@ -5,19 +5,21 @@ import { join } from 'node:path';
 import { installSandbox, SANDBOX_FILE, sandboxSettings } from '../../scripts/experiment/sandbox.js';
 import { tempDir } from '../temp-dir.js';
 
-const PATHS = { gitDir: '/lab/hive/.git', origin: '/lab/hive.git', state: '/home/u/.local/state/agent-hive-lab' };
+const CODE = { gitDir: '/lab/hive/.git', origin: '/lab/hive.git' };
+const DOCS = { gitDir: '/lab/hive/docs/.git', origin: '/lab/hive-docs.git' };
+const PATHS = { repos: [CODE, DOCS], state: '/home/u/.local/state/agent-hive-lab' };
 
-test('the workers\' Bash runs sandboxed with no prompt and no way out: writes reach the clone\'s git and the local origin, reads miss the secrets and the experiment (#105)', () => {
+test('the workers\' Bash runs sandboxed with no prompt and no way out: writes reach both clones\' git and their local origins, reads miss the secrets and the experiment (#105, #79)', () => {
   const { sandbox } = sandboxSettings(PATHS) as { sandbox: Record<string, unknown> & { filesystem: Record<string, string[]>; network: Record<string, unknown> } };
   assert.deepEqual([sandbox.enabled, sandbox.autoAllowBashIfSandboxed, sandbox.allowUnsandboxedCommands, sandbox.failIfUnavailable], [true, true, false, true]);
-  assert.deepEqual(sandbox.filesystem.allowWrite, ['/lab/hive/.git', '/lab/hive.git']);
+  assert.deepEqual(sandbox.filesystem.allowWrite, ['/lab/hive/.git', '/lab/hive.git', '/lab/hive/docs/.git', '/lab/hive-docs.git'], 'a docs worktree\'s commits land in the docs clone\'s .git');
   for (const path of ['~/.ssh', '~/.aws', '~/.config/gh', PATHS.state]) assert.ok(sandbox.filesystem.denyRead.includes(path), path);
   assert.deepEqual(sandbox.network.allowedDomains, ['registry.npmjs.org', 'localhost', '127.0.0.1']);
   assert.equal(sandbox.network.allowLocalBinding, true, 'the Hive\'s own tests listen on localhost ports: without it every one fails with listen EPERM');
 });
 
 test('an origin that is not a local path adds no writable path: a push there leaves the sandbox only through its network rules (#105)', () => {
-  const { sandbox } = sandboxSettings({ ...PATHS, origin: 'https://example.test/repo.git' }) as { sandbox: { filesystem: { allowWrite: string[] } } };
+  const { sandbox } = sandboxSettings({ ...PATHS, repos: [{ ...CODE, origin: 'https://example.test/repo.git' }] }) as { sandbox: { filesystem: { allowWrite: string[] } } };
   assert.deepEqual(sandbox.filesystem.allowWrite, ['/lab/hive/.git']);
 });
 
@@ -25,7 +27,7 @@ test('installSandbox writes the settings where the worktree setup copies them fr
   const root = await tempDir(t, 'sandbox-');
   await mkdir(join(root, '.git', 'info'), { recursive: true });
   await writeFile(join(root, '.git', 'info', 'exclude'), '# local\n');
-  const settings = sandboxSettings({ ...PATHS, gitDir: join(root, '.git') });
+  const settings = sandboxSettings({ ...PATHS, repos: [{ ...CODE, gitDir: join(root, '.git') }] });
   await installSandbox(root, join(root, '.git'), settings);
   await installSandbox(root, join(root, '.git'), settings);
   assert.deepEqual(JSON.parse(await readFile(join(root, SANDBOX_FILE), 'utf8')), settings);

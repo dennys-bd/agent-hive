@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["**", "!docs/handoff_*", "!**/handoff"] },
+  "files": { "includes": ["**", "!**/handoff"] },
   "formatter": { "enabled": false },
   "assist": { "enabled": false },
   "css": { "parser": { "tailwindDirectives": true } },

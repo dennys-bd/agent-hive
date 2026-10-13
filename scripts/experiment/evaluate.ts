@@ -4,7 +4,7 @@ import { parseEvaluateArgs } from './args.js';
 import { evaluateRun } from './evaluate-run.js';
 import { execRun, serialGit } from './exec.js';
 import { readJson } from './files.js';
-import { repoRoot } from './git.js';
+import { docsClone, repoRoot } from './git.js';
 import { experimentDir, isMeasured, latest, parseManifest, runOrder, seedDrift, stateRoot } from './plan.js';
 import { writeReport } from './report.js';
 import { loadSeed, seedHash } from './seed.js';
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
   const opts = parseEvaluateArgs(process.argv.slice(2));
   const git = serialGit(execRun);
   const root = await repoRoot(git);
+  const { docs } = await docsClone(git, root);
   const state = stateRoot(process.env, homedir());
   const dir = experimentDir(state, opts.experiment);
   const manifest = await readJson(join(dir, FILES.manifest), parseManifest);
@@ -31,7 +32,7 @@ async function main(): Promise<void> {
   for (const ref of refs) {
     try {
       const token = latest(manifest, ref)?.token ?? '';
-      await evaluateRun({ dir, baseline: manifest.baseline, token, seed, judgeModel: opts.judgeModel }, evalDeps(root, git));
+      await evaluateRun({ dir, baseline: manifest.baseline, docsBaseline: manifest.docsBaseline, token, seed, judgeModel: opts.judgeModel }, evalDeps(root, git, docs));
       log(`${ref.id} (${token}) evaluated`);
     } catch (err) {
       log(`evaluation of ${ref.id} failed: ${message(err)}`);

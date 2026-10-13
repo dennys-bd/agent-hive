@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { parseConfig } from '../../src/config.js';
 import { migrateTransitions } from '../../src/config-migrate.js';
 import { loadState } from '../../src/state-store.js';
-import { ARM_COMMANDS, evalConfig, runConfig, runState, watchTasks } from '../../scripts/experiment/arm-config.js';
+import { ARM_COMMANDS, evalConfig, runConfig, runState, WORKSPACE_TEARDOWN, watchTasks, workspaceSetup } from '../../scripts/experiment/arm-config.js';
 import type { Arm } from '../../scripts/experiment/types.js';
 import { tempDir } from '../temp-dir.js';
 import { BRANCH, PATHS, PREFIX, STAGES, TASKS, WORKSPACE } from './fixtures.js';
@@ -35,7 +35,10 @@ test('runConfig fills {runBranch}, drops the roles, and parses as three workers,
   assert.deepEqual(config.comb.stages.map((s) => [s.name, s.maxWorkers, s.approval]), [
     ['Spec', 3, undefined], ['Plan', 3, undefined], ['Build', 2, undefined], ['Merge', 1, undefined], ['Done', undefined, undefined],
   ]);
-  assert.deepEqual(config.comb.workspaces.map((w) => [w.name, w.path, w.setup]), [['agent-hive', WORKSPACE, 'COPY .claude/settings.local.json\nRUN pnpm install --frozen-lockfile']]);
+  assert.deepEqual(config.comb.workspaces.map((w) => [w.name, w.path, w.setup, w.teardown]), [['agent-hive', WORKSPACE, workspaceSetup(BRANCH), WORKSPACE_TEARDOWN]]);
+  const setup = workspaceSetup(BRANCH).split('\n');
+  assert.deepEqual([setup[0], setup.at(-1)], ['COPY .claude/settings.local.json', 'RUN pnpm install --frozen-lockfile']);
+  assert.ok(setup[1].endsWith(`"origin/${BRANCH}"; }`), 'a new docs branch starts from the docs run branch (#79)');
   assert.equal('port' in config, false, 'each daemon binds a free port of its own (#466): two homes never share one');
 });
 
