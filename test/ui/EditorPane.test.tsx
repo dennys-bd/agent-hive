@@ -1,13 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { EditorPane } from '@/components/EditorPane';
 import { EditorLanguagesContext } from '@/components/editor-languages';
-import { FileOpenerContext } from '@/components/terminal-tabs';
 import { ConsoleContext } from '@/hooks/use-console';
 import { setLanguage } from '@/i18n';
 import * as store from '@/lib/diagnostics-store';
-import { problemsOf } from './problem-fake';
 import * as models from '@/lib/editor-models';
 import * as fileBase from '@/lib/file-base';
 import * as checks from '@/lib/check-session';
@@ -55,6 +53,7 @@ afterEach(() => {
   models.closeExcept(new Set());
   fileBase.closeExcept(new Set());
   resetMonacoFakes();
+  store.resetDiagnostics();
   vi.unstubAllGlobals();
 });
 
@@ -177,66 +176,6 @@ test('the model attaches to its language server with the editor config; a save t
   expect(checks.notifyChecksSaved).toHaveBeenCalledWith(A, PATH);
 });
 
-test('the bar shows the server starting, its name once ready, failed with ver log, or none with instalar; the counts sit in the problems button (#780, #782)', async () => {
-  const user = userEvent.setup();
-  const openLanguage = vi.fn();
-  const openConsole = vi.fn();
-  render(
-    <ConsoleContext.Provider value={openConsole}>
-      <EditorLanguagesContext.Provider value={{ editor: EDITOR_DEFAULTS, openLanguage }}>{pane()}</EditorLanguagesContext.Provider>
-    </ConsoleContext.Provider>,
-  );
-  expect(screen.queryByTestId('server-status')).not.toBeInTheDocument();
-  act(() => { store.setClient('k', A, 'typescript-language-server', { phase: 'starting' }, { channel: 'lsp:hive:ts', run: 'r1' }); store.bindFile(A, PATH, 'k', 'typescript'); });
-  expect(screen.getByText('typescript-language-server · iniciando')).toBeInTheDocument();
-  act(() => { store.setClient('k', A, 'typescript-language-server', { phase: 'ready' }); store.setDiagnostics('k', PATH, problemsOf(PATH, { errors: 1, infos: 2 })); });
-  expect(screen.getByTestId('server-status')).toHaveTextContent(/^typescript-language-server$/);
-  const counts = screen.getByRole('button', { name: 'problemas' });
-  expect(counts).toHaveTextContent(/^1 erro\s*·\s*2 info$/);
-  expect(within(counts).getByText('1 erro')).toHaveClass('text-destructive');
-  expect(within(counts).getByText('2 info')).toHaveClass('text-review');
-  act(() => store.setClient('k', A, 'typescript-language-server', { phase: 'failed', reason: 'spawn node ENOENT' }));
-  expect(screen.getByText('typescript-language-server falhou')).toHaveAttribute('title', 'spawn node ENOENT');
-  expect(counts).toHaveTextContent(/^problemas$/);
-  await user.click(within(screen.getByTestId('server-status')).getByRole('button', { name: 'ver log' }));
-  expect(openConsole).toHaveBeenCalledWith('lsp:hive:ts', 'r1', true);
-  act(() => store.setClient('k', A, 'typescript-language-server', { phase: 'absent', reason: 'not installed' }));
-  expect(screen.getByText('sem language server')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'instalar typescript-language-server' }));
-  expect(openLanguage).toHaveBeenCalledWith('typescript');
-  act(() => store.setClient('k', A, 'typescript-language-server', { phase: 'off' }));
-  expect(screen.queryByTestId('server-status')).not.toBeInTheDocument();
-});
-
-test('the bar shows one entry per checker: ready and running with their dots, failed in red with ver log, one not in the project left out (#850); the problems button is pressed while open (#782)', async () => {
-  const user = userEvent.setup();
-  const openConsole = vi.fn();
-  render(<ConsoleContext.Provider value={openConsole}>{pane()}</ConsoleContext.Provider>);
-  await ready();
-  act(() => {
-    store.setClient('b', A, 'biome', { phase: 'ready' }, undefined, 'biome');
-    store.bindFile(A, PATH, 'b', 'typescript');
-    store.setClient('e', A, 'eslint', { phase: 'absent', reason: 'not installed' }, undefined, 'eslint');
-    store.bindFile(A, PATH, 'e', 'typescript');
-    store.bindChecks(A, PATH, ['tsc']);
-    store.checkStarted(A, 'tsc', '');
-  });
-  expect(screen.getByText('biome')).toBeInTheDocument();
-  expect(screen.queryByText('eslint')).not.toBeInTheDocument();
-  expect(screen.getByText('tsc')).toBeInTheDocument();
-  act(() => store.setCheck(A, 'tsc', { state: 'failed', reason: 'exit code 2', log: { channel: 'check:hive:tsc', run: 'r9' } }, ''));
-  expect(screen.getByText('tsc falhou')).toHaveAttribute('title', 'exit code 2');
-  await user.click(screen.getByRole('button', { name: 'ver log' }));
-  expect(openConsole).toHaveBeenCalledWith('check:hive:tsc', 'r9', true);
-  const button = screen.getByRole('button', { name: 'problemas' });
-  expect(button).toHaveAttribute('aria-pressed', 'false');
-  await user.click(button);
-  expect(button).toHaveAttribute('aria-pressed', 'true');
-  expect(button).toHaveClass('bg-accent');
-  expect(button).toHaveClass('h-5'); // a 20px control in the 24px bar (#946)
-  expect(button.parentElement).toHaveClass('h-6');
-});
-
 test('a Settings save that leaves this file\'s server as it was does not reconnect it; one that turns it off detaches (#780)', async () => {
   const attached = vi.mocked(lsp.attach);
   const detach = vi.fn();
@@ -273,16 +212,18 @@ test('the editor marks its buffer\'s changes against the base in the gutter, and
   expect(editor.decorations).toEqual([]);
 });
 
-test('the problems button opens the list under the code and its × closes it; a click on a problem opens its file through the pane\'s opener (#782)', async () => {
-  const user = userEvent.setup();
-  const openFile = vi.fn(() => true);
-  render(<FileOpenerContext.Provider value={openFile}>{pane()}</FileOpenerContext.Provider>);
+test('the bar holds the file path alone: no server state, checker or problems, whatever the store knows (#225)', async () => {
+  render(pane());
   await ready();
-  act(() => store.setCheck(A, 'tsc', { state: 'done', scope: 'project', diagnostics: [{ path: 'src/Column.tsx', line: 9, column: 14, severity: 'error', message: "Cannot find name 'x'." }] }, ''));
-  expect(screen.queryByRole('region', { name: 'problemas' })).not.toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'problemas' }));
-  await user.click(within(screen.getByRole('region', { name: 'problemas' })).getByRole('button', { name: /Cannot find name/ }));
-  expect(openFile).toHaveBeenCalledWith('I1', 'src/Column.tsx', { line: 9, col: 14 });
-  await user.click(screen.getByRole('button', { name: 'fechar problemas' }));
-  expect(screen.queryByRole('region', { name: 'problemas' })).not.toBeInTheDocument();
+  act(() => {
+    store.setClient('k', A, 'typescript-language-server', { phase: 'failed', reason: 'spawn node ENOENT' }, { channel: 'lsp:hive:ts', run: 'r1' });
+    store.bindFile(A, PATH, 'k', 'typescript');
+    store.bindChecks(A, PATH, ['tsc']);
+    store.setCheck(A, 'mypy', { state: 'done', scope: 'project', diagnostics: [{ path: PATH, line: 1, column: 1, severity: 'error', message: 'bad' }] }, '');
+  });
+  expect(screen.getByTitle(PATH).parentElement).toHaveTextContent(/^src\/a\.ts$/);
+  expect(screen.queryByText('typescript-language-server falhou')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'problemas' })).not.toBeInTheDocument();
+  expect(screen.queryByText('bad')).not.toBeInTheDocument();
 });

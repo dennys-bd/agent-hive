@@ -1,9 +1,14 @@
-import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type RefObject, useEffect, useRef, useState } from 'react';
 import type { ChannelStatus } from '../../console';
 import { ConsolePanel } from '@/components/ConsolePanel';
-import { type ConsoleChannels, shownChannel } from '@/hooks/use-console';
+import { ProblemsTab } from '@/components/ProblemsTab';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { type ConsoleChannels, type ConsoleTab, shownChannel } from '@/hooks/use-console';
 import { t } from '@/i18n';
+import { ownerOf } from '@/lib/diagnostics-store';
 import { onShortcutKey } from '@/lib/dock-layout';
+import type { FileAt } from '@/lib/editor-models';
+import { isInDialog } from '@/lib/shortcut-bindings';
 import { readView, writeView } from '@/lib/view-state';
 
 // The chip's dot (redesign 05): working while the last run is live, destructive once it failed, empty once it ended well or with none yet
@@ -19,7 +24,7 @@ export function ConsoleChip({ console: channels }: { console: ConsoleChannels })
   const text = channel === undefined ? t('console.title') : t('console.chip', { command: commandName(channel.label) });
   return (
     <button
-      type="button" aria-expanded={channels.isOpen} onClick={() => channels.setOpen(!channels.isOpen)}
+      type="button" aria-expanded={channels.isOpen && channels.tab === 'console'} onClick={() => channels.show('console')}
       className="flex items-center gap-1.5 rounded-sm bg-muted px-2 py-px text-foreground text-xs"
     >
       <span aria-hidden="true" className={`size-1.5 rounded-full ${DOT[channel?.status ?? 'done']}`} />
@@ -106,30 +111,64 @@ function ResizeHandle({ height, drawer, onHeight }: HandleProps) {
   );
 }
 
-interface ConsoleDrawerProps { console: ConsoleChannels; fontFamily: string; onOpenTab?(): void }
+const SEGMENT = 'h-auto px-2 py-0.5 text-xs font-medium text-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground';
 
-/** The console's drawer over the center (redesign 05): the flow under fluxo, the activity's grid under atividades. Opened only by the chip,
- * Cmd+J (toggleConsole) or a setup's ver log; Escape, esc, the chip or Cmd+J close it. Its top handle resizes it (see useHeight). abrir como aba moves the console into a tab of the activity's grid and closes
- * the drawer; with no grid there (fluxo, or no activity picked) it shows disabled. */
-export function ConsoleDrawer({ console: channels, fontFamily, onOpenTab }: ConsoleDrawerProps) {
-  const { isOpen, setOpen } = channels;
-  const close = useCallback(() => setOpen(false), [setOpen]);
+// The segmented console · problemas (#225, handoff §4): a click shows that tab, the active one on --background
+function DrawerTabs({ tab, onTab }: { tab: ConsoleTab; onTab(tab: ConsoleTab): void }) {
+  return (
+    <ToggleGroup type="single" size="sm" value={tab} onValueChange={(next) => { if (next === 'console' || next === 'problems') onTab(next); }} className="rounded-md bg-muted p-0.5">
+      <ToggleGroupItem value="console" className={SEGMENT}>{t('console.tab.console')}</ToggleGroupItem>
+      <ToggleGroupItem value="problems" className={SEGMENT}>{t('console.tab.problems')}</ToggleGroupItem>
+    </ToggleGroup>
+  );
+}
+
+// ⌘J and ⌘⇧M (#225): each opens the drawer on its tab, switches to it, or closes the drawer showing it. ⌘⇧M does nothing inside a dialog,
+// where it is switchStartMode's (YIELDS_TO_DIALOGS): refused there, the key goes on unprevented
+function useTabKeys(show: (tab: ConsoleTab) => void): void {
+  useEffect(() => onShortcutKey<ConsoleTab>([['console', 'toggleConsole']], show), [show]);
+  useEffect(() => onShortcutKey<ConsoleTab>([['problems', 'problems']], show, (event) => !isInDialog(event.target)), [show]);
+}
+
+interface ConsoleDrawerProps {
+  console: ConsoleChannels; fontFamily: string; onOpenTab?(): void;
+  activityId?: string; // #225: the activity the center shows; undefined under fluxo and on the home, where problems reads every activity
+  onOpenProblem?(activityId: string, path: string, at: FileAt): void; // #225: a problem's file, in its activity
+}
+
+/** The console's drawer over the center (redesign 05, #225): the flow under fluxo, the activity's grid under atividades. One drawer with two
+ * tabs, console and problemas: the chip and Cmd+J toggle the first, the footer's problems button and Cmd+Shift+M the second, or a setup's ver log
+ * opens the console; Escape, esc, the chip or the same key close it. Its top handle resizes it (see useHeight). abrir como aba moves the console
+ * into a tab of the activity's grid and closes the drawer; with no grid there (fluxo, or no activity picked) it shows disabled. */
+export function ConsoleDrawer({ console: channels, fontFamily, onOpenTab, activityId, onOpenProblem }: ConsoleDrawerProps) {
+  const { isOpen, tab, close, show, open } = channels;
   const [height, setHeight] = useHeight();
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set()); // lifted so recolher todos reaches the list; kept while closed
   const section = useRef<HTMLElement>(null);
   useCloseKey(isOpen, close);
-  useEffect(() => onShortcutKey([[true, 'toggleConsole']], () => setOpen(!isOpen)), [isOpen, setOpen]);
+  useTabKeys(show);
   if (!isOpen) return null;
   const openTab = onOpenTab === undefined ? undefined : (): void => { onOpenTab(); close(); };
+  const tabs = <DrawerTabs tab={tab} onTab={open} />;
+  // over every activity the list has no activity level yet: the first one holding the path (ownerOf)
+  const openProblem = (path: string, at: FileAt): void => {
+    const owner = activityId ?? ownerOf(path);
+    if (owner !== undefined) onOpenProblem?.(owner, path, at);
+  };
   return (
     <section
       ref={section} data-console-drawer aria-label={t('console.title')} style={{ height }}
       className="absolute inset-x-3 bottom-2 z-20 flex max-h-[70%] flex-col overflow-hidden rounded-lg border bg-popover shadow-lg"
     >
       <ResizeHandle height={height} drawer={section} onHeight={setHeight} />
-      <ConsolePanel
-        channels={channels.channels} selection={channels.selection} stamp={channels.stamp} fontFamily={fontFamily}
-        onSelect={channels.select} onStale={channels.refresh} drawer={{ onClose: close, onOpenTab: openTab }}
-      />
+      {tab === 'console'
+        ? (
+          <ConsolePanel
+            channels={channels.channels} selection={channels.selection} stamp={channels.stamp} fontFamily={fontFamily}
+            onSelect={channels.select} onStale={channels.refresh} drawer={{ onClose: close, onOpenTab: openTab, tabs }}
+          />
+        )
+        : <ProblemsTab activityId={activityId} tabs={tabs} collapsed={collapsed} onCollapsed={setCollapsed} onClose={close} onOpen={openProblem} />}
     </section>
   );
 }

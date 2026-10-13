@@ -19,7 +19,7 @@ import { DockBody } from '@/components/ViewRail';
 import {
   DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
 } from '@/components/terminal-tabs';
-import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext } from '@/hooks/use-console';
+import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import type { BackEntry } from '@/hooks/use-back-stack';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -30,6 +30,7 @@ import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
 import { shownRun } from '@/lib/center-layout';
+import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { useRememberFocus } from '@/lib/session-focus';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, runShortcut, shownBySide } from '@/lib/dock-layout';
@@ -48,6 +49,9 @@ export interface MainDockProps {
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
   automation?(openActivity: (taskId: string) => void): ReactNode;
+  // The window's footer (#225), from the Dashboard, handed the store id of the activity the center shows; inside the openers, so a failed
+  // checker opens its console channel. Absent (the terminal's harness): no footer
+  footer?(shownActivityId: string | undefined): ReactNode;
   header?(shell: HeaderShell): ReactNode; // the window's header (#533, #221), from the Dashboard, handed what its three columns show; absent (the terminal's harness): no header
   liveActivities?: State['activities']; // #629: state.activities, what the workers point at; absent (the terminal's harness): none
   slept?: State['slept']; // #672: the runs that sleep, kept as tabs; absent (the terminal's harness): none
@@ -100,19 +104,6 @@ const NO_STAGES: Stage[] = [];
 const NO_RECORDS: State['activityRecords'] = [];
 const NO_ACTIVITIES: State['activities'] = [];
 
-// A run command's start (#353): the console switches to the command's channel and the new run, and the list is read again, since the
-// channel may be new. The footer's chip shows it; the drawer opens only when asked (redesign 05), as a setup's ver log does.
-function useConsoleOpener(channels?: ConsoleChannels): OpenConsole {
-  const select = channels?.select;
-  const refresh = channels?.refresh;
-  const setOpen = channels?.setOpen;
-  return useCallback((channel: string, ptyId: string, show?: boolean) => {
-    select?.({ channel, ptyId });
-    refresh?.();
-    if (show) setOpen?.(true);
-  }, [select, refresh, setOpen]);
-}
-
 interface ActivitiesArgs { activities: Activity[]; selection: ActivitySelection; layouts: CenterLayouts; workspaces: string[]; sourceWorkspaces?: Record<string, string>; stages: Stage[]; workers: Worker[]; nav: ActivitiesNav; isShown: boolean }
 
 // The Activities tab (#457, redesign 03): the workspaces and their activities; a row's click makes it the window's center, a session's opens
@@ -133,7 +124,13 @@ function activitiesPanel({ activities, selection, layouts, nav, ...rest }: Activ
   return { id: 'activities', title: t('dock.activities'), ownHeader: true, body };
 }
 
-interface CenterArgs { selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext }
+// The store's id of the activity the center shows (#225): under atividades with one picked; undefined under fluxo and on the home
+const shownIdOf = (selection: ActivitySelection): string | undefined => (selection.center === 'activities' ? selection.current?.activity.id : undefined);
+
+interface CenterArgs {
+  selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext;
+  openProblem?(activityId: string, path: string, at: FileAt): void; // #225: a problem of the drawer's list, opened in its activity
+}
 
 // Whether the flow is what the center shows (#596): the flow and its sidebar stay mounted under Atividades, so what they must not do while
 // hidden (the search key, the source keys #585) reads this. Outside a dock (a flow rendered alone) it is shown.
@@ -171,7 +168,7 @@ function CenterWithConsole(args: CenterArgs) {
   return (
     <>
       {centerView(args)}
-      {channels && <ConsoleDrawer console={channels} fontFamily={fontFamily} onOpenTab={onOpenTab} />}
+      {channels && <ConsoleDrawer console={channels} fontFamily={fontFamily} onOpenTab={onOpenTab} activityId={shownIdOf(selection)} onOpenProblem={args.openProblem} />}
     </>
   );
 }
@@ -270,7 +267,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * a run's terminal a tab of its activity's center. Each side is a panel that opens and closes (#452). The center follows the left panel's
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
-  const { selected, onSelect, showTask, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
+  const { selected, onSelect, showTask, detail, consoleChannels, automation, header, footer, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
   const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
@@ -318,10 +315,12 @@ export function MainDock(props: MainDockProps) {
   const searchClose = useSearchClose(current, layouts, openUserRun);
   // Markdown: Open Preview (#697) and Git: Open Changes (#668): the focused editor names its activity by id; the tab opens in the focused group,
   // as any file does
-  const openFileAs = (how: OpenFileHow) => (activityId: string, path: string): void => {
+  // An activity's file by its store id (#697, #668, #225): Open Preview and Open Changes name the focused editor's, a problem names its own
+  const openFileOf = (activityId: string, path: string, at?: FileAt, how?: OpenFileHow): void => {
     const target = activities.find((activity) => activity.activity.id === activityId);
-    if (target !== undefined) openActivityFile(activityKey(target), path, undefined, how);
+    if (target !== undefined) openActivityFile(activityKey(target), path, at, how);
   };
+  const openFileAs = (how: OpenFileHow) => (activityId: string, path: string): void => openFileOf(activityId, path, undefined, how);
   const searchHost: SearchHost | undefined = search && {
     state: search.state, effective: search.effective, openShortcuts: search.openShortcuts, activities, shown: selection.center === 'activities' ? current : undefined,
     shownRun: selection.center === 'activities' ? shownRun(layouts.layout) : undefined, // the split-terminal keys' run (#641)
@@ -379,10 +378,11 @@ export function MainDock(props: MainDockProps) {
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
-            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} />
+            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>
+      {footer?.(shownIdOf(selection))}
       {quick.dialogs}
       {searchClose.dialog}
       {newIn && newActivity?.({ ...newIn, onStarted: openStarted, onClose: () => setNewIn(undefined) })}

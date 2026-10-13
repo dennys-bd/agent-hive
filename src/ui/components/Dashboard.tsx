@@ -19,6 +19,8 @@ import { DetailSlotProvider } from '@/components/DetailSlot';
 import type { SourcesNav } from '@/components/FlowSources';
 import { type BackLink, FlowHeader, type RepoHeader, type RepoTab, type SourceTab, type SourceTabs } from '@/components/FlowHeader';
 import { Footer } from '@/components/Footer';
+import { Checkers } from '@/components/footer/Checkers';
+import { ProblemsButton } from '@/components/footer/ProblemsButton';
 import { Header } from '@/components/Header';
 import { IssuePage, type IssueRef } from '@/components/IssuePage';
 import { activityPane } from '@/components/PaneHeader';
@@ -303,6 +305,14 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         sidebarsPerView={sidebarsPerView}
         fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
+        // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
+        // signal and the worker cap stay in the flow sidebar (redesign 09)
+        footer={(shown) => (
+          <Footer
+            state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />}
+            checkers={<Checkers activityId={shown} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
+          />
+        )}
         header={(shell) => <Header shell={shell} state={state} effective={limits} />}
         automation={() => (
           <AutomationPanel
@@ -323,9 +333,6 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           <NavScrollContext.Provider value={pending}><Center state={state} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
         </main>
       </MainDock>
-      {/* redesign 02: the signal, the workers, the rules with their pause popover and shut down when done; the manual signal and the
-          worker cap stay in the flow sidebar (redesign 09) */}
-      <Footer state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />} />
       <CrashDialog state={state} onSelect={(taskId) => onSelect({ taskId })} />
     </div>
   );

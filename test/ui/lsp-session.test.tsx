@@ -32,11 +32,11 @@ test('a TypeScript file opens one socket per binary; providers are registered on
   const [socket] = FakeSocket.all;
   await ready(socket, { hoverProvider: true, definitionProvider: true });
   expect(registered.map((r) => `${r.kind}:${r.language}`).sort()).toEqual(['definition:typescript', 'hover:typescript']);
-  expect(store.fileServer('a1', 'src/a.ts')?.state).toEqual({ phase: 'ready' });
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'typescript-language-server', phase: 'ready', language: 'typescript' }]);
   stop();
   stop2();
   expect(socket.isClosed).toBe(true);
-  expect(store.fileServer('a1', 'src/a.ts')).toBeUndefined();
+  expect(store.activityStatus('a1')).toEqual([]);
 });
 
 test('no socket for a language without a server or checker server, nor for a workspace out of the server\'s scope with its checkers off (#780)', () => {
@@ -59,10 +59,10 @@ test('publishDiagnostics sets the model\'s markers and the store\'s problems (#7
 test('a server installed after its client found it absent gets a new socket (#780)', () => {
   attach(input('a.py', new FakeModel('x', 'python')));
   FakeSocket.all[0].closeWith(4404, 'not installed');
-  expect(store.fileServer('a1', 'a.py')?.state).toEqual({ phase: 'absent', reason: 'not installed' });
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'pyright', phase: 'absent', reason: 'not installed' }]);
   emitEditorInstall({ kind: 'server', id: 'pyright', state: { state: 'installed', version: '1.2.3' } });
   expect(FakeSocket.all).toHaveLength(2);
-  expect(store.fileServer('a1', 'a.py')?.state).toEqual({ phase: 'starting' });
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'pyright', phase: 'starting' }]);
 });
 
 test('when its server dies the squiggles go with it: the model\'s lsp markers are cleared (#780)', async () => {
@@ -84,11 +84,11 @@ test('a file opened after its client failed starts a new one with the files alre
   attach(input('c.py', new FakeModel('z', 'python')));
   expect(FakeSocket.all).toHaveLength(1);
   socket.closeWith(1011, 'exit code 3');
-  expect(store.fileServer('a1', 'a.py')?.state).toMatchObject({ phase: 'failed' });
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'pyright', phase: 'failed' }]);
   attach(input('b.py', new FakeModel('y', 'python')));
   expect(FakeSocket.all).toHaveLength(2);
   expect(socket.isClosed).toBe(true);
-  expect([store.fileServer('a1', 'a.py')?.state, store.fileServer('a1', 'b.py')?.state]).toEqual([{ phase: 'starting' }, { phase: 'starting' }]);
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'pyright', phase: 'starting', language: 'python' }]); // one client, both files on it
 });
 
 test('the completion provider gets the server\'s trigger characters (#780)', async () => {
@@ -109,8 +109,7 @@ test('a Python file attaches to pyright and to ruff, on by default; ruff\'s clie
   await settle();
   expect(markers.at(-1)).toMatchObject({ model, owner: 'lsp:ruff', list: [{ message: 'unused import' }] });
   expect(store.problems('a1')[0].problems[0]).toMatchObject({ source: 'ruff', code: 'F401', severity: 'warning' });
-  expect(store.fileSources('a1', 'a.py')).toMatchObject([{ name: 'ruff', phase: 'ready' }]);
-  expect(store.fileServer('a1', 'a.py')?.server).toBe('pyright');
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'pyright', kind: 'server', language: 'python' }, { name: 'ruff', kind: 'server', phase: 'ready' }]);
 });
 
 test('the quick fix provider asks every client of the model whose server offers quick fixes: the language\'s and its checkers\' (#782)', async () => {

@@ -1118,7 +1118,7 @@ export interface CombConfig {
 /** The Hive's operations a key can start (#449, #585, #573: was OperationId, which named the operation, not its key);
  * src/shortcut-registry.ts holds each one's defaults per platform, scope and name. The fixed keys are not shortcuts (#481): FIXED_SHORTCUTS there. */
 export type OperationId =
-  | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole'
+  | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'openDiff' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
