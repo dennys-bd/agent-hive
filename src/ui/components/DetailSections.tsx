@@ -1,12 +1,13 @@
 import { toast } from 'sonner';
 import { type MouseEvent, type ReactNode, useState } from 'react';
+import { agentName } from '../../agents';
 import { liveRuns, openFeedbackSession, startMode } from '../../task-runs';
 import { activityOf, prsOf, recordWithSession, workIdOf } from '../../activities';
 import { taskTotals } from '../../record-kit';
 import { parentOf } from '../../task-tree';
 import { continuable, SESSION_ID_CHARS, sessionsOf, taskLabel, workersOf } from '../../tasks';
 import { prGroups, prNumber, repoName, type PrGroup, type PrLine } from '../../pull-requests';
-import type { Task, TaskFile, Session, OpenResult, State } from '../../types';
+import type { Task, TaskFile, TaskUsage, Session, OpenResult, State, UsagePart } from '../../types';
 import type { TaskState } from '@/lib/status';
 import { baseText } from '@/components/ForkSyncNotice';
 import { act, actThen, attachRun } from '@/components/actions';
@@ -156,10 +157,35 @@ function PrValue({ task, state }: { task: Task; state: Work }) {
   return <div className="flex min-w-0 flex-col">{groups.map((group) => <PrGroupLines key={group.repo} group={group} />)}</div>;
 }
 
-// Every run on the task so far (#248): working time (the waiting left out) and tokens, the running sessions included
-function totalText(task: Task, state: Work): string {
+// A usage's working time (the waiting left out, #248) and tokens: the total's line and each part's, so the lines add up to it on screen
+const usageText = (u: Pick<TaskUsage, 'tokens' | 'ms' | 'waitingMs'>): string => t('detail.total', { time: compact(u.ms - u.waitingMs), tokens: fmt(u.tokens) });
+
+// A part's name (#617): a commands stage runs no agent, a free session no stage, and usage saved before the breakdown has neither
+function partName({ stage, agent }: UsagePart): string {
+  if (stage === undefined) return agent === undefined ? t('detail.usage.before') : `${t('detail.freeSession')} · ${agentName(agent)}`;
+  return agent === undefined ? stage : `${stage} · ${agentName(agent)}`;
+}
+
+// The total row's value (#248, #617): a button that expands the parts below it, one line per stage and agent in the order the task first
+// ran them, collapsed by default. Running runs count in both, so the lines move with the main window's tick as the total does
+function TotalValue({ task, state }: { task: Task; state: Work }) {
+  const [isOpen, setIsOpen] = useState(false);
   const total = taskTotals(state, task, Date.now());
-  return t('detail.total', { time: compact(total.ms - total.waitingMs), tokens: fmt(total.tokens) });
+  return (
+    <div className="flex min-w-0 flex-col items-start gap-0.5">
+      <Button
+        type="button" variant="link" size="xs" aria-expanded={isOpen} title={t(isOpen ? 'detail.total.collapse' : 'detail.total.expand')}
+        className="h-auto p-0 font-normal text-foreground" onClick={() => setIsOpen((open) => !open)}
+      >
+        {usageText(total)}
+      </Button>
+      {isOpen && (
+        <ul className={`flex min-w-0 flex-col ${MUTED}`}>
+          {total.parts.map((part) => <li key={JSON.stringify([part.stage, part.agent])} className="truncate">{`${partName(part)} · ${usageText(part)}`}</li>)}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -197,7 +223,7 @@ export function MetaGrid({ task, state, isActivity, onOpenTask, hasPrs = true }:
       {parent && onOpenTask && <Row label={t('detail.parent')}><ParentValue parent={parent} onOpenTask={onOpenTask} /></Row>}
       <Row label={t('detail.branch')}><span className="truncate font-mono">{activityOf(state, task.item.itemId)?.branch ?? '—'}</span></Row>
       {sync && <Row label={t('detail.base')}><span className="truncate font-mono">{baseText(sync)}</span></Row>}
-      <Row label={t('detail.totalLabel')}>{totalText(task, state)}</Row>
+      <Row label={t('detail.totalLabel')}><TotalValue task={task} state={state} /></Row>
     </dl>
   );
 }
