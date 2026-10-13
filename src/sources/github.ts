@@ -9,13 +9,14 @@ import { facetsOf, filterOptionsFrom, matchesFilter, ME, projectQuery, splitBloc
 import type { Logger } from '../log.js';
 import {
   ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PAGE_SIZE, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo,
-  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
+  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
 import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
-import { applyRelations, fetchRelations } from './github-items-sync.js';
+import { applyRelations, createItemsSync, fetchRelations, readProbe } from './github-items-sync.js';
+import type { ItemStore } from '../read-model/items.js';
 import { readProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
@@ -165,7 +166,7 @@ export async function listFilterOptions(owner: string, number: number, gql: Gql 
   return { ...filterOptionsFrom(nodes, project?.fields?.nodes ?? []), linkedRepositories: (project?.repositories?.nodes ?? []).map((r) => r.nameWithOwner) };
 }
 
-export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql(), log?: Logger): Source {
+export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql(), log?: Logger, items?: ItemStore): Source {
   const { owner, number, epics } = source, query = projectQuery(source.filter); // #234: GitHub filters first, so the pages count kept items only
   const { blocked, other } = splitBlocked(source.filter); // #441: the blocked rules wait for the relations query
   let resolved: { projectId: string; statusFieldId: string; options: GhOption[]; optionIds: Record<string, string> } | undefined; // options: every Status option, in order (#756)
@@ -174,6 +175,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   let me: string | undefined; // the polling account's login, asked only when the filter says @me; a transport change builds a new adapter
   let lastNodes: GhItemNode[] = []; // #28: the last listing's nodes, what a field write's re-read reads its tree links over
   let contents = new Map<string, GhItemNode['content']>(); // every item the last listing saw, draft or filtered out: what apply acts on (#286)
+  // #190: with a read model the poll probes the project first and lists what the model holds; it reads in full only when the sync says so
+  const sync = items && createItemsSync({ store: items, probe, listNodes, kept: (nodes) => keep(nodes), fetchRelations: (tasks) => fetchRelations(gql, tasks), log });
 
   async function resolveFields(): Promise<void> {
     const status = await fetchStatusField(owner, number, gql);
@@ -196,6 +199,14 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return nodes;
   }
 
+  // #190: 1 point; its rateLimit is the quota reading of a poll that reads nothing more. listItems resolved the login first
+  async function probe(): Promise<string> {
+    login ??= await ownerLogin(owner, gql);
+    const { updatedAt, rateLimit } = await readProbe(gql, { login, number }, sourceNotFound(owner, number));
+    lastQuota = quotaFrom(rateLimit);
+    return updatedAt;
+  }
+
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
   // under their epics, then the filter and the hidden epics. The tree links (#28) are read over every node first, before a column or a filter
   // drops one: a child filtered out or in another column is still a child
@@ -216,21 +227,42 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     });
   }
 
-  // Then the relations and the blocked rules (#441). Items carry no relations; a failed query rejects the poll, never "no blockers"
-  async function listed(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): Promise<SourceItem[]> {
-    const tasks = keep(items, links);
-    return applyRelations(tasks, await fetchRelations(gql, tasks)).filter((task) => matchesRules(blocked, task.item));
+  const blockedOut = (tasks: SourceItem[]): SourceItem[] => tasks.filter((task) => matchesRules(blocked, task.item)); // #441: judged on the relations
+
+  // Then the relations and the blocked rules (#441). Items carry no relations; a failed query rejects the poll, never "no blockers". What it
+  // read is kept for a write's answer (#190)
+  async function related(tasks: SourceItem[]): Promise<{ listed: SourceItem[]; relations: Map<string, GhIssueRelations | null> }> {
+    const relations = await fetchRelations(gql, tasks);
+    return { listed: blockedOut(applyRelations(tasks, relations)), relations };
   }
 
+  async function listed(nodes: GhItemNode[]): Promise<SourceItem[]> {
+    return (await related(keep(nodes))).listed;
+  }
+
+  function remember(nodes: GhItemNode[]): void {
+    contents = new Map(nodes.map((node) => [node.id, node.content]));
+    lastNodes = nodes;
+  }
+
+  // #190: with a store and a login, the model's listing after a probe; without either (headless, setup mode, no login), the wire's, as before
   async function listItems(): Promise<SourceItem[]> {
-    const items = await listNodes();
-    contents = new Map(items.map((item) => [item.id, item.content]));
-    lastNodes = items;
-    return listed(items);
+    const rows = await items?.source();
+    if (sync === undefined || rows === undefined) {
+      const nodes = await listNodes();
+      remember(nodes);
+      return listed(nodes);
+    }
+    login ??= await ownerLogin(owner, gql);
+    const project = `${login}/${number}`;
+    const read = await sync.list({ source: rows, project, scope: query === undefined ? project : `${project} ${query}` });
+    remember(read.nodes);
+    return blockedOut(await sync.relate(rows, keep(read.nodes), read.relations));
   }
 
   async function setColumn(itemId: string, column: string): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     const optionId = resolved.optionIds[column];
     if (optionId === undefined) throw new Error(`"${column}" is not a column the config cites`);
     await gql(SET_OPTION, { projectId: resolved.projectId, itemId, fieldId: resolved.statusFieldId, singleSelectOptionId: optionId });
@@ -241,6 +273,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // #846: a new issue in source.repository, on the Project, in the Status option `column` (the stage's first from column, cited)
   async function create({ title, body, column }: { title: string; body?: string; column: string }): Promise<string> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     if (source.repository === undefined) throw new Error('source has no repository for new issues');
     const option = resolved.options.find((o) => o.name === column);
     if (!option) throw new Error(`"${column}" is not a Status option: ${resolved.options.map((o) => o.name).join(', ')}`);
@@ -252,6 +285,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // it cannot be closed, and deleting it deletes the item. A close from hive_stop carries a reason and maybe the original of a duplicate (#314).
   async function apply(itemId: string, action: ItemAction): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     if (!contents.has(itemId)) throw new Error(`item ${itemId} is not on the source`);
     const content = contents.get(itemId);
     const issueId = content?.__typename === 'Issue' ? content.id : undefined;
@@ -293,22 +327,31 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return { statuses, ...(await readProject(gql, await projectRead())) };
   }
 
-  // #686, #56: what a write on one item needs. listed([node]) is the poll's steps on one item. groupUnderEpics only reorders a list, the
-  // tree links (#28) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so the
-  // one-item entry equals the poll's for that item
+  // #686, #56: what a write on one item needs. related(keep([node])) is the poll's steps on one item. groupUnderEpics only reorders a list,
+  // the tree links (#28) are read over the last listing with the re-read node in its place, and the rest of the steps read the item alone, so
+  // the one-item entry equals the poll's for that item. #190: answer stores the re-read node, and the relations entry read, in the model
   async function fieldsContext(): Promise<FieldsContext> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => (await listed([node], treeLinks(inPlace(lastNodes, node))))[0];
-    return { gql, projectId: resolved.projectId, read: await projectRead(), entry };
+    const read = await projectRead();
+    let fetched = new Map<string, GhIssueRelations | null>();
+    const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => {
+      const one = await related(keep([node], treeLinks(inPlace(lastNodes, node))));
+      fetched = one.relations;
+      return one.listed[0];
+    };
+    const answer = sync && ((node: GhItemNode): Promise<void> => sync.answer(node, fetched, `${read.login}/${number}`));
+    return { gql, projectId: resolved.projectId, read, entry, ...(answer === undefined ? {} : { answer }) };
   }
 
   // #686: a field write, then the item re-read and run through the poll's own steps, so `entry` is what the next poll would list
   async function setField(itemId: string, field: string, value: FieldValue): Promise<FieldWrite> {
+    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     return writeItemField(await fieldsContext(), itemId, field, value);
   }
 
   // #56: a blocker relation added or removed, then the item's relations and entry re-read as a field write's
   async function relate(itemId: string, change: BlockerChange): Promise<BlockerWrite> {
+    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     return relateItem(await fieldsContext(), itemId, change);
   }
 

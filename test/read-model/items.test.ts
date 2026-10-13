@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
 import { openReadModel, type ReadModel } from '../../src/read-model/db.js';
-import { itemRow, readListing, storeListing, type ListingKey } from '../../src/read-model/items.js';
+import { itemRow, readListing, storeListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import type { GhIssueRelations, GhItemFieldsNode, GhItemNode, RelationsData } from '../../src/sources/github-queries.js';
 import type { SourceItem } from '../../src/types.js';
@@ -115,4 +115,16 @@ test('itemRow drops the project and cuts the repository to its name: a write\'s 
   assert.deepEqual([row.source, row.nodeId, row.project, row.updatedAt], [SOURCE, 'PVTI_8', PROJECT, T1]);
   assert.equal(stored.project, undefined);
   assert.deepEqual(stored.content?.repository, { nameWithOwner: 'acme/r' });
+});
+
+test('the contract through the adapter (#190): with a store, a full poll and a probe-only one list what the wire path lists', async () => {
+  const db = await memoryModel();
+  const items: ItemStore = { db, source: async () => SOURCE, notify: () => undefined };
+  const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
+  const { gql, calls } = fakeGql({ probe, items: page(WIRE), relations: RELATIONS });
+  const stored = createSource(SPEC, { gql, items });
+  const wire = await listedOver(WIRE);
+  assert.deepEqual(await stored.listItems(), wire);
+  assert.deepEqual(await stored.listItems(), wire, 'read back with the stored relations');
+  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations', 'probe']);
 });

@@ -10,8 +10,11 @@ const ASSIGNEES = 'ASSIGNEES'; // GitHub's dataType of the built-in Assignees fi
 const LABELS = 'LABELS'; // GitHub's dataType of the built-in Labels field
 const WRITABLE = new Set(['SINGLE_SELECT', 'ITERATION', 'TEXT', 'NUMBER', 'DATE']); // the kinds updateProjectV2ItemFieldValue takes
 
-/** What a field write needs of the adapter (#686): its transport, what projectItem reads, and the poll's own steps on one item. */
-export interface FieldsContext { gql: Gql; projectId: string; read: ProjectRead; entry(node: GhItemFieldsNode): Promise<SourceItem | undefined> }
+/** What a field write needs of the adapter (#686): its transport, what projectItem reads, and the poll's own steps on one item. answer (#190):
+ * the re-read node stored in the read model, before the write answers and before the next poll. */
+export interface FieldsContext {
+  gql: Gql; projectId: string; read: ProjectRead; entry(node: GhItemFieldsNode): Promise<SourceItem | undefined>; answer?(node: GhItemFieldsNode): Promise<void>;
+}
 
 /** One mutation of a write (#686). */
 export interface FieldMutation { query: string; variables: Record<string, string | number> }
@@ -151,6 +154,7 @@ export async function reread(ctx: FieldsContext, itemId: string): Promise<FieldW
   const row = projectItem(node, projectFields(node.project?.fields?.nodes ?? []), ctx.read);
   if (row === undefined) throw new Error(`item ${itemId} is not an issue`);
   const entry = await ctx.entry(node);
+  await ctx.answer?.(node); // #190: after entry, which read the relations the answer stores beside the row
   return { fields: itemFields(node), row, ...(entry === undefined ? {} : { entry }) };
 }
 

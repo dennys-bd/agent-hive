@@ -5,11 +5,13 @@ import { RelationRereadError } from './sources/github-blockers.js';
 import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
 import type { Logger } from './log.js';
+import type { ItemStore } from './read-model/items.js';
 import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView } from './types.js';
 
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
   log?: Logger; // every GraphQL call is logged at debug
+  items?: ItemStore; // #190: the read model a GitHub adapter stores its items in; absent (headless, setup mode, most tests): the wire as before
 }
 
 /** What the server hands createSource for one entry (#180): that source (its epics keys included, #30) next to the Comb's stages and the transport. */
@@ -24,7 +26,7 @@ export function createSource(spec: SourceSpec, deps: SourceDeps): Source {
       // The log wraps whichever runner is in play, the configured transport or an injected one, so a test sees the same debug lines.
       // parseConfig requires auth next to a github source; a hand-built spec without it fails with that same message.
       const gql = deps.gql ?? gqlFor((auth ?? parseAuth(undefined)).github);
-      return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql, deps.log);
+      return createGithubSource(source, cited, deps.log ? loggedGql(gql, deps.log) : gql, deps.log, deps.items);
     }
   }
 }
