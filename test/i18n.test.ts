@@ -486,7 +486,7 @@ test('the confirmations\' copy (#75): sentence-case titles with no question mark
   const titles = [
     'confirm.title.stopRun', 'confirm.title.closeTask', 'confirm.title.closeTasks', 'confirm.title.deleteTask', 'confirm.title.trash',
     'confirm.title.discardEdits', 'confirm.title.discardSettings', 'confirm.title.deleteActivity', 'confirm.title.cleanOrphans',
-    'confirm.title.deleteStages', 'confirm.title.sleep', 'confirm.title.shutdown', 'activities.deleteAll.title',
+    'confirm.title.deleteStages', 'confirm.title.sleep', 'confirm.title.shutdown', 'confirm.title.forceDelete', 'activities.deleteAll.title',
   ] as const;
   const lowercase = [
     'confirm.close', 'confirm.closeMissing', 'confirm.closeMissingAll', 'confirm.removeLocal', 'confirm.deleteActivity', 'confirm.deleteActivity.lead',
@@ -508,6 +508,7 @@ test('the confirmations\' copy (#75): sentence-case titles with no question mark
     [MESSAGES.pt['confirm.title.shutdown'], MESSAGES.pt['confirm.shutdown'], MESSAGES.pt['shutdown.arm']],
     ['Desligar ao terminar', 'desligar o computador quando os workers terminarem?', 'desligar ao terminar'],
   );
+  assert.deepEqual([MESSAGES.en['confirm.title.forceDelete'], MESSAGES.pt['confirm.title.forceDelete']], ['Force the removal', 'Forçar remoção']);
   assert.deepEqual([MESSAGES.en['confirm.title.sleep'], MESSAGES.pt['confirm.title.sleep']], ['Sleep session', 'Dormir sessão']);
   assert.deepEqual([MESSAGES.en['confirm.title.cleanOrphans'], MESSAGES.pt['confirm.title.cleanOrphans']], ['Delete orphan worktrees', 'Apagar worktrees órfãs']);
 });
