@@ -1,0 +1,86 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { DesignPane } from '@/components/DesignPane';
+import { showCommentsPanel } from '@/hooks/use-design-pins';
+import { setLanguage } from '@/i18n';
+import type { ReviewDraft, ReviewFile } from '../../src/types';
+import { area, FRAME_NAME, fromBridge, mintFrame, PATH, postsToFrame } from './design-review';
+import { activityOf, fakeHive, type FakeHive, SESSION, withSessions } from './diff-harness';
+
+type User = ReturnType<typeof userEvent.setup>;
+const BLOCK = { layout: { options: ['board', 'list'], default: 'board' }, auto: { type: 'boolean', default: true } };
+const draft = (pin: number, text: string, state: Parameters<typeof area>[2] = {}): ReviewDraft => ({ id: `D${pin}`, anchor: area(pin, PATH, state), session: SESSION, text });
+// One comment per state the pane can be in, and one on a tweak the block no longer has
+const STATES: ReviewFile = {
+  reviewed: [], threads: [], drafts: [
+    draft(1, 'on the default'), draft(2, 'on the list', { tweaks: { layout: 'list' } }), draft(3, 'on mobile', { viewport: 390 }),
+    draft(4, 'in light', { theme: 'light' }), draft(5, 'on a gone tweak', { tweaks: { gone: 'x' } }),
+    draft(6, 'on mobile, light, list', { viewport: 390, theme: 'light', tweaks: { layout: 'list', auto: false } }),
+  ],
+};
+const tweak = (name: string, value: unknown): Record<string, unknown> => ({ hive: 'design', type: 'tweak', name, value });
+const ofType = (posts: Record<string, unknown>[], type: string): Record<string, unknown>[] => posts.filter((data) => data.type === type);
+const row = (): HTMLElement | null => screen.queryByRole('toolbar', { name: 'tweaks' });
+
+let hive: FakeHive;
+beforeEach(() => {
+  setLanguage('pt');
+  document.documentElement.dataset.theme = 'dark';
+  showCommentsPanel(false);
+  hive = fakeHive();
+  hive.review = STATES;
+  mintFrame(hive);
+});
+afterEach(() => {
+  delete document.documentElement.dataset.theme;
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+async function pane(): Promise<void> {
+  render(<DesignPane activity={activityOf(withSessions())} path={PATH} label="#1 Task 1 · Design Landing.hv.html" active />);
+  await screen.findByTitle(FRAME_NAME);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'comentários' })).toHaveTextContent('6'));
+}
+async function pick(user: User, name: string, option: string): Promise<void> {
+  await user.click(screen.getByRole('combobox', { name }));
+  await user.click(screen.getByRole('option', { name: option }));
+}
+
+test('no row before or without a block; the frame\'s block shows it and sends the defaults, and a change sends that tweak (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  expect(row()).toBeNull();
+  const posts = postsToFrame();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  expect(ofType(posts(), 'tweak')).toEqual([tweak('layout', 'board'), tweak('auto', true)]);
+  await user.click(screen.getByRole('switch', { name: 'auto' }));
+  expect(ofType(posts(), 'tweak').at(-1)).toEqual(tweak('auto', false));
+  expect(screen.getByRole('switch', { name: 'auto' })).not.toBeChecked();
+});
+
+test('after every ready the values go again, after the theme; a new block settles them and sends them at once (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  await pick(user, 'layout', 'list');
+  const posts = postsToFrame();
+  fromBridge({ type: 'ready' });
+  expect(posts().slice(-3)).toEqual([{ hive: 'design', type: 'theme', theme: 'dark' }, tweak('layout', 'list'), tweak('auto', true)]);
+  fromBridge({ type: 'tweaks', schema: { layout: { options: ['board', 'grid'], default: 'grid' } } });
+  expect(ofType(posts(), 'tweak').at(-1)).toEqual(tweak('layout', 'grid')); // list left the block: the default
+  expect(screen.getByRole('combobox', { name: 'layout' })).toHaveTextContent('grid');
+  expect(screen.queryByRole('switch', { name: 'auto' })).toBeNull();
+});
+
+test('a block whose JSON broke, or whose rules fail, shows the invalid message and no control (#241)', async () => {
+  await pane();
+  fromBridge({ type: 'tweaks', schema: null, error: 'json' });
+  expect(row()).toHaveTextContent('o bloco hv-tweaks é inválido');
+  fromBridge({ type: 'tweaks', schema: { Layout: { options: ['a'], default: 'a' } } });
+  expect(row()).toHaveTextContent('o bloco hv-tweaks é inválido');
+  expect(screen.queryByRole('combobox', { name: 'Layout' })).toBeNull();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  expect(screen.getByRole('combobox', { name: 'layout' })).toBeInTheDocument();
+});

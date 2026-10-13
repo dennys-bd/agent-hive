@@ -1,13 +1,15 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
-import type { DesignTarget, DesignViewport, UnpinnedDesignAnchor } from '../../types';
+import type { DesignTarget, DesignTweakValue, DesignViewport, UnpinnedDesignAnchor } from '../../types';
 import { DesignComposer, saveComment } from '@/components/DesignComposer';
 import { composerStyle, DesignPins } from '@/components/DesignPins';
 import { DesignBar } from '@/components/DesignBar';
 import { DesignComments } from '@/components/DesignComments';
+import { DesignTweaks } from '@/components/DesignTweaks';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
 import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
+import { type DesignTweaks as DesignTweaksModel, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX } from '@/hooks/use-design-zoom';
 import type { Activity, TaskActivity } from '@/lib/activities';
@@ -192,8 +194,8 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, frameWidth
 interface DesignViewModel {
   name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
   viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
-  zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge;
-  pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; selectComment(id: string): void;
+  zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge; tweaks: DesignTweaksModel;
+  pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
 }
 
 // The pane's state (#109, #113, #114): one owner for the bar, the canvas, its overlay and the panel
@@ -206,21 +208,24 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const reloads = useReloads(activity.activity.id, path, active);
   const [reloadedAt, setReloadedAt] = useState<Date>();
   const viewportPx = VIEWPORT_PX[viewport];
+  const tweaks = useDesignTweaks(frame);
   const marks = useCommentCanvas(comments);
   const pins = useDesignPins(frame, canvas, anchorsOf(comments), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
   const size = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
-    postTheme(frame.current, theme); // the frame forgets the theme on every load
+    postTheme(frame.current, theme); // the frame forgets the theme and the tweaks on every load
+    tweaks.repost();
     if (reloads.take()) setReloadedAt(new Date());
   });
   // A window screen wider than the viewport is drawn whole, the canvas scrolling (#241).
   // ponytail: the frame never narrows below a width it was given until the pane remounts, since a responsive screen reports scrollWidth equal to the frame's own width; reset on viewport change plus a measure request to the bridge if it bites
   const width = Math.max(viewportPx, size.width ?? 0);
   const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
-  // An aimed rect was measured in the other theme or viewport: either change drops the composer
+  // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
+  const pickTweak = (name: string, value: DesignTweakValue): void => { tweaks.set(name, value); marks.close(); };
   return {
-    name: baseName(path), canvas, frame, viewport, theme, viewportPx, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, pickTheme,
+    name: baseName(path), canvas, frame, viewport, theme, viewportPx, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
     pickViewport: (next) => { setViewport(next); marks.close(); },
     selectComment: (id) => { marks.selectItem(id); pins.scrollTo(id); },
   };
@@ -240,6 +245,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
         path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
+      {view.tweaks.block.status !== 'none' && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
       <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
