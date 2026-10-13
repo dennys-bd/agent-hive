@@ -31,14 +31,18 @@ const bar = (c: WithWork, onShowFlow = vi.fn()) => <ActivityBar activity={activi
 
 beforeEach(() => setLanguage('pt'));
 
-test('the bar reads the title, then etapa, the branch in mono, the time and the tokens as Detalhes totals them; no branch yet leaves it out with its separator (#536)', () => {
+test('the bar reads the title over a line of etapa, the branch in mono, the time and the tokens as Detalhes totals them; no branch yet leaves it out with its separator (#536, #221)', () => {
   const { rerender } = render(bar(task()));
   expect(screen.getByText('#1 Task 1')).toHaveClass('truncate', 'font-semibold', 'text-[13px]');
   const facts = screen.getByText(/^etapa dev/);
   expect(facts).toHaveTextContent('etapa dev · hive/1-task-1 · 2h31m · 12.3k tokens');
   expect(facts).toHaveClass('text-muted-foreground', 'text-xs');
   expect(within(facts).getByText('hive/1-task-1')).toHaveClass('font-mono');
-  expect(facts.closest('[data-activity-bar]')).toHaveClass('h-9', 'gap-2.5', 'border-b', 'px-3');
+  const box = facts.closest('[data-activity-bar]');
+  expect(box).not.toHaveClass('h-9'); // #221: no 36px box of its own, the header's 44px holds it
+  expect(box).not.toHaveClass('border-b');
+  expect(facts.previousElementSibling).toHaveTextContent('#1 Task 1'); // the title over the facts
+  expect(facts.parentElement).toHaveClass('flex-col');
   rerender(bar(task({ branch: undefined })));
   expect(screen.getByText(/^etapa dev/)).toHaveTextContent(/^etapa dev · 2h31m · 12\.3k tokens$/);
 });
@@ -52,6 +56,15 @@ test('the workspace\'s commands render as outline buttons, then dormir and the �
   expect(sleep).toBeDisabled(); // no focused run
   expect(seed.compareDocumentPosition(sleep) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   expect(screen.getByRole('button', { name: 'mais ações' })).toBeInTheDocument();
+});
+
+test('the commands, dormir and the ⋯ sit out of the window drag; the title and the facts drag with the header (#221)', () => {
+  render(bar(task()));
+  const actions = screen.getByRole('button', { name: 'mais ações' }).closest('[data-activity-bar] > :last-child');
+  expect(actions).toHaveClass('[-webkit-app-region:no-drag]');
+  expect(actions).toContainElement(screen.getByRole('button', { name: 'seed' }));
+  expect(actions).toContainElement(screen.getByRole('button', { name: 'dormir' }));
+  expect(screen.getByText('#1 Task 1').closest('[class*="no-drag"]')).toBeNull();
 });
 
 test('the ⋯ lists the activity\'s items; ver no fluxo shows the flow (#536)', async () => {
