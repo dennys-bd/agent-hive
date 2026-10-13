@@ -699,6 +699,7 @@ export interface State {
   rateLimitWaitMinutes: number; // copied from Config.rateLimitWaitMinutes wherever the live state is created and by setRateLimitWait on a save that changes it (#805)
   defaultAgent?: AgentId; // #925: copied from Config.defaultAgent wherever the live state is created and by setDefaultAgent on a save that changes it; absent only on a state built by hand (a test's): liveDefaultAgent reads DEFAULT_AGENT then
   shutdown?: { armedAt: string }; // shutdown when done (#233): absent = off; set and cleared by setShutdown, cleared with the shutdown effect and by boot
+  keepAwake?: true; // keep awake (#226): absent = off. Set and cleared by setKeepAwake, cleared at boot and with the shutdown effect.
   cleanStop?: true; // set by quit (#283): the kills of a Quit are not exits, and the next boot resumes the tasks in flight
   crash?: { at: string; tasks: string[] }; // the item ids a boot after a crash stopped (#283): the source lists them until dismissCrash
   slept?: SleptRun[]; // #672: the runs that ended with their session kept, newest last, at most SLEPT_MAX; never saved (state-store.ts)
@@ -1316,6 +1317,7 @@ export type HiveEvent =
   | { type: 'setDefaultAgent'; agent: AgentId } // like setRateLimitWait: the config's default agent, from a save that changed it (#925)
   | { type: 'setApprovalMinutes'; minutes: number } // like setShutdownIdle: the approval window, from a save that changed it (#268)
   | { type: 'setShutdown'; armed: boolean } // the main window's power toggle (#233)
+  | { type: 'setKeepAwake'; on: boolean } // the footer's keep-awake toggle, or the daemon clearing it after the holder failed (#226)
   | { type: 'tick' } // the server's poll timer while shutdown-when-done is armed (#233): the reducer's final step reads the clock
   | { type: 'setStages'; stages: Stage[]; transitions: Transition[] } // #134: the transitions travel with the stages
   | { type: 'setWorkspaces'; workspaces: string[]; sourceWorkspaces: Record<string, string>; commands: Record<string, string[]>; workspaceColors: Record<string, string> } // like setStages: what the reducer resolves workspaces against (#179), and each workspace's command names (#300) and colour (#78)

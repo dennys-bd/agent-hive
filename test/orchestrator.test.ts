@@ -2704,6 +2704,32 @@ test('boot drops the mode: a restart never shuts the Mac down (#233)', () => {
   assert.deepEqual(booted.effects, []);
 });
 
+test('setKeepAwake on sets keepAwake and off drops the key, with no effect, never touching the state it was given; the log line says on or off (#226)', () => {
+  const start = base(1);
+  const before = structuredClone(start);
+  const on = reduce(start, { type: 'setKeepAwake', on: true });
+  assert.equal(on.state.keepAwake, true);
+  assert.deepEqual(on.effects, []);
+  assert.deepEqual(start, before, 'the given state is untouched');
+  const off = reduce(on.state, { type: 'setKeepAwake', on: false });
+  assert.equal('keepAwake' in off.state, false);
+  assert.deepEqual(off.effects, []);
+  assert.equal(on.state.keepAwake, true, 'the previous state still holds it');
+  assert.equal(describeEvent({ type: 'setKeepAwake', on: true }), 'setKeepAwake on');
+  assert.equal(describeEvent({ type: 'setKeepAwake', on: false }), 'setKeepAwake off');
+});
+
+test('keep awake never outlives the shutdown or a restart: the shutdown effect and boot both drop it; armed with a worker running, it stays (#226)', () => {
+  const awake: State = { ...base(1), keepAwake: true };
+  const idle = armed(awake);
+  assert.deepEqual(idle.effects, [{ type: 'shutdown' }]);
+  assert.equal('keepAwake' in idle.state, false, 'dropped with the shutdown');
+  const running = armed({ ...filled(1, 1).state, keepAwake: true });
+  assert.equal(running.state.keepAwake, true, 'a worker still runs: no shutdown yet');
+  const booted = reduce(running.state, { type: 'boot' });
+  assert.equal('keepAwake' in booted.state, false, 'every boot starts with keep awake off');
+});
+
 // Totals per task (#248). The first worker of a state as if its clock had run: a start, a wait, a last hook in the past
 const backdated = (state: State, changes: Partial<Worker>): State => ({ ...state, workers: state.workers.map((s, i) => (i === 0 ? { ...s, ...changes } : s)) });
 
