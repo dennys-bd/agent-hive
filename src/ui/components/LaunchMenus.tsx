@@ -18,10 +18,11 @@ const PLUGIN = 'hive'; // the Hive plugin, the hive: of every specialized agent 
 
 interface FieldMenuProps { label: string; shown: string; isDefault: boolean; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; children: ReactNode }
 
-// A field's menu (#257): a combobox button showing the pick (the default muted, a pick in mono) over a searchable list
+// A field's menu (#257): a combobox button showing the pick (the default muted, a pick in mono) over a searchable list. Modal: its content is
+// portalled out of the dialog that holds it, and the dialog's scroll lock eats the wheel there unless the popover registers its own (#290)
 function FieldMenu({ label, shown, isDefault, disabled = false, open, onOpenChange, children }: FieldMenuProps) {
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover modal open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button type="button" variant="outline" role="combobox" aria-expanded={open} aria-label={label} title={shown} disabled={disabled} className="w-full min-w-0 justify-between font-normal">
           <span className={isDefault ? 'truncate text-muted-foreground' : 'truncate font-mono text-xs'}>{shown}</span>

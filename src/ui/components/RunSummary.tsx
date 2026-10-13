@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from 'react';
 import { agentName } from '../../agents';
 import { sessionText } from '@/components/RunFields';
-import { AgentIcon } from '@/components/SessionLabel';
+import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { RunPicks } from '@/hooks/use-run-pick';
 import { t } from '@/i18n';
@@ -41,7 +41,7 @@ export function RunSummary({ picks, stageModel, isCustomizable, isOpen, onToggle
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex min-w-0 flex-1 items-center gap-1.5"><AgentIcon agent={picks.agent} /><span className="truncate">{line}</span></span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5"><AgentIcon agent={picks.agent} className={`size-3.5 shrink-0 ${AGENT_COLOR[picks.agent] ?? ''}`} /><span className="truncate">{line}</span></span>
             </TooltipTrigger>
             <TooltipContent className="w-[260px]"><RunDetails picks={picks} stageModel={stageModel} /></TooltipContent>
           </Tooltip>
