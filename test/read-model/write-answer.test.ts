@@ -42,3 +42,18 @@ test('a row the model refuses rolls the whole answer back and notifies nothing (
   assert.throws(() => applyWriteAnswer(deps, REPO, { issues: [WRITTEN], comments: [broken] }));
   assert.deepEqual([deps.db.issue(SOURCE, REPO, 12), notified], [undefined, []]);
 });
+
+const PR_ROW = { ...ISSUE_ROW, nodeId: 'PR_7', number: 7, kind: 'pr' as const, state: 'open' as const, closedAt: null, updatedAt: T1 };
+const MERGED = { ...PR_ROW, state: 'closed' as const, closedAt: T2, updatedAt: T2 };
+const KEY = { source: SOURCE, nodeId: 'PR_7', repository: REPO, number: 7 };
+const REVIEW = { source: SOURCE, nodeId: 'PRR_1', pullNodeId: 'PR_7', repository: REPO, author: 'caio', state: 'APPROVED' as const, body: '', submittedAt: T2 };
+
+test('a review answer and a merge answer upsert their rows with origin write and notify pulls beside issues (#187)', async () => {
+  const { deps, notified } = await model({ now: 1_000 });
+  deps.db.upsertIssue(PR_ROW, 'sync');
+  assert.deepEqual(applyWriteAnswer(deps, REPO, { issues: [{ ...PR_ROW, updatedAt: T2 }], reviews: [REVIEW] }), ['issues', 'pulls']);
+  assert.deepEqual(applyWriteAnswer(deps, REPO, { issues: [MERGED], pullFlags: [{ ...KEY, draft: false, mergedAt: T2 }] }), ['issues', 'pulls']);
+  const page = deps.db.prPage(SOURCE, REPO, 7);
+  assert.deepEqual([page?.reviews.map((r) => r.nodeId), page?.issue.state, page?.pull?.mergedAt], [['PRR_1'], 'closed', T2]);
+  assert.deepEqual(notified.map(([, kinds]) => kinds), [['issues', 'pulls'], ['issues', 'pulls']]);
+});
