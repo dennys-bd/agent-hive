@@ -38,8 +38,8 @@ function moved(state: State, task: Task, target: Stage): Reduced {
   return { state: withTask(went.state, started.task), effects: [...went.effects, ...started.effects] };
 }
 
-// Out through the last stage's done exit to end once that stage is due (#213): the epic waits its `after` there as any task does, re-read on
-// every reduction as `enter` reads the clock. The stage's own action never runs for it (#31). No such exit, or not due yet: the state itself
+// Out through the last stage's done exit to end once that stage is due (#213): the epic waits its `after` there as any task does. isDue is
+// checked on each reduction, not scheduled: the polls keep reductions coming. The stage's own action never runs for it (#31). No such exit, or not due yet: the state itself
 function ended(state: State, task: Task, last: Stage): Reduced {
   const exit = exitOf(state, last.name, 'done');
   return exit === undefined || exit.to !== END || !isDue(task, last, Date.now()) ? none(state) : follow(state, task, exit);
