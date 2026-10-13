@@ -1120,8 +1120,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     repositories: async () => (live ? (await listRepositories(live.runtime.config, live.state, exec)).map((ref) => ref.repository) : []),
   });
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
-  // go to GitHub with the Hive's own login (#757)
-  const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : { readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch } };
+  // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
+  const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
+    readModel: { db: deps.readModel, source: async () => (await readAccess())?.source, refetch: readLoop.refetch, notify: notifyReadModel },
+  };
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 

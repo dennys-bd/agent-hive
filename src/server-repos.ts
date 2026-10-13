@@ -1,10 +1,12 @@
 import type { Express, Request, Response } from 'express';
 import { inBackoff } from './polling.js';
-import { comment, editIssue, IssueChanged, type IssueEdit, setLabels, UnknownLabel } from './repos/github-repos.js';
+import { comment, type CommentAnswer, editIssue, IssueChanged, type IssueEdit, setLabels, UnknownLabel } from './repos/github-repos.js';
 import { issueUrl, taskOfIssue } from './repos/issue-task.js';
 import type { Logger } from './log.js';
-import type { ReadModel } from './read-model/db.js';
+import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ReadModelLoop } from './read-model/loop.js';
+import { commentFromGql, issueFromGql } from './read-model/normalize.js';
+import { applyWriteAnswer, type WriteAnswer } from './read-model/write-answer.js';
 import { issuePageOf, issuesOf, summaryOf } from './read-model/views.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
@@ -43,8 +45,9 @@ export interface RepoRouteDeps {
   readModel?: RepoReadModel; // absent: the daemon could not open the model, or setup mode (#181)
 }
 
-/** What the read routes answer from (#181): the model, whose rows to read, and the issue page's refetch. */
-export interface RepoReadModel { db: ReadModel; source(): Promise<string | undefined>; refetch: ReadModelLoop['refetch'] }
+/** What the read routes answer from (#181), and where a write's answer goes (#183): the model, whose rows to read, the issue page's refetch
+ * and the readModel event. */
+export interface RepoReadModel { db: ReadModel; source(): Promise<string | undefined>; refetch: ReadModelLoop['refetch']; notify(repository: string, kinds: SyncKind[]): void }
 
 interface Refusal { status: number; message: string }
 
@@ -118,15 +121,41 @@ async function pollOwner(ctx: RepoContext, { state, repository, number }: Target
   if (source !== undefined) await ctx.deps.poll([source]);
 }
 
-// A write's answer: { ok: true } once GitHub took it; the poll when `pollAfter` runs after the answer, so a slow or failing poll never
-// turns a write GitHub took into a refusal; its failure the refusal it maps to
-async function write(ctx: RepoContext, res: Response, target: Target, run: () => Promise<unknown>, pollAfter: boolean): Promise<void> {
-  if (inQuotaBackoff(ctx, res)) return;
+// A write's confirmed answer as rows, under the source the reads use: the source is read only once GitHub took the write (#183)
+type AnswerOf = (source: string) => WriteAnswer;
+
+const issueAnswer = (repository: string, issue: unknown): AnswerOf => (source) => ({ issues: [issueFromGql(source, repository, issue)] });
+
+// The comment's row goes under the node id of the issue the same answer brings
+const commentAnswer = (repository: string, answer: CommentAnswer): AnswerOf => (source) => {
+  const issue = issueFromGql(source, repository, answer.issue);
+  return { issues: [issue], comments: [commentFromGql(source, repository, issue.nodeId, answer.comment)] };
+};
+
+// The answer into the read model, so the next GET shows it (#183). GitHub already took the write: a failure here (a malformed answer, the
+// store) is only logged, and the next round brings the row. No model or no login: nothing stored, the sync catches up
+async function storeAnswer(ctx: RepoContext, repository: string, answerOf: AnswerOf | undefined): Promise<void> {
+  const model = ctx.deps.readModel;
+  if (model === undefined || answerOf === undefined) return;
   try {
-    await run();
+    const source = await model.source();
+    if (source !== undefined) applyWriteAnswer(model, repository, answerOf(source));
+  } catch (err) {
+    ctx.deps.log.error(`repositories: the answer of a write on ${repository} was not stored: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// A write's answer: { ok: true } once GitHub took it and its answer is in the read model (#183); the poll when `pollAfter` runs after the
+// answer, so a slow or failing poll never turns a write GitHub took into a refusal; its failure the refusal it maps to
+async function write(ctx: RepoContext, res: Response, target: Target, run: () => Promise<AnswerOf | undefined>, pollAfter: boolean): Promise<void> {
+  if (inQuotaBackoff(ctx, res)) return;
+  let answerOf: AnswerOf | undefined;
+  try {
+    answerOf = await run();
   } catch (err) {
     return refuse(res, refusalOf(err));
   }
+  await storeAnswer(ctx, target.repository, answerOf);
   res.json({ ok: true });
   if (pollAfter) {
     pollOwner(ctx, target).catch((err: unknown) => {
@@ -135,21 +164,25 @@ async function write(ctx: RepoContext, res: Response, target: Target, run: () =>
   }
 }
 
-// The issue page's writes (#757), each straight to GitHub with the Hive's login, the body checked before GitHub is asked
+// The issue page's writes (#757), each straight to GitHub with the Hive's login, the body checked before GitHub is asked; each answer upserted into the read model (#183)
 function registerWriteRoutes(app: Express, ctx: RepoContext): void {
   app.post('/repositories/:owner/:name/issues/:number', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const body = editOf(req.body);
     if (number === undefined || body === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: EDIT_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => editIssue(ctx.gql, found.repository, number, body.edit, body.updatedAt), true);
+    if (found) await write(ctx, res, { ...found, number }, async () => issueAnswer(found.repository, await editIssue(ctx.gql, found.repository, number, body.edit, body.updatedAt)), true);
   });
   app.post('/repositories/:owner/:name/issues/:number/labels', async (req: Request, res: Response) => {
     const number = numberOf(req);
     const { add, remove } = bodyOf(req);
     if (number === undefined || !isNames(add) || !isNames(remove)) return refuse(res, { status: HTTP_BAD_REQUEST, message: LABELS_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => setLabels(ctx.gql, found.repository, number, add, remove), true);
+    if (!found) return;
+    await write(ctx, res, { ...found, number }, async () => {
+      const labelable = await setLabels(ctx.gql, found.repository, number, add, remove);
+      return labelable === undefined ? undefined : issueAnswer(found.repository, labelable); // nothing sent: nothing to store
+    }, true);
   });
   // A comment changes nothing the flow shows: no poll
   app.post('/repositories/:owner/:name/issues/:number/comments', async (req: Request, res: Response) => {
@@ -157,7 +190,7 @@ function registerWriteRoutes(app: Express, ctx: RepoContext): void {
     const { body } = bodyOf(req);
     if (number === undefined || typeof body !== 'string' || body.trim() === '' || body.length > BODY_MAX) return refuse(res, { status: HTTP_BAD_REQUEST, message: COMMENT_MESSAGE });
     const found = await named(ctx, req, res);
-    if (found) await write(ctx, res, { ...found, number }, () => comment(ctx.gql, found.repository, number, body), false);
+    if (found) await write(ctx, res, { ...found, number }, async () => commentAnswer(found.repository, await comment(ctx.gql, found.repository, number, body)), false);
   });
 }
 
