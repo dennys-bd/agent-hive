@@ -2756,7 +2756,7 @@ test('a Stop adds its delta to the task\'s usage.tokens and writes the transcrip
   const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
   const turn = (state: State, tokens: number): State => reduce(state, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens }).state;
   const one = turn(started, 1000);
-  assert.deepEqual([usageN(one, 1), sessionsN(one, 1)?.[0].tokens], [{ tokens: 1000, ms: 0, waitingMs: 0 }, 1000]);
+  assert.deepEqual([usageN(one, 1), sessionsN(one, 1)?.[0].tokens], [{ tokens: 1000, ms: 0, waitingMs: 0, parts: [{ stage: 'spec', agent: 'claude', tokens: 1000, ms: 0, waitingMs: 0 }] }, 1000]);
   const two = turn(one, 1500);
   assert.deepEqual([usageN(two, 1)?.tokens, sessionsN(two, 1)?.[0].tokens], [1500, 1500]);
   assert.deepEqual(two.usage.map((s) => s.tokens), [1000, 500], 'the budget and the task count the same deltas');
@@ -2814,18 +2814,36 @@ test('an exit folds the run into its task: the wall clock since it started and t
   assert.ok(usageN(left, 1)!.ms >= 20 * MINUTE, 'a session the user opened counts too');
 });
 
-test('a Stop that ends the stage folds the run into the task, which carries it into the next stage; an in-place continuation folds nothing, and the next release counts the whole run once (#248)', () => {
+test('a Stop that ends the stage folds the run into the stage it ran, though the task moved on; an in-place continuation folds the time so far into the stage it leaves, and the next release counts the rest, so the whole run counts once (#248, #617)', () => {
   const first = filled(1, 1).state; // green: spec continues into dev in place
   const id = first.workers[0].runId!;
   const ran = backdated(first, { startedAt: agoIso(40 * MINUTE) });
   const parked = stopped(signaled(ran, 'red').state, id).state; // red: the session dies, the task waits in dev
   assert.equal(task(parked, 1)?.stage, 'dev');
   assert.ok(usageN(parked, 1)!.ms >= 40 * MINUTE);
+  assert.deepEqual(usageN(parked, 1)!.parts.map((p) => [p.stage, p.agent]), [['spec', 'claude']], 'the stage the run ran, not the one the task moved to');
   const continued = stopped(ran, id);
   assert.equal(continued.effects.at(-1)?.type, 'continue');
-  assert.equal(usageN(continued.state, 1), undefined, 'the same run goes on: nothing folded yet');
-  const { ms } = usageN(reduce(signaled(continued.state, 'red').state, { type: 'exit', ptyId: id }).state, 1)!;
+  const folded = usageN(continued.state, 1)!;
+  assert.ok(folded.ms >= 40 * MINUTE && folded.ms < 41 * MINUTE, `spec keeps the time so far: ${folded.ms}`);
+  assert.deepEqual([continued.state.workers[0].stage, continued.state.workers[0].foldedMs], ['dev', folded.ms]);
+  const { ms, parts } = usageN(reduce(signaled(continued.state, 'red').state, { type: 'exit', ptyId: id }).state, 1)!;
   assert.ok(ms >= 40 * MINUTE && ms < 41 * MINUTE, `the whole run, once: ${ms}`);
+  assert.deepEqual(parts.map((p) => p.stage), ['spec', 'dev']);
+  assert.ok(parts[1].ms < MINUTE, `dev only from the continuation: ${parts[1].ms}`);
+});
+
+test('a session continued into the next stage counts only its new turns there: the turn that ended the stage stays on it (#617)', () => {
+  const first = filled(1, 1).state;
+  const id = first.workers[0].runId!;
+  const sessionId = work(first, 1)!.sessionId!;
+  const started = hook(first, id, { hook_event_name: 'SessionStart', cwd: WORKTREE, session_id: sessionId }).state;
+  const continued = counted(started, id, 1000); // hive_done + a Stop at 1000: spec ends, dev continues the session in place
+  assert.equal(continued.workers[0].stage, 'dev');
+  const turned = reduce(continued, { type: 'hook', ptyId: id, payload: { hook_event_name: 'Stop' }, tokens: 1500 }).state;
+  const usage = usageN(turned, 1)!;
+  assert.deepEqual(usage.parts.map((p) => [p.stage, p.agent, p.tokens]), [['spec', 'claude', 1000], ['dev', 'claude', 500]]);
+  assert.equal(usage.tokens, 1500);
 });
 
 test('boot closes each dead run at its last hook, not at the restart, so the hours the Hive was down never land on a task; with no hook seen, where it started (#248)', () => {
@@ -2839,7 +2857,7 @@ test('boot closes each dead run at its last hook, not at the restart, so the hou
 
 test('a delete activity that drops the sessions keeps the task\'s totals, like its PRs (#236, #248)', () => {
   const first = polled(base(1, DELETE_STAGES), [listed(1, 'Done')]).state; // in done, 5d to go: the test marks it deleting itself
-  const usage = { tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE };
+  const usage = { tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE, parts: [{ tokens: 5000, ms: HOUR_MS, waitingMs: MINUTE }] };
   const deleting: State = withMade(withLive({
     ...first, deleteActivity: { session: true, transcripts: true, nonAutoTasks: false },
   }, 1, { worktree: WORKTREE, deleting: true, sessionId: 'kept-session-id-0001' }), 1, { sessions: [keptSession('kept-session-id-0001')], usage });

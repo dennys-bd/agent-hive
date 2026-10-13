@@ -454,21 +454,21 @@ test('loadState never comes back awake: a saved keepAwake is dropped before boot
   assert.equal('keepAwake' in (await loadState(dir)), false);
 });
 
-test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s tokens only as a count, and a worker\'s waitedMs, seenAt and waitingSince only in the shape the reducer writes: boot closes the run with them (#248)', async (t) => {
+test('loadState keeps a task\'s usage only as three counts ≥ 0, a session\'s tokens only as a count, and a worker\'s waitedMs, seenAt and waitingSince only in the shape the reducer writes: boot closes the run with them, a worker\'s stage and folded time (#248, #617)', async (t) => {
   const dir = await tempDir(t, '');
   const item = { itemId: 'I1', id: '1', title: 'T', body: '', url: 'https://github.com/o/r/issues/1' };
   const task = { item, stage: 'dev', boardColumn: 'Ready', auto: true };
   const session = { id: 'a1b2c3d4-0000-4000-8000-000000000001', startedAt: '2026-09-22T10:00:00.000Z', stages: ['dev'], agent: 'claude' as const, lastUsedAt: '2026-09-22T11:00:00.000Z' };
-  const usage = { tokens: 3_400_000, ms: 4_320_000, waitingMs: 0 };
+  const usage = { tokens: 3_400_000, ms: 4_320_000, waitingMs: 0, parts: [{ stage: 'dev', agent: 'claude' as const, tokens: 3_400_000, ms: 4_320_000, waitingMs: 0 }] };
   const at = '2026-09-24T10:00:00.000Z';
-  const worker: Worker = { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER, agent: 'claude', waitedMs: 60_000, seenAt: at, waitingSince: at };
+  const worker: Worker = { id: 'a', status: 'waiting', runId: uuid(1), activityId: OWNER, agent: 'claude', waitedMs: 60_000, seenAt: at, waitingSince: at, stage: 'dev', foldedMs: 30_000, foldedWaitingMs: 0 };
   const good = withKeptRecord({ ...initialState(0), ...owned, workers: [worker], tasks: [task] }, 'I1', 'r1', { usage, sessions: [{ ...session, tokens: 1200 }] }); // #629: the record's
   await saveState(dir, good);
   const loaded = await loadState(dir);
   assert.deepEqual([loaded.workers[0], loaded.tasks, loaded.activityRecords], [worker, [task], good.activityRecords], 'a save and a load keep them');
   const badUsage = [{ ...usage, ms: -1 }, { ...usage, tokens: '5' }, { tokens: 1, ms: 1 }, null, 'x'];
   const activityRecords = [...badUsage.map((u, i) => savedRecord(`r${i}`, { usage: u })), savedRecord('rs', { sessions: [{ ...session, tokens: -1 }, { ...session, tokens: '9' }] })];
-  const workers = [{ ...worker, waitedMs: -5, seenAt: 'yesterday', waitingSince: 7 }];
+  const workers = [{ ...worker, waitedMs: -5, seenAt: 'yesterday', waitingSince: 7, stage: 7, foldedMs: -1, foldedWaitingMs: 'x' }];
   await writeFile(join(dir, 'state.json'), JSON.stringify({ ...initialState(0), workers, tasks: [task], activities: owned.activities, activityRecords: [...activityRecords, ...owned.activityRecords] }));
   const dropped = await loadState(dir);
   assert.deepEqual(dropped.activityRecords.filter((r) => r.id !== OWNER).map(({ id: _id, ...r }) => r), [...badUsage.map(() => ({ taskIds: ['I1'], sessions: [] })), { taskIds: ['I1'], sessions: [session, session] }], 'dropped, not kept as undefined: the record reads as nothing recorded');

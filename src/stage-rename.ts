@@ -1,4 +1,4 @@
-import type { Activity, ActivityRecord, State, Task } from './types.js';
+import type { Activity, ActivityRecord, State, Task, TaskUsage } from './types.js';
 
 // #861: a save that renamed stages, as one map applied once per value (so A ↔ B swaps), over every State field the audit found naming a
 // stage or holding a transitionKey (plan Task 1). The stages and transitions too, so no reduction between this and setStages reads a task in
@@ -43,8 +43,13 @@ function renamedActivity(a: Activity, stage: Rename, key: Rename): Activity {
   };
 }
 
+// #617: a part keeps the name its stage had when deleted (a record is history); a renamed one follows the rename
+const renamedUsage = (usage: TaskUsage, stage: Rename): TaskUsage =>
+  ({ ...usage, parts: usage.parts.map((p) => (p.stage === undefined ? p : { ...p, stage: stage(p.stage) })) });
+
 const renamedRecord = (r: ActivityRecord, stage: Rename): ActivityRecord => ({
   ...r, sessions: r.sessions.map((s) => ({ ...s, stages: s.stages.map(stage) })), ...(r.stageRuns === undefined ? {} : { stageRuns: keysRenamed(r.stageRuns, stage) }),
+  ...(r.usage === undefined ? {} : { usage: renamedUsage(r.usage, stage) }),
 });
 
 /** The state with every stage name and transitionKey under `renames` (old → new), applied once per value; the same object when no value
@@ -60,6 +65,7 @@ export function renameStages(state: State, renames: Record<string, string>): Sta
     tasks: state.tasks.map((t) => renamedTask(t, stage)),
     activities: state.activities.map((a) => renamedActivity(a, stage, key)),
     activityRecords: state.activityRecords.map((r) => renamedRecord(r, stage)),
+    workers: state.workers.map((w) => (w.stage === undefined ? w : { ...w, stage: stage(w.stage) })), // #617: a running worker's next fold lands on the renamed part
     usageRules: state.usageRules.map((r) => (r.stage === undefined ? r : { ...r, stage: stage(r.stage) })),
     ...(state.slept === undefined ? {} : { slept: state.slept.map((s) => (s.stage === undefined ? s : { ...s, stage: stage(s.stage) })) }),
   };

@@ -32,15 +32,16 @@ test('resultOf keeps a loaded __proto__ key as an own key and never swaps the me
   assert.deepEqual([Object.hasOwn(merged, '__proto__'), merged.spec, (merged as { x?: unknown }).x], [true, 'a', undefined]);
 });
 
-test('prsOf concatenates every record\'s PRs oldest first, and usageOf sums their usage (#629)', () => {
+test('prsOf concatenates every record\'s PRs oldest first, and usageOf sums their usage part by part, first appearance first (#629, #617)', () => {
   const old = { url: 'https://github.com/o/r/pull/1', state: 'merged' as const };
   const fresh = { url: 'https://github.com/o/r/pull/2', state: 'open' as const };
+  const spec = (tokens: number, ms: number, waitingMs: number) => ({ stage: 'spec', agent: 'claude' as const, tokens, ms, waitingMs });
   const state = withWork(
-    withKeptRecord(base([task(1)]), ID, 'old', { prs: [old], usage: { tokens: 10, ms: 100, waitingMs: 5 } }),
-    ID, {}, { prs: [fresh], usage: { tokens: 1, ms: 2, waitingMs: 3 } },
+    withKeptRecord(base([task(1)]), ID, 'old', { prs: [old], usage: { tokens: 10, ms: 100, waitingMs: 5, parts: [spec(10, 100, 5)] } }),
+    ID, {}, { prs: [fresh], usage: { tokens: 1, ms: 2, waitingMs: 3, parts: [{ stage: 'dev', agent: 'claude', tokens: 1, ms: 1, waitingMs: 1 }, spec(0, 1, 2)] } },
   );
   assert.deepEqual(prsOf(state, ID), [old, fresh]);
-  assert.deepEqual(usageOf(state, ID), { tokens: 11, ms: 102, waitingMs: 8 });
+  assert.deepEqual(usageOf(state, ID), { tokens: 11, ms: 102, waitingMs: 8, parts: [spec(10, 101, 7), { stage: 'dev', agent: 'claude', tokens: 1, ms: 1, waitingMs: 1 }] });
   assert.equal(usageOf(base([task(1)]), ID), undefined);
 });
 

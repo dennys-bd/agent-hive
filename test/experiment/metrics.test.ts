@@ -31,7 +31,7 @@ test('runMetrics sums usage, counts Build restarts, keeps outcome, the last Done
     entries: { 'local:1': [{ stage: 'Spec', at: T0 }, { stage: 'Done', at: plus(60) }], 'local:2': [{ stage: 'Spec', at: plus(60) }, { stage: 'Build', at: plus(90) }] },
     buildRuns: { 'local:1': ['r1'], 'local:2': ['r2', 'r3', 'r4'] },
   };
-  const usage: TaskUsage = { tokens: 1000, ms: 3_000_000, waitingMs: 0 };
+  const usage: TaskUsage = { tokens: 1000, ms: 3_000_000, waitingMs: 0, parts: [] };
   const state = withRecord(snap([task(1, 'Done'), task(2, 'Build')]), 1, { usage, result: { testsGreen: false } });
   const metrics = runMetrics({ token: 'bbbbbb', startedAt: T0, endedAt: plus(120), end: { outcome: 'error', reason: 'MON-2: boom' }, watch, state, diff: { files: 1, insertions: 2, deletions: 3 }, unpaired: true });
   assert.deepEqual([metrics.token, metrics.outcome, metrics.reason, metrics.tokens, metrics.ms, metrics.buildRestarts, metrics.reportedTestsGreen, metrics.unpaired], ['bbbbbb', 'error', 'MON-2: boom', 1000, 3_000_000, 2, false, true]);

@@ -1,4 +1,4 @@
-import { activityOf, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
+import { activityOf, addUsage, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
 import type { ActivityRecord, AgentId, DeleteActivityScope, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
@@ -49,19 +49,25 @@ export function markFreeRun(state: State, task: Task): State {
   return live ? withActivity(state, { ...live, freeSessionStage: task.stage }) : state;
 }
 
-const addRun = (usage: TaskUsage, run: Pick<TaskUsage, 'ms' | 'waitingMs'>): TaskUsage =>
-  ({ ...usage, ms: usage.ms + run.ms, waitingMs: usage.waitingMs + run.waitingMs });
-
-/** One turn counted (#248, #489): the delta joins the live record's usage, as it joins the budget; the transcript total becomes the baseline
- * of the session it ran in, and a title the turn read names it, in the record holding it. Claude Code has no way to clear a name. */
-export function withTurn(state: State, task: Task, sessionId: string | undefined, total: number, delta: number, title?: string): State {
-  const counted = withLive(state, task, (r) => ({ ...r, usage: { ...(r.usage ?? NO_USAGE), tokens: (r.usage ?? NO_USAGE).tokens + delta } }));
-  return sessionId === undefined ? counted : withSession(counted, task, sessionId, (s) => ({ ...titled(s, title), tokens: total }));
+/** One turn counted (#248, #489, #617): the delta joins the live record's usage, in the part of the stage and agent the worker runs, as it
+ * joins the budget; the transcript total becomes the baseline of the session it ran in, and a title the turn read names it, in the record
+ * holding it. Claude Code has no way to clear a name. */
+export function withTurn(state: State, task: Task, worker: Worker, total: number, delta: number, title?: string): State {
+  const counted = withLive(state, task, (r) => ({ ...r, usage: addUsage(r.usage ?? NO_USAGE, worker, { tokens: delta, ms: 0, waitingMs: 0 }) }));
+  return worker.sessionId === undefined ? counted : withSession(counted, task, worker.sessionId, (s) => ({ ...titled(s, title), tokens: total }));
 }
 
-/** A run's time folded into the live record up to `end` (#248): what the reducer stores when the worker frees. */
+/** The run's time not folded yet (#617): an in-place continuation already left what the run ran before on the stage it left. Boot closes a run
+ * at its last hook, which can fall a few ms before the fold made in the same Stop: never below 0. */
+export function runShare(worker: Worker, end: number): Pick<TaskUsage, 'ms' | 'waitingMs'> {
+  const { ms, waitingMs } = runTime(worker, end);
+  return { ms: Math.max(0, ms - (worker.foldedMs ?? 0)), waitingMs: Math.max(0, waitingMs - (worker.foldedWaitingMs ?? 0)) };
+}
+
+/** A run's time folded into the live record up to `end` (#248), in the total and in the worker's (stage, agent) part (#617): what the reducer
+ * stores when the worker frees. */
 export const withRun = (state: State, task: Task, worker: Worker, end: number): State =>
-  withLive(state, task, (r) => ({ ...r, usage: addRun(r.usage ?? NO_USAGE, runTime(worker, end)) }));
+  withLive(state, task, (r) => ({ ...r, usage: addUsage(r.usage ?? NO_USAGE, worker, { tokens: 0, ...runShare(worker, end) }) }));
 
 /** Where a worker running session `id` measures its first delta from (#248): the last total seen for it, in any record of the task. A resumed
  * transcript already holds the old turns, so starting from empty would count them again. A new session is listed nowhere: `{}`. */
@@ -70,10 +76,13 @@ export function sessionBaseline(state: Pick<State, 'activityRecords'>, task: Tas
   return tokens === undefined ? {} : { tokens };
 }
 
-/** A task's totals right now (#248): every record's usage plus, for every worker running on it, the time so far. Tokens are stored at every
- * Stop, so they need no running share. The detail panel re-renders on the main window's tick, so the time moves without a state write. */
+/** A task's totals right now (#248): every record's usage plus, for every worker running on it, the time so far, in the total and in the
+ * worker's part (#617). Tokens are stored at every Stop, so they need no running share. The detail panel re-renders on the main window's
+ * tick, so the time moves without a state write. */
 export function taskTotals(state: Pick<State, 'workers' | 'activities' | 'activityRecords'>, task: Task, now: number): TaskUsage {
-  return workersOf(state, task).reduce((total, worker) => addRun(total, runTime(worker, now)), usageOf(state, taskId(task)) ?? NO_USAGE);
+  const commands = activityOf(state, taskId(task))?.commands; // #617: a commands stage's worker holds no activity; its run names it
+  const running = [...workersOf(state, task), ...state.workers.filter((w) => w.id === commands?.workerId)];
+  return running.reduce((total, worker) => addUsage(total, worker, { tokens: 0, ...runShare(worker, now) }), usageOf(state, taskId(task)) ?? NO_USAGE);
 }
 
 /** hive_done's result shallow-merged into the live record, a newer key winning (#99). */

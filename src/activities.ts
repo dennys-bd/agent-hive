@@ -1,4 +1,4 @@
-import type { Activity, ActivityRecord, ForkSyncResult, State, Task, TaskPr, TaskUsage, Terminal, Worker } from './types.js';
+import type { Activity, ActivityRecord, ForkSyncResult, State, Task, TaskPr, TaskUsage, Terminal, UsagePart, Worker } from './types.js';
 
 // The activity's two records in State (#629): the reads the reducer, the routes and the UI share. No Node import, since the UI bundles it, and
 // no import of tasks.ts, which imports this file.
@@ -44,11 +44,30 @@ export function resultOf(state: Pick<State, 'activityRecords'>, taskId: string):
 /** Every PR the task's activities opened, oldest record first (#207). */
 export const prsOf = (state: Pick<State, 'activityRecords'>, taskId: string): TaskPr[] => recordsOf(state, taskId).flatMap((r) => r.prs ?? []);
 
-/** What every run of the task added up to (#248), summed over its records; undefined while none recorded anything. */
+type UsageCounts = Pick<UsagePart, 'tokens' | 'ms' | 'waitingMs'>;
+const summed = (a: UsageCounts, b: UsageCounts): UsageCounts => ({ tokens: a.tokens + b.tokens, ms: a.ms + b.ms, waitingMs: a.waitingMs + b.waitingMs });
+const ZERO: UsageCounts = { tokens: 0, ms: 0, waitingMs: 0 };
+
+// #617: a pair seen again adds to its own part, a new one is appended, so the parts read as the task's path through the stages. Summing with
+// ZERO copies only the three counts, so a Worker passed as the key or the counts never leaks its own fields into a part
+function addToParts(parts: readonly UsagePart[], key: Pick<UsagePart, 'stage' | 'agent'>, add: UsageCounts): UsagePart[] {
+  const at = parts.findIndex((p) => p.stage === key.stage && p.agent === key.agent);
+  if (at >= 0) return parts.map((p, i) => (i === at ? { ...p, ...summed(p, add) } : p));
+  return [...parts, { ...(key.stage === undefined ? {} : { stage: key.stage }), ...(key.agent === undefined ? {} : { agent: key.agent }), ...summed(add, ZERO) }];
+}
+
+/** `add` joined to the total and to the (stage, agent) part of `key` (#617): a worker passes itself, its stage and agent being the key. */
+export const addUsage = (usage: TaskUsage, key: Pick<UsagePart, 'stage' | 'agent'>, add: UsageCounts): TaskUsage =>
+  ({ ...summed(usage, add), parts: addToParts(usage.parts, key, add) });
+
+/** Two usages summed part by part (#617), `sum`'s parts first. The totals add as they are, so a part a load dropped never shrinks them. */
+export const mergeUsage = (sum: TaskUsage, next: TaskUsage): TaskUsage =>
+  ({ ...summed(sum, next), parts: next.parts.reduce((parts, p) => addToParts(parts, p, p), sum.parts) });
+
+/** What every run of the task added up to (#248), summed over its records part by part (#617); undefined while none recorded anything. */
 export function usageOf(state: Pick<State, 'activityRecords'>, taskId: string): TaskUsage | undefined {
   const used = recordsOf(state, taskId).flatMap((r) => (r.usage === undefined ? [] : [r.usage]));
-  if (used.length === 0) return undefined;
-  return used.reduce((sum, u) => ({ tokens: sum.tokens + u.tokens, ms: sum.ms + u.ms, waitingMs: sum.waitingMs + u.waitingMs }));
+  return used.length === 0 ? undefined : used.reduce(mergeUsage);
 }
 
 /** The records still owed to someone (#629): one stays while a live activity shares its id or one of its tasks is in the Hive. The same

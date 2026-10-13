@@ -783,7 +783,7 @@ function recordUsage(state: State, worker: Worker, tokens: number, title?: strin
   const workers = state.workers.map((s) => (s.runId === worker.runId ? { ...s, tokens } : s));
   const usage = delta > 0 ? pruneUsage([...state.usage, { at: now.toISOString(), tokens: delta }], now.getTime()) : state.usage;
   const task = taskOfWorker(state, worker);
-  const counted = task ? withTurn(state, task, worker.sessionId, tokens, delta, title) : withLocalTurn(state, worker, tokens, title);
+  const counted = task ? withTurn(state, task, worker, tokens, delta, title) : withLocalTurn(state, worker, tokens, title);
   return { ...counted, workers, usage };
 }
 

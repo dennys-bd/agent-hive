@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadActivity, savedPrs, savedWork } from '../src/state-guards.js';
+import { loadActivity, loadRecord, savedPrs, savedWork } from '../src/state-guards.js';
 import { FEEDBACK_MAX, type Activity, type Checkpoint } from '../src/types.js';
 
 // #134: a state file is read back, never trusted: the routing keys, a pending handoff and its feedback, and a handover's prompt are capped on load
@@ -49,4 +49,17 @@ test('savedPrs keeps the session that opened a PR across a load, only in the uui
   const id = 'f9f0456a-1b2c-4d5e-8f90-123456789abc';
   assert.deepEqual(savedPrs([{ url, state: 'open', sessionId: id }], undefined), [{ url, state: 'open', sessionId: id }]);
   assert.deepEqual(savedPrs([{ url, state: 'open', sessionId: '--settings' }], undefined), [{ url, state: 'open' }]);
+});
+
+test('a saved usage keeps its valid parts; one saved before the breakdown loads as one part with no stage and no agent; an invalid part is dropped, never the record, and what it held joins the part before the breakdown (#617)', () => {
+  const total = { tokens: 30, ms: 600, waitingMs: 60 };
+  const spec = { stage: 'spec', agent: 'claude', tokens: 20, ms: 400, waitingMs: 40 };
+  const free = { agent: 'codex', tokens: 10, ms: 100, waitingMs: 10 };
+  const checks = { stage: 'checks', tokens: 0, ms: 100, waitingMs: 10 };
+  const saved = (usage: unknown) => loadRecord({ id: 'r', taskIds: ['I1'], sessions: [], usage })?.usage;
+  assert.deepEqual(saved({ ...total, parts: [spec, free, checks] }), { ...total, parts: [spec, free, checks] });
+  assert.deepEqual(saved(total), { ...total, parts: [total] }, 'before the breakdown: the whole total, neither stage nor agent');
+  const bad = [{ ...spec, tokens: -1 }, { ...spec, ms: '5' }, { ...spec, stage: 7 }, { ...spec, agent: 'gpt' }, null, 'x'];
+  assert.deepEqual(saved({ ...total, parts: [spec, ...bad] }), { ...total, parts: [spec, { tokens: 10, ms: 200, waitingMs: 20 }] }, 'what the dropped parts held reads as before the breakdown, so the parts add up to the total');
+  assert.deepEqual(saved({ tokens: 0, ms: 0, waitingMs: 0 }), { tokens: 0, ms: 0, waitingMs: 0, parts: [] }, 'nothing recorded: no empty line');
 });

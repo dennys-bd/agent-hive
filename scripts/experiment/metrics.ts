@@ -3,7 +3,7 @@ import type { State, Task, TaskUsage } from '../../src/types.js';
 import type { DiffSize, Metrics, StageSpan, TaskMetrics } from './types.js';
 import { DONE_STAGE, type StageEntry, type WatchEnd, type WatchState } from './watcher.js';
 
-const NO_USAGE: TaskUsage = { tokens: 0, ms: 0, waitingMs: 0 };
+const NO_USAGE: TaskUsage = { tokens: 0, ms: 0, waitingMs: 0, parts: [] };
 const NO_DIFF: DiffSize = { files: 0, insertions: 0, deletions: 0 };
 const SHORTSTAT = /(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/;
 const between = (from: string, to: string): number => Math.max(0, Date.parse(to) - Date.parse(from));
