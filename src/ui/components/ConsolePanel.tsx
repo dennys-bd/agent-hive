@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
@@ -26,8 +26,9 @@ export interface ConsolePanelProps {
   run?: string; // #755: the stage execution a locked tab shows: only its runs of the shared channel
 }
 
-/** The drawer's own actions: esc, and abrir como aba, disabled while no activity's grid is there to take it. */
-export interface ConsoleDrawerActions { onClose(): void; onOpenTab?(): void }
+/** The drawer's own actions: esc, and abrir como aba, disabled while no activity's grid is there to take it. tabs (#225): the drawer's
+ * segmented console · problemas, in place of the console label. */
+export interface ConsoleDrawerActions { onClose(): void; onOpenTab?(): void; tabs?: ReactNode }
 
 type LiveRun = ChannelView['live'][number];
 
@@ -151,7 +152,7 @@ interface DrawerBarProps extends BarProps { id: string; live: LiveRun[]; run?: L
 function DrawerBar({ channels, channel, onSelect, id, live, run, drawer, onClear }: DrawerBarProps) {
   return (
     <div className="flex h-[34px] shrink-0 items-center gap-2.5 border-b px-3 text-muted-foreground text-xs">
-      <span className="font-medium text-foreground">{t('console.title')}</span>
+      {drawer.tabs ?? <span className="font-medium text-foreground">{t('console.title')}</span>}
       <ChannelSelect channels={channels} channel={channel} onSelect={onSelect} />
       {live.length > 1 && (
         <Select value={run?.ptyId} onValueChange={(ptyId) => onSelect({ channel: id, ptyId })}>

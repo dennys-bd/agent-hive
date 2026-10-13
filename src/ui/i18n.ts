@@ -323,6 +323,7 @@ const en = {
   'console.clear': 'clear',
   'console.close': 'close the console',
   'console.resize': 'resize the console',
+  'console.tab.console': 'console', 'console.tab.problems': 'problems', // #225: the drawer's segmented control
   'start.newTitle': 'New activity', // redesign 11: the Start dialog
   'start.title': 'Start #{id}',
   'start.subtitle': '{title} · stage {stage}',
@@ -579,8 +580,8 @@ const en = {
   'editor.diag.errors.one': '{n} error', 'editor.diag.errors.other': '{n} errors', 'editor.diag.warnings.one': '{n} warning', 'editor.diag.warnings.other': '{n} warnings',
   'editor.diag.infos.one': '{n} info', 'editor.diag.infos.other': '{n} info',
   'problems.title': 'problems', 'problems.none': 'no problems',
-  'problems.collapseAll': 'collapse all', 'problems.close': 'close problems', 'problems.resize': 'resize problems',
-  'problems.empty': 'No problems in the activity', 'problems.emptySources': '{sources} found nothing',
+  'problems.collapseAll': 'collapse all',
+  'problems.empty': 'No problems in the activity', 'problems.emptyAll': 'No problems in the activities', 'problems.emptySources': '{sources} found nothing',
   'problems.running': '{checker} running · results from {time}', 'problems.runningFirst': '{checker} running', 'problems.failed': '{checker} failed',
   'preview.title': 'Preview', 'preview.tab': '{label} · Preview {name}',
   'operation.markdownPreview': 'Markdown: Open Preview',
@@ -2189,6 +2190,7 @@ const pt: Record<MessageKey, string> = {
   'console.openTab': 'abrir como aba',
   'console.clear': 'limpar',
   'console.close': 'fechar o console',
+  'console.tab.console': 'console', 'console.tab.problems': 'problemas',
   'console.resize': 'redimensionar o console',
   'start.newTitle': 'Nova atividade', // redesign 11: the Start dialog
   'start.title': 'Iniciar #{id}',
@@ -2445,8 +2447,8 @@ const pt: Record<MessageKey, string> = {
   'editor.diag.errors.one': '{n} erro', 'editor.diag.errors.other': '{n} erros', 'editor.diag.warnings.one': '{n} aviso', 'editor.diag.warnings.other': '{n} avisos',
   'editor.diag.infos.one': '{n} info', 'editor.diag.infos.other': '{n} info',
   'problems.title': 'problemas', 'problems.none': 'nenhum problema',
-  'problems.collapseAll': 'recolher todos', 'problems.close': 'fechar problemas', 'problems.resize': 'redimensionar problemas',
-  'problems.empty': 'Nenhum problema na atividade', 'problems.emptySources': '{sources} não acusaram nada',
+  'problems.collapseAll': 'recolher todos',
+  'problems.empty': 'Nenhum problema na atividade', 'problems.emptyAll': 'Nenhum problema nas atividades', 'problems.emptySources': '{sources} não acusaram nada',
   'problems.running': '{checker} executando · resultados de {time}', 'problems.runningFirst': '{checker} executando', 'problems.failed': '{checker} falhou',
   'preview.title': 'Preview', 'preview.tab': '{label} · Preview {name}',
   'operation.markdownPreview': 'Markdown: Abrir Preview',

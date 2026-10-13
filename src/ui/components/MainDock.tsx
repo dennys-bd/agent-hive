@@ -30,6 +30,7 @@ import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
 import { shownRun } from '@/lib/center-layout';
+import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { useRememberFocus } from '@/lib/session-focus';
 import { onPanelKey, onShortcutKey, onViewKey, type PanelId, runShortcut, shownBySide } from '@/lib/dock-layout';
@@ -120,7 +121,13 @@ function activitiesPanel({ activities, selection, layouts, nav, ...rest }: Activ
   return { id: 'activities', title: t('dock.activities'), ownHeader: true, body };
 }
 
-interface CenterArgs { selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext }
+// The store's id of the activity the center shows (#225): under atividades with one picked; undefined under fluxo and on the home
+const shownIdOf = (selection: ActivitySelection): string | undefined => (selection.center === 'activities' ? selection.current?.activity.id : undefined);
+
+interface CenterArgs {
+  selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext;
+  openProblem?(activityId: string, path: string, at: FileAt): void; // #225: a problem of the drawer's list, opened in its activity
+}
 
 // Whether the flow is what the center shows (#596): the flow and its sidebar stay mounted under Atividades, so what they must not do while
 // hidden (the search key, the source keys #585) reads this. Outside a dock (a flow rendered alone) it is shown.
@@ -158,7 +165,7 @@ function CenterWithConsole(args: CenterArgs) {
   return (
     <>
       {centerView(args)}
-      {channels && <ConsoleDrawer console={channels} fontFamily={fontFamily} onOpenTab={onOpenTab} />}
+      {channels && <ConsoleDrawer console={channels} fontFamily={fontFamily} onOpenTab={onOpenTab} activityId={shownIdOf(selection)} onOpenProblem={args.openProblem} />}
     </>
   );
 }
@@ -305,10 +312,12 @@ export function MainDock(props: MainDockProps) {
   const searchClose = useSearchClose(current, layouts, openUserRun);
   // Markdown: Open Preview (#697) and Git: Open Changes (#668): the focused editor names its activity by id; the tab opens in the focused group,
   // as any file does
-  const openFileAs = (how: OpenFileHow) => (activityId: string, path: string): void => {
+  // An activity's file by its store id (#697, #668, #225): Open Preview and Open Changes name the focused editor's, a problem names its own
+  const openFileOf = (activityId: string, path: string, at?: FileAt, how?: OpenFileHow): void => {
     const target = activities.find((activity) => activity.activity.id === activityId);
-    if (target !== undefined) openActivityFile(activityKey(target), path, undefined, how);
+    if (target !== undefined) openActivityFile(activityKey(target), path, at, how);
   };
+  const openFileAs = (how: OpenFileHow) => (activityId: string, path: string): void => openFileOf(activityId, path, undefined, how);
   const searchHost: SearchHost | undefined = search && {
     state: search.state, effective: search.effective, openShortcuts: search.openShortcuts, activities, shown: selection.center === 'activities' ? current : undefined,
     shownRun: selection.center === 'activities' ? shownRun(layouts.layout) : undefined, // the split-terminal keys' run (#641)
@@ -366,7 +375,7 @@ export function MainDock(props: MainDockProps) {
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
-            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} />
+            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>

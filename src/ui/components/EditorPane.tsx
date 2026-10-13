@@ -1,8 +1,7 @@
 import type { editor } from 'monaco-editor';
 import { type RefObject, useEffect, useRef, useState } from 'react';
-import { CheckerSources, ProblemsButton, ServerStatus } from '@/components/EditorStatus';
+import { CheckerSources, ServerStatus } from '@/components/EditorStatus';
 import { useEditorLanguages } from '@/components/editor-languages';
-import { ProblemsList } from '@/components/ProblemsList';
 import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { useOpenConsole } from '@/hooks/use-console';
@@ -156,7 +155,7 @@ function useChecks({ activityId, path }: File, workspace: string, load: Load): v
   useEffect(() => (model === undefined || key === '' ? undefined : checks.attachChecks({ activityId, workspace, path, model, editor: editorRef.current })), [model, activityId, workspace, path, key]);
 }
 
-interface BarProps { file: File; error?: string; formatFailure?: FormatFailure; isProblemsOpen: boolean; onProblems(): void; onViewLog?(log: FormatLog): void }
+interface BarProps { file: File; error?: string; formatFailure?: FormatFailure; onViewLog?(log: FormatLog): void }
 
 // formatação falhou (#749): the reason in its title; ver log opens the run in the console, and with no console (outside a Dashboard) the words stand alone
 export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; onViewLog?(log: FormatLog): void }) {
@@ -169,8 +168,8 @@ export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; o
 }
 
 // The bar (#717, #780, #782): the path left; a save's refusal or a failed format (#749) in the middle; the language server and each checker
-// right, then a divider and the problems button. One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
-function EditorBar({ file, error, formatFailure, isProblemsOpen, onProblems, onViewLog }: BarProps) {
+// right; the problems moved to the footer and the drawer (#225). One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
+function EditorBar({ file, error, formatFailure, onViewLog }: BarProps) {
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
       <span title={file.path} className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
@@ -178,8 +177,6 @@ function EditorBar({ file, error, formatFailure, isProblemsOpen, onProblems, onV
       {formatFailure !== undefined && <FormatFailed failure={formatFailure} onViewLog={onViewLog} />}
       <ServerStatus activityId={file.activityId} path={file.path} onViewLog={onViewLog} />
       <CheckerSources activityId={file.activityId} path={file.path} onViewLog={onViewLog} />
-      <span aria-hidden className="h-3 w-px shrink-0 bg-border" />
-      <ProblemsButton activityId={file.activityId} path={file.path} isOpen={isProblemsOpen} onToggle={onProblems} />
     </div>
   );
 }
@@ -224,32 +221,21 @@ export function EditorPane({ activityId, path, label, active, fontFamily, worksp
   const view = useRef<editor.IStandaloneCodeEditor | undefined>(undefined);
   const load = useModel(file);
   const disk = useDiskStrip(file, view);
-  const [isProblemsOpen, setProblemsOpen] = useState(false); // closed in every new pane, never persisted
   const saving = useSave(file, disk.setStrip, view);
   useEditor(host, view, load, file, fontFamily, saving.save);
   useLanguageServer(file, workspace, openKey, load);
   useChecks(file, workspace, load);
   useDiskWatch(file, active && load.status === 'ready', view, disk.setStrip);
   const openConsole = useOpenConsole();
-  const openFile = useOpenFile();
   const viewLog =openConsole && ((log: FormatLog): void => openConsole(log.channel, log.run, true));
   useEffect(() => { if (active) view.current?.focus(); }, [active]);
   return (
     <section aria-label={label} data-file-activity={activityId} data-file-path={path} style={{ flex: active ? '1 1 0%' : '0 0 0%', opacity: active ? 1 : 0, pointerEvents: active ? 'auto' : 'none' }} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-      <EditorBar
-        file={file} error={saving.error} formatFailure={saving.formatFailure}
-        isProblemsOpen={isProblemsOpen} onProblems={() => setProblemsOpen(!isProblemsOpen)} onViewLog={viewLog}
-      />
+      <EditorBar file={file} error={saving.error} formatFailure={saving.formatFailure} onViewLog={viewLog} />
       {disk.strip && <DiskStrip strip={disk.strip} onReload={disk.reload} onKeep={disk.keep} />}
       {load.status === 'loading' && <p className="p-3 text-muted-foreground text-xs">{t('files.loading')}</p>}
       {load.status === 'error' && <p role="alert" className="p-3 text-destructive text-xs">{load.message}</p>}
       <div ref={host} hidden={load.status !== 'ready'} className="min-h-0 flex-1" />
-      {isProblemsOpen && (
-        <ProblemsList
-          activityId={activityId} onClose={() => setProblemsOpen(false)} onViewLog={viewLog}
-          onOpen={(target, at) => { if (openFile === undefined) models.revealAt(activityId, target, at); else openFile(openKey, target, at); }}
-        />
-      )}
     </section>
   );
 }
