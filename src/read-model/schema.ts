@@ -46,4 +46,11 @@ export const MIGRATIONS: readonly string[] = [
   UPDATE sync_scopes SET cursor = NULL, etag = NULL WHERE kind LIKE 'pull/%';
   UPDATE sync_scopes SET etag = NULL WHERE kind = 'repo';
   UPDATE pulls SET read_at = NULL;`,
+  // #190: a Project's items as their GraphQL nodes, replaced on the item's own updated_at; relations beside them, outside that rule; and each
+  // listing's order, per source and scope (the Project plus its filter text), so two sources over one Project keep their own
+  `CREATE TABLE project_items (source TEXT NOT NULL, node_id TEXT NOT NULL, project TEXT NOT NULL, updated_at TEXT NOT NULL, node TEXT NOT NULL,
+    relations TEXT, written_at INTEGER, PRIMARY KEY (source, node_id));
+  CREATE INDEX project_items_by_project ON project_items (source, project);
+  CREATE TABLE project_listings (source TEXT NOT NULL, scope TEXT NOT NULL, position INTEGER NOT NULL, node_id TEXT NOT NULL,
+    PRIMARY KEY (source, scope, position));`,
 ];

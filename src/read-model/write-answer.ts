@@ -1,9 +1,10 @@
 import type { ReadModel, SyncKind } from './db.js';
 import { rowStands } from './sync.js';
-import type { CommentRow, IssueRow, PullFlags, ReviewRow } from './rows.js';
+import type { CommentRow, IssueRow, ItemRow, PullFlags, ReviewRow } from './rows.js';
 
-/** A write's confirmed answer as rows (#183, #187): what its mutation asked back, normalized; a PR write's review and flags too. */
-export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[]; reviews?: ReviewRow[]; pullFlags?: PullFlags[] }
+/** A write's confirmed answer as rows (#183, #187): what its mutation asked back, normalized; a PR write's review and flags too; a Project
+ * field write's re-read item (#190). */
+export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[]; reviews?: ReviewRow[]; pullFlags?: PullFlags[]; items?: ItemRow[] }
 
 /** The model, and the readModel event the sync sends (#180): a write's rows reload every other open view of the repository. */
 export interface WriteAnswerDeps { db: ReadModel; notify(repository: string, kinds: SyncKind[]): void }
@@ -13,6 +14,8 @@ export interface WriteAnswerDeps { db: ReadModel; notify(repository: string, kin
 export function applyWriteAnswer(deps: WriteAnswerDeps, repository: string, answer: WriteAnswer): SyncKind[] {
   const { db } = deps;
   const kinds = db.transaction((): SyncKind[] => {
+    // #190: items name no SyncKind: the itemRead dispatch updates the board, and the next poll reads them back
+    for (const row of answer.items ?? []) db.upsertItem(row, 'write');
     // map, then includes: every row is upserted, not only up to the first that writes
     const issues = (answer.issues ?? []).map((row) => db.upsertIssue(row, 'write'));
     const comments = (answer.comments ?? []).map((row) => db.upsertComment(row, 'write'));

@@ -64,6 +64,7 @@ export const ITEMS = `query($login: String!, $number: Int!, $after: String, $fil
           pageInfo { hasNextPage endCursor }
           nodes {
             id
+            updatedAt
             fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             fieldValues(first: ${FIELD_VALUE_LIMIT}) {
               nodes {
@@ -171,6 +172,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
   node(id: $itemId) {
     ... on ProjectV2Item {
       id
+      updatedAt
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
@@ -271,6 +273,7 @@ export interface GhRateLimit { limit?: unknown; remaining?: unknown; resetAt?: u
 export interface GhFieldValue { name?: string; text?: string; number?: number; date?: string; title?: string; field?: { name?: string } | null }
 export interface GhItemNode {
   id: string;
+  updatedAt?: string; // the item's own (#190): the read model's replace rule compares it; a field write and a content edit move it (#189 §3)
   fieldValueByName?: { name?: string } | null;
   fieldValues?: { nodes: GhFieldValue[] } | null;
   content?: {

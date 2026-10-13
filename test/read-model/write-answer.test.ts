@@ -4,6 +4,8 @@ import { openReadModel, type SyncKind } from '../../src/read-model/db.js';
 import { applyWriteAnswer, type WriteAnswerDeps } from '../../src/read-model/write-answer.js';
 import { syncScope } from '../../src/read-model/sync.js';
 import { COMMENT_ROW, fakeRest, ISSUE_ROW, NOW, ok, REPO, restPr, SOURCE, T1, T2 } from './fixtures.js';
+import { itemRow, readListing, storeListing } from '../../src/read-model/items.js';
+import type { GhItemNode } from '../../src/sources/github-queries.js';
 
 const WINDOW_MS = 30_000; // #178's written_at window
 const WRITTEN = { ...ISSUE_ROW, title: 'written', updatedAt: T2 };
@@ -94,5 +96,22 @@ test('a write answer whose PR row the replace rule refuses does not write its fl
   const older = { ...PR_ROW, updatedAt: T1 };
   assert.deepEqual(applyWriteAnswer(deps, REPO, { issues: [older], pullFlags: [{ ...KEY, draft: false, mergedAt: null }] }), []);
   assert.equal(deps.db.prPage(SOURCE, REPO, 7)?.pull?.mergedAt, T2);
+  assert.deepEqual(notified, []);
+});
+
+const ITEM_KEY = { source: SOURCE, project: 'acme/6', scope: 'acme/6' };
+const itemAt = (status: string, updatedAt: string): GhItemNode => ({
+  id: 'PVTI_1', updatedAt, fieldValueByName: { name: status }, content: { __typename: 'Issue', number: 1, url: 'https://github.com/acme/r/issues/1' },
+});
+
+test('a status write\'s item upserts with origin write and notifies nothing; a poll read before it, older or tied inside the window, keeps the written status (#190)', async () => {
+  const clock = { now: 1_000 };
+  const { deps, notified } = await model(clock);
+  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T1)], new Map());
+  assert.deepEqual(applyWriteAnswer(deps, REPO, { items: [itemRow(SOURCE, 'acme/6', itemAt('In review', T2))] }), []);
+  clock.now += WINDOW_MS - 1;
+  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T1)], new Map());
+  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T2)], new Map());
+  assert.equal(readListing(deps.db, ITEM_KEY).nodes[0]?.fieldValueByName?.name, 'In review');
   assert.deepEqual(notified, []);
 });
