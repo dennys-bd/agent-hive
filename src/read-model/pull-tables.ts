@@ -23,7 +23,7 @@ const SET_POLL = `INSERT INTO pulls (source, node_id, repository, number, head_s
   ON CONFLICT (source, node_id) DO UPDATE SET head_sha = excluded.head_sha, merge_state = excluded.merge_state, checks = excluded.checks
   WHERE (excluded.head_sha, excluded.merge_state, excluded.checks) IS NOT (pulls.head_sha, pulls.merge_state, pulls.checks)`;
 const PR_ROWS = `FROM issues i LEFT JOIN pulls p ON p.source = i.source AND p.node_id = i.node_id
-  WHERE i.source = $source AND i.repository = $repository AND i.kind = 'pr' AND ($author IS NULL OR i.author = $author)`;
+  WHERE i.source = $source AND i.repository = $repository AND i.kind = 'pr' AND ($author IS NULL OR i.author = $author COLLATE NOCASE)`; // GitHub logins ignore case
 // merged is closed with merged_at; a PR with no pulls row has none, so it reads closed
 const LIST_STATE = "CASE WHEN i.state = 'open' THEN 'open' WHEN p.merged_at IS NOT NULL THEN 'merged' ELSE 'closed' END";
 const ROWS = `SELECT i.number, i.title, i.updated_at, ${LIST_STATE} AS list_state, p.draft, p.merge_state, p.checks, p.decision ${PR_ROWS}

@@ -307,8 +307,9 @@ test('GET …/pulls answers each state from the model with no GraphQL call: #758
 test('an original lists only the login\'s PRs, in its rows and its counts (#854, #186)', async (t) => {
   const db = await tempModel(t);
   seedPrs(db);
+  db.upsertIssue(prIssueRow(3, T1, { title: 'PR 3', author: 'Bia' }), 'sync'); // GitHub logins ignore case
   const original = prsOf(db, SOURCE, { repository: REPO, workspace: 'hive', role: 'original', pair: 'bia/hive' }, 'closed');
-  assert.deepEqual([original.rows, original.counts], [[], { open: 2, merged: 1, closed: 0 }]);
+  assert.deepEqual([original.rows, original.counts], [[], { open: 3, merged: 1, closed: 0 }]);
 });
 
 test('a never-synced repository answers syncedAt null and no rows, another source\'s rows never show; past PR_LIST_LIMIT the list says truncated (#186)', async (t) => {
