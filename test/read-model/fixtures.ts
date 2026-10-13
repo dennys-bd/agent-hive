@@ -72,6 +72,12 @@ export const restLabel = (name: string): Record<string, unknown> => ({ id: name.
 /** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */
 export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([])];
 export const restIssue = (n: number, updatedAt: string): Record<string, unknown> => ({ ...REST_ISSUE, node_id: `I_${n}`, number: n, title: `T${n}`, updated_at: updatedAt });
+
+/** A PR item of the issues endpoint (#186): open, or closed and merged when `mergedAt` is set; `extra` overrides any field. */
+export const restPr = (n: number, updatedAt: string, mergedAt: string | null = null, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  ...restIssue(n, updatedAt), node_id: `PR_${n}`, state: mergedAt === null ? 'open' : 'closed', closed_at: mergedAt, draft: false,
+  pull_request: { url: `https://api.github.com/repos/acme/hive/pulls/${n}`, merged_at: mergedAt }, ...extra,
+});
 export const restComment = (id: string, issue: number, updatedAt: string): Record<string, unknown> => ({
   ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,
 });

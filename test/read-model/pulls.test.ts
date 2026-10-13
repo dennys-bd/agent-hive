@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
+import { pullFlagsFromRest, pullFromRest, pullsFromGql, rollupOf, runsReading, statusReading, suitesReading, WireError } from '../../src/read-model/normalize.js';
 import type { PullFlags } from '../../src/read-model/rows.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { tempDir } from '../temp-dir.js';
-import { HEAD, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { HEAD, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, restIssue, restPr, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const memory = async (): Promise<ReadModel> => (await openReadModel(':memory:')).db;
 const flags = (n: number, draft: boolean, mergedAt: string | null): PullFlags => ({ ...pullKey(n), draft, mergedAt });
@@ -92,4 +93,46 @@ test('removeScopes drops one PR\'s poll scopes only; removeIssue drops its pulls
   db.removeIssue(SOURCE, 'PR_7');
   db.upsertIssue(prIssueRow(7, T1), 'sync');
   assert.equal(db.prs(SOURCE, REPO, 'open')[0]?.isDraft, false, 'the old flags left with the row');
+});
+
+test('pullFlagsFromRest reads a PR item\'s draft and merged_at; an issue item has none (#186)', () => {
+  assert.equal(pullFlagsFromRest(SOURCE, REPO, restIssue(1, T1)), undefined);
+  assert.deepEqual(pullFlagsFromRest(SOURCE, REPO, restPr(5, T2, T2, { draft: true })), { source: SOURCE, nodeId: 'PR_5', repository: REPO, number: 5, draft: true, mergedAt: T2 });
+});
+
+test('pullFromRest reads the head SHA and mergeable_state as GraphQL\'s merge state; a head that is no SHA throws (#186)', () => {
+  const pull = (state: unknown, sha = HEAD): Record<string, unknown> => ({ number: 7, head: { sha, ref: 'feature' }, mergeable_state: state });
+  assert.deepEqual(pullFromRest(pull('has_hooks')), { headSha: HEAD, mergeState: 'hooks' });
+  const states = ['dirty', 'clean', 'unstable', 'blocked', 'behind', 'draft', 'unknown', 'new_value', null];
+  assert.deepEqual(states.map((s) => pullFromRest(pull(s)).mergeState), ['conflicts', 'clean', 'unstable', 'blocked', 'behind', 'draft', 'unknown', 'unknown', 'unknown']);
+  assert.throws(() => pullFromRest(pull('clean', '../../x')), WireError);
+});
+
+test('the rollup: failure beats pending beats success across the runs and the status; awaiting only when nothing ran; none when nothing ran (#186)', () => {
+  const run = (status: string, conclusion: string | null): Record<string, unknown> => ({ name: 'test', status, conclusion });
+  const runs = (...items: unknown[]): unknown[] => [{ total_count: items.length, check_runs: items }];
+  assert.equal(runsReading(runs(run('completed', 'success'), run('in_progress', null))), 'pending');
+  assert.equal(runsReading(runs(run('completed', 'success'), run('completed', 'timed_out'))), 'failure');
+  assert.equal(runsReading(runs(run('completed', 'skipped'))), 'success');
+  assert.equal(runsReading(runs()), null);
+  assert.equal(statusReading([{ state: 'pending', statuses: [] }]), null, 'GitHub answers pending with no context');
+  assert.equal(statusReading([{ state: 'failure', statuses: [{ context: 'ci', state: 'error' }] }]), 'failure');
+  const suite = (slug: string, conclusion: string): Record<string, unknown> => ({ conclusion, app: { slug } });
+  assert.equal(suitesReading([{ check_suites: [suite('github-actions', 'action_required')] }]), 'awaiting');
+  assert.equal(suitesReading([{ check_suites: [suite('other-app', 'action_required'), suite('github-actions', 'success')] }]), null);
+  assert.deepEqual(
+    [rollupOf('success', 'failure', null), rollupOf('pending', 'success', 'awaiting'), rollupOf('success', null, null), rollupOf(null, null, 'awaiting'), rollupOf(null, null, null)],
+    ['failure', 'pending', 'success', 'awaiting', null],
+  );
+});
+
+test('pullsFromGql reads each aliased node\'s id, decision, merge state and checks; a deleted PR\'s null node is skipped (#186)', () => {
+  const node = { id: 'PR_7', reviewDecision: 'CHANGES_REQUESTED', mergeStateStatus: 'DIRTY', headCommit: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] } };
+  const suites = { nodes: [{ conclusion: 'ACTION_REQUIRED', app: { slug: 'github-actions' }, workflowRun: null }] };
+  const waiting = { id: 'PR_8', reviewDecision: null, mergeStateStatus: 'UNKNOWN', headCommit: { nodes: [{ commit: { statusCheckRollup: null, checkSuites: suites } }] } };
+  assert.deepEqual(pullsFromGql({ p0: node, p1: null, p2: waiting }), [
+    { nodeId: 'PR_7', decision: 'changes', mergeState: 'conflicts', checks: 'success' },
+    { nodeId: 'PR_8', decision: null, mergeState: 'unknown', checks: 'awaiting' },
+  ]);
+  assert.throws(() => pullsFromGql(null), WireError);
 });

@@ -96,7 +96,7 @@ export const canPushOf = (permission: unknown): boolean => permission === 'ADMIN
 export const SUITE_FIELDS = 'checkSuites(first: 50) { nodes { conclusion app { slug } workflowRun { workflow { name } } } }';
 /** #758's rollup with the suites beside it (#854): what the PR page, its poll and the CI read ask. */
 export const AWAITING_ROLLUP = rollupFields(`${SUITE_FIELDS} `);
-const ACTIONS_APP = 'github-actions';
+export const ACTIONS_APP = 'github-actions'; // the read model's suites reading matches it too (#186)
 
 /** The workflows awaiting a maintainer's approval on the head commit (#854): its github-actions suites concluded ACTION_REQUIRED, once each. */
 export function awaitingOf(headCommit: unknown): string[] {
