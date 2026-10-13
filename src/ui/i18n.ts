@@ -444,6 +444,11 @@ const en = {
   'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
   'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
   'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
+  'runPick.refused.agent': '"agent" must be an agent installed on this machine', // #290: the start route's run picks
+  'runPick.refused.session': '"session" must be new, previous or a session of the task that agent recorded',
+  'runPick.refused.action': 'a stage that runs no agent takes no "agent", "session", "model", "specializedAgent" or "args"',
+  'runPick.refused.handover': 'the transition already decides the task\'s next run: no "agent", "session", "model", "specializedAgent" or "args"',
+  'runPick.refused.continue': 'only a start takes "agent", "session", "model", "specializedAgent" or "args": a continue resumes the stage\'s session as it ran',
   'activity.stop.pick': 'pick a session to put to sleep', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'active sessions · {n}',
   'activity.stop.focused': 'focused',
@@ -2365,6 +2370,11 @@ const pt: Record<MessageKey, string> = {
   'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
   'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
   'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
+  'runPick.refused.agent': '"agent" precisa ser um agente instalado nesta máquina', // #290: the start route's run picks
+  'runPick.refused.session': '"session" precisa ser new, previous ou uma sessão da tarefa registrada por esse agente',
+  'runPick.refused.action': 'uma etapa que não executa agente não aceita "agent", "session", "model", "specializedAgent" nem "args"',
+  'runPick.refused.handover': 'a transição já decide a próxima execução da tarefa: sem "agent", "session", "model", "specializedAgent" nem "args"',
+  'runPick.refused.continue': 'só um início aceita "agent", "session", "model", "specializedAgent" ou "args": continuar retoma a sessão da etapa como ela executou',
   'activity.stop.pick': 'escolher a sessão para dormir', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'sessões ativas · {n}',
   'activity.stop.focused': 'em foco',

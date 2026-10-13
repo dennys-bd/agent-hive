@@ -21,7 +21,8 @@ import { registerFileBaseRoutes } from './server-file-base.js';
 import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
 import { registerRetryRoute } from './server-retry.js';
-import type { Activity, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
+import { parseRunPick } from './run-pick.js';
+import type { Activity, AgentAvailability, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropCheckpoints } from './checkpoints.js';
 import { dropBranches, dropStageStart, leftBehind } from './restart.js';
 import { baseOptions, taskDir, checkBase, cleanWorktree, refuseUnmerged, removeWorktree } from './worktree.js';
@@ -73,6 +74,7 @@ export interface TaskRouteDeps {
   } | undefined;
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, reaches only the spawns this event causes
   language(): Language; // the Hive's effective language, the config's else the system's: a kept-both item's " - copy" suffix (#594)
+  agents: readonly AgentAvailability[]; // the agent CLIs found on boot (#516): a start's picked agent must be one (#290)
   /** The pool's own started(ptyId) (#249): resolves once the run's pty exists (#251), rejects on a spawn failure or an unknown id.
    * What POST /tasks/:id/open and POST /activities/:id/sessions/:session/open await before answering the run they just started. */
   started(ptyId: string): Promise<void>;
@@ -112,7 +114,8 @@ function startRefusal(state: State, itemId: string): Refusal | undefined {
 
 /** The start the body asks for. `base: null` is the popup's default and drops a saved base. No string base, or a delete activity stage (which
  * never gets one): today's start. A base must be a branch git has and not the task's own (#131), else the answer is a 409 with the
- * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). */
+ * reason and nothing starts. The body's workspace is checked like right-click › Workspace and saved with the start (#179). The body's run picks
+ * (#290) are checked by parseRunPick and travel with the event. */
 async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string, body: unknown): Promise<Extract<HiveEvent, { type: 'start' }> | Refusal> {
   const { base, tellWorker, workspace: raw } = (body ?? {}) as { base?: unknown; tellWorker?: unknown; workspace?: unknown };
   const found = current.state.tasks.find((c) => c.item.itemId === itemId);
@@ -121,7 +124,9 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
-  const placed = raw === undefined ? {} : { workspace: task.workspace };
+  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language()); // #290: the run picks, before any git
+  if ('status' in picked) return picked;
+  const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };
   if (base === null) return { type: 'start', itemId, base: null, ...placed }; // the popup's default: drops a saved base
   if (typeof base !== 'string') return { type: 'start', itemId, ...placed };

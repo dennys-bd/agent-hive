@@ -596,6 +596,11 @@ export function defaultSession(task: Task, state: WorkersState, stage: Stage | u
   return stage?.session === 'continue' ? worktreeSessions(task, state).at(-1)?.id : undefined;
 }
 
+/** The session mesma da etapa anterior resumes (#290): the newest one a stage run used that opens in the task's worktree; a free session, which
+ * has no stage, is never it. The start route and the Start dialog read this one rule. */
+export const previousSession = (task: Task, state: WorkersState): Session | undefined =>
+  worktreeSessions(task, state).filter((s) => s.stages.length > 0).at(-1);
+
 /** A task the user may move to another stage (#164, #366, #708), by right-click → move to or by a drag, auto on or off: still on the
  * source, not leaving it, and held by no stage run. A free session or a terminal on it holds nothing: the session is the user's own and
  * has no stage (#283). The reducer, the route, the menu and the drag share it. */
