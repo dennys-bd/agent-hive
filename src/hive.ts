@@ -16,8 +16,9 @@ import type { ItemStore } from './read-model/items.js';
 import { newSecret } from './secret.js';
 import { createServer, type HiveServer, type ServerDeps, type SourceFactory } from './server.js';
 import { loadState } from './state-store.js';
+import { hydrate } from './hydrate.js';
 import { workspacePathProblem } from './worktree.js';
-import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type Config, type Exec, type Language } from './types.js';
+import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 
@@ -114,13 +115,29 @@ function bootItemStore(db: ReadModel, config: Config, log: Logger): ItemStore {
   return { db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { exec: execFileAsync, log }))?.source, notify: () => undefined };
 }
 
+// #191: what every source's read model holds, read with no network call before the first rule runs, so the lean tasks state.json loaded
+// get their source fields back. A source whose read fails is logged and skipped: its tasks stay lean until its first poll
+async function storedItems(sources: ReadonlyMap<string, Source>, log: Logger): Promise<SourceItem[]> {
+  const read = await Promise.all([...sources].map(async ([name, source]): Promise<SourceItem[]> => {
+    try {
+      return (await source.stored?.()) ?? [];
+    } catch (err) {
+      log.error(`source ${name}: the read model's listing was not read at boot: ${err instanceof Error ? err.message : String(err)}`);
+      return [];
+    }
+  }));
+  return read.flat();
+}
+
 async function bootHiveMode(
   home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined,
 ): Promise<BootedHive> {
   const names = config.comb.workspaces.map((p) => p.name).join(',');
   log.info(`boot home=${home} workspaces=${names} mode=hive`);
-  // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
-  const saved = { ...(await loadState(home, workspaceScope(config))), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
+  // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot. #191: its lean tasks get their
+  // source fields back from the read model before createServer, so no rule runs on a task without them when the model has them
+  const loaded = await loadState(home, workspaceScope(config));
+  const saved = { ...loaded, tasks: hydrate(loaded.tasks, await storedItems(sources, log)), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
   const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const port = await listenAndRecord(server, home, deps.secret);

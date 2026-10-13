@@ -11,7 +11,7 @@ import { READ_MODEL_FILE } from '../src/read-model/db.js';
 import type { ItemStore } from '../src/read-model/items.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
-import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceSpec } from '../src/types.js';
+import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceItem, SourceSpec, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive, claudePlan } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -561,4 +561,25 @@ test('a read model that cannot be opened is logged, and the daemon boots without
   t.after(() => server.close());
   assert.equal((await settingsInfo(home, port)).configured, true);
   assert.ok((await logLines(home)).some((line) => line.includes('read model: not opened')));
+});
+
+test('bootHive hydrates the loaded tasks from every source\'s stored() before the first rule; a stored() that rejects leaves its tasks lean and the boot goes on (#191)', async (t) => {
+  const lean: Task = { item: { itemId: 'board:I1', id: '1', title: '', body: '', url: '', source: 'board' }, stage: 'fila', boardColumn: 'Ready', auto: true };
+  const kept: SourceItem = { item: { itemId: 'I1', id: '1', title: 'from the model', body: 'b', url: 'https://github.com/acme/r/issues/1' }, column: 'Ready' };
+  // The poll fails, so what the state holds after the boot is what the boot read gave back
+  const offline = (stored: () => Promise<SourceItem[]>) => (spec: SourceSpec): Source =>
+    ({ ...fakeSourceFactory().factory(spec), listItems: () => Promise.reject(new Error('no network')), stored });
+
+  const { home } = await hiveWithConfig(t, WITH_SOURCE);
+  await saveState(home, { ...initialState(0), tasks: [lean] });
+  const hive = await bootHive(home, { sourceFactory: offline(async () => [kept]) });
+  t.after(() => hive.server.close());
+  assert.deepEqual(hive.server.getState()?.tasks.map((task) => [task.item.itemId, task.item.title, task.item.source]), [['board:I1', 'from the model', 'board']]);
+
+  const failing = await hiveWithConfig(t, WITH_SOURCE);
+  await saveState(failing.home, { ...initialState(0), tasks: [lean] });
+  const booted = await bootHive(failing.home, { sourceFactory: offline(() => Promise.reject(new Error('model gone'))) });
+  t.after(() => booted.server.close());
+  assert.deepEqual(booted.server.getState()?.tasks.map((task) => task.item.title), ['']);
+  assert.ok((await logLines(failing.home)).some((l) => l.includes('source board: the read model\'s listing was not read at boot: model gone')));
 });
