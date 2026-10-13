@@ -137,7 +137,7 @@ test('convertDrafts marks each conversation\'s first message received by the ses
   assert.deepEqual(converted.threads[0].received, { s9: 'M1' });
 });
 
-const design = (pin: number, path = 'd/home.hv.html') => ({ path, viewport: 1280 as const, theme: 'dark' as const, pin, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } });
+const design = (pin: number, path = 'd/home.hv.html') => ({ path, viewport: 1280 as const, theme: 'dark' as const, tweaks: {}, pin, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } });
 
 test('nextPin is the highest pin among the path\'s design drafts and threads plus one: gaps kept, other paths and line anchors apart (#111)', () => {
   assert.equal(nextPin(EMPTY_REVIEW, 'd/home.hv.html'), 1);
@@ -176,4 +176,16 @@ test('convertDrafts carries a design draft\'s anchor, pin included (#111)', () =
   const draft = { id: 'D1', anchor: design(3), session: 's1', text: 'a' };
   const converted = convertDrafts(frozen(addDraft(EMPTY_REVIEW, draft)), [{ draft, threadId: 'T1', messageId: 'M1' }], 's1', 'AT');
   assert.deepEqual(converted.threads[0].anchor, design(3));
+});
+
+test('a stored file whose design anchor has no tweaks reads back with tweaks {}; a line anchor is untouched (#241)', async (t) => {
+  const home = await tempDir(t, 'reviews-');
+  const { tweaks: _tweaks, ...old } = design(1);
+  const file = { reviewed: [], drafts: [{ id: 'D1', anchor: old, session: 's1', text: 'a' }, { id: 'D2', anchor: ANCHOR, session: 's1', text: 'b' }], threads: [{ id: 'T1', anchor: old, participants: [], messages: [] }] };
+  await mkdir(dirname(reviewPath(home, 'local:1')), { recursive: true });
+  await writeFile(reviewPath(home, 'local:1'), JSON.stringify(file));
+  const read = await createReviewStore(home, () => true).read('local:1');
+  assert.deepEqual(read.drafts[0].anchor, design(1));
+  assert.deepEqual(read.drafts[1].anchor, ANCHOR);
+  assert.deepEqual(read.threads[0].anchor, design(1));
 });

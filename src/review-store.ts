@@ -17,7 +17,14 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 // ponytail: a shallow check, the Hive is the file's only writer; a deep one if a hand edit ever breaks a pane
 function parseReviewFile(raw: unknown): ReviewFile {
   if (!isObject(raw) || !Array.isArray(raw.reviewed) || !Array.isArray(raw.drafts) || !Array.isArray(raw.threads)) throw new Error('not a review file');
-  return raw as unknown as ReviewFile;
+  const file = raw as unknown as ReviewFile;
+  return { ...file, drafts: file.drafts.map(withTweaks), threads: file.threads.map(withTweaks) };
+}
+
+// Comments stored before #241 have no tweaks: a design anchor without them reads as made on none
+function withTweaks<T extends { anchor: ThreadAnchor | UnpinnedDesignAnchor }>(entry: T): T {
+  const { anchor } = entry;
+  return 'kind' in anchor && !isObject(anchor.tweaks) ? { ...entry, anchor: { ...anchor, tweaks: {} } } : entry;
 }
 
 export type ReviewStore = JsonStore<ReviewFile>;

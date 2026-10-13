@@ -234,7 +234,7 @@ interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rect
 function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: OverlayProps) {
   const { target } = canvas;
   const scale = percent / FULL;
-  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme });
+  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme, tweaks: {} });
   const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
   const pin = nextPin(model);
   // The composer closes once the server took the comment; a refusal keeps it open with its text

@@ -9,7 +9,7 @@ import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, withSessions } f
 
 const ELEMENT = { kind: 'element', selector: 'main > h1:nth-of-type(1)', text: 'Welcome', rect: RECT };
 const AREA = { kind: 'area', rect: { x: 40, y: 60, width: 320.4, height: 179.6 } };
-const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark' };
+const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark', tweaks: {} };
 
 let hive: FakeHive;
 beforeEach(() => {

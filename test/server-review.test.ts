@@ -111,13 +111,13 @@ test('drafts are added, edited and removed; the default session is set and clear
   assert.equal((await send(base, 'PUT', '/tasks/local%3A1/review/default-session', { session: SESSION_OTHER })).status, 400);
 });
 
-const DESIGN = { kind: 'element', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', selector: 'main > h1', text: 'Hi', rect: { x: 1, y: 2, width: 3, height: 4 } };
+const DESIGN = { kind: 'element', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', tweaks: {}, selector: 'main > h1', text: 'Hi', rect: { x: 1, y: 2, width: 3, height: 4 } };
 
 test('a design draft is pinned by the server per path, a sent pin is ignored, and a bad design anchor is refused (#111)', async (t) => {
   const { base, home } = await startReviews(t);
   const draft = (anchor: unknown) => send(base, 'POST', '/tasks/local%3A1/review/drafts', { anchor, text: 'look', session: SESSION_A });
   assert.equal((await draft({ ...DESIGN, pin: 7 })).status, 200);
-  assert.equal((await draft({ kind: 'area', path: DESIGN.path, viewport: 390, theme: 'light', rect: DESIGN.rect })).status, 200);
+  assert.equal((await draft({ kind: 'area', path: DESIGN.path, viewport: 390, theme: 'light', tweaks: {}, rect: DESIGN.rect })).status, 200);
   assert.equal((await draft({ ...DESIGN, path: 'agent/hive/designs/x/other.hv.html' })).status, 200);
   assert.equal((await draft(ANCHOR)).status, 200);
   const anchors = (await onDisk(home, 'local:1')).drafts.map((d) => d.anchor);
