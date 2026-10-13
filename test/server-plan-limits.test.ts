@@ -2,12 +2,12 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
-import type { PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
+import type { AgentId, PlanLimitsReport, RateLimits, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeSourceFactory, fakeSpawn, workspacesAt, tempHive, claudePlan, claudePlanFailure, fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 
-// POST /plan-limits/refresh: the header's refresh button, a reading on demand that replaces the held one instead of merging into it
+// POST /plan-limits/refresh: the usage group's ↻ (#223), a reading on demand that replaces the held one instead of merging into it
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true,
@@ -85,4 +85,52 @@ test('the refresh dispatches one reading per agent and answers ok while any agen
   const res = await postJson(`${base}/plan-limits/refresh`);
   assert.deepEqual([res.status, await res.json()], [200, { ok: true }]);
   assert.deepEqual(server.getState()?.rateLimits, { claude: HIGH, codex: later });
+});
+
+test('{ agent } reads that agent only and replaces only its reading; {} reads every agent (#223)', async (t) => {
+  const codex: RateLimits = { at: HIGH.at, windows: { thirty_day: { usedPercent: 40, resetsAt: RESET } } };
+  const codexLater: RateLimits = { at: AFTER_UPGRADE.at, windows: { thirty_day: { usedPercent: 12, resetsAt: RESET } } };
+  let held: Record<AgentId, RateLimits> = { claude: HIGH, codex };
+  const asked: (readonly AgentId[] | undefined)[] = [];
+  const readPlanLimits = async (agents?: readonly AgentId[]): Promise<PlanLimitsReport> => {
+    asked.push(agents);
+    return { readings: (agents ?? (['claude', 'codex'] as const)).map((agent) => ({ agent, rateLimits: held[agent] })), failures: [] };
+  };
+  const { base, server } = await start(t, { readPlanLimits });
+  await waitFor(() => server.getState()?.rateLimits?.codex !== undefined); // the background read after the save
+  held = { claude: AFTER_UPGRADE, codex: codexLater };
+  const one = await postJson(`${base}/plan-limits/refresh`, { agent: 'codex' });
+  assert.deepEqual([one.status, await one.json()], [200, { ok: true }]);
+  assert.deepEqual(asked.at(-1), ['codex']);
+  assert.deepEqual(server.getState()?.rateLimits, { claude: HIGH, codex: codexLater }, 'claude keeps its held reading');
+  const all = await postJson(`${base}/plan-limits/refresh`, {});
+  assert.deepEqual([all.status, await all.json()], [200, { ok: true }]);
+  assert.equal(asked.at(-1), undefined, 'no list: every agent with plan limits');
+  assert.deepEqual(server.getState()?.rateLimits, { claude: AFTER_UPGRADE, codex: codexLater });
+});
+
+test('{ agent } that is not an agent with plan limits answers 400 and reads nothing (#223)', async (t) => {
+  let reads = 0;
+  const { base, server } = await start(t, { readPlanLimits: async () => { reads += 1; return claudePlan(HIGH); } });
+  await waitFor(() => server.getState()?.rateLimits?.claude !== undefined);
+  const before = reads;
+  for (const agent of ['nope', 42, null]) {
+    const res = await postJson(`${base}/plan-limits/refresh`, { agent });
+    assert.deepEqual([res.status, await res.json()], [400, { error: 'agent has no plan limits' }], String(agent));
+  }
+  assert.equal(reads, before);
+});
+
+test('a one-agent refresh logs only that agent\'s reason: another agent\'s logged failure stays as it was (#223)', async (t) => {
+  const { log, lines } = fakeLog();
+  const codex: RateLimits = { at: HIGH.at, windows: { thirty_day: { usedPercent: 40, resetsAt: RESET } } };
+  const readPlanLimits = async (agents?: readonly AgentId[]): Promise<PlanLimitsReport> => ({
+    readings: [{ agent: 'codex', rateLimits: codex }],
+    failures: agents === undefined || agents.includes('claude') ? [{ agent: 'claude', reason: 'HTTP 429' }] : [],
+  });
+  const { server } = await start(t, { readPlanLimits, log });
+  const planLines = (): string[] => lines.filter((l) => l.includes('plan limits'));
+  await waitFor(() => planLines().length > 0);
+  await server.refreshPlanLimits(true, ['codex']);
+  assert.deepEqual(planLines(), ['INFO plan limits claude: HTTP 429'], 'never "claude: ok" from a read that did not read claude');
 });

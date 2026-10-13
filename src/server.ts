@@ -21,7 +21,7 @@ import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { excludeFromGit, prepareHome, type ProtocolPaths } from './hooks-settings.js';
-import { AGENTS, ALL_AGENTS, ranAgent } from './agents.js';
+import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
 import { createEventLog, type EventLog } from './events.js';
@@ -83,7 +83,7 @@ import { trustedCopies } from './copy-sides.js';
 import { isTranscriptIn, isTranscriptPath, isWorkerTranscript, type TranscriptTurn } from './usage.js';
 import { createViewStore, readViewState } from './view-store.js';
 import {
-  AGENT_IDS, CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
+  CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
   type Signal, type SourceItem, type Worker, type LaunchPty, type State,
@@ -157,7 +157,7 @@ export interface HiveServer {
   dispatch(event: HiveEvent): Promise<Effect[]>;
   poll(names?: string[], manual?: string[]): Promise<void>; // every named source (all by default), in parallel (#180); manual: items born with auto off (#846)
   boot(saved: State): Promise<void>; // strays killed, then the boot reducer
-  refreshPlanLimits(replace?: boolean): Promise<string | undefined>; // the failure's reason, undefined when read (or nothing to read)
+  refreshPlanLimits(replace?: boolean, agents?: readonly AgentId[]): Promise<string | undefined>; // the failure's reason, undefined when read (or nothing to read); agents: only these (#223)
   listen(port: number | undefined): Promise<number>; // tried first; taken, or undefined, the OS picks one (#466)
   close(reason?: string): Promise<void>; // reason: hive.quit's (#742), `close` by default
   getState(): State | undefined;
@@ -640,13 +640,14 @@ export function createServer(deps: ServerDeps): HiveServer {
     planLimitsReasons = { ...planLimitsReasons, [agent]: reason };
   }
 
-  // Every agent with plan limits (#929): one rateLimits event per reading; a failing agent keeps its last value. `replace`: the header's
-  // refresh, whose reading is taken whole (see setRateLimits); the timer's is merged. A reason only when no agent gave a reading
-  async function refreshPlanLimits(replace = false): Promise<string | undefined> {
+  // Every agent with plan limits (#929), or only `agents` (#223, a chip's ↻): one rateLimits event per reading; a failing agent keeps its
+  // last value. `replace`: the usage group's refresh, whose reading is taken whole (see setRateLimits); the timer's is merged. A reason only
+  // when no agent gave a reading. Only the agents read note their reason, so one agent's ↻ never clears another's logged failure
+  async function refreshPlanLimits(replace = false, agents?: readonly AgentId[]): Promise<string | undefined> {
     const read = deps.readPlanLimits;
     if (!read || !live) return undefined;
-    const { readings, failures } = await read();
-    for (const agent of AGENT_IDS.filter((id) => AGENTS[id].planLimits)) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
+    const { readings, failures } = await read(agents);
+    for (const agent of planLimitAgents(agents)) notePlanReason(agent, failures.find((f) => f.agent === agent)?.reason);
     for (const { agent, rateLimits } of readings) await dispatch({ type: 'rateLimits', agent, rateLimits, replace });
     if (readings.length > 0) return undefined;
     return failures[0]?.reason ?? (replace ? NO_PLAN_READING : undefined); // the refresh says so; the timer just has nothing to merge
@@ -1127,14 +1128,21 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerRepoRoutes(app, { requireLive, exec, gql: cliGqlJson(gh), poll, log, ...repoModel });
   registerForkRoutes(app, { requireLive, exec }); // POST /workspaces/:name/sync and GET /settings/remotes, a fork workspace's (#854)
 
-  // The header's refresh button: read the plan limits now and replace the held reading, e.g. after a plan upgrade lowered the percent
-  app.post('/plan-limits/refresh', async (_req: Request, res: Response) => {
+  // The usage group's ↻ (#223): `{ agent }` reads that agent only, `{}` every agent with plan limits (↻ todos); either replaces the held
+  // reading, e.g. after a plan upgrade lowered the percent. The page only offers ↻ on agents with plan limits: anything else is a 400
+  app.post('/plan-limits/refresh', async (req: Request, res: Response) => {
     if (!requireLive(res)) return;
     if (!deps.readPlanLimits) {
       res.status(HTTP_NOT_IMPLEMENTED).json({ error: 'plan limits not supported' });
       return;
     }
-    const reason = await refreshPlanLimits(true);
+    const asked: unknown = (req.body as { agent?: unknown } | undefined)?.agent;
+    const agent = knownAgent(asked);
+    if (asked !== undefined && (agent === undefined || !AGENTS[agent].planLimits)) {
+      res.status(HTTP_BAD_REQUEST).json({ error: 'agent has no plan limits' });
+      return;
+    }
+    const reason = await refreshPlanLimits(true, agent === undefined ? undefined : [agent]);
     if (reason === undefined) res.json({ ok: true });
     else res.status(HTTP_BAD_GATEWAY).json({ error: reason });
   });
