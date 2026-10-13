@@ -6,7 +6,6 @@ import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
 import type { CommentsState } from '@/hooks/use-comments';
 import { setLanguage } from '@/i18n';
-import { DEFAULT_DOCK_LAYOUT, moveTo } from '@/lib/dock-layout';
 import { resetViewState } from '@/lib/view-state';
 import type { Task, TaskFile, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -125,22 +124,17 @@ test('with no selection Detalhes is still there, its body the empty state, once 
   expect(screen.getByText('Nenhuma tarefa selecionada')).toBeVisible();
 });
 
-test('Escape closes the detail\'s panel and keeps the selection; with Detalhes behind another tab, or its panel closed, Escape does nothing (#426, #452)', async () => {
+test('Escape closes the detail\'s panel and keeps the selection; with its panel closed, Escape does nothing (#426, #452)', async () => {
   const user = userEvent.setup();
   const calls: (Selection | undefined)[] = [];
-  resetViewState({ dockLayout: moveTo(DEFAULT_DOCK_LAYOUT, 'detail', 'left') }); // Detalhes docked left, beside Automação and Atividades
   render(<Home initial={{ taskId: 'A' }} calls={calls} />);
-  await user.click(screen.getByRole('tab', { name: 'Automação' }));
+  showFlow();
+  expect(screen.getByRole('heading', { name: '#1 Task A' })).toBeVisible();
   await user.keyboard('{Escape}');
-  expect(screen.getByRole('tab', { name: 'Automação' })).toHaveAttribute('aria-selected', 'true'); // still open
-  await user.click(screen.getByRole('tab', { name: 'Detalhes' }));
-  await user.keyboard('{Escape}');
-  expect(screen.queryByRole('tab', { name: 'Detalhes' })).not.toBeInTheDocument(); // the left panel closed
-  expect(screen.queryByRole('tab', { name: 'Automação' })).not.toBeInTheDocument();
+  expect(detailsIcon()).not.toBeInTheDocument(); // the right side closed: panel-right in its place
   await user.keyboard('{Escape}'); // closed: no listener, nothing more
   expect(calls).toEqual([]);
-  fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true }); // toggleLeft opens the left panel again (#452)
-  expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  rightKey();
   expect(screen.getByRole('heading', { name: '#1 Task A' })).toBeVisible();
 });
 

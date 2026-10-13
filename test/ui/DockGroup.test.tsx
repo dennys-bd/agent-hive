@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect, useState } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
@@ -16,14 +16,14 @@ const TWO = (): DockPanel[] => [
 const group = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock]')!;
 
 // The group as the frame drives it: the active tab lives outside, and a tab's click sets it
-function Group({ side = 'right', panels, initial, open = true, onMove = vi.fn(), onResize = vi.fn(), onClose = vi.fn() }: {
-  side?: Side; panels: DockPanel[]; initial?: PanelId; open?: boolean; onMove?: (id: PanelId, side: Side) => void; onResize?: (size: number) => void; onClose?: () => void;
+function Group({ side = 'right', panels, initial, open = true, onResize = vi.fn(), onClose = vi.fn() }: {
+  side?: Side; panels: DockPanel[]; initial?: PanelId; open?: boolean; onResize?: (size: number) => void; onClose?: () => void;
 }) {
   const [active, setActive] = useState<PanelId | undefined>(initial);
   return (
     <DockGroup
       side={side} size={30} panels={panels} active={active} open={open} measure={NOWHERE}
-      onActivate={setActive} onMove={onMove} onResize={onResize} onClose={onClose}
+      onActivate={setActive} onResize={onResize} onClose={onClose}
     />
   );
 }
@@ -41,15 +41,15 @@ test('one tab per panel in a tablist, the active one aria-selected, then only it
   expect(screen.getByText('corpo Detalhes')).not.toBeVisible();
 });
 
-// Ahead of the userEvent.click tests below (#377): a plain userEvent.click anywhere in a document that also holds a mounted ContextMenu
-// exhausts Radix's module-scoped DismissableLayer state under jsdom, so a later fireEvent.contextMenu here would never open.
-test('right-clicking a tab\'s title offers the other side, and picking it calls onMove with that panel and side (#342)', async () => {
-  const onMove = vi.fn();
-  render(<Group side="right" panels={TWO()} initial="automation" onMove={onMove} />);
-  fireEvent.contextMenu(screen.getByRole('tab', { name: 'Detalhes' }));
-  expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Mover para a esquerda']);
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Mover para a esquerda' }));
-  expect(onMove).toHaveBeenCalledWith('detail', 'left');
+test('a tab has no menu: no panel moves to the other side, the tabs only switch the group (#295)', async () => {
+  render(<Group side="right" panels={TWO()} initial="automation" />);
+  for (const name of ['Automação', 'Detalhes']) {
+    const tab = screen.getByRole('tab', { name });
+    expect(tab).not.toHaveAttribute('data-state'); // no ContextMenu trigger around it
+    fireEvent.contextMenu(tab);
+  }
+  await act(async () => {});
+  expect(screen.queryAllByRole('menuitem')).toEqual([]);
 });
 
 test('clicking a tab activates it; the body it hides stays mounted, collapsed, never remounted (#342)', async () => {

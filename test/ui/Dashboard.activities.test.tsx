@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
 import { setLanguage } from '@/i18n';
-import { DEFAULT_DOCK_LAYOUT, moveTo } from '@/lib/dock-layout';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { Task, Terminal, Worker, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -125,20 +124,15 @@ test('Automação shows the board and keeps the pick; Atividades brings the same
   expect(centerTabs()).toEqual([['Claude · abcdef12', 'false'], ['Terminal', 'true']]);
 });
 
-test('activating another tab docked on the left, or closing the left panel, leaves the center as it is (#458)', async () => {
+test('closing the left panel and opening it again leaves the center as it is (#458, #452)', async () => {
   const user = userEvent.setup();
-  resetViewState({ dockLayout: moveTo(DEFAULT_DOCK_LAYOUT, 'detail', 'left') });
   render(<Home state={base} />);
   showActivities();
   await user.click(row('#1 Task A'));
-  await user.click(within(group('left')!).getByRole('tab', { name: 'Detalhes' }));
-  expect(screen.getByRole('region', { name: '#1 Task A · etapa' })).toBeVisible();
   fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true }); // Cmd+B closes the left panel (#452)
   expect(screen.getByRole('region', { name: '#1 Task A · etapa' })).toBeVisible();
   fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true });
-  await user.click(within(group('left')!).getByRole('tab', { name: 'Automação' })); // beside Detalhes, which has no header of its own here
-  await user.click(within(group('left')!).getByRole('tab', { name: 'Detalhes' }));
-  expect(screen.getByRole('main')).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '#1 Task A · etapa' })).toBeVisible();
 });
 
 test('the rail lists atividades then fluxo and the header no view switch; Cmd+1 / Cmd+2 and the rail show the Atividades and Automação tabs, the center following (#533, #746, #221)', async () => {

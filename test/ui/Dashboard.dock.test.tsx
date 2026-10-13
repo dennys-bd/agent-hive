@@ -55,6 +55,17 @@ const boardTask = (label: string): Element => screen.getAllByText(label).find((e
 const detailsIcon = (): HTMLElement | null => within(screen.getByRole('banner')).queryByRole('button', { name: 'detalhes' });
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
 
+test('the panels are fixed: Detalhes sits alone in the right panel beside the center and no group draws a tab to move it; a stored layout with Detalhes on the left reads as the defaults (#342, #452, #295)', () => {
+  resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'left', activities: 'left', detail: 'left' } } });
+  render(<Home initial={{ taskId: 'A' }} />);
+  showFlow();
+  const right = group('right')!;
+  expect(right.parentElement).toBe(screen.getByRole('main').parentElement!.parentElement!.parentElement); // beside the center column, in the frame
+  expect(right).toContainElement(screen.getByRole('complementary', { name: 'detalhe' }));
+  expect(document.querySelectorAll('[data-dock] [role="tab"]')).toHaveLength(0);
+  expect(saved()).toMatchObject({ docks: { detail: 'right' } });
+});
+
 test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wider, clamped to 15 and to what leaves the center 20%, saved in the view state and read back on the next mount (#342, #484, #295)', async () => {
   const user = userEvent.setup();
   const { unmount } = render(<Home initial={{ taskId: 'A' }} />);

@@ -16,7 +16,7 @@ function Frame({ layout, onClose = vi.fn() }: { layout: ViewLayout; onClose?: (s
   return (
     <DockFrame
       layout={layout} shown={{ left: 'activities', right: 'detail' }} panels={PANELS}
-      onActivate={vi.fn()} onMove={vi.fn()} onResize={vi.fn()} onClose={onClose}
+      onActivate={vi.fn()} onResize={vi.fn()} onClose={onClose}
     >
       <main>fluxo</main>
     </DockFrame>

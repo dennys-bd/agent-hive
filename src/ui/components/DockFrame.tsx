@@ -4,18 +4,18 @@ import type { ActiveTabs, PanelId, Side, ViewLayout } from '@/lib/dock-layout';
 
 export interface DockFrameProps {
   layout: ViewLayout; shown: ActiveTabs; panels: DockPanel[]; children: ReactNode;
-  onActivate(id: PanelId): void; onMove(id: PanelId, side: Side): void; onResize(side: Side, size: number): void; onClose(side: Side): void;
+  onActivate(id: PanelId): void; onResize(side: Side, size: number): void; onClose(side: Side): void;
 }
 
 /** The dock frame between the header and the workers footer (#342): the left group, the center column, then the right group, each side
  * group running the frame's full height. There is no bottom group since redesign 05. A panel that changes side lands in another group and
  * remounts. Each group gets its side's open flag and a close for that side (#452). */
-export function DockFrame({ layout, shown, panels, children, onActivate, onMove, onResize, onClose }: DockFrameProps) {
+export function DockFrame({ layout, shown, panels, children, onActivate, onResize, onClose }: DockFrameProps) {
   const frame = useRef<HTMLDivElement>(null); // left and right sizes are percent of its width
   const group = (side: Side, measure: RefObject<HTMLElement | null>): ReactNode => (
     <DockGroup
       side={side} size={layout.sizes[side]} panels={panels.filter((panel) => layout.docks[panel.id] === side)} active={shown[side]}
-      open={layout.open[side]} measure={measure} onActivate={onActivate} onMove={onMove}
+      open={layout.open[side]} measure={measure} onActivate={onActivate}
       onResize={(size) => onResize(side, size)} onClose={() => onClose(side)}
     />
   );

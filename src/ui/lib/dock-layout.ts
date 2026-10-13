@@ -1,6 +1,6 @@
 // Where each main window panel docks, how big each side is and which sides are open (#342, #452): per-viewer UI state, as #251's and #341's
 // layouts were, kept in the view state (#484) and never a setting. Anything unreadable or out of range falls back to the defaults whole, the shape #342
-// wrote (its terminal flag, no per-side flags), one from before #456 (no Automação) and one with Automação or Atividades off the left (#458)
+// wrote (its terminal flag, no per-side flags), one from before #456 (no Automação), one with Automação or Atividades off the left (#458) and one with Detalhes off the right (#295)
 // included: there is one user, so no migration. Which tab each group shows is not stored: it follows what the user last opened. The panel keys
 // live here too (#452): they name a side, not a panel. There is no bottom side since redesign 05: a layout that docks a panel there reads as
 // the defaults. There is no terminal panel since redesign 07: a run is a tab of its activity's center. Each view keeps its own sizes and open
@@ -18,6 +18,7 @@ export type ViewId = 'activities' | 'automation';
 export const VIEWS: readonly ViewId[] = ['activities', 'automation'];
 /** One view's sides as DockFrame draws them (#821). sizes: percent of the frame's width. open: whether each side's panel shows (#452). */
 export interface ViewLayout { docks: Record<PanelId, Side>; sizes: Record<Side, number>; open: Record<Side, boolean> }
+// docks stays though every panel is fixed (#295): DockFrame, shownBySide, use-dock and MainDock place the panels by it
 /** What the view state keeps (#821): where each panel docks, shared by the views, and each view's own sizes and open flags. */
 export interface DockLayout { docks: Record<PanelId, Side>; sizes: Record<ViewId, Record<Side, number>>; open: Record<ViewId, Record<Side, boolean>> }
 /** A change to one side (#821): its open flag or its size. */
@@ -56,10 +57,6 @@ function roomFor(layout: DockLayout, views: readonly ViewId[], side: Side): numb
   return Math.min(...views.filter((view) => layout.open[view][other]).map((view) => 100 - CENTER_MIN - layout.sizes[view][other]));
 }
 
-// A locked panel (#458) stays where it is: the same layout back
-export const moveTo = (layout: DockLayout, panel: PanelId, side: Side): DockLayout =>
-  (isLocked(panel) ? layout : { ...layout, docks: { ...layout.docks, [panel]: side } });
-
 /** One view's flat layout (#821): the shared docks with that view's sizes and open flags, the shape DockFrame and shownBySide read. */
 export const sideOf = (layout: DockLayout, view: ViewId): ViewLayout => ({ docks: layout.docks, sizes: layout.sizes[view], open: layout.open[view] });
 
@@ -87,7 +84,6 @@ export const syncSide = (layout: DockLayout, from: ViewId, side: Side): DockLayo
   withSide(withSide(layout, from, side, { open: layout.open[from][side] }, false), from, side, { size: layout.sizes[from][side] }, false);
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
-const isSide = (value: unknown): value is Side => SIDES.some((side) => side === value);
 const inBounds = (value: unknown, min: number, max: number): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 
@@ -114,8 +110,9 @@ function viewsOf<T>(value: unknown, isValue: SideCheck<T>): Record<ViewId, Recor
 function parseLayout(value: unknown): DockLayout | undefined {
   if (!isObject(value) || !isObject(value.docks)) return undefined;
   const { automation, activities, detail } = value.docks; // a stored console (before redesign 05) or terminal side (before redesign 07) is ignored
-  // Automação and Atividades are locked to the left (#458): a layout with either elsewhere is not one writeDockLayout wrote since
-  if (automation !== 'left' || activities !== 'left' || !isSide(detail)) return undefined;
+  // Every panel is fixed (#458, #295): Automação and Atividades on the left, Detalhes on the right; a layout with one elsewhere is not one
+  // writeDockLayout wrote since, and reads as the defaults whole (one user, no migration)
+  if (automation !== 'left' || activities !== 'left' || detail !== 'right') return undefined;
   const sizes = viewsOf(value.sizes, isSize);
   const open = viewsOf(value.open, isFlag);
   return sizes && open ? { docks: { automation, activities, detail }, sizes, open } : undefined;
