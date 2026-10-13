@@ -53,14 +53,15 @@ function routed(state: State, task: Task, transition: Transition, tries: Record<
   return withActivity(born.state, { ...rest, ...(kept ? { tries } : {}), ...(log.length > 0 ? { tryLog: log } : {}), via: transitionKey(transition) });
 }
 
-// Into `to` with a fresh entry, or out on end. A loop to its own stage is no new entry: `after`, the pin and the entry stay
-function moveOn(state: State, task: Task, transition: Transition, end: EndOf, effects: Effect[]): Advanced {
+// Into `to` with a fresh entry, or out on end. A loop to its own stage is no new entry: `after`, the pin and the entry stay. No end: an epic's
+// move (#213), which hands over nothing, since no run of its own would read it
+function moveOn(state: State, task: Task, transition: Transition, end: EndOf | undefined, effects: Effect[]): Advanced {
   if (transition.to === END) return { ...left(state, task, effects), transition };
   const next = stageOf(state.stages, transition.to);
   if (next === undefined) return { ...held(state, task, effects), transition };
   const moved = next.name === task.stage ? task : enter(task, next);
   const entered = settleEntries(state.tasks, withTask(state, moved));
-  const handover = handoverOf(entered, moved, transition, next, end);
+  const handover = end === undefined ? undefined : handoverOf(entered, moved, transition, next, end);
   return { state: handover === undefined ? entered : withHandover(entered, moved, handover), moved, next, effects, transition, ...(handover === undefined ? {} : { handover }) };
 }
 
@@ -125,8 +126,8 @@ function logged(advanced: Advanced, task: Task, record: TryRecord): Advanced {
 }
 
 // A transition past its count (#915: take's and a retry's): its sources written in order, as onFinish was (#286, #515), a leaving action
-// holding the task until the source answers; then the arrow and the tries on the activity, and the move
-function pass(state: State, task: Task, transition: Transition, end: EndOf, tries: Record<string, number>): Advanced {
+// holding the task until the source answers; then the arrow and the tries on the activity, and the move. No end: an epic's (#213)
+function pass(state: State, task: Task, transition: Transition, end: EndOf | undefined, tries: Record<string, number>): Advanced {
   const { task: written, effects } = sourceWrites(task, onSource(transition.sources, task.item.source));
   const marked = routed(state, written, transition, tries);
   if (written.leaving) return { ...held(marked, written, effects), transition };
@@ -146,6 +147,10 @@ export function take(state: State, task: Task, transition: Transition, end: EndO
   const n = tries[key] ?? 0;
   return n > (live?.tries?.[key] ?? 0) ? logged(advanced, task, tryRecord(state, task, transition, end, n)) : advanced;
 }
+
+/** A show epic through `transition` (#213): pass's source writes, its arrow and its move, with no try counted or recorded and no handover, as
+ * the epic runs nothing (a try limit would only halt it in a loop). A leaving action holds it until the source answers, as pass does. */
+export const follow = (state: State, task: Task, transition: Transition): Advanced => pass(state, task, transition, undefined, {});
 
 /** hive_done's result with its verdict (#134): `result.verdict = { name, evidence? }`, what {verdict} and the panel read. The evidence loses
  * its control characters, as the user's feedback does: it is rendered into prompts and may be typed into a live pty. */
