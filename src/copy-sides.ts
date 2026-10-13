@@ -23,7 +23,8 @@ const NO_DIRECTORY = 'esta atividade não tem diretório';
 const NOTICE_TAIL = 'Only the conversation came along: the files, the branch and the uncommitted changes it mentions stayed where they were. Read the code here before relying on what was said about it.';
 
 const localSide = (path: string, name: string): CopySide => ({ cwd: path, onDisk: true, transcriptCwds: [path], label: `the local checkout of ${name}` });
-const taskLabel = (task: { item: { id: string; title: string } }): string => `task ${task.item.id} (${task.item.title})`;
+// #191: a lean task before its first poll has no title
+const taskLabel = (task: { item: { id: string; title: string } }): string => (task.item.title === '' ? `task ${task.item.id}` : `task ${task.item.id} (${task.item.title})`);
 
 // A local record's session: its workspace's checkout (#587)
 function localSource(config: Pick<Config, 'comb'>, name: string, session: Session | undefined): { side: CopySide; session: Session } | Refusal {
