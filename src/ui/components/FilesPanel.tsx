@@ -23,7 +23,7 @@ import { type Activity, activityKey, isTask } from '@/lib/activities';
 import { ancestorsOf, buildTree, type TreeNode, type TreeRow, visibleRows } from '@/lib/file-tree';
 import { isMac } from '@/lib/shortcut-bindings';
 import { expandedOf, onTreeSelect, rememberExpanded, rememberFolder } from '@/lib/tree-place';
-import { fileStatus, folderStatuses, MARK_TEXT, marksWithLoaded, type TreeStatus } from '@/lib/tree-status';
+import { fileStatus, folderStatuses, MARK_TEXT, type TreeStatus } from '@/lib/tree-status';
 import { readView, writeView } from '@/lib/view-state';
 
 /** Which of the activity sidebar's two views shows (redesign 07). */
@@ -240,9 +240,9 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const { activity } = target;
   const tree = useTaskTree(activity.id, isShown);
   const ready = tree.status === 'ready' ? tree.tree : undefined;
-  const loaded = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
+  const { loaded, marks: nestedMarks } = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
   const root = ready?.root;
-  const marks = marksWithLoaded(ready?.marks ?? {}, loaded); // #1: a nested repository's marks count for its folders too
+  const marks = { ...ready?.marks, ...nestedMarks }; // #1, #289: a nested repository's marks count for its folders too, collapsed ones' included
   const rows = ready ? visibleRows(buildTree(ready.files, ready.marks, view.showHidden, ready.folders, ready.ignored, loaded), view.expanded) : [];
   const [selection, setSelection] = useState<TreeSelection>(NO_SELECTION);
   useSelectionPlace(activity.id, rows, selection, setSelection, onView);

@@ -64,3 +64,17 @@ test('a changed file read from a nested repository colours the folders above it,
   expect(nameOf('vendor/sub', 'sub')).toHaveClass('text-git-modified');
   expect(nameOf('vendor')).toHaveClass('text-git-modified');
 });
+
+test('a nested repository\'s folder keeps its colour after it collapses, and so does every folder above it (#289)', async () => {
+  const user = userEvent.setup();
+  render(side());
+  await user.dblClick(await screen.findByTitle('vendor'));
+  await user.dblClick(await screen.findByTitle('vendor/sub'));
+  await screen.findByTitle('vendor/sub/a.md');
+  await user.dblClick(screen.getByTitle('vendor/sub'));
+  expect(screen.queryByTitle('vendor/sub/a.md')).toBeNull();
+  expect(nameOf('vendor/sub', 'sub')).toHaveClass('text-git-modified');
+  await user.dblClick(screen.getByTitle('vendor'));
+  expect(screen.queryByTitle('vendor/sub')).toBeNull();
+  expect(nameOf('vendor')).toHaveClass('text-git-modified');
+});
