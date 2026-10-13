@@ -20,7 +20,7 @@ test('the pane draws the bar\'s totals, a 280px list (mark, dir muted, name, cou
   expect(callsTo(hive, 'GET', '/activities/a-I1/diff?scope=worktree')).toHaveLength(1);
   expect(bar()).toHaveTextContent('3 arquivos · +1 −1');
   expect(list()).toHaveClass('w-[280px]', 'border-r');
-  expect(rows()).toEqual(['Msrc/a.ts+1 −1', 'Mb.ts+0 −0', 'Aimg/logo.png']);
+  expect(rows()).toEqual(['Msrc/a.ts+1 −1', 'Mb.ts', 'Aimg/logo.png']);
   expect(within(list()).getByText('src/')).toHaveClass('text-muted-foreground');
   expect(within(list()).getByText('A')).toHaveClass('text-working');
   expect(within(list()).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'true');

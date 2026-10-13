@@ -118,3 +118,38 @@ test('a hunk with no function context keeps its @@ range (#853)', () => {
   render(inSessionsPane(PANE, <DiffFile file={bare} id="f1" layout="unified" collapsed={false} isReviewed={false} onToggle={vi.fn()} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />));
   expect(within(section()).getAllByRole('row').map(cells)[0]).toEqual(['@@ -1,2 +1,2 @@']);
 });
+
+const headerOf = (path: string): HTMLElement => screen.getByRole('region', { name: path }).querySelector('header') as HTMLElement;
+
+test('the card: 1px border, radius 8px; a 40px card header with the folder muted, the name semibold, 12px counts and abrir arquivo in ring (#853)', () => {
+  renderFile('unified');
+  expect(section()).toHaveClass('rounded-lg', 'border', 'overflow-clip');
+  const header = headerOf('src/a.ts');
+  expect(header).toHaveClass('h-10', 'bg-card', 'px-3.5', 'border-b');
+  expect(within(header).getByText('src/')).toHaveClass('text-muted-foreground');
+  expect(within(header).getByText('a.ts')).toHaveClass('font-semibold');
+  expect(within(header).getByText('+1').parentElement).toHaveClass('text-xs', 'tabular-nums');
+  expect(within(header).getByRole('button', { name: 'abrir arquivo' })).toHaveClass('text-ring');
+});
+
+test('revisado is an outline button holding a check square, empty while unreviewed and filled with ✓ once reviewed; aria-pressed follows (#853)', () => {
+  const ui = (isReviewed: boolean) => inSessionsPane(PANE, <DiffFile file={FILE} id="f1" layout="unified" collapsed={false} isReviewed={isReviewed} onToggle={vi.fn()} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />);
+  const { rerender } = render(ui(false));
+  const button = (): HTMLElement => screen.getByRole('button', { name: 'revisado' });
+  const check = (): Element | null => button().querySelector('[data-slot="reviewed-check"]');
+  expect(button()).toHaveAttribute('aria-pressed', 'false');
+  expect(check()?.textContent).toBe('');
+  expect(check()).toHaveClass('border-empty');
+  rerender(ui(true));
+  expect(button()).toHaveAttribute('aria-pressed', 'true');
+  expect(check()?.textContent).toBe('✓');
+  expect(check()).toHaveClass('bg-muted-foreground');
+});
+
+test('a collapsed card is its header alone, with no border under it; a rename keeps old → new whole (#853)', () => {
+  const renamed: FileDiff = { ...FILE, path: 'src/b.ts', oldPath: 'src/a.ts', status: 'renamed' };
+  render(inSessionsPane(PANE, <DiffFile file={renamed} id="f1" layout="unified" collapsed isReviewed={false} onToggle={vi.fn()} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />));
+  expect(headerOf('src/b.ts')).not.toHaveClass('border-b');
+  expect(within(screen.getByRole('region', { name: 'src/b.ts' })).queryAllByRole('row')).toEqual([]);
+  expect(screen.getByText('src/a.ts → src/b.ts')).toBeInTheDocument();
+});
