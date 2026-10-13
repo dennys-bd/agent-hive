@@ -464,3 +464,20 @@ test('the power buttons\' titles read as the spec writes them, in both languages
   ]);
   for (const gone of ['footer.shuttingDown', 'footer.cancelShutdown', 'shutdown.toggle']) assert.equal(gone in MESSAGES.en, false, gone);
 });
+
+test('the rules button\'s and panel\'s copy reads as the spec writes it, in both languages; the signal stays its raw state (#224)', () => {
+  const keys = [
+    'footer.rules.none', 'footer.rules.more', 'footer.rules.title', 'footer.rules.stage', 'footer.rules.signal',
+    'rules.panel.title', 'rules.panel.count', 'rules.panel.edit', 'rules.panel.close', 'rules.panel.binding', 'rules.panel.weaker', 'rules.panel.left', 'rules.panel.note',
+  ] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'nenhuma ativa', '{first} +{n}', 'valendo: {effects}', '{stage} {n}', 'sinal {signal}',
+    'regras de uso', '{n} regras · {fired} dispararam', 'editar…', 'fechar', 'valendo', 'disparou · menos restritiva', 'faltam {n}%',
+    'vale a regra mais restritiva que disparou, em qualquer medida.',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'none active', '{first} +{n}', 'in force: {effects}', '{stage} {n}', 'signal {signal}',
+    'usage rules', '{n} rules · {fired} fired', 'edit…', 'close', 'in force', 'fired · less restrictive', '{n}% to go',
+    'the most restrictive fired rule wins, in any measure.',
+  ]);
+});
