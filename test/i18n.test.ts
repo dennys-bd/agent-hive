@@ -511,3 +511,10 @@ test('the confirmations\' copy (#75): sentence-case titles with no question mark
   assert.deepEqual([MESSAGES.en['confirm.title.sleep'], MESSAGES.pt['confirm.title.sleep']], ['Sleep session', 'Dormir sessão']);
   assert.deepEqual([MESSAGES.en['confirm.title.cleanOrphans'], MESSAGES.pt['confirm.title.cleanOrphans']], ['Delete orphan worktrees', 'Apagar worktrees órfãs']);
 });
+
+test('the link confirm\'s copy (#75): a sentence-case title with no question mark, lowercase buttons; its own cancel is gone', () => {
+  const keys = ['link.confirm.title', 'link.confirm.trust', 'link.confirm.open'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), ['Open link', 'always trust {host}', 'open']);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['Abrir link', 'sempre confiar em {host}', 'abrir']);
+  assert.equal('link.confirm.cancel' in MESSAGES.en || 'link.confirm.cancel' in MESSAGES.pt, false);
+});

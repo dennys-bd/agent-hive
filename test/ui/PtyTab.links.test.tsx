@@ -46,7 +46,7 @@ test('the tab\'s xterm is created with the shared link handler: a trusted link o
   expect(open).toHaveBeenCalledWith('https://github.com/acme/r/pull/9');
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   act(() => handler.activate(new MouseEvent('click'), 'https://example.com/a', RANGE));
-  expect(screen.getByRole('alertdialog', { name: 'Abrir link?' })).toHaveTextContent('https://example.com/a');
+  expect(screen.getByRole('alertdialog', { name: 'Abrir link' })).toHaveTextContent('https://example.com/a');
   expect(open).toHaveBeenCalledTimes(1);
 });
 
