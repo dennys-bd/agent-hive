@@ -17,6 +17,7 @@ import { ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
 import { TreeSection } from '@/components/TreeSection';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
+import { TaskDescription } from '@/components/DescriptionCopy';
 import { StartFailure } from '@/components/StartFailure';
 import { Button } from '@/components/ui/button';
 import { useTaskFiles } from '@/hooks/use-task-files';
@@ -130,7 +131,7 @@ function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask
       <ResultsList task={task} files={files} />
       {!page && (
         <div className="flex flex-col gap-3.5 border-t pt-3.5 text-[13px] leading-5">
-          {item.body.trim() === '' ? <p className="text-muted-foreground">{t('detail.noBody')}</p> : <IssueMarkdown text={item.body} />}
+          <TaskDescription body={item.body} />
           <Comments comments={comments} locale={locale} />
         </div>
       )}
