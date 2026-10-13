@@ -1,7 +1,8 @@
-import { type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
+import { type RefObject, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { type AnchorEntry, isAnchorList, type Pin, type Rect } from '../../design-anchor.js';
 import type { DesignTarget } from '../../types.js';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
+import { type DesignState, isOnState } from '@/lib/design-comments';
 
 // The design pane's comment canvas (#114): the bridge's side of the comment mode (#112), and the state the pane's keys and the bridge's
 // key message share, so both paths reach one owner.
@@ -33,10 +34,10 @@ const isPinList = (value: unknown): value is Pin[] => Array.isArray(value) && va
   return typeof id === 'string' && (rect === null || isTarget({ kind: 'area', rect }));
 });
 
-/** Every comment of the file, open and resolved, as the bridge's anchors (#114): each one gets a rect, so every panel item knows whether its
- *  target is gone. What is drawn is filtered after. */
-export const anchorsOf = (model: DesignCommentsModel | undefined): AnchorEntry[] =>
-  (model === undefined ? [] : [...model.open, ...model.resolved].map((c) => ({ id: c.id, anchor: c.anchor })));
+/** The file's comments made on the pane's state, open and resolved, as the bridge's anchors (#114, #241): a pin never points at an element
+ *  that moved or is gone in another state. Each gets a rect, so its panel item knows whether its target is gone; what is drawn is filtered after. */
+export const anchorsOf = (model: DesignCommentsModel | undefined, state: DesignState): AnchorEntry[] =>
+  (model === undefined ? [] : [...model.open, ...model.resolved].filter((c) => isOnState(c.anchor, state)).map((c) => ({ id: c.id, anchor: c.anchor })));
 
 export interface FrameEvents { onAnchor(target: DesignTarget): void; onKey(key: string): void }
 /** reload: the frame's ready (#112), as the bridge keeps nothing across a load. scrollTo: an item's click. */
@@ -50,11 +51,19 @@ const pinElement = (canvas: HTMLElement | null, id: string): HTMLElement | undef
 export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas: RefObject<HTMLElement | null>, anchors: readonly AnchorEntry[], isCommenting: boolean, events: FrameEvents): PinsBridge {
   const [rects, setRects] = useState<PinRects>(() => new Map());
   const scrolling = useRef<string | undefined>(undefined);
+  const [scrollRequest, setScrollRequest] = useState<{ id: string }>();
   const onAnchor = useEffectEvent(events.onAnchor);
   const onKey = useEffectEvent(events.onKey);
   const list = JSON.stringify(anchors); // a new array on every render: its text says whether the list changed
   useEffect(() => post(frame.current, { type: 'anchors', anchors: JSON.parse(list) as unknown }), [frame, list]);
   useEffect(() => post(frame.current, { type: 'comment-mode', on: isCommenting }), [frame, isCommenting]);
+  // After the anchors effect above: a comment that switched the pane's state reaches the bridge's anchors before its scroll-to (#241). A new
+  // object per click, so the same item scrolls again
+  useEffect(() => {
+    if (scrollRequest === undefined) return;
+    scrolling.current = scrollRequest.id;
+    post(frame.current, { type: 'scroll-to', id: scrollRequest.id });
+  }, [frame, scrollRequest]);
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
       const data = bridgeData(event, frame.current);
@@ -77,11 +86,23 @@ export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas
     post(frame.current, { type: 'anchors', anchors });
     post(frame.current, { type: 'comment-mode', on: isCommenting });
   };
-  const scrollTo = (id: string): void => {
-    scrolling.current = id;
-    post(frame.current, { type: 'scroll-to', id });
-  };
-  return { rects, reload, scrollTo };
+  return { rects, reload, scrollTo: (id) => setScrollRequest({ id }) };
+}
+
+// The comments panel's open state (#241): one for every design pane, closed when the Hive opens, then the last choice wherever it came
+// from (the bar's button, the panel's ×, a pin). In memory only, as the session in focus (lib/session-focus.ts)
+let isPanelOpen = false;
+const panelListeners = new Set<() => void>();
+const subscribePanel = (listener: () => void): (() => void) => {
+  panelListeners.add(listener);
+  return () => { panelListeners.delete(listener); };
+};
+
+/** Shows or hides the comments panel of every design pane (#241). */
+export function showCommentsPanel(shown: boolean): void {
+  if (isPanelOpen === shown) return;
+  isPanelOpen = shown;
+  for (const listener of panelListeners) listener();
 }
 
 /** What a design pane's comments show and do (#114). takeKey: c and Escape, from the pane's keydown or the bridge's key message; true: taken. */
@@ -98,7 +119,7 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
   const [target, setTarget] = useState<DesignTarget>();
   const [selection, setSelection] = useState<CommentSelection>();
   const [tab, setTab] = useState<CommentTab>('open');
-  const [isPanelShown, setPanelShown] = useState(true); // shown at mount; the mounted pane's own, never stored (#113)
+  const isPanelShown = useSyncExternalStore(subscribePanel, () => isPanelOpen);
   // Either way drops the composer. A saved comment leaves the mode on: several in a row is the common case
   const toggle = (): void => {
     setCommenting((on) => !on);
@@ -115,11 +136,11 @@ export function useCommentCanvas(model: DesignCommentsModel | undefined): Commen
   // A pin shows its item: the panel shown, on the tab that lists it
   const selectPin = (id: string): void => {
     setTab(model?.resolved.some((c) => c.id === id) ? 'resolved' : 'open');
-    setPanelShown(true);
+    showCommentsPanel(true);
     setSelection({ id, isFromPin: true });
   };
   return {
-    isCommenting, target, selection, tab, isPanelShown, toggle, takeKey, selectPin, setTab, setPanelShown,
+    isCommenting, target, selection, tab, isPanelShown, toggle, takeKey, selectPin, setTab, setPanelShown: showCommentsPanel,
     aim: (next) => { if (isCommenting) setTarget(next); }, // a new anchor re-aims an open composer, its text kept
     close: () => setTarget(undefined),
     closeIf: (aimed) => setTarget((now) => (now === aimed ? undefined : now)), // a slow save must not close a composer re-aimed meanwhile

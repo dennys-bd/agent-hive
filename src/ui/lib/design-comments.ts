@@ -1,6 +1,7 @@
 // The design pane's comments (#113): a design file's drafts and conversations as its panel lists them, each in one of the handoff's five
 // states derived from #111's stored fields, and the session enviar sends them to. Pure.
-import { type DesignAnchor, type DesignTarget, isDesignAnchor, NEW_SESSION, type ReviewFile, type ReviewMessage, type ReviewThread, type ThreadAnchor, type UnpinnedDesignAnchor } from '../../types.js';
+import { sameState, type TweakSchema } from '../../design-tweaks.js';
+import { type DesignAnchor, type DesignTarget, type DesignTweakValue, type DesignViewport, isDesignAnchor, NEW_SESSION, type ReviewFile, type ReviewMessage, type ReviewThread, type ThreadAnchor, type UnpinnedDesignAnchor } from '../../types.js';
 import { t } from '../i18n.js';
 
 export type CommentState = 'draft' | 'agent' | 'replied' | 'agentDone' | 'resolved';
@@ -17,6 +18,13 @@ export const clockOf = (at: Date): string => at.toLocaleTimeString([], { hour: '
 
 /** A design's own theme (#109): the frame's, apart from the Hive's. */
 export type DesignTheme = UnpinnedDesignAnchor['theme'];
+
+/** The pane's state a comment is made on (#241): what its pin needs to be drawn, and what choosing it reopens. */
+export interface DesignState { viewport: DesignViewport; theme: DesignTheme; schema: TweakSchema; tweaks: Readonly<Record<string, DesignTweakValue>> }
+
+/** True when `anchor` was made on `state` (#241): its viewport, theme and tweaks; a tweak the block no longer has is ignored. */
+export const isOnState = (anchor: UnpinnedDesignAnchor, state: DesignState): boolean =>
+  anchor.viewport === state.viewport && anchor.theme === state.theme && sameState(state.schema, anchor.tweaks, state.tweaks);
 
 /** A comment's target as the panel and the composer head it (#113, #114): an element's selector, or an area's size. */
 export const targetOf = (anchor: DesignTarget): string =>

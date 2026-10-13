@@ -35,7 +35,7 @@ function harness(): { sent: () => unknown[]; flush: () => void } {
   };
 }
 
-test('the bridge posts ready and the height on load, then each new height, and applies a theme only from its parent in the protocol\'s shape (#108)', () => {
+test('the bridge posts ready and the height and width on load, then each new size, and applies a theme only from its parent in the protocol\'s shape (#108)', () => {
   let observed: () => void = () => {};
   vi.stubGlobal('ResizeObserver', class {
     constructor(callback: () => void) { observed = callback; }
@@ -44,15 +44,25 @@ test('the bridge posts ready and the height on load, then each new height, and a
   });
   const { sent } = harness();
   const root = document.documentElement;
-  const height = (px: number): void => { Object.defineProperty(root, 'scrollHeight', { configurable: true, value: px }); };
-  height(640);
+  const size = (height: number, width: number, client = 1280): void => {
+    Object.defineProperty(root, 'scrollHeight', { configurable: true, value: height });
+    Object.defineProperty(root, 'scrollWidth', { configurable: true, value: width });
+    Object.defineProperty(root, 'clientWidth', { configurable: true, value: client });
+  };
+  size(640, 1280);
   start();
   window.dispatchEvent(new Event('load'));
-  height(900);
+  size(900, 1280);
   observed();
-  observed(); // the same height: nothing new
+  observed(); // the same size: nothing new
+  size(900, 1440); // a window screen wider than the viewport (#241)
+  observed();
+  size(900, 1440, 768); // the frame narrowed: the same overflow is news again
+  observed();
   expect(sent()).toEqual([
-    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640 }, { hive: 'design', type: 'size', height: 900 },
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640 }, // content that fits reports no width: the frame's own is not a wish
+    { hive: 'design', type: 'size', height: 900 }, { hive: 'design', type: 'size', height: 900, width: 1440 },
+    { hive: 'design', type: 'size', height: 900, width: 1440 },
   ]);
   message({ hive: 'design', type: 'theme', theme: 'light' }, null); // not from the parent
   message({ hive: 'design', type: 'theme', theme: 'blue' });
@@ -199,4 +209,44 @@ test('c and Escape are forwarded, Escape\'s default prevented only in comment mo
   expect(sent()).toEqual([
     { hive: 'design', type: 'key', key: 'c' }, { hive: 'design', type: 'key', key: 'Escape' }, { hive: 'design', type: 'key', key: 'Escape' },
   ]);
+});
+
+test('on load, after ready, the bridge posts the hv-tweaks block raw, or a json error when it does not parse; no block, no tweaks message (#241)', () => {
+  const { sent } = harness();
+  const loadWith = (html: string): unknown[] => {
+    for (const stop of stops) stop();
+    stops = [];
+    document.body.innerHTML = html;
+    start();
+    const before = sent().length;
+    window.dispatchEvent(new Event('load'));
+    return sent().slice(before).filter((data) => (data as { type: string }).type !== 'size');
+  };
+  const block = (text: string): string => `<script type="application/json" id="hv-tweaks">${text}</script>`;
+  expect(loadWith(block('{"layout":{"options":["board","list"],"default":"board"}}'))).toEqual([
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: { layout: { options: ['board', 'list'], default: 'board' } } },
+  ]);
+  expect(loadWith(block('{"layout":'))).toEqual([{ hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: null, error: 'json' }]);
+  expect(loadWith('<p>no block</p>')).toEqual([{ hive: 'design', type: 'ready' }]);
+});
+
+test('a tweak from the parent sets data-tweak-<name> on the root and fires hv:tweak; a bad name, a bad value or another source changes nothing (#241)', () => {
+  harness();
+  start();
+  const root = document.documentElement;
+  const fired = vi.fn();
+  window.addEventListener('hv:tweak', fired);
+  design({ type: 'tweak', name: 'layout', value: 'board' });
+  design({ type: 'tweak', name: 'auto', value: true });
+  design({ type: 'tweak', name: 'gap', value: 12.5 });
+  design({ type: 'tweak', name: 'Bad', value: 'x' });
+  design({ type: 'tweak', name: 'a b', value: 'x' });
+  design({ type: 'tweak', name: 'ok', value: { a: 1 } });
+  design({ type: 'tweak', name: 'nan', value: Number.NaN });
+  message({ hive: 'design', type: 'tweak', name: 'layout', value: 'list' }, null);
+  expect([root.getAttribute('data-tweak-layout'), root.getAttribute('data-tweak-auto'), root.getAttribute('data-tweak-gap')]).toEqual(['board', 'true', '12.5']);
+  expect([root.hasAttribute('data-tweak-ok'), root.hasAttribute('data-tweak-nan')]).toEqual([false, false]);
+  expect(fired.mock.calls.map(([event]) => (event as CustomEvent).detail)).toEqual([{ name: 'layout', value: 'board' }, { name: 'auto', value: true }, { name: 'gap', value: 12.5 }]);
+  window.removeEventListener('hv:tweak', fired);
+  for (const name of ['layout', 'auto', 'gap']) root.removeAttribute(`data-tweak-${name}`);
 });

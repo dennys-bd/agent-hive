@@ -129,6 +129,7 @@ Technical checks of what is measurable. Report; do not fix.
 - No fixed widths that break narrow screens.
 - Colours come from tokens; dark and light themes both keep contrast.
 - Every state the spec names is present.
+- Every option of every tweak renders without clipping or overlap.
 - No URL or absolute path outside the screen's folder (`## The .hv.html format`).
 - The screen is specific to this product, not interchangeable with another.
 - Rank each finding: what breaks the task, AA compliance or the layout is
@@ -214,43 +215,95 @@ frame, with no network.
   path without `..`. No `http:`, `https:`, `file:`, `//` or absolute path in
   any attribute, `url(`, `image-set(`, `@import` or `import`. Fonts are a system stack, or the design
   system's font with a system fallback; never a font CDN.
-- States are sections of the one file, one after another: one `<section>`
-  per state (empty, loading, error, filled…), `id="state-<name>"`, headed by
-  the state's name, so the pane shows them together and each state is easy
-  to find.
+- One screen's combinations (a layout, an option on or off, a count) are
+  tweaks of the file ("Tweaks" below); states meant to be seen side by side
+  are sections: one `<section>` per state (empty, loading, error, filled…),
+  `id="state-<name>"`, headed by the state's name.
+- A window screen (a fixed-size app window) is drawn whole at its natural
+  size, in its section: no card, border or padding around it, no `overflow`
+  that clips or scrolls it. The design pane widens its frame to it; only its
+  canvas scrolls.
+- Theme tokens live under `:root` (dark) and `:root[data-theme="light"]`; a
+  new screen starts from the skeleton ("The skeleton" below).
 - An alternative direction the user asked for is its own file,
   `<screen>.<variant>.hv.html` (`a`, `b`…).
-- Lays out at 1280, 768 and 390 px wide.
+- Lays out at 1280, 768 and 390 px wide; a window screen keeps its own width.
 - Real copy in the product's own words and languages; never lorem ipsum.
 - Scripts only show states and interactions: no `fetch`, `XMLHttpRequest`
   or `WebSocket`.
 - No secret, token or absolute home path in a screen or the handoff: the
   handoff may be posted to a public issue.
 
-### The check
+### Tweaks
 
-Run from the docs repository, `<folder>` the design folder, quoted. Both
-commands print nothing:
+A screen declares its tweaks in one block in `<head>`:
 
-```bash
-grep -nEi "(src|srcset|href|action|formaction|poster|data)\s*=\s*[\"']?\s*(https?:|file:|//|/)|(url|image-set)\(\s*[\"']?\s*(https?:|file:|//|/)|@import\s+[\"']?\s*(https?:|file:|//|/)|import\s*\(?\s*[\"'](https?:|//)|\.\.[/\\]|http-equiv\s*=\s*[\"']?refresh|sendBeacon|EventSource|window\.open|fetch\s*\(|XMLHttpRequest|WebSocket" "<folder>"/*.hv.html
-find "<folder>" -type l
+```html
+<script type="application/json" id="hv-tweaks">
+{
+  "layout": { "options": ["board", "list"], "default": "board", "group": "view" },
+  "auto": { "type": "boolean", "default": true },
+  "title": { "type": "text", "default": "Fluxo" },
+  "gap": { "type": "number", "default": 8, "min": 0, "max": 24, "step": 4 }
+}
+</script>
 ```
 
-Each file also holds `<!doctype html>`, `<html`, `<head`, `</head>`, `<body`,
-`</body>` and `</html>`, in that order.
+- Names match `[a-z][a-z0-9-]*`; at most 32 tweaks.
+- An enum is `{options, default}`, its options unique, non-empty strings.
+  Boolean, text (up to 200 characters) and number (`min`, `max`, `step`
+  optional) carry a `type`. Every default fits its own definition; `group`
+  names the section of the pane's tweaks panel a tweak sits in.
+- The design pane shows a control per tweak, sets each value on `<html>` as
+  `data-tweak-<name>` (booleans `"true"` or `"false"`, numbers as decimals),
+  then fires `hv:tweak` on `window` with `{name, value}`.
+- CSS reacts by attribute: `:root[data-tweak-layout="list"] .board { display: none; }`.
+  A script listens to `hv:tweak` and also reads the attribute at load.
+- The default state needs no attribute: without the pane (a screenshot)
+  nothing sets them.
+
+### The skeleton
+
+`${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` holds the required tags,
+an empty `hv-tweaks` block, the theme tokens under `:root` and
+`:root[data-theme="light"]`, and one section. Copy it for a new screen; with
+a design system, its tokens replace the skeleton's.
+
+### The check
+
+Run from the docs repository, `<folder>` the design folder, quoted. It prints
+nothing and exits 0 when the folder passes:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"
+```
+
+It reports, one line each: what reaches outside the folder or the network
+(`http:`, `https:`, `file:`, `//` or an absolute path in an attribute,
+`url(`, `image-set(`, `@import` or `import`; `..`; a refresh; `fetch`,
+`XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `window.open`);
+a symbolic link; `<!doctype html>`, `<html`, `<head`, `</head>`, `<body`,
+`</body>` or `</html>` missing or out of order; an `hv-tweaks` block that is
+not JSON or breaks "Tweaks".
 
 ### Seeing it rendered
 
 Only after the check passes, and only when a browser is at hand: a browser
-tool the session offers, or a Chromium on `PATH`
-(`command -v chromium chromium-browser google-chrome`). Screenshot into a
-`mktemp -d` folder outside the repositories, with no network and a throwaway
-profile, never `--no-sandbox`:
+tool the session offers, else the first found of a Chromium on `PATH`
+(`command -v chromium chromium-browser google-chrome`), the system Chrome
+(`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` on macOS),
+and Playwright's newest `chromium-*` (under `PLAYWRIGHT_BROWSERS_PATH`, else
+`~/Library/Caches/ms-playwright` on macOS, `~/.cache/ms-playwright` on Linux).
+Screenshot into a `mktemp -d` folder outside the repositories, with no
+network and a throwaway profile, never `--no-sandbox`:
 
 ```bash
-chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolver-rules="MAP * ~NOTFOUND" --window-size=390,2400 --screenshot="$tmp/<screen>-390.png" "file://<absolute path>"
+chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolver-rules="MAP * ~NOTFOUND" --proxy-server=http://127.0.0.1:9 --proxy-bypass-list="<-loopback>" --window-size=390,2400 --screenshot="$tmp/<screen>-390.png" "file://<absolute path>"
 ```
+
+Screenshot each enum option once, and each boolean the other way: copy the
+screen into the temporary folder with `data-tweak-<name>="<value>"` added to
+its `<html>` tag, one copy per value, the other tweaks at their default.
 
 One round at 1280 and 390 px, then delete the folder. Without a browser, say
 the screens were not seen rendered.

@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { fileComments, nextPin, recipientOf, targetOf, threadState } from '@/lib/design-comments';
+import { fileComments, isOnState, nextPin, recipientOf, targetOf, threadState } from '@/lib/design-comments';
 import { EMPTY_REVIEW } from '@/lib/review-view';
+import { parseTweaks } from '../../src/design-tweaks';
 import { NEW_SESSION } from '../../src/types';
-import { AT, PATH, REVIEW } from './design-review';
+import { area, AT, PATH, REVIEW } from './design-review';
 import { SESSION } from './diff-harness';
 
 const ids = (items: { id: string }[]): string[] => items.map((item) => item.id);
@@ -44,4 +45,14 @@ test('targetOf heads an element by its selector and an area by its rounded size;
   expect(targetOf({ kind: 'area', rect })).toBe('área · 320×180');
   expect(nextPin(fileComments(REVIEW, PATH))).toBe(7); // T6 is the highest, resolved ones included
   expect(nextPin({ open: [], resolved: [] })).toBe(1);
+});
+
+test('isOnState: a comment is on the pane\'s state when its viewport, theme and settled tweaks match; a tweak the block no longer has is ignored (#241)', () => {
+  const parsed = parseTweaks({ layout: { options: ['board', 'list'], default: 'board' } });
+  if (!parsed.ok) throw new Error(parsed.reason);
+  const state = { viewport: 1280, theme: 'dark', schema: parsed.schema, tweaks: { layout: 'list' } } as const;
+  expect(isOnState(area(1, PATH, { tweaks: { layout: 'list', gone: 'x' } }), state)).toBe(true);
+  expect(isOnState(area(1, PATH), state)).toBe(false); // {}: the default, board
+  expect(isOnState(area(1, PATH, { viewport: 390, tweaks: { layout: 'list' } }), state)).toBe(false);
+  expect(isOnState(area(1, PATH, { theme: 'light', tweaks: { layout: 'list' } }), state)).toBe(false);
 });

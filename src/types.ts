@@ -838,8 +838,10 @@ export const DESIGN_VIEWPORTS = [1280, 768, 390] as const;
 export type DesignViewport = (typeof DESIGN_VIEWPORTS)[number];
 /** What a design comment points at (#111): an element, with its selector and text, or an area. */
 export type DesignTarget = { kind: 'element'; selector: string; text: string; rect: DesignRect } | { kind: 'area'; rect: DesignRect };
-/** A design comment's place as a request carries it (#111): everything but the pin, which only the server sets. */
-export type UnpinnedDesignAnchor = { path: string; viewport: DesignViewport; theme: 'dark' | 'light' } & DesignTarget;
+/** A tweak's value (#241): an enum's option or a text, a number, a boolean. */
+export type DesignTweakValue = string | number | boolean;
+/** A design comment's place as a request carries it (#111): everything but the pin, which only the server sets; tweaks: the values it was made on (#241). */
+export type UnpinnedDesignAnchor = { path: string; viewport: DesignViewport; theme: 'dark' | 'light'; tweaks: Record<string, DesignTweakValue> } & DesignTarget;
 /** Where a design comment sits (#111): an element or an area of a .hv.html screen; pin is set by the server. */
 export type DesignAnchor = UnpinnedDesignAnchor & { pin: number };
 /** What a review conversation anchors at (#111): lines of a diff, or a design. Only a design anchor has a kind. */

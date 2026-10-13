@@ -1,6 +1,7 @@
 import { sessionsOf } from './tasks.js';
 import { isScope } from './diff.js';
-import { DESIGN_VIEWPORTS, type DesignRect, type DesignTarget, type DesignViewport, type LineAnchor, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor, type UnpinnedDesignAnchor } from './types.js';
+import { TWEAK_NAME, TWEAKS_MAX, TWEAK_TEXT_MAX } from './design-tweaks.js';
+import { DESIGN_VIEWPORTS, type DesignRect, type DesignTarget, type DesignTweakValue, type DesignViewport, type LineAnchor, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor, type UnpinnedDesignAnchor } from './types.js';
 
 // What the review routes and hive_reply take from a request (#591): checked here, stored as data, never passed to git or the disk.
 
@@ -68,13 +69,25 @@ function targetOf(raw: Record<string, unknown>): DesignTarget | undefined {
   return typeof text === 'string' && text.length <= ELEMENT_TEXT_MAX ? { kind: 'element', selector, text, rect } : undefined;
 }
 
+const isTweakValue = (value: unknown): value is DesignTweakValue =>
+  typeof value === 'boolean' || (typeof value === 'string' && value.length <= TWEAK_TEXT_MAX) || isCoord(value);
+
+// The tweaks a design comment was made on (#241): names the frame could hold, plain values, a bounded count; data the agent reads
+function tweaksOf(raw: unknown): Record<string, DesignTweakValue> | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const entries = Object.entries(raw);
+  if (entries.length > TWEAKS_MAX || !entries.every(([name, value]) => TWEAK_NAME.test(name) && isTweakValue(value))) return undefined;
+  return Object.fromEntries(entries) as Record<string, DesignTweakValue>;
+}
+
 /** Where a design comment sits (#111), without its pin: a pin in the body is ignored, the server sets it. */
 export function parseDesignAnchor(raw: unknown): UnpinnedDesignAnchor | undefined {
   const body = (raw ?? {}) as Record<string, unknown>;
   const { path, viewport, theme } = body;
   const target = targetOf(body);
-  if (!isPath(path) || !isViewport(viewport) || (theme !== 'dark' && theme !== 'light') || target === undefined) return undefined;
-  return { path, viewport, theme, ...target };
+  const tweaks = tweaksOf(body.tweaks);
+  if (!isPath(path) || !isViewport(viewport) || (theme !== 'dark' && theme !== 'light') || target === undefined || tweaks === undefined) return undefined;
+  return { path, viewport, theme, tweaks, ...target };
 }
 
 /** A conversation's anchor (#111): a design one when the body carries a kind, else #591's lines. */

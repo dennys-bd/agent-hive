@@ -17,12 +17,13 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the ten agents and the two references, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the ten agents and the two references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
-  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md'], 'reference/ holds the conventions every new-* skill reads first and the design rules the designer and its reviewer read');
+  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, and the skeleton of a screen');
+  assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
   for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md'], `skills/${skill} is one file`);
@@ -51,6 +52,9 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
     join(PLUGIN, 'CREDITS.md'),
     join(PLUGIN, 'reference', 'conventions.md'),
     join(PLUGIN, 'reference', 'design.md'),
+    join(PLUGIN, 'reference', 'skeleton.hv.html'),
+    join(PLUGIN, 'scripts', 'check-hv.mjs'),
+    join(PLUGIN, 'scripts', 'import-dc.mjs'),
     ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md')),
     ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
   ];
@@ -145,4 +149,15 @@ test('the design agents read the references through the plugin root variable, si
     const text = await readFile(join(PLUGIN, 'agents', `${agent}.md`), 'utf8');
     assert.ok(text.includes(`${PLUGIN_ROOT}/reference/design.md`), `agents/${agent} does not read the design rules from the plugin root`);
   }
+});
+
+test('the design check is the plugin\'s script, the designer imports through import-dc.mjs and starts from the skeleton, and the reviewer runs the check (#241)', async () => {
+  const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
+  assert.ok(design.includes(`node "${PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"`), 'design.md runs the check script');
+  assert.doesNotMatch(design, /grep -nEi/, 'the grep check is gone');
+  for (const heading of ['### Tweaks', '### The skeleton']) assert.ok(design.includes(heading), `design.md has ${heading}`);
+  const designer = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  for (const part of [`${PLUGIN_ROOT}/scripts/import-dc.mjs`, `${PLUGIN_ROOT}/reference/skeleton.hv.html`, '| import |']) assert.ok(designer.includes(part), `designer.md names ${part}`);
+  const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
+  assert.ok(reviewer.includes(`${PLUGIN_ROOT}/scripts/check-hv.mjs`), 'the reviewer may run the check script');
 });

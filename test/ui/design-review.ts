@@ -6,7 +6,7 @@ import { type FakeHive, SESSION } from './diff-harness';
 // A design file's comments in each of the handoff's five states (#113), plus a draft on another design and a line draft, which the panel leaves out
 export const PATH = 'design/Landing.hv.html';
 export const AT = (minute: number): string => `2026-10-12T14:${String(minute).padStart(2, '0')}:00.000Z`;
-export const area = (pin: number, path = PATH): DesignAnchor => ({ kind: 'area', path, viewport: 1280, theme: 'dark', rect: { x: 0, y: 0, width: 320, height: 180 }, pin });
+export const area = (pin: number, path = PATH, state: Partial<Pick<DesignAnchor, 'viewport' | 'theme' | 'tweaks'>> = {}): DesignAnchor => ({ kind: 'area', path, viewport: 1280, theme: 'dark', tweaks: {}, rect: { x: 0, y: 0, width: 320, height: 180 }, pin, ...state });
 const LINES: ReviewAnchor = { scope: 'worktree', path: PATH, side: 'new', start: 1, end: 1, excerpt: ['x'] };
 const you = (id: string, minute: number, text: string): ReviewMessage => ({ id, author: 'user', at: AT(minute), text, to: [SESSION] });
 const agent = (id: string, minute: number, text: string): ReviewMessage => ({ id, author: { session: SESSION }, at: AT(minute), text });
@@ -45,3 +45,10 @@ export function stubScrollIntoView(): Mock {
   return scroll;
 }
 export const unstubScrollIntoView = (): void => { Reflect.deleteProperty(Element.prototype, 'scrollIntoView'); };
+/** What the pane posts to its frame from now on (#241), every message in order. */
+export function postsToFrame(): () => Record<string, unknown>[] {
+  const { contentWindow } = screen.getByTitle(FRAME_NAME) as HTMLIFrameElement;
+  if (contentWindow === null) throw new Error('the frame has no window');
+  const spy = vi.spyOn(contentWindow, 'postMessage').mockImplementation(() => undefined);
+  return () => spy.mock.calls.map(([data]) => data as Record<string, unknown>);
+}

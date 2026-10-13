@@ -1,28 +1,25 @@
-import { MessageCircleIcon } from 'lucide-react';
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
-import type { DesignTarget, DesignViewport, UnpinnedDesignAnchor } from '../../types';
+import type { DesignTarget, DesignTweakValue, DesignViewport, UnpinnedDesignAnchor } from '../../types';
 import { DesignComposer, saveComment } from '@/components/DesignComposer';
 import { composerStyle, DesignPins } from '@/components/DesignPins';
-import { DesignComments, TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
+import { DesignBar } from '@/components/DesignBar';
+import { DesignComments } from '@/components/DesignComments';
+import { DesignTweaks } from '@/components/DesignTweaks';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
-import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
-import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
+import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
+import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
-import { type DesignZoom, isViewport, useDesignZoom, type Viewport, VIEWPORT_PX, VIEWPORTS } from '@/hooks/use-design-zoom';
-import { t } from '@/i18n';
+import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX, viewportOf } from '@/hooks/use-design-zoom';
 import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
-import { clockOf, type DesignTheme, nextPin } from '@/lib/design-comments';
+import { type DesignState, type DesignTheme, isOnState, nextPin } from '@/lib/design-comments';
 import { isMac, isTextField } from '@/lib/shortcut-bindings';
-import { STATUS_DOT } from '@/lib/status';
 
 // The design pane (#109): one Hive design (.hv.html) of an activity, served by the design frame route (#108) into a sandboxed frame on the
 // handoff's canvas, under its preview bar. Read only: the agent writes the file.
 
-const THEMES: readonly DesignTheme[] = ['dark', 'light'];
 type Mint = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; url: string };
 
 /** label: `{task label} · Design {file name}`, the section's name (#109). */
@@ -30,7 +27,7 @@ export interface DesignPaneProps { activity: Activity; path: string; label: stri
 
 const FRAME_ASPECT = 0.625; // the frame's height before the bridge's first size: 800 px at desktop
 const FULL = 100;
-const MAX_FRAME_HEIGHT = 100_000; // a design may post any size: past this, the canvas's layout would choke
+const MAX_FRAME_PX = 100_000; // a design may post any size: past this, the canvas's layout would choke
 const SHOWN: CSSProperties = { flex: '1 1 0%', opacity: 1, pointerEvents: 'auto' };
 const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'none' }; // mounted: a tab switch never reloads the frame
 const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' };
@@ -94,94 +91,35 @@ function useReloads(activityId: string, path: string, isShown: boolean): Reloads
   return { count, take };
 }
 
-// The handoff's §2.2: after the first reload, ● in --working and the time; it stays until the tab unmounts, updated on each reload
-function ReloadedMark({ name, at }: { name: string; at: Date }) {
-  const time = clockOf(at);
-  return (
-    <span title={t('design.reloaded', { file: name, time })} className="flex shrink-0 items-center gap-1 tabular-nums">
-      <span aria-hidden="true" className={`size-1.5 rounded-full ${STATUS_DOT.working}`} />{time}
-    </span>
-  );
-}
-
 // The bridge's messages (#108), only from this pane's frame and only in the protocol's shape: ready, the frame loaded (again); size, its
-// content's height, which the frame takes so the canvas scrolls rather than the frame. The design itself may post too: anything else is dropped
-function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): number | undefined {
-  const [height, setHeight] = useState<number>();
+// content's height and width (#241), which the frame takes so the canvas scrolls rather than the frame. The design itself may post too: anything else is dropped
+interface FrameSize { height?: number; width?: number }
+const isFramePx = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): [FrameSize, () => void] {
+  const [size, setSize] = useState<FrameSize>({});
   const ready = useEffectEvent(onReady);
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
       const data = bridgeData(event, frame.current);
       if (data === undefined) return;
-      const { type, height: next } = data;
+      const { type, height, width } = data;
       if (type === 'ready') ready();
-      else if (type === 'size' && typeof next === 'number' && Number.isFinite(next) && next >= 0) setHeight(Math.min(next, MAX_FRAME_HEIGHT));
+      else if (type === 'size' && isFramePx(height)) {
+        setSize((now) => ({ height: Math.min(height, MAX_FRAME_PX), width: isFramePx(width) ? Math.min(width, MAX_FRAME_PX) : now.width }));
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [frame]);
-  return height;
+  // A width belongs to the viewport it was measured at: a viewport change drops it, and the bridge reports the next one if the content still overflows
+  return [size, () => setSize(({ height }) => ({ height }))];
 }
 
 // '*': the sandboxed frame's origin is opaque, so no named origin matches it; a theme is nothing to hide
 const postTheme = (frame: HTMLIFrameElement | null, theme: DesignTheme): void => {
   frame?.contentWindow?.postMessage({ hive: 'design', type: 'theme', theme }, '*');
 };
-
-function ZoomControl({ zoom }: { zoom: DesignZoom }) {
-  return (
-    <span className="flex shrink-0 items-center">
-      <Button type="button" size="icon-xs" variant="ghost" aria-label={t('design.zoomOut')} onClick={() => zoom.zoomBy(-1)}>−</Button>
-      <span title={t('design.fit')} className="w-10 text-center tabular-nums">{`${zoom.zoom}%`}</span>
-      <Button type="button" size="icon-xs" variant="ghost" aria-label={t('design.zoomIn')} onClick={() => zoom.zoomBy(1)}>+</Button>
-    </span>
-  );
-}
-
-interface CommentsToggle { count: number; isShown: boolean; onToggle(): void; isCommenting: boolean; onComment(): void }
-interface BarProps { path: string; name: string; reloadedAt?: Date; viewport: Viewport; theme: DesignTheme; zoom: DesignZoom; comments?: CommentsToggle; onViewport(next: Viewport): void; onTheme(next: DesignTheme): void }
-
-// The bar's item 7 (#114): on, an --empty border on --accent; off, the border alone
-function CommentModeButton({ isOn, onToggle }: { isOn: boolean; onToggle(): void }) {
-  return (
-    <Button type="button" size="xs" variant="ghost" aria-pressed={isOn} title={t('design.comment.toggle')} onClick={onToggle} className={`shrink-0 border ${isOn ? 'border-empty bg-accent text-foreground' : 'text-muted-foreground'}`}>
-      {t('design.comment')}
-    </Button>
-  );
-}
-
-// The bar's item 8 (#113): message-circle and the open count; --accent with --foreground while the panel shows, muted while hidden
-function CommentsButton({ count, isShown, onToggle }: CommentsToggle) {
-  return (
-    <Button type="button" size="xs" variant="ghost" aria-label={t('design.comments')} aria-pressed={isShown} title={t('design.comments.toggle')} onClick={onToggle} className={`shrink-0 tabular-nums ${isShown ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>
-      <MessageCircleIcon className="size-3" />{count}
-    </Button>
-  );
-}
-
-// The handoff's preview bar (#109), items 1–5 and, on a task's pane, 7 (#114) and 8 (#113): 26 px, one line that hides what does not fit
-function DesignBar({ path, name, reloadedAt, viewport, theme, zoom, comments, onViewport, onTheme }: BarProps) {
-  return (
-    <div className="flex h-[26px] shrink-0 items-center gap-3 overflow-hidden border-b px-2.5 text-muted-foreground text-xs">
-      <span title={path} className="min-w-0 flex-1 truncate font-mono">{path}</span>
-      {reloadedAt && <ReloadedMark name={name} at={reloadedAt} />}
-      <ToggleGroup type="single" size="xs" aria-label={t('design.viewport')} value={viewport} onValueChange={(next) => { if (isViewport(next)) onViewport(next); }} className={TOGGLE_TRACK}>
-        {VIEWPORTS.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.viewport.${item}`)}</ToggleGroupItem>)}
-      </ToggleGroup>
-      <ZoomControl zoom={zoom} />
-      <ToggleGroup type="single" size="xs" aria-label={t('design.theme')} value={theme} onValueChange={(next) => { if (next === 'dark' || next === 'light') onTheme(next); }} className={TOGGLE_TRACK}>
-        {THEMES.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.theme.${item}`)}</ToggleGroupItem>)}
-      </ToggleGroup>
-      {comments && (
-        <>
-          <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border" />
-          <CommentModeButton isOn={comments.isCommenting} onToggle={comments.onComment} />
-          <CommentsButton {...comments} />
-        </>
-      )}
-    </div>
-  );
-}
 
 interface CanvasProps { canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>; url?: string; name: string; width: number; height: number; zoom: DesignZoom; reloads: number; isCommenting: boolean; children?: ReactNode }
 
@@ -228,13 +166,14 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
-interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: DesignViewport; theme: DesignTheme }
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; state: DesignState; frameWidth: number }
 
 // The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
-function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: OverlayProps) {
+function CommentOverlay({ model, canvas, rects, percent, path, state, frameWidth }: OverlayProps) {
+  const { theme } = state;
   const { target } = canvas;
   const scale = percent / FULL;
-  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme });
+  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: state.viewport, theme, tweaks: state.tweaks });
   const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
   const pin = nextPin(model);
   // The composer closes once the server took the comment; a refusal keeps it open with its text
@@ -246,7 +185,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: O
       <DesignPins items={items} rects={rects} scale={scale} theme={theme} selected={canvas.selection?.id} editing={target && { target, pin }} onSelect={canvas.selectPin} />
       {target !== undefined && (
         <DesignComposer
-          target={target} pin={pin} theme={theme} isBusy={model.isBusy} style={composerStyle(target.rect, scale, width * scale)}
+          target={target} pin={pin} theme={theme} isBusy={model.isBusy} style={composerStyle(target.rect, scale, frameWidth * scale)}
           onAdd={save(false)} onSend={save(true)} onCancel={canvas.close}
         />
       )}
@@ -254,9 +193,15 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: O
   );
 }
 
-// The pane itself (#109, #113): comments only on a task's
-function DesignView({ activity, path, label, active, comments }: DesignPaneProps & { comments?: DesignCommentsModel }) {
-  const name = baseName(path);
+interface DesignViewModel {
+  name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
+  viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; state: DesignState; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
+  zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge; tweaks: DesignTweaksModel;
+  pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
+}
+
+// The pane's state (#109, #113, #114): one owner for the bar, the canvas, its overlay and the panel
+function useDesignView({ activity, path, active }: DesignPaneProps, comments?: DesignCommentsModel): DesignViewModel {
   const canvas = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<Viewport>('desktop');
@@ -264,38 +209,73 @@ function DesignView({ activity, path, label, active, comments }: DesignPaneProps
   const mint = useMint(activity.activity.id, path);
   const reloads = useReloads(activity.activity.id, path, active);
   const [reloadedAt, setReloadedAt] = useState<Date>();
-  const width = VIEWPORT_PX[viewport];
-  const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
+  const viewportPx = VIEWPORT_PX[viewport];
+  const tweaks = useDesignTweaks(frame);
   const marks = useCommentCanvas(comments);
-  const pins = useDesignPins(frame, canvas, anchorsOf(comments), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
-  const height = useFrameMessages(frame, () => {
+  const state: DesignState = { viewport: viewportPx, theme, schema: tweaks.schema, tweaks: tweaks.values };
+  const pins = useDesignPins(frame, canvas, anchorsOf(comments, state), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
+  const [size, forgetWidth] = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
-    postTheme(frame.current, theme); // the frame forgets the theme on every load
+    postTheme(frame.current, theme); // the frame forgets the theme and the tweaks on every load
+    tweaks.repost();
     if (reloads.take()) setReloadedAt(new Date());
-  }) ?? width * FRAME_ASPECT;
-  // An aimed rect was measured in the other theme or viewport: either change drops the composer
+  });
+  // A window screen wider than the viewport is drawn whole, the canvas scrolling (#241).
+  const width = Math.max(viewportPx, size.width ?? 0);
+  const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
+  // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
+  const pickViewport = (next: Viewport): void => { setViewport(next); forgetWidth(); marks.close(); };
+  // A comment chosen in the list reopens on the state it was made on (#241), then scrolls to it (#114)
+  const selectComment = (id: string): void => {
+    marks.selectItem(id);
+    const anchor = comments && [...comments.open, ...comments.resolved].find((c) => c.id === id)?.anchor;
+    if (anchor !== undefined && !isOnState(anchor, state)) {
+      pickViewport(viewportOf(anchor.viewport));
+      if (anchor.theme !== theme) pickTheme(anchor.theme);
+      tweaks.apply(anchor.tweaks);
+    }
+    pins.scrollTo(id);
+  };
+  const pickTweak = (name: string, value: DesignTweakValue): void => { tweaks.set(name, value); marks.close(); };
+  return {
+    name: baseName(path), canvas, frame, viewport, theme, viewportPx, state, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
+    pickViewport,
+    selectComment,
+  };
+}
+
+// No row for a valid block with no tweak: the skeleton ships one, and a row of only "More…" would say nothing (#241)
+const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status: 'none' }> =>
+  block.status === 'invalid' || (block.status === 'ok' && block.schema.length > 0);
+
+// The pane itself (#109, #113): comments only on a task's
+function DesignView({ comments, ...props }: DesignPaneProps & { comments?: DesignCommentsModel }) {
+  const { path, label, active } = props;
+  const view = useDesignView(props, comments);
+  const { name, canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
   };
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
       <DesignBar
-        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={(next) => { setViewport(next); marks.close(); }} onTheme={pickTheme}
+        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
+      {hasTweaksRow(view.tweaks.block) && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
       <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
             <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
-              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} width={width} theme={theme} />}
+              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} state={view.state} frameWidth={width} />}
             </DesignCanvas>
           )}
         {comments !== undefined && marks.isPanelShown && (
           <DesignComments
             model={comments} tab={marks.tab} selection={marks.selection} rects={pins.rects} onTab={marks.setTab} onHide={() => marks.setPanelShown(false)}
-            onSelect={(id) => { marks.selectItem(id); pins.scrollTo(id); }}
+            onSelect={view.selectComment}
           />
         )}
       </div>

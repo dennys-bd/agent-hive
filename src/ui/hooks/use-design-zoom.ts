@@ -17,6 +17,9 @@ const FIT_MARGIN_PX = 32; // the canvas's 16 px of padding on each side
 
 const clamp = (zoom: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
 
+/** The viewport whose width an anchor stored (#241). */
+export const viewportOf = (px: DesignViewport): Viewport => VIEWPORTS.find((viewport) => VIEWPORT_PX[viewport] === px) ?? 'desktop';
+
 export const isViewport = (value: string): value is Viewport => (VIEWPORTS as readonly string[]).includes(value);
 
 /** The percentage that fits `frameWidth` into the canvas's width less its margin (#109): never above 100, so a tall screen stays readable,

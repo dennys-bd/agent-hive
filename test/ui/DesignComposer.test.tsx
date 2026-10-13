@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { DesignPane } from '@/components/DesignPane';
+import { showCommentsPanel } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
 import { rememberFocus } from '@/lib/session-focus';
 import { FRAME_NAME, fromBridge, mintFrame, PATH, RECT, REVIEW } from './design-review';
@@ -9,10 +10,11 @@ import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, withSessions } f
 
 const ELEMENT = { kind: 'element', selector: 'main > h1:nth-of-type(1)', text: 'Welcome', rect: RECT };
 const AREA = { kind: 'area', rect: { x: 40, y: 60, width: 320.4, height: 179.6 } };
-const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark' };
+const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark', tweaks: {} };
 
 let hive: FakeHive;
 beforeEach(() => {
+  showCommentsPanel(true);
   setLanguage('pt');
   document.documentElement.dataset.theme = 'dark';
   hive = fakeHive();
@@ -124,4 +126,17 @@ test('a viewport change drops the composer, and a slow adicionar never closes a 
   answer(new Response(JSON.stringify({ id: 'd9' }), { status: 200 }));
   await waitFor(() => expect(screen.getByRole('button', { name: 'adicionar' })).toBeEnabled());
   expect(within(composer()!).getByText('área · 320×180')).toBeInTheDocument();
+});
+
+test('a comment made on tweaks saves the pane\'s settled tweaks in its anchor (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  fromBridge({ type: 'tweaks', schema: { layout: { options: ['board', 'list'], default: 'board' } } });
+  await user.click(screen.getByRole('combobox', { name: 'layout' }));
+  await user.click(screen.getByRole('option', { name: 'list' }));
+  await user.click(toggle());
+  anchor(ELEMENT);
+  await user.type(field(), 'here{Enter}');
+  await waitFor(() => expect(composer()).toBeNull());
+  expect(posted('/drafts')).toEqual([{ anchor: { ...ELEMENT, ...ON_PATH, tweaks: { layout: 'list' } }, text: 'here', session: SESSION }]);
 });

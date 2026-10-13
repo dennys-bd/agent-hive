@@ -78,10 +78,17 @@ function targetOf(anchor: DesignAnchor): string {
   return `element \`${oneLine(anchor.selector).replaceAll('`', "'")}\`${text === '' ? '' : ` (${JSON.stringify(text)})`}`;
 }
 
+// The tweaks the comment was made on (#241), in the anchor's order; a text tweak is the user's own, so each value stays on its line
+function tweaksLine({ tweaks }: DesignAnchor): string[] {
+  const pairs = Object.entries(tweaks).map(([name, value]) => `${name}=${oneLine(String(value))}`);
+  return pairs.length === 0 ? [] : [`Tweaks: ${pairs.join(', ')}`];
+}
+
 // A design comment (#111): numbered by its pin, so a batch reads as the canvas does; the agent may propose a resolve, the user confirms it
 function designText(anchor: DesignAnchor, threadId: string, message: Outgoing, recipient: string, agentOf: AgentOf, earlier: readonly ReviewMessage[]): string {
   return [
     `Design comment ${anchor.pin} on ${oneLine(anchor.path)} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, `Viewport: ${anchor.viewport} px, theme: ${anchor.theme}`,
+    ...tweaksLine(anchor),
     ...mentionsLine(message.mentions, recipient, agentOf), ...catchUp(earlier, agentOf), withMentionNames(message.text, message.mentions, agentOf),
     `Answer with the hive_reply tool, thread "${threadId}". Pass resolve: true when the comment is done; the user confirms it.`,
   ].join('\n');

@@ -70,8 +70,8 @@ test('commentText puts the missed messages before the new one, each with its aut
 });
 
 const PATH = 'agent/hive/designs/2026-10-11-x/home.hv.html';
-const ELEMENT = { path: PATH, viewport: 1280, theme: 'dark', pin: 2, kind: 'element', selector: 'hero > h1', text: 'Welcome back', rect: { x: 40, y: 120, width: 320, height: 48 } } satisfies DesignAnchor;
-const AREA = { path: PATH, viewport: 390, theme: 'light', pin: 1, kind: 'area', rect: { x: 40, y: 120, width: 320, height: 180 } } satisfies DesignAnchor;
+const ELEMENT = { path: PATH, viewport: 1280, theme: 'dark', pin: 2, tweaks: {}, kind: 'element', selector: 'hero > h1', text: 'Welcome back', rect: { x: 40, y: 120, width: 320, height: 48 } } satisfies DesignAnchor;
+const AREA = { path: PATH, viewport: 390, theme: 'light', pin: 1, tweaks: {}, kind: 'area', rect: { x: 40, y: 120, width: 320, height: 180 } } satisfies DesignAnchor;
 const RESOLVE_LINE = 'Answer with the hive_reply tool, thread "T1". Pass resolve: true when the comment is done; the user confirms it.';
 
 test('a design comment names its pin, path, target, viewport, theme and text, and offers resolve (#111)', () => {
@@ -112,4 +112,11 @@ test('agentsOf names each session of the task by its record\'s agent and a new s
   const state = { defaultAgent: OTHER_AGENT, activityRecords: [{ id: 'a', taskIds: ['I1'], sessions: [{ id: SESSION, startedAt: '', stages: [], lastUsedAt: '', agent: 'claude' as const }] }] };
   const agentOf = agentsOf(state, 'I1');
   assert.deepEqual([agentOf(SESSION), agentOf('new')], ['claude', OTHER_AGENT]);
+});
+
+test('a design comment made on tweaks names them after the viewport, one-lined, in the anchor\'s order; none for {} (#241)', () => {
+  const tweaked = { ...ELEMENT, tweaks: { layout: 'board', auto: true, title: 'a\nb', gap: 8 } } satisfies DesignAnchor;
+  const lines = commentText(tweaked, 'T1', { text: 'x' }, 's1', CLAUDE).split('\n');
+  assert.deepEqual(lines.slice(2, 4), ['Viewport: 1280 px, theme: dark', 'Tweaks: layout=board, auto=true, title=a b, gap=8']);
+  assert.doesNotMatch(commentText(ELEMENT, 'T1', { text: 'x' }, 's1', CLAUDE), /Tweaks:/);
 });
