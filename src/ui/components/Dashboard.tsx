@@ -181,7 +181,7 @@ function withBefore(picks: SourcePick, before: () => void): SourcePick {
 /** The center's navigation with its back stack (#911). `nav` is the pick whose page navigations push and whose source tabs reset. `sidebar`
  * holds the picks that reset. The openers handed to MainDock reset the stack to `from` when it is given (a page opened from Atividades). */
 interface CenterNav {
-  picks: SourcePick; nav: SourcePick; goTo(taskId: string): void; back?: BackLink; pending: RefObject<number | undefined>;
+  picks: SourcePick; nav: SourcePick; goTo(taskId: string): void; showTask(taskId: string): void; back?: BackLink; pending: RefObject<number | undefined>;
   sidebar: { pick(name?: string): void; pickRepository(name: string): void };
   openPr(url: string, from?: BackEntry): void; openIssue(url: string, from?: BackEntry): void;
   page?: DetailPage; // #64: what the details panel hosts while the center is under Automação
@@ -207,8 +207,10 @@ function useCenterNav(state: State | undefined, sources: SourcesNav | undefined,
   const reset = (): void => stack.reset();
   const nav: SourcePick = { ...withBefore(picks, push), tabs: picks.tabs && { ...picks.tabs, onPick: preceded(reset, picks.tabs.onPick) } };
   const dockNav = (from?: BackEntry): SourcePick => (from === undefined ? nav : withBefore(picks, () => stack.reset(from)));
+  // #229: ver no fluxo starts a new path, as a sidebar pick does: the user chose no back button to the activity it came from
   return {
-    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), page: state && shownPage(state, picks),
+    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), showTask: preceded(reset, goTo),
+    page: state && shownPage(state, picks),
     back: stack.top && { label: stack.top.label, onBack: stack.back },
     sidebar: { pick: preceded(reset, picks.pick), pickRepository: preceded(reset, picks.pickRepository) },
     openPr: (url, from) => prOpener(dockNav(from), repositories)(url),
@@ -280,7 +282,7 @@ export function Dashboard(props: DashboardProps) {
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
   const repositories = useRepositories();
-  const { picks, nav, goTo, back, pending, sidebar, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #911
+  const { picks, nav, goTo, showTask, back, pending, sidebar, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #911
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
   // the console's channels again. Before the early return: a hook runs on every render.
   const consoleChannels = useConsoleChannels([
@@ -297,6 +299,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           the task's detail (#341) each docked as a tab on the left or the right (a run's terminal is a tab of its activity, redesign 07); the console (#353) a drawer over the center, opened by its chip in the footer (redesign 05). Detalhes is always a tab (#452): App drops a selection whose task went, a render late, and the detail
           shows its empty state meanwhile */}
       <MainDock
+        showTask={showTask}
         sidebarsPerView={sidebarsPerView}
         fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
