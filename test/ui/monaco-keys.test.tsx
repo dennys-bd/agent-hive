@@ -36,6 +36,22 @@ test('passHiveKeys stops a Hive key at the editor\'s host, before Monaco\'s list
   host.remove();
 });
 
+test('the terminal\'s find key reaches Monaco\'s find inside an editor (#254)', () => {
+  const host = document.createElement('div');
+  const textarea = document.createElement('textarea');
+  host.append(textarea);
+  document.body.append(host);
+  const seen = vi.fn();
+  textarea.addEventListener('keydown', seen);
+  const stop = passHiveKeys(host);
+  const find = { key: 'F', code: 'KeyF', ctrlKey: true, shiftKey: true }; // findInTerminal off macOS
+  expect(isHiveKey(key(find))).toBe(false);
+  textarea.dispatchEvent(key(find));
+  expect(seen).toHaveBeenCalledOnce();
+  stop();
+  host.remove();
+});
+
 test('the sleep key stays Monaco\'s quick fix inside an editor and still sleeps the session anywhere else (#780)', () => {
   const sleep = vi.fn();
   const stop = onShortcutKey([[true, 'sleepSession']], sleep);
