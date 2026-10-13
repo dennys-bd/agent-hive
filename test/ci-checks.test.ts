@@ -166,3 +166,15 @@ test('ciVerdict: a PR whose repository has no CI does not hold the wait; one wit
   assert.equal(ciVerdict([read([], { url: B, head: 'h2' }), code], all).kind, 'pending', 'a repository with CI and no checks yet');
   assert.equal(ciVerdict([read([check('vercel', 'pending', B)], { url: B, head: 'h2', noCi: true }), code], all).kind, 'pending', 'a noCi PR\'s own checks still count');
 });
+
+test('parseCi reads the base branch and marks conflicting only on CONFLICTING; MERGEABLE, UNKNOWN or no answer leave it unset; ciQuery asks both (#264)', () => {
+  assert.match(ciQuery([A]) ?? '', /mergeable baseRefName/);
+  const of = (extra: Record<string, unknown>): CiPrRead | undefined => parseCi([A], { p0: { ...answer('abc', []), ...extra } })[0];
+  const conflicting = of({ mergeable: 'CONFLICTING', baseRefName: 'main' });
+  assert.deepEqual([conflicting?.conflicting, conflicting?.base], [true, 'main']);
+  for (const mergeable of ['MERGEABLE', 'UNKNOWN', undefined]) {
+    const read = of({ mergeable, baseRefName: 'main' });
+    assert.deepEqual([read?.conflicting, read?.base], [undefined, 'main'], String(mergeable));
+  }
+  assert.equal(of({ mergeable: 'CONFLICTING', baseRefName: 7 })?.base, undefined, 'a base that is not a string is not read');
+});

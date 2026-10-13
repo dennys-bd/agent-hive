@@ -458,7 +458,10 @@ export const DISCARD_FAILED = 'discard_failed';
 export interface CiCheck extends PrCheck { pr: string; runId?: number }
 /** One open PR's CI as one read saw it (#834): its last commit and that commit's checks; required: its base branch's required check names,
  * absent when the branch protects none; awaiting: workflows awaiting a maintainer's approval; canPush false: the login may not re-run there (#854). */
-export interface CiPrRead { url: string; head: string; required?: string[]; checks: CiCheck[]; awaiting?: string[]; canPush?: boolean; noCi?: true } // noCi: #11
+export interface CiPrRead {
+  url: string; head: string; base?: string; conflicting?: true; // #264: base is the PR's baseRefName; conflicting only on CONFLICTING
+  required?: string[]; checks: CiCheck[]; awaiting?: string[]; canPush?: boolean; noCi?: true; // noCi: #11
+}
 /** A failed Actions run to re-run (#834), by its repository (owner/name) and id. */
 export interface CiRerun { repo: string; runId: number }
 /** One considered check as the running block shows it (#914): completedAt only once it finished; url only an https link. */

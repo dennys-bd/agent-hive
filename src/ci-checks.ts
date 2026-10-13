@@ -6,9 +6,9 @@ import type { CiCheck, CiChecks, CiPrRead, Stage, StageCiCheck } from './types.j
 // A PR's CI for a wait-for-CI stage (#834), on top of #758's checks (pr-checks.ts): the same rollup and the same states, plus what the stage
 // needs (the head commit, the Actions run behind each check run, the base branch's required checks) and the verdict. Pure.
 
-/** Per PR: its base branch's required checks, the login's permission on its repository (#854), the default branch's workflows folder (#11) and
- * #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run. */
-export const CI_FIELDS = 'baseRef { refUpdateRule { requiredStatusCheckContexts } } '
+/** Per PR: its mergeability and base branch name (#264), its base branch's required checks, the login's permission on its repository (#854),
+ * the default branch's workflows folder (#11) and #758's rollup, with the head's oid, its check suites (#854) and each check run's workflow run. */
+export const CI_FIELDS = 'mergeable baseRefName baseRef { refUpdateRule { requiredStatusCheckContexts } } '
   + 'repository { viewerPermission workflows: object(expression: "HEAD:.github/workflows") { ... on Tree { entries { name } } } } '
   + rollupFields(`oid ${SUITE_FIELDS} `, ' checkSuite { workflowRun { databaseId } }');
 
@@ -55,6 +55,14 @@ function noCiOf(repository: unknown, required: readonly string[] = []): { noCi?:
   return names !== undefined && !names.some((n) => typeof n === 'string' && /\.ya?ml$/i.test(n)) ? { noCi: true } : {};
 }
 
+// #264: GitHub runs no checks on a PR that conflicts with its base, so the wait reads the conflict; UNKNOWN is GitHub still computing, not one
+function mergeOf(alias: Alias): Pick<CiPrRead, 'base' | 'conflicting'> {
+  return {
+    ...(typeof alias.baseRefName === 'string' ? { base: alias.baseRefName } : {}),
+    ...(alias.mergeable === 'CONFLICTING' ? { conflicting: true as const } : {}),
+  };
+}
+
 /** Each PR's last commit and checks, alias p<i> for urls[i], each check as #758 reads it. A null or missing alias, one with no commit, and one
  * with a check checkOf cannot read have no entry: a skipped check could be the failed one, so the wait never reads it as passed. */
 export function parseCi(urls: string[], data: unknown): CiPrRead[] {
@@ -68,7 +76,7 @@ export function parseCi(urls: string[], data: unknown): CiPrRead[] {
     const permission = isObject(alias.repository) ? alias.repository.viewerPermission : undefined;
     const { required } = requiredOf(alias);
     const pr: CiPrRead = {
-      url, head, ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
+      url, head, ...mergeOf(alias), ...(required === undefined ? {} : { required }), checks, awaiting: awaitingOf(alias.headCommit), canPush: canPushOf(permission),
       ...noCiOf(alias.repository, required),
     };
     return skipped ? [] : [pr];
