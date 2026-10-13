@@ -32,8 +32,8 @@ test('a conversation shows under its line with its messages; ↵ replies, resolv
   await user.click(within(conversation).getByRole('button', { name: 'resolver' }));
   expect(callsTo(hive, 'POST', '/tasks/I1/review/threads/T1/resolve')[0].body).toEqual({ resolved: true });
   const list = screen.getByRole('navigation', { name: 'arquivos do diff' });
-  expect(list).toHaveTextContent('1 com comentários');
-  expect(within(list).getByRole('button', { name: /src\/a\.ts/ })).toHaveTextContent('1');
+  expect(list).toHaveTextContent('1 comentário');
+  expect(within(within(list).getByRole('button', { name: /^a\.ts/ })).getByText('1')).toHaveClass('rounded-full');
 });
 
 test('não entregue offers reenviar; a delivered session at work reads respondendo; a resolved one folds to a line that reopens (#591)', async () => {

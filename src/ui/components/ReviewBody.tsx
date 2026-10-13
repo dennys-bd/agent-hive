@@ -46,7 +46,7 @@ export function ReviewBody({ files, layout, nav, sectionId, lines, target, onClo
     <div className="flex min-h-0 flex-1 flex-col outline-none" tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="flex min-h-0 flex-1">
         {/* Every file, whatever ocultar revisados says: the list is the diff's map (#591) */}
-        <DiffFileList files={files} open={nav.open} isReviewed={surface.reviewed} onOpen={nav.show} onReviewed={nav.toggleReviewed} comments={comments} />
+        <DiffFileList files={files} open={nav.open} isReviewed={surface.reviewed} onOpen={nav.show} comments={comments} />
         {/* the files as cards, 16px around and 12px between (#853) */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-auto p-4">
           {top}
