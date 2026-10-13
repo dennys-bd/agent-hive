@@ -17,15 +17,17 @@ export const MEASURE_LABEL: Record<RuleSource, MessageKey> = {
 const BUDGET_SOURCES: readonly RuleSource[] = ['hour', 'day'];
 /** The five measures in ruler order (#526, #929). */
 export const MEASURES: readonly RuleSource[] = [...PLAN_SOURCES, ...BUDGET_SOURCES];
+/** What the ruler grouping reads of a rule (#224): a Settings row and a saved UsageRule both have it, so the footer's panel groups as Settings does. */
+export type RuleScope = Pick<RuleDraft, 'source' | 'agent'>;
 /** The measures at least one row uses, in ruler order; an empty row counts so its bar appears with the row. */
-export const measuresInUse = (rules: readonly RuleDraft[]): RuleSource[] => MEASURES.filter((s) => rules.some((r) => r.source === s));
+export const measuresInUse = (rules: readonly RuleScope[]): RuleSource[] => MEASURES.filter((s) => rules.some((r) => r.source === s));
 
 /** One ruler: a measure and, on a plan measure, a non-default agent (#929). */
 export interface Ruler { source: RuleSource; agent?: AgentId }
 
 /** One ruler per measure in use and, on a plan measure, one per agent its rows read, the default first (#929). Only a non-default agent is
  * named, so a single-agent table keeps one ruler per measure, named as before. */
-export function rulersInUse(rows: readonly RuleDraft[], defaultAgent: AgentId): Ruler[] {
+export function rulersInUse(rows: readonly RuleScope[], defaultAgent: AgentId): Ruler[] {
   return measuresInUse(rows).flatMap((source): Ruler[] => {
     if (!isPlanSource(source)) return [{ source }];
     const read = agentOptions(defaultAgent).filter((agent) => rows.some((r) => r.source === source && (r.agent ?? defaultAgent) === agent));
@@ -33,8 +35,8 @@ export function rulersInUse(rows: readonly RuleDraft[], defaultAgent: AgentId): 
   });
 }
 
-/** A ruler's rows (#929): its measure's, and on a plan measure only those of its agent. */
-export const rulerRows = (rows: readonly RuleDraft[], ruler: Ruler, defaultAgent: AgentId): RuleDraft[] =>
+/** A ruler's rows (#929): its measure's, and on a plan measure only those of its agent. Generic, so rows in give rows out and rules in give rules out (#224). */
+export const rulerRows = <T extends RuleScope>(rows: readonly T[], ruler: Ruler, defaultAgent: AgentId): T[] =>
   rows.filter((r) => r.source === ruler.source && (!isPlanSource(r.source) || (r.agent ?? defaultAgent) === (ruler.agent ?? defaultAgent)));
 
 export const emptyRule = (source: RuleSource): RuleDraft => ({ id: crypto.randomUUID(), source, percent: '', stage: '', kind: '', value: '' });

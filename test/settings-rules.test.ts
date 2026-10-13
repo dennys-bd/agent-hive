@@ -92,3 +92,16 @@ test('agentOptions puts the default agent first; rulersInUse gives a plan measur
   assert.deepEqual(rulerRows(rows, { source: 'week', agent: 'codex' }, 'claude'), [rows[1]]);
   assert.deepEqual(rulerRows(rows, { source: 'day' }, 'claude'), [rows[3]], 'a budget ruler takes every row of its measure');
 });
+
+test('the ruler helpers take saved rules too: measuresInUse, rulersInUse and rulerRows group UsageRule[] as they group rows, and rulerRows returns the type it got (#224)', () => {
+  const rules: UsageRule[] = [
+    { source: 'day', percent: 80, maxWorkers: 1 },
+    { source: 'week', percent: 50, signal: 'red', agent: 'codex' },
+    { source: 'week', percent: 90, maxWorkers: 2 },
+  ];
+  assert.deepEqual(measuresInUse(rules), ['week', 'day']);
+  assert.deepEqual(rulersInUse(rules, 'claude'), [{ source: 'week' }, { source: 'week', agent: 'codex' }, { source: 'day' }]);
+  const week: UsageRule[] = rulerRows(rules, { source: 'week' }, 'claude');
+  assert.deepEqual(week, [rules[2]]);
+  assert.deepEqual(rulerRows(rules, { source: 'week', agent: 'codex' }, 'claude'), [rules[1]]);
+});
