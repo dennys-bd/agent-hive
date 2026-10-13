@@ -29,7 +29,7 @@ import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
-import { shownRun } from '@/lib/center-layout';
+import { shownFile, shownRun } from '@/lib/center-layout';
 import type { FileAt } from '@/lib/editor-models';
 import { pendingSessions } from '@/lib/home';
 import { useRememberFocus } from '@/lib/session-focus';
@@ -49,9 +49,9 @@ export interface MainDockProps {
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
   automation?(openActivity: (taskId: string) => void): ReactNode;
-  // The window's footer (#225), from the Dashboard, handed the store id of the activity the center shows; inside the openers, so a failed
-  // checker opens its console channel. Absent (the terminal's harness): no footer
-  footer?(shownActivityId: string | undefined): ReactNode;
+  // The window's footer (#225), from the Dashboard, handed the shown activity's store id and the focused file tab's path (#295); inside the
+  // openers, so a failed checker opens its console channel. Absent (the terminal's harness): no footer
+  footer?(shownActivityId: string | undefined, shownFile: string | undefined): ReactNode;
   header?(shell: HeaderShell): ReactNode; // the window's header (#533, #221), from the Dashboard, handed what its three columns show; absent (the terminal's harness): no header
   liveActivities?: State['activities']; // #629: state.activities, what the workers point at; absent (the terminal's harness): none
   slept?: State['slept']; // #672: the runs that sleep, kept as tabs; absent (the terminal's harness): none
@@ -177,11 +177,11 @@ interface DetailArgs {
   current?: Activity; isShown: boolean; sideTab: SideTab; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
 }
 
-// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes, as the header's icons pick (#221),
-// on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
+// Detalhes as a dock panel (#341, #452), drawing no group header (#295): the window header's right column names it and closes it. Under Atividades
+// with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes as the header's icons pick (#221), arquivos alone on a local one (#633).
 function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: DetailArgs): DockPanel {
   const title = t('dock.detail');
-  if (current === undefined) return { id: 'detail', title, body: detail({ isShown, onClose, nav }) };
+  if (current === undefined) return { id: 'detail', title, ownHeader: true, body: detail({ isShown, onClose, nav }) };
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
   const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
@@ -376,13 +376,13 @@ export function MainDock(props: MainDockProps) {
     <>
       {header?.(shell)}
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
-        <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
+        <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
             <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} openProblem={openFileOf} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>
-      {footer?.(shownIdOf(selection))}
+      {footer?.(shownIdOf(selection), shownIdOf(selection) === undefined ? undefined : shownFile(layouts.layout))}
       {quick.dialogs}
       {searchClose.dialog}
       {newIn && newActivity?.({ ...newIn, onStarted: openStarted, onClose: () => setNewIn(undefined) })}

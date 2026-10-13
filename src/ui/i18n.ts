@@ -6,11 +6,11 @@ const en = {
   'footer.max': 'max.',
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive', // #533
-  'header.workers': 'workers {active}/{max}', // #227: the brand's count, and the flow sidebar's worker cap
+  'header.workers': 'workers {active}/{max}', // #227: the brand's count, the signal popover's first row (#295) and the flow sidebar's worker cap
   'header.flow': 'flow',
   'header.activities': 'activities',
-  'header.signalTitle': 'signal {signal} · {effect} · click to change', // #221: the brand's title, what the signal holds back in the middle
-  'header.signalTitlePlain': 'signal {signal} · click to change', // a signal that holds nothing back
+  'header.signalTitle': 'signal {signal} · {effect}', // #221, #295: the brand's title, what the signal holds back in the middle; the popover's toggle changes it
+  'header.signalTitlePlain': 'signal {signal}', // a signal that holds nothing back
   'header.collapseLeft': 'collapse sidebar',
   'header.expandLeft': 'open sidebar',
   'header.openRight': 'open right sidebar',
@@ -546,8 +546,6 @@ const en = {
   'search.files.noActivity': 'open an activity to search files',
   'search.files.failed': 'could not read the files',
   'dock.close': 'Close panel',
-  'dock.moveLeft': 'Move to the left',
-  'dock.moveRight': 'Move to the right',
   'dock.resize.left': 'resize the left panel',
   'dock.resize.right': 'resize the right panel',
   'review.comment': 'comment line {n}',
@@ -1945,8 +1943,8 @@ const pt: Record<MessageKey, string> = {
   'header.workers': 'workers {active}/{max}',
   'header.flow': 'fluxo',
   'header.activities': 'atividades',
-  'header.signalTitle': 'sinal {signal} · {effect} · clique para trocar',
-  'header.signalTitlePlain': 'sinal {signal} · clique para trocar',
+  'header.signalTitle': 'sinal {signal} · {effect}',
+  'header.signalTitlePlain': 'sinal {signal}',
   'header.collapseLeft': 'recolher lateral',
   'header.expandLeft': 'abrir lateral',
   'header.openRight': 'abrir lateral direita',
@@ -2482,8 +2480,6 @@ const pt: Record<MessageKey, string> = {
   'search.files.noActivity': 'abra uma atividade para buscar arquivos',
   'search.files.failed': 'não foi possível ler os arquivos',
   'dock.close': 'Fechar painel',
-  'dock.moveLeft': 'Mover para a esquerda',
-  'dock.moveRight': 'Mover para a direita',
   'dock.resize.left': 'redimensionar o painel da esquerda',
   'dock.resize.right': 'redimensionar o painel da direita',
   'review.comment': 'comentar linha {n}',

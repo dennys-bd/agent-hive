@@ -16,7 +16,7 @@ function Frame({ layout, onClose = vi.fn() }: { layout: ViewLayout; onClose?: (s
   return (
     <DockFrame
       layout={layout} shown={{ left: 'activities', right: 'detail' }} panels={PANELS}
-      onActivate={vi.fn()} onMove={vi.fn()} onResize={vi.fn()} onClose={onClose}
+      onActivate={vi.fn()} onResize={vi.fn()} onClose={onClose}
     >
       <main>fluxo</main>
     </DockFrame>
@@ -50,4 +50,10 @@ test('each group gets its side\'s open flag, and its X closes that side (#452)',
   expect(within(group('left')!).getByRole('tab', { name: 'Atividades' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Fechar painel' }));
   expect(onClose).toHaveBeenCalledWith('left');
+});
+
+test('the frame shrinks with the window instead of taking its content\'s width, so the center never runs under the right group (#295)', () => {
+  render(<Frame layout={FLAT} />);
+  const frame = screen.getByRole('main').parentElement!.parentElement!;
+  expect(frame).toHaveClass('min-w-0', 'min-h-0', 'flex-1', 'flex-row');
 });

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidebarsPerView } from '../../types';
 import {
-  type ActiveTabs, type DockLayout, moveTo, type PanelId, readDockLayout, type Side, type SideChange, SIDES, sideOf, syncSide, type ViewId,
+  type ActiveTabs, type DockLayout, type PanelId, readDockLayout, type Side, type SideChange, SIDES, sideOf, syncSide, type ViewId,
   type ViewLayout, withSide, writeDockLayout,
 } from '@/lib/dock-layout';
 
@@ -13,7 +13,7 @@ export interface Dock {
   layout: ViewLayout; // the current view's (#821): the shape DockFrame and shownBySide read
   view: ViewId; active: ActiveTabs;
   setView(view: ViewId): void;
-  activate(id: PanelId): void; show(id: PanelId): void; move(id: PanelId, side: Side): void; resize(side: Side, size: number): void;
+  activate(id: PanelId): void; show(id: PanelId): void; resize(side: Side, size: number): void;
   toggle(side: Side): void; close(side: Side): void;
 }
 
@@ -53,13 +53,11 @@ export function useDock({ left, right }: SidebarsPerView): Dock {
   const setView = useCallback((view: ViewId) => setState((s) => (s.view === view ? s : { ...s, view })), []);
   const activate = useCallback((id: PanelId) => setState((s) => withActive(s, id)), []);
   const show = useCallback((id: PanelId) => setState((s) => withShown(s, id)), []);
-  // A moved panel opens its new side as the active tab there; the side it left keeps its flag
-  const move = useCallback((id: PanelId, side: Side) => setState((s) => withActive({ ...s, layout: moveTo(s.layout, id, side) }, id)), []);
   const resize = useCallback((side: Side, size: number) => setState((s) => withChange(s, side, { size })), []);
   // The panel's X, or Escape on the shown Detalhes (#452): every tab and stream stays, only the side stops showing
   const close = useCallback((side: Side) => setState((s) => withOpen(s, side, false)), []);
   // A panel key (#452): a side with no tab flips its flag all the same, so a panel that starts docked there obeys it
   const toggle = useCallback((side: Side) => setState((s) => withOpen(s, side, !s.layout.open[s.view][side])), []);
   const layout = useMemo(() => sideOf(state.layout, state.view), [state.layout, state.view]);
-  return { layout, view: state.view, active: state.active, setView, activate, show, move, resize, toggle, close };
+  return { layout, view: state.view, active: state.active, setView, activate, show, resize, toggle, close };
 }

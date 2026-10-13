@@ -51,25 +51,22 @@ const seed = (detail: Side, open: Record<Side, boolean> = ALL_OPEN): void =>
 // The board's own task, not the detail's title
 const boardTask = (label: string): Element => screen.getAllByText(label).find((el) => el.closest('li'))!;
 // The window opens on Atividades (#746): a test about the board or Detalhes beside it shows the flow first. Switching views never opens a side (#821)
+// The header's detalhes icon (#221): there while the right column shows, pressed while Detalhes is its pane; the right group draws no tab (#295)
+const detailsIcon = (): HTMLElement | null => within(screen.getByRole('banner')).queryByRole('button', { name: 'detalhes' });
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
 
-// Radix's ContextMenu opens once per file under jsdom (#377): this is the only test here that right-clicks a tab, kept first.
-test('Detalhes sits alone in the right panel beside the center; its tab\'s menu moves it to the left panel, and the move persists (#342, #452)', async () => {
+test('the panels are fixed: Detalhes sits alone in the right panel beside the center and no group draws a tab to move it; a stored layout with Detalhes on the left reads as the defaults (#342, #452, #295)', () => {
+  resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'left', activities: 'left', detail: 'left' } } });
   render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
   const right = group('right')!;
   expect(right.parentElement).toBe(screen.getByRole('main').parentElement!.parentElement!.parentElement); // beside the center column, in the frame
-  expect(within(right).getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['Detalhes', 'true']]);
-  expect(saved()).toMatchObject({ docks: { detail: 'right' }, open: { automation: { right: true } } });
-  fireEvent.contextMenu(within(right).getByRole('tab', { name: 'Detalhes' }));
-  expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent)).toEqual(['Mover para a esquerda']);
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Mover para a esquerda' }));
-  expect(within(group('left')!).getByRole('tab', { name: 'Detalhes' })).toBeInTheDocument();
-  expect(group('right')).toBeNull();
-  expect(saved()).toMatchObject({ docks: { detail: 'left' } });
+  expect(right).toContainElement(screen.getByRole('complementary', { name: 'detalhe' }));
+  expect(document.querySelectorAll('[data-dock] [role="tab"]')).toHaveLength(0);
+  expect(saved()).toMatchObject({ docks: { detail: 'right' } });
 });
 
-test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wider, clamped to 15..70, saved in the view state and read back on the next mount (#342, #484)', async () => {
+test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wider, clamped to 15 and to what leaves the center 20%, saved in the view state and read back on the next mount (#342, #484, #295)', async () => {
   const user = userEvent.setup();
   const { unmount } = render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
@@ -83,12 +80,12 @@ test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wi
   await user.keyboard('{ArrowRight}'.repeat(5));
   expect(separator()).toHaveAttribute('aria-valuenow', '15'); // floored
   await user.keyboard('{ArrowLeft}'.repeat(12));
-  expect(separator()).toHaveAttribute('aria-valuenow', '70'); // ceiled
+  expect(separator()).toHaveAttribute('aria-valuenow', '50'); // the left open at 30 leaves the center 20% (#295)
   unmount();
   render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
-  expect(separator()).toHaveAttribute('aria-valuenow', '70');
-  expect(group('right')).toHaveStyle({ flexBasis: '70%' });
+  expect(separator()).toHaveAttribute('aria-valuenow', '50');
+  expect(group('right')).toHaveStyle({ flexBasis: '50%' });
 });
 
 test('the first run opens the center on Home and the left panel on the Atividades tab, with Automação mounted beside it holding the signal toggle, the worker cap, the shut-down toggle and the sources; the right stays closed, the footer holds no signal and the header brand\'s mark does (#452, #456, #457, #746)', () => {
@@ -119,13 +116,14 @@ test('Cmd+Shift+B hides the right panel, its body still mounted, and brings it b
   seed('right', { left: false, right: true }); // the left, closed, holds Automação (#456)
   render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
-  expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true');
   panelKey('right');
   expect(within(group('right')!).queryAllByRole('tab', { hidden: true })).toEqual([]);
   expect(screen.getByRole('complementary', { name: 'detalhe', hidden: true })).not.toBeVisible();
   expect(saved()).toMatchObject({ open: { automation: { right: false } } });
   panelKey('right');
-  expect(within(group('right')!).getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')])).toEqual([['Detalhes', 'true']]);
+  expect(within(group('right')!).queryAllByRole('tab')).toEqual([]);
+  expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('complementary', { name: 'detalhe' })).toBeVisible();
 });
 
@@ -147,7 +145,7 @@ test('selecting a task opens its closed panel with Detalhes as the shown tab, th
   showFlow();
   expect(within(group('right')!).queryAllByRole('tab', { hidden: true })).toEqual([]);
   await user.click(boardTask('#1 Task A'));
-  expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('complementary', { name: 'detalhe' })).toBeVisible();
   panelKey('right');
   await user.click(boardTask('#1 Task A')); // the same task again
@@ -169,7 +167,7 @@ test('a closed right panel leaves no strip: no tab and no divider, the detail\'s
   expect(within(right).queryAllByRole('separator', { name: /^redimensionar o painel/, hidden: true })).toEqual([]);
   expect(screen.getByText('Nenhuma tarefa selecionada')).not.toBeVisible();
   panelKey('right');
-  expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('separator', { name: 'redimensionar o painel da direita' })).toHaveAttribute('aria-orientation', 'vertical');
 });
 

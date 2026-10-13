@@ -68,6 +68,7 @@ afterEach(() => vi.unstubAllGlobals());
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
 const main = () => within(screen.getByRole('main'));
+const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 
 test('picking a repository clears the source pick, todas included, and picking a source clears the repository (#757)', async () => {
   const user = userEvent.setup();
@@ -89,14 +90,14 @@ test('a picked repository takes the center with its header on the PRs tab and it
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
   expect(await main().findByText('Fix the pager')).toBeInTheDocument();
-  expect(main().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
-  expect(main().getByText('workspace hive')).toBeInTheDocument();
-  await user.click(main().getByRole('tab', { name: 'issues 3' }));
+  expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByText('workspace hive')).toBeInTheDocument();
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   expect(await main().findByText('Issue 12')).toBeInTheDocument();
-  expect(main().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByRole('tab', { name: 'issues 3' })).toHaveAttribute('aria-selected', 'true');
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
   expect(main().queryByText('Issue 12')).not.toBeInTheDocument();
-  expect(main().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('a repository\'s row opens the issue page under the repository header; its issues tab returns to the list (#757)', async () => {
@@ -104,11 +105,11 @@ test('a repository\'s row opens the issue page under the repository header; its 
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
-  await user.click(await main().findByRole('tab', { name: 'issues 3' }));
+  await user.click(await bar().findByRole('tab', { name: 'issues 3' }));
   await user.click(await main().findByText('Issue 12'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   expect(main().getByText('acme/site · hive')).toBeInTheDocument();
-  await user.click(main().getByRole('tab', { name: 'issues 3' }));
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   expect(await main().findByText('Issue 12')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Pager breaks' })).not.toBeInTheDocument();
 });
@@ -120,14 +121,14 @@ test('a native view row opens the issue page under the source header when the Hi
   showFlow();
   await automation().findByRole('button', { name: /^site/ }); // the repositories are read
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByText('Elsewhere'));
   expect(open).toHaveBeenCalledWith('https://github.com/acme/else/issues/5', '_blank', 'noreferrer');
   await user.click(main().getByText('Pager breaks'));
   expect(await main().findByRole('heading', { name: 'Pager breaks' })).toBeInTheDocument();
   expect(main().getByText('roadmap · hive')).toBeInTheDocument();
-  expect(main().getByRole('tab', { name: 'GitHub Project' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  expect(bar().getByRole('tab', { name: 'GitHub Project' })).toHaveAttribute('aria-selected', 'true');
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   expect(await main().findByText('2 issues · 0 no fluxo')).toBeInTheDocument();
   open.mockRestore();
 });
@@ -141,7 +142,7 @@ test('a native view row of a task whose repository the Hive does not list goes t
   showFlow();
   await automation().findByRole('button', { name: /^site/ });
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByText('Elsewhere'));
   await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_5' }));
   expect(open).not.toHaveBeenCalled();
@@ -156,8 +157,8 @@ test('a PR row opens its page under the PRs tab; the PRs tab returns to the list
   await user.click(await main().findByText('Fix the pager'));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
   expect(main().getByRole('tab', { name: 'conversa 0' })).toHaveAttribute('aria-selected', 'true');
-  expect(main().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(main().getByRole('tab', { name: 'PRs 2' }));
+  expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  await user.click(bar().getByRole('tab', { name: 'PRs 2' }));
   expect(await main().findByText('Fix the pager')).toBeInTheDocument();
   expect(main().queryByRole('heading', { name: 'Fix the pager' })).not.toBeInTheDocument();
 });
@@ -188,9 +189,9 @@ test('an issue page\'s abrir PR › opens the PR\'s page under the PRs tab (#758
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
-  await user.click(main().getByRole('tab', { name: 'issues 3' }));
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
   await user.click(await main().findByText('Issue 12'));
   await user.click(await main().findByRole('button', { name: 'abrir PR ›' }));
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
-  expect(main().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
 });

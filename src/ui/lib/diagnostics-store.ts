@@ -199,9 +199,11 @@ function clientSource([key, client]: [string, Client]): ActivitySource[] {
 const CLI_PHASE: Record<CheckPhase, ActivitySource['phase'] | undefined> = { running: 'starting', done: 'ready', failed: 'failed', absent: undefined };
 
 // The activity's command-line checkers: those that ran, by their line over every target, then those bound to an open file with no answer yet
-function cliSources(activityId: string): ActivitySource[] {
-  const waiting = [...checkBound].filter(([file]) => file.startsWith(`${activityId}\0`)).flatMap(([, ids]) => ids);
-  return [...new Set([...checksOf(activityId).map((c) => c.checker), ...waiting])].flatMap((checker): ActivitySource[] => {
+// `path`: only the checkers bound to that file (#295)
+function cliSources(activityId: string, path?: string): ActivitySource[] {
+  const bindings = path === undefined ? [...checkBound].filter(([file]) => file.startsWith(`${activityId}\0`)).flatMap(([, ids]) => ids) : (checkBound.get(fileKey(activityId, path)) ?? []);
+  const ran = path === undefined ? checksOf(activityId).map((c) => c.checker) : [];
+  return [...new Set([...ran, ...bindings])].flatMap((checker): ActivitySource[] => {
     const check = checks.get(checkKey(activityId, checker));
     if (check === undefined) return [{ name: checker, kind: 'checker', phase: 'starting' }];
     const { phase, reason, log } = statusOf(check);
@@ -212,9 +214,18 @@ function cliSources(activityId: string): ActivitySource[] {
 
 /** The footer's checkers for the activity (#225): its language servers, then its checker servers, then its command-line checkers, one per name. */
 export function activityStatus(activityId: string): ActivitySource[] {
-  const own = [...clients].filter(([, c]) => c.activityId === activityId);
+  return sourcesOf([...clients].filter(([, c]) => c.activityId === activityId), cliSources(activityId));
+}
+
+/** The footer's checkers for one open file (#295): the clients bound to it and its bound command-line checkers, the activity's order. */
+export function fileStatus(activityId: string, path: string): ActivitySource[] {
+  const keys = bound.get(fileKey(activityId, path));
+  return sourcesOf([...clients].filter(([key, c]) => c.activityId === activityId && keys?.has(key)), cliSources(activityId, path));
+}
+
+function sourcesOf(own: [string, Client][], cli: ActivitySource[]): ActivitySource[] {
   const servers = [...own.filter(([, c]) => c.checker === undefined), ...own.filter(([, c]) => c.checker !== undefined)].flatMap(clientSource);
-  const all = [...servers, ...cliSources(activityId)];
+  const all = [...servers, ...cli];
   return all.filter((s, i) => all.findIndex((other) => other.name === s.name) === i);
 }
 

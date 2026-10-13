@@ -43,7 +43,7 @@ function Home() {
   return (
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[taskA, taskC]} workers={[workerA]} liveActivities={work.activities} activityRecords={work.activityRecords}
-      terminals={[]} onSelect={() => {}} detail={() => openers} automation={() => <p>automação</p>}
+      terminals={[]} onSelect={() => {}} detail={() => openers} automation={() => <p>automação</p>} footer={(shown, file) => <p data-testid="footer">{`${shown ?? '-'} ${file ?? '-'}`}</p>}
     >
       <main>fluxo</main>
     </MainDock>
@@ -116,4 +116,13 @@ test('a file opened as a preview takes a preview tab of its own beside its edito
   expect(within(screen.getByRole('tablist', { name: 'abas' })).getAllByRole('tab').map((tab) => [tab.textContent, tab.getAttribute('aria-selected')]))
     .toEqual([['Claude', 'false'], ['spec.md', 'false'], ['Preview spec.md', 'true']]);
   expect(answers).toEqual([true, true, true]);
+});
+
+test('the footer is handed the focused file tab\'s path, and no file once the run tab is focused again (#295)', async () => {
+  render(<Home />);
+  click('spec');
+  await waitFor(() => expect(screen.getByTestId('footer')).toHaveTextContent(/ docs\/spec\.md$/));
+  fireEvent.click(screen.getByRole('tab', { name: 'Claude' }));
+  expect(screen.getByTestId('footer')).toHaveTextContent(/ -$/);
+  expect(screen.getByTestId('footer')).not.toHaveTextContent(/^- /);
 });

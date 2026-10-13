@@ -39,6 +39,13 @@ ipcRenderer.on('window:close', () => closeKeyListener?.());
 let openFileListener: ((file: unknown) => void) | undefined;
 ipcRenderer.on('window:openFile', (_event, file: unknown) => openFileListener?.(file));
 
+// Full screen (#295): main sends window:fullScreen on the window's enter and leave; nothing is held, since the page asks isFullScreen at load.
+// Untrusted IPC: only a boolean reaches the page
+let fullScreenListener: ((on: boolean) => void) | undefined;
+ipcRenderer.on('window:fullScreen', (_event, on: unknown) => {
+  if (typeof on === 'boolean') fullScreenListener?.(on);
+});
+
 const bridge: HiveWindow = {
   chooseFolder: () => invoke('window:chooseFolder'),
   onSelect: (callback) => {
@@ -75,6 +82,13 @@ const bridge: HiveWindow = {
   clipboardFiles: () => invoke('window:clipboardFiles'),
   writeClipboardFiles: (paths) => invoke('window:writeClipboardFiles', paths), // #818
   saveDialog: (defaultPath) => invoke('window:saveDialog', defaultPath), // #818
+  isFullScreen: () => invoke('window:isFullScreen'), // #295
+  onFullScreen: (callback) => {
+    fullScreenListener = callback;
+    return () => {
+      if (fullScreenListener === callback) fullScreenListener = undefined;
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('hive', bridge);

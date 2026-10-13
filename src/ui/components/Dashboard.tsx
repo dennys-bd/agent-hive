@@ -16,6 +16,7 @@ import { ConsoleChip } from '@/components/ConsoleDrawer';
 import { CrashDialog } from '@/components/CrashDialog';
 import { type DetailPage, DetailPanel, type Selection } from '@/components/DetailPanel';
 import { DetailSlotProvider } from '@/components/DetailSlot';
+import { HeaderSlotProvider } from '@/components/HeaderSlot';
 import type { SourcesNav } from '@/components/FlowSources';
 import { type BackLink, FlowHeader, type RepoHeader, type RepoTab, type SourceTab, type SourceTabs } from '@/components/FlowHeader';
 import { Footer } from '@/components/Footer';
@@ -277,9 +278,9 @@ function TreeHoverHost({ children }: { children: ReactNode }) {
 const NO_COLORS: Readonly<Record<string, string>> = {};
 
 /** The dashboard, with the workspaces' colours (#78), the create destinations (#846) its dialogs and popovers read from the context, the tree row the details hover (#36), and
- * the details panel's slot (#64) around the dock, which a page's block lands in. */
+ * the details panel's slot (#64) and the header's center slot (#295) around the dock, which a page's block and the flow's bar land in. */
 export function Dashboard(props: DashboardProps) {
-  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><WorkspaceColorsContext.Provider value={props.state?.workspaceColors ?? NO_COLORS}><TreeHoverHost><DetailSlotProvider><DashboardView {...props} /></DetailSlotProvider></TreeHoverHost></WorkspaceColorsContext.Provider></CreateTargetsContext.Provider>;
+  return <CreateTargetsContext.Provider value={createTargetsOf(props.sources ?? NO_SOURCES)}><WorkspaceColorsContext.Provider value={props.state?.workspaceColors ?? NO_COLORS}><TreeHoverHost><DetailSlotProvider><HeaderSlotProvider><DashboardView {...props} /></HeaderSlotProvider></DetailSlotProvider></TreeHoverHost></WorkspaceColorsContext.Provider></CreateTargetsContext.Provider>;
 }
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
@@ -307,10 +308,10 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
         // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
         // signal and the worker cap stay in the flow sidebar (redesign 09)
-        footer={(shown) => (
+        footer={(shown, file) => (
           <Footer
             state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />}
-            checkers={<Checkers activityId={shown} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
+            checkers={<Checkers activityId={shown} path={file} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
           />
         )}
         header={(shell) => <Header shell={shell} state={state} effective={limits} />}

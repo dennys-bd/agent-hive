@@ -139,3 +139,18 @@ test('undefined reads every activity: problems, check statuses and answered sour
   expect(store.answeredSources(undefined)).toEqual(['tsc', 'mypy']);
   expect([store.ownerOf('x.ts'), store.ownerOf('a.py'), store.ownerOf('none.ts')]).toEqual(['a1', 'a2', undefined]);
 });
+
+test('fileStatus lists only the clients bound to that file and the command-line checkers bound to it; another file\'s server and checker are left out (#295)', () => {
+  store.setClient('ts', 'a1', 'typescript-language-server', { phase: 'ready' });
+  store.bindFile('a1', 'a.ts', 'ts', 'typescript');
+  store.setClient('py', 'a1', 'pyright', { phase: 'ready' });
+  store.bindFile('a1', 'b.py', 'py', 'python');
+  store.setClient('b', 'a1', 'biome', { phase: 'ready' }, undefined, 'biome');
+  store.bindFile('a1', 'a.ts', 'b', 'typescript');
+  store.bindChecks('a1', 'a.ts', ['tsc']);
+  store.bindChecks('a1', 'b.py', ['mypy']);
+  expect(store.fileStatus('a1', 'a.ts').map((s) => s.name)).toEqual(['typescript-language-server', 'biome', 'tsc']);
+  expect(store.fileStatus('a1', 'b.py').map((s) => s.name)).toEqual(['pyright', 'mypy']);
+  expect(store.fileStatus('a1', 'c.txt')).toEqual([]);
+  expect(store.fileStatus('a2', 'a.ts')).toEqual([]);
+});

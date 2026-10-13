@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import { type BackLink, FlowHeader, lastPolled } from '@/components/FlowHeader';
 import { Flow } from '@/components/Flow';
+import { HeaderSlotProvider, useHeaderSlotRef } from '@/components/HeaderSlot';
 import { FlowShownContext } from '@/components/MainDock';
 import { setLanguage } from '@/i18n';
 import { setShortcuts } from '@/lib/shortcut-bindings';
@@ -249,4 +250,28 @@ test('⌘F leaves buscar tarefas alone while the Settings page is open, and the 
   const field = screen.getByRole('textbox', { name: 'buscar tarefas' });
   expect(fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true })).toBe(true);
   expect(field).not.toHaveFocus();
+});
+
+// A header's center column as Header registers it (#295)
+function Slot() {
+  return <div data-testid="slot" ref={useHeaderSlotRef()} />;
+}
+const inSlot = (hasSlot: boolean, isShown = true) => (
+  <HeaderSlotProvider>
+    {hasSlot && <Slot />}
+    <FlowShownContext.Provider value={isShown}><div data-testid="page"><FlowHeader state={state([])} tasks={[]} /></div></FlowShownContext.Provider>
+  </HeaderSlotProvider>
+);
+
+test('under a header slot provider the bar renders in the registered slot, not in its page; nothing while no slot is registered or the flow is hidden; alone it stays in place (#295, #596)', () => {
+  const { rerender } = render(inSlot(true));
+  expect(screen.getByTestId('slot')).toContainElement(header());
+  expect(screen.getByTestId('page')).toBeEmptyDOMElement();
+  expect(header()).not.toHaveClass('h-10');
+  expect(header()).not.toHaveClass('border-b');
+  expect(header().className).toContain('[-webkit-app-region:no-drag]'); // its controls keep their clicks in the dragging header
+  rerender(inSlot(true, false));
+  expect(screen.queryByRole('region', { name: 'fluxo' })).not.toBeInTheDocument();
+  rerender(inSlot(false));
+  expect(screen.queryByRole('region', { name: 'fluxo' })).not.toBeInTheDocument();
 });

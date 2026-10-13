@@ -44,8 +44,8 @@ export function useHeaderShell({ center, current, layout, isHome, bar, sideTab, 
     setSideTab(pane);
   };
   return {
-    center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isHome && layout.docks.detail === 'right', // nothing to open on the home, nor with Detalhes docked left
-    rightShown: layout.open.right && layout.docks.detail === 'right', // Detalhes can be docked left: its group is then no right column
+    center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isHome, // nothing to open on the home
+    rightShown: layout.open.right, // Detalhes is always the right group (#295)
     panes: { active, enabled: { files: isActivities && current !== undefined, details: !isActivities || current?.kind === 'task' }, pick },
   };
 }

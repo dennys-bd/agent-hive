@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { applyLanding } from '@/components/center-drag';
 import {
   type CenterLayout, type CenterTabRef, changePanes, closeLeaf, closeRef, consoleRef, fileRefPath, foldIntoPane, groupsOf, initialLayout, isTabOpen, moveRef, openRef, prune, pruneLayouts,
-  readCenterLayouts, refKey, replaceRun, resize, retargetRef, runsOf, selectRef, sharesBuffer, shownRun, splitWith, type TabGroup, withSessions, withStageConsole, writeCenterLayouts,
+  readCenterLayouts, refKey, replaceRun, resize, retargetRef, runsOf, selectRef, sharesBuffer, shownFile, shownRun, splitWith, type TabGroup, withSessions, withStageConsole, writeCenterLayouts,
 } from '@/lib/center-layout';
 import { focusPane, type Panes, resizePanes } from '@/lib/pane-split';
 import { readView, resetViewState, writeView } from '@/lib/view-state';
@@ -438,4 +438,15 @@ test('a design tab is keyed design:<path>, apart from its file\'s editor tab, op
   expect(readCenterLayouts()).toEqual({ I1: opened });
   expect(readStored({ I1: initialLayout({ kind: 'design', path: '../x.hv.html' }) })).toEqual({});
   expect(readStored({ I1: { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'design', path: 5 }], active: 0 }, focused: 'g1' } })).toEqual({});
+});
+
+test('shownFile is the path of the focused group\'s shown tab when that is a file; undefined for a run, a diff, a preview, a file in an unfocused group, and no layout (#295)', () => {
+  const file: CenterTabRef = { kind: 'file', path: 'a.ts' };
+  const preview: CenterTabRef = { kind: 'preview', path: 'a.md' };
+  expect(shownFile(openRef(ROW, file))).toBe('a.ts'); // opened in g2, its shown tab
+  expect(shownFile(selectRef(openRef(ROW, file), 'g2', 0))).toBeUndefined(); // back on a run
+  expect(shownFile(openRef(ROW, DIFF))).toBeUndefined();
+  expect(shownFile(openRef(ROW, preview))).toBeUndefined();
+  expect(shownFile({ ...openRef(ROW, file), focused: 'g1' })).toBeUndefined(); // the file sits in the unfocused g2
+  expect(shownFile(undefined)).toBeUndefined();
 });

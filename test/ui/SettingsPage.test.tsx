@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
 import { setLanguage, t } from '@/i18n';
 import type { SettingsSection } from '@/lib/settings-sections';
-import { WINDOW_CHROME } from '@/lib/window-chrome';
+import { SETTINGS_CHROME } from '@/lib/window-chrome';
 import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 
@@ -244,11 +244,11 @@ test('the first run saves an untouched prefilled draft (#294, #510)', async () =
   expect(screen.getByRole('navigation')).toBeInTheDocument();
 });
 
-test('the header clears the macOS window buttons and drags the window, the back button still takes clicks (#583)', async () => {
+test('the header clears the macOS window buttons, or in full screen the rail, and drags the window, the back button still takes clicks (#583, #295)', async () => {
   render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
   await settled();
   const back = screen.getByRole('button', { name: t('settings.back') });
-  expect(back.closest('header')?.className).toContain(WINDOW_CHROME);
+  expect(back.closest('header')?.className).toContain(SETTINGS_CHROME);
   expect(back.className).toContain('[-webkit-app-region:no-drag]');
 });
 

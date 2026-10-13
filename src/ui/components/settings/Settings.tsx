@@ -18,7 +18,7 @@ import { SETTINGS_SECTIONS, type SettingsView, unsavedKeys } from '@/lib/setting
 import { type SourceDraft, sourceColumnsUrl, draftFrom, filterOptionsUrl, projectsUrl, toSettingsBody, validateSettings, type SettingsDraft } from '@/lib/settings-form';
 import { deletionMessage, deletionMoves, type StageMove } from '@/lib/settings-stages';
 import { isRecording } from '@/lib/shortcut-bindings';
-import { WINDOW_CHROME } from '@/lib/window-chrome';
+import { SETTINGS_CHROME } from '@/lib/window-chrome';
 import type { FilterOptions, GithubAuthStatus, ProjectSummary, SettingsInfo, SettingsResult, State } from '../../../types';
 
 interface SettingsProps { info: SettingsInfo; state?: State; newSource?: NewSource; view?: SettingsView; onSaved(result: SettingsResult): Promise<void>; onCancel?(): void }
@@ -220,7 +220,7 @@ export function Settings({ info, state, newSource, view: opening, onSaved, onCan
   return (
     <WorkspaceColorsContext.Provider value={colors}>
     <div ref={pageRef} data-settings-page="" className="fixed inset-0 z-40 flex flex-col bg-background text-foreground">
-      <header className={`flex shrink-0 items-center gap-3 border-b pr-6 ${WINDOW_CHROME}`}>
+      <header className={`flex shrink-0 items-center gap-3 border-b pr-6 ${SETTINGS_CHROME}`}>
         {onCancel && <Button type="button" variant="ghost" size="sm" className="[-webkit-app-region:no-drag]" disabled={saving} onClick={requestLeave}><ArrowLeftIcon />{t('settings.back')}</Button>}
         <span className="font-semibold text-lg leading-none">{t('settings.title')}</span>
       </header>

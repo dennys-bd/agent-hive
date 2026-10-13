@@ -115,7 +115,7 @@ const MIN_WIDTH = 960;
 function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   const origin = `http://127.0.0.1:${port}`;
   const { maximized, fullScreen, ...rect } = bounds;
-  // The native title bar is hidden (#533): the header draws it, with the traffic lights centred in its 44px and inside its 100px left padding.
+  // The native title bar is hidden (#533): the header draws it, with the traffic lights centred in its 44px and inside its 84px left inset (#295: 12px in full screen, where macOS hides them).
   // fullscreen only when true: an explicit false makes the window not fullscreenable on macOS (the green light's +, no full screen key, #585)
   const win = new BrowserWindow({
     ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
@@ -145,6 +145,9 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
     terminals.closeAll();
     whenNoMainWindow();
   });
+  // #295: the header drops the window buttons' inset in full screen, where macOS hides them; the page asks window:isFullScreen at load
+  win.on('enter-full-screen', () => win.webContents.send('window:fullScreen', true));
+  win.on('leave-full-screen', () => win.webContents.send('window:fullScreen', false));
   guardUnsavedEdits(win);
   externalLinksToBrowser(win, origin, log);
   return win;
@@ -534,6 +537,9 @@ ipcMain.handle('window:saveDialog', async (event, defaultPath: unknown) => {
 // The page's closeWindow shortcut (#585), the only key that closes a main window since the close key stopped falling back to it (#612):
 // its own window closes, through the close handler (#513) that may turn the last main window's close into a quit.
 ipcMain.handle('window:closeWindow', (event) => senderMainWindow(event).win.close());
+
+// Whether the asking main window is in full screen (#295): a window created full screen (restored there, #398) sends no enter event
+ipcMain.handle('window:isFullScreen', (event) => senderMainWindow(event).win.isFullScreen());
 
 // A panel tab as a window of its own and back (#252): the handlers live in detach-ipc.ts.
 const detach = registerDetachIpc({ handle: (channel, listener) => ipcMain.handle(channel, listener), senderMainWindow });
