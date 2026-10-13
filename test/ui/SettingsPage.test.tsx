@@ -200,22 +200,19 @@ test('← source and Esc leave at once without changes and ask with them (#294, 
   expect(onCancel).not.toHaveBeenCalled();
 });
 
-test('the search filters the nav, ignoring accents (#510)', async () => {
+test('the nav lists every section while the search holds text; a query with no setting says so (#510, #689)', async () => {
   const user = userEvent.setup();
   render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
   await settled();
   const nav = screen.getByRole('navigation', { name: t('settings.nav') });
+  const box = () => screen.getByRole('combobox', { name: t('settings.search') });
 
-  await user.type(screen.getByRole('searchbox', { name: t('settings.search') }), 'execucao');
-  expect(within(nav).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['execução']);
-  expect(h1()).toHaveTextContent('workspaces');
-
-  await user.clear(screen.getByRole('searchbox', { name: t('settings.search') }));
-  await user.type(screen.getByRole('searchbox', { name: t('settings.search') }), 'zzz');
-  expect(screen.getByText(t('settings.search.none'))).toBeInTheDocument();
-
-  await user.clear(screen.getByRole('searchbox', { name: t('settings.search') }));
+  await user.type(box(), 'execucao');
   expect(within(nav).getAllByRole('button')).toHaveLength(8);
+
+  await user.clear(box());
+  await user.type(box(), 'zzz');
+  expect(screen.getByText(t('settings.search.none'))).toBeInTheDocument();
 });
 
 test('a problem on save opens its section with the message (#510)', async () => {

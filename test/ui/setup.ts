@@ -36,6 +36,7 @@ class ResizeObserverStub {
 }
 globalThis.ResizeObserver = globalThis.ResizeObserver ?? ResizeObserverStub;
 Element.prototype.scrollIntoView = Element.prototype.scrollIntoView ?? ((): void => {});
+Element.prototype.scrollTo = Element.prototype.scrollTo ?? ((): void => {});
 Element.prototype.hasPointerCapture = Element.prototype.hasPointerCapture ?? ((): boolean => false);
 Element.prototype.releasePointerCapture = Element.prototype.releasePointerCapture ?? ((): void => {});
 Element.prototype.setPointerCapture = Element.prototype.setPointerCapture ?? ((): void => {});

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { AppSection, searchEntries as appEntries } from '@/components/settings/AppSection';
-import { EditorSection, searchEntries as editorEntries } from '@/components/settings/EditorSection';
+import { EditorSection, searchEntries as editorSectionEntries } from '@/components/settings/EditorSection';
 import { ExecutionSection, searchEntries as executionEntries } from '@/components/settings/ExecutionSection';
 import { FlowSection, type FlowProps, searchEntries as flowEntries } from '@/components/settings/FlowSection';
 import { RulesTab, searchEntries as rulesEntries } from '@/components/settings/RulesTab';
@@ -81,7 +81,7 @@ function body(section: SettingsSection, source: SourceDraft | undefined, { draft
 export function settingsEntries(draft: SettingsDraft, offered: readonly SettingsSection[]): SettingEntry[] {
   const bySection: Record<SettingsSection, () => SettingEntry[]> = {
     workspaces: () => workspacesEntries(draft), flow: () => flowEntries(draft), execution: executionEntries, rules: rulesEntries,
-    app: appEntries, editor: editorEntries, shortcuts: shortcutsEntries, maintenance: maintenanceEntries,
+    app: appEntries, editor: editorSectionEntries, shortcuts: shortcutsEntries, maintenance: maintenanceEntries,
   };
   return offered.flatMap((section) => bySection[section]());
 }

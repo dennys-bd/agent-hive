@@ -64,6 +64,12 @@
 @keyframes close-tab-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .close-tab-countdown { transform-origin: left; animation-name: close-tab-countdown; animation-timing-function: linear; animation-fill-mode: forwards; }
 [data-sonner-toaster]:hover .close-tab-countdown { animation-play-state: paused; }
+/* The Settings search's landing (#689): the picked setting outlined in the focus colour, held, then faded over its last 600ms (2s total).
+   An animation, not a transition: a removed class takes its transition with it. In components, so a card's own rounded-xl wins. */
+@keyframes setting-highlight { 0%, 70% { outline-color: color-mix(in oklab, var(--ring) 70%, transparent); } 100% { outline-color: transparent; } }
+@layer components {
+  .setting-highlight { outline: 2px solid transparent; outline-offset: 4px; border-radius: var(--radius-md); animation: setting-highlight 2s ease-out forwards; }
+}
 
 /* Muted file icons in the files tree (#754): the icon theme's own colours, toned down by the two theme.css tokens. */
 .file-icon-muted { filter: saturate(var(--file-icon-saturate)) opacity(var(--file-icon-opacity)); }

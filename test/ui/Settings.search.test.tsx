@@ -1,9 +1,11 @@
-import { render } from '@testing-library/react';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
+import { Settings } from '@/components/settings/Settings';
 import { SectionContent, settingsEntries } from '@/components/settings/SectionContent';
-import { setLanguage } from '@/i18n';
+import { setLanguage, t } from '@/i18n';
 import { draftFrom, type SettingsDraft } from '@/lib/settings-form';
-import { type SettingEntry, textIn } from '@/lib/settings-search';
+import { type SettingEntry, settingAnchor, textIn } from '@/lib/settings-search';
 import { SETTINGS_SECTIONS, type SettingsView } from '@/lib/settings-sections';
 import type { SettingsInfo } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
@@ -60,3 +62,59 @@ test('every entry lands on an element once its view is open: a workspace, a sour
     unmount();
   }
 }, 30_000); // renders every view of the index: slow under the parallel gate
+
+const search = () => screen.getByRole('combobox', { name: t('settings.search') });
+const pickFirst = async (user: UserEvent, query: string) => { await user.type(search(), query); await user.keyboard('{Enter}'); };
+
+test('a pick opens its view, scrolls it smoothly, focuses its control without a second scroll and outlines it for 2s (#689)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  onTestFinished(() => { vi.useRealTimers(); });
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const scrolled = vi.spyOn(Element.prototype, 'scrollTo');
+  render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
+  await pickFirst(user, 'tema');
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('app');
+  await vi.advanceTimersByTimeAsync(20); // the landing frame
+  expect(scrolled).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+  const block = document.getElementById(settingAnchor('settings.theme'));
+  expect(screen.getByLabelText(t('settings.theme'))).toHaveFocus();
+  expect(block).toHaveClass('setting-highlight');
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(block).not.toHaveClass('setting-highlight');
+  await pickFirst(user, 'formatar ao salvar');
+  await vi.advanceTimersByTimeAsync(20);
+  expect(screen.getByRole('switch', { name: 'formatar ao salvar' })).toHaveFocus(); // the control before its label
+});
+
+test('a source\'s and a stage\'s entries open that context (#689)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
+  await pickFirst(user, 'board');
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('board');
+  await pickFirst(user, 'review');
+  await waitFor(() => expect(screen.getByLabelText(t('settings.stages.name'))).toHaveValue('review'));
+});
+
+test('⌘F focuses the search and selects its text; Esc twice never leaves Settings (#689)', async () => {
+  const user = userEvent.setup();
+  const onCancel = vi.fn();
+  render(<Settings info={info} onSaved={vi.fn()} onCancel={onCancel} />);
+  await user.type(search(), 'tema');
+  await user.click(screen.getByRole('heading', { level: 1 }));
+  fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true }); // jsdom is not macOS
+  expect(search()).toHaveFocus();
+  expect([(search() as HTMLInputElement).selectionStart, (search() as HTMLInputElement).selectionEnd]).toEqual([0, 4]);
+  await user.keyboard('{Escape}{Escape}');
+  expect(search()).not.toHaveFocus();
+  expect(onCancel).not.toHaveBeenCalled();
+});
+
+test('what the nav search found before is still found, now as settings (#510, #689)', async () => {
+  const user = userEvent.setup();
+  render(<Settings info={info} onSaved={vi.fn()} onCancel={vi.fn()} />);
+  for (const query of ['idioma', 'notificações', 'aprovação', 'prefixo', 'conexões', 'medida', 'ícones de arquivo', 'laterais por visão', 'formatar', 'sintaxe', 'em cada workspace', 'no menu', 'sinal', 'órfãs', 'pyright', 'ambiente', 'agente padrão', 'comandos']) {
+    await user.clear(search());
+    await user.type(search(), query);
+    expect(screen.queryAllByRole('option').length, query).toBeGreaterThan(0);
+  }
+}, 30_000);
