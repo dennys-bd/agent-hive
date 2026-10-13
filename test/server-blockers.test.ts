@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { ItemNotOnSourceError } from '../src/field-values.js';
-import { registerBlockerRoutes } from '../src/server-blockers.js';
+import { canRelateItem, refsOf, registerBlockerRoutes, relateItem } from '../src/server-blockers.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from '../src/sources/github-blockers.js';
 import type { BlockerChange, HiveEvent, ItemBlockers, Source, SourceItem, State, Task } from '../src/types.js';
 import { fakeLog } from './fakes.js';
@@ -98,7 +98,7 @@ test('the source path refuses with a code and never answers GitHub\'s words, whi
   assert.deepEqual([status, (body as { code?: unknown }).code], [502, 'blockers.refused']);
   assert.equal(JSON.stringify(body).includes('Resource not accessible'), false, 'GitHub\'s words stay out of the answer');
   assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('Resource not accessible by integration')), 'and go to the log');
-  assert.equal((await post(h.base, 'low', 'low:PVTI_1', add('bad')))[0], 429, 'refused before relate, as the fields route');
+  assert.deepEqual(await post(h.base, 'low', 'low:PVTI_1', add('bad')), [429, { error: 'GitHub quota is low', resetsAt: LOW.resetsAt }], 'refused before relate, as the fields route');
   assert.deepEqual(h.dispatched, []);
 });
 
@@ -153,4 +153,32 @@ test('a refused search answers 502 refused without the source\'s words, which go
   assert.deepEqual([status, (body as { code?: unknown }).code], [502, 'blockers.refused']);
   assert.equal(JSON.stringify(body).includes('Resource not accessible'), false, 'GitHub\'s words stay out of the answer');
   assert.ok(h.lines.some((l) => l.startsWith('ERROR') && l.includes('Resource not accessible by integration')), 'and go to the log');
+});
+
+test('relateItem writes as the route does, the path picked by the item\'s own source; a backoff and no live Hive are refusals (#294)', async () => {
+  const low: Task = { ...GH_TASK, item: { ...GH_TASK.item, itemId: 'low:PVTI_1', source: 'low' } };
+  let state: State = { ...initialState(0), tasks: [hive(1), hive(2), GH_TASK, low], syncs: { low: { quota: LOW } } };
+  const dispatched: HiveEvent[] = [];
+  const deps = { dispatch: async (event: HiveEvent) => { dispatched.push(event); if (event.type === 'blockerSet') state = reduce(state, event).state; }, latest: () => state };
+  const work: RelateSource = { relate: async () => ({ blockers: SEVEN, entry: ENTRY }) };
+  const live = () => ({ state, runtime: { sources: new Map(Object.entries({ work, low: work })) } });
+  assert.deepEqual(await relateItem(deps, live(), 'local:1', add('HIVE-2')), { blockers: { blockedBy: [{ id: 'HIVE-2', title: 'T2', state: 'open' }], blocking: [] } });
+  assert.deepEqual(await relateItem(deps, live(), 'work:PVTI_1', add('#7')), { blockers: SEVEN });
+  assert.deepEqual(dispatched.map((e) => e.type), ['blockerSet', 'itemRead']);
+  assert.deepEqual(await relateItem(deps, live(), 'local:1', add('HIVE-1')), { refusal: { status: 400, error: 'an item cannot block itself', code: 'blockers.self' } });
+  assert.deepEqual(await relateItem(deps, live(), 'low:PVTI_1', add('7')), { refusal: { status: 429, error: 'GitHub quota is low', resetsAt: LOW.resetsAt } });
+  assert.deepEqual(await relateItem(deps, undefined, 'local:1', add('HIVE-2')), { refusal: { status: 404, error: 'no such item on this source', code: 'blockers.unknownItem' } });
+});
+
+test('canRelateItem: a hive task always, a source\'s task when its adapter relates; an unknown item never (#294)', () => {
+  const bare: Task = { ...GH_TASK, item: { ...GH_TASK.item, itemId: 'bare:PVTI_1', source: 'bare' } };
+  const sources = new Map<string, RelateSource>([['work', { relate: async () => ({ blockers: NONE }) }], ['bare', {}]]);
+  const live = { state: { ...initialState(0), tasks: [hive(1), GH_TASK, bare] }, runtime: { sources } };
+  assert.deepEqual(['local:1', 'work:PVTI_1', 'bare:PVTI_1', 'local:9'].map((id) => canRelateItem(live, id)), [true, true, false, false]);
+});
+
+test('refsOf reads hive_stop\'s block as the route\'s refs: positive integers and trimmed strings up to 200, 1 to 10 of them (#294)', () => {
+  assert.deepEqual(refsOf([12, ' #13 ', 'acme/site#14', 'HIVE-2']), ['12', '#13', 'acme/site#14', 'HIVE-2']);
+  const bad: (number | string)[][] = [[], [0], [-3], [1.5], [' '], ['x'.repeat(201)], Array.from({ length: 11 }, (_, i) => i + 1)];
+  for (const block of bad) assert.equal(refsOf(block), undefined, JSON.stringify(block).slice(0, 40));
 });

@@ -253,3 +253,30 @@ test('a commands run whose stage was deleted (stageGone) routes no verdict at it
   const work = activityOf(r.state, 'board:item1');
   assert.deepEqual([r.state.tasks[0].stage, work?.error, work?.commands, work?.stageGone, r.state.workers[0].status], ['checks', `${STAGE_GONE}old`, undefined, undefined, 'empty']);
 });
+
+// What relate's re-read leaves on the task (#294): its open blockers, the fill's gate
+const gatedBy = (state: State, n: number, ids: string[]): State =>
+  ({ ...state, tasks: state.tasks.map((t) => (t.item.itemId === `board:item${n}` ? { ...t, item: { ...t.item, blockedBy: ids } } : t)) });
+const ungated = (state: State): State => ({ ...state, tasks: state.tasks.map(({ item: { blockedBy: _gate, ...item }, ...t }) => ({ ...t, item })) });
+
+test('a stop with block kills the run but leaves the activity unstopped, the worker marked; its exit leaves it unstopped and the fill skips it while blocked (#294)', () => {
+  const running = filled(hive('green', [waiting(1, 'spec')])).state;
+  const ptyId = workerOf(running, 1);
+  const gated = deepFreeze(gatedBy(running, 1, ['9']));
+  const halted = reduce(gated, { type: 'stop', ptyId, block: true });
+  assert.deepEqual(halted.effects.map((e) => e.type), ['kill']);
+  assert.deepEqual([activityOf(halted.state, 'board:item1')?.stopped, halted.state.workers[0].blocked], [undefined, true]);
+  const exited = reduce(halted.state, { type: 'exit', ptyId });
+  assert.deepEqual([activityOf(exited.state, 'board:item1')?.stopped, exited.state.workers[0], spawned(exited)], [undefined, { id: exited.state.workers[0].id, status: 'empty' }, []]);
+  const plain = reduce(reduce(running, { type: 'stop', ptyId }).state, { type: 'exit', ptyId });
+  assert.equal(activityOf(plain.state, 'board:item1')?.stopped, true, 'without block: stopped, as today');
+});
+
+test('a task a blocked stop left is idle again once its blockers are gone: the next fill starts it with no manual start (#294)', () => {
+  const running = filled(hive('green', [waiting(1, 'spec')])).state;
+  const ptyId = workerOf(running, 1);
+  const halted = reduce(gatedBy(running, 1, ['9']), { type: 'stop', ptyId, block: true }).state;
+  const exited = reduce(halted, { type: 'exit', ptyId }).state;
+  assert.deepEqual(spawned(filled(exited)), [], 'still blocked');
+  assert.deepEqual(spawned(filled(ungated(exited))), ['1']);
+});

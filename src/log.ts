@@ -162,7 +162,7 @@ export function describeEvent(event: HiveEvent): string {
       return `hook ${name} pty=${shortId(event.ptyId)}${field('tool', tool)}${field('reason', reason)}${field('source', source)}`;
     }
     case 'exit': return `exit pty=${shortId(event.ptyId)}`;
-    case 'stop': return `stop pty=${shortId(event.ptyId)}${event.cause === undefined ? '' : ` cause=${event.cause}`}`;
+    case 'stop': return `stop pty=${shortId(event.ptyId)}${event.cause === undefined ? '' : ` cause=${event.cause}`}${event.block ? ' block' : ''}`;
     case 'forgetSlept': return `forgetSlept pty=${shortId(event.ptyId)}`; // #672
     case 'quit': return 'quit';
     case 'dismissCrash': return 'dismissCrash';

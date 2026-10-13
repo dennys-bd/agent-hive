@@ -55,3 +55,9 @@ test('both protocols tell the worker how to find why code is the way it is and t
     assert.deepEqual(lines.slice(remember + 1, remember + 3), [why, undo]);
   }
 });
+
+test('both protocols tell the worker to stop with block when another issue must be done first (#294)', () => {
+  for (const protocol of [STAGE_PROTOCOL, SESSION_PROTOCOL]) {
+    assert.deepEqual(missing(protocol, ['call `hive_stop` with `block` (that issue\'s number)', 'starts the task again once it closes']), []);
+  }
+});

@@ -4,23 +4,21 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { activityOfWorker, taskOfWorker } from './activities.js';
-import { taskWorkspace, workspaceByName } from './config.js';
+import { taskOfWorker } from './activities.js';
+import { taskWorkspace } from './config.js';
 import { correlationOf } from './event-derive.js';
-import { forkRepos, workspaceBase } from './fork.js';
 import type { Correlation, EventLog, RecordInput, RefusalCode } from './events.js';
-import { systemLanguage } from './language.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, type MemoryStore, whyProblem, withEntry, withUse } from './memory.js';
 import { liveRecord } from './record-kit.js';
-import { stageOf, taskId } from './tasks.js';
+import { isBlocked, stageOf, taskId } from './tasks.js';
+import { refsOf, type RelateOutcome } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
 import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
 import { appendMessage, markAgentResolved, type ReviewStore } from './review-store.js';
 import { createTask } from './create-task.js';
-import { gitOrWords } from './worktree.js';
-import { remoteHead } from './worktree-base.js';
-import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type Config, type Conventions, type Language, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, type PrTarget, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Worker, type Workspace } from './types.js';
+import { conventionsAnswer, forkConventions, workerWorkspace } from './mcp-conventions.js';
+import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type BlockerChange, type Config, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, REVIEW_TEXT_MAX, type ReviewMessage, type State } from './types.js';
 
 const SERVER_INFO = { name: 'hive', version: '1.0.0' }; // Claude Code names the tools mcp__hive__<tool>
 const RESULT_MAX_BYTES = 64 * 1024; // serialized, UTF-8
@@ -39,6 +37,10 @@ const QUESTION_MESSAGE = `question must be 1 to ${QUESTION_MAX} characters`;
 const CLOSE_REASONS = ['wontDo', 'duplicate'] as const satisfies readonly CloseReason[];
 const DUPLICATE_OF_MESSAGE = 'duplicateOf needs reason "duplicate" and the original issue\'s number, a positive integer';
 export const CANNOT_CLOSE_MESSAGE = 'this task\'s source cannot close it; call hive_stop without reason';
+export const BLOCK_WITH_REASON_MESSAGE = 'block records what the task waits for; it takes no reason or duplicateOf';
+export const BLOCK_MESSAGE = 'block must be 1 to 10 refs, each an issue (12, #12, owner/repo#12) or a task id';
+export const CANNOT_BLOCK_MESSAGE = 'this task\'s source cannot record a blocker; call hive_stop without block';
+export const NOT_BLOCKED_MESSAGE = 'none of these blockers is open; go on with the task';
 export const NO_SESSION_MESSAGE = 'your session id is not known yet';
 export const REPLY_TEXT_MESSAGE = `text must be 1 to ${REVIEW_TEXT_MAX} characters`;
 export const UNKNOWN_THREAD_MESSAGE = 'unknown conversation for this task';
@@ -51,6 +53,8 @@ export interface McpDeps {
   poll(names: string[], manual?: string[]): Promise<void>; // #846: hive_create_task on a source polls it through the route's own path
   dispatch(event: HiveEvent): Promise<Effect[]>;
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item
+  relate(itemId: string, change: BlockerChange): Promise<RelateOutcome>; // hive_stop's block (#294): the blockers route's own write, relateItem
+  canRelate(itemId: string): boolean; // hive_stop's block (#294): a hive task, or a task whose source relates
   reviews: Pick<ReviewStore, 'read' | 'update'>; // a task's review file (#591): hive_reply appends to it
   notifyReview(taskId: string): void; // the review event after its write (#591)
   events: Pick<EventLog, 'write'>; // #742: each tool call's mcp.call
@@ -204,15 +208,37 @@ function registerUserTools(server: McpServer, deps: McpDeps, header: string | un
   }));
 }
 
+// hive_stop with block (#294): every relation is written first, in order, so relate's re-read gates the task before the kill and no fill can
+// pick it up between the kill and the exit. A refused ref, or no open blocker, refuses the call and the session runs on; relations already
+// written stay, and a retry is a no-op for them (relate and blockerSet read before they write).
+async function stopBlocked(deps: McpDeps, ptyId: string, block: (number | string)[]): Promise<Answer> {
+  const refs = refsOf(block);
+  if (refs === undefined) return refuse('block_refused', BLOCK_MESSAGE);
+  const itemId = workerTaskId(deps, ptyId) ?? ''; // a local session has no task: it cannot relate
+  if (!deps.canRelate(itemId)) return refuse('cannot_block', CANNOT_BLOCK_MESSAGE);
+  for (const ref of refs) {
+    const written = await deps.relate(itemId, { action: 'add', kind: 'blockedBy', ref });
+    if ('refusal' in written) return refuse('block_refused', `${ref}: ${written.refusal.error}`);
+  }
+  const task = deps.live()?.state.tasks.find((t) => taskId(t) === itemId);
+  if (!task || !isBlocked(task.item)) return refuse('not_blocked', NOT_BLOCKED_MESSAGE);
+  await deps.dispatch({ type: 'stop', ptyId, block: true });
+  return reply(OK); // the kill may land before this reaches the worker: the call is its last act
+}
+
 // hive_stop (#314): the worker's own Stop, for a task that will not be done. With a reason the task's issue is closed too, after the kill;
-// a source that cannot close it refuses the call whole, so the worker learns and may stop without one.
+// a source that cannot close it refuses the call whole, so the worker learns and may stop without one. With block (#294) the blockers are
+// written and the task is left unstopped.
 function registerStopTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_stop', {
-    description: 'Tell the Hive this task will not be done: your session is stopped. Pass reason "wontDo" or "duplicate" (with duplicateOf, the original issue number) to have the Hive close the issue; never close it yourself. Without reason nothing is written to the source.',
-    inputSchema: { reason: z.enum(CLOSE_REASONS).optional(), duplicateOf: z.number().optional() },
-  }, async ({ reason, duplicateOf }) => recorded(deps, header, 'hive_stop', async () => {
+    description: 'Tell the Hive this task will not be done: your session is stopped. Pass reason "wontDo" or "duplicate" (with duplicateOf, the original issue number) to have the Hive close the issue; never close it yourself. Without reason nothing is written to the source.'
+      + ' When the task cannot go on until another issue is done, pass block instead (that issue\'s number, or several: 12, #12, owner/repo#12): the Hive records the blocker and starts the task again once it closes. block takes no reason.',
+    inputSchema: { reason: z.enum(CLOSE_REASONS).optional(), duplicateOf: z.number().optional(), block: z.array(z.union([z.number(), z.string()])).optional() },
+  }, async ({ reason, duplicateOf, block }) => recorded(deps, header, 'hive_stop', async () => {
     const ptyId = livePtyId(deps, header);
     if (!ptyId) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
+    if (block !== undefined && (reason !== undefined || duplicateOf !== undefined)) return refuse('block_with_reason', BLOCK_WITH_REASON_MESSAGE);
+    if (block !== undefined) return stopBlocked(deps, ptyId, block);
     if (duplicateOf !== undefined && (reason !== 'duplicate' || !Number.isInteger(duplicateOf) || duplicateOf < 1)) return refuse('duplicate_of', DUPLICATE_OF_MESSAGE);
     if (reason !== undefined && !deps.canClose(workerTaskId(deps, ptyId) ?? '')) return refuse('cannot_close', CANNOT_CLOSE_MESSAGE);
     const close = reason === undefined ? {} : { close: { type: 'close' as const, reason, ...(duplicateOf === undefined ? {} : { duplicateOf }) } };
@@ -252,42 +278,6 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
     deps.notifyReview(owner);
     return reply(OK);
   }));
-}
-
-/** Where a fork workspace's PRs go (#854): the target, the two repositories (owner/name), the remote the work starts from and the effective base. */
-export interface ForkConventions { pr: PrTarget; original: string; fork: string; baseRemote: string; base: string }
-
-/** What hive_conventions answers (#692): only the conventions set in the Hive, the Hive's language, the worker's stage with its approval, and a
- * fork workspace's PR target (#854). */
-export interface ConventionsAnswer { conventions: Conventions; hiveLanguage: Language; approval: boolean; stage?: string; fork?: ForkConventions }
-
-// The workspace a worker runs in (#692): its task's, or a local activity's own
-function workerWorkspace(state: Pick<State, 'tasks' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb'>, worker: Worker): Workspace | undefined {
-  const task = taskOfWorker(state, worker);
-  return task ? taskWorkspace(config, task) : workspaceByName(config, activityOfWorker(state, worker)?.workspace);
-}
-
-/** hive_conventions' answer for `worker` (#692): the conventions of its task's workspace, or of a local activity's own. The stage and its
- * approval only for a stage run: a free or a local session runs no stage. `fork` only when given (#854). */
-export function conventionsAnswer(state: Pick<State, 'tasks' | 'stages' | 'activities' | 'activityRecords'>, config: Pick<Config, 'comb' | 'language'>, worker: Worker, fork?: ForkConventions): ConventionsAnswer {
-  const task = taskOfWorker(state, worker);
-  const workspace = workerWorkspace(state, config, worker);
-  const stage = task && !worker.freeSession ? stageOf(state.stages, task.stage) : undefined;
-  return {
-    conventions: workspace?.conventions ?? {}, hiveLanguage: config.language ?? systemLanguage(), approval: stage?.approval === true,
-    ...(stage ? { stage: stage.name } : {}), ...(fork ? { fork } : {}),
-  };
-}
-
-/** A fork workspace's PR target as the skills read it (#854): none for a workspace that is not a fork or whose remotes are off GitHub. The base
- * is the workspace's own, else config.baseBranch, else the base remote's HEAD, else main. */
-export async function forkConventions(exec: Exec, workspace: Workspace | undefined, config: Pick<Config, 'baseBranch'>): Promise<ForkConventions | undefined> {
-  if (!workspace?.fork) return undefined;
-  const repos = await forkRepos(exec, workspace);
-  if (!repos) return undefined;
-  const { remote, branch } = workspaceBase(config, workspace);
-  const base = branch ?? (await remoteHead((...args) => gitOrWords(workspace.path, args, exec), remote));
-  return { pr: workspace.fork.pr, original: repos.original, fork: repos.fork, baseRemote: remote, base };
 }
 
 // hive_conventions (#692): what the plugin's new-* skills read first. Any skill may call it; it only reads.

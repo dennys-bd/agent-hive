@@ -398,6 +398,7 @@ test('describeEvent appends a SessionEnd\'s reason and a SessionStart\'s source,
 
 test('describeEvent names a stop\'s cause and a forgetSlept, describeEffect a forgetScrollback, by short ids only (#672)', () => {
   assert.equal(describeEvent({ type: 'stop', ptyId: PTY, cause: 'all' }), 'stop pty=1a2b3c4d cause=all');
+  assert.equal(describeEvent({ type: 'stop', ptyId: PTY, block: true }), 'stop pty=1a2b3c4d block');
   assert.equal(describeEvent({ type: 'forgetSlept', ptyId: PTY }), 'forgetSlept pty=1a2b3c4d');
   assert.equal(describeEffect({ type: 'forgetScrollback', ptyId: PTY }), 'forgetScrollback pty=1a2b3c4d');
 });

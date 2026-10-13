@@ -39,11 +39,19 @@ function withStages(view: ProjectView, stages: Stage[], source: string): Project
   };
 }
 
+/** The quota backoff's answer for a source (#294): what refusedInBackoff sends, for a caller with no Response. */
+export function backoffAnswer(state: State, name: string): { status: number; error: string; resetsAt?: string } | undefined {
+  const sync = Object.hasOwn(state.syncs, name) ? state.syncs[name] : undefined;
+  if (!inBackoff(sync, Date.now())) return undefined;
+  return { status: HTTP_TOO_MANY_REQUESTS, error: QUOTA_MESSAGE, ...(sync?.quota?.resetsAt === undefined ? {} : { resetsAt: sync.quota.resetsAt }) };
+}
+
 // Refused inside the source's quota backoff, as its poll would be (no reading yet: it reads); true when the 429 went out
 export function refusedInBackoff(state: State, name: string, res: Response): boolean {
-  const sync = Object.hasOwn(state.syncs, name) ? state.syncs[name] : undefined;
-  if (!inBackoff(sync, Date.now())) return false;
-  res.status(HTTP_TOO_MANY_REQUESTS).json({ error: QUOTA_MESSAGE, resetsAt: sync?.quota?.resetsAt });
+  const backoff = backoffAnswer(state, name);
+  if (backoff === undefined) return false;
+  const { status, ...body } = backoff;
+  res.status(status).json(body);
   return true;
 }
 

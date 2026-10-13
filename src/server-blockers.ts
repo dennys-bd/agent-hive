@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { ItemNotOnSourceError } from './field-values.js';
 import { blockerProblem, hiveCandidates } from './hive-blockers.js';
 import type { Logger } from './log.js';
-import { refusedInBackoff } from './server-project.js';
+import { backoffAnswer, refusedInBackoff } from './server-project.js';
 import { BadBlockerRefError, BlockerRefNotFoundError, RelationRereadError, SelfBlockerError } from './sources/github-blockers.js';
 import { HIVE_SOURCE, itemSource } from './tasks.js';
 import type { BlockerChange, BlockerRef, BlockerWrite, HiveEvent, ItemBlockers, Source, State } from './types.js';
@@ -46,12 +46,27 @@ export interface BlockerRouteDeps {
   log?: Logger;
 }
 type Live = NonNullable<ReturnType<BlockerRouteDeps['requireLive']>>;
+type RelateDeps = Pick<BlockerRouteDeps, 'dispatch' | 'latest' | 'log'>;
+
+/** A refusal as the route answers it (#294): status and body, so the route and hive_stop's block read the same words. */
+export interface RelateRefusal { status: number; error: string; code?: string; resetsAt?: string }
+/** One relation's outcome (#294): the item's blockers, or the refusal. */
+export type RelateOutcome = { blockers: ItemBlockers } | { refusal: RelateRefusal };
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 function refuse(res: Response, refusal: Refusal): void {
   const { status, error } = REFUSALS[refusal];
   res.status(status).json({ error, code: BLOCKER_CODES[refusal] });
+}
+
+const refusalOf = (r: Refusal): { refusal: RelateRefusal } => ({ refusal: { status: REFUSALS[r].status, error: REFUSALS[r].error, code: BLOCKER_CODES[r] } });
+
+// The outcome as the route has always answered it: 200 with the blockers, or the refusal's status and body
+function answer(res: Response, outcome: RelateOutcome): void {
+  if ('blockers' in outcome) return void res.json(outcome);
+  const { status, ...body } = outcome.refusal;
+  res.status(status).json(body);
 }
 
 // The body as a BlockerChange, its ref trimmed; any other shape is undefined
@@ -63,42 +78,43 @@ function changeOf(body: unknown): BlockerChange | undefined {
 }
 
 // A hive task's relation (#56): checked with the reducer's own rule, so the answer names the problem; then blockerSet writes both tasks
-async function relateHive(deps: BlockerRouteDeps, res: Response, state: State, itemId: string, change: BlockerChange): Promise<void> {
+async function relateHive(deps: RelateDeps, state: State, itemId: string, change: BlockerChange): Promise<RelateOutcome> {
   const problem = blockerProblem(state.tasks, itemId, change);
-  if (problem !== undefined) return refuse(res, problem);
+  if (problem !== undefined) return refusalOf(problem);
   try {
     await deps.dispatch({ type: 'blockerSet', itemId, change });
   } catch (err) {
     deps.log?.error(`blockerSet for ${itemId} failed: ${errorMessage(err)}`);
-    return refuse(res, 'refused');
+    return refusalOf('refused');
   }
-  res.json({ blockers: deps.latest()?.tasks.find((t) => t.item.itemId === itemId)?.item.blockers ?? NO_BLOCKERS });
+  return { blockers: deps.latest()?.tasks.find((t) => t.item.itemId === itemId)?.item.blockers ?? NO_BLOCKERS };
 }
 
 // A source's refusal (#56): the request's own fault to its code. A write that landed but whose re-read failed is a success with what was read
 // (the next poll brings the item back). Anything else is the source's: its raw words go to the log, never to the answer
-function failed(deps: BlockerRouteDeps, res: Response, itemId: string, err: unknown): void {
+function failed(deps: RelateDeps, itemId: string, err: unknown): RelateOutcome {
   if (err instanceof RelationRereadError) {
     deps.log?.error(`blockers of ${itemId} written, but their re-read failed: ${err.message}`);
     // Nothing read: refused, so the UI does not show the written relation as gone; a retry is a no-op, relate reads before it writes
-    return void (err.blockers === undefined ? refuse(res, 'refused') : res.json({ blockers: err.blockers }));
+    return err.blockers === undefined ? refusalOf('refused') : { blockers: err.blockers };
   }
   const known = KNOWN.find(([type]) => err instanceof type);
-  if (known !== undefined) return void refuse(res, known[1]);
+  if (known !== undefined) return refusalOf(known[1]);
   deps.log?.error(`blockers of ${itemId} refused: ${errorMessage(err)}`);
-  refuse(res, 'refused');
+  return refusalOf('refused');
 }
 
 // A source item's relation (#56): the adapter writes it and re-reads the item; its entry goes through itemRead, as a field write's
-async function relateOnSource(deps: BlockerRouteDeps, res: Response, current: Live, name: string, itemId: string, change: BlockerChange): Promise<void> {
+async function relateOnSource(deps: RelateDeps, current: Live, name: string, itemId: string, change: BlockerChange): Promise<RelateOutcome> {
   const relate = current.runtime.sources.get(name)?.relate;
-  if (relate === undefined || itemSource(itemId) !== name) return refuse(res, 'unknownItem');
-  if (refusedInBackoff(current.state, name, res)) return;
+  if (relate === undefined || itemSource(itemId) !== name) return refusalOf('unknownItem');
+  const backoff = backoffAnswer(current.state, name);
+  if (backoff !== undefined) return { refusal: backoff };
   let written: BlockerWrite;
   try {
     written = await relate(itemId, change);
   } catch (err) {
-    return failed(deps, res, itemId, err);
+    return failed(deps, itemId, err);
   }
   if (written.entry !== undefined) {
     try {
@@ -107,7 +123,35 @@ async function relateOnSource(deps: BlockerRouteDeps, res: Response, current: Li
       deps.log?.error(`itemRead for ${itemId} failed: ${errorMessage(err)}`); // the write is done: the answer still goes out
     }
   }
-  res.json({ blockers: written.blockers });
+  return { blockers: written.blockers };
+}
+
+// The route's own choice: `hive` edits the Hive's tasks, any other name goes through that source's relate
+const relateOn = (deps: RelateDeps, current: Live, name: string, itemId: string, change: BlockerChange): Promise<RelateOutcome> =>
+  (name === HIVE_SOURCE ? relateHive(deps, current.state, itemId, change) : relateOnSource(deps, current, name, itemId, change));
+
+/** One relation written exactly as the blockers route writes it (#294), for hive_stop's block. The item's own source picks the path: a hive
+ * task's blockerSet, or its source's relate. An unknown task takes the hive path, which answers unknownItem; so does a Hive with no config. */
+export async function relateItem(deps: RelateDeps, current: Live | undefined, itemId: string, change: BlockerChange): Promise<RelateOutcome> {
+  if (current === undefined) return refusalOf('unknownItem');
+  const source = current.state.tasks.find((t) => t.item.itemId === itemId)?.item.source;
+  return relateOn(deps, current, source ?? HIVE_SOURCE, itemId, change);
+}
+
+/** Whether hive_stop may write a blocker on the item (#294): a hive task always can (blockerSet); a source's task when its adapter relates. */
+export function canRelateItem(current: Live, itemId: string): boolean {
+  const task = current.state.tasks.find((t) => t.item.itemId === itemId);
+  if (task === undefined) return false;
+  return task.item.source === undefined || current.runtime.sources.get(task.item.source)?.relate !== undefined;
+}
+
+const BLOCK_MAX = 10; // #294: hive_stop's block names a handful of issues; more is no single blocker
+
+/** hive_stop's block as the route's refs (#294): each a positive integer or a string of 1 to REF_MAX after the trim, 1 to BLOCK_MAX of them;
+ * any other list is undefined. */
+export function refsOf(block: readonly (number | string)[]): string[] | undefined {
+  const refs = block.map((r) => (typeof r === 'number' ? (Number.isInteger(r) && r > 0 ? String(r) : '') : r.trim()));
+  return refs.length === 0 || refs.length > BLOCK_MAX || refs.some((r) => r === '' || r.length > REF_MAX) ? undefined : refs;
 }
 
 // #57: the add row's text, trimmed; absent, empty or too long is no search
@@ -143,7 +187,7 @@ export function registerBlockerRoutes(app: Express, deps: BlockerRouteDeps): voi
     if (change === undefined) return refuse(res, 'badRequest');
     const name = req.params.name as string;
     const itemId = req.params.itemId as string;
-    await (name === HIVE_SOURCE ? relateHive(deps, res, current.state, itemId, change) : relateOnSource(deps, res, current, name, itemId, change));
+    answer(res, await relateOn(deps, current, name, itemId, change));
   });
   app.get('/sources/:name/items/:itemId/blockers/candidates', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);

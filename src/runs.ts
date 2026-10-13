@@ -34,8 +34,9 @@ function closeRun(state: State, worker: Worker, end: number, stop: boolean): Sta
 /** The only way a user ends a run (#283), and hive_stop (#314). The process is killed and the worker frees on the exit that follows, as today. A
  * stage run leaves its task stopped at once, so no fill picks it up between the kill and the exit; a free session only dies. With
  * `close` the task's item is closed after the kill, whatever the run; the source's own automation moves it. `cause` marks the worker so its
- * exit records why it slept (#672); a plain terminal sleeps instead (#696). Unknown worker: nothing. */
-export function stop(state: State, ptyId: string, close?: CloseAction, cause?: SleepCause): Reduced {
+ * exit records why it slept (#672); a plain terminal sleeps instead (#696). With `block` (#294) the activity is not stopped: the relations
+ * written before it gate the fill. Unknown worker: nothing. */
+export function stop(state: State, ptyId: string, close?: CloseAction, cause?: SleepCause, block?: true): Reduced {
   const staged = state.activities.find((a) => a.commands?.ptyId === ptyId);
   if (staged) return haltCommands(state, staged.id); // #755: a commands stage's pty: killed, no verdict; a cause or a close means nothing to it
   const terminal = state.terminals.find((t) => t.terminalId === ptyId && t.asleep === undefined);
@@ -45,7 +46,9 @@ export function stop(state: State, ptyId: string, close?: CloseAction, cause?: S
   if (!worker) return none(state);
   // #696: a captured session's claude runs in a terminal's pty: killed by its run's MCP config path, the terminal stays; no sleep cause, it has no tab
   if (worker.terminalId !== undefined) return { state, effects: [{ type: 'killCaptured', ptyId }] };
-  const marked: State = cause === undefined ? state : { ...state, workers: state.workers.map((s) => (s === worker ? { ...s, ending: cause } : s)) };
+  // #672: why it ends; #294: a blocked stop, so its exit leaves the activity to the blockers' gate
+  const flags: Partial<Worker> = { ...(cause === undefined ? {} : { ending: cause }), ...(block ? { blocked: true as const } : {}) };
+  const marked: State = Object.keys(flags).length === 0 ? state : { ...state, workers: state.workers.map((s) => (s === worker ? { ...s, ...flags } : s)) };
   const task = taskOfWorker(marked, worker);
   const kill: Effect = { type: 'kill', slug: task ? slugOf(marked, taskId(task)) : '', ptyId };
   const closing: Effect[] = task && close ? [{ type: 'sourceAction', itemId: task.item.itemId, taskId: taskId(task), action: close }] : [];
@@ -55,7 +58,7 @@ export function stop(state: State, ptyId: string, close?: CloseAction, cause?: S
   if (worker.status === 'approval') { // a held Stop (#268): answered with no decision first; the stage reached hive_done, so the task is not stopped
     return { state: withoutHold(marked, task), effects: [{ type: 'release', ptyId }, kill, ...closing] };
   }
-  return { state: withActivity(marked, stoppedWork(live)), effects: [kill, ...closing] };
+  return { state: block ? marked : withActivity(marked, stoppedWork(live)), effects: [kill, ...closing] };
 }
 
 /** A run ended without a Stop that finished its stage (a kill, a closed tab, a crash): the worker frees and the run's time joins the task up to
@@ -67,7 +70,7 @@ export function exit(state: State, ptyId: string, end = Date.now()): Reduced {
   if (terminal?.command !== undefined) return none({ ...state, terminals: state.terminals.filter((t) => t !== terminal) }); // a command's run holds nothing else (#283)
   if (terminal) return none(terminal.asleep ? state : slept(state, terminal)); // #696: its shell ended by itself: it sleeps on the cwd it held
   const worker = liveWorker(state, ptyId);
-  return worker ? none(closeRun(state, worker, end, !worker.done)) : none(state);
+  return worker ? none(closeRun(state, worker, end, !worker.done && !worker.blocked)) : none(state);
 }
 
 /** The server's close(), before its kills (#283): every stop path, POST /stop, SIGTERM and SIGINT alike. */

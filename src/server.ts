@@ -47,7 +47,7 @@ import { registerApprovalRoutes } from './server-approval.js';
 import { registerDecompositionRoutes } from './server-decomposition.js';
 import { registerReviewThreadRoutes } from './server-review-threads.js';
 import { registerProjectRoutes } from './server-project.js';
-import { registerBlockerRoutes } from './server-blockers.js';
+import { canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
@@ -900,8 +900,10 @@ export function createServer(deps: ServerDeps): HiveServer {
     res.send(formatRateLimits(rateLimits, effectiveLanguage())); // from the payload, not the State: an unknown worker gets the line and the reducer ignores it
     await dispatch({ type: 'rateLimits', agent, ptyId, rateLimits }); // #929: the worker's agent's reading
   });
-  // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
-  mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId), reviews, notifyReview, events: wiring.events, memory });
+  // The worker's tools (#99): hive_done, hive_pr, hive_ask, hive_create_task, hive_stop (#314) and its block (#294, the blockers route's own write), hive_reply (#591). State and sources are read at call time: a POST /settings may replace them.
+  mountMcp(app, { exec, live: () => (live ? { state: live.state, config: live.runtime.config, sources: live.runtime.sources } : undefined), poll, dispatch, canClose: (itemId) => live !== undefined && canCloseTask(live.state, live.runtime.config.comb.sources, itemId),
+    relate: (itemId, change) => relateItem({ dispatch, latest: () => live?.state, log }, live, itemId, change), canRelate: (itemId) => live !== undefined && canRelateItem(live, itemId),
+    reviews, notifyReview, events: wiring.events, memory });
 
   app.get('/events', (req: Request, res: Response) => {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });

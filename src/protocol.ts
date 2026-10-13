@@ -14,7 +14,8 @@ const askLines = (end: string): string[] => [
 ];
 
 const STOP_RULES =
-  'with `reason` "wontDo" (or "duplicate", plus `duplicateOf`: the original issue number) the Hive closes the issue; without `reason` the task only stops. Never close the issue yourself.';
+  'with `reason` "wontDo" (or "duplicate", plus `duplicateOf`: the original issue number) the Hive closes the issue; without `reason` the task only stops. Never close the issue yourself.'
+  + ' When the task cannot go on until another issue is done, call `hive_stop` with `block` (that issue\'s number) instead: the Hive records the blocker and starts the task again once it closes.';
 
 // #797: what makes the workspace's memory grow. hive_applied is told in the memory section itself, which exists only once a lesson does
 const REMEMBER_LINE = 'When the user corrects you, or you learn a fact about this repository that a later task would need, call `hive_remember` with it.';
