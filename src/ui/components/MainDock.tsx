@@ -373,11 +373,12 @@ export function MainDock(props: MainDockProps) {
     ...automationPanel,
     detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, setSideTab, detail, onClose: closeDetail, nav }),
   ];
+  // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
+  const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
   const content = (
     <>
       {header?.(selection.center, activateTab)}
-      {/* #220: the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos); the dot reads every workspace, as the window shows them all */}
-      <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting: pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
+      <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
             <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} bar={bar} pane={pane} />
