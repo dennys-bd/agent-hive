@@ -13,7 +13,7 @@ import {
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
-import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
+import { answerColumn, readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
 import { applyRelations, createItemsSync, fetchRelations, readProbe } from './github-items-sync.js';
 import { readListing, type ItemStore, type ListingKey } from '../read-model/items.js';
@@ -290,6 +290,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     const optionId = resolved.optionIds[column];
     if (optionId === undefined) throw new Error(`"${column}" is not a column the config cites`);
     await gql(SET_OPTION, { projectId: resolved.projectId, itemId, fieldId: resolved.statusFieldId, singleSelectOptionId: optionId });
+    // #191: the write's answer in the model under fieldsContext()'s key, so a poll read before it cannot move the task back
+    if (sync) await answerColumn(gql, itemId, resolved.projectId, async (node) => sync.answer(node, new Map(), `${(await projectRead()).login}/${number}`), log);
   }
 
   let repositoryId: string | undefined; // #846: source.repository's node id, asked once

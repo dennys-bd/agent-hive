@@ -3,9 +3,10 @@ import type { ColumnWrite, Task } from './types.js';
 // The Hive's own column writes against the polls that lag behind them (#889). Here and not in tasks.ts, which is already over its size,
 // and with no Node import, so the reducer and tasks.ts can both use it.
 
-/** How long a write holds against a poll still showing the column from before it: about four polls of POLL_INTERVAL_MS, long enough for
- * GitHub Projects' lag (#861), short enough that a failed write or a deliberate move back on the source is followed soon. */
-export const COLUMN_WRITE_TIMEOUT_MS = 2 * 60_000;
+/** How long a write holds against a poll still showing the column from before it: #178's written_at window. The Hive's own write stores its
+ * re-read item in the read model (#191), and a poll read before it carries an older updatedAt that cannot replace it, so the window only
+ * covers an answer that failed to store. Short, so a deliberate move back on the source is followed soon. */
+export const COLUMN_WRITE_TIMEOUT_MS = 30_000;
 
 // The task's mark when it has the shape the code relies on: it comes back from the saved state file unchecked, and a hand-edited or
 // damaged one must not make every poll of the source throw

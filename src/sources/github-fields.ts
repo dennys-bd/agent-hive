@@ -1,5 +1,6 @@
 import { isReadOnly, ItemNotOnSourceError, PartialWriteError, STATUS } from '../field-values.js';
 import type { FieldValue, FieldWrite, Gql, ItemField, ProjectField, SourceItem } from '../types.js';
+import type { Logger } from '../log.js';
 import { projectFields, projectItem, valuesOf, type ProjectRead } from './github-project.js';
 import {
   assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, labelsMutation, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
@@ -24,6 +25,16 @@ export async function readItem(gql: Gql, itemId: string, projectId: string): Pro
   const node = ((await gql(ITEM_FIELDS, { itemId })) as ItemFieldsData).node;
   if (node?.project?.id !== projectId) throw new ItemNotOnSourceError(itemId);
   return node;
+}
+
+/** #191: a column write's answer, the item re-read and handed to `answer` (the read model's write answer). The mutation already landed, so a
+ * failed re-read is logged and never fails the write: staleRead's window covers the poll that follows. */
+export async function answerColumn(gql: Gql, itemId: string, projectId: string, answer: (node: GhItemFieldsNode) => Promise<void>, log?: Logger): Promise<void> {
+  try {
+    await answer(await readItem(gql, itemId, projectId));
+  } catch (err) {
+    log?.error(`item ${itemId}: the column write was not re-read for the read model: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // What a choice can be: a milestone or an issue type from the issue's repository, anything else from the project's own options

@@ -258,20 +258,22 @@ const writtenDone = (age: number, extra: Partial<WithWork> = {}): WithWork =>
 const seenIn = (column: string, title = 'Task 1'): SourceItem => ({ item: { ...item(1), title }, column });
 
 test('mergeTasks over a column write: the written column clears the mark, a stale one inside the window is ignored while the item refreshes, an expired mark or a third column lets a stopped task follow (#889)', () => {
-  const [confirmed] = merge([writtenDone(30_000)], STAGES, [seenIn('Done')], NO_RUNS, AT_NOW);
+  const [confirmed] = merge([writtenDone(10_000)], STAGES, [seenIn('Done')], NO_RUNS, AT_NOW);
   assert.deepEqual([confirmed.stage, confirmed.boardColumn, confirmed.columnWrite, confirmed.enteredAt], ['done', 'Done', undefined, ago(HOUR)]);
-  const [stale] = merge([writtenDone(30_000, { missing: true })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
+  const [stale] = merge([writtenDone(10_000, { missing: true })], STAGES, [seenIn('Ready', 'Renamed')], NO_RUNS, AT_NOW);
   assert.deepEqual([stale.stage, stale.boardColumn, stale.enteredAt], ['done', 'Done', ago(HOUR)], 'a read from before the write: no move back');
-  assert.deepEqual(stale.columnWrite, { column: 'Done', stale: ['Ready'], at: ago(30_000) }, 'the mark waits for the source to show the write');
+  assert.deepEqual(stale.columnWrite, { column: 'Done', stale: ['Ready'], at: ago(10_000) }, 'the mark waits for the source to show the write');
   assert.deepEqual([stale.item.title, stale.missing], ['Renamed', undefined], 'everything but the column refreshes');
+  const [held] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS - 1)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
+  assert.deepEqual([held.stage, held.boardColumn], ['done', 'Done'], 'just under the window (#191: 30 s) the write still holds');
   const [expired] = merge([writtenDone(COLUMN_WRITE_TIMEOUT_MS)], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
   assert.deepEqual([expired.stage, expired.boardColumn, expired.columnWrite], ['dev', 'Ready', undefined], 'past the window the source wins, as over a failed write');
-  const [third] = merge([writtenDone(30_000)], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
+  const [third] = merge([writtenDone(10_000)], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
   assert.deepEqual([third.stage, third.boardColumn, third.columnWrite], ['now', 'Now', undefined], 'a column the write never replaced is a human move');
 });
 
 test('a running task keeps its written boardColumn through a stale read; a third column still overwrites it without moving the task (#889)', () => {
-  const running = writtenDone(30_000, { workerId: 's1' });
+  const running = writtenDone(10_000, { workerId: 's1' });
   const [stale] = merge([running], STAGES, [seenIn('Ready')], NO_RUNS, AT_NOW);
   assert.deepEqual([stale.stage, stale.boardColumn, stale.columnWrite?.column], ['done', 'Done', 'Done'], 'today the stale value overwrote it');
   const [third] = merge([running], STAGES, [seenIn('Now')], NO_RUNS, AT_NOW);
