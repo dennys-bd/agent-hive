@@ -25,11 +25,18 @@ export function fileStatus(counts: StatusCounts | undefined, mark: GitMark | und
   return mark;
 }
 
-/** The tree's marks plus those of every loaded folder inside a nested repository (#1), by full path, so their folders count too (#903). A new
- *  object: neither input changes. */
-export function marksWithLoaded(marks: Readonly<Record<string, GitMark>>, loaded: ReadonlyMap<string, FolderEntries>): Record<string, GitMark> {
-  const nested = [...loaded].flatMap(([folder, entries]) => Object.entries(entries.repo?.marks ?? {}).map(([name, mark]) => [`${folder}/${name}`, mark] as const));
-  return { ...marks, ...Object.fromEntries(nested) };
+/** The nested repositories' marks (#1) by full path, after a round of folder reads (#289): each folder read replaces its own children's marks
+ *  and forgets what was under a child folder it no longer lists; a folder not read this round, collapsed since, keeps its last marks so
+ *  they still raise the folders above it. A new object: neither input changes. */
+export function rememberMarks(prev: Readonly<Record<string, GitMark>>, read: ReadonlyMap<string, FolderEntries>): Record<string, GitMark> {
+  const isStale = (path: string): boolean => [...read].some(([folder, entries]) => {
+    if (!path.startsWith(`${folder}/`)) return false;
+    const rest = path.slice(folder.length + 1).split('/');
+    return rest.length === 1 || !entries.folders.includes(rest[0]);
+  });
+  const kept = Object.entries(prev).filter(([path]) => !isStale(path));
+  const fresh = [...read].flatMap(([folder, entries]) => Object.entries(entries.repo?.marks ?? {}).map(([name, mark]) => [`${folder}/${name}`, mark] as const));
+  return Object.fromEntries([...kept, ...fresh]);
 }
 
 /** Every folder above a path with a status, with the worst status under it (#903). A deleted path (D) is in `marks` but not in the tree's

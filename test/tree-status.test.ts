@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { FolderEntries, GitMark } from '../src/types.js';
-import { fileStatus, folderStatuses, marksWithLoaded, type TreeStatus, worse } from '../src/ui/lib/tree-status.js';
+import { fileStatus, folderStatuses, rememberMarks, type TreeStatus, worse } from '../src/ui/lib/tree-status.js';
 
 // #903: worst first, the same order for a file and a folder
 const RANKED: TreeStatus[] = ['error', 'warning', 'M', 'D', 'A'];
@@ -40,12 +40,23 @@ test('a deleted path, in the marks but in no row, raises its folders only; a pat
   assert.deepEqual([...folderStatuses(new Map(), { 'docs/old/gone.md': 'D', 'gone.txt': 'D' })], [['docs', 'D'], ['docs/old', 'D']]);
 });
 
-test('marksWithLoaded adds a nested repository\'s marks by full path to the tree\'s, leaves a folder read outside one alone, and does not touch its input (#1, #903)', () => {
-  const marks: Record<string, GitMark> = { 'src/a.ts': 'M' };
-  const loaded = new Map<string, FolderEntries>([
+test('rememberMarks adds a nested repository\'s marks by full path, and a folder read outside one adds nothing (#1, #289)', () => {
+  const read = new Map<string, FolderEntries>([
     ['docs/agent', { files: ['foo.md'], folders: [], repo: { marks: { 'foo.md': 'M', 'gone.md': 'D' }, ignored: [] } }],
     ['node_modules', { files: ['x.js'], folders: [] }],
   ]);
-  assert.deepEqual(marksWithLoaded(marks, loaded), { 'src/a.ts': 'M', 'docs/agent/foo.md': 'M', 'docs/agent/gone.md': 'D' });
-  assert.deepEqual(marks, { 'src/a.ts': 'M' });
+  assert.deepEqual(rememberMarks({}, read), { 'docs/agent/foo.md': 'M', 'docs/agent/gone.md': 'D' });
+});
+
+test('rememberMarks keeps what a folder no longer read last showed, so a collapsed one still raises its folders (#289)', () => {
+  const prev: Record<string, GitMark> = { 'docs/sub/a.md': 'M', 'docs/b.md': 'A' };
+  const read = new Map<string, FolderEntries>([['docs', { files: ['b.md'], folders: ['sub'], repo: { marks: { 'b.md': 'A' }, ignored: [] } }]]);
+  assert.deepEqual(rememberMarks(prev, read), { 'docs/sub/a.md': 'M', 'docs/b.md': 'A' });
+});
+
+test('rememberMarks replaces a read folder\'s own children and drops what was under a child folder it no longer lists (#289)', () => {
+  const prev: Record<string, GitMark> = { 'docs/old.md': 'M', 'docs/gone/x.md': 'M', 'docs/gone/deep/y.md': 'A', 'docs/sub/a.md': 'M', 'docsx/z.md': 'M' };
+  const read = new Map<string, FolderEntries>([['docs', { files: ['new.md'], folders: ['sub'], repo: { marks: { 'new.md': 'A' }, ignored: [] } }]]);
+  assert.deepEqual(rememberMarks(prev, read), { 'docs/sub/a.md': 'M', 'docsx/z.md': 'M', 'docs/new.md': 'A' });
+  assert.deepEqual(prev, { 'docs/old.md': 'M', 'docs/gone/x.md': 'M', 'docs/gone/deep/y.md': 'A', 'docs/sub/a.md': 'M', 'docsx/z.md': 'M' });
 });
