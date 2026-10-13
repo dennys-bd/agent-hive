@@ -11,6 +11,10 @@ import { t } from '@/i18n';
  * without a logo still reads, by its name. */
 export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon, codex: CodexIcon };
 
+/** Each agent's own colour (#669), on its mark only: the footer's usage group, the +'s agents and the new session dialog's agent select (#257).
+ * Partial, so an agent without one keeps currentColor. */
+export const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex' };
+
 const MARK = 'size-3.5 shrink-0';
 
 /** The agent's icon (#516, #925), or nothing for an agent without one: every place that shows it names the agent beside it. */
