@@ -4,8 +4,8 @@ import { liveDefaultAgent } from '../../agents';
 import { type AgentId, DEFAULT_AGENT, type DisabledRuleStatus, type DisableUntil, type EffectiveLimits, type State, type UsageRule } from '../../types';
 import { workerCount } from '../../worker-count';
 import { act } from '@/components/actions';
-import { Confirm } from '@/components/Confirm';
 import { AgentUsage } from '@/components/footer/AgentUsage';
+import { PowerButtons } from '@/components/footer/PowerButtons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -116,23 +116,9 @@ function PausedRule({ status, ...chip }: Omit<RuleChipProps, 'rule' | 'paused'> 
   );
 }
 
-// Shut down when done (#233): arming asks first, since an idle Hive shuts the Mac down at once; cancelling posts at once.
-function Shutdown({ armed }: { armed: boolean }) {
-  if (armed) {
-    return (
-      <>
-        <span className="text-waiting">{t('footer.shuttingDown')}</span>
-        <Button type="button" variant="outline" className={CHIP} onClick={() => { void act('/shutdown', { armed: false }); }}>{t('footer.cancelShutdown')}</Button>
-      </>
-    );
-  }
-  const trigger = <Button type="button" variant="outline" className={CHIP}>{t('shutdown.toggle')}</Button>;
-  return <Confirm message={t('confirm.shutdown')} confirmLabel={t('shutdown.arm')} trigger={trigger} onConfirm={() => act('/shutdown', { armed: true })} />;
-}
-
 /** The window's footer (redesign 02, #223), the same under fluxo and atividades: the agents' plan usage and its panel, the effective signal and what it holds back, the workers, the
- * rules in force and the paused ones, each opening its pausar regra popover, then the console's chip (redesign 05) and shut down when done at
- * the right edge. */
+ * rules in force and the paused ones, each opening its pausar regra popover, then the console's chip (redesign 05) and the power buttons
+ * (#226) at the right edge. */
 export function Footer({ state, effective, locale, onEditRules, console: consoleChip }: FooterProps) {
   const fired = firedRules(effective);
   const chip = { state, locale, onEditRules };
@@ -156,7 +142,8 @@ export function Footer({ state, effective, locale, onEditRules, console: console
       )}
       <span className="flex-1" />
       {consoleChip}
-      <Shutdown armed={state.shutdown !== undefined} />
+      <span aria-hidden="true" className="h-3.5 w-px bg-border" />
+      <PowerButtons keepAwake={state.keepAwake === true} armed={state.shutdown !== undefined} />
     </footer>
   );
 }

@@ -444,7 +444,23 @@ test('the design comments\' copy reads as the handoff writes it, in both languag
   ]);
 });
 
-
 test('the header\'s usage keys are gone: the footer\'s usage group says usage.* (#223)', () => {
   for (const key of ['header.fiveHour', 'header.week', 'header.thirtyDay', 'header.refreshUsage']) assert.equal(key in MESSAGES.en || key in MESSAGES.pt, false, `${key} is gone (#223)`);
+});
+
+test('the power buttons\' titles read as the spec writes them, in both languages; the footer\'s shutting-down text, its cancel and the old toggle are gone (#226)', () => {
+  const keys = ['power.keepAwake.off', 'power.keepAwake.on', 'power.shutdown.off', 'power.shutdown.on'] as const;
+  assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
+    'keep awake: no sleep and the display stays on',
+    'keeping awake: no sleep and the display stays on · click to turn off',
+    'shut the computer down when every session finishes',
+    'shutting down when the workers finish · click to cancel',
+  ]);
+  assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
+    'manter ligado: sem hibernar e sem desligar a tela',
+    'mantendo ligado: sem hibernar e sem desligar a tela · clique para desligar',
+    'desligar o computador quando todas as sessões terminarem',
+    'desligando quando os workers terminarem · clique para cancelar',
+  ]);
+  for (const gone of ['footer.shuttingDown', 'footer.cancelShutdown', 'shutdown.toggle']) assert.equal(gone in MESSAGES.en, false, gone);
 });

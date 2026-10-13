@@ -32,14 +32,14 @@ const posted = (path: string, body: unknown) => waitFor(() => expect(fetchMock).
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('green with nothing fired: the pill, no effect, the workers (the own session not counted), no rules label, and the shut-down button', () => {
+test('green with nothing fired: the pill, no effect, the workers (the own session not counted), no rules label, and the power buttons', () => {
   render(<Footer state={STATE} effective={NONE} locale="pt-BR" />);
   expect(within(footer()).getByRole('status')).toHaveAttribute('data-signal', 'green');
   expect(within(footer()).getByRole('status')).toHaveTextContent('green');
   expect(footer()).toHaveTextContent('workers 1/5');
   expect(footer()).not.toHaveTextContent(t('footer.rules'));
   expect(footer()).not.toHaveTextContent(t('signal.effect.noNewTasks'));
-  expect(within(footer()).getAllByRole('button').filter(outsideUsage).map((b) => b.textContent)).toEqual(['desligar ao terminar']);
+  expect(within(footer()).getAllByRole('button').filter(outsideUsage).map((b) => b.textContent)).toEqual(['', '']); // keep awake and shutdown, icon only (#226)
 });
 
 test('fired rules: the signal named in English with its effect in Portuguese, the effective cap, and one chip per rule naming what it does', () => {
@@ -49,7 +49,7 @@ test('fired rules: the signal named in English with its effect in Portuguese, th
   expect(footer()).toHaveTextContent('workers 1/2');
   expect(footer()).toHaveTextContent('regras');
   const chips = within(footer()).getAllByRole('button').filter(outsideUsage).map((b) => b.textContent);
-  expect(chips).toEqual(['sessão ≥ 60% → yellow', 'semana ≥ 90% → máx 2 workers', 'dia ≥ 80% → review máx 1', 'desligar ao terminar']);
+  expect(chips).toEqual(['sessão ≥ 60% → yellow', 'semana ≥ 90% → máx 2 workers', 'dia ≥ 80% → review máx 1', '', '']);
 });
 
 test('a rule chip opens pausar regra: até resetar shows the window countdown, até amanhã the next 07:00, and 1 h posts a pause an hour ahead', async () => {
@@ -105,17 +105,15 @@ test('a paused rule: struck through, pausada with the time left, and its popover
   await posted('/rules/enable', { source: 'week', percent: 90 });
 });
 
-test('shut down when done asks first; armed, the footer says so in waiting and cancelar posts the release at once', async () => {
-  const user = userEvent.setup();
+test('the footer ends in the power buttons, armed or not: no shutting-down text and no cancelar button (#226)', () => {
   const { rerender } = render(<Footer state={STATE} effective={NONE} locale="pt-BR" />);
-  await user.click(screen.getByRole('button', { name: 'desligar ao terminar' }));
-  expect(fetchMock).not.toHaveBeenCalled();
-  await user.click(await screen.findByRole('button', { name: t('shutdown.arm') }));
-  await posted('/shutdown', { armed: true });
-  rerender(<Footer state={{ ...STATE, shutdown: { armedAt: '2026-09-28T10:00:00Z' } }} effective={NONE} locale="pt-BR" />);
-  expect(screen.getByText('desligando quando os workers terminarem')).toHaveClass('text-waiting');
-  await user.click(screen.getByRole('button', { name: 'cancelar' }));
-  await posted('/shutdown', { armed: false });
+  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.off') })).toHaveAttribute('aria-pressed', 'false');
+  expect(within(footer()).getByRole('button', { name: t('power.shutdown.off') })).toHaveAttribute('aria-pressed', 'false');
+  rerender(<Footer state={{ ...STATE, shutdown: { armedAt: '2026-09-28T10:00:00Z' }, keepAwake: true }} effective={NONE} locale="pt-BR" />);
+  expect(footer()).not.toHaveTextContent('desligando quando os workers terminarem');
+  expect(within(footer()).queryByRole('button', { name: 'cancelar' })).not.toBeInTheDocument();
+  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.on') })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(footer()).getByRole('button', { name: t('power.shutdown.on') })).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('the effect is read from the signal\'s row: what it holds back, joined; a row that holds nothing back reads like green; green says nothing (#727)', () => {
