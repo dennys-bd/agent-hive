@@ -86,3 +86,13 @@ test('a PR item whose row is already stored identical still writes its flags: th
   assert.deepEqual((await syncScope({ ...sync, rest: fakeRest([ok([item])]).rest }, REPO, 'issues')).kinds, ['pulls']);
   assert.equal(deps.db.prPage(SOURCE, REPO, 5)?.pull?.mergedAt, T1);
 });
+
+test('a write answer whose PR row the replace rule refuses does not write its flags: a stored newer merge keeps merged_at (#187)', async () => {
+  const { deps, notified } = await model({ now: 1_000 });
+  deps.db.upsertIssue(MERGED, 'sync');
+  deps.db.setPullFlags({ ...KEY, draft: false, mergedAt: T2 });
+  const older = { ...PR_ROW, updatedAt: T1 };
+  assert.deepEqual(applyWriteAnswer(deps, REPO, { issues: [older], pullFlags: [{ ...KEY, draft: false, mergedAt: null }] }), []);
+  assert.equal(deps.db.prPage(SOURCE, REPO, 7)?.pull?.mergedAt, T2);
+  assert.deepEqual(notified, []);
+});

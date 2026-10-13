@@ -64,13 +64,18 @@ function rowOf(deps: SyncDeps, repository: string, kind: ListKind, item: unknown
   return kind === 'issues' ? issueFromRest(source, repository, item) : commentFromRest(source, repository, item, (n) => db.nodeIdOf(source, repository, n));
 }
 
+/** Whether an issues row stands as read (#187): just written, or stored identical. The rule that lets its PR flags be written beside it. */
+export function rowStands(db: ReadModel, source: string, row: IssueRow, wrote: boolean): boolean {
+  return wrote || isDeepStrictEqual(db.issueByNode(source, row.nodeId), row);
+}
+
 /** A PR item's own flags beside its issues row (#186), written wherever a PR item is read: the issues scope, the full listing and the
  * refetch. Only for a row that stands as read (#187): just written, or stored identical. A row the replace rule refused (a write's answer
  * inside its window) keeps that write's flags, so a page read before a merge cannot set merged_at back. Whether they changed. */
 export function storePullFlags(deps: SyncDeps, repository: string, item: unknown, row: IssueRow, wrote: boolean): boolean {
   const flags = pullFlagsFromRest(deps.source, repository, item);
   if (flags === undefined) return false;
-  if (!wrote && !isDeepStrictEqual(deps.db.issueByNode(deps.source, row.nodeId), row)) return false;
+  if (!rowStands(deps.db, deps.source, row, wrote)) return false;
   return deps.db.setPullFlags(flags);
 }
 
