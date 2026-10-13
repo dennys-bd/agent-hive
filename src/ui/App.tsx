@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Toaster } from '@/components/ui/sonner';
+import { FullScreenContext, useFullScreen } from '@/hooks/use-full-screen';
 import { act } from '@/components/actions';
 import { CloseTabContext, type NoticeKey, type CloseTabSettings } from '@/components/close-tab-notice';
 import { EditorLanguagesContext, type EditorLanguages } from '@/components/editor-languages';
@@ -61,6 +62,7 @@ export function App() {
   const [selected, setSelected] = useState<Selection>();
   const [pending, setPending] = useState<Selection>(); // a menu bar request (#192) waiting for `state` to hold its task
   const theme = info?.config?.theme ?? 'system'; // setup mode with nothing saved follows macOS (#296)
+  const isFullScreen = useFullScreen(); // #295: before any early return, so the setup form's Settings gets its insets too
 
   useEffect(() => { // before the first content render: neither the form nor the dashboard ever shows the wrong language
     if (!info) return;
@@ -136,6 +138,7 @@ export function App() {
   return (
     <>
       {/* #510: the dashboard stays mounted under the Settings page, so its terminals keep their sessions; inert keeps focus and clicks off it */}
+      <FullScreenContext.Provider value={isFullScreen}>
       <div className="contents" inert={settingsOpen}>
         {/* the panel's tabs take a saved terminal font at once (#376): a save reloads info and re-renders them */}
         <DefaultAgentContext.Provider value={info.config?.defaultAgent ?? DEFAULT_AGENT}>
@@ -154,6 +157,7 @@ export function App() {
           </AgentsContext.Provider>
         </DefaultAgentContext.Provider>
       </div>
+      </FullScreenContext.Provider>
       {settingsOpen && <Settings info={info} state={state} view={settingsView} onSaved={onSaved} onCancel={() => { setSettingsOpen(false); setSettingsView(undefined); }} />}
       <Toaster theme={theme} />
     </>

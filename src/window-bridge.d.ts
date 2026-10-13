@@ -39,6 +39,11 @@ interface HiveWindow {
   writeClipboardFiles(paths: string[]): Promise<void>;
   // an untitled file's ⌘S (#818): the OS's save dialog from `defaultPath`; the chosen path, or undefined when cancelled
   saveDialog(defaultPath?: string): Promise<string | undefined>;
+  // whether this main window is in full screen now (#295): the state at load, for a window restored there (#398)
+  isFullScreen(): Promise<boolean>;
+  // window:fullScreen on the window's enter-full-screen and leave-full-screen (#295); the preload drops a payload that is no boolean.
+  // Returns the unsubscribe, which clears only its own callback.
+  onFullScreen(callback: (on: boolean) => void): () => void;
 }
 
 interface Window {

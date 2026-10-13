@@ -4,8 +4,10 @@
 /* The shadcn components' dark: classes follow the page's resolved theme (data-theme, lib/theme.ts), not the OS: a forced theme wins (#296). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* Not a color: the same in both themes, so it stays out of theme.css. */
-:root { --radius: 0.5rem; }
+/* Not colors: the same in both themes, so they stay out of theme.css. The window insets (#295): the macOS window buttons' space in a window;
+   under data-fullscreen (useFullScreen: full screen, and always off macOS) the header's 12px and Settings' rail edge, ViewRail's 44px. */
+:root { --radius: 0.5rem; --window-inset: 84px; --settings-inset: 84px; }
+:root[data-fullscreen] { --window-inset: 12px; --settings-inset: 44px; }
 
 @theme inline {
   --color-background: var(--background);
