@@ -37,8 +37,8 @@
   --signal-green: var(--working);
   --signal-yellow: var(--waiting);
   --signal-red: var(--destructive);
-  --agent-claude: #d97757; /* #669: the agent's own colour, the header's agent mark only */
-  --agent-codex: #b392f0; /* #927: Codex's own colour, the header's agent mark only; a violet apart from green, yellow and red */
+  --agent-claude: #d97757; /* #669: the agent's own colour, the usage group's agent mark only (#223: in the footer) */
+  --agent-codex: #b392f0; /* #927: Codex's own colour, the usage group's agent mark only (#223: in the footer); a violet apart from green, yellow and red */
   --file-icon-saturate: 0.45; /* #754: muted file icons, through .file-icon-muted in index.css; tuned here, not in code */
   --file-icon-opacity: 0.7;
 }

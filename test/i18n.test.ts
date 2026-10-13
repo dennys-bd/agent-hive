@@ -444,3 +444,7 @@ test('the design comments\' copy reads as the handoff writes it, in both languag
   ]);
 });
 
+
+test('the header\'s usage keys are gone: the footer\'s usage group says usage.* (#223)', () => {
+  for (const key of ['header.fiveHour', 'header.week', 'header.thirtyDay', 'header.refreshUsage']) assert.equal(key in MESSAGES.en || key in MESSAGES.pt, false, `${key} is gone (#223)`);
+});

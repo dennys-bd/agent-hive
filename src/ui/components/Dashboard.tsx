@@ -300,7 +300,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
         sidebarsPerView={sidebarsPerView}
         fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
         tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
-        header={(center, go) => <Header state={state} signal={limits.signal} center={center} onView={go} />}
+        header={(center, go) => <Header signal={limits.signal} center={center} onView={go} />}
         automation={() => (
           <AutomationPanel
             state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={sidebar.pick}
