@@ -75,3 +75,6 @@ export interface PullPage {
 /** Everything the PR page reads of one PR (#187): its issues row, its pulls row (none before the first poll or flag), its reviews oldest first,
  * its comments, its head's checks and its repository's row. */
 export interface PrPage { issue: IssueRow; pull: PullRow | undefined; reviews: ReviewRow[]; comments: CommentRow[]; checks: CheckRow[]; repo: RepoRow | undefined }
+
+/** A Project item (#190): its GraphQL node as JSON, pruned to the ITEMS shape; project is `<owner login>/<number>`. */
+export interface ItemRow { source: string; nodeId: string; project: string; updatedAt: string; node: string }

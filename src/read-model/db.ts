@@ -2,9 +2,11 @@ import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
 import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import type { GhIssueRelations } from '../sources/github-queries.js';
 import { prDetailsOf } from './pr-details.js';
+import { itemTablesOf } from './items.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CheckRow, CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, IssueRow, IssueView, ItemRow, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
 import { inTransaction, issueOf, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
 
@@ -81,6 +83,11 @@ export interface ReadModel {
   upsertReview(row: ReviewRow, origin: UpsertOrigin): boolean;
   pullAt(source: string, repository: string, number: number): OpenPull | undefined; // a PR's, open or not
   prPage(source: string, repository: string, number: number): PrPage | undefined; // never an issue
+  upsertItem(row: ItemRow, origin: UpsertOrigin): boolean; // #190: a Project item; whether it wrote
+  setItemRelations(source: string, nodeId: string, relations: GhIssueRelations | null): void; // outside the replace rule
+  setListing(source: string, scope: string, nodeIds: string[]): void; // replaces the scope's listing whole
+  removeUnlisted(source: string, project: string): void; // the project's rows no listing of any scope names
+  listing(source: string, scope: string): { node: string; relations: string | null }[]; // in position order
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -265,7 +272,7 @@ function modelOf(db: DatabaseSync, now: () => number): ReadModel {
   const reads = readsOf(db);
   const repos = repoTablesOf(db);
   return {
-    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db),
+    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now),
     ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
   };

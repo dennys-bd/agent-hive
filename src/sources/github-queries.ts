@@ -64,6 +64,7 @@ export const ITEMS = `query($login: String!, $number: Int!, $after: String, $fil
           pageInfo { hasNextPage endCursor }
           nodes {
             id
+            updatedAt
             fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
             fieldValues(first: ${FIELD_VALUE_LIMIT}) {
               nodes {
@@ -77,6 +78,13 @@ export const ITEMS = `query($login: String!, $number: Int!, $after: String, $fil
       }
     }
   }
+}`;
+
+// #190, #189 §5: the poll's probe, 1 point. A project's updatedAt moves on an item's field write and a content edit; the rateLimit keeps the
+// source's quota reading fresh on a poll that reads nothing more
+export const PROBE = `query($login: String!, $number: Int!) {
+  rateLimit { limit remaining resetAt }
+  repositoryOwner(login: $login) { ... on ProjectV2Owner { projectV2(number: $number) { updatedAt } } }
 }`;
 
 // Each set value of an item with its field's name, of every kind the native view renders (#756); ITEM_FIELDS reads the same (#686)
@@ -171,6 +179,7 @@ export const ITEM_FIELDS = `query($itemId: ID!) {
   node(id: $itemId) {
     ... on ProjectV2Item {
       id
+      updatedAt
       project { id fields(first: ${FIELD_LIMIT}) { nodes { ... on ProjectV2FieldCommon { id name dataType } ... on ProjectV2SingleSelectField { options { id name } } ... on ProjectV2IterationField { configuration { iterations { id title } } } } } }
       fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } }
       ${ALL_FIELD_VALUES}
@@ -271,6 +280,7 @@ export interface GhRateLimit { limit?: unknown; remaining?: unknown; resetAt?: u
 export interface GhFieldValue { name?: string; text?: string; number?: number; date?: string; title?: string; field?: { name?: string } | null }
 export interface GhItemNode {
   id: string;
+  updatedAt?: string; // the item's own (#190): the read model's replace rule compares it; a field write and a content edit move it (#189 §3)
   fieldValueByName?: { name?: string } | null;
   fieldValues?: { nodes: GhFieldValue[] } | null;
   content?: {
@@ -313,6 +323,9 @@ export interface ItemsData {
     } | null;
   } | null;
 }
+
+/** PROBE's answer (#190): a null owner or project is the source not being there. */
+export interface ProbeData { rateLimit?: GhRateLimit | null; repositoryOwner?: { projectV2?: { updatedAt: string } | null } | null }
 // One entry per alias; the repository (null) or the issue (issue: null) may be gone by the time we ask.
 export type RelationsData = Record<string, { issue: GhIssueRelations | null } | null | undefined>;
 export interface ViewerData { viewer?: { login?: string } | null }

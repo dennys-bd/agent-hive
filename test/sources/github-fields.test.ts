@@ -247,3 +247,21 @@ test('a field write\'s re-read row keeps the issue\'s blocked-by refs, so a Stat
   assert.deepEqual(written.row.blockedBy, [{ id: '274', title: 'Dock layout', state: 'open' }]);
   assert.match(ITEM_FIELDS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
 });
+
+test('a field write\'s re-read node reaches answer before writeItemField resolves, and a PartialWriteError\'s re-read too (#190)', async () => {
+  const answered: (string | undefined)[] = [];
+  const answer = async (node: GhItemFieldsNode): Promise<void> => {
+    answered.push(node.fieldValueByName?.name);
+  };
+  const { gql } = itemGql([fieldsNode(), fieldsNode({ fieldValueByName: { name: 'In review' } })]);
+  await writeItemField({ gql, projectId: PROJECT, read: READ, entry: async () => undefined, answer }, 'PVTI_1', 'Status', 'In review');
+  assert.deepEqual(answered, ['In review']);
+  const queue = [fieldsNode(), fieldsNode({ fieldValueByName: { name: 'Done' } })];
+  const refusing: Gql = async (query) => {
+    if (query === ITEM_FIELDS) return { node: queue.shift() };
+    if (query.includes('removeAssigneesFromAssignable')) throw new Error('Resource not accessible by integration');
+    return {};
+  };
+  await assert.rejects(writeItemField({ gql: refusing, projectId: PROJECT, read: READ, entry: async () => undefined, answer }, 'PVTI_1', 'Assignees', ['bia']), PartialWriteError);
+  assert.deepEqual(answered, ['In review', 'Done']);
+});

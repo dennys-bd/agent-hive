@@ -52,6 +52,7 @@ import { registerForkRoutes } from './server-fork.js';
 import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
+import type { ItemStore } from './read-model/items.js';
 import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -110,7 +111,7 @@ const ARMED_MESSAGE = 'armed must be true or false';
 const ON_MESSAGE = 'on must be a boolean';
 const TURN_END_EVENTS: readonly string[] = ['Stop', 'StopFailure', 'SessionEnd']; // the only stable points to read a transcript; a failed turn's tokens count too (#805)
 
-export type SourceFactory = (spec: SourceSpec) => Source; // one entry's spec (#180)
+export type SourceFactory = (spec: SourceSpec, items?: ItemStore) => Source; // one entry's spec (#180); items: the read model's store, when there is one (#190)
 
 export interface Runtime {
   config: Config;
@@ -226,7 +227,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const wiring = createServerEvents(deps.events ?? createEventLog(home, 'info', { log }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // events.jsonl (#742): activate sets its level with the log's
   const createdAt = Date.now(); // hive.booted's start (#742)
   const systemLanguage = deps.systemLanguage ?? 'en';
-  const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec) => createSource(spec, { log }));
+  const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ...(items === undefined ? {} : { items }) }));
   // The daemon's ptys (#251) reach every spawn.
   const ptys = createPtyHost(deps.spawnPty ?? NO_PTY, (message) => log.error(message)); // #696: a ring that cannot be written
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)
@@ -1030,7 +1031,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     // An entry whose baked-in parts match the live runtime's keeps its instance, so a write already in flight keeps its chain (#180: per source).
-    const sources = createSources(config, sourceFactory, live && { config: live.runtime.config, sources: live.runtime.sources });
+    const sources = createSources(config, (spec) => sourceFactory(spec, itemStore), live && { config: live.runtime.config, sources: live.runtime.sources });
     try {
       await resolveSources(sources); // validates every source against the real one before the config is written; the message names the source
     } catch (err) {
@@ -1143,6 +1144,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
   const readAccess = deps.readAccess ?? (() => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log }));
+  // #190: what a Settings save's GitHub adapters store their items in: the daemon's model, under the login the read sync reads with
+  const itemStore: ItemStore | undefined = deps.readModel && { db: deps.readModel, source: async () => (await readAccess())?.source, notify: notifyReadModel };
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
