@@ -6,6 +6,7 @@ import { resolveWorkspace } from '../../tasks';
 import type { RepoSummary, SourceSync, Task, State } from '../../types';
 import { act } from '@/components/actions';
 import { ButtonKeyHint, KeyHint } from '@/components/KeyHint';
+import { HeaderSlot } from '@/components/HeaderSlot';
 import { useIsFlowShown } from '@/components/MainDock';
 import { Button } from '@/components/ui/button';
 import { useBackKeys } from '@/hooks/use-back-stack';
@@ -19,6 +20,9 @@ const pad = (n: number): string => String(n).padStart(2, '0');
 // otherwise paint both alike
 const TOGGLE_ON = 'bg-muted text-foreground dark:bg-muted';
 const TOGGLE_OFF = 'bg-transparent text-muted-foreground dark:bg-transparent';
+
+// The bar sits in the window header (#295), which drags the window (#583): its controls opt out to keep their clicks; its text drags with it
+const NO_DRAG_CONTROLS = '[&_:is(button,input)]:[-webkit-app-region:no-drag]';
 
 /** The latest poll among the shown sources (#542): the picked one, or every one; local 24h HH:MM, undefined while none has polled. */
 export function lastPolled(syncs: Record<string, SourceSync>, source?: string): string | undefined {
@@ -187,7 +191,8 @@ interface FlowHeaderProps {
 /** The flow's header (redesign 10, #542): fluxo, the picked source or todas as sources, the chips of the workspaces the shown tasks resolve
  * to, ⑂ tree with `onTree` (#34), ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
  * With `tabs` it is the source header instead (#756, handoff 01), on both tabs, with no chips and no last poll; with
- * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. */
+ * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. It renders in the window header's center column (#295, HeaderSlot),
+ * the header's 44px and border its own. */
 export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isOwn = tabs !== undefined || repository !== undefined;
@@ -207,7 +212,8 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
     ? <RepoTitle header={repository} />
     : tabs ? <SourceTitle name={source ?? ''} tabs={tabs} /> : <FlowTitle state={state} source={source} tasks={tasks} />;
   return (
-    <section aria-label={t('header.flow')} className="flex h-10 shrink-0 items-center gap-2.5 border-b px-3.5 text-muted-foreground text-xs">
+    <HeaderSlot>
+    <section aria-label={t('header.flow')} className={`flex h-full min-w-0 flex-1 items-center gap-2.5 px-3.5 text-muted-foreground text-xs ${NO_DRAG_CONTROLS}`}>
       {back && <BackButton back={back} />}
       {title}
       <span className="flex-1" />
@@ -227,5 +233,6 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
         {t('flow.refresh')}<ButtonKeyHint id="refreshFlow" />
       </Button>
     </section>
+    </HeaderSlot>
   );
 }

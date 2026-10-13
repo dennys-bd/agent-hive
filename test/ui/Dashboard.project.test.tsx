@@ -41,21 +41,22 @@ afterEach(() => vi.unstubAllGlobals());
 
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 const main = () => within(screen.getByRole('main'));
+const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
 
 test('the tabs show only with an external source picked; the native tab shows its table, and a new pick returns to the flow (#756)', async () => {
   const user = userEvent.setup();
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
   showFlow();
-  expect(main().queryByRole('tab', { name: 'GitHub Project' })).not.toBeInTheDocument(); // todas
+  expect(bar().queryByRole('tab', { name: 'GitHub Project' })).not.toBeInTheDocument(); // todas
   await user.click(automation().getByRole('button', { name: /^hive/ }));
-  expect(main().queryByRole('tab', { name: 'GitHub Project' })).not.toBeInTheDocument();
+  expect(bar().queryByRole('tab', { name: 'GitHub Project' })).not.toBeInTheDocument();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  expect(main().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   expect(await main().findByText('1 issues · 1 no fluxo')).toBeInTheDocument();
   await user.click(automation().getByRole('button', { name: /^notes/ }));
-  expect(main().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
   expect(main().queryByText(/issues ·/)).not.toBeInTheDocument();
 });
 
@@ -65,11 +66,11 @@ test('fluxo › in the native view goes back to the flow tab and selects the tas
   render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await main().findByText('1 issues · 1 no fluxo');
   await user.click(main().getByRole('button', { name: 'fluxo ›' }));
   expect(onSelect).toHaveBeenCalledWith({ taskId: 'roadmap:PVTI_1' });
-  expect(main().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
+  expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('a task created from the native view is selected once the state holds it, on the flow tab (#756)', async () => {
@@ -83,10 +84,10 @@ test('a task created from the native view is selected once the state holds it, o
   const { rerender } = render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);
   showFlow();
   await user.click(automation().getByRole('button', { name: /^roadmap/ }));
-  await user.click(main().getByRole('tab', { name: 'GitHub Project' }));
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
   await user.click(await main().findByRole('button', { name: 'fluxo…' }));
   await user.click(screen.getByRole('button', { name: 'criar tarefa' }));
-  await waitFor(() => expect(main().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true'));
+  await waitFor(() => expect(bar().getByRole('tab', { name: 'fluxo' })).toHaveAttribute('aria-selected', 'true'));
   expect(onSelect).not.toHaveBeenCalledWith({ taskId: 'local:1' }); // App would drop a selection the state does not hold yet
   const created: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'Issue 2', body: '', url: out.url, origin: out.itemId }, stage: 'dev', boardColumn: '', auto: false, created: true };
   rerender(<Dashboard state={{ ...state, tasks: [...state.tasks, created] }} locale="pt-BR" tick={0} sources={NAV} onSelect={onSelect} />);

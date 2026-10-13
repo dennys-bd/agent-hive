@@ -55,7 +55,7 @@ function Home() {
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
-const main = () => within(screen.getByRole('main'));
+const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const right = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock="right"]')!;
 
 // Picks the task's activity and presses the details' "ver no fluxo"
@@ -71,11 +71,11 @@ test('from a repository page, see in flow lands on the task\'s source flow with 
   render(<Home />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
-  await main().findByRole('tab', { name: 'issues 3' }); // the repository is shown
+  await bar().findByRole('tab', { name: 'issues 3' }); // the repository is shown
   await seeInFlow(user);
-  expect(main().queryByRole('tab', { name: 'issues 3' })).not.toBeInTheDocument(); // the repository is gone
+  expect(bar().queryByRole('tab', { name: 'issues 3' })).not.toBeInTheDocument(); // the repository is gone
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();
-  expect(main().queryByTitle(/^voltar( · |$)/)).not.toBeInTheDocument(); // the back button's title (#911)
+  expect(bar().queryByTitle(/^voltar( · |$)/)).not.toBeInTheDocument(); // the back button's title (#911)
 });
 
 test('with another source picked, see in flow moves the pick to the task\'s source', async () => {
@@ -83,9 +83,9 @@ test('with another source picked, see in flow moves the pick to the task\'s sour
   render(<Home />);
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^other/ }));
-  await main().findByText(/other/);
+  await bar().findByText(/other/);
   await seeInFlow(user);
-  expect(await main().findByRole('tab', { name: 'GitHub Project' })).toBeInTheDocument();
+  expect(await bar().findByRole('tab', { name: 'GitHub Project' })).toBeInTheDocument();
   expect(automation().getByRole('button', { name: /^roadmap/ })).toHaveAttribute('aria-pressed', 'true');
   expect(automation().getByRole('button', { name: /^other/ })).toHaveAttribute('aria-pressed', 'false');
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();

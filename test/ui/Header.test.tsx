@@ -149,11 +149,13 @@ test('panel-left runs toggleLeft as the key does; its name follows the left side
   off();
 });
 
-test('the center column holds the activity\'s bar, and is empty without one (#221)', () => {
+test('the center column holds the activity\'s bar; without one, only the empty slot the flow\'s bar portals into (#221, #295)', () => {
   const { rerender } = render(header(shellOf({ bar: <p>the bar</p> })));
   expect(column('center')).toContainElement(screen.getByText('the bar'));
+  expect(column('center')?.querySelector('[data-header-slot]')).toBeNull();
   rerender(header());
-  expect(column('center')).toBeEmptyDOMElement();
+  expect(column('center')?.children).toHaveLength(1);
+  expect(column('center')?.querySelector('[data-header-slot]')).toBeEmptyDOMElement();
 });
 
 test('the right column always shows arquivos then detalhes, a pane the side cannot show disabled, the active one pressed and named at the end; a click picks the pane, active or not (#221)', async () => {

@@ -1,6 +1,7 @@
 import { FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
 import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
+import { useHeaderSlotRef } from '@/components/HeaderSlot';
 import { Button } from '@/components/ui/button';
 import { keyTitle } from '@/components/ViewRail';
 import { useIsFullScreen } from '@/hooks/use-full-screen';
@@ -90,12 +91,14 @@ function RightColumn({ width, panes }: { width?: string; panes: HeaderShell['pan
 export function Header({ shell, state, effective }: HeaderProps) {
   const widths = headerColumns(shell.layout, shell.rightShown, useIsFullScreen());
   const isLeftOpen = shell.layout.open.left;
+  const registerSlot = useHeaderSlotRef();
   return (
     <header className={`flex shrink-0 items-stretch border-b ${WINDOW_DRAG}`}>
       <LeftColumn width={widths.left} isOpen={isLeftOpen} state={state} effective={effective} />
       <div data-header-column="center" className={`flex min-w-0 flex-1 items-center ${widths.left === null ? 'pl-3' : ''}`}>
         {!isLeftOpen && <ClosedLead state={state} effective={effective} />}
-        {shell.bar}
+        {/* #295: no activity bar, the slot the flow's bar portals into; an element of its own, so React keeps the closed lead before it */}
+        {shell.bar ?? <div ref={registerSlot} data-header-slot className="flex h-full min-w-0 flex-1 items-center" />}
       </div>
       {shell.rightShown ? <RightColumn width={widths.right} panes={shell.panes} /> : (
         <div className="flex shrink-0 items-center pr-2">

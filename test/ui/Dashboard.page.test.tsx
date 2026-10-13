@@ -81,12 +81,13 @@ const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name
 const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
 const main = () => within(screen.getByRole('main'));
+const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
 const panel = () => within(screen.getByRole('complementary', { name: 'detalhe' }));
 const right = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock="right"]')!;
 
 // Under the repository: its issue #12's page (T12's)
 async function openIssue12(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(await main().findByRole('tab', { name: 'issues 3' }));
+  await user.click(await bar().findByRole('tab', { name: 'issues 3' }));
   await user.click(await main().findByText('Issue 12'));
 }
 
@@ -102,7 +103,7 @@ test('an issue page shows its task in the panel ahead of the selection, with its
   expect(panel().getByText('hive · roadmap')).toBeInTheDocument();
   expect(await panel().findByText('responsável', { selector: 'dt' })).toBeInTheDocument(); // the page's block, in third place
   expect(main().queryByRole('complementary')).not.toBeInTheDocument();
-  await user.click(main().getByRole('tab', { name: 'PRs 2' }));
+  await user.click(bar().getByRole('tab', { name: 'PRs 2' }));
   expect(await panel().findByRole('heading', { name: 'HIVE-1 Task A' })).toBeInTheDocument();
   await user.click(await main().findByText('Fix the pager'));
   expect(await panel().findByRole('heading', { name: 'HIVE-2 Fix it' })).toBeInTheDocument();

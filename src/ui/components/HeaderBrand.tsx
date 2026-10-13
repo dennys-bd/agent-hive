@@ -48,7 +48,7 @@ function PopoverBody({ state, effective, workers }: Omit<HeaderBrandProps, 'isCo
         <span className="font-semibold text-[13px]">{t('header.brand')}</span>
         <span className="ml-auto text-muted-foreground text-xs">{workers}</span>
       </div>
-      <div role="separator" className="my-1 h-px bg-border" />
+      <hr className="my-1 h-px border-0 bg-border" />
       <div className="px-2 pt-1 pb-2"><SignalToggle signal={state.signal} signals={state.signals} effective={effective} /></div>
     </>
   );
