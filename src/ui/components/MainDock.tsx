@@ -276,7 +276,7 @@ export function MainDock(props: MainDockProps) {
   const dock = useDock(sidebarsPerView);
   const { layout, activate, close, toggle } = dock;
   const openConsole = useConsoleOpener(consoleChannels);
-  const activities = activitiesOf({ tasks, workers, terminals, workspaces: workspaces, activities: liveActivities, activityRecords: activityRecords ?? NO_RECORDS, slept });
+  const activities = activitiesOf({ tasks, workers, terminals, workspaces: workspaces, activities: liveActivities, activityRecords: activityRecords ?? NO_RECORDS, slept, stages: stages ?? NO_STAGES });
   const selection = useActivity(activities, onSelect, dock);
   const { current, request, open, openRun, openStarted, openDiff, openFile, activateTab, openConsole: openConsoleTab } = selection;
   // ver saída (#755): the task's activity picked with its commands stage's locked console tab, as abrir como aba opens a tab
