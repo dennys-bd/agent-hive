@@ -163,7 +163,8 @@ export interface RateLimits {
 export type PlanReadings = Partial<Record<AgentId, RateLimits>>;
 /** One read of every agent with plan limits (#929): the readings it got and each failing agent's reason. */
 export interface PlanLimitsReport { readings: { agent: AgentId; rateLimits: RateLimits }[]; failures: { agent: AgentId; reason: string }[] }
-export type PlanLimitsReader = () => Promise<PlanLimitsReport>;
+/** `agents`: only these (#223, a chip's ↻); absent, every agent with plan limits. */
+export type PlanLimitsReader = (agents?: readonly AgentId[]) => Promise<PlanLimitsReport>;
 
 /** GraphQL quota of the account the Hive polls with, as last read after a poll; `at` is when it was read. */
 export interface SourceQuota {
