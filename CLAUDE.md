@@ -20,6 +20,10 @@ A macOS app that keeps several `claude` workers running on the tasks of its sour
 - `docs/` — not part of this repository (ignored): the clone of the private docs repository, the documentation of the whole Hive ecosystem. Its root holds what every project shares (`docs/glossary.md`); `docs/agent/` is agent-hive's (`docs/agent/design-system.md`, `docs/agent/settings-candidates.md`, the design handoffs). `docs/agent/hive/specs/`, `plans/` and `walkthroughs/` hold the specs, plans and walkthroughs of every delivery. `docs/agent/hive/specs/2026-09-15-agent-hive-design.md` is authoritative for anything a newer spec does not override; every spec says which ones it extends.
 - `assets/plugin/` — the Hive's own Claude Code plugin (`/hive:new-spec`, `/hive:new-plan`, `/hive:new-build`, `/hive:new-pr`, `/hive:decomposition` and their agents), copied into the Hive's home on every boot and loaded into every worker with `--plugin-dir`. A human session here loads it with `claude --plugin-dir assets/plugin`.
 
+## The code graph (#212 experiment)
+
+For the length of the #212 experiment, every checkout has a Graphify graph of the code at `graphify-out/` (ignored), built by the worktree setup and served over MCP. Before grepping or reading whole files to find where something lives, who calls it or what a change reaches, ask the graph (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `get_pr_impact`), then read only the files it points to. The graph can lag behind the working tree: when an answer looks wrong or stale, fall back to grep.
+
 ## Hive conventions
 
 What the plugin's `new-*` skills resolve here when the Hive's Settings set nothing (`assets/plugin/reference/conventions.md`).
