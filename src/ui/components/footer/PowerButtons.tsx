@@ -20,7 +20,7 @@ export function PowerButtons({ keepAwake, armed }: PowerButtonsProps) {
   const shutdownTitle = t(armed ? 'power.shutdown.on' : 'power.shutdown.off');
   const shutdown = (
     <Button
-      type="button" variant="ghost" size="icon-xs" title={shutdownTitle} aria-label={shutdownTitle} aria-pressed={armed}
+      type="button" variant="ghost" size="icon-xs" title={shutdownTitle} aria-label={shutdownTitle}
       className={`${BUTTON} ${armed ? SHUTTING_DOWN : OFF}`}
       onClick={armed ? () => { void act('/shutdown', { armed: false }); } : undefined}
     >
@@ -30,7 +30,7 @@ export function PowerButtons({ keepAwake, armed }: PowerButtonsProps) {
   return (
     <span className="flex items-center gap-1">
       <Button
-        type="button" variant="ghost" size="icon-xs" title={awakeTitle} aria-label={awakeTitle} aria-pressed={keepAwake}
+        type="button" variant="ghost" size="icon-xs" title={awakeTitle} aria-label={awakeTitle}
         className={`${BUTTON} ${keepAwake ? KEEPING_AWAKE : OFF}`}
         onClick={() => { void act('/keep-awake', { on: !keepAwake }); }}
       >

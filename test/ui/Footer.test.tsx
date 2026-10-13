@@ -107,13 +107,13 @@ test('a paused rule: struck through, pausada with the time left, and its popover
 
 test('the footer ends in the power buttons, armed or not: no shutting-down text and no cancelar button (#226)', () => {
   const { rerender } = render(<Footer state={STATE} effective={NONE} locale="pt-BR" />);
-  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.off') })).toHaveAttribute('aria-pressed', 'false');
-  expect(within(footer()).getByRole('button', { name: t('power.shutdown.off') })).toHaveAttribute('aria-pressed', 'false');
+  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.off') })).toBeInTheDocument();
+  expect(within(footer()).getByRole('button', { name: t('power.shutdown.off') })).toBeInTheDocument();
   rerender(<Footer state={{ ...STATE, shutdown: { armedAt: '2026-09-28T10:00:00Z' }, keepAwake: true }} effective={NONE} locale="pt-BR" />);
   expect(footer()).not.toHaveTextContent('desligando quando os workers terminarem');
   expect(within(footer()).queryByRole('button', { name: 'cancelar' })).not.toBeInTheDocument();
-  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.on') })).toHaveAttribute('aria-pressed', 'true');
-  expect(within(footer()).getByRole('button', { name: t('power.shutdown.on') })).toHaveAttribute('aria-pressed', 'true');
+  expect(within(footer()).getByRole('button', { name: t('power.keepAwake.on') })).toBeInTheDocument();
+  expect(within(footer()).getByRole('button', { name: t('power.shutdown.on') })).toBeInTheDocument();
 });
 
 test('the effect is read from the signal\'s row: what it holds back, joined; a row that holds nothing back reads like green; green says nothing (#727)', () => {

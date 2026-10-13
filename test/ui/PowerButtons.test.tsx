@@ -10,7 +10,7 @@ const posted = (path: string, body: unknown) => waitFor(() => expect(fetchMock).
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-test('off: two icon-only buttons, coffee then power, muted, not pressed, titled with what they would do (#226)', () => {
+test('off: two icon-only buttons, coffee then power, muted, titled with what they would do (#226)', () => {
   render(<PowerButtons keepAwake={false} armed={false} />);
   const [awake, shutdown] = screen.getAllByRole('button');
   expect(awake).toHaveAccessibleName('manter ligado: sem hibernar e sem desligar a tela');
@@ -19,19 +19,16 @@ test('off: two icon-only buttons, coffee then power, muted, not pressed, titled 
   expect(shutdown).toHaveAttribute('title', t('power.shutdown.off'));
   for (const button of [awake, shutdown]) {
     expect(button.textContent).toBe('');
-    expect(button).toHaveAttribute('aria-pressed', 'false');
     expect(button).toHaveClass('text-muted-foreground');
   }
 });
 
-test('on: keep awake in working and shutdown in waiting, each over 16% of its colour, pressed, titled with how to turn it off (#226)', () => {
+test('on: keep awake in working and shutdown in waiting, each over 16% of its colour, titled with how to turn it off (#226)', () => {
   render(<PowerButtons keepAwake armed />);
   const awake = screen.getByRole('button', { name: 'mantendo ligado: sem hibernar e sem desligar a tela · clique para desligar' });
   const shutdown = screen.getByRole('button', { name: 'desligando quando os workers terminarem · clique para cancelar' });
   expect(awake).toHaveAttribute('title', t('power.keepAwake.on'));
   expect(shutdown).toHaveAttribute('title', t('power.shutdown.on'));
-  expect(awake).toHaveAttribute('aria-pressed', 'true');
-  expect(shutdown).toHaveAttribute('aria-pressed', 'true');
   expect(awake).toHaveClass('border-working', 'bg-working/16', 'text-working');
   expect(shutdown).toHaveClass('border-waiting', 'bg-waiting/16', 'text-waiting');
 });
