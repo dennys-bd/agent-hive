@@ -178,6 +178,17 @@ test('a size past the cap is held to 100 000 px, so a design cannot choke the ca
   expect(frame()).toHaveAttribute('height', '100000');
 });
 
+test('the frame takes the content\'s reported width when wider than the viewport, the viewport\'s when narrower, and fits to it; a bad width keeps the last (#241)', async () => {
+  render(pane());
+  await screen.findByTitle(NAME);
+  fromFrame({ hive: 'design', type: 'size', height: 900, width: 1440 });
+  expect([frame().getAttribute('width'), percent()]).toEqual(['1440', '44%']); // (672 − 32) / 1440
+  fromFrame({ hive: 'design', type: 'size', height: 900, width: 600 });
+  expect(frame()).toHaveAttribute('width', '1280');
+  fromFrame({ hive: 'design', type: 'size', height: 700, width: 'wide' });
+  expect([frame().getAttribute('width'), frame().getAttribute('height')]).toEqual(['1280', '700']);
+});
+
 test('a pointer down on the canvas puts the focus in the pane, so ⌘0 and Space reach it (#109)', async () => {
   render(pane());
   await screen.findByTitle(NAME);

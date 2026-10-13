@@ -25,7 +25,7 @@ export interface DesignPaneProps { activity: Activity; path: string; label: stri
 
 const FRAME_ASPECT = 0.625; // the frame's height before the bridge's first size: 800 px at desktop
 const FULL = 100;
-const MAX_FRAME_HEIGHT = 100_000; // a design may post any size: past this, the canvas's layout would choke
+const MAX_FRAME_PX = 100_000; // a design may post any size: past this, the canvas's layout would choke
 const SHOWN: CSSProperties = { flex: '1 1 0%', opacity: 1, pointerEvents: 'auto' };
 const COLLAPSED: CSSProperties = { flex: '0 0 0%', opacity: 0, pointerEvents: 'none' }; // mounted: a tab switch never reloads the frame
 const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--border) 1px, transparent 1px)', backgroundSize: '16px 16px' };
@@ -90,22 +90,27 @@ function useReloads(activityId: string, path: string, isShown: boolean): Reloads
 }
 
 // The bridge's messages (#108), only from this pane's frame and only in the protocol's shape: ready, the frame loaded (again); size, its
-// content's height, which the frame takes so the canvas scrolls rather than the frame. The design itself may post too: anything else is dropped
-function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): number | undefined {
-  const [height, setHeight] = useState<number>();
+// content's height and width (#241), which the frame takes so the canvas scrolls rather than the frame. The design itself may post too: anything else is dropped
+interface FrameSize { height?: number; width?: number }
+const isFramePx = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): FrameSize {
+  const [size, setSize] = useState<FrameSize>({});
   const ready = useEffectEvent(onReady);
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
       const data = bridgeData(event, frame.current);
       if (data === undefined) return;
-      const { type, height: next } = data;
+      const { type, height, width } = data;
       if (type === 'ready') ready();
-      else if (type === 'size' && typeof next === 'number' && Number.isFinite(next) && next >= 0) setHeight(Math.min(next, MAX_FRAME_HEIGHT));
+      else if (type === 'size' && isFramePx(height)) {
+        setSize((now) => ({ height: Math.min(height, MAX_FRAME_PX), width: isFramePx(width) ? Math.min(width, MAX_FRAME_PX) : now.width }));
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [frame]);
-  return height;
+  return size;
 }
 
 // '*': the sandboxed frame's origin is opaque, so no named origin matches it; a theme is nothing to hide
@@ -158,10 +163,10 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
-interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: DesignViewport; theme: DesignTheme }
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: DesignViewport; frameWidth: number; theme: DesignTheme }
 
 // The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
-function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: OverlayProps) {
+function CommentOverlay({ model, canvas, rects, percent, path, width, frameWidth, theme }: OverlayProps) {
   const { target } = canvas;
   const scale = percent / FULL;
   const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme, tweaks: {} });
@@ -176,7 +181,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: O
       <DesignPins items={items} rects={rects} scale={scale} theme={theme} selected={canvas.selection?.id} editing={target && { target, pin }} onSelect={canvas.selectPin} />
       {target !== undefined && (
         <DesignComposer
-          target={target} pin={pin} theme={theme} isBusy={model.isBusy} style={composerStyle(target.rect, scale, width * scale)}
+          target={target} pin={pin} theme={theme} isBusy={model.isBusy} style={composerStyle(target.rect, scale, frameWidth * scale)}
           onAdd={save(false)} onSend={save(true)} onCancel={canvas.close}
         />
       )}
@@ -186,7 +191,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, theme }: O
 
 interface DesignViewModel {
   name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
-  viewport: Viewport; theme: DesignTheme; width: DesignViewport; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
+  viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
   zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge;
   pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; selectComment(id: string): void;
 }
@@ -200,19 +205,22 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const mint = useMint(activity.activity.id, path);
   const reloads = useReloads(activity.activity.id, path, active);
   const [reloadedAt, setReloadedAt] = useState<Date>();
-  const width = VIEWPORT_PX[viewport];
-  const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
+  const viewportPx = VIEWPORT_PX[viewport];
   const marks = useCommentCanvas(comments);
   const pins = useDesignPins(frame, canvas, anchorsOf(comments), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
-  const height = useFrameMessages(frame, () => {
+  const size = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
     postTheme(frame.current, theme); // the frame forgets the theme on every load
     if (reloads.take()) setReloadedAt(new Date());
-  }) ?? width * FRAME_ASPECT;
+  });
+  // A window screen wider than the viewport is drawn whole, the canvas scrolling (#241).
+  // ponytail: the frame never narrows below a width it was given until the pane remounts, since a responsive screen reports scrollWidth equal to the frame's own width; reset on viewport change plus a measure request to the bridge if it bites
+  const width = Math.max(viewportPx, size.width ?? 0);
+  const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
   // An aimed rect was measured in the other theme or viewport: either change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
   return {
-    name: baseName(path), canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins, pickTheme,
+    name: baseName(path), canvas, frame, viewport, theme, viewportPx, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, pickTheme,
     pickViewport: (next) => { setViewport(next); marks.close(); },
     selectComment: (id) => { marks.selectItem(id); pins.scrollTo(id); },
   };
@@ -222,7 +230,7 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
 function DesignView({ comments, ...props }: DesignPaneProps & { comments?: DesignCommentsModel }) {
   const { path, label, active } = props;
   const view = useDesignView(props, comments);
-  const { name, canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
+  const { name, canvas, frame, viewport, theme, viewportPx, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
   };
@@ -237,7 +245,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
             <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
-              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} width={width} theme={theme} />}
+              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} width={viewportPx} frameWidth={width} theme={theme} />}
             </DesignCanvas>
           )}
         {comments !== undefined && marks.isPanelShown && (
