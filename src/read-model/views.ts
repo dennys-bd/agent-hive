@@ -97,8 +97,8 @@ const sameLogin = (a: string | null, b: string): boolean => a !== null && a.toLo
 /** How many reviewers approve (#187): those whose latest approval, change request or dismissal is an approval, as latestOpinionatedReviews.
  * The reviews come oldest first, so a later entry replaces an earlier one. */
 export function approvalsOf(reviews: ReviewRow[]): number {
-  const latest = new Map(reviews.filter((r) => OPINIONS.includes(r.state)).map((r) => [r.author ?? GHOST, r.state]));
-  return [...latest.values()].filter((state) => state === 'APPROVED').length;
+  const lastOpinion = new Map(reviews.filter((r) => OPINIONS.includes(r.state)).map((r) => [r.author ?? GHOST, r.state]));
+  return [...lastOpinion.values()].filter((state) => state === 'APPROVED').length;
 }
 
 const checkOf = (row: CheckRow): PrCheck => ({
