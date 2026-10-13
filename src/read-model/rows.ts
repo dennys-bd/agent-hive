@@ -51,3 +51,6 @@ export type PullPoll = Pick<PullRow, 'mergeState' | 'checks'> & { headSha: strin
 export interface PullToRead { nodeId: string; number: number; isOpen: boolean; updatedAt: string }
 /** An open PR the poll reads (#186), with what the last poll stored. */
 export interface OpenPull { nodeId: string; number: number; headSha: string | null; mergeState: PrMergeState }
+
+/** The login of a source (#186): the last `:`-segment of `github:<host>:<login>`, as sourceOf writes it. */
+export const sourceLogin = (source: string): string => source.slice(source.lastIndexOf(':') + 1);

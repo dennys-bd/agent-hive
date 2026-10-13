@@ -28,7 +28,7 @@ const OPEN: RepoIssues = {
   issues: [{ number: 12, title: 'Issue 12', url: 'https://github.com/acme/site/issues/12', labels: [], assignees: [], updatedAt: '2026-10-05T09:00:00Z', pullRequests: [] }],
 };
 const PRS: RepoPrs = {
-  counts: { open: 2, merged: 0, closed: 0 }, truncated: false, canPush: true,
+  counts: { open: 2, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z',
   rows: [{ url: 'https://github.com/acme/site/pull/7', number: 7, title: 'Fix the pager', state: 'open', isDraft: false, mergeState: 'clean', updatedAt: '2026-10-05T09:00:00Z' }],
 };
 const PR_PAGE: PrData = {

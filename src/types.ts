@@ -907,8 +907,8 @@ export interface PrRow {
   mergeState: PrMergeState; updatedAt: string;
 }
 /** GET /repositories/:owner/:name/pulls?state= (#758): one state's rows, newest update first, the three counts; truncated: more than the first 100;
- * canPush: the login may merge there (#854). */
-export interface RepoPrs { rows: PrRow[]; counts: { open: number; merged: number; closed: number }; truncated: boolean; canPush: boolean }
+ * canPush: the login may merge there (#854). syncedAt: the repository's last complete issues round (#186), null while never synced. */
+export interface RepoPrs { rows: PrRow[]; counts: { open: number; merged: number; closed: number }; truncated: boolean; canPush: boolean; syncedAt: string | null }
 /** A comment added to the PR review (#592), published with enviar revisão. */
 export interface PrDraft { id: string; anchor: LineAnchor & { excerpt: string[] }; text: string }
 /** A PR's review file (#592), <home>/pr-reviews/<encodeURIComponent(url)>.json: outside State and the reducer. The review's summary is sent,

@@ -7,11 +7,9 @@ import { workspaceBase } from './fork.js';
 import { prTextOf } from './pr-bodies.js';
 import { parseHead, parsePrChecks, PR_CHECKS_QUERY, PR_HEAD_QUERY, prDiffArgs, PrNotFound, type PrView, readView } from './pr-github.js';
 import { conflictedFiles } from './pr-conflicts.js';
-import { parsePrRows, parseSearchRows, prsQuery, SEARCH_PRS_QUERY, searchVariables } from './pr-list.js';
 import { addPrDraft, dropStalePrMarks, markPrReviewed, type PrReviewStore, removePrDraft, updatePrDraft } from './pr-review-store.js';
-import { PR_STATES, prLink, prNumber, prRepo } from './pull-requests.js';
+import { prLink, prNumber, prRepo } from './pull-requests.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
-import { ownerName } from './repos/github-repos.js';
 import { isHash, isPath, parseLineAnchor } from './review-bodies.js';
 import { badRequest, errorMessage, refuse } from './server-review.js';
 import type { LiveView, Refusal, TaskRouteDeps } from './server-tasks.js';
@@ -34,7 +32,6 @@ const MARK_MESSAGE = 'path um texto não vazio, hash um sha256 e reviewed true o
 const DRAFT_MESSAGE = `anchor e text (1 a ${REVIEW_TEXT_MAX} caracteres) são obrigatórios`;
 const TEXT_MESSAGE = `text precisa ter de 1 a ${REVIEW_TEXT_MAX} caracteres`;
 const UNKNOWN_DRAFT_MESSAGE = 'rascunho desconhecido';
-const STATE_MESSAGE = 'state must be open, merged or closed';
 
 /** Every PR route's path (#758): the PR under a repository GET /repositories lists, by its number. */
 export const PR_ROUTE = '/repositories/:owner/:name/pulls/:number';
@@ -256,23 +253,8 @@ function registerDraftEdits(app: Express, deps: PrRouteDeps): void {
   });
 }
 
-// A repository's PR list and the checks' poll (#758): one GitHub read each, nothing stored. A row the parser skips is a debug line, by its reason
-function registerListRoutes(app: Express, deps: PrRouteDeps): void {
-  app.get('/repositories/:owner/:name/pulls', async (req: Request, res: Response) => {
-    const state = PR_STATES.find((s) => s === req.query.state);
-    if (state === undefined) return badRequest(res, STATE_MESSAGE);
-    const found = await listedRepository(deps, req, res);
-    if (!found) return;
-    const skip = (reason: string): void => deps.log.debug(`pulls: a row skipped (${reason})`);
-    try {
-      const { ref } = found; // #854: an original lists only the PRs of the user's fork
-      res.json(ref.role === 'original' && ref.pair !== undefined
-        ? parseSearchRows(await deps.gql(SEARCH_PRS_QUERY, searchVariables(found.repository, state)), skip)
-        : parsePrRows(await deps.gql(prsQuery(state), ownerName(found.repository)), skip));
-    } catch (err) {
-      githubRefusal(deps, res, err, `pulls ${found.repository}`);
-    }
-  });
+// The checks' poll (#758): one GitHub read, nothing stored. The PR list reads the model, in server-repos.ts (#186)
+function registerChecksRoute(app: Express, deps: PrRouteDeps): void {
   app.get(`${PR_ROUTE}/checks`, async (req: Request, res: Response) => {
     const found = await prTarget(deps, req, res);
     if (!found) return;
@@ -284,10 +266,10 @@ function registerListRoutes(app: Express, deps: PrRouteDeps): void {
   });
 }
 
-/** The PR page's reads and its review file, and a repository's PR list (#592, #758): every route names the PR by its repository and number. */
+/** The PR page's reads, its review file and its checks' poll (#592, #758): every route names the PR by its repository and number. */
 export function registerPrRoutes(app: Express, deps: PrRouteDeps): void {
   registerReadRoutes(app, deps);
   registerFileRoutes(app, deps);
   registerDraftEdits(app, deps);
-  registerListRoutes(app, deps);
+  registerChecksRoute(app, deps);
 }

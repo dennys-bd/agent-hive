@@ -14,12 +14,12 @@ const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/ac
 const LINK = 'https://github.com/acme/site/pull/';
 const row = (n: number, extra: Partial<PrRow> = {}): PrRow => ({ url: `${LINK}${n}`, number: n, title: `PR ${n}`, state: 'open', isDraft: false, mergeState: 'clean', updatedAt: '2026-10-05T09:00:00Z', ...extra });
 const OPEN: RepoPrs = {
-  counts: { open: 3, merged: 1, closed: 0 }, truncated: false, canPush: true,
+  counts: { open: 3, merged: 1, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z',
   rows: [row(7, { checks: 'success', decision: 'approved' }), row(8, { isDraft: true, mergeState: 'draft' }), row(9, { checks: 'failure', decision: 'changes', mergeState: 'conflicts' })],
 };
-const MERGED: RepoPrs = { canPush: true, counts: { open: 3, merged: 1, closed: 0 }, truncated: true, rows: [row(5, { state: 'merged', mergeState: 'unknown' })] };
+const MERGED: RepoPrs = { canPush: true, syncedAt: '2026-10-05T09:00:00Z', counts: { open: 3, merged: 1, closed: 0 }, truncated: true, rows: [row(5, { state: 'merged', mergeState: 'unknown' })] };
 const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://github.com/acme/other' };
-const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, rows: [] };
+const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
 // #12 is a task of roadmap whose stack is #6 (merged) then #7
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const STACK = [{ url: `${LINK}6`, state: 'merged' as const, slice: { k: 1, type: 'stacked' as const } }, { url: `${LINK}7`, state: 'open' as const, slice: { k: 2, type: 'stacked' as const } }];
