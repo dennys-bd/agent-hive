@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Header } from '@/components/Header';
@@ -75,21 +75,61 @@ test('left side closed in full screen: no left column; the header starts 12px in
   expect(mark()).toBeInTheDocument();
 });
 
-test('the brand\'s title names the signal and what it holds back, a green holding nothing back has no middle part; the mark takes the signal\'s colour (#221, #533)', () => {
+test('the brand\'s title names the signal and what it holds back, a green holding nothing back has no middle part, and no "click to change"; the closed ⬢ carries the same; the mark takes the signal\'s colour (#221, #533, #295)', () => {
   const { rerender } = render(header(shellOf(), limits('yellow')));
-  expect(brand()).toHaveAttribute('title', 'sinal yellow · tarefas novas só de árvore iniciada · clique para trocar');
+  expect(brand()).toHaveAttribute('title', 'sinal yellow · tarefas novas só de árvore iniciada');
   expect(brand().querySelector('[data-signal]')?.getAttribute('class')).toMatch(/text-signal-yellow/);
   rerender(header(shellOf(), limits('green')));
-  expect(brand()).toHaveAttribute('title', 'sinal green · clique para trocar');
-  expect(brand().querySelector('[data-signal]')?.getAttribute('class')).toMatch(/text-signal-green/);
+  expect(brand()).toHaveAttribute('title', 'sinal green');
+  rerender(header(shellOf({ layout: LEFT_CLOSED }), limits('yellow')));
+  expect(mark()).toHaveAttribute('title', 'sinal yellow · tarefas novas só de árvore iniciada');
 });
 
-test('a click on the brand opens the signal choice, the flow sidebar\'s own toggle (#221)', async () => {
+test('a click on the open brand opens the signal popover: hive and workers {active}/{max}, a separator, then the signal toggle, a fired rule\'s floor locking the looser items (#221, #295)', async () => {
   const user = userEvent.setup();
-  render(header());
+  render(header(shellOf(), { ...limits('yellow'), floor: { signal: 'yellow' } }));
   expect(screen.queryByRole('radio')).not.toBeInTheDocument();
   await user.click(brand());
-  expect((await screen.findAllByRole('radio')).map((item) => item.textContent)).toEqual(['green', 'yellow', 'red']);
+  const popover = await screen.findByRole('dialog');
+  expect(within(popover).getByText('hive')).toBeInTheDocument();
+  expect(within(popover).getByText('workers 1/5')).toBeInTheDocument();
+  expect(within(popover).getByRole('separator')).toBeInTheDocument();
+  expect(within(popover).getAllByRole('radio').map((item) => [item.textContent, (item as HTMLButtonElement).disabled])).toEqual([['green', true], ['yellow', false], ['red', false]]);
+});
+
+test('with the left side closed, hovering, focusing or clicking the ⬢ opens the same popover; the pointer leaving the ⬢ and the popover closes it, as Escape does (#295)', async () => {
+  const user = userEvent.setup();
+  render(header(shellOf({ layout: LEFT_CLOSED })));
+  await user.hover(mark());
+  const popover = await screen.findByRole('dialog');
+  expect(within(popover).getByText('workers 1/5')).toBeInTheDocument();
+  expect(within(popover).getAllByRole('radio')).toHaveLength(3);
+  expect(document.activeElement).not.toBe(mark()); // a hover never moves the focus
+  await user.hover(popover); // crossing the gap from the ⬢ keeps it open
+  await user.unhover(popover);
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  act(() => mark().focus());
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); // the focus handed back to the ⬢ does not reopen it
+  await user.click(mark());
+  expect(await screen.findByRole('dialog')).toBeInTheDocument();
+});
+
+test('the mark is one size in every state: the open brand, the closed ⬢ and the popover\'s first row (#295)', async () => {
+  const user = userEvent.setup();
+  const classes = (): string[] => Array.from(document.querySelectorAll('svg[data-signal]'), (svg) => svg.getAttribute('class') ?? '');
+  const { unmount } = render(header());
+  await user.click(brand());
+  await screen.findByRole('dialog');
+  const open = classes();
+  unmount();
+  render(header(shellOf({ layout: LEFT_CLOSED }), limits('green'), true));
+  await user.hover(mark());
+  await screen.findByRole('dialog');
+  const seen = [...open, ...classes()];
+  expect(seen).toHaveLength(4);
+  expect(new Set(seen)).toEqual(new Set(['size-3 shrink-0 text-signal-green']));
 });
 
 test('panel-left runs toggleLeft as the key does; its name follows the left side, its title adds the key, the name alone when unbound (#221)', async () => {
