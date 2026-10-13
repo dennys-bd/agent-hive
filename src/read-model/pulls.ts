@@ -173,6 +173,7 @@ async function pollPull(deps: SyncDeps, repository: string, pr: OpenPull): Promi
 
 /** One PR's poll for its page's refetch (#187), open or not; none when the model holds no PR at that number. */
 export async function pollOne(deps: SyncDeps, repository: string, number: number): Promise<SyncReport> {
+  throwIfStopped(deps);
   const pr = deps.db.pullAt(deps.source, repository, number);
   return pr === undefined ? EMPTY_REPORT : pollPull(deps, repository, pr);
 }

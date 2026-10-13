@@ -402,3 +402,33 @@ test('a PR\'s refetch also polls it, in one readModel event; again passes the co
   assert.equal(await loop.refetch(REPO, 7, { again: true }), 'unchanged');
   assert.ok(gh.calls.length > asked, 'again ran it');
 });
+
+test('a stop that lands between a PR\'s refetch and its poll ends the poll without an error line: a stop is no failure (#187)', async (t) => {
+  const { db } = await openReadModel(join(await tempDir(t, 'read-model-'), READ_MODEL_FILE));
+  const gh = github({
+    ...pagesAt(HEAD), 'repos/acme/hive/issues/7': { body: restPr(7, T1), etag: 'EI7' }, 'repos/acme/hive/issues/7/comments?per_page=100': { body: [], etag: 'EC7' },
+  });
+  const gate = deferred();
+  const called = deferred();
+  let gated = false;
+  const rest: RestGet = async (path, etag) => {
+    if (gated) {
+      called.resolve();
+      await gate.promise;
+    }
+    return gh.rest(path, etag);
+  };
+  const errors: string[] = [];
+  const { loop } = loopOn(db, rest, { log: { ...quiet, error: (line: string): void => { errors.push(line); } } });
+  assert.equal(await loop.refetch(REPO, 7), 'changed');
+  gated = true;
+  const before = gh.calls.length;
+  const again = loop.refetch(REPO, 7, { again: true });
+  await called.promise;
+  const stopped = loop.stop();
+  gate.resolve();
+  await Promise.all([again, stopped]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(gh.calls.slice(before).filter(([path]) => path.includes('/pulls/')), [], 'the stopped poll asked GitHub nothing');
+  db.close();
+});

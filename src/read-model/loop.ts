@@ -179,8 +179,9 @@ function refetchesOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => b
   // refetch's own outcome into a failure: the page still answers from the model
   async function polled(access: RefetchDeps, repository: string, number: number): Promise<SyncReport> {
     try {
-      return await pollOne(access, repository, number);
+      return await pollOne({ ...access, isStopped }, repository, number);
     } catch (err) {
+      if (err instanceof SyncStopped) return EMPTY_REPORT; // a stop landed after the refetch: no failure, the poll just does not run
       deps.log.error(`read model: the poll of ${repository}#${number} failed: ${reasonOf(err)}`);
       return EMPTY_REPORT;
     }
