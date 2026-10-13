@@ -137,21 +137,24 @@ async function requestsOf(deps: Pick<PrRouteDeps, 'gh'>, url: string, data: Stor
 
 /** GET …/pulls/:number's read (#187): the refetch (conditional; its failure is the loop's log line, and the model answers), the page from the
  * model, the diff, then the threads with the head they were read at. The diff carries no oid, so a head that moved past the stored one is
- * refetched and read once more, and a second move is HeadMoved. Then the compare and the request times. An item the parser skips is a debug
+ * refetched and read once more, and a second move is HeadMoved, unless that refetch did not succeed: then the model answers at the threads' head. Then the compare and the request times. An item the parser skips is a debug
  * line, by number, never the link. */
 export async function readPr(deps: Pick<PrRouteDeps, 'gql' | 'gh' | 'log'>, reading: Reading, url: string): Promise<PrData> {
   const repository = prRepo(url);
   const number = Number(prNumber(url)); // prNumber is the text of a link a route checked: digits
   const skip = (reason: string): void => deps.log.debug(`pr #${number}: an item skipped (${reason})`);
   for (const again of [false, true]) {
-    await reading.model.refetch(repository, number, { again });
+    const outcome = await reading.model.refetch(repository, number, { again });
     const page = reading.model.db.prPage(reading.source, repository, number);
     if (page === undefined) throw new PrNotFound();
     const files = cappedFiles(await deps.gh(prDiffArgs(url)));
     const read = parseThreads(await deps.gql(PR_THREADS_QUERY, { url }), skip);
     const head = page.pull?.headSha ?? read.head; // never polled (its refetch failed): the threads' head is all there is
-    if (read.head !== head) continue;
-    const stored = { ...prDataOf(page, sourceLogin(reading.source)), head };
+    // A second mismatch is the PR moving again only when the refetch read GitHub; one that failed or was skipped left the model behind, and the
+    // diff just read matches the threads' head
+    const refetched = outcome !== 'failed' && outcome !== 'skipped';
+    if (read.head !== head && (!again || refetched)) continue;
+    const stored = { ...prDataOf(page, sourceLogin(reading.source)), head: read.head };
     const [behind, reviewRequests] = await Promise.all([behindOf(deps, url, stored), requestsOf(deps, url, stored)]);
     return { ...stored, ...behind, reviewRequests, threads: read.threads, truncated: read.truncated, files };
   }

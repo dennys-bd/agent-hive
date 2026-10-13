@@ -55,6 +55,16 @@ test('GET …/pulls/:number checks the stored head against the threads\' headRef
   assert.deepEqual([moved.status, await moved.json()], [409, { error: 'o PR mudou durante a leitura, atualize' }]);
 });
 
+test('GET …/pulls/:number whose head differs after a refetch that failed answers the model\'s page at the threads\' head, not 409: the diff matches that head (#187)', async (t) => {
+  const gh = fakeGh();
+  gh.rest = async () => { throw new Error('gh api: HTTP 502'); };
+  const { base } = await startPrs(t, gh);
+  const newer = 'c'.repeat(40);
+  gh.heads = [newer, newer];
+  const res = await prOf(base);
+  assert.deepEqual([res.status, (await res.json() as PrData).head], [200, newer]);
+});
+
 test('GET …/pulls/:number answers the fields from the model even when every refetch fails; GitHub is read only for the threads, the diff and the compare (#187)', async (t) => {
   const gh = fakeGh();
   gh.rest = async () => { throw new Error('gh api: HTTP 502'); };
