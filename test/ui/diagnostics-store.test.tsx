@@ -76,7 +76,7 @@ test('counts sum both sources with a duplicate once, the server\'s copy kept; th
   store.bindChecks('a1', 'a.ts', ['tsc', 'mypy']);
   expect(store.fileSources('a1', 'a.ts')).toEqual([{ name: 'biome', phase: 'starting' }, { name: 'tsc', phase: 'ready' }, { name: 'mypy', phase: 'starting' }]);
   expect(store.fileServer('a1', 'a.ts')?.server).toBe('typescript-language-server');
-  expect(store.activitySources('a1')).toEqual(['typescript-language-server', 'tsc']);
+  expect(store.answeredSources('a1')).toEqual(['typescript-language-server', 'tsc']);
   store.unbindChecks('a1', 'a.ts');
   expect(store.fileSources('a1', 'a.ts')).toEqual([{ name: 'biome', phase: 'starting' }]);
 });
@@ -102,4 +102,44 @@ test('a check problem a language server reports at the same path, line and code 
   store.setDiagnostics('k', 'a.ts', [{ path: 'a.ts', line: 3, column: 1, severity: 'error', message: 'x', code: '2304', source: 'ts', fromServer: true }]);
   store.setCheck('a1', 'tsc', { state: 'done', scope: 'project', diagnostics: [finding('a.ts', 3, { code: '2304' }), finding('a.ts', 4, { code: '2304' })] }, '');
   expect(store.checkProblems('a1', 'tsc', 'a.ts').map((p) => p.line)).toEqual([4]);
+});
+
+const TSC_LOG = { channel: 'check:hive:tsc', run: 'r3' };
+
+test('activityStatus lists the activity\'s language servers, its checker servers, then its command-line checkers, one entry per name; off and an absent checker are left out (#225)', () => {
+  store.setClient('ts', 'a1', 'typescript-language-server', { phase: 'absent', reason: 'not installed' });
+  store.bindFile('a1', 'a.ts', 'ts', 'typescript');
+  store.setClient('ts2', 'a1', 'typescript-language-server', { phase: 'ready' });
+  store.setClient('py', 'a1', 'pyright', { phase: 'off' });
+  store.setClient('b', 'a1', 'biome', { phase: 'ready' }, undefined, 'biome');
+  store.setClient('e', 'a1', 'eslint', { phase: 'absent', reason: 'not installed' }, undefined, 'eslint');
+  store.setClient('r', 'a1', 'ruff', { phase: 'off' }, undefined, 'ruff');
+  store.setClient('x', 'a2', 'pyright', { phase: 'ready' });
+  store.checkStarted('a1', 'mypy', 'a.py');
+  store.bindChecks('a1', 'a.ts', ['tsc', 'mypy']);
+  expect(store.activityStatus('a1')).toEqual([
+    { name: 'typescript-language-server', kind: 'server', phase: 'absent', language: 'typescript', reason: 'not installed' },
+    { name: 'biome', kind: 'server', phase: 'ready' },
+    { name: 'mypy', kind: 'checker', phase: 'starting' }, // running reads as starting
+    { name: 'tsc', kind: 'checker', phase: 'starting' }, // bound to an open file, no answer yet
+  ]);
+  store.setCheck('a1', 'tsc', { state: 'failed', reason: 'exit code 2', log: TSC_LOG }, '');
+  store.setCheck('a1', 'mypy', { state: 'absent' }, 'a.py');
+  expect(store.activityStatus('a1').slice(2)).toEqual([{ name: 'tsc', kind: 'checker', phase: 'failed', reason: 'exit code 2', log: TSC_LOG }]);
+  store.setCheck('a1', 'tsc', { state: 'done', scope: 'project', diagnostics: [] }, '');
+  expect(store.activityStatus('a1').at(-1)).toEqual({ name: 'tsc', kind: 'checker', phase: 'ready' });
+  store.setClient('ts', 'a1', 'typescript-language-server', { phase: 'failed', reason: 'spawn node ENOENT' }, LOG);
+  expect(store.activityStatus('a1')[0]).toEqual({ name: 'typescript-language-server', kind: 'server', phase: 'failed', language: 'typescript', reason: 'spawn node ENOENT', log: LOG });
+  expect(store.activityStatus('a3')).toEqual([]);
+});
+
+test('undefined reads every activity: problems, check statuses and answered sources; ownerOf names the first activity with a problem on the path (#225)', () => {
+  store.setCheck('a1', 'tsc', { state: 'done', scope: 'project', diagnostics: [finding('x.ts', 1)] }, '');
+  store.setCheck('a2', 'mypy', { state: 'done', scope: 'file', diagnostics: [finding('a.py', 1)] }, 'a.py');
+  store.setCheck('a2', 'tsc', { state: 'done', scope: 'project', diagnostics: [finding('x.ts', 2)] }, '');
+  expect(store.problems(undefined).map((g) => [g.path, g.problems.length])).toEqual([['a.py', 1], ['x.ts', 2]]);
+  expect(store.problems('a1').map((g) => g.path)).toEqual(['x.ts']);
+  expect(store.checkStatuses(undefined).map((s) => s.checker)).toEqual(['tsc', 'mypy', 'tsc']);
+  expect(store.answeredSources(undefined)).toEqual(['tsc', 'mypy']);
+  expect([store.ownerOf('x.ts'), store.ownerOf('a.py'), store.ownerOf('none.ts')]).toEqual(['a1', 'a2', undefined]);
 });

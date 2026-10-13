@@ -4,7 +4,7 @@ import { ProblemCounts } from '@/components/EditorStatus';
 import { Button } from '@/components/ui/button';
 import { toneOf, useDiagnostics } from '@/hooks/use-diagnostics';
 import { t } from '@/i18n';
-import { activitySources, checkStatuses, type CheckStatus, type Problem, type ProblemGroup, problems } from '@/lib/diagnostics-store';
+import { answeredSources, checkStatuses, type CheckStatus, type Problem, type ProblemGroup, problems } from '@/lib/diagnostics-store';
 import type { FileAt } from '@/lib/editor-models';
 import { addCounts, ZERO } from '@/lib/problems';
 import { listOf } from '@/lib/settings-languages';
@@ -92,7 +92,7 @@ function Group({ group, isCollapsed, onToggle, onOpen }: { group: ProblemGroup; 
 }
 
 function Empty({ activityId }: { activityId: string }) {
-  const sources = activitySources(activityId);
+  const sources = answeredSources(activityId);
   return (
     <div className="flex flex-col items-center gap-1 p-4 text-xs">
       <span>{t('problems.empty')}</span>
