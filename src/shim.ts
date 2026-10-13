@@ -13,7 +13,7 @@ export const BIN_DIR = 'bin'; // <home>/bin: first on every terminal's PATH
 const COMMAND = '__HIVE_COMMAND__';
 const SUBCOMMANDS = '__HIVE_SUBCOMMANDS__';
 const FLAGS = '__HIVE_FLAGS__';
-const BIN_MODE = 0o700;
+export const BIN_MODE = 0o700; // <home>/bin and <home>/shell (#259): this user only
 const SHIM_MODE = 0o755;
 
 /** `assets/bin/shim` in the Hive's own checkout, resolved from dist/src/ as pluginSource is. */

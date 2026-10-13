@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
+import { shellInitDir, shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
 import { historyPath } from './terminal-files.js';
 import { AGENT_IDS, type Stage, type Exec, type SessionPolicy, type Item, type LaunchArg, type PtyLaunch } from './types.js';
@@ -104,14 +105,11 @@ export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmp
   return { ...withoutHiveEnv(base), TMPDIR: tmpDir, HIVE_PTY_ID: ptyId, HIVE_PORT: String(port), HIVE_SECRET_FILE: secretFile };
 }
 
-/** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, and the Hive's bin
- * dir first on PATH, so an agent typed there is its shim's (#924). `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
+/** What a kept terminal's shell gets on top of ptyEnv (#696): a history file of its own, kept with it until it is forgotten, the Hive's bin
+ * dir first on PATH, so an agent typed there is its shim's (#924) for a child process too, and HIVE_SHELL_DIR, the init files' folder
+ * ptyCommand starts zsh, bash and fish on (#259). `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
 export function terminalEnv(home: string, terminalId: string, path = process.env.PATH ?? ''): Record<string, string> {
-  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}:${path}` };
-}
-
-export function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
+  return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}:${path}`, HIVE_SHELL_DIR: shellInitDir(home) };
 }
 
 // A run command (#300, #353): its env exported, then the command itself echoed as `> <command>` in bright white, as pnpm prints a script,
@@ -127,17 +125,32 @@ const commandLine = ({ command, env }: NonNullable<PtyLaunch['run']>): string =>
 // command line always had them
 const shellWord = (arg: LaunchArg): string => (typeof arg === 'string' ? shellQuote(arg) : `${arg[0]} ${shellQuote(arg[1])}`);
 
-// The one shell string of the repo (#283, #251), in three renders: an agent's run, a terminal and a workspace's run command (#300). The
-// pty host runs it through `sh -c`, so there is no argv to pass. Everything user-controlled goes through shellQuote: the agent's argv, which
-// its runner rendered (#924), word by word; a run command's line and env values are quoted whole, and its env names passed ENV_NAME in the
-// parser and the form, since `export NAME=` cannot quote a name.
+// A plain terminal's shell (#259): zsh, bash and fish start on the init files in HIVE_SHELL_DIR (terminalEnv), which run the user's own rc
+// files and then define a function per agent calling its shim, so no PATH those files set hides it. zsh finds them through ZDOTDIR, the user's
+// kept in HIVE_USER_ZDOTDIR for the files to put back; bash through --rcfile, which stands for ~/.bashrc; fish through -C, run after its
+// config. Any other shell, or an env with no HIVE_SHELL_DIR, is the plain $SHELL with the shim first on PATH. Only the pty env's own values
+// are expanded here, each one quoted.
+const TERMINAL_SHELL = [
+  `case "\${HIVE_SHELL_DIR:+\${SHELL##*/}}" in`,
+  `zsh) HIVE_USER_ZDOTDIR="\${ZDOTDIR-}" ZDOTDIR="$HIVE_SHELL_DIR/zsh" "$SHELL" ;;`,
+  `bash) "$SHELL" --rcfile "$HIVE_SHELL_DIR/bash/rc" ;;`,
+  `fish) "$SHELL" -C 'source "$HIVE_SHELL_DIR/fish/init.fish"' ;;`,
+  `*) "\${SHELL:-sh}" ;;`,
+  'esac',
+].join(' ');
+
+// The one shell string of the repo (#283, #251), in three renders: an agent's run, a terminal, whose shell starts on the Hive's init files
+// (#259), and a workspace's run command (#300). The pty host runs it through `sh -c`, so there is no argv to pass. Everything user-controlled
+// goes through shellQuote: the agent's argv, which its runner rendered (#924), word by word; a run command's line and env values are quoted
+// whole, and its env names passed ENV_NAME in the parser and the form, since `export NAME=` cannot quote a name.
 export function ptyCommand(o: PtyLaunch): string {
   // The secret from hive.secret, whose path the env ptyEnv gave the run holds (#467): curl reads the header from the file, so neither
   // sh -c's argv nor curl's ever holds the value
   const trailer = `curl -s -m 2 -X POST http://127.0.0.1:${o.port}/hooks/exit -H 'x-hive-pty: ${o.ptyId}' -H @"$HIVE_SECRET_FILE" --noproxy '*' >/dev/null`; // #696: never through a proxy
-  // A terminal (#283, #647): the user's shell in the worktree, not exec'd, so the trailer still reports its exit; or a run command, which ends with its command (#300, #353).
+  // A terminal (#283, #647): the user's shell in the worktree, started on the Hive's init files (#259) and not exec'd, so the trailer still
+  // reports its exit; or a run command, which ends with its command (#300, #353).
   if (o.terminal && o.run) return `cd ${shellQuote(o.cwd)} && ${commandLine(o.run)}${trailer}; exit "$hive_code"`;
-  if (o.terminal) return `cd ${shellQuote(o.cwd)} && "\${SHELL:-sh}"; ${trailer}`;
+  if (o.terminal) return `cd ${shellQuote(o.cwd)} && ${TERMINAL_SHELL}; ${trailer}`;
   if (o.agent === undefined) throw new Error('pty: a run launch with no agent');
   const line = [
     `cd ${shellQuote(o.cwd)} &&`,

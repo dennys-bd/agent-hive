@@ -94,7 +94,7 @@ test('prepareHome copies the Hive plugin into <home>/plugin on every boot, wipin
 test('prepareHome with no runner writes the shared files only: no hooks.json and no shim for an agent boot did not find (#924)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
   await prepareHome(home, 4242, []);
-  assert.deepEqual((await readdir(home)).sort(), ['plugin', 'prompts', 'protocol']);
+  assert.deepEqual((await readdir(home)).sort(), ['plugin', 'prompts', 'protocol', 'shell']);
 });
 
 test('prepareHome writes the stage and the session protocol into <home>/protocol, for this user only, returns their paths, and a later boot rewrites them (#167)', async (t) => {
