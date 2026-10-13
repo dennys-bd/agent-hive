@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { IssuePage } from '@/components/IssuePage';
@@ -37,6 +37,12 @@ const renderPage = () => render(
   { wrapper: WithSlot },
 );
 const posted = (path: string): unknown[] => fetchMock.mock.calls.filter(([input, init]) => String(input) === path && init?.method === 'POST').map(([, init]) => JSON.parse(String(init?.body)));
+// Every POST held until the test settles it: a write still out at GitHub
+function holdPosts(): (res: Response) => void {
+  const waiting: ((res: Response) => void)[] = [];
+  fetchMock.mockImplementation(async (input, init) => (init?.method === 'POST' ? new Promise<Response>((resolve) => { waiting.push(resolve); }) : answer(input, init)));
+  return (res) => waiting.shift()?.(res);
+}
 const reads = (): number => fetchMock.mock.calls.filter(([input, init]) => String(input) === ROUTE && init?.method !== 'POST').length;
 
 test('the labels: + lists the repository\'s as checkboxes, a toggle posts at once and the page reads again; a chip\'s × removes it (#757)', async () => {
@@ -76,4 +82,34 @@ test('a failed labels read shows a muted error line instead of reading… foreve
   await user.click(screen.getByRole('button', { name: 'adicionar label' }));
   expect(await screen.findByText('não foi possível ler as labels')).toBeInTheDocument();
   expect(screen.queryByText('lendo…')).not.toBeInTheDocument();
+});
+
+test('a label change shows at once while its write is out and rolls back when GitHub refuses it (#183)', async () => {
+  const user = userEvent.setup();
+  const settle = holdPosts();
+  renderPage();
+  await user.click(await screen.findByRole('button', { name: 'remover bug' }));
+  expect(screen.queryByRole('button', { name: 'remover bug' })).not.toBeInTheDocument();
+  settle(jsonRes({ error: 'GitHub refused' }, 502));
+  expect(await screen.findByRole('button', { name: 'remover bug' })).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'adicionar label' }));
+  await user.click(await screen.findByRole('checkbox', { name: 'docs' }));
+  expect(screen.getByRole('checkbox', { name: 'docs' })).toBeChecked();
+  settle(jsonRes({ error: 'GitHub refused' }, 502));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'docs' })).not.toBeChecked());
+});
+
+test('a comment shows as enviando… while its write is out; a refusal removes it and keeps the draft (#183)', async () => {
+  const user = userEvent.setup();
+  const settle = holdPosts();
+  renderPage();
+  await user.type(await screen.findByRole('textbox', { name: 'comentar na issue…' }), 'Looks good');
+  await user.click(screen.getByRole('button', { name: /^comentar/ }));
+  const comments = within(await screen.findByRole('region', { name: 'comentários · 1' }));
+  expect(comments.getByText('Looks good')).toBeInTheDocument();
+  expect(comments.getByText('enviando…')).toBeInTheDocument();
+  settle(jsonRes({ error: 'GitHub refused' }, 502));
+  expect(await screen.findByRole('region', { name: 'comentários · 0' })).toBeInTheDocument();
+  expect(screen.queryByText('enviando…')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'comentar na issue…' })).toHaveValue('Looks good');
 });

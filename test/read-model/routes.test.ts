@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState } from '../../src/orchestrator.js';
-import type { ReadModel } from '../../src/read-model/db.js';
+import type { ReadModel, SyncKind } from '../../src/read-model/db.js';
 import type { RefetchOutcome } from '../../src/read-model/loop.js';
 import { REPO_ISSUE_LIMIT } from '../../src/read-model/views.js';
+import { ADD_COMMENT, ADD_LABELS, UPDATE_ISSUE } from '../../src/repos/github-repo-queries.js';
 import { registerRepoRoutes, type RepoReadModel, type RepoRouteDeps } from '../../src/server-repos.js';
+import type { GqlJson } from '../../src/sources/github-gql.js';
 import type { CombConfig, Exec, Workspace } from '../../src/types.js';
-import { CLOSING_PRS, COMMENT_ROW, commentRow, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, T3, tempModel } from './fixtures.js';
+import { CLOSING_PRS, COMMENT_ROW, commentRow, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, T3, tempModel } from './fixtures.js';
 
 const SITE = 'acme/site';
 const LATER = '2026-10-06T00:00:00Z';
@@ -19,14 +21,15 @@ const exec: Exec = async (_file, args) => ({ stdout: `git@github.com:acme/${args
 const READS = ['/repositories', '/repositories/acme/hive/issues?state=open', '/repositories/acme/hive/issues/12', '/repositories/acme/hive/labels'];
 
 type Refetch = (db: ReadModel, repository: string, number: number) => Promise<RefetchOutcome>;
-interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch }
-interface Harness { base: string; db: ReadModel; gqlCalls(): number; refetched: string[]; errors: string[] }
+interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch; gql?: GqlJson }
+interface Harness { base: string; db: ReadModel; gqlCalls(): number; refetched: string[]; errors: string[]; notified: [string, SyncKind[]][] }
 
-// The repository routes over a real read model in a temporary home; GraphQL throws on any call and counts it
+// The repository routes over a real read model in a temporary home; GraphQL throws on any call and counts it, unless the test answers it
 async function routesOn(t: TestContext, options: Options = {}): Promise<Harness> {
   const db = await tempModel(t);
   const refetched: string[] = [];
   const errors: string[] = [];
+  const notified: [string, SyncKind[]][] = [];
   let gqlCalls = 0;
   const readModel: RepoReadModel = {
     db,
@@ -34,6 +37,7 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
       if (options.sourceFails) throw new Error('credential store corrupt');
       return 'source' in options ? options.source : SOURCE;
     },
+    notify: (repository, kinds) => { notified.push([repository, kinds]); },
     refetch: (repository, number) => {
       refetched.push(`${repository}#${number}`);
       return options.refetch?.(db, repository, number) ?? Promise.resolve('unchanged');
@@ -41,18 +45,20 @@ async function routesOn(t: TestContext, options: Options = {}): Promise<Harness>
   };
   const deps: RepoRouteDeps = {
     requireLive: () => ({ state: initialState(0), runtime: { config: { comb: COMB } } }), exec,
-    gql: async () => {
+    gql: async (query, variables) => {
       gqlCalls += 1;
+      if (options.gql) return options.gql(query, variables);
       throw new Error('a read route called GraphQL');
     },
     poll: async () => undefined, log: { error: (message: string) => { errors.push(message); } },
     ...(options.model === false ? {} : { readModel }),
   };
   const app = express();
+  app.use(express.json()); // the write routes read a JSON body, as server.ts's app does
   registerRepoRoutes(app, deps);
   const server = app.listen(0);
   t.after(() => server.close());
-  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, db, gqlCalls: () => gqlCalls, refetched, errors };
+  return { base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, db, gqlCalls: () => gqlCalls, refetched, errors, notified };
 }
 
 async function get(url: string): Promise<[number, unknown]> {
@@ -191,4 +197,74 @@ test('a source lookup that rejects answers 503 with the fixed message, logs the 
   for (const path of READS) assert.deepEqual(await get(`${base}${path}`), [503, { error: 'no GitHub login' }], path);
   assert.equal(errors.length, READS.length);
   assert.match(errors[0] as string, /credential store corrupt/);
+});
+
+const RATE = { limit: 5000, remaining: 4000, resetAt: '2999-01-01T00:00:00Z' };
+// What every write reads first: issue 12's id and updatedAt, and the repository's labels
+const READ12 = { rateLimit: RATE, repository: { issue: { id: 'I_12', updatedAt: T1 }, labels: { nodes: [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'docs' }] } } };
+// GitHub answering `mutation` with `answer`, and every read with READ12
+const github = (mutation: string, answer: () => unknown): GqlJson => async (query) => (query === mutation ? answer() : READ12);
+const ANSWERED = { ...GQL_ISSUE, updatedAt: T2 };
+const POSTED = { ...GQL_COMMENT, id: 'IC_6', url: 'https://github.com/acme/hive/issues/12#issuecomment-6', body: 'Looks good', createdAt: T2, updatedAt: T2 };
+
+async function post(url: string, body: unknown): Promise<[number, unknown]> {
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  return [res.status, await res.json()];
+}
+
+const page12 = async (base: string): Promise<Record<string, unknown>> => (await get(`${base}/repositories/acme/hive/issues/12`))[1] as Record<string, unknown>;
+
+test('an edit upserts the issue its mutation answers: the next GET shows it with no sync round, and the event names issues (#183)', async (t) => {
+  const { base, db, notified } = await routesOn(t, { gql: github(UPDATE_ISSUE, () => ({ updateIssue: { issue: { ...ANSWERED, title: 'New' } } })) });
+  seed(db);
+  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
+  const shown = await page12(base);
+  assert.deepEqual([shown.title, shown.updatedAt], ['New', T2]);
+  assert.deepEqual(notified, [[REPO, ['issues']]]);
+});
+
+test('a label change upserts the labelable its last mutation answers: the next GET shows the new labels (#183)', async (t) => {
+  const labelled = { ...ANSWERED, labels: { nodes: [{ name: 'bug' }, { name: 'docs' }] } };
+  const { base, db } = await routesOn(t, { gql: github(ADD_LABELS, () => ({ addLabelsToLabelable: { labelable: labelled } })) });
+  seed(db);
+  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12/labels`, { add: ['docs'], remove: [] }), [200, { ok: true }]);
+  assert.deepEqual((await page12(base)).labels, ['bug', 'docs']);
+});
+
+test('a comment upserts its comment and the issue it moved: the next GET counts it, and the event names both kinds (#183)', async (t) => {
+  const answer = () => ({ addComment: { commentEdge: { node: POSTED }, subject: { ...ANSWERED, comments: { totalCount: 2 } } } });
+  const { base, db, notified } = await routesOn(t, { gql: github(ADD_COMMENT, answer) });
+  seed(db);
+  assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12/comments`, { body: 'Looks good' }), [200, { ok: true }]);
+  const shown = (await page12(base)) as { commentCount: number; comments: unknown[] };
+  assert.deepEqual([shown.commentCount, shown.comments.at(-1)], [2, { author: 'bia', createdAt: T2, body: 'Looks good', url: POSTED.url }]);
+  assert.equal(db.issue(SOURCE, REPO, 12)?.comments, 2);
+  assert.deepEqual(notified, [[REPO, ['issues', 'comments']]]);
+});
+
+test('a refused write leaves the database as it was: GitHub\'s error, an issue changed since the page read it, an unknown label (#183)', async (t) => {
+  const refusals: [GqlJson, string, unknown, number][] = [
+    [github(UPDATE_ISSUE, () => { throw new Error('GitHub refused'); }), '', { title: 'New', updatedAt: T1 }, 502],
+    [github(UPDATE_ISSUE, () => ({ updateIssue: { issue: ANSWERED } })), '', { title: 'New', updatedAt: T2 }, 409],
+    [github(ADD_LABELS, () => ({ addLabelsToLabelable: { labelable: ANSWERED } })), '/labels', { add: ['wontfix'], remove: [] }, 400],
+  ];
+  for (const [gql, path, body, status] of refusals) {
+    const { base, db, notified } = await routesOn(t, { gql });
+    seed(db);
+    const before = [db.issue(SOURCE, REPO, 12), db.comments(SOURCE, 'I_12')];
+    assert.equal((await post(`${base}/repositories/acme/hive/issues/12${path}`, body))[0], status, `${path || 'edit'} ${status}`);
+    assert.deepEqual([db.issue(SOURCE, REPO, 12), db.comments(SOURCE, 'I_12'), notified], [...before, []]);
+  }
+});
+
+test('an answer the model cannot store still answers ok and is logged; with no login the write goes to GitHub and nothing is stored (#183)', async (t) => {
+  const malformed = github(UPDATE_ISSUE, () => ({ updateIssue: { issue: { id: 'I_12' } } }));
+  const renamed = github(UPDATE_ISSUE, () => ({ updateIssue: { issue: { ...ANSWERED, title: 'New' } } }));
+  const cases: [Options, number][] = [[{ gql: malformed }, 1], [{ gql: renamed, source: undefined }, 0]];
+  for (const [options, logged] of cases) {
+    const { base, db, notified, errors, gqlCalls } = await routesOn(t, options);
+    seed(db);
+    assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
+    assert.deepEqual([db.issue(SOURCE, REPO, 12)?.title, notified, errors.length, gqlCalls()], ['T12', [], logged, 2]);
+  }
 });

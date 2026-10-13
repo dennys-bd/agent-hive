@@ -5,6 +5,7 @@ import { IssueFieldsBox } from '@/components/IssueFieldsBox';
 import { IssueLabelsPopover, writeLabels } from '@/components/IssueLabelsPopover';
 import { ProjectCreatePopover } from '@/components/ProjectCreatePopover';
 import { type FieldAnswer, useItemFields } from '@/hooks/use-item-fields';
+import type { Optimistic } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
@@ -21,11 +22,11 @@ function Prop({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-interface RowsProps { issue: IssuePage; task?: Task; workspace?: string; create?: ReactNode; onChanged(): Promise<void> }
+interface RowsProps { issue: IssuePage; task?: Task; workspace?: string; create?: ReactNode; onChanged(): Promise<void>; optimistic: Optimistic }
 
 // #757's rows: an issue in no source's Project, or one whose fields are still read or failed to read (useItemFields tells neither apart),
 // where these rows are a correct view all the same
-function IssueRows({ issue, task, workspace, create, onChanged }: RowsProps) {
+function IssueRows({ issue, task, workspace, create, onChanged, optimistic }: RowsProps) {
   return (
     <dl className={GRID}>
       {create && <Prop label={t('issue.props.flow')}>{create}</Prop>}
@@ -33,10 +34,10 @@ function IssueRows({ issue, task, workspace, create, onChanged }: RowsProps) {
         {issue.labels.map((label) => (
           <span key={label} className={`flex items-center ${CHIP}`}>
             {label}
-            <button type="button" aria-label={t('issue.labels.remove', { label })} className="pl-1 hover:text-foreground" onClick={() => void writeLabels(issue, [], [label], onChanged)}>×</button>
+            <button type="button" aria-label={t('issue.labels.remove', { label })} className="pl-1 hover:text-foreground" onClick={() => void writeLabels(issue, [], [label], onChanged, optimistic)}>×</button>
           </span>
         ))}
-        <IssueLabelsPopover issue={issue} onChanged={onChanged} />
+        <IssueLabelsPopover issue={issue} onChanged={onChanged} optimistic={optimistic} />
       </Prop>
       <Prop label={t('issue.props.assignee')}><span>{issue.assignees.length > 0 ? issue.assignees.join(', ') : '—'}</span></Prop>
       {task && (
@@ -60,12 +61,13 @@ export interface IssuePropertiesProps {
   meta: string; // the source or owner/name the page was opened from: what fluxo…'s warning names
   onGoTo(taskId: string): void;
   onChanged(): Promise<void>; // the page's reload, after a label or field write
+  optimistic: Optimistic; // the page's pending changes (#183): a label write shows at once
 }
 
 /** The issue's block in the details panel's slot (#64). With the fields of its source item read (the task's, else the native view item the
  * page came from, #686), the this issue box (#65); otherwise #757's rows. An issue out of the flow shows fluxo… first (handoff 02). The
  * stage is moved on the flow's own menu: no stage select here (#65). */
-export function IssueProperties({ issue, task, state, workspace, itemId, meta, onGoTo, onChanged }: IssuePropertiesProps) {
+export function IssueProperties({ issue, task, state, workspace, itemId, meta, onGoTo, onChanged, optimistic }: IssuePropertiesProps) {
   const sourced = task?.item.source === undefined ? undefined : task;
   const fieldsItem = sourced?.item.itemId ?? itemId;
   const { fields, replace } = useItemFields(fieldsItem);
@@ -74,7 +76,7 @@ export function IssueProperties({ issue, task, state, workspace, itemId, meta, o
     ...(workspace === undefined ? {} : { workspaceHint: workspace }), ...(itemId === undefined ? {} : { itemId }),
   };
   const create = task === undefined ? <ProjectCreatePopover item={from} source={meta} state={state} onCreated={onGoTo} /> : undefined;
-  if (fieldsItem === undefined || fields === undefined) return <IssueRows issue={issue} task={task} workspace={workspace} create={create} onChanged={onChanged} />;
+  if (fieldsItem === undefined || fields === undefined) return <IssueRows issue={issue} task={task} workspace={workspace} create={create} onChanged={onChanged} optimistic={optimistic} />;
   // The answer's fields at once, then the page's reload: the center reads the issue, not the item, so its labels and assignees follow
   const written = (answer: FieldAnswer): void => {
     replace(fieldsItem, answer.fields);

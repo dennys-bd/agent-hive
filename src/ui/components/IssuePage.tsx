@@ -28,7 +28,7 @@ export interface IssuePageProps {
  * state, so the PRs list stays mounted when the read lands and its checks are read once. */
 export function IssuePage(props: IssuePageProps) {
   const { state, issue: ref, meta, workspace, header, onGoTo, onOpenPr } = props;
-  const { load, reload } = useIssue(ref.repository, ref.number);
+  const { load, reload, optimistic } = useIssue(ref.repository, ref.number);
   const issue = load.kind === 'issue' ? load.issue : undefined;
   // Before the read answers, the task from the ref, as the dashboard finds it (#64): the details grid leaves the PRs to this slot (#65)
   const task = taskOfIssue(state.tasks, issue?.url ?? issueUrl(ref.repository, ref.number), ref.itemId);
@@ -39,14 +39,14 @@ export function IssuePage(props: IssuePageProps) {
       {header(reload)}
       {issue ? (
         <div className="flex min-h-0 flex-1">
-          <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} />
+          <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} optimistic={optimistic} />
         </div>
       ) : <p className="px-3.5 py-2 text-muted-foreground text-xs">{line}</p>}
       <DetailSlot>
         {issue ? (
           <>
             {task === undefined && <SlotTitle>{issue.title}</SlotTitle>}
-            <IssueProperties issue={issue} task={task} state={state} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload} />
+            <IssueProperties issue={issue} task={task} state={state} workspace={shownWorkspace} itemId={ref.itemId} meta={meta} onGoTo={onGoTo} onChanged={reload} optimistic={optimistic} />
           </>
         ) : <p className="text-muted-foreground text-xs">{line}</p>}
         {task && <TaskPrList task={task} state={state} onOpenPr={onOpenPr} />}
