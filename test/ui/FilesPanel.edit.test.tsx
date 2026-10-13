@@ -30,7 +30,7 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
   return new Response(null, { status: 204 });
 });
 const openFile = vi.fn<OpenFile>(() => true);
-const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
+const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown /></FileOpenerContext.Provider>;
 const posted = (): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === 'POST' ? [`${url} ${String(init.body ?? '')}`] : []));
 const nameInput = (): HTMLInputElement | null => screen.queryByRole('textbox', { name: 'nome' });
 

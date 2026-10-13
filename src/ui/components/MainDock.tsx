@@ -20,11 +20,12 @@ import {
   DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
 } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext } from '@/hooks/use-console';
-import { type ActivitySelection, type CenterMode, useActivity } from '@/hooks/use-activity';
+import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import type { BackEntry } from '@/hooks/use-back-stack';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
 import { useFileOpener } from '@/hooks/use-file-opener';
 import { useDock } from '@/hooks/use-dock';
+import { type HeaderShell, useHeaderShell } from '@/hooks/use-header-shell';
 import { useWindowKeys } from '@/hooks/use-window-keys';
 import { t } from '@/i18n';
 import { type Activity, activitiesOf, activityKey, isTask, localKey, sleepingOf } from '@/lib/activities';
@@ -46,8 +47,7 @@ export interface MainDockProps {
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
   automation?(openActivity: (taskId: string) => void): ReactNode;
-  // The window's header (#533), from the Dashboard, handed the center's mode and how to switch it; absent (the terminal's harness): no header
-  header?(center: CenterMode, go: (panel: PanelId) => void): ReactNode;
+  header?(shell: HeaderShell): ReactNode; // the window's header (#533, #221), from the Dashboard, handed what its three columns show; absent (the terminal's harness): no header
   liveActivities?: State['activities']; // #629: state.activities, what the workers point at; absent (the terminal's harness): none
   slept?: State['slept']; // #672: the runs that sleep, kept as tabs; absent (the terminal's harness): none
   activityRecords?: State['activityRecords']; // #629: the records, each workspace's local sessions (#587) in its local activity's (#590); absent (the terminal's harness): none
@@ -132,7 +132,7 @@ function activitiesPanel({ activities, selection, layouts, nav, ...rest }: Activ
   return { id: 'activities', title: t('dock.activities'), ownHeader: true, body };
 }
 
-interface CenterArgs { selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; bar?: ReactNode; pane?: PaneContext }
+interface CenterArgs { selection: ActivitySelection; layouts: CenterLayouts; fileLinks: boolean; fontFamily: string; flow: ReactNode; home: ReactNode; console?: ConsoleChannels; pane?: PaneContext }
 
 // Whether the flow is what the center shows (#596): the flow and its sidebar stay mounted under Atividades, so what they must not do while
 // hidden (the search key, the source keys #585) reads this. Outside a dock (a flow rendered alone) it is shown.
@@ -144,7 +144,7 @@ export const useIsFlowShown = (): boolean => useContext(FlowShownContext);
 // What the center shows (#458): the flow always, hidden and inert under Atividades so it keeps its stages' pages, scroll and search
 // (#596); beside it, under Atividades, the picked activity's layout or Home with none picked. Keyed by task, so another activity starts
 // with fresh drag state and its own terminals. The wrapper swaps `hidden` for `flex` because Tailwind's display class beats [hidden].
-function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, bar, pane }: CenterArgs): ReactNode {
+function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pane }: CenterArgs): ReactNode {
   const { current } = selection;
   const isFlow = selection.center === 'automation';
   const flowView = (
@@ -155,7 +155,7 @@ function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, bar
   // one fragment in both cases: the flow keeps its place in the tree, so switching does not remount it
   const activityView = isFlow ? null : current === undefined
     ? home
-    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} bar={bar} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
+    : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
   return <>{flowView}{activityView}</>;
 }
 
@@ -176,16 +176,16 @@ function CenterWithConsole(args: CenterArgs) {
 }
 
 interface DetailArgs {
-  current?: Activity; isShown: boolean; sideTab: SideTab; setSideTab(tab: SideTab): void; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
+  current?: Activity; isShown: boolean; sideTab: SideTab; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
 }
 
-// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos | detalhes
-// in a header of its own on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
-function detailPanel({ current, isShown, sideTab, setSideTab, detail, onClose, nav }: DetailArgs): DockPanel {
+// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes, as the header's icons pick (#221),
+// on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
+function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: DetailArgs): DockPanel {
   const title = t('dock.detail');
   if (current === undefined) return { id: 'detail', title, body: detail({ isShown, onClose, nav }) };
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
-  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} onTab={setSideTab} />;
+  const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
 }
 
@@ -359,8 +359,7 @@ export function MainDock(props: MainDockProps) {
     menu: activityMenu && ((task, row) => activityMenu(task, () => showFlow(task.item.itemId), row)),
     localMenu: (activity, row) => <LocalMenu activity={activity}>{row}</LocalMenu>, // needs no State: its sessions are the activity's (#590)
   };
-  // The picked activity's bar (#536): parar reads the run the focused group shows, the one the sidebar marks
-  // ver no fluxo is a task's (#590)
+  // The picked activity's bar (#536), the header's center (#221): parar reads the run the focused group shows; ver no fluxo is a task's (#590)
   const bar = current && activityBar?.(current, shownRun(layouts.layout), () => (current.kind === 'task' ? showFlow(current.task.item.itemId) : activateTab('automation')));
   const pane = current && paneContext?.(current);
   const isFlow = selection.center === 'automation';
@@ -371,17 +370,18 @@ export function MainDock(props: MainDockProps) {
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
     activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),
     ...automationPanel,
-    detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, setSideTab, detail, onClose: closeDetail, nav }),
+    detailPanel({ current: selection.center === 'activities' ? current : undefined, isShown: shown[detailSide] === 'detail', sideTab, detail, onClose: closeDetail, nav }),
   ];
   // #220: the rail's dot reads every workspace, as the window shows them all; the map opens through ⌘/'s own listener (search.openShortcuts is Settings › atalhos)
   const hasWaiting = hasHeader && pendingSessions({ tasks, workers, activityRecords: activityRecords ?? NO_RECORDS }).length > 0;
+  const shell = useHeaderShell({ center: selection.center, current, layout: frameLayout, isHome, bar, sideTab, setSideTab, activateTab, close });
   const content = (
     <>
-      {header?.(selection.center, activateTab)}
+      {header?.(shell)}
       <DockBody rail={hasHeader ? { center: selection.center, onView: activateTab, hasWaiting, onOpenShortcuts: () => runShortcut('shortcutMap'), onOpenSettings: search?.openSettings } : undefined}>
         <DockFrame layout={frameLayout} shown={shown} panels={panels} onActivate={activateTab} onMove={dock.move} onResize={dock.resize} onClose={close}>
           <ConsoleChannelsContext.Provider value={consoleChannels}>
-            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} bar={bar} pane={pane} />
+            <CenterWithConsole selection={selection} layouts={layouts} fileLinks={fileLinks} fontFamily={fontFamily} flow={children} home={home} console={consoleChannels} pane={pane} />
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>

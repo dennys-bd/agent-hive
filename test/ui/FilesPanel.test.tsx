@@ -24,10 +24,10 @@ const TREE: TaskTree = { root: '/wt/hive-1-task-1', files: ['src/a.ts', 'src/b.t
 const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (url.endsWith('/tree') ? json(TREE) : new Response(null, { status: 204 })));
 const openFile = vi.fn<OpenFile>(() => true); // the dock's file opener (#717)
-const side = (tab: SideTab, onTab = vi.fn()) => (
-  <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab={tab} isShown details={<p>the detail</p>} onTab={onTab} /></FileOpenerContext.Provider>
+const side = (tab: SideTab) => (
+  <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab={tab} isShown details={<p>the detail</p>} /></FileOpenerContext.Provider>
 );
-const localSide = (tab: SideTab = 'files') => <FileOpenerContext.Provider value={openFile}><ActivitySide target={local} tab={tab} isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
+const localSide = (tab: SideTab = 'files') => <FileOpenerContext.Provider value={openFile}><ActivitySide target={local} tab={tab} isShown /></FileOpenerContext.Provider>;
 const posted = (): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === 'POST' ? [`${url} ${String(init.body ?? '')}`] : []));
 
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); openFile.mockClear(); vi.mocked(toast.error).mockClear(); vi.stubGlobal('fetch', fetchMock); });
@@ -72,15 +72,15 @@ test('the ⋯ shows hidden files, collapses everything and shows the worktree in
   expect(posted().filter((post) => post.startsWith('/activities/'))).toEqual(['/activities/a-I1/reveal ']);
 });
 
-test('detalhes shows the task\'s detail in place of the tree, with no ⋯ and no git read; the toggle asks for the other view', async () => {
-  const user = userEvent.setup();
-  const onTab = vi.fn();
-  render(side('details', onTab));
+test('detalhes shows the task\'s detail in place of the tree, with no ⋯ and no git read; neither view has an arquivos | detalhes toggle, the window header switches them (#221)', () => {
+  const { rerender } = render(side('details'));
   expect(screen.getByText('the detail')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'mais ações' })).not.toBeInTheDocument();
   expect(fetchMock).not.toHaveBeenCalled();
-  await user.click(screen.getByRole('radio', { name: 'arquivos' }));
-  expect(onTab).toHaveBeenCalledWith('files');
+  expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  rerender(side('files'));
+  expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'mais ações' })).toBeInTheDocument(); // the files' ⋯ stays
 });
 
 // The file tree's drag (#594). jsdom has no DataTransfer: the stub carries what dragstart set to the drop, and a Finder drag's types and files.

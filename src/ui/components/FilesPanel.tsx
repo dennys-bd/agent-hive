@@ -13,7 +13,6 @@ import { actedOn, clicked, modeOf, NO_SELECTION, single, type TreeSelection } fr
 import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { type FileIconsView, useFileIcons } from '@/hooks/use-file-icons';
 import { useDiagnostics } from '@/hooks/use-diagnostics';
 import { useIgnoredFolders } from '@/hooks/use-ignored-folders';
@@ -71,22 +70,13 @@ function useFilesView(activityId: string): [FilesView, Dispatch<SetStateAction<F
   return [view, setView];
 }
 
-interface HeaderProps { tab: SideTab; hasDetails: boolean; activityId: string; view: FilesView; onTab(tab: SideTab): void; onView(view: FilesView): void }
+interface HeaderProps { tab: SideTab; activityId: string; view: FilesView; onView(view: FilesView): void }
 
-// The 36px header: arquivos | detalhes on a task's activity (a local one has arquivos alone, #633), then the files' ⋯ (recolher tudo,
-// mostrar arquivos ocultos, mostrar na pasta) while they show.
-function SideHeader({ tab, hasDetails, activityId, view, onTab, onView }: HeaderProps) {
+// The 36px header: the files' ⋯ (recolher tudo, mostrar arquivos ocultos, mostrar na pasta) while they show. The window header's icons switch
+// arquivos and detalhes (#221): a second switch here would drift from them.
+function SideHeader({ tab, activityId, view, onView }: HeaderProps) {
   return (
     <div className="flex h-9 shrink-0 items-center gap-2 px-2">
-      {hasDetails && (
-        <ToggleGroup type="single" value={tab} onValueChange={(value) => value && onTab(value as SideTab)} spacing={0.5} aria-label={t('files.tab.label')} className="rounded-md bg-muted p-0.5">
-          {(['files', 'details'] as const).map((value) => (
-            <ToggleGroupItem key={value} value={value} className="h-6 rounded-sm px-2 font-medium text-foreground text-xs data-[state=on]:bg-background data-[state=on]:text-foreground">
-              {t(`files.tab.${value}`)}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      )}
       {tab === 'files' && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -286,13 +276,13 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   );
 }
 
-export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: boolean; details?: ReactNode; onTab(tab: SideTab): void }
+export interface ActivitySideProps { target: Activity; tab: SideTab; isShown: boolean; details?: ReactNode }
 
 /** The right sidebar under Atividades with an activity open (redesign 07): arquivos, the activity's worktree (the workspace checkout for a
  *  local run, or for a workspace's local activity, #633) as a tree that follows git status, or detalhes, the task's detail. A local activity
  *  has no task to detail, so it shows arquivos alone, whatever tab a task left. MainDock keys it by activity, so each switch remounts it
  *  and useFilesView starts from that activity's open folders (#947). */
-export function ActivitySide({ target, tab, isShown, details, onTab }: ActivitySideProps) {
+export function ActivitySide({ target, tab, isShown, details }: ActivitySideProps) {
   const [view, setView] = useFilesView(target.activity.id);
   const task = isTask(target) ? target.task : undefined;
   const openFile = useOpenFile();
@@ -300,7 +290,7 @@ export function ActivitySide({ target, tab, isShown, details, onTab }: ActivityS
   const shown: SideTab = task ? tab : 'files'; // the stored tab may be a task's detalhes; read shown, never tab, below
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-      <SideHeader tab={shown} hasDetails={task !== undefined} activityId={target.activity.id} view={view} onTab={onTab} onView={setView} />
+      <SideHeader tab={shown} activityId={target.activity.id} view={view} onView={setView} />
       {shown === 'files' && <FilesBody target={target} view={view} isShown={isShown} onView={setView} onOpen={onOpen} />}
       {task && <div style={shown === 'details' ? SHOWN : COLLAPSED} inert={shown !== 'details'} className="flex min-h-0 min-w-0 flex-col overflow-hidden">{details}</div>}
     </div>

@@ -51,7 +51,7 @@ const seed = (detail: Side, open: Record<Side, boolean> = ALL_OPEN): void =>
 // The board's own task, not the detail's title
 const boardTask = (label: string): Element => screen.getAllByText(label).find((el) => el.closest('li'))!;
 // The window opens on Atividades (#746): a test about the board or Detalhes beside it shows the flow first. Switching views never opens a side (#821)
-const showFlow = (): void => { fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); };
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
 
 // Radix's ContextMenu opens once per file under jsdom (#377): this is the only test here that right-clicks a tab, kept first.
 test('Detalhes sits alone in the right panel beside the center; its tab\'s menu moves it to the left panel, and the move persists (#342, #452)', async () => {
@@ -109,7 +109,7 @@ test('the first run opens the center on Home and the left panel on the Atividade
   expect(within(footer).queryAllByRole('radio')).toEqual([]);
   expect(within(footer).getAllByRole('button').filter((b) => b.closest('[data-usage-group]') === null).map((b) => b.textContent)).toEqual(['console', '', '']); // no rule chip; the usage group (#223) aside, the console's chip (redesign 05), then keep awake and shutdown, icon only (#226)
   expect(within(footer).queryByLabelText('máx.')).not.toBeInTheDocument();
-  expect(within(document.querySelector('header')!).queryByRole('radio', { name: 'green' })).not.toBeInTheDocument(); // its radios are the views (#533)
+  expect(within(document.querySelector('header')!).queryByRole('radio', { name: 'green' })).not.toBeInTheDocument(); // the signal choice opens from the brand, closed here (#221)
   expect(within(document.querySelector('header')!).queryByRole('status')).not.toBeInTheDocument();
   expect(saved()).toEqual(DEFAULT_DOCK_LAYOUT);
 });

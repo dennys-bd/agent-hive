@@ -137,19 +137,6 @@ test('the strip is 34px under a bottom border: the tabs, then the + right after 
   expect(plus).toBeEnabled();
 });
 
-test('the bar sits over the whole center, above every group, and stays once no tab is left (#536)', async () => {
-  const user = userEvent.setup();
-  seed(SIDE_BY_SIDE);
-  render(<Center runs={[STAGE, SESSION]} bar={<div data-testid="bar">bar</div>} />);
-  const root = document.querySelector('[data-center-root]');
-  expect(screen.getByTestId('bar').nextElementSibling).toBe(root);
-  expect(root).not.toContainElement(screen.getByTestId('bar'));
-  await user.click(screen.getByRole('button', { name: 'Fechar Claude' }));
-  await user.click(screen.getByRole('button', { name: 'Fechar Claude · abcdef12' }));
-  expect(screen.getByText('Nenhuma aba aberta')).toBeInTheDocument();
-  expect(screen.getByTestId('bar')).toBeInTheDocument();
-});
-
 test('the shown tab reads on task with a foreground line at its foot, each tab has its status dot, and each pane shows its header (#536)', async () => {
   const user = userEvent.setup();
   const sessions = [{ run: STAGE, status: 'waiting' as const }, { run: SESSION, status: 'working' as const }];

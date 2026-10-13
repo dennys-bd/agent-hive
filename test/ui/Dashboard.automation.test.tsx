@@ -34,7 +34,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 
 test('Automação and Atividades offer no move: they stay on the left, and a stored layout with Automação on the right reads as the defaults (#456, #458)', () => {
   resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'right', activities: 'left', detail: 'right' } } });

@@ -18,7 +18,7 @@ const json = (body: unknown): Response => new Response(JSON.stringify(body), { s
 let moveAnswer = (): Response => new Response(null, { status: 204 });
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (url.endsWith('/tree') ? json(TREE) : moveAnswer()));
 const openFile = vi.fn<OpenFile>(() => true);
-const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown onTab={vi.fn()} /></FileOpenerContext.Provider>;
+const side = () => <FileOpenerContext.Provider value={openFile}><ActivitySide target={target} tab="files" isShown /></FileOpenerContext.Provider>;
 const posted = (): string[] => fetchMock.mock.calls.flatMap(([url, init]) => (init?.method === 'POST' ? [`${url} ${String(init.body ?? '')}`] : []));
 const selected = (): string[] => screen.getAllByRole('button').filter((b) => b.hasAttribute('data-selected')).map((b) => b.getAttribute('data-tree-path') ?? '');
 // jsdom has no DataTransfer: the stub carries what dragstart set to the drop (FilesPanel.test.tsx's)

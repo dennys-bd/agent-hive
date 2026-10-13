@@ -29,10 +29,10 @@ function Home({ sidebarsPerView }: { sidebarsPerView?: SidebarsPerView }) {
   return <Dashboard state={state} locale="pt-BR" tick={0} selected={selected} onSelect={setSelected} sidebarsPerView={sidebarsPerView} />;
 }
 
-const right = (): HTMLElement | null => document.querySelector<HTMLElement>('[data-dock="right"]');
 // toggleSideTab is Ctrl+Alt+Shift+E off macOS (#585)
 const sideKey = (): boolean => fireEvent.keyDown(document.body, { key: 'E', code: 'KeyE', ctrlKey: true, altKey: true, shiftKey: true });
-const checked = (name: string): string | null => within(right() as HTMLElement).getByRole('radio', { name }).getAttribute('aria-checked');
+// The window header's pane icons (#221): the shown pane's is pressed
+const checked = (name: string): string | null => within(document.querySelector('header') as HTMLElement).getByRole('button', { name }).getAttribute('aria-pressed');
 
 beforeEach(() => {
   setLanguage('pt');
@@ -45,7 +45,7 @@ afterEach(() => vi.unstubAllGlobals());
 test('with an activity shown, the toggleSideTab key opens its closed sidebar and switches files and details, one press at a time (#585)', async () => {
   const user = userEvent.setup();
   render(<Home />);
-  fireEvent.click(screen.getByRole('radio', { name: /atividades/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'atividades' }));
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A').closest('button') as HTMLElement);
   expect(screen.queryByRole('tab', { name: 'Detalhes' })).not.toBeInTheDocument(); // the right side starts closed
   expect(sideKey()).toBe(false);
@@ -56,7 +56,7 @@ test('with an activity shown, the toggleSideTab key opens its closed sidebar and
 
 test('on the flow the key is not bound: it reaches the page untouched (#585)', () => {
   render(<Home />);
-  fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); // the window opens on Atividades (#746)
+  fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
   expect(sideKey()).toBe(true);
 });
 
@@ -71,8 +71,8 @@ test.each([
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A').closest('button') as HTMLElement);
   rightKey(); // the activities' right side open, on arquivos (redesign 07)
   expect(checked('arquivos')).toBe('true');
-  fireEvent.click(screen.getByRole('radio', { name: /fluxo/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'fluxo' }));
   await user.click(within(screen.getByRole('main')).getByText('#1 Task A')); // a pick outside the activities
-  fireEvent.click(screen.getByRole('radio', { name: /atividades/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'atividades' }));
   expect(checked(tab)).toBe('true');
 });
