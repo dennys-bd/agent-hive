@@ -25,6 +25,8 @@ const STATE = {
 
 const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
 const footer = (): HTMLElement => screen.getByRole('contentinfo');
+// The usage group (#223) has its own tests (AgentUsage, UsagePanel): the lists below are the rest of the footer
+const outsideUsage = (b: HTMLElement): boolean => b.closest('[data-usage-group]') === null;
 const posted = (path: string, body: unknown) => waitFor(() => expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({ body: JSON.stringify(body) })));
 
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
@@ -37,7 +39,7 @@ test('green with nothing fired: the pill, no effect, the workers (the own sessio
   expect(footer()).toHaveTextContent('workers 1/5');
   expect(footer()).not.toHaveTextContent(t('footer.rules'));
   expect(footer()).not.toHaveTextContent(t('signal.effect.noNewTasks'));
-  expect(within(footer()).getAllByRole('button').map((b) => b.textContent)).toEqual(['desligar ao terminar']);
+  expect(within(footer()).getAllByRole('button').filter(outsideUsage).map((b) => b.textContent)).toEqual(['desligar ao terminar']);
 });
 
 test('fired rules: the signal named in English with its effect in Portuguese, the effective cap, and one chip per rule naming what it does', () => {
@@ -46,7 +48,7 @@ test('fired rules: the signal named in English with its effect in Portuguese, th
   expect(footer()).toHaveTextContent('tarefas novas só de árvore iniciada');
   expect(footer()).toHaveTextContent('workers 1/2');
   expect(footer()).toHaveTextContent('regras');
-  const chips = within(footer()).getAllByRole('button').map((b) => b.textContent);
+  const chips = within(footer()).getAllByRole('button').filter(outsideUsage).map((b) => b.textContent);
   expect(chips).toEqual(['sessão ≥ 60% → yellow', 'semana ≥ 90% → máx 2 workers', 'dia ≥ 80% → review máx 1', 'desligar ao terminar']);
 });
 
@@ -151,4 +153,16 @@ test('a rule of a non-default agent names it on its chip and posts it with its p
   await user.click(screen.getByRole('button', { name: /semana ≥ 90% · codex/ }));
   await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'retomar agora' }));
   await posted('/rules/enable', { source: 'week', percent: 90, agent: 'codex' });
+});
+
+test('the usage group is the footer\'s first child in its full form, then a separator, then the signal pill; the footer anchors its panel (#223)', () => {
+  render(<Footer state={STATE} effective={NONE} locale="pt-BR" />);
+  const [usage, separator, pill] = [...footer().children] as HTMLElement[];
+  expect(usage).toHaveAttribute('data-usage-group');
+  expect(within(usage).getByTitle(/^claude · sem 91% · reinicia 4d10h/)).toBeInTheDocument();
+  expect(usage.querySelector('[data-slot="progress"]')).toHaveClass('w-14');
+  expect(within(usage).getByTitle('codex · sem leitura')).toBeInTheDocument();
+  expect(separator).toHaveClass('h-3.5', 'w-px', 'bg-border');
+  expect(pill).toContainElement(within(footer()).getByRole('status'));
+  expect(footer()).toHaveClass('relative');
 });

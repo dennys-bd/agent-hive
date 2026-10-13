@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { AGENTS } from '../../src/agents.js';
 import { planLimitsReading, runners } from '../../src/agents/registry.js';
 import { transcriptDir } from '../../src/agents/claude-transcript.js';
-import { AGENT_IDS, type RateLimits } from '../../src/types.js';
+import { AGENT_IDS, type AgentId, type RateLimits } from '../../src/types.js';
 import { isTranscriptIn } from '../../src/usage.js';
 import { tempDir } from '../temp-dir.js';
 
@@ -30,14 +30,32 @@ test('shared code reads a run\'s transcripts and status line through its agent\'
 test('planLimitsReading reads every agent whose entry has plan limits and lists a failing one with its reason; no reading is no failure (#929)', async () => {
   const reading: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { five_hour: { usedPercent: 5, resetsAt: '2026-10-12T15:00:00.000Z' } } };
   const table = (claude: () => Promise<RateLimits | undefined>) => ({ claude: { planLimits: claude }, codex: { planLimits: async () => undefined } });
-  assert.deepEqual(await planLimitsReading(table(async () => reading)), { readings: [{ agent: 'claude', rateLimits: reading }], failures: [] });
-  assert.deepEqual(await planLimitsReading(table(async () => { throw new Error('HTTP 401'); })), { readings: [], failures: [{ agent: 'claude', reason: 'HTTP 401' }] });
-  assert.deepEqual(await planLimitsReading(table(async () => undefined)), { readings: [], failures: [] });
+  assert.deepEqual(await planLimitsReading(undefined, table(async () => reading)), { readings: [{ agent: 'claude', rateLimits: reading }], failures: [] });
+  assert.deepEqual(await planLimitsReading(undefined, table(async () => { throw new Error('HTTP 401'); })), { readings: [], failures: [{ agent: 'claude', reason: 'HTTP 401' }] });
+  assert.deepEqual(await planLimitsReading(undefined, table(async () => undefined)), { readings: [], failures: [] });
 });
 
 test('Codex has plan limits too, and one agent\'s failure never costs another\'s reading (#929)', async () => {
   assert.deepEqual(AGENT_IDS.filter((id) => AGENTS[id].planLimits), ['claude', 'codex']);
   const codex: RateLimits = { at: '2026-10-12T12:00:00.000Z', windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-11-01T00:00:00.000Z' } } };
-  const report = await planLimitsReading({ claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex } });
+  const report = await planLimitsReading(undefined, { claude: { planLimits: async () => { throw new Error('no Claude Code OAuth token'); } }, codex: { planLimits: async () => codex } });
   assert.deepEqual(report, { readings: [{ agent: 'codex', rateLimits: codex }], failures: [{ agent: 'claude', reason: 'no Claude Code OAuth token' }] });
+});
+
+test('planLimitsReading reads only the listed agents, in AGENT_IDS order, never one without plan limits; no list reads every one (#223)', async () => {
+  const at = '2026-10-12T12:00:00.000Z';
+  const claude: RateLimits = { at, windows: { five_hour: { usedPercent: 5, resetsAt: '2026-10-12T15:00:00.000Z' } } };
+  const codex: RateLimits = { at, windows: { thirty_day: { usedPercent: 40, resetsAt: '2026-11-01T00:00:00.000Z' } } };
+  const read: AgentId[] = [];
+  const table = {
+    claude: { planLimits: async () => { read.push('claude'); return claude; } },
+    codex: { planLimits: async () => { read.push('codex'); return codex; } },
+  };
+  assert.deepEqual(await planLimitsReading(['codex'], table), { readings: [{ agent: 'codex', rateLimits: codex }], failures: [] });
+  // no agent lacks planLimits today: an id outside AGENT_IDS takes the same filter
+  assert.deepEqual(await planLimitsReading(['nope' as AgentId], table), { readings: [], failures: [] });
+  const both = { readings: [{ agent: 'claude', rateLimits: claude }, { agent: 'codex', rateLimits: codex }], failures: [] };
+  assert.deepEqual(await planLimitsReading(['codex', 'claude'], table), both, 'AGENT_IDS order, not the list\'s');
+  assert.deepEqual(await planLimitsReading(undefined, table), both);
+  assert.deepEqual(read, ['codex', 'claude', 'codex', 'claude', 'codex']);
 });

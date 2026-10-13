@@ -7,7 +7,7 @@ import { CodexIcon } from '@/components/CodexIcon';
 import { useSessionAgent } from '@/components/review-context';
 import { t } from '@/i18n';
 
-/** Each agent's own mark (#516, #591): the header's usage groups and every place a review names a session. Partial, so an agent added
+/** Each agent's own mark (#516, #591): the footer's usage group (#223) and every place a review names a session. Partial, so an agent added
  * without a logo still reads, by its name. */
 export const AGENT_ICON: Partial<Record<AgentId, ComponentType<{ className?: string }>>> = { claude: ClaudeIcon, codex: CodexIcon };
 

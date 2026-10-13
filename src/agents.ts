@@ -7,7 +7,7 @@ export interface AgentSpec {
   command: string; // the CLI on PATH, probed with --version, which a run's command line starts with and its shim is named after
   subcommands: readonly string[]; // the shim's first-arg passthrough (#696, #932): the CLI's own commands and any that open a session the user chose
   shimFlags: readonly string[]; // #932: sh case patterns that pass the shim through in any position: a session the user chose, or no conversation
-  planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the header offers their refresh
+  planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the footer's usage group offers their refresh
   canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from its first SessionStart, its free and local sessions too (#931)
 }
 
@@ -53,6 +53,10 @@ export const LEGACY_RUN_AGENT: AgentId = 'claude';
 
 /** `value` when AGENT_IDS has it (#925): what an open route's kind and a saved run's agent are checked against. */
 export const knownAgent = (value: unknown): AgentId | undefined => AGENT_IDS.find((id) => id === value);
+
+/** The agents whose plan limits the Hive reads (#925), in AGENT_IDS order; `only` narrows them to the asked ones (#223: a chip's ↻). */
+export const planLimitAgents = (only?: readonly AgentId[]): AgentId[] =>
+  AGENT_IDS.filter((id) => AGENTS[id].planLimits && (only === undefined || only.includes(id)));
 
 /** A saved run's agent (#925): its own when known, else LEGACY_RUN_AGENT. */
 export const savedAgent = (value: unknown): AgentId => knownAgent(value) ?? LEGACY_RUN_AGENT;
