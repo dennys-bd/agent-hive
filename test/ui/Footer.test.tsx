@@ -1,5 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Footer } from '@/components/Footer';
 import { setLanguage, t } from '@/i18n';
@@ -10,7 +9,6 @@ const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => new Respon
 const footer = (): HTMLElement => screen.getByRole('contentinfo');
 // The usage group (#223) has its own tests (AgentUsage, UsagePanel): the lists below are the rest of the footer
 const outsideUsage = (b: HTMLElement): boolean => b.closest('[data-usage-group]') === null;
-const posted = (path: string, body: unknown) => waitFor(() => expect(fetchMock).toHaveBeenCalledWith(path, expect.objectContaining({ body: JSON.stringify(body) })));
 
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
