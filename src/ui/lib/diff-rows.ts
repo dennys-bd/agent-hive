@@ -33,3 +33,17 @@ function pairRun(run: DiffLine[]): SplitRow[] {
 
 /** Side by side (#591): a deleted run and the added run after it paired row by row, the longer leaving empty cells; context on both. */
 export const splitRows = (hunk: DiffHunk): SplitRow[] => runsOf(hunk.lines).flatMap(pairRun);
+
+/** A path's folder, trailing slash kept, and its name (#591): the list's folder rows and the card's header (#853). */
+export function splitPath(path: string): { dir: string; name: string } {
+  const at = path.lastIndexOf('/');
+  return { dir: path.slice(0, at + 1), name: path.slice(at + 1) };
+}
+
+/** A hunk header as the pane shows it (#853): the function context git prints after the range, or the whole header when there is none,
+ * so the row still separates hunks. */
+export function hunkContext(header: string): string {
+  const end = header.indexOf('@@', 2);
+  const context = end === -1 ? '' : header.slice(end + 2).trim();
+  return context === '' ? header : context;
+}

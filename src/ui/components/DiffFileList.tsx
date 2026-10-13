@@ -3,7 +3,7 @@ import type { FileDiff } from '../../types';
 import { CountsText } from '@/components/DiffFile';
 import { Input } from '@/components/ui/input';
 import { type MessageKey, t } from '@/i18n';
-import { countsOf } from '@/lib/diff-rows';
+import { countsOf, splitPath } from '@/lib/diff-rows';
 
 // A file's mark and its status colour (#591): M waiting (a rename reads M), A working, D destructive
 const MARK: Record<FileDiff['status'], { letter: string; tone: string }> = {
@@ -13,12 +13,6 @@ const MARK: Record<FileDiff['status'], { letter: string; tone: string }> = {
 const STATUS_KEY: Record<FileDiff['status'], MessageKey> = {
   added: 'diff.status.added', deleted: 'diff.status.deleted', modified: 'diff.status.modified', renamed: 'diff.status.renamed',
 };
-
-/** A path's folder, trailing slash kept, and its name (#591). */
-export function splitPath(path: string): { dir: string; name: string } {
-  const at = path.lastIndexOf('/');
-  return { dir: path.slice(0, at + 1), name: path.slice(at + 1) };
-}
 
 interface FileRowProps { file: FileDiff; isOpen: boolean; isReviewed: boolean; count: number; onOpen(path: string): void; onReviewed(file: FileDiff): void }
 
