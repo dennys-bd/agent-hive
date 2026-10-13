@@ -3,7 +3,7 @@ import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
 import type { RepoRef } from '../repos/repositories.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
-import { syncPulls } from './pulls.js';
+import { pollOne, syncPulls } from './pulls.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
 import { syncLabels, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
@@ -97,7 +97,7 @@ export interface ReadModelLoopDeps {
 
 export interface ReadModelLoop {
   runOnce(): Promise<void>;
-  refetch(repository: string, number: number): Promise<RefetchOutcome>;
+  refetch(repository: string, number: number, options?: { again?: boolean }): Promise<RefetchOutcome>; // again: past the cooldown (#187)
   start(): void;
   stop(): Promise<void>; // resolves once the running round and every refetch in flight settled
 }
@@ -175,14 +175,26 @@ function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => bool
 function refetchesOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { refetch: ReadModelLoop['refetch']; inFlight(): Promise<RefetchOutcome>[] } {
   const inFlight = new Map<string, Promise<RefetchOutcome>>();
   const started = new Map<string, number>();
+  // A PR's page also needs its poll (#187): pulls/{n}, its reviews and its head's checks, conditional. Its failure is logged and never turns the
+  // refetch's own outcome into a failure: the page still answers from the model
+  async function polled(access: RefetchDeps, repository: string, number: number): Promise<SyncReport> {
+    try {
+      return await pollOne(access, repository, number);
+    } catch (err) {
+      deps.log.error(`read model: the poll of ${repository}#${number} failed: ${reasonOf(err)}`);
+      return EMPTY_REPORT;
+    }
+  }
   async function run(repository: string, number: number): Promise<RefetchOutcome> {
     try {
       const access = await core.access();
       if (access === undefined) return 'skipped';
       const { outcome, kinds, linksError } = await refetchIssue(access, repository, number);
       if (linksError !== undefined) deps.log.warn(`read model: the closing PRs of ${repository}#${number} were not read: ${linksError}`);
-      if (kinds.length > 0) deps.notify(repository, kinds); // changed or gone, and only what changed
-      return outcome;
+      const poll = outcome === 'gone' ? EMPTY_REPORT : await polled(access, repository, number);
+      const changed = mergeReports({ kinds, requests: { 200: 0, 304: 0 } }, poll).kinds;
+      if (changed.length > 0) deps.notify(repository, changed); // changed or gone, and only what changed
+      return poll.kinds.length > 0 ? 'changed' : outcome;
     } catch (err) {
       deps.log.error(`read model: the refetch of ${repository}#${number} failed: ${reasonOf(err)}`);
       return 'failed';
@@ -190,13 +202,13 @@ function refetchesOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => b
   }
   return {
     inFlight: () => [...inFlight.values()],
-    refetch: (repository, number) => {
+    refetch: (repository, number, options = {}) => {
       const key = `${repository}#${number}`;
       const running = inFlight.get(key);
       if (running !== undefined) return running;
       const at = core.now().getTime();
       for (const [other, start] of started) if (at - start >= REFETCH_COOLDOWN_MS) started.delete(other); // pruned on each call: the map holds only the last 10 s
-      if (isStopped() || core.inBackoff() || started.has(key)) return Promise.resolve('skipped');
+      if (isStopped() || core.inBackoff() || (started.has(key) && options.again !== true)) return Promise.resolve('skipped');
       started.set(key, at);
       const promise = run(repository, number).finally(() => inFlight.delete(key));
       inFlight.set(key, promise);
