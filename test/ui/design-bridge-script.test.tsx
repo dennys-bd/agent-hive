@@ -59,6 +59,6 @@ test('the real bridgeScript body runs in jsdom with every function it reaches jo
   window.dispatchEvent(new Event('load'));
   expect(errors).toEqual([]);
   expect(posted.mock.calls.slice(-3).map(([data]) => data)).toEqual([
-    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: {} }, { hive: 'design', type: 'size', height: 0, width: 0 },
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: {} }, { hive: 'design', type: 'size', height: 0 },
   ]);
 });

@@ -44,12 +44,17 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   };
   let height = -1;
   let width = -1;
-  // the width lets the pane widen its frame for a window screen wider than the viewport (#241)
+  let frameWidth = -1;
+  // The width lets the pane widen its frame for a window screen wider than the viewport (#241). It counts only when the content overflows
+  // the frame: a fitting page reports the frame's own width back, and the pane would never narrow it again. The frame's width is in the
+  // key since the same overflow is news again once the frame narrows.
   const postSize = (): void => {
-    if (root.scrollHeight === height && root.scrollWidth === width) return;
+    const wide = root.scrollWidth > root.clientWidth ? root.scrollWidth : -1;
+    if (root.scrollHeight === height && wide === width && root.clientWidth === frameWidth) return;
     height = root.scrollHeight;
-    width = root.scrollWidth;
-    post({ type: 'size', height, width });
+    width = wide;
+    frameWidth = root.clientWidth;
+    post(wide < 0 ? { type: 'size', height } : { type: 'size', height, width: wide });
   };
   // with no anchor there is no pin to move: a scroll then posts nothing
   const refreshPins = (): void => {

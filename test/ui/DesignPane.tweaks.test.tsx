@@ -85,6 +85,31 @@ test('a block whose JSON broke, or whose rules fail, shows the invalid message a
   expect(screen.getByRole('combobox', { name: 'layout' })).toBeInTheDocument();
 });
 
+test('an empty block shows no row, an invalid one still does (#241)', async () => {
+  await pane();
+  fromBridge({ type: 'tweaks', schema: {} });
+  expect(row()).toBeNull();
+  fromBridge({ type: 'tweaks', schema: null, error: 'json' });
+  expect(row()).toHaveTextContent('o bloco hv-tweaks é inválido');
+  fromBridge({ type: 'tweaks', schema: {} });
+  expect(row()).toBeNull();
+});
+
+test('a default changed in the file reaches the pane on reload, while a value the user picked survives it when it still fits (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  const posts = postsToFrame();
+  const sizes = (dflt: string): unknown => ({ density: { options: ['compact', 'roomy'], default: dflt }, layout: { options: ['board', 'list'], default: 'board' } });
+  fromBridge({ type: 'tweaks', schema: sizes('compact') });
+  fromBridge({ type: 'tweaks', schema: sizes('roomy') });
+  expect(ofType(posts(), 'tweak').at(-2)).toEqual(tweak('density', 'roomy'));
+  expect(screen.getByRole('combobox', { name: 'density' })).toHaveTextContent('roomy');
+  await pick(user, 'layout', 'list');
+  fromBridge({ type: 'tweaks', schema: sizes('compact') });
+  expect(screen.getByRole('combobox', { name: 'density' })).toHaveTextContent('compact');
+  expect(screen.getByRole('combobox', { name: 'layout' })).toHaveTextContent('list');
+});
+
 const anchored = (posts: Record<string, unknown>[]): string[] =>
   ((ofType(posts, 'anchors').at(-1)?.anchors ?? []) as { id: string }[]).map((entry) => entry.id);
 

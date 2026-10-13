@@ -191,6 +191,20 @@ test('the frame takes the content\'s reported width when wider than the viewport
   expect([frame().getAttribute('width'), frame().getAttribute('height')]).toEqual(['1280', '700']);
 });
 
+test('a width reported at one viewport does not hold the next: mobile after a desktop load is 390, and an overflowing 1440 at desktop is 1440 (#241)', async () => {
+  const user = userEvent.setup();
+  render(pane());
+  await screen.findByTitle(NAME);
+  fromFrame({ hive: 'design', type: 'size', height: 900, width: 1280 });
+  await user.click(screen.getByRole('radio', { name: 'mobile' }));
+  expect(frame()).toHaveAttribute('width', '390');
+  await user.click(screen.getByRole('radio', { name: 'desktop' }));
+  fromFrame({ hive: 'design', type: 'size', height: 900, width: 1440 });
+  expect(frame()).toHaveAttribute('width', '1440');
+  await user.click(screen.getByRole('radio', { name: 'tablet' }));
+  expect(frame()).toHaveAttribute('width', '768');
+});
+
 test('a pointer down on the canvas puts the focus in the pane, so ⌘0 and Space reach it (#109)', async () => {
   render(pane());
   await screen.findByTitle(NAME);

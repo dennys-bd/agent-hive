@@ -44,9 +44,10 @@ test('the bridge posts ready and the height and width on load, then each new siz
   });
   const { sent } = harness();
   const root = document.documentElement;
-  const size = (height: number, width: number): void => {
+  const size = (height: number, width: number, client = 1280): void => {
     Object.defineProperty(root, 'scrollHeight', { configurable: true, value: height });
     Object.defineProperty(root, 'scrollWidth', { configurable: true, value: width });
+    Object.defineProperty(root, 'clientWidth', { configurable: true, value: client });
   };
   size(640, 1280);
   start();
@@ -56,9 +57,12 @@ test('the bridge posts ready and the height and width on load, then each new siz
   observed(); // the same size: nothing new
   size(900, 1440); // a window screen wider than the viewport (#241)
   observed();
+  size(900, 1440, 768); // the frame narrowed: the same overflow is news again
+  observed();
   expect(sent()).toEqual([
-    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640, width: 1280 },
-    { hive: 'design', type: 'size', height: 900, width: 1280 }, { hive: 'design', type: 'size', height: 900, width: 1440 },
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640 }, // content that fits reports no width: the frame's own is not a wish
+    { hive: 'design', type: 'size', height: 900 }, { hive: 'design', type: 'size', height: 900, width: 1440 },
+    { hive: 'design', type: 'size', height: 900, width: 1440 },
   ]);
   message({ hive: 'design', type: 'theme', theme: 'light' }, null); // not from the parent
   message({ hive: 'design', type: 'theme', theme: 'blue' });

@@ -34,12 +34,11 @@ export function useDesignTweaks(frame: RefObject<HTMLIFrameElement | null>): Des
   const [held, setHeld] = useState<Values>({});
   const schema = schemaOf(block);
   const values = settle(schema, held);
-  // A new block (a load) settles the values against it and sends them at once: the ready just before sent them for the old one
+  // A new block (a load) settles the picks against it and sends them at once: the ready just before sent them for the old one. `held` keeps
+  // only what the user picked, never a default, so a default changed in the file shows on the next load
   const onBlock = useEffectEvent((next: TweakBlock) => {
-    const settled = settle(schemaOf(next), held);
     setBlock(next);
-    setHeld(settled);
-    postValues(frame.current, settled);
+    postValues(frame.current, settle(schemaOf(next), held));
   });
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
@@ -50,14 +49,12 @@ export function useDesignTweaks(frame: RefObject<HTMLIFrameElement | null>): Des
     return () => window.removeEventListener('message', onMessage);
   }, [frame]);
   const apply = (next: Values): void => {
-    const settled = settle(schema, next);
-    setHeld(settled);
-    postValues(frame.current, settled);
+    setHeld(next);
+    postValues(frame.current, settle(schema, next));
   };
   const set = (name: string, value: DesignTweakValue): void => {
-    const settled = settle(schema, { ...values, [name]: value });
-    setHeld(settled);
-    postValues(frame.current, { [name]: settled[name] });
+    setHeld({ ...held, [name]: value });
+    postValues(frame.current, { [name]: settle(schema, { [name]: value })[name] });
   };
   return { block, schema, values, set, apply, repost: () => postValues(frame.current, values) };
 }

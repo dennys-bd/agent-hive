@@ -9,7 +9,7 @@ import { DesignTweaks } from '@/components/DesignTweaks';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
 import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
-import { type DesignTweaks as DesignTweaksModel, useDesignTweaks } from '@/hooks/use-design-tweaks';
+import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX, viewportOf } from '@/hooks/use-design-zoom';
 import type { Activity, TaskActivity } from '@/lib/activities';
@@ -96,7 +96,7 @@ function useReloads(activityId: string, path: string, isShown: boolean): Reloads
 interface FrameSize { height?: number; width?: number }
 const isFramePx = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): FrameSize {
+function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: () => void): [FrameSize, () => void] {
   const [size, setSize] = useState<FrameSize>({});
   const ready = useEffectEvent(onReady);
   useEffect(() => {
@@ -112,7 +112,8 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [frame]);
-  return size;
+  // A width belongs to the viewport it was measured at: a viewport change drops it, and the bridge reports the next one if the content still overflows
+  return [size, () => setSize(({ height }) => ({ height }))];
 }
 
 // '*': the sandboxed frame's origin is opaque, so no named origin matches it; a theme is nothing to hide
@@ -213,19 +214,18 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const marks = useCommentCanvas(comments);
   const state: DesignState = { viewport: viewportPx, theme, schema: tweaks.schema, tweaks: tweaks.values };
   const pins = useDesignPins(frame, canvas, anchorsOf(comments, state), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
-  const size = useFrameMessages(frame, () => {
+  const [size, forgetWidth] = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
     postTheme(frame.current, theme); // the frame forgets the theme and the tweaks on every load
     tweaks.repost();
     if (reloads.take()) setReloadedAt(new Date());
   });
   // A window screen wider than the viewport is drawn whole, the canvas scrolling (#241).
-  // ponytail: the frame never narrows below a width it was given until the pane remounts, since a responsive screen reports scrollWidth equal to the frame's own width; reset on viewport change plus a measure request to the bridge if it bites
   const width = Math.max(viewportPx, size.width ?? 0);
   const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
   // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
-  const pickViewport = (next: Viewport): void => { setViewport(next); marks.close(); };
+  const pickViewport = (next: Viewport): void => { setViewport(next); forgetWidth(); marks.close(); };
   // A comment chosen in the list reopens on the state it was made on (#241), then scrolls to it (#114)
   const selectComment = (id: string): void => {
     marks.selectItem(id);
@@ -245,6 +245,10 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   };
 }
 
+// No row for a valid block with no tweak: the skeleton ships one, and a row of only "More…" would say nothing (#241)
+const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status: 'none' }> =>
+  block.status === 'invalid' || (block.status === 'ok' && block.schema.length > 0);
+
 // The pane itself (#109, #113): comments only on a task's
 function DesignView({ comments, ...props }: DesignPaneProps & { comments?: DesignCommentsModel }) {
   const { path, label, active } = props;
@@ -259,7 +263,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
         path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
-      {view.tweaks.block.status !== 'none' && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
+      {hasTweaksRow(view.tweaks.block) && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
       <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
