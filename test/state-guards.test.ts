@@ -63,3 +63,13 @@ test('a saved usage keeps its valid parts; one saved before the breakdown loads 
   assert.deepEqual(saved({ ...total, parts: [spec, ...bad] }), { ...total, parts: [spec, { tokens: 10, ms: 200, waitingMs: 20 }] }, 'what the dropped parts held reads as before the breakdown, so the parts add up to the total');
   assert.deepEqual(saved({ tokens: 0, ms: 0, waitingMs: 0 }), { tokens: 0, ms: 0, waitingMs: 0, parts: [] }, 'nothing recorded: no empty line');
 });
+
+test('savedWork keeps a run pick only in the shape the start route writes: a malformed field drops alone, none left is no pick (#290)', () => {
+  const SESSION = 'aaaaaaaa-1111-4111-8111-111111111111';
+  const pick = { agent: 'codex', resume: SESSION, launch: { model: 'gpt-5.6-terra', args: ['--verbose'] } };
+  assert.deepEqual(savedWork({ runPick: pick }).runPick, pick);
+  assert.deepEqual(savedWork({ runPick: { resume: null } }).runPick, { resume: null });
+  assert.deepEqual(savedWork({ runPick: { agent: 'codex', resume: '--settings' } }).runPick, { agent: 'codex' }, 'a resume that is not a uuid never reaches --resume');
+  assert.equal('runPick' in savedWork({ runPick: { agent: 'gemini', launch: { model: '-x' } } }), false);
+  assert.equal('runPick' in savedWork({ runPick: 'x' }), false);
+});

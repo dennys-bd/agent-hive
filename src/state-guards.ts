@@ -4,7 +4,7 @@ import { cleanTitle } from './usage.js';
 import { addUsage, localActivityId } from './activities.js';
 import { knownAgent, savedAgent } from './agents.js';
 import { savedLaunch } from './launch-pick.js';
-import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
+import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type RunPick, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -197,6 +197,20 @@ function savedRouting(tries: unknown, via: unknown, tryLog: unknown): Pick<Activ
   };
 }
 
+// #290: a manual start's picks as the start route wrote them; the occupy of the same reduction takes them off, so the state file only ever has
+// one by hand. The session id reaches the argv as --resume <id>: only its uuid shape is kept, as a handover's
+function savedRunPick(value: unknown): Pick<Activity, 'runPick'> {
+  if (!isJsonObject(value)) return {};
+  const { agent, resume, launch } = value;
+  const known = knownAgent(agent);
+  const runPick: RunPick = {
+    ...(known === undefined ? {} : { agent: known }),
+    ...(resume === null ? { resume: null } : isUuid(resume) ? { resume } : {}),
+    ...savedLaunch(launch),
+  };
+  return Object.keys(runPick).length === 0 ? {} : { runPick };
+}
+
 export function savedWork(value: Record<string, unknown>): Partial<Activity> {
   const { worktree, branch, worktreeGone, local, base, sessionId, workerId, stopped, stoppedAt, stageStart, error, handover, handoffPending, handoffFeedback, tries, tryLog, via, freeSessionStage } = value;
   return {
@@ -215,6 +229,7 @@ export function savedWork(value: Record<string, unknown>): Partial<Activity> {
     ...savedCi(value.ci), // #834: the boot keeps it
     ...savedSync(value.sync), // #854: shown while the activity lives
     ...savedCheckpoints(value.checkpoints), // #619: listed until the activity's delete
+    ...savedRunPick(value.runPick), // #290
   };
 }
 
