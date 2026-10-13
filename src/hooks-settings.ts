@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentRunner } from './agents/runner.js';
 import { SESSION_PROTOCOL, STAGE_PROTOCOL } from './protocol.js';
+import { installShellInit } from './shell-init.js';
 import { APPROVAL_HOLD_MAX_MIN } from './types.js';
 
 export const HIVE_DIR = '.hive'; // the workspace's folder for the Hive: only worktrees/ lives there (#202)
@@ -132,13 +133,14 @@ export const hooksPath = (home: string): string => join(home, HOOKS_FILE);
 
 /** The home's runtime files for `port`: prompts/ (the spawn's prompt files), plugin/ (the Hive's own skills and agents, what every run's
  * plugin flag points at), protocol/ (what the agent's protocol flag points at, #167), and each runner's own (#924): Claude's hooks.json and
- * shim, Codex's plugin cache copy and role files (#934). `runners` are the agents boot found. */
+ * shim, Codex's plugin cache copy and role files (#934), and shell/ (the terminals' init files, #259). `runners` are the agents boot found. */
 export async function prepareHome(
   home: string, port: number, runners: readonly Pick<AgentRunner, 'prepareHome'>[],
 ): Promise<{ hooksPath: string; promptsDir: string; pluginDir: string; protocol: ProtocolPaths }> {
   const promptsDir = join(home, PROMPTS_DIR);
   await mkdir(promptsDir, { recursive: true, mode: HOME_MODE });
   for (const runner of runners) await runner.prepareHome(home, port);
+  await installShellInit(home); // #259: after the runners' shims, which its functions call; one site for every agent
   const pluginDir = await copyPlugin(home);
   const protocol = await writeProtocol(home);
   return { hooksPath: hooksPath(home), promptsDir, pluginDir, protocol };
