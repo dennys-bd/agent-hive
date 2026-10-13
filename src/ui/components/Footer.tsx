@@ -5,6 +5,7 @@ import { type AgentId, DEFAULT_AGENT, type DisabledRuleStatus, type DisableUntil
 import { workerCount } from '../../worker-count';
 import { act } from '@/components/actions';
 import { Confirm } from '@/components/Confirm';
+import { AgentUsage } from '@/components/footer/AgentUsage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -129,7 +130,7 @@ function Shutdown({ armed }: { armed: boolean }) {
   return <Confirm message={t('confirm.shutdown')} confirmLabel={t('shutdown.arm')} trigger={trigger} onConfirm={() => act('/shutdown', { armed: true })} />;
 }
 
-/** The window's footer (redesign 02), the same under fluxo and atividades: the effective signal and what it holds back, the workers, the
+/** The window's footer (redesign 02, #223), the same under fluxo and atividades: the agents' plan usage and its panel, the effective signal and what it holds back, the workers, the
  * rules in force and the paused ones, each opening its pausar regra popover, then the console's chip (redesign 05) and shut down when done at
  * the right edge. */
 export function Footer({ state, effective, locale, onEditRules, console: consoleChip }: FooterProps) {
@@ -137,7 +138,9 @@ export function Footer({ state, effective, locale, onEditRules, console: console
   const chip = { state, locale, onEditRules };
   const effect = signalEffect(effective.signal, state.signals);
   return (
-    <footer className="flex h-[30px] shrink-0 items-center gap-3 border-t px-3 text-xs text-muted-foreground">
+    <footer className="relative flex h-[30px] shrink-0 items-center gap-3 border-t px-3 text-xs text-muted-foreground">
+      <AgentUsage state={state} form="full" />{/* #223: 2.5 picks the form from the width */}
+      <span aria-hidden="true" className="h-3.5 w-px bg-border" />
       <span className="flex items-center gap-1.5">
         <span role="status" data-signal={effective.signal} className="signal-pill rounded-sm px-2 py-px font-medium">{effective.signal}</span>
         {effect}
