@@ -5,7 +5,7 @@ import { sessionBaseline, touchSession, withRun, withStageRun } from './record-k
 import { handoverRun } from './task-runs.js';
 import { resumableBy } from './transitions.js';
 import { withColumnWrite } from './column-write.js';
-import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
+import { taskId, closeWait, isGate, onSource, resolveWorkspace, runningFirst, runTime, slugFor, slugOwner, slugTakenMessage, stageOf } from './tasks.js';
 import { isLeaving } from './types.js';
 import { stageWorkerCount, workerCount } from './worker-count.js';
 import type { Activity, ActivityRecord, SourceAction, Task, Stage, Effect, SessionPolicy, Worker, WorkerEventKind, SpawnRun, State, Status } from './types.js';
@@ -282,10 +282,17 @@ export function liveWorker(state: State, ptyId: string): Worker | undefined {
 export function continueInPlace(freed: State, worker: Worker, ptyId: string, moved: Task, next: Stage, finished: Effect[], prompt?: string, sameStage = false): Reduced {
   const onStart = onSource(next.onStart, moved.item.source);
   const written = sourceWrites(moved, sameStage ? onStart?.filter((a) => a.type === 'move') : onStart);
+  const now = Date.now();
   const { waitingSince: _waitingSince, ...running } = worker; // it leaves waiting outside patch (#233)
-  const kept: Worker = { ...running, ...closeWait(worker, Date.now()), status: 'working', done: undefined, verdict: undefined, question: undefined, lastEvent: { kind: 'continuing' } };
+  // #617: the run so far stays on the stage it leaves; the new stage run counts past it (runShare), its clocks untouched for events.jsonl
+  const ran = runTime(worker, now);
+  const kept: Worker = {
+    ...running, ...closeWait(worker, now), stage: next.name, foldedMs: ran.ms, foldedWaitingMs: ran.waitingMs,
+    status: 'working', done: undefined, verdict: undefined, question: undefined, lastEvent: { kind: 'continuing' },
+  };
   const task = written.task;
-  const held = withTask({ ...freed, workers: freed.workers.map((s) => (s.id === worker.id ? kept : s)) }, task);
+  const counted = withRun(freed, task, worker, now);
+  const held = withTask({ ...counted, workers: counted.workers.map((s) => (s.id === worker.id ? kept : s)) }, task);
   const live = activityOf(freed, taskId(task));
   if (!live) return { state: held, effects: [...finished, ...written.effects] }; // a running worker always has its activity (#629)
   const { handover: _handover, ...unqueued } = live;
