@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
+import { shellQuote } from './shell-init.js';
 import { shimDir } from './shim.js';
 import { historyPath } from './terminal-files.js';
 import { AGENT_IDS, type Stage, type Exec, type SessionPolicy, type Item, type LaunchArg, type PtyLaunch } from './types.js';
@@ -108,10 +109,6 @@ export function ptyEnv(base: NodeJS.ProcessEnv, ptyId: string, port: number, tmp
  * dir first on PATH, so an agent typed there is its shim's (#924). `path` is the workspace's PATH when it sets one (#738), else the Hive's. */
 export function terminalEnv(home: string, terminalId: string, path = process.env.PATH ?? ''): Record<string, string> {
   return { HISTFILE: historyPath(home, terminalId), PATH: path === '' ? shimDir(home) : `${shimDir(home)}:${path}` };
-}
-
-export function shellQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 // A run command (#300, #353): its env exported, then the command itself echoed as `> <command>` in bright white, as pnpm prints a script,

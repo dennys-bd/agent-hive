@@ -1,0 +1,6 @@
+# Agent Hive (#259): a Hive terminal starts bash with --rcfile here, which replaces what an interactive bash reads: the system bashrc (Debian
+# builds read /etc/bash.bashrc; macOS has none) and ~/.bashrc, both run first. The agents' functions come after them, so they win over
+# whatever PATH they set. Rewritten on every boot: an edit here is lost.
+[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+[ -f ~/.bashrc ] && . ~/.bashrc
+__HIVE_FUNCTIONS__

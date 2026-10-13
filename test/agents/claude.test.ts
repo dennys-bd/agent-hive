@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { AGENTS } from '../../src/agents.js';
 import { runners } from '../../src/agents/registry.js';
 import type { AgentRun } from '../../src/agents/runner.js';
-import { ptyCommand, shellQuote } from '../../src/spawn.js';
+import { ptyCommand } from '../../src/spawn.js';
+import { shellQuote } from '../../src/shell-init.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
 import { mcpConfigPattern } from '../../src/hooks-settings.js';
 
