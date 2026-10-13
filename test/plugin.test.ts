@@ -17,12 +17,13 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the ten agents and the two references, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the ten agents and the two references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
-  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md'], 'reference/ holds the conventions every new-* skill reads first and the design rules the designer and its reviewer read');
+  assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, and the skeleton of a screen');
+  assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
   for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md'], `skills/${skill} is one file`);
@@ -51,6 +52,8 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
     join(PLUGIN, 'CREDITS.md'),
     join(PLUGIN, 'reference', 'conventions.md'),
     join(PLUGIN, 'reference', 'design.md'),
+    join(PLUGIN, 'reference', 'skeleton.hv.html'),
+    join(PLUGIN, 'scripts', 'check-hv.mjs'),
     ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md')),
     ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
   ];
