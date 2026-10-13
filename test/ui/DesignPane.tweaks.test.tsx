@@ -84,3 +84,39 @@ test('a block whose JSON broke, or whose rules fail, shows the invalid message a
   fromBridge({ type: 'tweaks', schema: BLOCK });
   expect(screen.getByRole('combobox', { name: 'layout' })).toBeInTheDocument();
 });
+
+const anchored = (posts: Record<string, unknown>[]): string[] =>
+  ((ofType(posts, 'anchors').at(-1)?.anchors ?? []) as { id: string }[]).map((entry) => entry.id);
+
+test('only the comments made on the pane\'s viewport, theme and tweaks go to the frame as anchors; a tweak gone from the block is ignored (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  const posts = postsToFrame();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  expect(anchored(posts())).toEqual(['D1', 'D5']);
+  await pick(user, 'layout', 'list');
+  expect(anchored(posts())).toEqual(['D2']);
+  await user.click(screen.getByRole('radio', { name: 'mobile' }));
+  await user.click(screen.getByRole('radio', { name: 'claro' }));
+  await user.click(screen.getByRole('switch', { name: 'auto' }));
+  expect(anchored(posts())).toEqual(['D6']);
+});
+
+test('a comment chosen in the list switches the pane to its viewport, theme and tweaks, then scrolls to it once the frame has its anchor (#241)', async () => {
+  const user = userEvent.setup();
+  showCommentsPanel(true);
+  await pane();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  const posts = postsToFrame();
+  await user.click(screen.getByText('on mobile, light, list'));
+  expect(screen.getByRole('radio', { name: 'mobile' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('radio', { name: 'claro' })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.getByRole('combobox', { name: 'layout' })).toHaveTextContent('list');
+  expect(screen.getByRole('switch', { name: 'auto' })).not.toBeChecked();
+  const sent = posts();
+  expect(ofType(sent, 'theme')).toEqual([{ hive: 'design', type: 'theme', theme: 'light' }]);
+  expect(ofType(sent, 'tweak')).toEqual([tweak('layout', 'list'), tweak('auto', false)]);
+  const scroll = sent.findIndex((data) => data.type === 'scroll-to');
+  expect(sent[scroll]).toEqual({ hive: 'design', type: 'scroll-to', id: 'D6' });
+  expect(anchored(sent.slice(0, scroll))).toEqual(['D6']);
+});

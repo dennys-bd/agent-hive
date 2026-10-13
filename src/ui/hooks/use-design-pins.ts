@@ -2,6 +2,7 @@ import { type RefObject, useEffect, useEffectEvent, useRef, useState, useSyncExt
 import { type AnchorEntry, isAnchorList, type Pin, type Rect } from '../../design-anchor.js';
 import type { DesignTarget } from '../../types.js';
 import type { DesignCommentsModel } from '@/hooks/use-design-comments';
+import { type DesignState, isOnState } from '@/lib/design-comments';
 
 // The design pane's comment canvas (#114): the bridge's side of the comment mode (#112), and the state the pane's keys and the bridge's
 // key message share, so both paths reach one owner.
@@ -33,10 +34,10 @@ const isPinList = (value: unknown): value is Pin[] => Array.isArray(value) && va
   return typeof id === 'string' && (rect === null || isTarget({ kind: 'area', rect }));
 });
 
-/** Every comment of the file, open and resolved, as the bridge's anchors (#114): each one gets a rect, so every panel item knows whether its
- *  target is gone. What is drawn is filtered after. */
-export const anchorsOf = (model: DesignCommentsModel | undefined): AnchorEntry[] =>
-  (model === undefined ? [] : [...model.open, ...model.resolved].map((c) => ({ id: c.id, anchor: c.anchor })));
+/** The file's comments made on the pane's state, open and resolved, as the bridge's anchors (#114, #241): a pin never points at an element
+ *  that moved or is gone in another state. Each gets a rect, so its panel item knows whether its target is gone; what is drawn is filtered after. */
+export const anchorsOf = (model: DesignCommentsModel | undefined, state: DesignState): AnchorEntry[] =>
+  (model === undefined ? [] : [...model.open, ...model.resolved].filter((c) => isOnState(c.anchor, state)).map((c) => ({ id: c.id, anchor: c.anchor })));
 
 export interface FrameEvents { onAnchor(target: DesignTarget): void; onKey(key: string): void }
 /** reload: the frame's ready (#112), as the bridge keeps nothing across a load. scrollTo: an item's click. */
@@ -50,11 +51,19 @@ const pinElement = (canvas: HTMLElement | null, id: string): HTMLElement | undef
 export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas: RefObject<HTMLElement | null>, anchors: readonly AnchorEntry[], isCommenting: boolean, events: FrameEvents): PinsBridge {
   const [rects, setRects] = useState<PinRects>(() => new Map());
   const scrolling = useRef<string | undefined>(undefined);
+  const [scrollRequest, setScrollRequest] = useState<{ id: string }>();
   const onAnchor = useEffectEvent(events.onAnchor);
   const onKey = useEffectEvent(events.onKey);
   const list = JSON.stringify(anchors); // a new array on every render: its text says whether the list changed
   useEffect(() => post(frame.current, { type: 'anchors', anchors: JSON.parse(list) as unknown }), [frame, list]);
   useEffect(() => post(frame.current, { type: 'comment-mode', on: isCommenting }), [frame, isCommenting]);
+  // After the anchors effect above: a comment that switched the pane's state reaches the bridge's anchors before its scroll-to (#241). A new
+  // object per click, so the same item scrolls again
+  useEffect(() => {
+    if (scrollRequest === undefined) return;
+    scrolling.current = scrollRequest.id;
+    post(frame.current, { type: 'scroll-to', id: scrollRequest.id });
+  }, [frame, scrollRequest]);
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
       const data = bridgeData(event, frame.current);
@@ -77,11 +86,7 @@ export function useDesignPins(frame: RefObject<HTMLIFrameElement | null>, canvas
     post(frame.current, { type: 'anchors', anchors });
     post(frame.current, { type: 'comment-mode', on: isCommenting });
   };
-  const scrollTo = (id: string): void => {
-    scrolling.current = id;
-    post(frame.current, { type: 'scroll-to', id });
-  };
-  return { rects, reload, scrollTo };
+  return { rects, reload, scrollTo: (id) => setScrollRequest({ id }) };
 }
 
 // The comments panel's open state (#241): one for every design pane, closed when the Hive opens, then the last choice wherever it came

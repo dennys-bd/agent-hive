@@ -127,3 +127,16 @@ test('a viewport change drops the composer, and a slow adicionar never closes a 
   await waitFor(() => expect(screen.getByRole('button', { name: 'adicionar' })).toBeEnabled());
   expect(within(composer()!).getByText('área · 320×180')).toBeInTheDocument();
 });
+
+test('a comment made on tweaks saves the pane\'s settled tweaks in its anchor (#241)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  fromBridge({ type: 'tweaks', schema: { layout: { options: ['board', 'list'], default: 'board' } } });
+  await user.click(screen.getByRole('combobox', { name: 'layout' }));
+  await user.click(screen.getByRole('option', { name: 'list' }));
+  await user.click(toggle());
+  anchor(ELEMENT);
+  await user.type(field(), 'here{Enter}');
+  await waitFor(() => expect(composer()).toBeNull());
+  expect(posted('/drafts')).toEqual([{ anchor: { ...ELEMENT, ...ON_PATH, tweaks: { layout: 'list' } }, text: 'here', session: SESSION }]);
+});

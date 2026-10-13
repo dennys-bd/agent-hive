@@ -11,10 +11,10 @@ import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-
 import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
 import { type DesignTweaks as DesignTweaksModel, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
-import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX } from '@/hooks/use-design-zoom';
+import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX, viewportOf } from '@/hooks/use-design-zoom';
 import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
-import { type DesignTheme, nextPin } from '@/lib/design-comments';
+import { type DesignState, type DesignTheme, isOnState, nextPin } from '@/lib/design-comments';
 import { isMac, isTextField } from '@/lib/shortcut-bindings';
 
 // The design pane (#109): one Hive design (.hv.html) of an activity, served by the design frame route (#108) into a sandboxed frame on the
@@ -165,13 +165,14 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
-interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; width: DesignViewport; frameWidth: number; theme: DesignTheme }
+interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; state: DesignState; frameWidth: number }
 
 // The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
-function CommentOverlay({ model, canvas, rects, percent, path, width, frameWidth, theme }: OverlayProps) {
+function CommentOverlay({ model, canvas, rects, percent, path, state, frameWidth }: OverlayProps) {
+  const { theme } = state;
   const { target } = canvas;
   const scale = percent / FULL;
-  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: width, theme, tweaks: {} });
+  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: state.viewport, theme, tweaks: state.tweaks });
   const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
   const pin = nextPin(model);
   // The composer closes once the server took the comment; a refusal keeps it open with its text
@@ -193,7 +194,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, width, frameWidth
 
 interface DesignViewModel {
   name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
-  viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
+  viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; state: DesignState; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
   zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge; tweaks: DesignTweaksModel;
   pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
 }
@@ -210,7 +211,8 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const viewportPx = VIEWPORT_PX[viewport];
   const tweaks = useDesignTweaks(frame);
   const marks = useCommentCanvas(comments);
-  const pins = useDesignPins(frame, canvas, anchorsOf(comments), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
+  const state: DesignState = { viewport: viewportPx, theme, schema: tweaks.schema, tweaks: tweaks.values };
+  const pins = useDesignPins(frame, canvas, anchorsOf(comments, state), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
   const size = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
     postTheme(frame.current, theme); // the frame forgets the theme and the tweaks on every load
@@ -223,11 +225,23 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
   // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
+  const pickViewport = (next: Viewport): void => { setViewport(next); marks.close(); };
+  // A comment chosen in the list reopens on the state it was made on (#241), then scrolls to it (#114)
+  const selectComment = (id: string): void => {
+    marks.selectItem(id);
+    const anchor = comments && [...comments.open, ...comments.resolved].find((c) => c.id === id)?.anchor;
+    if (anchor !== undefined && !isOnState(anchor, state)) {
+      pickViewport(viewportOf(anchor.viewport));
+      if (anchor.theme !== theme) pickTheme(anchor.theme);
+      tweaks.apply(anchor.tweaks);
+    }
+    pins.scrollTo(id);
+  };
   const pickTweak = (name: string, value: DesignTweakValue): void => { tweaks.set(name, value); marks.close(); };
   return {
-    name: baseName(path), canvas, frame, viewport, theme, viewportPx, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
-    pickViewport: (next) => { setViewport(next); marks.close(); },
-    selectComment: (id) => { marks.selectItem(id); pins.scrollTo(id); },
+    name: baseName(path), canvas, frame, viewport, theme, viewportPx, state, width, height: size.height ?? viewportPx * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
+    pickViewport,
+    selectComment,
   };
 }
 
@@ -235,7 +249,7 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
 function DesignView({ comments, ...props }: DesignPaneProps & { comments?: DesignCommentsModel }) {
   const { path, label, active } = props;
   const view = useDesignView(props, comments);
-  const { name, canvas, frame, viewport, theme, viewportPx, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
+  const { name, canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
   };
@@ -251,7 +265,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
             <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
-              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} width={viewportPx} frameWidth={width} theme={theme} />}
+              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} state={view.state} frameWidth={width} />}
             </DesignCanvas>
           )}
         {comments !== undefined && marks.isPanelShown && (
