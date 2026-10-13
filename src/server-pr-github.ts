@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from 'express';
-import { activityOf } from './activities.js';
+import { activityOf, prsOf } from './activities.js';
 import { ciQuery, parseCi } from './ci-checks.js';
 import { isNodeId, isOid, prBodyOf, prTextOf } from './pr-bodies.js';
 import {
@@ -195,12 +195,13 @@ function registerThreadRoutes(app: Express, deps: PrRouteDeps): void {
 }
 
 // #207's event with no wait for the poll, then, read again since the approval may have gone while the merge was out, #268's approve on a task
-// still awaiting it: the Hive's own merge is the user's gesture of approval. No new reducer rule.
+// still awaiting it: the Hive's own merge is the user's gesture of approval, once it merges the task's last open PR (#261). No new reducer rule.
 async function markMerged(deps: PrRouteDeps, res: Response, url: string, task: Task): Promise<void> {
   await deps.dispatch({ type: 'prStates', states: [{ url, state: 'merged' }] });
   const live = deps.requireLive(res);
   const awaiting = live && activityOf(live.state, task.item.itemId);
-  if (awaiting?.approval) await deps.dispatch({ type: 'approve', activityId: awaiting.id });
+  const settled = live && prsOf(live.state, task.item.itemId).every((pr) => pr.state !== 'open');
+  if (awaiting?.approval && settled) await deps.dispatch({ type: 'approve', activityId: awaiting.id });
 }
 
 // #849: a merge that finds the PR already merged (a second click, or a first merge whose follow-up failed) counts as this one: what the user
