@@ -56,7 +56,9 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   fixed('quit', 'global', same(['CmdOrCtrl+Q'])),
   row('newTerminal', { mac: 'CmdOrCtrl+T', other: 'CmdOrCtrl+Shift+T' }, 'activities'),
   row('newSession', { mac: 'CmdOrCtrl+Shift+N', other: 'CmdOrCtrl+Alt+Shift+N' }, 'activities'),
+  row('newSessionDialog', { mac: 'CmdOrCtrl+Alt+N', other: 'CmdOrCtrl+Alt+Shift+S' }, 'activities'), // #257: off macOS no plain Ctrl+Alt (AltGr), and Ctrl+Alt+Shift+N is newSession's
   row('openDiff', { mac: 'CmdOrCtrl+Alt+C', other: 'CmdOrCtrl+Shift+G' }, 'activities'),
+  row('newFile', { mac: 'CmdOrCtrl+Alt+F', other: 'CmdOrCtrl+Alt+Shift+F' }, 'activities'), // #257: the +'s file; in the editor ⌘⌥F stays Monaco's replace (EDITOR_KEYS)
   row('close', { mac: 'CmdOrCtrl+W', other: 'CmdOrCtrl+Shift+W' }, 'activities'),
   row('nextTab', { mac: 'Ctrl+Tab', other: 'CmdOrCtrl+Tab' }, 'activities', SOON),
   row('prevTab', { mac: 'Ctrl+Shift+Tab', other: 'CmdOrCtrl+Shift+Tab' }, 'activities', SOON),

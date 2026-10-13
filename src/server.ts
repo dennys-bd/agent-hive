@@ -68,6 +68,7 @@ import { matchesSecret, pagePolicy, presentedSecret } from './secret.js';
 import { registerConsoleRoutes } from './server-console.js';
 import { createDesignFrameTokens, registerDesignFrameMint, registerDesignFrameRoute } from './server-design-frame.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
+import { registerLaunchOptionsRoute } from './launch-options.js';
 import { registerOpenRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
@@ -1125,6 +1126,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const deliverReview = deps.deliverReview ?? createDeliver({ state: () => live?.state, dispatch, started: pool.started, write });
   registerReviewThreadRoutes(app, { requireLive, reviews, notifyReview, log, deliver: deliverReview });
   registerOpenRoute(app, taskDeps); // POST /tasks/:id/open and /activities/:id/open, whose first worktree setup runs in the console (#351)
+  registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
   registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir }); // wake, forget (#696); the shim's register under /hooks/

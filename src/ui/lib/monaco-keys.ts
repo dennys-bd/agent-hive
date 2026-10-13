@@ -6,8 +6,8 @@ import type { OperationId } from '../../types';
 import { pressed } from '@/lib/shortcut-bindings';
 
 /** The Hive keys that stay the editor's inside it: ⌘. is Monaco's quick fix, sleepSession keeps it everywhere else (#780); ⌘F is
- * Monaco's find, findInTerminal keeps it in a terminal (#254). */
-export const EDITOR_KEYS: readonly OperationId[] = ['sleepSession', 'findInTerminal'];
+ * Monaco's find, findInTerminal keeps it in a terminal (#254); ⌘⌥F is Monaco's replace, newFile keeps it elsewhere (#257). */
+export const EDITOR_KEYS: readonly OperationId[] = ['sleepSession', 'findInTerminal', 'newFile'];
 const isInEditor = (target: EventTarget | null): boolean => target instanceof Element && target.closest('.monaco-editor') !== null;
 /** Whether shortcut `id` yields to the editor at `target` (#780). */
 export const isEditorKey = (id: OperationId, target: EventTarget | null): boolean => EDITOR_KEYS.includes(id) && isInEditor(target);

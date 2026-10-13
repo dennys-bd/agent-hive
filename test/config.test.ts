@@ -1149,9 +1149,9 @@ test('a workspace\'s memoryCap is a required integer from 300 to 20000, refused 
   for (const bad of [299, 20001, 4000.5, '4000', undefined]) assert.throws(() => parseConfig(at(bad)), { message }, String(bad));
 });
 
-test('a codex stage, by its own agent or the default, refuses a Claude model naming the field; a Codex model passes and a claude stage keeps its aliases (#927)', () => {
+test('a codex stage, by its own agent or the default, refuses a Claude model naming the field, fable included; a Codex model passes and a claude stage keeps its aliases (#927, #257)', () => {
   const withStage = (extra: Record<string, unknown>, top: Record<string, unknown> = {}) => github({ stages: [{ ...STAGES[0], ...extra }], ...top });
-  for (const model of ['opus', 'sonnet', 'haiku', 'sonnet[1m]', 'claude-sonnet-4']) {
+  for (const model of ['fable', 'fable[1m]', 'opus', 'sonnet', 'haiku', 'sonnet[1m]', 'claude-sonnet-4']) {
     const message = `hive.config.json: "comb.stages[0].model" "${model}" is a Claude model; a codex stage needs a Codex model name`;
     assert.throws(() => parseConfig(withStage({ agent: 'codex', model })), { message }, model);
   }

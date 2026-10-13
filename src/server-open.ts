@@ -10,9 +10,10 @@ import { openWorktreeRun } from './task-setup.js';
 import { setupRunId } from './console.js';
 import { branchFor, slugFor, slugOwner, slugTakenMessage, worktreeSessions } from './tasks.js';
 import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE } from './server-tasks.js';
+import { askedLaunch } from './launch-options.js';
 import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Effect, type Task, type HiveEvent, type Workspace } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
@@ -34,11 +35,12 @@ export type OpenRouteDeps = TaskRouteDeps; // ptys and consoleStore came with th
 type OpenEvent = Extract<HiveEvent, { type: 'openSession' | 'openTerminal' }>;
 /** What an open asks for, before its activity is known (#629): a first open makes it. #570: a terminal is not a session, so it has its own event.
  * prompt: the rendered first message of a new agent session (#758). agent: the session's, the kind asked for (#925). */
-interface OpenAsk { taskId: string; terminal: boolean; agent?: AgentId; continueId?: string; prompt?: string; size?: TerminalSize }
+interface OpenAsk { taskId: string; terminal: boolean; agent?: AgentId; continueId?: string; prompt?: string; size?: TerminalSize; launch?: LaunchPick } // launch: the new session dialog's picks (#257)
 
-const openEvent = ({ terminal, agent, continueId, prompt }: OpenAsk, activityId: string): OpenEvent =>
+const openEvent = ({ terminal, agent, continueId, prompt, launch }: OpenAsk, activityId: string): OpenEvent =>
   (terminal ? { type: 'openTerminal', activityId } : {
     type: 'openSession', activityId, ...(agent === undefined ? {} : { agent }), ...(continueId === undefined ? {} : { continueId }), ...(prompt === undefined ? {} : { prompt }),
+    ...(launch === undefined ? {} : { launch }),
   });
 
 // The first prompt an open asks for (#758): a key, never text, rendered here; none without one; a 400 for anything but mergeBase with a
@@ -195,12 +197,14 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   if (kind !== 'terminal' && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
   const asked = promptOf(body, workspaceBase(current.runtime.config, taskWorkspace(current.runtime.config, task)).remote);
   if ('status' in asked) return refuse(res, asked);
+  const picked = askedLaunch(body, agent, deps.language()); // #257: before any worktree, as every check here
+  if ('status' in picked) return refuse(res, picked);
   const offered = typeof continueId === 'string' && worktreeSessions(task, current.state).some((s) => s.id === continueId); // a repo session opens from the sidebar (#208)
   if (agent !== undefined && continueId !== undefined && !offered) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });
   const size = sizeIn(body);
   const open: OpenAsk = {
     taskId, terminal: agent === undefined, ...(agent === undefined ? {} : { agent }),
-    ...(agent !== undefined && typeof continueId === 'string' ? { continueId } : {}), ...asked, ...(size === undefined ? {} : { size }),
+    ...(agent !== undefined && typeof continueId === 'string' ? { continueId } : {}), ...asked, ...picked, ...(size === undefined ? {} : { size }),
   };
   if (activity?.worktree !== undefined && !activity.worktreeGone) return openNow(deps, current, task, open, res);
   // A stage spawn is still making this worktree (and its setup, in the same console channel): one maker at a time (#351).

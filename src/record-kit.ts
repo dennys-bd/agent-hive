@@ -1,7 +1,8 @@
 import { activityOf, addUsage, recordOf, recordsOf, recordWithSession, usageOf, withActivity, withRecord } from './activities.js';
 import { NO_USAGE, runTime, sessionsOf, taskId, titled, workersOf } from './tasks.js';
 import { recordedIssues } from './decomposition.js';
-import type { ActivityRecord, AgentId, DeleteActivityScope, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
+import { withLaunch } from './launch-pick.js';
+import type { ActivityRecord, AgentId, DeleteActivityScope, LaunchPick, PrSlice, Session, State, Task, TaskUsage, Worker } from './types.js';
 
 // The record side of a task's runs (#629): its sessions, its usage, its result and its PRs, written to the records where tasks.ts wrote them
 // on the task. New work lands in the live activity's record; a session already listed is updated in the record that holds it. Pure.
@@ -34,11 +35,11 @@ export function touchSession(state: State, task: Task, id: string, stage: string
 /** Session `id` put to work by a free run at `now` (#812): a free session, a copy or a captured one has no stage prompt to go on with, so it
  * never writes `stages`, the one thing stageSession reads. One the record holds (a free one, or a stage run's resumed by hand) only moves its
  * lastUsedAt; a new one is appended to the live record, free and with no stage. It marks the stage on the live activity, so the task offers no
- * continue there until a stage run spawns. A new one records `agent` (#925); one already listed keeps its own. */
-export function touchFreeSession(state: State, task: Task, id: string, now: string, agent: AgentId): State {
+ * continue there until a stage run spawns. A new one records `agent` (#925) and `launch` (#257); one already listed keeps its own. */
+export function touchFreeSession(state: State, task: Task, id: string, now: string, agent: AgentId, launch?: LaunchPick): State {
   const used = recordWithSession(state, taskId(task), id)
     ? withSession(state, task, id, (s) => ({ ...s, lastUsedAt: now }))
-    : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true, agent }] }));
+    : withLive(state, task, (r) => ({ ...r, sessions: [...r.sessions, { id, startedAt: now, stages: [], lastUsedAt: now, free: true, agent, ...withLaunch(launch) }] }));
   return markFreeRun(used, task);
 }
 

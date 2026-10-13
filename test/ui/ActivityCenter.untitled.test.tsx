@@ -40,7 +40,7 @@ afterEach(() => {
 async function newFile(user: ReturnType<typeof userEvent.setup>): Promise<FakeEditor> {
   screen.getByRole('button', { name: 'Novo terminal ou sessão' }).focus();
   await user.keyboard('{Enter}');
-  await user.click(await screen.findByRole('menuitem', { name: 'arquivo' }));
+  await user.click(await screen.findByRole('menuitem', { name: /^arquivo/ }));
   await waitFor(() => expect(FakeEditor.all).toHaveLength(1));
   return FakeEditor.all[0];
 }

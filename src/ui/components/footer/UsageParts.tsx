@@ -1,13 +1,11 @@
 import { RotateCwIcon } from 'lucide-react';
 import type { AgentId, RateLimits } from '../../../types';
-import { AGENT_ICON } from '@/components/SessionLabel';
+import { AGENT_COLOR, AGENT_ICON } from '@/components/SessionLabel';
 import { Progress } from '@/components/ui/progress';
 import { refreshTitle } from '@/lib/agent-usage';
 import { PERCENT_MAX, RED_AT } from '@/lib/usage';
 
 const MARK = 'size-3.5 shrink-0';
-// The agent's own colour on its mark (#669), the design system's agent-colour exception; an agent without one keeps currentColor
-const AGENT_COLOR: Partial<Record<AgentId, string>> = { claude: 'text-agent-claude', codex: 'text-agent-codex' };
 
 /** A percent's band, shared by its %, its reset time and (as bg-) its fill: destructive from RED_AT, muted below. */
 export const percentTone = (percent: number): string => (percent >= RED_AT ? 'text-destructive' : 'text-muted-foreground');

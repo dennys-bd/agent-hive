@@ -803,7 +803,7 @@ function firstSession(state: State, worker: Worker, id: string): State {
 // agent. The activity's own sessionId stays the stage run's: a free session never takes its place
 function firstFreeSession(state: State, worker: Worker, id: string): State {
   const activity = activityOfWorker(state, worker);
-  return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker))) ?? state;
+  return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch)) ?? state; // #257: its picks too
 }
 
 // #933: a copy of an agent that picks its own id (Codex) opened under the Hive's placeholder; the fork's SessionStart (source=fork, finding

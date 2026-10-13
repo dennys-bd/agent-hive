@@ -417,6 +417,7 @@ export interface Session {
   name?: string; // the session's /rename title as its last turn end read it (#489): what its run's tab shows. Display text only
   free?: true; // opened by hand (#812): a free session, a copy or a captured one. Only a feedback run after its hive_done gives it stages
   agent: AgentId; // #925: the agent whose run recorded it; a session saved before reads as claude (savedSession)
+  launch?: LaunchPick; // #257: what a free session was opened with, re-sent on every resume; absent = the agent's defaults
 }
 
 export type PrState = 'open' | 'merged' | 'closed';
@@ -662,6 +663,7 @@ export interface Worker {
   backoff?: WorkerBackoff; // #805: set with status backoff while the run waits out an API error
   apiErrors?: number; // #805: consecutive transient failures since the last Stop, 1..BACKOFF_RETRIES; a rate-limit wait adds none
   agent?: AgentId; // #925: what its run runs, set with the run; absent only on a commands stage's worker, which runs no agent
+  launch?: LaunchPick; // #257: what this free run launches with: its open's picks, or its resumed session's
   stage?: string; // #617: the stage this run counts its usage for, set with the run and moved by an in-place continuation; absent on a free session
   foldedMs?: number; // #617: the run's time already folded into the stages an in-place continuation left; runShare counts past it
   foldedWaitingMs?: number; // #617: the waiting inside foldedMs
@@ -748,6 +750,27 @@ export interface AgentAvailability {
   agent: AgentId;
   available: boolean;
 }
+
+/** What a free session was opened with (#257): absent fields are the agent's defaults. Each value reaches the run's argv as its own word. */
+export interface LaunchPick {
+  model?: string; // behind --model (Claude) or -m (Codex)
+  specializedAgent?: string; // a Hive plugin agent, hive:<name>
+  args?: string[]; // after config.agentArgs[agent]
+}
+
+/** One model a list of GET /launch-options offers (#257). hint: the muted right-hand text (e.g. "opus 5.5"). */
+export interface LaunchOption { id: string; hint?: string }
+
+/** One agent's picks the new session dialog offers (#257). */
+export interface AgentLaunchOptions {
+  aliases: LaunchOption[]; // Codex: []
+  versions: LaunchOption[];
+  specializedAgents: { name: string; description: string }[]; // hive:<name>, sorted by file
+  args: string[]; // config.agentArgs[agent]: the dialog's "added to the global ones" and "runs" lines
+}
+
+/** GET /launch-options (#257). */
+export type LaunchOptions = Record<AgentId, AgentLaunchOptions>;
 
 /** One file of a task's result the panel links (#258). */
 export interface TaskFile {
@@ -1137,7 +1160,7 @@ export interface CombConfig {
 export type OperationId =
   | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
-  | 'newTerminal' | 'newSession' | 'openDiff' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
+  | 'newTerminal' | 'newSession' | 'newSessionDialog' | 'openDiff' | 'newFile' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
@@ -1400,8 +1423,8 @@ export type HiveEvent =
   | { type: 'copySession'; from: SessionRef; to: SessionTarget; name?: string; notice?: string; copied?: string } // #587; name: the dialog's, as the route cleaned it; copied: the transcript dir the route put a temporary <from>.jsonl in
   | { type: 'openLocalSession'; activityId: string; sessionId: string } // continue a local session (#587)
   | { type: 'clearLocalSession'; activityId: string; sessionId: string } // its limpar (#587)
-  | { type: 'newLocalSession'; activityId: string; agent?: AgentId } // a new session in a workspace's local activity (#590): kept from its start, as a copy into the local is; agent: the local route's kind (#925), absent = the live default
-  | { type: 'openSession'; activityId: string; continueId?: string; prompt?: string; agent?: AgentId } // agent: a new session's, the open route's kind (#925); absent = the live default; a resume runs its session's own. Abrir sessão on any task (#283), or the sidebar's session (#208); continueId = one of continuable(task); a record id (#629): a kept session opens in the task's live activity, born when none; prompt: its first message, rendered by the open route (#758)
+  | { type: 'newLocalSession'; activityId: string; agent?: AgentId; launch?: LaunchPick } // a new session in a workspace's local activity (#590): kept from its start, as a copy into the local is; agent: the local route's kind (#925), absent = the live default; launch: the new session dialog's picks (#257)
+  | { type: 'openSession'; activityId: string; continueId?: string; prompt?: string; agent?: AgentId; launch?: LaunchPick } // agent: a new session's, the open route's kind (#925); absent = the live default; a resume runs its session's own. Abrir sessão on any task (#283), or the sidebar's session (#208); continueId = one of continuable(task); a record id (#629): a kept session opens in the task's live activity, born when none; prompt: its first message, rendered by the open route (#758); launch: a new session's picks (#257): the routes refuse it with continueId, and the reducer ignores it then: a resume runs with its record's
   | { type: 'openTerminal'; activityId: string; command?: string; cwd?: string } // a terminal on a task, in its worktree (#283, #570): not a session; command = a workspace's command (#300); cwd = a folder of the worktree the shell route checked (#818)
   | { type: 'openProjectShell'; project: string; cwd: string } // the terminal panel's + (#292): a shell in that project's main checkout, `cwd` (#696)
   | { type: 'sleepTerminal'; terminalId: string; cwd?: string } // #696: the pty is gone or going; cwd as read, absent = keep the held one

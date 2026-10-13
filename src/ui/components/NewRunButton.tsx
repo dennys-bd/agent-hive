@@ -1,21 +1,22 @@
-import { PlusIcon } from 'lucide-react';
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { FilePlusIcon, GitCompareIcon, PlusIcon, Settings2Icon, SquareTerminalIcon } from 'lucide-react';
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { agentName, ALL_AGENTS, isAvailable } from '../../agents';
-import { nextPr } from '../../pull-requests';
 import { canDiff } from '../../task-runs';
-import { type Activity as LiveActivity, AGENT_IDS, type AgentAvailability, type AgentId, type Task, type TaskPr, DEFAULT_AGENT, type DiffScope, type OpenResult, type OperationId } from '../../types';
+import { type Activity as LiveActivity, AGENT_IDS, type AgentAvailability, type AgentId, type Task, DEFAULT_AGENT, type DiffScope, type LaunchPick, type OpenResult, type OperationId } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { KeyHint } from '@/components/KeyHint';
 import { openLocalRun } from '@/components/local-runs';
-import { type OpenDiff, type OpenRun, useOpenDiff, useOpenPr, useOpenRun } from '@/components/terminal-tabs';
+import { NewSessionDialog } from '@/components/NewSessionDialog';
+import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
+import { type OpenDiff, type OpenRun, useOpenDiff, useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
-import { canOpenIn, type RunTarget, type TaskActivity } from '@/lib/activities';
-import { onShortcutKey } from '@/lib/dock-layout';
+import { canOpenIn, type RunTarget } from '@/lib/activities';
+import { onShortcutKey, runShortcut } from '@/lib/dock-layout';
 import { shownSize } from '@/lib/xterm-setup';
 
 /** What a new run opens (#491, #536): a terminal, or an agent's new session. */
@@ -49,42 +50,58 @@ export const useAgentPicks = (): AgentPick[] => agentPicks(useContext(AgentsCont
 const diffScopeOf = (task: Task, activity: LiveActivity | undefined): DiffScope | undefined =>
   (canDiff(task, activity, 'stage') ? 'stage' : canDiff(task, activity, 'worktree') ? 'worktree' : undefined);
 
-/** The + menu's keys (#536): newSession opens the default agent's new session and openDiff the + menu's diff, in the shown activity. Mounted
- * with the center, once, so they act only while an activity shows; each does nothing where its item would be disabled. */
-export function useNewRunKeys(target: RunTarget): void {
+type NewRunAction = 'session' | 'diff' | 'dialog' | 'file';
+const NEW_RUN_KEYS: readonly [NewRunAction, OperationId][] = [['session', 'newSession'], ['diff', 'openDiff'], ['dialog', 'newSessionDialog'], ['file', 'newFile']];
+
+/** The + menu's keys (#536, #257): newSession opens the default agent's new session, openDiff the + menu's diff, newSessionDialog the new
+ * session dialog and newFile an untitled file, in the shown activity. Mounted with the center, once, so they act only while an activity shows;
+ * each does nothing where its item would be disabled. The + menu's nova sessão… runs newSessionDialog too (runShortcut). Returns the dialog
+ * while it is open, for the center to render. */
+export function useNewRunKeys(target: RunTarget, onNewFile?: () => void): ReactNode {
   const openRun = useOpenRun();
   const openDiff = useOpenDiff();
   const agent = useContext(DefaultAgentContext);
   const agents = useContext(AgentsContext);
-  const latest = useRef<Record<'session' | 'diff', () => void>>({ session: () => undefined, diff: () => undefined });
+  const [isPicking, setPicking] = useState(false);
+  const latest = useRef<Record<NewRunAction, () => void>>({ session: () => undefined, diff: () => undefined, dialog: () => undefined, file: () => undefined });
   useEffect(() => {
     latest.current = {
       session: () => { if (canOpenIn(target) && isAvailable(agent, agents)) openNew(target, agent, openRun); }, // #931: nothing where its item is disabled
       diff: () => startEntry(target, 'diff', openRun, openDiff),
+      dialog: () => { if (canOpenIn(target)) setPicking(true); },
+      file: () => onNewFile?.(),
     };
   });
-  useEffect(() => onShortcutKey([['session', 'newSession'], ['diff', 'openDiff']] as const, (action) => latest.current[action]()), []);
+  useEffect(() => onShortcutKey(NEW_RUN_KEYS, (action) => latest.current[action]()), []);
+  if (!isPicking) return null;
+  return (
+    <NewSessionDialog
+      target={target} defaultAgent={agent} agents={agents}
+      onOpen={(kind, launch) => openNew(target, kind, openRun, undefined, undefined, launch)} onClose={() => setPicking(false)}
+    />
+  );
 }
 
 // POST /activities/:id/open with no resume and no base (#491): the task already has its worktree or runs in the checkout, since it has a live
 // run, so Abrir sessão's questions never apply. A refusal is act's toast; a spawn failure answers no run and opens nothing (#292). onRun
 // hears the run once it is opened, so the split menu can land its tab (#536); onNoRun hears neither came, so a waking tab lets go (#931). A
-// local activity's opens in its workspace's checkout (#590).
-export function openNew(target: RunTarget, kind: NewRunKind, openRun?: OpenRun, onRun?: (ptyId: string) => void, onNoRun?: () => void): void {
+// local activity's opens in its workspace's checkout (#590). launch: the new session dialog's picks (#257), spread into the body; none posts
+// the kind alone.
+export function openNew(target: RunTarget, kind: NewRunKind, openRun?: OpenRun, onRun?: (ptyId: string) => void, onNoRun?: () => void, launch: LaunchPick = {}): void {
   if (target.kind === 'local') {
-    openLocalRun(target.workspace, kind, openRun, { onRun, onNoRun });
+    openLocalRun(target.workspace, kind, openRun, { onRun, onNoRun, launch });
     return;
   }
   const { task } = target;
-  void act<OpenResult>(`/activities/${encodeURIComponent(target.activity.id)}/open`, { kind, size: shownSize() }).then((result) => {
+  void act<OpenResult>(`/activities/${encodeURIComponent(target.activity.id)}/open`, { kind, ...launch, size: shownSize() }).then((result) => {
     if (!result?.ptyId) return void onNoRun?.();
     attachRun(result, task, kind === 'terminal' ? 'terminal' : 'session', openRun);
     onRun?.(result.ptyId);
   });
 }
 
-/** One way to start a run in an activity (#759): what the + menu lists before its PR and file items, and what the activity's home shows as
- * its buttons, so the two never drift. `disabled` where the + is (canOpenIn), and the diff also with no worktree to diff. */
+/** One way to start a run in an activity (#759): what the + menu lists, and what the activity's home shows as its buttons, so the two never
+ * drift. `disabled` where the + is (canOpenIn), and the diff also with no worktree to diff. */
 export interface NewRunEntry { kind: NewRunKind | 'diff'; label: string; key?: OperationId; disabled: boolean }
 
 /** The new-run entries of an activity (#759): terminal, each agent (the default one carries newSession's key; one off PATH disabled, #931)
@@ -125,24 +142,34 @@ function OpensAs() {
 // The +'s title (#536, #590): a task's short reference (taskLabel's head: the title would not fit 220px), or a local activity's workspace
 export const referenceOf = (target: RunTarget): string => (target.kind === 'local' ? target.workspace : `${target.task.created ? '' : '#'}${target.task.item.id}`);
 
-// mostrar PR (#592, #698, #758): the page of the task's next PR to merge; disabled while it has none
-function PrItem({ task, prs }: { task: Task; prs: TaskPr[] }) {
-  const openPr = useOpenPr();
-  const url = nextPr(prs, task.item.facets?.repository);
-  return <DropdownMenuItem disabled={url === undefined} onSelect={() => { if (url !== undefined) openPr?.(url); }}>{t('task.showPr')}</DropdownMenuItem>;
+const ICON = 'size-4 shrink-0';
+const isTool = (entry: NewRunEntry): boolean => entry.kind === 'terminal' || entry.kind === 'diff';
+
+// Each item's 16px icon (handoff §1): the tools' muted, an agent's mark in its own colour (the design system's agent-colour exception)
+function EntryIcon({ kind }: { kind: NewRunEntry['kind'] }) {
+  if (kind === 'terminal') return <SquareTerminalIcon className={ICON} />;
+  if (kind === 'diff') return <GitCompareIcon className={ICON} />;
+  return <AgentIcon agent={kind} className={`${ICON} ${AGENT_COLOR[kind] ?? ''}`} />;
 }
 
-/** The activity center's + (#491, redesign 04): a 220px menu titled with the task's reference (the handoff's HIVE-11), a terminal (with the
- * newTerminal key, which opens one in the shown activity) or a new session of each agent, opened at once as a new tab of this center through
- * the run opener (#457); the stage's diff, else the worktree's (#270, #591), the task's PR (#592); an untitled file (#818), enabled where the center gives onNewFile; and how an agent opens. Resuming a session stays in the
- * task's menu and the sidebar. Disabled by the rule Abrir sessão reads, so both agree; on the trigger, so Radix neither shows the button
- * enabled nor opens the menu. A local activity's + is titled with its workspace and has no diff item (#590). */
-export function NewRunButton({ activity, onNewFile }: { activity: RunTarget & Partial<Pick<TaskActivity, 'records'>>; onNewFile?(): void }) {
+/** The activity center's + (#491, redesign 04, handoff §1 of #257): a 220px menu titled with the task's reference; the tools (a terminal, the
+ * stage's diff, else the worktree's, #270, #591, and an untitled file, #818, enabled where the center gives onNewFile), then each agent's new
+ * session opened at once with its defaults (the default agent marked padrão, with newSession's key), then nova sessão…, which opens the new
+ * session dialog; and how an agent opens. Resuming a session stays in the task's menu and the sidebar; the task's PR in its menu (#257).
+ * Disabled by the rule Abrir sessão reads, so both agree; on the trigger, so Radix neither shows the button enabled nor opens the menu. A
+ * local activity's + is titled with its workspace and has no diff item (#590). */
+export function NewRunButton({ activity, onNewFile }: { activity: RunTarget; onNewFile?(): void }) {
   const openRun = useOpenRun();
   const openDiff = useOpenDiff();
   const defaultAgent = useContext(DefaultAgentContext);
-  const agents = useContext(AgentsContext);
-  const task = activity.kind === 'task' ? activity.task : undefined; // the PR item is a task's (#592)
+  const entries = newRunEntries(activity, defaultAgent, useContext(AgentsContext));
+  const item = (entry: NewRunEntry) => (
+    <DropdownMenuItem key={entry.kind} disabled={entry.disabled} onSelect={() => startEntry(activity, entry.kind, openRun, openDiff)}>
+      <EntryIcon kind={entry.kind} />{entry.label}
+      {entry.kind === defaultAgent && <span className="text-muted-foreground text-xs">{t('activity.new.default')}</span>}
+      {entry.key && <KeyHint id={entry.key} />}
+    </DropdownMenuItem>
+  );
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={!canOpenIn(activity)}>
@@ -150,13 +177,11 @@ export function NewRunButton({ activity, onNewFile }: { activity: RunTarget & Pa
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[220px]">
         <DropdownMenuLabel>{t('activity.new.title', { task: referenceOf(activity) })}</DropdownMenuLabel>
-        {newRunEntries(activity, defaultAgent, agents).map((entry) => (
-          <DropdownMenuItem key={entry.kind} disabled={entry.disabled} onSelect={() => startEntry(activity, entry.kind, openRun, openDiff)}>
-            {entry.label}{entry.key && <KeyHint id={entry.key} />}
-          </DropdownMenuItem>
-        ))}
-        {task && <PrItem task={task} prs={activity.records?.flatMap((r) => r.prs ?? []) ?? []} />}
-        <DropdownMenuItem disabled={onNewFile === undefined} onSelect={() => onNewFile?.()}>{t('activity.new.file')}</DropdownMenuItem>
+        {entries.filter(isTool).map(item)}
+        <DropdownMenuItem disabled={onNewFile === undefined} onSelect={() => onNewFile?.()}><FilePlusIcon className={ICON} />{t('activity.new.file')}<KeyHint id="newFile" /></DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {entries.filter((entry) => !isTool(entry)).map(item)}
+        <DropdownMenuItem disabled={!canOpenIn(activity)} onSelect={() => runShortcut('newSessionDialog')}><Settings2Icon className={ICON} />{t('activity.new.session')}<KeyHint id="newSessionDialog" /></DropdownMenuItem>
         <DropdownMenuSeparator />
         <OpensAs />
       </DropdownMenuContent>

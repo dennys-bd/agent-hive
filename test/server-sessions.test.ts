@@ -277,3 +277,18 @@ test('a new local codex session runs codex with no id; its first SessionStart re
   assert.equal((await postJson(`${url}/${CODEX_ID}/open`)).status, 200, 'Codex keeps its rollouts by date, not by folder (#929): the route looks for no transcript');
   assert.deepEqual(workers[1].launch.agent?.argv.slice(0, 2), ['resume', CODEX_ID]);
 });
+
+test('a new local session takes a model, a specialized agent and args, and refuses one out of shape with a 400 naming the field (#257)', async (t) => {
+  const { base, server, workers } = await start(t);
+  const url = `${base}/activities/${encodeURIComponent(localActivityId(WORKSPACE))}/sessions`;
+  const unknown = await postJson(url, { kind: 'claude', specializedAgent: 'hive:nope' });
+  assert.equal(unknown.status, 400);
+  assert.match(((await unknown.json()) as { error: string }).error, /"specializedAgent"/);
+  assert.equal((await postJson(url, { model: 'gpt-5.6-terra', args: 'x' })).status, 400, 'no kind: the default agent, and args must be a list');
+  assert.equal((await postJson(url, { kind: 'codex', model: 'opus' })).status, 400);
+  assert.equal(workers.length, 0);
+  const pick = { model: 'sonnet', specializedAgent: 'hive:planner', args: ['--verbose'] };
+  assert.equal((await postJson(url, { kind: 'claude', ...pick })).status, 200);
+  assert.deepEqual(plainArgs(workers[0].launch).slice(0, 5), ['--verbose', '--agent', 'hive:planner', '--model', 'sonnet']);
+  assert.deepEqual(localSessionsOf(server.getState()!, WORKSPACE).at(-1)?.launch, pick);
+});

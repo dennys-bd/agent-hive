@@ -124,7 +124,7 @@ test('the registry is the map: the five scopes in order, every row in its scope,
   assert.deepEqual([...new Set(SHORTCUT_MAP.map((row) => row.scope))], [...SHORTCUT_SCOPES], 'contiguous, in scope order');
   const rows = (scope: ShortcutScope): string[] => SHORTCUT_MAP.filter((row) => row.scope === scope).map((row) => ('keys' in row ? `fixed:${row.id}` : row.id));
   assert.deepEqual(rows('global'), ['viewActivities', 'viewFlow', 'search', 'searchOperations', 'newActivity', 'runCommand', 'toggleConsole', 'problems', 'fixed:signal', 'toggleLeft', 'toggleRight', 'fixed:settings', 'shortcutMap', 'fullScreen', 'closeWindow', 'fixed:quit']);
-  assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'openDiff', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
+  assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'newSessionDialog', 'openDiff', 'newFile', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
@@ -239,7 +239,7 @@ test('the files tree\'s keys (#818): rename ↵ / F2, delete ⌘⌫ / Delete, re
   for (const id of ['treeNewFile', 'treeNewFolder', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath'] as const) {
     assert.deepEqual([effectiveBindings({}, MAC)[id], effectiveBindings({}, OTHER)[id]], [null, null], id);
   }
-  assert.deepEqual(parseShortcuts({ treeNewFile: 'CmdOrCtrl+Alt+N' }, MAC), { treeNewFile: 'CmdOrCtrl+Alt+N' });
+  assert.deepEqual(parseShortcuts({ treeNewFile: 'CmdOrCtrl+Alt+J' }, MAC), { treeNewFile: 'CmdOrCtrl+Alt+J' });
   assert.deepEqual([fixedShortcut('treeCut').keys.mac, fixedShortcut('treeCopy').keys.other, fixedShortcut('treePaste').scope], [['CmdOrCtrl+X'], ['CmdOrCtrl+C'], 'files']);
 });
 
@@ -280,4 +280,9 @@ test('problems is a global key on ⌘⇧M on every platform; switchStartMode kee
   assert.deepEqual(collisions({ problems: 'CmdOrCtrl+Enter' }, MAC), [], 'a dialog key: problems does nothing in a dialog');
   assert.deepEqual(collisions({ toggleConsole: 'CmdOrCtrl+Shift+M' }, MAC), [['toggleConsole', 'problems'], ['toggleConsole', 'switchStartMode']], 'any other global key still meets both');
   assert.deepEqual(collisions({ problems: 'CmdOrCtrl+K' }, MAC), [['problems', 'clear']], 'it still meets the activities');
+});
+
+test('newSessionDialog and newFile are Cmd+Alt+N and Cmd+Alt+F on macOS; off it they avoid plain Ctrl+Alt, which is AltGr (#257)', () => {
+  assert.deepEqual([pair('newSessionDialog'), pair('newFile')], [['CmdOrCtrl+Alt+N', 'CmdOrCtrl+Alt+Shift+S'], ['CmdOrCtrl+Alt+F', 'CmdOrCtrl+Alt+Shift+F']]);
+  assert.deepEqual([shortcutDef('newSessionDialog').scope, shortcutDef('newFile').scope], ['activities', 'activities']);
 });

@@ -21,7 +21,8 @@ export interface AgentRun {
   protocolText?: string; // #927: protocolPath's content, read by the shared spawn, for an agent that takes the protocol as text (Codex)
   model?: string;
   session?: { id: string; resume: boolean }; // launch: resume continues the session, else it starts under this id. copy: the fork's new id (resume ignored)
-  extraArgs: readonly string[]; // agentArgs[agent]
+  extraArgs: readonly string[]; // agentArgs[agent], then a free session's own args (#257)
+  specializedAgent?: { name: string; instructions: string }; // #257: a plugin agent the session runs as: Claude gets the name, Codex the instructions
 }
 
 /** What a run's MCP config names (#99, #467): the Hive's server for this pty, or none for a local session (#587). */

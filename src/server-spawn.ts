@@ -11,6 +11,7 @@ import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } f
 import { commandChannel, type ConsoleStore } from './console.js';
 import { feedConsole } from './console-feed.js';
 import { workspaceProtocolPaths, writeMcpConfig, type ProtocolPaths } from './hooks-settings.js';
+import { launchRun } from './launch-options.js';
 import type { Logger } from './log.js';
 import type { PtyHost } from './pty-host.js';
 import { recordStageStart } from './restart.js';
@@ -218,13 +219,19 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
       await dispatch({ type: 'spawnFailed', ptyId, message: place.refusal });
       return;
     }
+    // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
+    const agent = ranAgent(effect.worker);
+    const picked = launchRun(copy ? undefined : effect.worker.launch, config.agentArgs[agent]); // #257: a copy never runs with its source's picks
+    if ('refusal' in picked) {
+      await dispatch({ type: 'spawnFailed', ptyId, message: picked.refusal });
+      return;
+    }
+    // Refused above, before the stage start is recorded: a session that never runs leaves no mark
     // #812: a free session on a task records the stage start when the stage has none, before the agent runs, so Restart can undo its work. A
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
     const first = copy?.notice ?? prompt;
-    // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
-    const agent = ranAgent(effect.worker);
     const runner = runners[agent];
     const server = { port, ptyId, secret, withHive: task !== undefined };
     // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
@@ -238,7 +245,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (files === undefined) return;
     const [mcpPath, promptPath, protocolText] = files;
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), extraArgs: config.agentArgs[agent],
+      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
       session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);

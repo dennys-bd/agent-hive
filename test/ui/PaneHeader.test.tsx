@@ -62,3 +62,11 @@ test('a held approval run\'s header reads sleeping like its session line, not st
   expect(within(header()).getByText('dormindo')).toBeInTheDocument();
   expect(within(header()).queryByText('parada')).not.toBeInTheDocument();
 });
+
+test('a run opened with picks reads its own model over the stage\'s, then its specialized agent in mono (#257)', () => {
+  const picked: LiveRun = { ptyId: 'W2', label: 'Claude', kind: 'session', launch: { model: 'sonnet', specializedAgent: 'hive:designer' } };
+  const withPicked: Activity = { ...activity, runs: [picked], sessions: [{ run: picked, status: 'working' }] };
+  render(<PaneHeader item={{ kind: 'run', ptyId: 'W2' }} label="Claude" activity={withPicked} context={CONTEXT} />);
+  expect(within(header()).getByText('sonnet · hive-1-task-1')).toBeInTheDocument();
+  expect(within(header()).getByText('hive:designer')).toHaveClass('font-mono');
+});

@@ -388,6 +388,8 @@ const en = {
   'activity.new': 'New terminal or session', // #491: the activity center's +
   'activity.new.title': 'new session in {task}', // #536: the +'s menu
   'activity.new.file': 'file',
+  'activity.new.default': 'default', // #257: after the default agent's name in the +
+  'activity.new.session': 'new session…', // #257: opens the new session dialog
   'editor.untitled': 'Untitled-{n}',
   'editor.untitled.noBridge': 'saving a new file needs the Hive window, not a browser',
   'activity.new.diff': 'diff',
@@ -414,6 +416,34 @@ const en = {
   'copy.otherWorkspace': 'that activity is in another workspace',
   'activity.new.opensAs': 'agent opens as',
   'activity.new.chat': 'chat',
+  'newSession.title': 'New session', // #257: the new session dialog (handoff §2, §3)
+  'newSession.agent': 'agent',
+  'newSession.model': 'model',
+  'newSession.specializedAgent': 'specialized agent',
+  'newSession.args': 'arguments',
+  'newSession.model.default': '{agent} default',
+  'newSession.model.defaultHint': 'uses the model set in {agent}',
+  'newSession.model.aliases': 'model',
+  'newSession.model.versions': 'versions',
+  'newSession.model.context1m': 'with 1M context',
+  'newSession.model.typed': 'use "{model}"',
+  'newSession.model.search': 'search models',
+  'newSession.agents.none': 'none',
+  'newSession.agents.search': 'search agents',
+  'newSession.agents.group': '{plugin} · {agent} plugin',
+  'newSession.agents.empty': '{agent} has no specialized agents installed',
+  'newSession.args.global': 'added to the global ones:',
+  'newSession.runs': 'runs',
+  'newSession.in': 'in',
+  'newSession.open': 'open session',
+  'newSession.cancel': 'cancel',
+  'launch.pluginUnreadable': 'the Hive plugin\'s agents could not be read:', // #257: GET /launch-options and the open routes, the reason follows
+  'launch.refused.terminal': '"kind" terminal takes no "model", "specializedAgent" or "args"', // #257: the open routes' refusals name the field
+  'launch.refused.continue': 'a "continueId" resume runs with what its session was opened with: no "model", "specializedAgent" or "args"',
+  'launch.refused.model': '"model" must be 1 to 100 letters, digits or . _ : [ ] / -, not starting with -',
+  'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
+  'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
+  'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
   'activity.stop.pick': 'pick a session to put to sleep', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'active sessions · {n}',
   'activity.stop.focused': 'focused',
@@ -1596,6 +1626,8 @@ const en = {
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
   'shortcuts.openDiff': 'stage diff',
+  'shortcuts.newSessionDialog': 'new session…', // #257
+  'shortcuts.newFile': 'new file', // #257
   'shortcuts.sleepAll': 'sleep all sessions',
   'shortcuts.treeNewFile': 'new file',
   'shortcuts.treeNewFolder': 'new folder',
@@ -2262,6 +2294,8 @@ const pt: Record<MessageKey, string> = {
   'activity.new': 'Novo terminal ou sessão', // #491: the activity center's +
   'activity.new.title': 'nova sessão em {task}', // #536: the +'s menu
   'activity.new.file': 'arquivo',
+  'activity.new.default': 'padrão', // #257: after the default agent's name in the +
+  'activity.new.session': 'nova sessão…', // #257: opens the new session dialog
   'editor.untitled': 'Sem título-{n}',
   'editor.untitled.noBridge': 'salvar um arquivo novo precisa da janela do Hive, não de um navegador',
   'activity.new.diff': 'diff',
@@ -2288,6 +2322,34 @@ const pt: Record<MessageKey, string> = {
   'copy.otherWorkspace': 'essa atividade é de outro workspace',
   'activity.new.opensAs': 'agente abre como',
   'activity.new.chat': 'chat',
+  'newSession.title': 'Nova sessão', // #257: the new session dialog (handoff §2, §3)
+  'newSession.agent': 'agente',
+  'newSession.model': 'modelo',
+  'newSession.specializedAgent': 'agente especializado',
+  'newSession.args': 'argumentos',
+  'newSession.model.default': 'padrão do {agent}',
+  'newSession.model.defaultHint': 'usa o modelo configurado no {agent}',
+  'newSession.model.aliases': 'modelo',
+  'newSession.model.versions': 'versões',
+  'newSession.model.context1m': 'com contexto de 1M',
+  'newSession.model.typed': 'usar "{model}"',
+  'newSession.model.search': 'buscar modelo',
+  'newSession.agents.none': 'nenhum',
+  'newSession.agents.search': 'buscar agente',
+  'newSession.agents.group': '{plugin} · plugin do {agent}',
+  'newSession.agents.empty': '{agent} não tem agentes especializados instalados',
+  'newSession.args.global': 'somados aos globais:',
+  'newSession.runs': 'executa',
+  'newSession.in': 'em',
+  'newSession.open': 'abrir sessão',
+  'newSession.cancel': 'cancelar',
+  'launch.pluginUnreadable': 'os agentes do plugin do Hive não puderam ser lidos:', // #257: GET /launch-options and the open routes, the reason follows
+  'launch.refused.terminal': '"kind" terminal não aceita "model", "specializedAgent" nem "args"', // #257: the open routes' refusals name the field
+  'launch.refused.continue': 'uma retomada ("continueId") executa com o que a sessão abriu: sem "model", "specializedAgent" nem "args"',
+  'launch.refused.model': '"model" precisa ter de 1 a 100 letras, dígitos ou . _ : [ ] / -, sem começar com -',
+  'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
+  'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
+  'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
   'activity.stop.pick': 'escolher a sessão para dormir', // #536, #672: dormir's ⌄ in the activity bar
   'activity.stop.sessions': 'sessões ativas · {n}',
   'activity.stop.focused': 'em foco',
@@ -3464,6 +3526,8 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
   'shortcuts.openDiff': 'diff da etapa',
+  'shortcuts.newSessionDialog': 'nova sessão…', // #257
+  'shortcuts.newFile': 'novo arquivo', // #257
   'shortcuts.sleepAll': 'dormir todas as sessões',
   'shortcuts.treeNewFile': 'novo arquivo',
   'shortcuts.treeNewFolder': 'nova pasta',

@@ -171,3 +171,15 @@ test('the home is the run\'s plugin dir\'s parent: another home is another marke
   assert.ok(words.includes(`plugins.hive@agent-hive-${createHash('sha256').update('/other').digest('hex').slice(0, 8)}.enabled=true`));
   assert.ok(words.some((word) => word.startsWith('agents.hive:tdd=') && word.endsWith(`config_file=${tomlString('/other/codex/agents/tdd.toml')}}`)));
 });
+
+// The text of a launch's developer_instructions override, as Codex reads the TOML string
+const developerText = (run: AgentRun): string | undefined =>
+  codexRunner.launch(run).flatMap((arg) => (typeof arg !== 'string' && arg[1].startsWith('developer_instructions=') ? [JSON.parse(arg[1].slice('developer_instructions='.length)) as string] : []))[0];
+
+test('a specialized agent\'s instructions follow the protocol after a blank line in developer_instructions; a run with no protocol has them alone (#257)', () => {
+  const designer = { name: 'hive:designer', instructions: 'You design.\nWith "care".' };
+  assert.equal(developerText({ ...STAGE_RUN, specializedAgent: designer }), `${PROTOCOL}\n\n${designer.instructions}`);
+  assert.equal(developerText({ ...RUN, withHive: false, specializedAgent: designer }), designer.instructions);
+  assert.equal(developerText(STAGE_RUN), PROTOCOL, 'no agent: the protocol alone, as before');
+  assert.equal(developerText(RUN), undefined);
+});
