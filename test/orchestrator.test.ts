@@ -3500,14 +3500,17 @@ test('moveToStage and a start on a show epic are no-ops: its children decide its
   assert.equal(work(start.state, 1), undefined, 'no activity born for it');
 });
 
-test('a poll that moves the children moves their show epic in the same reduction, its column written like any move (#31)', () => {
+test('a poll that moves the children moves their show epic in the same reduction, through spec → dev\'s transition and then dev\'s onStart (#31, #213)', () => {
   const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2', 'board:item3'], epic: { follows: 'behind', switchAt: 'dev' } }, column });
   const first = polled(base(0), [epic('Backlog'), listed(2), listed(3)]).state;
   assert.equal(task(first, 1)?.stage, 'spec', 'every child in spec: the epic stays');
   const { state, effects } = polled(first, [epic('Backlog'), listed(2, 'Ready'), listed(3, 'Ready')]);
   assert.equal(task(state, 1)?.stage, 'dev', 'the furthest-behind child is in dev now');
-  assert.equal(task(state, 1)?.boardColumn, 'Ready');
-  assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), [{ type: 'setColumn', itemId: 'board:item1', column: 'Ready' }]);
+  assert.equal(task(state, 1)?.boardColumn, 'In progress');
+  assert.deepEqual(effects.filter((e) => e.type === 'setColumn'), [
+    { type: 'setColumn', itemId: 'board:item1', column: 'Ready' }, // spec → dev's own move (spec's onFinish)
+    { type: 'setColumn', itemId: 'board:item1', column: 'In progress' }, // dev's onStart, as a child's run writes it
+  ]);
 });
 
 test('renameStages renames every task and the flow in one reduction, with no fill; the renamed run ends through its renamed stage (#861)', () => {

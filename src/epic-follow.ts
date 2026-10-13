@@ -1,10 +1,10 @@
 import { activityOf } from './activities.js';
 import { withColumnWrite } from './column-write.js';
-import { none, type Reduced, settleEntries, shouldWrite, withTask } from './reducer-kit.js';
+import { none, type Reduced, settleEntries, shouldWrite, sourceWrites, withTask } from './reducer-kit.js';
 import { allDone, depthOf, epicStage } from './task-tree.js';
 import { enter, onSource, stageOf, taskId } from './tasks.js';
-import { take } from './transit.js';
-import { exitOf } from './transitions.js';
+import { follow, take } from './transit.js';
+import { exitOf, outgoing } from './transitions.js';
 import { END, type Stage, type State, type Task } from './types.js';
 
 // A show epic's stage follows its children (#31): one pass after every event, so whatever moved a child (a poll, a stage end, a move by hand,
@@ -13,7 +13,7 @@ import { END, type Stage, type State, type Task } from './types.js';
 
 // Into `target` as a move by hand enters it (moveToStage): the target's first door on the task's source written, marked until a poll shows it
 // (#889), and the entry settled
-function moved(state: State, task: Task, target: Stage): Reduced {
+function plainMove(state: State, task: Task, target: Stage): Reduced {
   const [entry] = onSource(target.from, task.item.source) ?? [];
   const write = shouldWrite(task, entry);
   const written = write ? withColumnWrite(task, entry, new Date().toISOString()) : task;
@@ -21,6 +21,21 @@ function moved(state: State, task: Task, target: Stage): Reduced {
     state: settleEntries(state.tasks, withTask(state, enter(written, target))),
     effects: write ? [{ type: 'setColumn', itemId: taskId(task), column: entry }] : [],
   };
+}
+
+const placedOf = (state: State, task: Task): Task | undefined => state.tasks.find((t) => taskId(t) === taskId(task));
+
+// One move from the epic's stage to `target`, as a child makes one (#213): the first transition configured straight there, in the config's
+// order whatever its trigger, its sources written; none, a plain move. The stages in between are never walked. Then the target's onStart,
+// which a child's run writes as it starts there and an epic never runs, after those writes (#515). A leaving action holds the epic where it
+// was, with no onStart
+function moved(state: State, task: Task, target: Stage): Reduced {
+  const direct = outgoing(state.transitions, task.stage).find((t) => t.to === target.name);
+  const went: Reduced = direct === undefined ? plainMove(state, task, target) : follow(state, task, direct);
+  const placed = placedOf(went.state, task);
+  if (placed === undefined || placed.stage !== target.name) return went;
+  const started = sourceWrites(placed, onSource(target.onStart, placed.item.source));
+  return { state: withTask(went.state, started.task), effects: [...went.effects, ...started.effects] };
 }
 
 // Every child done: out through the last stage's done exit when it goes to end, its source actions written as at any stage end. The epic took
