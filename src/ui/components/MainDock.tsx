@@ -214,7 +214,7 @@ function Openers({ openRun, openStarted, openDiff, openPr, openIssue, openFile, 
 // its own setting and after the agent confirm (#696); anything else only leaves the layout
 function useSearchClose(current: Activity | undefined, layouts: CenterLayouts, openRun: OpenRun): { close(ptyId: string): void; dialog: ReactNode } {
   const settings = useCloseTab();
-  const loss = useConfirmLoss();
+  const loss = useConfirmLoss(current);
   const close = (ptyId: string): void => {
     const isShown = current !== undefined && (current.runs.some((r) => r.ptyId === ptyId) || sleepingOf(current, ptyId) !== undefined);
     if (current !== undefined && isShown) closePaneOf(ptyId, current, layouts, settings, loss.confirm, openRun);

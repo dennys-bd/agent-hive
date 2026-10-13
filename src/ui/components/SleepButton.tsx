@@ -56,7 +56,7 @@ function SessionsMenu({ agents, focusedRun, isDisabled, onSleep, onSleepAll }: S
 export function SleepButton({ activity, focusedRun }: SleepButtonProps) {
   const sleep = useSleep(activity);
   const [pending, setPending] = useState<LiveRun[]>(); // dormir todas' dialog
-  const loss = useConfirmLoss(); // #696: a focused terminal's sleep asks it when an agent the shim missed runs there
+  const loss = useConfirmLoss(activity); // #696: a focused terminal's sleep asks it when an agent the shim missed runs there
   const all = activity.runs; // its agent sessions and its terminals (#696); a run command left out
   const agents = all.filter((run) => run.kind !== 'terminal');
   const focused = all.find((run) => run.ptyId === focusedRun);
