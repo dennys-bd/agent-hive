@@ -896,7 +896,8 @@ const en = {
   'settings.back': 'back', // #510
   'settings.nav': 'sections',
   'settings.search': 'search settings',
-  'settings.search.none': 'no setting matches',
+  'settings.search.none': 'no settings found',
+  'settings.search.navigate': '↑↓ navigate', 'settings.search.open': '↵ open', 'settings.search.close': 'esc close', // #689
   'settings.unsaved.one': '1 unsaved change in {sections}',
   'settings.unsaved.other': '{n} unsaved changes in {sections}',
   'settings.section.workspaces': 'workspaces',
@@ -2801,6 +2802,7 @@ const pt: Record<MessageKey, string> = {
   'settings.nav': 'seções',
   'settings.search': 'buscar configuração',
   'settings.search.none': 'nenhuma configuração encontrada',
+  'settings.search.navigate': '↑↓ navegar', 'settings.search.open': '↵ abrir', 'settings.search.close': 'esc fechar', // #689
   'settings.unsaved.one': '1 alteração não salva em {sections}',
   'settings.unsaved.other': '{n} alterações não salvas em {sections}',
   'settings.section.workspaces': 'workspaces',
