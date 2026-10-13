@@ -85,6 +85,23 @@ export const restComment = (id: string, issue: number, updatedAt: string): Recor
   ...REST_COMMENT, node_id: id, issue_url: `https://api.github.com/repos/acme/hive/issues/${issue}`, created_at: updatedAt, updated_at: updatedAt,
 });
 
+/** GET pulls/{n} as the poll reads it (#186, #187): the head, the merge state and the page's fields. */
+export const restPull = (n: number, sha: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  number: n, head: { sha, ref: 'feature', repo: { owner: { login: 'bia' } } }, base: { ref: 'main', repo: { owner: { login: 'acme' } } }, mergeable_state: 'clean',
+  commits: 1, additions: 1, deletions: 1, requested_reviewers: [], requested_teams: [], ...extra,
+});
+/** One item of pulls/{n}/reviews (#187); a pending review has no submitted_at. */
+export const restReview = (id: string, login: string | null, state: string, submittedAt: string | null = T1): Record<string, unknown> => ({
+  id: 1, node_id: id, user: login === null ? null : { login }, state, body: `body ${id}`, submitted_at: submittedAt,
+});
+/** PR 7 as PR_ROW_FIELDS answers it (#187): merged at T2. */
+export const GQL_PR = {
+  id: 'PR_7', number: 7, title: 'T7', body: 'b', state: 'MERGED', isDraft: false, mergedAt: T2, createdAt: CREATED, updatedAt: T2, closedAt: T2,
+  author: { login: 'bia' }, labels: { nodes: [{ name: 'bug' }] }, assignees: { nodes: [{ login: 'bia' }, { login: 'caio' }] }, comments: { totalCount: 1 },
+};
+/** A review as REVIEW_ROW_FIELDS answers it (#187). */
+export const GQL_REVIEW = { id: 'PRR_1', author: { login: 'caio' }, state: 'APPROVED', body: 'ship it', submittedAt: T2 };
+
 /** A RestGet answering `answers` in order, recording every [path, etag] it was asked. */
 export function fakeRest(answers: RestAnswer[]): { rest: RestGet; calls: [string, string | undefined][] } {
   const queue = [...answers];

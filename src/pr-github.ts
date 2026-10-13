@@ -15,10 +15,12 @@ const PR_FIELDS = 'id number title state isDraft mergeStateStatus headRefOid rep
 // The page's own fields (#758): the description, the branches and counts, the review decision and the approvals, how far the base moved past
 // the head, the head commit's checks, the issues it closes (#66), and the timeline's reviews and general comments
 const CLOSES_PAGE = 10; // #66: enough for one PR; more are cut silently
+/** The issues a PR closes on merge (#66), as the page's query and the read model's batch (#187) ask them. */
+export const CLOSES_FIELDS = `closingIssuesReferences(first: ${CLOSES_PAGE}) { nodes { number url repository { nameWithOwner } } }`;
 const PAGE_FIELDS = 'body author { login } createdAt updatedAt headRefName baseRefName commits { totalCount } additions deletions reviewDecision viewerCanUpdate '
   + 'headRepositoryOwner { login } baseRepository { owner { login } viewerPermission } '
   + `latestOpinionatedReviews(first: ${PR_PAGE}) { nodes { state } } baseRef { compare(headRef: $head) @include(if: $open) { behindBy } } ${AWAITING_ROLLUP} `
-  + `closingIssuesReferences(first: ${CLOSES_PAGE}) { nodes { number url repository { nameWithOwner } } } `
+  + `${CLOSES_FIELDS} `
   + `timelineItems(last: ${PR_PAGE}, itemTypes: [PULL_REQUEST_REVIEW, ISSUE_COMMENT]) { nodes { __typename `
   + '... on PullRequestReview { id author { login } submittedAt state body } ... on IssueComment { id author { login } createdAt body } } }';
 const THREAD_FIELDS = 'id path diffSide line startLine originalLine originalStartLine isOutdated isResolved subjectType '
@@ -165,7 +167,7 @@ function reviewRequestsOf(pr: Record<string, unknown>, viewer: string): PrReview
 }
 
 // The issues the PR closes on merge (#66): a node with no number, url or repository name is no issue the block can open, so it is dropped
-function closesOf(connection: unknown): PrClosingIssue[] {
+export function closesOf(connection: unknown): PrClosingIssue[] {
   return nodesOf(connection).flatMap((node) => {
     if (!isObject(node) || typeof node.number !== 'number' || typeof node.url !== 'string') return [];
     const name = isObject(node.repository) ? node.repository.nameWithOwner : undefined;

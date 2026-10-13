@@ -141,8 +141,8 @@ test('pullsFromGql reads each aliased node\'s id, decision, merge state and chec
   const suites = { nodes: [{ conclusion: 'ACTION_REQUIRED', app: { slug: 'github-actions' }, workflowRun: null }] };
   const waiting = { id: 'PR_8', reviewDecision: null, mergeStateStatus: 'UNKNOWN', headCommit: { nodes: [{ commit: { statusCheckRollup: null, checkSuites: suites } }] } };
   assert.deepEqual(pullsFromGql({ p0: node, p1: null, p2: waiting }), [
-    { nodeId: 'PR_7', decision: 'changes', mergeState: 'conflicts', checks: 'success' },
-    { nodeId: 'PR_8', decision: null, mergeState: 'unknown', checks: 'awaiting' },
+    { nodeId: 'PR_7', decision: 'changes', mergeState: 'conflicts', checks: 'success', closes: [] },
+    { nodeId: 'PR_8', decision: null, mergeState: 'unknown', checks: 'awaiting', closes: [] },
   ]);
   assert.throws(() => pullsFromGql(null), WireError);
 });

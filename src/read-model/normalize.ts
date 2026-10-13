@@ -1,8 +1,9 @@
 import { ACTIONS_APP, checkState, decisionOf, isObject, mergeState, rowChecks } from '../pr-checks.js';
+import { closesOf } from '../pr-github.js';
 import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
-import type { MergeMethod, PrCheck, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
-import type { CommentRow, IssueRow, PullChecks, PullFlags, RepoRow } from './rows.js';
+import type { MergeMethod, PrCheck, PrClosingIssue, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
+import type { CheckRow, CommentRow, IssueKind, IssueRow, PullChecks, PullFlags, PullPage, RepoRow, ReviewRow } from './rows.js';
 
 // The wire is untrusted (#178): every field read is checked, and anything that is not GitHub's shape throws instead of storing half a row
 type Json = Record<string, unknown>;
@@ -81,19 +82,24 @@ export function commentFromRest(source: string, repository: string, json: unknow
   return issueNodeId === undefined ? undefined : { ...row, issueNodeId };
 }
 
+// An Issue's or a PullRequest's row fields, as ISSUE_ROW_FIELDS (and PR_ROW_FIELDS, #187) answer them
+function gqlRowOf(source: string, repository: string, item: Json, kind: IssueKind, state: IssueRow['state']): IssueRow {
+  return {
+    source, nodeId: textOf(item, 'id'), repository, number: countOf(item, 'number'), kind, state,
+    title: textOf(item, 'title'), body: textOf(item, 'body'), author: loginOf(item.author),
+    labels: listOf(objectOf(item.labels, 'labels').nodes, 'labels', 'name'),
+    assignees: listOf(objectOf(item.assignees, 'assignees').nodes, 'assignees', 'login'),
+    createdAt: textOf(item, 'createdAt'), updatedAt: textOf(item, 'updatedAt'), closedAt: nullableText(item, 'closedAt'),
+    comments: countOf(objectOf(item.comments, 'comments'), 'totalCount'),
+  };
+}
+
 /** An issue as ISSUE_ROW_FIELDS (github-repo-queries.ts) answers it: a GraphQL Issue is never a PR. */
 export function issueFromGql(source: string, repository: string, json: unknown): IssueRow {
   const issue = objectOf(json, 'issue');
   const state = textOf(issue, 'state');
   if (state !== 'OPEN' && state !== 'CLOSED') throw new WireError('state');
-  return {
-    source, nodeId: textOf(issue, 'id'), repository, number: countOf(issue, 'number'), kind: 'issue', state: state === 'OPEN' ? 'open' : 'closed',
-    title: textOf(issue, 'title'), body: textOf(issue, 'body'), author: loginOf(issue.author),
-    labels: listOf(objectOf(issue.labels, 'labels').nodes, 'labels', 'name'),
-    assignees: listOf(objectOf(issue.assignees, 'assignees').nodes, 'assignees', 'login'),
-    createdAt: textOf(issue, 'createdAt'), updatedAt: textOf(issue, 'updatedAt'), closedAt: nullableText(issue, 'closedAt'),
-    comments: countOf(objectOf(issue.comments, 'comments'), 'totalCount'),
-  };
+  return gqlRowOf(source, repository, issue, 'issue', state === 'OPEN' ? 'open' : 'closed');
 }
 
 /** A comment as COMMENT_ROW_FIELDS (github-repo-queries.ts) answers it, under the issue the mutation named. */
@@ -176,7 +182,7 @@ export function pullFromRest(json: unknown): { headSha: string; mergeState: PrMe
 
 type Bucket = PrCheck['state'];
 const WORST_FIRST: readonly Bucket[] = ['failure', 'pending', 'success'];
-const worstOf = (states: Bucket[]): Bucket | null => WORST_FIRST.find((s) => states.includes(s)) ?? null;
+export const worstOf = (states: Bucket[]): Bucket | null => WORST_FIRST.find((s) => states.includes(s)) ?? null;
 
 /** Every page of `commits/{sha}/check-runs` as its worst run (#186), in checkState's buckets: a run not completed is pending. None ran: null. */
 export function runsReading(bodies: unknown[]): Bucket | null {
@@ -210,13 +216,99 @@ export function rollupOf(runs: string | null, status: string | null, suites: str
 }
 
 /** One PR of the batch (#186): what the list read of it over GraphQL before. */
-export interface PullGql { nodeId: string; decision: PrReviewDecision | null; mergeState: PrMergeState; checks: PullChecks | null }
+export interface PullGql { nodeId: string; decision: PrReviewDecision | null; mergeState: PrMergeState; checks: PullChecks | null; closes: PrClosingIssue[] }
 
 /** The batch's answer (#186), one aliased node per PR (`p0`, `p1`, …), read as the list's rows were. A deleted PR answers a null node and
  * is skipped. */
 export function pullsFromGql(json: unknown): PullGql[] {
   return Object.values(objectOf(json, 'batch')).flatMap((node) => {
     if (!isObject(node) || typeof node.id !== 'string') return [];
-    return [{ nodeId: node.id, decision: decisionOf(node.reviewDecision) ?? null, mergeState: mergeState(node.mergeStateStatus), checks: rowChecks(node.headCommit) ?? null }];
+    return [{ nodeId: node.id, decision: decisionOf(node.reviewDecision) ?? null, mergeState: mergeState(node.mergeStateStatus), checks: rowChecks(node.headCommit) ?? null, closes: closesOf(node.closingIssuesReferences) }];
   });
+}
+
+// A deleted fork answers a null repo: no owner to name
+const ownerOf = (repo: unknown): string => {
+  const found = optionalObject(repo, 'repo');
+  return found === undefined ? '' : textOf(objectOf(found.owner, 'owner'), 'login');
+};
+
+/** What GET pulls/{n} tells the page beyond the head and the merge state (#187): no request of its own. */
+export function pullPageFromRest(json: unknown): PullPage {
+  const pull = objectOf(json, 'pull request');
+  const head = objectOf(pull.head, 'head');
+  const base = objectOf(pull.base, 'base');
+  const requested = [
+    ...listOf(pull.requested_reviewers, 'requested_reviewers', 'login').map((reviewer) => ({ reviewer, team: false })),
+    ...listOf(pull.requested_teams, 'requested_teams', 'slug').map((reviewer) => ({ reviewer, team: true })),
+  ];
+  return {
+    headRef: textOf(head, 'ref'), baseRef: textOf(base, 'ref'), headOwner: ownerOf(head.repo), baseOwner: ownerOf(base.repo),
+    commits: countOf(pull, 'commits'), additions: countOf(pull, 'additions'), deletions: countOf(pull, 'deletions'), requested,
+  };
+}
+
+const REVIEW_STATES: readonly ReviewRow['state'][] = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED'];
+interface ReviewFields { nodeId: string; author: string | null; state: unknown; body: string; submittedAt: string | null }
+
+// A submitted review's row (#187); a pending one (no submittedAt) or a state GitHub adds later is none
+function reviewRowOf(source: string, repository: string, pullNodeId: string, fields: ReviewFields): ReviewRow | undefined {
+  const state = REVIEW_STATES.find((s) => s === fields.state);
+  if (state === undefined || fields.submittedAt === null) return undefined;
+  return { source, nodeId: fields.nodeId, pullNodeId, repository, author: fields.author, state, body: fields.body, submittedAt: fields.submittedAt };
+}
+
+/** Every page of pulls/{n}/reviews as rows (#187); a PENDING review is skipped. */
+export function reviewsFromRest(source: string, repository: string, pullNodeId: string, bodies: unknown[]): ReviewRow[] {
+  return bodies.flatMap((body) => arrayOf(body, 'reviews')).flatMap((value) => {
+    const review = objectOf(value, 'review');
+    const fields = { nodeId: textOf(review, 'node_id'), author: loginOf(review.user), state: review.state, body: nullableText(review, 'body') ?? '', submittedAt: nullableText(review, 'submitted_at') };
+    return reviewRowOf(source, repository, pullNodeId, fields) ?? [];
+  });
+}
+
+/** A review as REVIEW_ROW_FIELDS answers it (#187), under the PR the same answer names. */
+export function reviewFromGql(source: string, repository: string, pullNodeId: string, json: unknown): ReviewRow | undefined {
+  const review = objectOf(json, 'review');
+  return reviewRowOf(source, repository, pullNodeId, {
+    nodeId: textOf(review, 'id'), author: loginOf(review.author), state: review.state, body: textOf(review, 'body'), submittedAt: nullableText(review, 'submittedAt'),
+  });
+}
+
+/** A PR as PR_ROW_FIELDS answers it (#187): its issues row (MERGED is closed) and its flags, under its own node id. */
+export function pullFromGql(source: string, repository: string, json: unknown): { issue: IssueRow; flags: PullFlags } {
+  const pr = objectOf(json, 'pull request');
+  const state = textOf(pr, 'state');
+  if (state !== 'OPEN' && state !== 'CLOSED' && state !== 'MERGED') throw new WireError('state');
+  const issue = gqlRowOf(source, repository, pr, 'pr', state === 'OPEN' ? 'open' : 'closed');
+  return { issue, flags: { source, nodeId: issue.nodeId, repository, number: issue.number, draft: flagOf(pr, 'isDraft'), mergedAt: nullableText(pr, 'mergedAt') } };
+}
+
+// An empty link is none, as checkOf's filled
+const linkOf = (json: Json, key: string): string | null => {
+  const value = nullableText(json, key);
+  return value === '' ? null : value;
+};
+
+/** The head's check runs, then its status contexts, as rows (#187), read as checkOf read them over GraphQL: a run not completed is pending,
+ * and a context's one time is its start while it is pending. */
+export function checkItemsFromRest(runs: unknown[], status: unknown[]): CheckRow[] {
+  const runRows = runs.flatMap((body) => arrayOf(objectOf(body, 'check runs').check_runs, 'check_runs')).map((value): CheckRow => {
+    const run = objectOf(value, 'check run');
+    const state = run.status === 'completed' ? checkState(nullableText(run, 'conclusion')?.toUpperCase()) : 'pending';
+    return { name: textOf(run, 'name'), state, url: linkOf(run, 'details_url'), startedAt: nullableText(run, 'started_at'), at: nullableText(run, 'completed_at') };
+  });
+  const contexts = arrayOf(objectOf(status[0], 'status').statuses, 'statuses').map((value): CheckRow => {
+    const context = objectOf(value, 'status context');
+    const state = checkState(textOf(context, 'state').toUpperCase());
+    const at = nullableText(context, 'created_at');
+    return { name: textOf(context, 'context'), state, url: linkOf(context, 'target_url'), startedAt: state === 'pending' ? at : null, at };
+  });
+  return [...runRows, ...contexts];
+}
+
+/** actions/runs?status=action_required as the workflows awaiting a maintainer's approval (#854, #187), once each; a nameless run is Actions'. */
+export function awaitingFromRest(bodies: unknown[]): string[] {
+  const runs = bodies.flatMap((body) => arrayOf(objectOf(body, 'workflow runs').workflow_runs, 'workflow_runs'));
+  return [...new Set(runs.map((value) => nullableText(objectOf(value, 'workflow run'), 'name') ?? ACTIONS_APP))];
 }
