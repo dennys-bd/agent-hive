@@ -107,7 +107,7 @@ test('the first run opens the center on Home and the left panel on the Atividade
   const footer = screen.getByRole('contentinfo');
   expect(within(footer).getByRole('status')).toHaveAttribute('data-signal', 'green'); // the pill, by the manual signal before an effective one
   expect(within(footer).queryAllByRole('radio')).toEqual([]);
-  expect(within(footer).getAllByRole('button').filter((b) => b.closest('[data-usage-group]') === null).map((b) => b.textContent)).toEqual(['regras nenhuma ativa', 'console', '', '']); // the rules button (#224); the usage group (#223) aside, the console's chip (redesign 05) and shut down (redesign 02)
+  expect(within(footer).getAllByRole('button').filter((b) => b.closest('[data-usage-group]') === null).map((b) => b.textContent)).toEqual(['regras nenhuma ativa', '', 'console', '', '']); // the rules button (#224); the usage group (#223) aside, the problems button (#225, icon only), the console's chip (redesign 05) and the power buttons
   expect(within(footer).queryByLabelText('máx.')).not.toBeInTheDocument();
   expect(within(document.querySelector('header')!).queryByRole('radio', { name: 'green' })).not.toBeInTheDocument(); // the signal choice opens from the brand, closed here (#221)
   expect(within(document.querySelector('header')!).queryByRole('status')).not.toBeInTheDocument();

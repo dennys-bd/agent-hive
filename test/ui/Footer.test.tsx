@@ -66,3 +66,12 @@ test('the usage group is the footer\'s first child in its full form, then a sepa
   expect(pill).toContainElement(within(footer()).getByRole('status'));
   expect(footer()).toHaveClass('relative');
 });
+
+test('the checkers and the problems sit right of the spacer, before the console, a separator between the problems and the console (#225)', () => {
+  render(<Footer state={STATE} effective={NONE} locale="pt-BR" checkers={<span>checkers</span>} problems={<span>problems</span>} console={<span>console</span>} />);
+  const [checkers, problems, chip] = ['checkers', 'problems', 'console'].map((text) => screen.getByText(text));
+  expect(checkers.previousElementSibling).toHaveClass('flex-1');
+  expect(checkers.nextElementSibling).toBe(problems);
+  expect(problems.nextElementSibling).toHaveClass('bg-border');
+  expect(problems.nextElementSibling?.nextElementSibling).toBe(chip);
+});

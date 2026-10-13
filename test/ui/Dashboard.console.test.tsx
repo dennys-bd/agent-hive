@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Dashboard } from '@/components/Dashboard';
 import type { Selection } from '@/components/DetailPanel';
 import { setLanguage } from '@/i18n';
+import * as store from '@/lib/diagnostics-store';
 import { readView, resetViewState, writeView } from '@/lib/view-state';
 import type { ChannelEntry, ChannelView } from '../../src/console';
 import type { State } from '../../src/types';
@@ -62,7 +63,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock);
   vi.stubGlobal('WebSocket', FakeWebSocket);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); store.resetDiagnostics(); });
 
 const footer = (): HTMLElement => screen.getByRole('contentinfo', { hidden: true }); // hidden: a Radix menu closing hides the page a tick longer
 const chip = (): HTMLElement => within(footer()).getByRole('button', { name: /^console/, hidden: true });
@@ -226,4 +227,22 @@ test('a console tab keeps its own channel: a pick in the drawer leaves it, and i
   await waitFor(() => expect(tabChannel()).toHaveTextContent('Setup worktree'));
   expect(chip()).toHaveTextContent('console · lint');
   expect(readView('centerLayouts')).toMatchObject({ A: { root: { tabs: expect.arrayContaining([{ kind: 'console', channel: SETUP.id }]) } } });
+});
+
+test('the footer\'s checkers follow the activity the center shows, its problems button counts every activity without one, and ⌘⇧M opens the drawer on problemas (#225)', async () => {
+  const user = userEvent.setup();
+  render(dashboard());
+  act(() => {
+    store.setCheck(activityIdOf('A'), 'tsc', { state: 'failed', reason: 'exit code 2' }, '');
+    store.setCheck(activityIdOf('A'), 'mypy', { state: 'done', scope: 'file', diagnostics: [{ path: 'a.py', line: 1, column: 1, severity: 'error', message: 'bad' }] }, 'a.py');
+  });
+  showFlow();
+  expect(within(footer()).queryByText('tsc falhou')).not.toBeInTheDocument();
+  expect(within(footer()).getByRole('button', { name: 'problemas', hidden: true })).toHaveTextContent(/^1$/);
+  await user.click(screen.getByRole('button', { name: 'atividades' }));
+  await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A'));
+  expect(within(footer()).getByText('tsc falhou')).toHaveAttribute('title', 'exit code 2');
+  fireEvent.keyDown(document.body, { key: 'M', ctrlKey: true, shiftKey: true });
+  expect(within(drawer()!).getByRole('radio', { name: 'problemas' })).toHaveAttribute('aria-checked', 'true');
+  expect(within(drawer()!).getByText('bad')).toBeInTheDocument();
 });

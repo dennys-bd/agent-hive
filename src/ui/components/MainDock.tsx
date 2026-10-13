@@ -49,6 +49,9 @@ export interface MainDockProps {
   // the chip that opens its drawer lives in the Dashboard's footer (redesign 05)
   // The Automação tab's body (#456), from the Dashboard, handed what its worker chips call (#457); absent (the terminal's harness): no such tab
   automation?(openActivity: (taskId: string) => void): ReactNode;
+  // The window's footer (#225), from the Dashboard, handed the store id of the activity the center shows; inside the openers, so a failed
+  // checker opens its console channel. Absent (the terminal's harness): no footer
+  footer?(shownActivityId: string | undefined): ReactNode;
   header?(shell: HeaderShell): ReactNode; // the window's header (#533, #221), from the Dashboard, handed what its three columns show; absent (the terminal's harness): no header
   liveActivities?: State['activities']; // #629: state.activities, what the workers point at; absent (the terminal's harness): none
   slept?: State['slept']; // #672: the runs that sleep, kept as tabs; absent (the terminal's harness): none
@@ -264,7 +267,7 @@ const SHARED_SIDEBARS: SidebarsPerView = { left: false, right: false, rightTab: 
  * a run's terminal a tab of its activity's center. Each side is a panel that opens and closes (#452). The center follows the left panel's
  * tab (#458): the flow under Automação, the picked activity's layout or Home under Atividades. */
 export function MainDock(props: MainDockProps) {
-  const { selected, onSelect, showTask, detail, consoleChannels, automation, header, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
+  const { selected, onSelect, showTask, detail, consoleChannels, automation, header, footer, fontFamily, fileLinks, tasks, workers, terminals, children, pageKey } = props;
   const { workspaces, sourceWorkspaces, liveActivities = NO_ACTIVITIES, slept, activityRecords, stages, onAddWorkspace, activityMenu, newActivity, activityBar, paneContext, copySession, search, sidebarsPerView = SHARED_SIDEBARS, openPr: openPrPage, openIssue: openIssuePage } = props;
   const [newIn, setNewIn] = useState<StartRequest>(); // the Start dialog is open: from this workspace's +, on this task or with this title when set
   const dock = useDock(sidebarsPerView);
@@ -379,6 +382,7 @@ export function MainDock(props: MainDockProps) {
           </ConsoleChannelsContext.Provider>
         </DockFrame>
       </DockBody>
+      {footer?.(shownIdOf(selection))}
       {quick.dialogs}
       {searchClose.dialog}
       {newIn && newActivity?.({ ...newIn, onStarted: openStarted, onClose: () => setNewIn(undefined) })}
