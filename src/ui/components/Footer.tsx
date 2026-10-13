@@ -1,7 +1,7 @@
 import { ChevronDownIcon } from 'lucide-react';
 import { type FormEvent, type ReactNode, useState } from 'react';
 import { liveDefaultAgent } from '../../agents';
-import { type AgentId, DEFAULT_AGENT, type DisabledRuleStatus, type DisableUntil, type EffectiveLimits, type State, type UsageRule } from '../../types';
+import type { DisabledRuleStatus, DisableUntil, EffectiveLimits, State, UsageRule } from '../../types';
 import { workerCount } from '../../worker-count';
 import { act } from '@/components/actions';
 import { AgentUsage } from '@/components/footer/AgentUsage';
@@ -10,32 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { type MessageKey, t } from '@/i18n';
+import { firedRules, ruleKey, ruleLabel } from '@/lib/rule-effects';
 import { signalEffect } from '@/lib/signal-effect';
-import { clock, countdown, describeRules, nextMorning, type PauseChoice, pauseUntil, ruleTarget, timeLeft, windowResetsAt } from '@/lib/usage';
+import { clock, countdown, nextMorning, type PauseChoice, pauseUntil, ruleTarget, timeLeft, windowResetsAt } from '@/lib/usage';
 
 interface FooterProps { state: State; effective: EffectiveLimits; locale: string; onEditRules?(): void; console?: ReactNode } // console: its chip (redesign 05)
 
 // The footer's chips and buttons share the 1px 8px chip box of the handoff (02), on the ui Button so focus and hover come with it.
 const CHIP = 'h-auto gap-1.5 rounded-sm px-2 py-px text-xs font-normal text-foreground';
-
-// Two rules are the same one when they share a source, a floor, a stage and an agent (#929): the payload crosses JSON, so identity is lost.
-/** The search's pausar regra › reads the rules through these three too (#584). */
-export const ruleKey = (rule: UsageRule): string => `${rule.source}-${rule.percent}-${rule.stage ?? ''}-${rule.agent ?? ''}`;
-
-/** The fired rules in force, each once: the signal's, the cap's, then every stage cap's. */
-export function firedRules(effective: EffectiveLimits): UsageRule[] {
-  const all = [...effective.signalRules, ...effective.capRules, ...Object.values(effective.stageCapRules).flat()];
-  return all.filter((rule, i) => all.findIndex((other) => ruleKey(other) === ruleKey(rule)) === i);
-}
-
-/** `semana ≥ 90% · codex → máx 2 workers`: the rule, its agent when it is not the default one (#929), then what it does. */
-export function ruleLabel(rule: UsageRule, defaultAgent: AgentId = DEFAULT_AGENT): string {
-  const effects = [
-    ...(rule.signal ? [rule.signal] : []),
-    ...(rule.maxWorkers === undefined ? [] : [rule.stage ? t('footer.rule.stageCap', { stage: rule.stage, n: rule.maxWorkers }) : t('footer.rule.cap', { n: rule.maxWorkers })]),
-  ];
-  return `${describeRules([rule], defaultAgent)} → ${effects.join(' · ')}`;
-}
 
 function MenuItem({ onClick, hint, muted, children }: { onClick(): void; hint?: string; muted?: boolean; children: ReactNode }) {
   return (

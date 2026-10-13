@@ -3,7 +3,7 @@
 import { liveDefaultAgent } from '../../agents';
 import type { AgentId, OperationId, UsageRule } from '../../types';
 import { act } from '@/components/actions';
-import { firedRules, ruleKey, ruleLabel } from '@/components/Footer';
+import { firedRules, ruleKey, ruleLabel } from '@/lib/rule-effects';
 import { SIGNALS } from '@/components/SignalToggle';
 import { type MessageKey, t } from '@/i18n';
 import { runShortcut } from '@/lib/dock-layout';
@@ -28,12 +28,12 @@ const signal: Operation = {
   },
 };
 
-// The footer's horizons (redesign 02); personalizado… needs its date field and stays in the footer
+// The footer's horizons (redesign 02); personalizado… needs its date field and stays in the rules panel
 const HORIZONS: ReadonlyArray<[PauseChoice, MessageKey]> = [
   ['reset', 'pause.reset'], ['quarter', 'pause.quarter'], ['hour', 'pause.hour'], ['fourHours', 'pause.fourHours'], ['tomorrow', 'pause.tomorrow'],
 ];
 
-// A rule's page: retomar agora while paused, then the horizons, posting what the footer's popover posts
+// A rule's page: retomar agora while paused, then the horizons, posting what the rules panel's popover posts
 function ruleOperation(rule: UsageRule, isPaused: boolean, defaultAgent: AgentId): Operation {
   const body = ruleTarget(rule);
   const horizons = HORIZONS.map(([choice, key]) => leaf(`pause.${choice}`, t(key), () => void act('/rules/disable', { ...body, until: pauseUntil(choice, Date.now()) })));
@@ -41,7 +41,7 @@ function ruleOperation(rule: UsageRule, isPaused: boolean, defaultAgent: AgentId
   return { id: `pause.${ruleKey(rule)}`, group: 'global', label: () => ruleLabel(rule, defaultAgent), available: () => true, children: () => [...resume, ...horizons] };
 }
 
-// pausar regra › (the footer's chips): each fired rule, then each paused one; listed only while there is one
+// pausar regra › (the rules panel's rows, #224): each fired rule, then each paused one; listed only while there is one
 const pause: Operation = {
   id: 'pauseRule', group: 'global', label: () => t('pause.title'),
   available: (ctx) => ctx.effective !== undefined && firedRules(ctx.effective).length + ctx.effective.disabledRules.length > 0,

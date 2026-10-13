@@ -3,25 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Footer } from '@/components/Footer';
 import { setLanguage, t } from '@/i18n';
-import type { EffectiveLimits, State, UsageRule } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
-
-const WEEK_CAP: UsageRule = { source: 'week', percent: 90, maxWorkers: 2 };
-const SESSION_FORCE: UsageRule = { source: 'session', percent: 60, signal: 'yellow' };
-const DAY_STAGE: UsageRule = { source: 'day', percent: 80, maxWorkers: 1, stage: 'review' };
-
-const NONE: EffectiveLimits = { signal: 'green', floor: { signal: 'green' }, signalRules: [], capRules: [], disabledRules: [], stageCaps: {}, stageCapRules: {} };
-const FIRED: EffectiveLimits = {
-  signal: 'yellow', maxWorkers: 2, floor: { signal: 'yellow', maxWorkers: 2 }, signalRules: [SESSION_FORCE], capRules: [WEEK_CAP], disabledRules: [],
-  stageCaps: { review: 1 }, stageCapRules: { review: [DAY_STAGE] },
-};
-
-const STATE = {
-  signal: 'green', signals: SIGNALS_DEFAULTS, maxConcurrent: 5, workers: [{ id: 's1', status: 'working' }, { id: 's2', status: 'working', freeSession: true }, { id: 's3', status: 'empty' }],
-  tasks: [], sourceOrder: [], localCount: 0, activities: [], activityRecords: [], usage: [], budget: {}, usageRules: [], disabledRules: [], transitions: [], workspaces: [], sourceWorkspaces: {}, workspaceColors: {}, commands: {}, syncs: {},
-  deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, terminals: [], stages: [],
-  rateLimits: { claude: { at: '2026-09-28T10:00:00Z', windows: { seven_day: { usedPercent: 91, resetsAt: new Date(Date.now() + (4 * 24 + 10) * 3_600_000 + 60_000).toISOString() } } } },
-} as unknown as State;
+import { SIGNALS_DEFAULTS, type UsageRule } from '../../src/types';
+import { DAY_STAGE, FIRED, NONE, STATE, WEEK_CAP } from './rules-fixtures';
 
 const fetchMock = vi.fn(async (_path: string, _init?: RequestInit) => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } }));
 const footer = (): HTMLElement => screen.getByRole('contentinfo');

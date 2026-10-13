@@ -1,6 +1,6 @@
 import { waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { ruleLabel } from '@/components/Footer';
+import { ruleLabel } from '@/lib/rule-effects';
 import { setLanguage } from '@/i18n';
 import { activitiesOf, isTask, type TaskActivity } from '@/lib/activities';
 import type { Terminal } from '@xterm/xterm';
