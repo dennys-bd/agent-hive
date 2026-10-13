@@ -10,6 +10,7 @@ import type { Activity, ActivityRecord, ForkSyncResult } from '../src/types.js';
 import { describeEvent } from '../src/log.js';
 import { savedWork } from '../src/state-guards.js';
 import { HOUR_MS } from '../src/usage.js';
+import { deriveEvents } from '../src/event-derive.js';
 import type { SourceItem, SourceQuota, Budget, Task, TaskBase, TaskPr, DeleteActivityScope, Stage, DisableUntil, Effect, HiveEvent, HookPayload, RateLimits, RuleSource, Terminal, Signal, Worker, State, Item, UsageRule } from '../src/types.js';
 import { DELETE_ACTIVITY_DEFAULTS, SIGNALS_DEFAULTS, SPAWN_FAILED, STAGE_GONE } from '../src/types.js';
 import { behaviourOf } from '../src/signals.js';
@@ -3606,4 +3607,32 @@ test('a disable names its rule\'s agent: Codex\'s week rule goes off alone, its 
   assert.deepEqual(reduce(off, { type: 'enableRule', source: 'week', percent: 90 }).state.disabledRules, off.disabledRules, 'no agent: Claude\'s, which is not off');
   assert.deepEqual(reduce(off, { type: 'enableRule', source: 'week', percent: 90, agent: 'codex' }).state.disabledRules, []);
   assert.deepEqual(reduce(off, { type: 'setUsageRules', usageRules: [claudeWeek] }).state.disabledRules, [], 'its rule gone, its disable goes');
+});
+
+// #213: the issue's flow: review → done writes move Done; done waits 12h and deletes the activity, then done → end archives
+const EPIC_STAGES: LegacyStage[] = [
+  { name: 'review', from: { board: ['In review'] }, onFinish: { board: [move('Done')] } },
+  { name: 'done', from: { board: ['Done'] }, onFinish: { board: [{ type: 'archive' }] }, action: 'deleteActivity', after: '12h' },
+];
+
+test('the last child reaching Done takes its epic review → done through that transition; it waits out done\'s after, leaves with archive, and task.closed reports done via archive (#213)', () => {
+  const epic = (column: string): SourceItem => ({ item: { ...item(1), children: ['board:item2'], epic: { follows: 'behind', switchAt: 'review' } }, column });
+  const own = (effects: Effect[]): Effect[] => effects.filter((e) => 'itemId' in e && e.itemId === 'board:item1');
+  const reviewing = polled(base(0, EPIC_STAGES), [epic('In review'), listed(2, 'In review')]).state;
+  assert.equal(task(reviewing, 1)?.stage, 'review');
+  const done = polled(reviewing, [epic('In review'), listed(2, 'Done')]);
+  assert.deepEqual([task(done.state, 1)?.stage, task(done.state, 1)?.boardColumn], ['done', 'Done'], 'the board shows Done');
+  assert.deepEqual(own(done.effects), [{ type: 'setColumn', itemId: 'board:item1', column: 'Done' }], 'move Done, and no archive yet');
+  const waiting = polled(done.state, [epic('Done'), listed(2, 'Done')]);
+  assert.deepEqual([task(waiting.state, 1)?.stage, own(waiting.effects)], ['done', []], 'done\'s 12h have not passed: the epic stays in the Hive');
+  const due = polled(aged(waiting.state, 'board:item1', 13 * HOUR_MS), [epic('Done'), listed(2, 'Done')]);
+  assert.deepEqual(own(due.effects), [{ type: 'sourceAction', itemId: 'board:item1', taskId: 'board:item1', action: { type: 'archive' } }]);
+  assert.ok(!due.effects.some((e) => e.type === 'deleteActivity'), 'done\'s action never runs for the epic');
+  assert.deepEqual([task(due.state, 1)?.stage, task(due.state, 1)?.leaving], ['done', true]);
+  const close: HiveEvent = { type: 'closeTask', taskId: 'board:item1' }; // what the server dispatches once the archive succeeded (#286)
+  const closed = reduce(due.state, close).state;
+  assert.equal(task(closed, 1), undefined);
+  assert.deepEqual(deriveEvents(due.state, closed, close, Date.now()).filter((r) => r.event === 'task.closed'), [
+    { event: 'task.closed', level: 'info', task_id: 'board:item1', task: '1', stage: 'done', reason: 'finished', via: 'archive' },
+  ]);
 });

@@ -2,8 +2,8 @@ import { activityOf } from './activities.js';
 import { withColumnWrite } from './column-write.js';
 import { none, type Reduced, settleEntries, shouldWrite, sourceWrites, withTask } from './reducer-kit.js';
 import { allDone, depthOf, epicStage } from './task-tree.js';
-import { enter, onSource, stageOf, taskId } from './tasks.js';
-import { follow, take } from './transit.js';
+import { enter, isDue, onSource, stageOf, taskId } from './tasks.js';
+import { follow } from './transit.js';
 import { exitOf, outgoing } from './transitions.js';
 import { END, type Stage, type State, type Task } from './types.js';
 
@@ -38,14 +38,21 @@ function moved(state: State, task: Task, target: Stage): Reduced {
   return { state: withTask(went.state, started.task), effects: [...went.effects, ...started.effects] };
 }
 
-// Every child done: out through the last stage's done exit when it goes to end, its source actions written as at any stage end. The epic took
-// no run, so it counts no try: a limit on that exit would otherwise halt it in a loop. Without such an exit it sits in the last stage
-function finished(state: State, task: Task, last: Stage): Reduced {
+// Out through the last stage's done exit to end once that stage is due (#213): the epic waits its `after` there as any task does, re-read on
+// every reduction as `enter` reads the clock. The stage's own action never runs for it (#31). No such exit, or not due yet: the state itself
+function ended(state: State, task: Task, last: Stage): Reduced {
   const exit = exitOf(state, last.name, 'done');
-  if (exit === undefined || exit.to !== END) return task.stage === last.name ? none(state) : moved(state, task, last);
-  const { maxTries: _maxTries, ...once } = exit;
-  const { state: next, effects } = take(state, task, once, { trigger: 'done' });
-  return { state: next, effects };
+  return exit === undefined || exit.to !== END || !isDue(task, last, Date.now()) ? none(state) : follow(state, task, exit);
+}
+
+// Every child done (#213): into the last stage by the same move as any other (In Review → Done writes its move Done), then, in the same
+// pass, out through its end once due. Without such an exit it sits in the last stage
+function finished(state: State, task: Task, last: Stage): Reduced {
+  const into = task.stage === last.name ? none(state) : moved(state, task, last);
+  const placed = placedOf(into.state, task);
+  if (placed === undefined || placed.stage !== last.name || placed.leaving) return into;
+  const out = ended(into.state, placed, last);
+  return out.state === into.state ? into : { state: out.state, effects: [...into.effects, ...out.effects] };
 }
 
 function followed(state: State, task: Task): Reduced {

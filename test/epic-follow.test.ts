@@ -5,6 +5,7 @@ import { followEpics } from '../src/epic-follow.js';
 import { initialState } from '../src/orchestrator.js';
 import { transitionKey } from '../src/transitions.js';
 import { END, type EpicFollows, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
+import { HOUR_MS } from '../src/usage.js';
 import { move } from './fakes.js';
 import { withWork } from './fixtures/work.js';
 
@@ -45,6 +46,9 @@ const BACK: Transition = { from: 'review', to: 'dev', when: 'feedback', sources:
 const TO_DONE: Transition = { from: 'review', to: 'done', when: 'done', sources: { board: [move('Done')] } };
 const ARCHIVE: Transition = { from: 'done', to: END, when: 'done', sources: { board: [{ type: 'archive' }] } };
 const ISSUE: Transition[] = [TO_DEV, TO_REVIEW, BACK, TO_DONE, ARCHIVE];
+const ARCHIVED = { type: 'sourceAction', itemId: 'board:E', taskId: 'board:E', action: { type: 'archive' } };
+// The task as if it entered its stage `ms` ago: what isDue counts `after` from
+const aged = (t: Task, ms: number): Task => ({ ...t, enteredAt: new Date(Date.now() - ms).toISOString() });
 const column = (name: string) => ({ type: 'setColumn', itemId: 'board:E', column: name });
 
 test('a child\'s move moves its epic where its rule puts it, with one setColumn to the target\'s first door; the input state is untouched (#31)', () => {
@@ -65,12 +69,12 @@ test('no move and no effect when the epic already sits where its children put it
   assert.equal(followEpics(alone).state, alone, 'the child is not polled yet, filtered out or closed: the epic stays put');
 });
 
-test('every child done, with the last stage\'s done exit to end: the epic leaves the Hive through it, its source writes emitted (#31)', () => {
+test('every child done, with the last stage\'s done exit to end: the epic moves into the last stage, then, with no after, leaves the Hive through it in the same pass (#31, #213)', () => {
   const before = at([epic('build', ['c1', 'c2'], 'behind', { closedChildren: ['board:c2'] }), child('c1', 'done')], [ENDS]);
   const { state, effects } = followEpics(before);
   assert.equal(epicIn(state), undefined);
   assert.deepEqual(state.tasks.map((t) => t.item.itemId), ['board:c1']);
-  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Shipped' }]);
+  assert.deepEqual(effects, [{ type: 'setColumn', itemId: 'board:E', column: 'Done' }, { type: 'setColumn', itemId: 'board:E', column: 'Shipped' }]);
 });
 
 test('every child done and no done exit to end: the epic moves to the last stage and stays there (#31)', () => {
@@ -124,4 +128,27 @@ test('the epic counts no try, keeps no try record and gets no handover: only the
   const fed = deepFreeze(withWork(at([epic('review', ['c1']), child('c1', 'dev')], ISSUE, FLOW), 'board:E'));
   const back = activityOf(followEpics(fed).state, 'board:E');
   assert.deepEqual([back?.via, back?.handover], [transitionKey(BACK), undefined], 'a feedback into a stage with a prompt hands nothing over');
+});
+
+test('every child done with the epic in review: one pass takes review → done, writing Done, and does not archive it before done\'s after (#213)', () => {
+  const { state, effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], ISSUE, FLOW));
+  assert.deepEqual(effects, [column('Done')]);
+  assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.boardColumn, epicIn(state)?.leaving], ['done', 'Done', undefined]);
+});
+
+test('in done the epic waits out done\'s after: before it the same state, after it done → end is taken, archive written, the epic held leaving (#213)', () => {
+  const waiting = at([aged(epic('done', ['c1']), HOUR_MS), child('c1', 'done')], ISSUE, FLOW);
+  const early = followEpics(waiting);
+  assert.equal(early.state, waiting);
+  assert.deepEqual(early.effects, []);
+  const { state, effects } = followEpics(at([aged(epic('done', ['c1']), 13 * HOUR_MS), child('c1', 'done')], ISSUE, FLOW));
+  assert.deepEqual(effects, [ARCHIVED]);
+  assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.leaving], ['done', true], 'held until the source answers');
+});
+
+test('a last stage with no after: the epic moves into it and leaves through done → end in the same pass (#213)', () => {
+  const { after: _after, ...atOnce } = FLOW[3];
+  const { state, effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], ISSUE, [...FLOW.slice(0, 3), atOnce]));
+  assert.deepEqual(effects, [column('Done'), ARCHIVED]);
+  assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.leaving], ['done', true]);
 });
