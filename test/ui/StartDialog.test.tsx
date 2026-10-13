@@ -27,6 +27,7 @@ const state = (tasks: Task[] = [LANDING, HERO]): State => withPointedWork({
 const SHIPPED = task('I7', 'SITE-7', 'Shipped pricing page', { stage: 'done' });
 // #774: done with no prompt, the last stage: a task there has no stage left to run
 const finished = (): State => ({ ...state([LANDING, HERO, SHIPPED]), stages: stages.map((s) => (s.name === 'done' ? { name: s.name, from: s.from } : s)) });
+const AT = '2026-10-13T10:00:00.000Z';
 const BASES: BaseOptions = { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: [], remote: [] };
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 let created = 0;
@@ -197,16 +198,16 @@ test('abrir sessão on a task with its worktree opens on sessão livre with no b
   await waitFor(() => expect(open).toBeEnabled());
   expect(screen.queryByRole('combobox', { name: 'origin/main' })).not.toBeInTheDocument();
   const session = screen.getByRole('combobox', { name: 'sessão' });
-  expect(session).toHaveTextContent(/^cccccccc · dev · /);
+  expect(session).toHaveTextContent('mesma da etapa anterior');
   await user.click(session);
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^cccccccc · dev/), expect.stringMatching(/^bbbbbbbb · dev/)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude · dormindo há /), expect.stringMatching(/^bbbbbbbb · dev/)]);
   await user.click(screen.getByRole('option', { name: /^bbbbbbbb/ }));
   await user.click(open);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
   expect(posts()).toEqual([['/tasks/I4/open', { kind: 'claude', continueId: sessions[1].id }]]);
 });
 
-test('the resume picker names a free session sessão livre where a stage run\'s session names its last stage (#812)', async () => {
+test('the session picker offers the last stage run\'s session as mesma da etapa anterior and names a free session sessão livre among the others (#812, #290)', async () => {
   const user = userEvent.setup();
   bases = { ...BASES, hasWorktree: true };
   const sessions = [
@@ -217,7 +218,7 @@ test('the resume picker names a free session sessão livre where a stage run\'s 
   render(<StartDialog state={withPointedWork({ ...state([landing]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions }] })} taskId="I4" initialMode="free" onClose={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole('button', { name: /sessão livre/ })).toBeEnabled());
   await user.click(screen.getByRole('combobox', { name: 'sessão' }));
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^bbbbbbbb · sessão livre · /), expect.stringMatching(/^aaaaaaaa · dev · /)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude/), expect.stringMatching(/^bbbbbbbb · sessão livre · /)]);
 });
 
 test('executar etapas on a task whose activity was deleted posts continue to its newest record when the stage already ran, never a start (#283, #629)', async () => {
@@ -486,4 +487,30 @@ test('a discard git refuses shows its words under the dialog\'s own heading, and
   expect(alert).toHaveTextContent(t('start.orphan.failed'));
   expect(alert).toHaveTextContent("the branch 'x' is not fully merged into HEAD");
   expect(onClose).not.toHaveBeenCalled();
+});
+
+test('sessão livre always shows the five run fields; a resume shows its session\'s own picks, disabled, and a new session opens with the explicit picks (#290)', async () => {
+  const user = userEvent.setup();
+  bases = { ...BASES, hasWorktree: true };
+  const resumed = { id: 'aaaaaaaa-0000-4000-8000-000000000001', startedAt: AT, stages: ['dev'], agent: 'claude' as const, lastUsedAt: AT, launch: { model: 'opus' } };
+  const landing = task('I4', 'SITE-4', 'Landing copy review', { stage: 'dev', worktree: '/wt/site-4' });
+  const onContinue = withPointedWork({ ...state([landing]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions: [resumed] }], stages: stages.map((s) => (s.name === 'dev' ? { ...s, session: 'continue' as const } : s)) });
+  const onClose = vi.fn();
+  render(<StartDialog state={onContinue} taskId="I4" initialMode="free" onClose={onClose} />);
+  const dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getByRole('combobox', { name: 'agente' })).toHaveTextContent('claude');
+  expect(dialog.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('mesma da etapa anterior');
+  expect(dialog.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('opus');
+  for (const name of ['modelo', 'agente especializado']) expect(dialog.getByRole('combobox', { name })).toBeDisabled();
+  expect(dialog.getByRole('textbox', { name: 'argumentos' })).toBeDisabled();
+  await user.click(dialog.getByRole('combobox', { name: 'sessão' }));
+  await user.click(screen.getByRole('option', { name: 'nova' }));
+  expect(dialog.getByRole('combobox', { name: 'modelo' })).toBeEnabled();
+  expect(dialog.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do claude');
+  await user.type(dialog.getByRole('textbox', { name: 'argumentos' }), '--verbose');
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(onClose).toHaveBeenCalled());
+  expect(posts()).toEqual([['/tasks/I4/open', { kind: 'claude', args: ['--verbose'] }]]);
 });
