@@ -149,7 +149,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const isBlocked = held.entry === undefined && blocker(task, state, mode, base.choice);
   const close = (): void => {
     if (isCreating) return;
-    // created here and never started: they go. A start on its way (ver log closes too) keeps its task
+    // created here and never started: they go. A start on its way keeps its task
     if (!done.current) created.drop(pending ? picked : undefined);
     done.current = true;
     onClose();
@@ -262,7 +262,7 @@ export function StartDialog(props: StartDialogProps) {
           <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>
           <SetupSubmit
             label={<>{label}<ButtonKeyHint id="confirm" /></>}
-            pending={pending} setup={task && activityOf(state, task.item.itemId)?.setup} disabled={isBlocked} onSubmit={submit} onOpenLog={close}
+            pending={pending} setup={task && activityOf(state, task.item.itemId)?.setup} disabled={isBlocked} onSubmit={submit}
           />
         </DialogFooter>
       </DialogContent>

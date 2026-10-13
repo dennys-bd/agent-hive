@@ -1359,7 +1359,6 @@ const en = {
   'task.dragRunning': 'stop the stage to move it to another stage',
   'task.workspace': 'workspace',
   'task.setupStep': 'preparing: {detail}', // the worktree setup's running step, on the task (#351)
-  'task.setupLogs': 'show log', // the task's and the Start dialog's button to the setup's console run (#351)
   'stageCommands.running': 'running {name} · {n}/{total}', // #755: a commands stage's command, on the task and in its status box
   'stageCommands.viewOutput': 'view output', // #755: its locked console tab
   'stageCommands.failed': 'checks failed: {list}', // #755: the stage's failure: each failed command with its code
@@ -3291,7 +3290,6 @@ const pt: Record<MessageKey, string> = {
   'task.dragRunning': 'pare a etapa pra mover para outra etapa',
   'task.workspace': 'workspace',
   'task.setupStep': 'preparando: {detail}',
-  'task.setupLogs': 'ver log',
   'stageCommands.running': 'executando {name} · {n}/{total}',
   'stageCommands.viewOutput': 'ver saída',
   'stageCommands.failed': 'checks falharam: {list}',

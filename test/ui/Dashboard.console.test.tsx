@@ -131,19 +131,13 @@ test('limpar posts the channel\'s clear and reads it again, now without its fini
   await waitFor(() => expect(FakeTerminal.all.at(-1)?.written).toEqual([]));
 });
 
-test('a task running its worktree setup has a ver log button from the mark on that opens the drawer on the setup\'s channel and attaches its run (#351)', async () => {
-  const user = userEvent.setup();
+test('a task running its worktree setup shows iniciando with no ver log icon on its card (#290)', () => {
   channels = [CHANNEL, SETUP];
-  setupView = { history: '', live: [{ ptyId: SETUP_RUN, header: H2 }], status: 'running' };
-  const setting: State = withTasks(state, [{ ...taskA, setup: { consoleId: SETUP_RUN } }]); // marked, no step yet: its run is already there; #629: on the activity
+  const setting: State = withTasks(state, [{ ...taskA, setup: { consoleId: SETUP_RUN } }]);
   render(<Dashboard state={setting} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
   expect(screen.getByText('iniciando')).toBeInTheDocument();
-  await user.click(screen.getByRole('button', { name: 'ver log' }));
-  await waitFor(() => expect(FakeWebSocket.all.map((s) => s.path)).toEqual(['/ptys/setup%3AA/pty']));
-  expect(FakeTerminal.all.at(-1)?.written).toEqual([H2]);
-  expect(within(drawer()!).getByRole('combobox', { name: 'canal' })).toHaveTextContent('Setup worktree');
-  expect(chip()).toHaveTextContent('console · Setup worktree');
+  expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
 });
 
 test('under atividades with an activity picked, abrir como aba moves the console into a tab of its grid and closes the drawer (redesign 05)', async () => {

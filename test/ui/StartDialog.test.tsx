@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import { StartDialog } from '@/components/StartDialog';
+import { ConsoleContext } from '@/hooks/use-console';
 import { setLanguage, t } from '@/i18n';
 import { CreateTargetsContext, type CreateTargets } from '@/lib/create-targets';
 import { setShortcuts } from '@/lib/shortcut-bindings';
@@ -563,4 +564,17 @@ test('a continue shows the run without personalizar, since its session is fixed;
   unmount();
   render(<StartDialog state={withWork(state(), 'I9', { handover: { prompt: 'from the transition' } })} taskId="I9" onClose={vi.fn()} />);
   expect(screen.queryByRole('button', { name: /personalizar/ })).not.toBeInTheDocument();
+});
+
+test('while the start prepares the worktree the submit says so and offers no ver log icon, even inside a console (#290)', async () => {
+  const user = userEvent.setup();
+  fetchMock.mockImplementationOnce(async () => reply(BASES)); // the bases; the start after it never answers
+  fetchMock.mockImplementationOnce(() => new Promise<Response>(() => undefined));
+  const dialog = (st: State) => <ConsoleContext.Provider value={vi.fn()}><StartDialog state={st} taskId="I9" onClose={vi.fn()} /></ConsoleContext.Provider>;
+  const { rerender } = render(dialog(state()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  rerender(dialog(withWork(state(), 'I9', { setup: { consoleId: 'setup:I9' } }))); // the mark arrives while the start is on its way
+  expect(await screen.findByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
 });
