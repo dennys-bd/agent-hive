@@ -8,6 +8,7 @@ import { readDaemonSecret } from '../src/daemon-files.js';
 import { bootHive } from '../src/hive.js';
 import { initialState } from '../src/orchestrator.js';
 import { READ_MODEL_FILE } from '../src/read-model/db.js';
+import type { ItemStore } from '../src/read-model/items.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceSpec } from '../src/types.js';
@@ -81,6 +82,25 @@ test('bootHive falls back to setup mode when the configured source is unusable',
   assert.deepEqual(info.config?.comb.sources, [GITHUB_ENTRY]); // the form reopens prefilled with what was saved
   assert.equal(info.error, `source board: ${UNREADABLE}`);
   assert.equal(info.proposedWorkspace, undefined, 'a saved config prefills the form: nothing is proposed');
+});
+
+test('bootHive opens the read model before the boot adapters and hands it to each; a fallback to setup mode closes it (#190)', async (t) => {
+  const stores: (ItemStore | undefined)[] = [];
+  const recording = (build: (spec: SourceSpec) => Source) => (spec: SourceSpec, items?: ItemStore): Source => {
+    stores.push(items);
+    return build(spec);
+  };
+  const { home } = await hiveWithConfig(t, WITH_SOURCE);
+  const hive = await bootHive(home, { sourceFactory: recording(fakeSourceFactory().factory) });
+  t.after(() => hive.server.close());
+  assert.deepEqual(stores[0]?.db.listing('github:github.com:bia', 'acme/6'), [], 'open: it answers a read');
+
+  const broken = await hiveWithConfig(t, WITH_SOURCE);
+  const setup = await bootHive(broken.home, { sourceFactory: recording(unreadable) });
+  t.after(() => setup.server.close());
+  const closed = stores.at(-1);
+  assert.ok(closed !== undefined, 'the boot adapter got the store');
+  assert.throws(() => closed.db.listing('github:github.com:bia', 'acme/6'), 'closed: setup mode runs no read sync');
 });
 
 test('bootHive sweeps the prompt files a previous run left, in hive mode and in setup mode; hive mode keeps the directory', async (t) => {

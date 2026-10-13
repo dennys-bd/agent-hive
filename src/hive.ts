@@ -10,9 +10,11 @@ import { PROMPTS_DIR } from './hooks-settings.js';
 import { languageFrom, systemLanguage } from './language.js';
 import { createLogger, type Logger } from './log.js';
 import { predatesTaskProps } from './task-props.js';
+import { accessFor } from './read-model/access.js';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from './read-model/db.js';
+import type { ItemStore } from './read-model/items.js';
 import { newSecret } from './secret.js';
-import { createServer, type HiveServer, type ServerDeps } from './server.js';
+import { createServer, type HiveServer, type ServerDeps, type SourceFactory } from './server.js';
 import { loadState } from './state-store.js';
 import { workspacePathProblem } from './worktree.js';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type Config, type Exec, type Language } from './types.js';
@@ -67,21 +69,27 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, parsed.fallback, parsed.proposed);
   const { config } = parsed;
   log.setLevel(config.logLevel);
+  // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included
+  const readModel = await openModel(home, log);
+  const items = readModel && bootItemStore(readModel, config, log);
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
-  const sources = createSources(config, given.sourceFactory ?? ((spec) => createSource(spec, { log })));
+  const build: SourceFactory = given.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
+  const sources = createSources(config, (spec) => build(spec, items));
   try {
     await resolveSources(sources);
   } catch (err) {
+    readModel?.close(); // setup mode runs no read sync
     // A saved config whose source is gone (a GitHub Project deleted, access revoked) must not kill the app: reopen the settings form with the reason, which names the source (#180).
     const error = (err as Error).message;
     log.error(`source: ${error}`);
     return bootSetupMode(home, log, language, deps, { config, error });
   }
-  return bootHiveMode(home, log, language, deps, config, sources);
+  return bootHiveMode(home, log, language, deps, config, sources, readModel);
 }
 
-// The daemon's read model (#180): hive mode only, under the hive.lock bootHive already holds. openReadModel imports node:sqlite itself, so
-// its warning stays in the process that opens it. A file it cannot open is no reason to stop the Hive: logged, and no read sync runs.
+// The daemon's read model (#180): opened by bootLocked before the boot adapters (#190), under the hive.lock bootHive already holds, and closed
+// when the boot falls back to setup mode. openReadModel imports node:sqlite itself, so its warning stays in the process that opens it. A file
+// it cannot open is no reason to stop the Hive: logged, and no read sync runs.
 async function openModel(home: string, log: Logger): Promise<ReadModel | undefined> {
   try {
     const { db, resync } = await openReadModel(join(home, READ_MODEL_FILE));
@@ -93,15 +101,21 @@ async function openModel(home: string, log: Logger): Promise<ReadModel | undefin
   }
 }
 
+// The boot adapters' store (#190): rows under the login auth.github reads with, as the server's own store has them. A Settings save that
+// changes auth builds new adapters through the server's factory. notify stays silent: an item answer names no SyncKind, so nothing calls it
+// ponytail: one accessFor per poll (a gh config get in cli mode), as the repository reads already pay; cache it if the poll log shows it
+function bootItemStore(db: ReadModel, config: Config, log: Logger): ItemStore {
+  return { db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { exec: execFileAsync, log }))?.source, notify: () => undefined };
+}
+
 async function bootHiveMode(
-  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>,
+  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined,
 ): Promise<BootedHive> {
   const names = config.comb.workspaces.map((p) => p.name).join(',');
   log.info(`boot home=${home} workspaces=${names} mode=hive`);
   // state.json carries a copy of the budget; the config file is the source, so a hand edit wins on boot
   const saved = { ...(await loadState(home, workspaceScope(config))), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
-  const readModel = await openModel(home, log);
   const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const port = await listenAndRecord(server, home, deps.secret);
   await server.boot(saved); // strays and the boot reducer: the same order as the first POST /settings
