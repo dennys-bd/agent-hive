@@ -12,6 +12,9 @@ export type StatusCounts = Readonly<{ errors: number; warnings: number }>;
 // Lower is worse. Checkers before git; a change to an existing file outweighs a deletion, and a deletion a new file (the user's order)
 const RANK: Record<TreeStatus, number> = { error: 0, warning: 1, M: 2, D: 3, A: 4 };
 
+/** A git mark's text token (#903): the marks have their own, so a modified file never reads as a warning. */
+export const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added', D: 'text-git-deleted' };
+
 /** The worse of two statuses; `a` may be absent, as a folder's first one is. */
 export const worse = (a: TreeStatus | undefined, b: TreeStatus): TreeStatus => (a !== undefined && RANK[a] <= RANK[b] ? a : b);
 

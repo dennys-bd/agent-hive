@@ -2,13 +2,17 @@ import { PlusIcon } from 'lucide-react';
 import { type KeyboardEvent, useRef, useState } from 'react';
 import { ScopeBar, SearchField, SearchFooter } from '@/components/SearchChrome';
 import { ROW, SearchRowItem } from '@/components/SearchRows';
+import { type OpenFile, useOpenFile } from '@/components/terminal-tabs';
 import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { useSearchFiles } from '@/hooks/use-search-files';
+import type { TreeState } from '@/hooks/use-task-tree';
 import { type MessageKey, t } from '@/i18n';
-import type { Activity } from '@/lib/activities';
+import { type Activity, activityKey } from '@/lib/activities';
 import { itemPage, type Operation, type OperationContext, operationsFor, viewOf } from '@/lib/operations';
 import { taskRef } from '@/lib/operations-activity';
-import { type GroupId, nextScope, parseQuery, operationRows, type Scope, type SearchGroup, type SearchRow, searchGroups } from '@/lib/search';
+import { type GroupId, nextScope, parseQuery, operationRows, type Scope, type SearchFiles, type SearchGroup, type SearchRow, searchGroups } from '@/lib/search';
+import { selectInTree } from '@/lib/tree-place';
 
 // returnTo: what held the focus before the search opened, when a reopen (a key pressed while open) keeps the first one; default, what holds it now
 // page: a › page the search opens on (#585), the run-command key's commands of a task
@@ -16,21 +20,27 @@ export interface SearchDialogProps { scope: Scope; ctx: OperationContext; activi
 
 const GROUP_KEY: Record<GroupId, MessageKey> = {
   recent: 'home.recent', pending: 'search.group.pending', activities: 'search.scope.activities', tasks: 'search.scope.tasks', commands: 'search.scope.commands',
+  files: 'search.scope.files',
 };
 
 const itemIdOf = (row: SearchRow): string | undefined => {
   if (row.kind === 'activity') return row.activity.task.item.itemId;
   return row.kind === 'task' ? row.task.item.itemId : undefined;
 };
+// What a row is known by within its kind: an operation's id, a file's path (#133), else its item id
+const rowKey = (row: SearchRow): string | undefined => {
+  if (row.kind === 'operation') return row.view.operation.id;
+  return row.kind === 'file' ? row.path : itemIdOf(row);
+};
 // cmdk's value: unique across the groups, since a recent activity may also need you
-const rowValue = (group: GroupId, row: SearchRow): string => `${group}:${row.kind}:${row.kind === 'operation' ? row.view.operation.id : itemIdOf(row)}`;
+const rowValue = (group: GroupId, row: SearchRow): string => `${group}:${row.kind}:${rowKey(row)}`;
 
 /** A › page (#584): its name beside the field, the context its operations run in, and the operations. */
 interface Page { title: string; ctx: OperationContext; operations: Operation[] }
 
 // ↵ (the handoff): an operation with › opens its page and the search stays; everything else closes it first, then acts. The search closes
-// first, so a dialog the operation opens takes the focus
-function openRow(row: SearchRow, ctx: OperationContext, onClose: () => void, push: (page: Page) => void): void {
+// first, so a dialog the operation opens takes the focus; a file opens as a tree click opens it (#133)
+function openRow(row: SearchRow, ctx: OperationContext, onClose: () => void, push: (page: Page) => void, openFile?: OpenFile): void {
   const children = row.kind === 'operation' ? row.view.operation.children : undefined;
   if (row.kind === 'operation' && children !== undefined) {
     push({ title: row.view.label, ctx, operations: children(ctx) });
@@ -39,15 +49,28 @@ function openRow(row: SearchRow, ctx: OperationContext, onClose: () => void, pus
   onClose();
   if (row.kind === 'activity') ctx.nav.openActivity(row.activity.task.item.itemId);
   else if (row.kind === 'task') ctx.nav.startTask({ itemId: row.task.item.itemId });
-  else row.view.operation.run?.(ctx);
+  else if (row.kind === 'operation') row.view.operation.run?.(ctx);
+  else if (ctx.activity !== undefined) openFile?.(activityKey(ctx.activity), row.path); // a file (#133): the editor pane, a Hive design the design pane
 }
 
-// ⌘↵: an activity's or a task's details in the flow; nothing on an operation
+// ⌘↵: an activity's or a task's details in the flow; a file selected in the files sidebar (#133); nothing on an operation
 function showRow(row: SearchRow, ctx: OperationContext, onClose: () => void): void {
+  if (row.kind === 'file') {
+    if (ctx.activity === undefined) return;
+    onClose();
+    selectInTree(ctx.activity.activity.id, row.path);
+    return;
+  }
   const itemId = itemIdOf(row);
   if (itemId === undefined) return;
   onClose();
   ctx.nav.showFlow(itemId);
+}
+
+// ⌘↵'s label in the footer: ver no fluxo on an activity or a task, revelar na árvore on a file (#133), none on an operation
+function secondaryOf(row: SearchRow | undefined): string | undefined {
+  if (row === undefined || row.kind === 'operation') return undefined;
+  return t(row.kind === 'file' ? 'search.key.reveal' : 'detail.showFlow');
 }
 
 // The field, the scope and the page stack. A prefix typed first switches the scope and leaves the field (the handoff); a page has no scope
@@ -71,20 +94,23 @@ function useSearchState(initial: Scope, first?: Page) {
 }
 type SearchState = ReturnType<typeof useSearchState>;
 
+// The open activity's paths and marks once its tree is read (#133); none while it loads, after a failure, or with no activity open
+const filesOf = (tree: TreeState | undefined): SearchFiles | undefined => (tree?.status === 'ready' ? { paths: tree.tree.files, marks: tree.tree.marks } : undefined);
+
 // What the list shows: a page's operations, or the search's groups for the scope and the query
-function groupsOf(search: SearchState, ctx: OperationContext, activities: Activity[]): SearchGroup[] {
+function groupsOf(search: SearchState, ctx: OperationContext, activities: Activity[], files?: SearchFiles): SearchGroup[] {
   const { page, scope, query } = search;
   if (page !== undefined) {
     const rows = operationRows(page.operations.filter((op) => op.available(page.ctx)).map((op) => viewOf(op, page.ctx)), query);
     return rows.length === 0 ? [] : [{ id: 'commands', rows }];
   }
   const operations = operationsFor(ctx).map((op) => viewOf(op, ctx));
-  return searchGroups({ scope, query, tasks: ctx.state.tasks, workers: ctx.state.workers, liveActivities: ctx.state.activities, activityRecords: ctx.state.activityRecords, activities, operations });
+  return searchGroups({ scope, query, tasks: ctx.state.tasks, workers: ctx.state.workers, liveActivities: ctx.state.activities, activityRecords: ctx.state.activityRecords, activities, operations, files });
 }
 
-// → on an activity or a task row (the spec): a page with that item's operations, e.g. #466 → parar todas
+// → on an activity or a task row (the spec): a page with that item's operations, e.g. #466 → parar todas; nothing on an operation or a file
 function itemPageOf(row: SearchRow, ctx: OperationContext): Page | undefined {
-  if (row.kind === 'operation') return undefined;
+  if (row.kind === 'operation' || row.kind === 'file') return undefined; // a file has no operations page (#133)
   const task = row.kind === 'activity' ? row.activity.task : row.task;
   const page = itemPage(ctx, task, row.kind === 'activity' ? row.activity : undefined);
   return { title: `${taskRef(task)} →`, ...page };
@@ -122,13 +148,30 @@ function searchKeys({ current, search, ctx, root, onClose }: KeyArgs) {
   };
 }
 
+const NOTE = 'px-2.5 py-3 text-[13px] text-muted-foreground';
+
 function NoResult({ term, canCreate, onCreate }: { term: string; canCreate: boolean; onCreate(): void }) {
   return (
     <>
-      <p className="px-2.5 py-3 text-[13px] text-muted-foreground">{t('search.none', { term })}</p>
+      <p className={NOTE}>{t('search.none', { term })}</p>
       {canCreate && <CommandItem value="create" onSelect={onCreate} className={ROW}><PlusIcon />{t('search.createTask', { term })}</CommandItem>}
     </>
   );
+}
+
+// The arquivos scope's note (#133): no activity open, so no tree to search, or its tree could not be read; none on a page or another scope
+function filesNote(search: SearchState, ctx: OperationContext, tree: TreeState | undefined): MessageKey | undefined {
+  if (search.scope !== 'files' || search.page !== undefined) return undefined;
+  if (ctx.activity === undefined) return 'search.files.noActivity';
+  return tree?.status === 'error' ? 'search.files.failed' : undefined;
+}
+
+interface EmptyListProps { note?: MessageKey; term: string; canCreate: boolean; onCreate(): void }
+
+// What the list says with no row: the arquivos scope's note (#133), inline, no toast; else nothing found, with + criar tarefa in tarefas (#584)
+function EmptyList({ note, term, canCreate, onCreate }: EmptyListProps) {
+  if (note !== undefined) return <p className={NOTE}>{t(note)}</p>;
+  return term === '' ? null : <NoResult term={term} canCreate={canCreate} onCreate={onCreate} />;
 }
 
 /** The search (⌘P; ⌘⇧P on comandos; #584): activities, tasks and the Hive's operations in one box, with scopes. Mounted only while open, so
@@ -139,7 +182,9 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
   const [selected, setSelected] = useState('');
   const before = useRef(returnTo === undefined ? document.activeElement : returnTo); // Radix gives the focus back to a trigger only, and this dialog has none
   const on = page?.ctx ?? ctx; // the context a row's operation runs in
-  const groups = groupsOf(search, ctx, activities);
+  const tree = useSearchFiles(ctx.activity?.activity.id); // #133: the open activity's tree, read once
+  const openFile = useOpenFile();
+  const groups = groupsOf(search, ctx, activities, filesOf(tree));
   const rows = new Map(groups.flatMap((group) => group.rows.map((row) => [rowValue(group.id, row), row] as const)));
   const current = rows.get(selected);
   const term = query.trim();
@@ -166,13 +211,13 @@ export function SearchDialog({ scope: initial, ctx, activities, returnTo, page: 
               <CommandGroup key={group.id} heading={page?.title ?? t(GROUP_KEY[group.id])}>
                 {group.rows.map((row) => {
                   const value = rowValue(group.id, row);
-                  return <SearchRowItem key={value} value={value} row={row} state={ctx.state} onSelect={() => openRow(row, on, onClose, search.push)} />;
+                  return <SearchRowItem key={value} value={value} row={row} state={ctx.state} onSelect={() => openRow(row, on, onClose, search.push, openFile)} />;
                 })}
               </CommandGroup>
             ))}
-            {groups.length === 0 && term !== '' && <NoResult term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
+            {groups.length === 0 && !(scope === 'files' && tree?.status === 'loading') && <EmptyList note={filesNote(search, ctx, tree)} term={term} canCreate={page === undefined && scope === 'tasks'} onCreate={create} />}
           </CommandList>
-          <SearchFooter secondary={current && itemIdOf(current) !== undefined ? t('detail.showFlow') : undefined} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
+          <SearchFooter secondary={secondaryOf(current)} count={groups.reduce((n, g) => n + g.rows.length, 0)} />
         </Command>
       </DialogContent>
     </Dialog>

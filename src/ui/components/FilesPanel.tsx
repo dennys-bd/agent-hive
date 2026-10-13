@@ -2,6 +2,7 @@ import { type CSSProperties, type Dispatch, Fragment, type MouseEvent, type Reac
 import { ChevronDownIcon, ChevronRightIcon, MoreHorizontalIcon } from 'lucide-react';
 import type { GitMark } from '../../types';
 import { act } from '@/components/actions';
+import { GitMarkLetter } from '@/components/GitMarkLetter';
 import { FileMenu, FolderMenu, RootMenu, TrashConfirm } from '@/components/tree-menus';
 import { folderOf, isInDropBlock, type RowDragHandlers, type TreeDrag, useTreeDrag } from '@/components/tree-drag';
 import { runTreeKey, useTreeKeys } from '@/components/tree-keys';
@@ -23,14 +24,11 @@ import { type Activity, activityKey, isTask } from '@/lib/activities';
 import { ancestorsOf, buildTree, type TreeNode, type TreeRow, visibleRows } from '@/lib/file-tree';
 import { isMac } from '@/lib/shortcut-bindings';
 import { expandedOf, onTreeSelect, rememberExpanded, rememberFolder } from '@/lib/tree-place';
-import { fileStatus, folderStatuses, marksWithLoaded, type TreeStatus } from '@/lib/tree-status';
+import { fileStatus, folderStatuses, MARK_TEXT, marksWithLoaded, type TreeStatus } from '@/lib/tree-status';
 import { readView, writeView } from '@/lib/view-state';
 
 /** Which of the activity sidebar's two views shows (redesign 07). */
 export type SideTab = 'files' | 'details';
-
-// #903: the git marks have their own tokens, so a modified file never reads as a warning
-const MARK_TEXT: Record<GitMark, string> = { M: 'text-git-modified', A: 'text-git-added', D: 'text-git-deleted' };
 
 // A file's diagnostic as the tree shows it (#780): the most severe count, errors before warnings; infos never show
 interface Worst { n: number; tone: string; family: 'editor.diag.errors' | 'editor.diag.warnings' }
@@ -162,12 +160,7 @@ function TreeRowView({ node, depth, isOpen, isDropTarget, isSelected, worst, sta
           <span className="sr-only">{`, ${tPlural(worst.family, worst.n, { n: worst.n })}`}</span>
         </>
       )}
-      {node.mark && (
-        <>
-          <span aria-hidden data-git-mark title={t(`files.mark.${node.mark}`)} className={`${MARK_TEXT[node.mark]} text-xs`}>{node.mark}</span>
-          <span className="sr-only">{`, ${t(`files.mark.${node.mark}`)}`}</span>
-        </>
-      )}
+      {node.mark && <GitMarkLetter mark={node.mark} />}
     </button>
   );
   const Menu = isFolder ? FolderMenu : FileMenu;

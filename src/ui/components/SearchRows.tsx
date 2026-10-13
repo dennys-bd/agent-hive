@@ -3,6 +3,7 @@ import { taskLabel, isBlocked } from '../../tasks';
 import type { Task, State } from '../../types';
 import { taskAutoBadge } from '@/lib/auto-badge';
 import { Square } from '@/components/Home';
+import { GitMarkLetter } from '@/components/GitMarkLetter';
 import { KeyHint } from '@/components/KeyHint';
 import { agentName } from '../../agents';
 import { StatusWord } from '@/components/StatusWord';
@@ -43,6 +44,25 @@ function Title({ text, ranges, meta }: { text: string; ranges: readonly Range[];
       <Highlight text={text} ranges={ranges} />
       {meta && <span className={META}>{meta}</span>}
     </span>
+  );
+}
+
+// The ranges that fall in [from, to), counted from `from`: a path's match cut at its file name (#133)
+const clip = (ranges: readonly Range[], from: number, to: number): Range[] =>
+  ranges.flatMap(([start, end]): Range[] => (end <= from || start >= to ? [] : [[Math.max(start, from) - from, Math.min(end, to) - from]]));
+
+// ·, the path in mono, its folders muted and its name in foreground, the match in 500; the git mark on the right as the tree draws it (#133)
+function FileBody({ row }: { row: Extract<SearchRow, { kind: 'file' }> }) {
+  const cut = row.path.lastIndexOf('/') + 1;
+  return (
+    <>
+      <span aria-hidden="true" className="w-3.5 shrink-0 text-center text-muted-foreground">·</span>
+      <span className="flex min-w-0 flex-1 font-mono">
+        <span className="min-w-0 truncate text-muted-foreground"><Highlight text={row.path.slice(0, cut)} ranges={clip(row.ranges, 0, cut)} /></span>
+        <span className="shrink-0 text-foreground"><Highlight text={row.path.slice(cut)} ranges={clip(row.ranges, cut, row.path.length)} /></span>
+      </span>
+      {row.mark && <GitMarkLetter mark={row.mark} />}
+    </>
   );
 }
 
@@ -99,6 +119,7 @@ export function SearchRowItem({ row, value, state, onSelect }: SearchRowItemProp
       {row.kind === 'activity' && <ActivityBody activity={row.activity} ranges={row.ranges} state={state} />}
       {row.kind === 'task' && <TaskBody task={row.task} ranges={row.ranges} state={state} />}
       {row.kind === 'operation' && <OperationBody row={row} />}
+      {row.kind === 'file' && <FileBody row={row} />}
     </CommandItem>
   );
 }

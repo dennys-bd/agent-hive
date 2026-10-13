@@ -6,7 +6,7 @@ import { SCOPE_PREFIX, SCOPES, type Scope } from '@/lib/search';
 import { isMac } from '@/lib/shortcut-bindings';
 
 const SCOPE_KEY: Record<Scope, MessageKey> = {
-  all: 'search.scope.all', activities: 'search.scope.activities', tasks: 'search.scope.tasks', commands: 'search.scope.commands',
+  all: 'search.scope.all', activities: 'search.scope.activities', tasks: 'search.scope.tasks', commands: 'search.scope.commands', files: 'search.scope.files',
 };
 
 /** The search's 48px field (the handoff): the icon, the text in 15px, and esc on the right. `crumb` names the page a › or → opened. */
