@@ -1,34 +1,20 @@
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from 'react';
-import { toast } from 'sonner';
-import { agentName, isAvailable, knownAgent } from '../../agents';
+import { type KeyboardEvent, type ReactNode, useState } from 'react';
+import { isAvailable } from '../../agents';
 import { taskLabel } from '../../tasks';
-import { AGENT_IDS, type AgentAvailability, type AgentId, type LaunchOptions, type LaunchPick } from '../../types';
-import { ModelMenu, SpecializedAgentMenu } from '@/components/LaunchMenus';
-import { AGENT_COLOR, AgentIcon } from '@/components/SessionLabel';
+import type { AgentAvailability, AgentId, LaunchOptions, LaunchPick } from '../../types';
+import { AgentField, ModelMenu, SpecializedAgentMenu } from '@/components/LaunchMenus';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useLaunchOptions } from '@/hooks/use-launch-options';
 import { t } from '@/i18n';
 import type { RunTarget } from '@/lib/activities';
-import { getJson } from '@/lib/api';
 import { launchOf, runsLine, type SessionPicks } from '@/lib/new-session';
 
 type Menu = 'agent' | 'model' | 'specialized';
 const AGENT_ID = 'new-session-agent';
 const ARGS_ID = 'new-session-args';
-
-// GET /launch-options once per open (#257): the fields work with the defaults at once, the lists fill in when the answer comes; a failure is a toast
-function useLaunchOptions(): LaunchOptions | undefined {
-  const [options, setOptions] = useState<LaunchOptions>();
-  useEffect(() => {
-    let isLive = true;
-    getJson<LaunchOptions>('/launch-options').then((answer) => { if (isLive) setOptions(answer); }, (err: Error) => { toast.error(err.message); });
-    return () => { isLive = false; };
-  }, []);
-  return options;
-}
 
 // cancel and × keep their own Enter: they close
 const isCloser = (target: EventTarget): boolean => target instanceof Element && target.closest('[data-slot="dialog-close"], [data-closer]') !== null;
@@ -42,23 +28,6 @@ function Field({ label, htmlFor, isWide = false, children }: { label: string; ht
       <Label htmlFor={htmlFor} className="font-normal text-[13px] text-muted-foreground">{label}</Label>
       {children}
     </div>
-  );
-}
-
-// agente: each agent with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it
-function AgentField({ value, agents, onChange, onOpenChange }: { value: AgentId; agents: readonly AgentAvailability[]; onChange(agent: AgentId): void; onOpenChange(open: boolean): void }) {
-  return (
-    <Select value={value} onValueChange={(v) => { const picked = knownAgent(v); if (picked !== undefined) onChange(picked); }} onOpenChange={onOpenChange}>
-      <SelectTrigger id={AGENT_ID} className="w-full"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        {AGENT_IDS.map((agent) => (
-          <SelectItem key={agent} value={agent} disabled={!isAvailable(agent, agents)}>
-            <AgentIcon agent={agent} className={`size-4 ${AGENT_COLOR[agent] ?? ''}`} />
-            {isAvailable(agent, agents) ? agentName(agent) : `${agentName(agent)} · ${t('settings.agent.offPath')}`}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }
 
@@ -84,7 +53,7 @@ function Fields({ picks, options, agents, menu, onMenu, onPicks }: FieldsProps) 
     <div className="grid grid-cols-2 gap-2.5">
       <Field label={t('newSession.agent')} htmlFor={AGENT_ID}>
         {/* another agent's models mean nothing here: the model goes back to the default */}
-        <AgentField value={picks.agent} agents={agents} onOpenChange={toggle('agent')} onChange={(agent) => onPicks({ agent, model: '' })} />
+        <AgentField id={AGENT_ID} value={picks.agent} agents={agents} onOpenChange={toggle('agent')} onChange={(agent) => onPicks({ agent, model: '' })} />
       </Field>
       <Field label={t('newSession.model')}>
         <ModelMenu agent={picks.agent} options={ofAgent} value={picks.model} open={menu === 'model'} onOpenChange={toggle('model')} onPick={(model) => onPicks({ model })} />
