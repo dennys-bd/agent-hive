@@ -1,4 +1,5 @@
 import { SUITE_FIELDS } from '../pr-checks.js';
+import { CLOSES_FIELDS } from '../pr-github.js';
 import type { RepoRef } from '../repos/repositories.js';
 import type { PrMergeState } from '../types.js';
 import type { PullPart, ScopeKind } from './db.js';
@@ -15,8 +16,8 @@ type CheckPart = Exclude<PullPart, 'pr' | 'reviews'>;
 const CHECK_PARTS: readonly CheckPart[] = ['runs', 'status', 'suites'];
 const CHECK_PATHS: Record<CheckPart, string> = { runs: 'check-runs', status: 'status', suites: 'check-suites' };
 const READINGS: Record<CheckPart, (bodies: unknown[]) => string | null> = { runs: runsReading, status: statusReading, suites: suitesReading };
-// What the list read of a PR over GraphQL before (#758, #854)
-const PULL_FIELDS = 'id reviewDecision mergeStateStatus '
+// What the list read of a PR over GraphQL before (#758, #854), and the issues it closes, which REST has not (#187)
+const PULL_FIELDS = `id reviewDecision mergeStateStatus ${CLOSES_FIELDS} `
   + `headCommit: commits(last: 1) { nodes { commit { ${SUITE_FIELDS} statusCheckRollup { state } } } }`;
 
 export const pullPath = (repository: string, number: number): string => `repos/${repository}/pulls/${number}`;
@@ -45,7 +46,9 @@ function storeBatch(deps: SyncDeps, repository: string, due: PullToRead[], read:
     if (node === undefined) return wrote;
     const key = { source: deps.source, nodeId: pr.nodeId, repository, number: pr.number };
     const settled = pr.isOpen ? {} : { settled: { mergeState: node.mergeState, checks: node.checks } };
-    return deps.db.setPullRead(key, { decision: node.decision, readAt: pr.updatedAt, ...settled }) || wrote;
+    const read = deps.db.setPullRead(key, { decision: node.decision, readAt: pr.updatedAt, ...settled });
+    const closes = deps.db.setPullCloses(key, node.closes);
+    return read || closes || wrote;
   }, false));
 }
 

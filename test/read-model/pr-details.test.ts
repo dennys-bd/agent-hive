@@ -7,9 +7,10 @@ import {
   awaitingFromRest, checkItemsFromRest, pullFromGql, pullPageFromRest, pullsFromGql, repoFromRest, reviewFromGql, reviewsFromRest, WireError,
 } from '../../src/read-model/normalize.js';
 import type { CheckRow, PullPage, ReviewRow } from '../../src/read-model/rows.js';
-import { awaitingPath, checkPath, pollOne, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
+import { awaitingPath, batchQuery, checkPath, pollOne, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { EMPTY_REPORT } from '../../src/read-model/sync.js';
+import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 import { commentRow, github, GQL_PR, GQL_REVIEW, HEAD, issueRow, NO_REST, pagesAt, REF, RUN_OK, roundDeps, tempModel, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
 
@@ -213,4 +214,14 @@ test('pollOne polls one PR open or not, for its page\'s refetch; an issue number
   assert.deepEqual((await pollOne(roundDeps(db, github(pagesAt(HEAD, undefined, 5)).rest), REPO, 5)).kinds, ['pulls']);
   assert.equal(db.prPage(SOURCE, REPO, 5)?.pull?.headSha, HEAD);
   assert.deepEqual(await pollOne(roundDeps(db, NO_REST), REPO, 1), EMPTY_REPORT);
+});
+
+test('the batch asks and stores the issues each PR closes (#187)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(prIssueRow(5, T1, { state: 'closed', closedAt: T1 }), 'sync');
+  const closes = { nodes: [{ number: 12, url: 'https://github.com/acme/hive/issues/12', repository: { nameWithOwner: 'acme/hive' } }] };
+  const gql: Gql = async () => ({ p0: { id: 'PR_5', reviewDecision: null, mergeStateStatus: 'UNKNOWN', headCommit: { nodes: [] }, closingIssuesReferences: closes } });
+  await syncPulls(roundDeps(db, NO_REST, gql), REF);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 5)?.pull?.closes, CLOSES);
+  assert.match(batchQuery(1), /closingIssuesReferences\(first: 10\) \{ nodes \{ number url repository \{ nameWithOwner \} \} \}/);
 });
