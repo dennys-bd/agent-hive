@@ -26,7 +26,7 @@ function renderList(extra: Partial<Props> = {}) {
 
 test('a folder row heads each folder once, in the files\' order; a root file has none; a file shows its name alone (#853)', () => {
   renderList();
-  expect(items()).toEqual(['⌄src/ui', 'Card.tsx2', 'Pager.tsx+2', 'Old.tsx−1', '⌄src', 'daemon.ts✓', 'CHANGELOG.md']);
+  expect(items()).toEqual(['⌄src/ui', 'Card.tsxmodificado2', 'Pager.tsxadicionado+2', 'Old.tsxremovido−1', '⌄src', 'daemon.tsmodificado, revisado✓', 'CHANGELOG.mdmodificado']);
   expect(within(list()).getByText('src/ui').closest('li')).toHaveClass('h-[26px]', 'text-muted-foreground', 'text-xs');
   expect(within(list()).getByText('src/ui').closest('li')?.querySelector('button')).toBeNull();
   expect(within(list()).queryByRole('checkbox')).toBeNull();
@@ -79,8 +79,8 @@ test('the filter narrows the rows, any case, and drops a folder it leaves empty 
   renderList();
   const filter = within(list()).getByRole('textbox', { name: 'filtrar arquivos' });
   await user.type(filter, 'DAEMON');
-  expect(items()).toEqual(['⌄src', 'daemon.ts✓']);
+  expect(items()).toEqual(['⌄src', 'daemon.tsmodificado, revisado✓']);
   await user.clear(filter);
   await user.type(filter, 'change');
-  expect(items()).toEqual(['CHANGELOG.md']);
+  expect(items()).toEqual(['CHANGELOG.mdmodificado']);
 });

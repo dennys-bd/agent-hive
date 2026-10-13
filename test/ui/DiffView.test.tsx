@@ -20,8 +20,8 @@ test('the pane draws the bar\'s totals, a 280px list (folder rows, names in thei
   expect(callsTo(hive, 'GET', '/activities/a-I1/diff?scope=worktree')).toHaveLength(1);
   expect(bar()).toHaveTextContent('3 arquivos · +1 −1');
   expect(list()).toHaveClass('w-[280px]', 'border-r');
-  expect(rows()).toEqual(['a.ts+1 −1', 'b.ts', 'logo.png']);
-  expect(within(list()).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['⌄src', 'a.ts+1 −1', 'b.ts', '⌄img', 'logo.png']);
+  expect(rows()).toEqual(['a.tsmodificado+1 −1', 'b.tsrenomeado', 'logo.pngadicionado']);
+  expect(within(list()).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['⌄src', 'a.tsmodificado+1 −1', 'b.tsrenomeado', '⌄img', 'logo.pngadicionado']);
   expect(within(list()).getByText('src').closest('li')).toHaveClass('text-muted-foreground');
   expect(within(list()).getByText('logo.png')).toHaveClass('text-working');
   expect(within(list()).getAllByRole('button')[0]).toHaveAttribute('aria-current', 'true');
@@ -33,7 +33,7 @@ test('the filter keeps the paths holding its text, any case; a row click opens t
   renderPane();
   await within(pane()).findByRole('region', { name: 'src/a.ts' });
   await user.type(within(list()).getByRole('textbox', { name: 'filtrar arquivos' }), 'LOGO');
-  expect(rows()).toEqual(['logo.png']);
+  expect(rows()).toEqual(['logo.pngadicionado']);
   await user.click(within(list()).getByRole('button'));
   expect(within(list()).getByRole('button')).toHaveAttribute('aria-current', 'true');
 });

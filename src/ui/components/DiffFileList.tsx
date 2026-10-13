@@ -46,6 +46,8 @@ function FileRow({ file, isRoot, isOpen, isReviewed, count, onOpen }: FileRowPro
         className={`flex h-7 w-full items-center gap-2 rounded-sm pr-2 text-left text-[13px] ${isRoot ? 'pl-2' : 'pl-[22px]'} ${isOpen ? OPEN : ''}`}
       >
         <span className={`min-w-0 flex-1 truncate ${tone} ${file.status === 'deleted' ? 'line-through' : ''}`}>{splitPath(file.path).name}</span>
+        {/* The status and the reviewed mark as words for a screen reader: on screen they are a colour and a ✓ (#853) */}
+        <span className="sr-only">{`${t(STATUS_KEY[file.status])}${isReviewed ? `, ${t('diff.reviewed')}` : ''}`}</span>
         {count > 0 && <span className="rounded-full bg-muted px-1.5 text-[11px] text-foreground">{count}</span>}
         {!file.binary && <CountsText counts={countsOf(file.hunks)} className="text-[11px]" />}
         <span className="w-3 shrink-0 text-center text-muted-foreground text-xs">{isReviewed ? '✓' : ''}</span>
@@ -66,7 +68,7 @@ function ListHead({ files, isReviewed, comments, filter, onFilter }: ListHeadPro
         <span className="font-medium text-foreground">{t('diff.reviewedOf', { n: reviewed, m: files.length })}</span>
         <span className="ml-auto">{tPlural('review.comments', total, { n: total })}</span>
       </div>
-      <Progress value={files.length === 0 ? 0 : (reviewed / files.length) * 100} className="h-1 bg-border" indicatorClassName="bg-muted-foreground" />
+      <Progress value={files.length === 0 ? 0 : (reviewed / files.length) * 100} aria-label={t('diff.reviewedOf', { n: reviewed, m: files.length })} className="h-1 bg-border" indicatorClassName="bg-muted-foreground" />
       <div className="relative">
         <span aria-hidden="true" className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground text-xs">⌕</span>
         <Input value={filter} placeholder={t('diff.filter')} aria-label={t('diff.filter')} className="h-7 pl-6 text-xs" onChange={(e) => onFilter(e.target.value)} />
