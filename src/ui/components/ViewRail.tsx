@@ -17,6 +17,9 @@ export interface ViewRailProps {
   onOpenSettings?(): void;
 }
 
+/** The rail's width in px (#220): the header's left column adds it to the left group's share of the frame (#221). */
+export const RAIL_WIDTH = 44;
+
 // Keyed by VIEW_SHORTCUTS' tabs, so the rail and ⌘1 / ⌘2 read one list
 const VIEW: Record<CenterMode, { Icon: LucideIcon; label: MessageKey }> = {
   activities: { Icon: LayersIcon, label: 'rail.activities' },
@@ -49,7 +52,7 @@ function RailButton({ Icon, label, keys, isActive = false, disabled, onClick, ch
  * while any session needs the user, whatever its status: the home lists which. */
 export function ViewRail({ center, onView, hasWaiting, onOpenShortcuts, onOpenSettings }: ViewRailProps) {
   return (
-    <nav aria-label={t('rail.label')} className="flex w-11 shrink-0 flex-col gap-1 border-r border-border py-1.5">
+    <nav aria-label={t('rail.label')} style={{ width: RAIL_WIDTH }} className="flex shrink-0 flex-col gap-1 border-r border-border py-1.5">
       {VIEW_SHORTCUTS.map(([panel, id]) => {
         const { Icon, label } = VIEW[panel as CenterMode];
         return (
