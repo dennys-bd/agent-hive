@@ -104,6 +104,13 @@ test('mergear approves only when it merges the task\'s last open PR: the first o
   assert.deepEqual([prsOf(server.getState()!, 'local:1').map((p) => p.state), stageOf()], [['merged', 'merged'], 'feito']);
 });
 
+test('mergear keeps the task awaiting while a PR on an earlier record of it is still open (#261)', async (t) => {
+  const gh = fakeGh();
+  const { base, server } = await startPrs(t, gh, undefined, { kept: [{ url: PR3, state: 'open' }] });
+  assert.equal((await send(base, 'POST', `${PATH}/merge`, { method: 'squash', head: HEAD })).status, 200);
+  assert.deepEqual([activityOf(server.getState()!, 'local:1')?.approval !== undefined, server.getState()?.tasks.find((c) => c.item.itemId === 'local:1')?.stage], [true, 'fila']);
+});
+
 test('mergear approves when the task\'s other PRs are closed: a PR closed without merging does not hold it back (#261)', async (t) => {
   const gh = fakeGh();
   const { base, server } = await startPrs(t, gh, undefined, { prs: [{ url: PR, state: 'open' }, { url: PR3, state: 'closed' }] });

@@ -112,9 +112,12 @@ function ghOf(gh: FakeGh): Exec {
 
 export interface Prs { base: string; home: string; server: HiveServer; db: ReadModel }
 
-/** A Comb with no source and two local tasks in fila (#592): 1 awaits approval and holds PR (or `prs`, #261), 2 holds PR2. gh is `gh`. With
- * `worktree`, task 1's worktree is on disk (#758). */
-export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { worktree = false, prs = [{ url: PR, state: 'open' }] }: { worktree?: boolean; prs?: TaskPr[] } = {}): Promise<Prs> {
+/** `worktree`: task 1's worktree is on disk (#758). `prs`: its live record's PRs; `kept`: a kept record of task 1 with these PRs (#261). */
+export interface StartOpts { worktree?: boolean; prs?: TaskPr[]; kept?: TaskPr[] }
+
+/** A Comb with no source and two local tasks in fila (#592): 1 awaits approval and holds PR (or `opts.prs`), 2 holds PR2. gh is `gh`. */
+export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, opts: StartOpts = {}): Promise<Prs> {
+  const { worktree = false, prs = [{ url: PR, state: 'open' }], kept } = opts;
   const { home, repo } = await tempHive(t);
   const path = worktreePath(repo, 'hive-1-task');
   if (worktree) await mkdir(path, { recursive: true });
@@ -125,7 +128,8 @@ export async function startPrs(t: TestContext, gh: FakeGh, log?: Logger, { workt
   // #629: the PRs are the records', the approval task 1's live activity's
   const work = { id: savedActivityId(1), approval: { since: '2026-09-30T09:00:00.000Z' }, ...(worktree ? { slug: 'hive-1-task', worktree: path } : {}) };
   const one = withWork({ ...initialState(0), localCount: 2, tasks }, 'local:1', work, { prs });
-  await saveState(home, withKeptRecord(one, 'local:2', 'r2', { prs: [{ url: PR2, state: 'open' }] }));
+  const withKept = kept ? withKeptRecord(one, 'local:1', 'r1', { prs: kept }) : one;
+  await saveState(home, withKeptRecord(withKept, 'local:2', 'r2', { prs: [{ url: PR2, state: 'open' }] }));
   const { db } = await openReadModel(':memory:'); // server.close() closes it
   db.setRepo({ source: PR_SOURCE, repository: REPOSITORY, url: 'https://github.com/acme/app', canPush: true, issuesEnabled: true, forkParent: null, pushedAt: null, methods: ['merge', 'squash'] });
   for (const n of [7, 8, 9]) seedPr(db, n);
