@@ -175,7 +175,7 @@ test('← source and Esc leave at once without changes and ask with them (#294, 
   await user.type(screen.getByLabelText(t('settings.branch')), 'x');
   await user.keyboard('{Escape}');
   const firstConfirm = screen.getByRole('alertdialog');
-  await user.click(within(firstConfirm).getByRole('button', { name: t('settings.cancel') }));
+  await user.click(within(firstConfirm).getByText(t('settings.cancel')));
   expect(onCancel).not.toHaveBeenCalled();
   expect(screen.getByRole('navigation')).toBeInTheDocument();
 

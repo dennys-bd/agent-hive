@@ -57,7 +57,7 @@ test('a missing task offers fechar / manter; fechar asks once, with no worktree 
   await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'fechar' }));
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/close', expect.objectContaining({ method: 'POST', body: undefined }));
-  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
 });
 
 test('a running task shows abrir and no iniciar; a blocked task and a stage without prompt show no button (#542)', () => {

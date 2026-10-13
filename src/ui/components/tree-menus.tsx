@@ -136,12 +136,12 @@ function trashMessage(paths: string[] | undefined): string {
   return t('files.trashOne', { name: paths[0].split('/').at(-1) ?? paths[0] });
 }
 
-/** Delete's question (#818): always asked, Enter confirming it, its focus on the action. */
+/** Delete's question (#818): always asked; Enter confirms it through the dialogs' keyboard rule (#75). */
 export function TrashConfirm({ paths, onConfirm, onCancel }: { paths?: string[]; onConfirm(): void; onCancel(): void }) {
   return (
     <Confirm
       open={paths !== undefined} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}
-      message={trashMessage(paths)} confirmLabel={t('files.trash')} onConfirm={onConfirm} focusConfirm
+      message={trashMessage(paths)} confirmLabel={t('files.trash')} onConfirm={onConfirm}
     />
   );
 }

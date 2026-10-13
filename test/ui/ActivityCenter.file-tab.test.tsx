@@ -61,7 +61,7 @@ test('closing a clean file tab closes it at once and drops its model; a dirty on
   act(() => b.type('mine'));
   await user.click(screen.getByRole('button', { name: 'Fechar b.ts' }));
   expect(screen.getByRole('alertdialog')).toHaveTextContent('descartar alterações não salvas?');
-  await user.click(screen.getByRole('button', { name: 'cancelar' }));
+  await user.click(within(screen.getByRole('alertdialog')).getByText('cancelar'));
   expect([strips(), b.disposed, models.isDirty('a-I1', 'src/b.ts')]).toEqual([[['Claude', 'b.ts']], false, true]);
   await user.click(screen.getByRole('button', { name: 'Fechar b.ts' }));
   await user.click(screen.getByRole('button', { name: 'descartar' }));
