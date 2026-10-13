@@ -5,10 +5,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { syncRepository } from '../../src/read-model/loop.js';
 import { pullFlagsFromRest, pullFromRest, pullsFromGql, rollupOf, runsReading, statusReading, suitesReading, WireError } from '../../src/read-model/normalize.js';
-import { BATCH_SIZE, checkPath, pullPath, syncPulls } from '../../src/read-model/pulls.js';
+import { BATCH_SIZE, checkPath, pullPath, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
 import { reconcile, refetchIssue } from '../../src/read-model/reconcile.js';
 import { labelsPath, repoPath } from '../../src/read-model/repo-scopes.js';
-import type { RestGet } from '../../src/read-model/rest.js';
 import type { PullFlags } from '../../src/read-model/rows.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { scopePath, syncScope } from '../../src/read-model/sync.js';
@@ -16,7 +15,8 @@ import type { RepoRef } from '../../src/repos/repositories.js';
 import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 import {
-  fakeRest, HEAD, issueRow, NO_GQL, NOW, ok, OTHER_SOURCE, prIssueRow, pullKey, REF, REPO, REST_REPO, restIssue, restPr, SOURCE, T1, T2, T3, tempModel,
+  fakeRest, github, HEAD, issueRow, NO_GQL, NO_REST, NOW, ok, OTHER_SOURCE, type Page, pagesAt, prIssueRow, pullKey, REF, REPO, REST_REPO, restIssue, restPr, roundDeps, RUN_OK, RUNS_OK, SOURCE, T1, T2, T3,
+  tempModel,
 } from './fixtures.js';
 
 const memory = async (): Promise<ReadModel> => (await openReadModel(':memory:')).db;
@@ -170,33 +170,9 @@ test('a PR the full listing or the refetch reads gets its draft and merged_at, a
   assert.deepEqual(db.prs(SOURCE, REPO, 'open').map((r) => [r.number, r.isDraft]), [[7, true]]);
 });
 
-interface Page { body: unknown; etag: string }
 const OTHER_HEAD = 'b'.repeat(40);
-const RUN_OK = { name: 'test', status: 'completed', conclusion: 'success' };
-const RUNS_OK: Page = { body: { total_count: 1, check_runs: [RUN_OK] }, etag: 'ER1' };
 const CHECK_PARTS = ['runs', 'status', 'suites'] as const;
 const ORIGINAL: RepoRef = { ...REF, role: 'original', pair: 'bia/hive' };
-const restPull = (n: number, sha: string): Record<string, unknown> => ({ number: n, head: { sha, ref: 'feature' }, mergeable_state: 'clean' });
-// What GitHub answers the poll of PR n at head sha
-const pagesAt = (sha: string, runs: Page = RUNS_OK, n = 7): Record<string, Page> => ({
-  [pullPath(REPO, n)]: { body: restPull(n, sha), etag: `EP-${sha.slice(0, 1)}` },
-  [checkPath(REPO, sha, 'runs')]: runs,
-  [checkPath(REPO, sha, 'status')]: { body: { state: 'pending', statuses: [] }, etag: 'ES' },
-  [checkPath(REPO, sha, 'suites')]: { body: { total_count: 0, check_suites: [] }, etag: 'EU' },
-});
-
-// GitHub over `pages`: a 304 to a page's own ETag, as GitHub does; a path it lacks fails as the transport does. Every [path, etag] recorded
-function github(pages: Record<string, Page>): { rest: RestGet; calls: [string, string | undefined][] } {
-  const calls: [string, string | undefined][] = [];
-  const rest: RestGet = async (path, etag) => {
-    calls.push([path, etag]);
-    const page = pages[path];
-    if (page === undefined) throw new Error(`github rest: HTTP 404 for ${path}`);
-    return etag === page.etag ? { status: 304 } : ok(page.body, { etag: page.etag });
-  };
-  return { rest, calls };
-}
-
 const gqlPull = (id: string): Record<string, unknown> => ({
   id, reviewDecision: 'APPROVED', mergeStateStatus: 'BLOCKED', headCommit: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] },
 });
@@ -212,26 +188,21 @@ function fakeBatch(): { gql: Gql; calls: string[][] } {
   return { gql, calls };
 }
 
-const NO_REST: RestGet = async (path) => {
-  throw new Error(`unexpected ${path}`);
-};
-const roundDeps = (db: ReadModel, rest: RestGet, gql: Gql = NO_GQL) => ({ db, rest, gql, source: SOURCE, now: NOW });
-
 test('the poll of an open PR reads every part first; a quiet round answers 304 on each and emits nothing; a new check run reports pulls; a new head reads the checks without the old ETags (#186)', async (t) => {
   const db = await tempModel(t);
   db.upsertIssue(prIssueRow(7, T1), 'sync');
   db.setPullRead(pullKey(7), { decision: null, readAt: T1 }); // read already: no batch
-  assert.deepEqual((await syncPulls(roundDeps(db, github(pagesAt(HEAD)).rest), REF)).report, { kinds: ['pulls'], requests: { 200: 4, 304: 0 } });
+  assert.deepEqual((await syncPulls(roundDeps(db, github(pagesAt(HEAD)).rest), REF)).report, { kinds: ['pulls'], requests: { 200: 5, 304: 0 } });
   assert.equal(db.prs(SOURCE, REPO, 'open')[0]?.checks, 'success');
   const quiet = github(pagesAt(HEAD));
-  assert.deepEqual(await syncPulls(roundDeps(db, quiet.rest), REF), { report: { kinds: [], requests: { 200: 0, 304: 4 } }, errors: [] });
-  assert.deepEqual(quiet.calls.map(([, etag]) => etag), ['EP-a', 'ER1', 'ES', 'EU']);
+  assert.deepEqual(await syncPulls(roundDeps(db, quiet.rest), REF), { report: { kinds: [], requests: { 200: 0, 304: 5 } }, errors: [] });
+  assert.deepEqual(quiet.calls.map(([, etag]) => etag), ['EP-a', 'ER1', 'ES', 'EU', 'EV']);
   const failing: Page = { body: { total_count: 2, check_runs: [RUN_OK, { name: 'lint', status: 'completed', conclusion: 'failure' }] }, etag: 'ER2' };
-  assert.deepEqual((await syncPulls(roundDeps(db, github(pagesAt(HEAD, failing)).rest), REF)).report, { kinds: ['pulls'], requests: { 200: 1, 304: 3 } });
+  assert.deepEqual((await syncPulls(roundDeps(db, github(pagesAt(HEAD, failing)).rest), REF)).report, { kinds: ['pulls'], requests: { 200: 2, 304: 4 } });
   assert.equal(db.prs(SOURCE, REPO, 'open')[0]?.checks, 'failure');
   const moved = github(pagesAt(OTHER_HEAD));
   await syncPulls(roundDeps(db, moved.rest), REF);
-  assert.deepEqual(moved.calls, [[pullPath(REPO, 7), 'EP-a'], ...CHECK_PARTS.map((part) => [checkPath(REPO, OTHER_HEAD, part), undefined])]);
+  assert.deepEqual(moved.calls, [[pullPath(REPO, 7), 'EP-a'], ...CHECK_PARTS.map((part) => [checkPath(REPO, OTHER_HEAD, part), undefined]), [reviewsPath(REPO, 7), 'EV']]);
   assert.equal(db.openPulls(SOURCE, REPO)[0]?.headSha, OTHER_HEAD);
 });
 
@@ -284,8 +255,8 @@ test('a PR that stops being open drops its poll scopes; its row stays as last re
   assert.equal(db.scope(SOURCE, REPO, 'pull/7/runs')?.cursor, 'success', 'the reading rides beside its ETag');
   db.upsertIssue(prIssueRow(7, T2, { state: 'closed', closedAt: T2 }), 'sync');
   await syncPulls(roundDeps(db, NO_REST, fakeBatch().gql), REF);
-  const parts = (['pr', ...CHECK_PARTS] as const).map((part) => db.scope(SOURCE, REPO, `pull/7/${part}` as const));
-  assert.deepEqual(parts, [undefined, undefined, undefined, undefined]);
+  const parts = (['pr', ...CHECK_PARTS, 'reviews'] as const).map((part) => db.scope(SOURCE, REPO, `pull/7/${part}` as const));
+  assert.deepEqual(parts, [undefined, undefined, undefined, undefined, undefined]);
   assert.deepEqual(db.prs(SOURCE, REPO, 'closed').map((r) => [r.number, r.decision]), [[7, 'approved']]);
 });
 
@@ -323,5 +294,5 @@ test('a round runs the PR part after the issue scopes and reports pulls (#186)',
   const { report, error } = await syncRepository(roundDeps(db, gh.rest, batch.gql), REF);
   assert.equal(error, undefined);
   assert.deepEqual([report.kinds, batch.calls], [['issues', 'repo', 'pulls'], [['PR_7']]]);
-  assert.deepEqual(gh.calls.slice(4).map(([path]) => path), [pullPath(REPO, 7), ...CHECK_PARTS.map((part) => checkPath(REPO, HEAD, part))]);
+  assert.deepEqual(gh.calls.slice(4).map(([path]) => path), [pullPath(REPO, 7), ...CHECK_PARTS.map((part) => checkPath(REPO, HEAD, part)), reviewsPath(REPO, 7)]);
 });

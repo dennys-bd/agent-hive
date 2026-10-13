@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
+import { checkPath, pullPath, reviewsPath } from '../../src/read-model/pulls.js';
+import type { RefetchDeps } from '../../src/read-model/reconcile.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
@@ -145,3 +147,34 @@ export function fakeLinks(nodes: GhPullRequest[] = []): { gql: Gql; calls: unkno
 export const NO_GQL: Gql = async () => {
   throw new Error('a read called GraphQL');
 };
+
+/** A REST page of the poll's fake GitHub (#186): its body and the ETag it answers 304 to. */
+export interface Page { body: unknown; etag: string }
+export const RUN_OK = { name: 'test', status: 'completed', conclusion: 'success' };
+export const RUNS_OK: Page = { body: { total_count: 1, check_runs: [RUN_OK] }, etag: 'ER1' };
+
+/** What GitHub answers the poll of PR n at head sha (#186, #187): pulls/{n}, the three check parts, and no review. */
+export const pagesAt = (sha: string, runs: Page = RUNS_OK, n = 7): Record<string, Page> => ({
+  [pullPath(REPO, n)]: { body: restPull(n, sha), etag: `EP-${sha.slice(0, 1)}` },
+  [checkPath(REPO, sha, 'runs')]: runs,
+  [checkPath(REPO, sha, 'status')]: { body: { state: 'pending', statuses: [] }, etag: 'ES' },
+  [checkPath(REPO, sha, 'suites')]: { body: { total_count: 0, check_suites: [] }, etag: 'EU' },
+  [reviewsPath(REPO, n)]: { body: [], etag: 'EV' },
+});
+
+/** GitHub over `pages`: a 304 to a page's own ETag, as GitHub does; a path it lacks fails as the transport does. Every [path, etag] recorded. */
+export function github(pages: Record<string, Page>): { rest: RestGet; calls: [string, string | undefined][] } {
+  const calls: [string, string | undefined][] = [];
+  const rest: RestGet = async (path, etag) => {
+    calls.push([path, etag]);
+    const page = pages[path];
+    if (page === undefined) throw new Error(`github rest: HTTP 404 for ${path}`);
+    return etag === page.etag ? { status: 304 } : ok(page.body, { etag: page.etag });
+  };
+  return { rest, calls };
+}
+
+export const NO_REST: RestGet = async (path) => {
+  throw new Error(`unexpected ${path}`);
+};
+export const roundDeps = (db: ReadModel, rest: RestGet, gql: Gql = NO_GQL): RefetchDeps => ({ db, rest, gql, source: SOURCE, now: NOW });

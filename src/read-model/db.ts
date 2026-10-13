@@ -33,8 +33,8 @@ const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor,
 
 /** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). `pulls`: a PR's own fields changed (#186). */
 export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'pulls';
-/** A part of an open PR's poll (#186): pulls/{n}, then its head's check runs, combined status and check suites. */
-export type PullPart = 'pr' | 'runs' | 'status' | 'suites';
+/** A part of a PR's poll (#186, #187): pulls/{n}, its head's check runs, combined status and check suites, and its reviews. */
+export type PullPart = 'pr' | 'runs' | 'status' | 'suites' | 'reviews';
 /** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
  * whose cursor holds the part's own reading, so a 304 still has it. kind is TEXT: no migration. */
 export type ScopeKind = SyncKind | 'reconcile' | `pull/${number}/${PullPart}`;

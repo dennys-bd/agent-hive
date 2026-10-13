@@ -7,9 +7,11 @@ import {
   awaitingFromRest, checkItemsFromRest, pullFromGql, pullPageFromRest, pullsFromGql, repoFromRest, reviewFromGql, reviewsFromRest, WireError,
 } from '../../src/read-model/normalize.js';
 import type { CheckRow, PullPage, ReviewRow } from '../../src/read-model/rows.js';
+import { awaitingPath, checkPath, pollOne, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
+import { EMPTY_REPORT } from '../../src/read-model/sync.js';
 import { tempDir } from '../temp-dir.js';
-import { commentRow, GQL_PR, GQL_REVIEW, HEAD, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { commentRow, github, GQL_PR, GQL_REVIEW, HEAD, issueRow, NO_REST, pagesAt, REF, RUN_OK, roundDeps, tempModel, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, REST_REPO, restPull, restReview, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const memory = async (): Promise<ReadModel> => (await openReadModel(':memory:')).db;
 
@@ -164,4 +166,51 @@ test('a review keeps #178\'s replace rule: a sync read before a write does not u
   assert.equal(db.upsertReview(review('R1', 'caio', 'APPROVED', T1, 'stale'), 'sync'), false);
   clock.now += 1;
   assert.equal(db.upsertReview(review('R1', 'caio', 'APPROVED', T1, 'edited'), 'sync'), true, 'past the window the sync is the truth again');
+});
+
+const OTHER_HEAD = 'b'.repeat(40);
+
+test('the poll stores the page, the reviews (no PENDING) and the check items; awaiting is not read with no suite awaiting; a quiet round writes nothing (#187)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  db.setPullRead(pullKey(7), { decision: null, readAt: T1 }); // read already: no batch
+  const pages = { ...pagesAt(HEAD), [reviewsPath(REPO, 7)]: { body: [restReview('R1', 'caio', 'APPROVED'), restReview('R2', 'bia', 'PENDING', null)], etag: 'EV' } };
+  const first = github(pages);
+  assert.deepEqual((await syncPulls(roundDeps(db, first.rest), REF)).report.kinds, ['pulls']);
+  const found = db.prPage(SOURCE, REPO, 7);
+  assert.deepEqual([found?.pull?.headRef, found?.pull?.baseOwner, found?.reviews.map((r) => r.nodeId), found?.checks.map((c) => [c.name, c.state])], ['feature', 'acme', ['R1'], [['test', 'success']]]);
+  assert.ok(first.calls.every(([path]) => !path.includes('actions/runs')), 'no suite awaits: no actions read');
+  assert.deepEqual((await syncPulls(roundDeps(db, github(pages).rest), REF)).report, { kinds: [], requests: { 200: 0, 304: 5 } });
+});
+
+test('a moved head replaces the check items whole: the old head\'s rows are gone (#187)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  db.setPullRead(pullKey(7), { decision: null, readAt: T1 });
+  const two = { body: { total_count: 2, check_runs: [RUN_OK, { name: 'lint', status: 'completed', conclusion: 'failure' }] }, etag: 'ER2' };
+  await syncPulls(roundDeps(db, github(pagesAt(HEAD, two)).rest), REF);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 7)?.checks.map((c) => c.name), ['test', 'lint']);
+  await syncPulls(roundDeps(db, github(pagesAt(OTHER_HEAD)).rest), REF);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 7)?.checks.map((c) => c.name), ['test']);
+});
+
+test('a suite awaiting approval reads the workflow names from actions/runs and stores them; a later 200 with none awaiting clears them (#187)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(prIssueRow(7, T1), 'sync');
+  db.setPullRead(pullKey(7), { decision: null, readAt: T1 });
+  const suites = { body: { total_count: 1, check_suites: [{ conclusion: 'action_required', app: { slug: 'github-actions' } }] }, etag: 'EU2' };
+  const pages = { ...pagesAt(HEAD), [checkPath(REPO, HEAD, 'suites')]: suites, [awaitingPath(REPO, HEAD)]: { body: { total_count: 1, workflow_runs: [{ name: 'CI' }] }, etag: 'EA' } };
+  await syncPulls(roundDeps(db, github(pages).rest), REF);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 7)?.pull?.awaiting, ['CI']);
+  await syncPulls(roundDeps(db, github(pagesAt(HEAD)).rest), REF);
+  assert.deepEqual(db.prPage(SOURCE, REPO, 7)?.pull?.awaiting, []);
+});
+
+test('pollOne polls one PR open or not, for its page\'s refetch; an issue number makes no request (#187)', async (t) => {
+  const db = await tempModel(t);
+  db.upsertIssue(prIssueRow(5, T1, { state: 'closed', closedAt: T1 }), 'sync');
+  db.upsertIssue(issueRow(1, T1), 'sync');
+  assert.deepEqual((await pollOne(roundDeps(db, github(pagesAt(HEAD, undefined, 5)).rest), REPO, 5)).kinds, ['pulls']);
+  assert.equal(db.prPage(SOURCE, REPO, 5)?.pull?.headSha, HEAD);
+  assert.deepEqual(await pollOne(roundDeps(db, NO_REST), REPO, 1), EMPTY_REPORT);
 });
