@@ -428,16 +428,21 @@ test('a card out of the focus reads at .3; a dragged one reads at the drag\'s .5
   expect(tile()).not.toHaveClass('opacity-30');
 });
 
-test('a cut title shows in full on hover, over the card\'s drag hint; a title that fits leaves only the hint (#91)', () => {
+// Radix draws the content twice (visible, and a visually hidden role="tooltip" copy): read the role, not the text.
+test('a cut title shows in full in a tooltip on hover, hiding the card\'s drag hint meanwhile; a title that fits leaves only the hint (#91, #284)', async () => {
   render(<Flow state={state(task())} />);
   const title = screen.getByText('#1 Task 1');
-  const hint = tile().getAttribute('title');
-  fireEvent.mouseEnter(title);
+  const card = tile(); // read before the tooltip repeats the text
+  const hint = card.getAttribute('title');
+  fireEvent.pointerMove(title, { pointerType: 'mouse' });
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   expect(title).not.toHaveAttribute('title');
+  fireEvent.pointerLeave(title, { pointerType: 'mouse' });
   Object.defineProperty(title, 'scrollHeight', { configurable: true, value: 48 });
   Object.defineProperty(title, 'clientHeight', { configurable: true, value: 32 });
-  fireEvent.mouseEnter(title);
-  expect(title).toHaveAttribute('title', '#1 Task 1');
-  expect(tile()).toHaveAttribute('title', hint ?? '');
+  fireEvent.pointerMove(title, { pointerType: 'mouse' });
+  expect(await screen.findByRole('tooltip')).toHaveTextContent('#1 Task 1');
+  expect(title).toHaveAttribute('title', '');
+  expect(card).toHaveAttribute('title', hint ?? '');
   cleanup();
 });
