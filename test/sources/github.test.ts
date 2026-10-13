@@ -58,6 +58,28 @@ test('a write clears the probe\'s stamp: the next poll reads in full (#190)', as
   assert.deepEqual(names(calls), ['probe', 'items', 'relations']);
 });
 
+test('a poll that ran while a write was in flight does not keep its stamp: the poll after the write reads in full (#190)', async () => {
+  const fake = fakeGql({ fields: FIELDS, setOption: {}, probe: probeAt(T1), items: page([node(1, 'Ready')]), relations: {} });
+  let land: () => void = () => undefined;
+  const landed = new Promise<void>((resolve) => { land = resolve; });
+  // the mutation is sent, then held: GitHub has not answered when the poll below reads
+  const gql: Gql = async (query, variables) => {
+    const answer = await fake.gql(query, variables);
+    if (fake.calls.at(-1)?.name === 'setOption') await landed;
+    return answer;
+  };
+  const source = createSource(SPEC, { gql, items: await memoryStore() });
+  await source.resolveFields();
+  await source.listItems();
+  const write = source.setColumn('PVTI_1', 'In progress');
+  await source.listItems(); // a full read (the write cleared the stamp) of the item from before the write
+  land();
+  await write;
+  fake.calls.length = 0;
+  await source.listItems();
+  assert.deepEqual(names(fake.calls), ['probe', 'items', 'relations']);
+});
+
 test('without a store, or a store with no login, every poll reads the wire as before: no probe (#190)', async () => {
   for (const items of [undefined, { ...(await memoryStore()), source: async () => undefined }]) {
     const { gql, calls } = fakeGql({ items: page([node(1, 'Ready')]), relations: {} });

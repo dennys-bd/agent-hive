@@ -177,6 +177,16 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   let contents = new Map<string, GhItemNode['content']>(); // every item the last listing saw, draft or filtered out: what apply acts on (#286)
   // #190: with a read model the poll probes the project first and lists what the model holds; it reads in full only when the sync says so
   const sync = items && createItemsSync({ store: items, probe, listNodes, kept: (nodes) => keep(nodes), fetchRelations: (tasks) => fetchRelations(gql, tasks), log });
+  // #190: every write makes the next poll read in full (a relation write does not move the probe). Cleared again once it lands: a poll that
+  // started between the first clear and the mutation read the item from before it
+  const written = <A extends unknown[], R>(write: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
+    sync?.clear();
+    try {
+      return await write(...args);
+    } finally {
+      sync?.clear();
+    }
+  };
 
   async function resolveFields(): Promise<void> {
     const status = await fetchStatusField(owner, number, gql);
@@ -262,7 +272,6 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   async function setColumn(itemId: string, column: string): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     const optionId = resolved.optionIds[column];
     if (optionId === undefined) throw new Error(`"${column}" is not a column the config cites`);
     await gql(SET_OPTION, { projectId: resolved.projectId, itemId, fieldId: resolved.statusFieldId, singleSelectOptionId: optionId });
@@ -273,7 +282,6 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // #846: a new issue in source.repository, on the Project, in the Status option `column` (the stage's first from column, cited)
   async function create({ title, body, column }: { title: string; body?: string; column: string }): Promise<string> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     if (source.repository === undefined) throw new Error('source has no repository for new issues');
     const option = resolved.options.find((o) => o.name === column);
     if (!option) throw new Error(`"${column}" is not a Status option: ${resolved.options.map((o) => o.name).join(', ')}`);
@@ -285,7 +293,6 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // it cannot be closed, and deleting it deletes the item. A close from hive_stop carries a reason and maybe the original of a duplicate (#314).
   async function apply(itemId: string, action: ItemAction): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     if (!contents.has(itemId)) throw new Error(`item ${itemId} is not on the source`);
     const content = contents.get(itemId);
     const issueId = content?.__typename === 'Issue' ? content.id : undefined;
@@ -345,13 +352,11 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   // #686: a field write, then the item re-read and run through the poll's own steps, so `entry` is what the next poll would list
   async function setField(itemId: string, field: string, value: FieldValue): Promise<FieldWrite> {
-    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     return writeItemField(await fieldsContext(), itemId, field, value);
   }
 
   // #56: a blocker relation added or removed, then the item's relations and entry re-read as a field write's
   async function relate(itemId: string, change: BlockerChange): Promise<BlockerWrite> {
-    sync?.clear(); // #190: the next poll reads in full; a relation write does not move the probe
     return relateItem(await fieldsContext(), itemId, change);
   }
 
@@ -364,5 +369,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     return readItemFields(gql, itemId, resolved.projectId);
   }
-  return { resolveFields, listItems, setColumn, create, apply, settingsOptions, comments, project, fieldsOf, setField, relate, findBlockers: searchBlockers, quota: async () => lastQuota };
+  return {
+    resolveFields, listItems, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,
+    setField: written(setField), relate: written(relate), findBlockers: searchBlockers, quota: async () => lastQuota,
+  };
 }

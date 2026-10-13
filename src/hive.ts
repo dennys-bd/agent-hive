@@ -74,7 +74,13 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   const items = readModel && bootItemStore(readModel, config, log);
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
   const build: SourceFactory = given.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
-  const sources = createSources(config, (spec) => build(spec, items));
+  let sources: Map<string, Source>;
+  try {
+    sources = createSources(config, (spec) => build(spec, items));
+  } catch (err) {
+    readModel?.close(); // the boot fails: nothing else would close the handle just opened
+    throw err;
+  }
   try {
     await resolveSources(sources);
   } catch (err) {
