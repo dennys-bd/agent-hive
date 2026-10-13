@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, tPlural } from '../src/ui/i18n.js';
-import { chipTitle, highestPercent, readAgo, refreshTitle, topAgent, usageWindows } from '../src/ui/lib/agent-usage.js';
+import { chipTitle, highestPercent, readAgo, refreshTitle, shownReadings, topAgent, usageWindows } from '../src/ui/lib/agent-usage.js';
 import type { RateLimits } from '../src/types.js';
 
 const NOW = Date.parse('2026-10-12T12:00:00.000Z');
@@ -78,4 +78,10 @@ test('the panel counts its agents with a plural (#223)', () => {
   assert.deepEqual([tPlural('usage.panel.count', 1, { n: 1 }), tPlural('usage.panel.count', 2, { n: 2 })], ['1 agente', '2 agentes']);
   setLanguage('en');
   assert.deepEqual([tPlural('usage.panel.count', 1, { n: 1 }), tPlural('usage.panel.count', 2, { n: 2 })], ['1 agent', '2 agents']);
+});
+
+test('shownReadings: a reading with no window the footer shows reads as no reading (#223)', () => {
+  const unknown = { at: ago(0), windows: { seven_day_opus: { usedPercent: 50, resetsAt: ago(0) } } };
+  assert.deepEqual(shownReadings({ claude: CLAUDE, codex: unknown }), { claude: CLAUDE });
+  assert.deepEqual(shownReadings({ codex: { at: ago(0), windows: {} } }), {});
 });

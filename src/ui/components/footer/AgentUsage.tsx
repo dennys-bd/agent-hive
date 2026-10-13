@@ -6,7 +6,7 @@ import { act } from '@/components/actions';
 import { UsagePanel } from '@/components/footer/UsagePanel';
 import { AgentMark, percentTone, RefreshButton, UsageMeter } from '@/components/footer/UsageParts';
 import { t } from '@/i18n';
-import { chipTitle, highestPercent, topAgent, usageWindows } from '@/lib/agent-usage';
+import { chipTitle, highestPercent, shownReadings, topAgent, usageWindows } from '@/lib/agent-usage';
 import { countdown } from '@/lib/usage';
 
 /** The usage group's forms (#223): the footer passes full until 2.5 picks one from the width. */
@@ -93,7 +93,7 @@ export function AgentUsage({ state, form, agents = PLAN_AGENTS }: AgentUsageProp
     void act('/plan-limits/refresh', agent === undefined ? {} : { agent }).finally(() =>
       setRefreshing((current) => new Set([...current].filter((a) => !asked.includes(a)))));
   };
-  const readings = state.rateLimits ?? {};
+  const readings = shownReadings(state.rateLimits ?? {});
   return (
     <div data-usage-group="" className="flex shrink-0 items-center gap-2">
       {form === 'group'

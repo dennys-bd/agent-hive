@@ -21,6 +21,10 @@ export const usageWindows = (reading: RateLimits): UsageWindow[] =>
     return window === undefined ? [] : [{ key, short: t(short), long: t(long), percent: Math.round(window.usedPercent), resetsAt: window.resetsAt }];
   });
 
+/** The readings the footer can show (#223): one whose windows are all unknown keys reads as no reading, so every form says so alike. */
+export const shownReadings = (readings: PlanReadings): PlanReadings =>
+  Object.fromEntries(Object.entries(readings).filter(([, reading]) => reading !== undefined && usageWindows(reading).length > 0));
+
 /** The minimal form's number: the highest rounded percent of the shown windows; undefined with nothing to measure. */
 export function highestPercent(reading: RateLimits | undefined): number | undefined {
   const percents = reading === undefined ? [] : usageWindows(reading).map((w) => w.percent);
