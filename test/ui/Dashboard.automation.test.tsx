@@ -47,13 +47,13 @@ test('Automação and Atividades offer no move: they stay on the left, and a sto
   expect(saved()).toMatchObject({ docks: { automation: 'left', activities: 'left' } });
 });
 
-test('the footer signal pill is colored by the effective signal; without one it falls back to the manual signal (#456, #357)', () => {
+test('the brand\'s mark is coloured by the effective signal; without one it falls back to the manual signal (#456, #357, #227)', () => {
   const { rerender } = render(<Dashboard state={{ ...state, signal: 'yellow' }} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  const pill = (): HTMLElement => within(screen.getByRole('contentinfo')).getByRole('status');
-  expect(pill()).toHaveAttribute('data-signal', 'yellow');
+  const mark = (): Element | null => document.querySelector('header [data-signal]');
+  expect(mark()).toHaveAttribute('data-signal', 'yellow');
   const effective = { signal: 'red' as const, floor: { signal: 'green' as const }, signalRules: [], capRules: [], disabledRules: [], stageCaps: {}, stageCapRules: {} };
   rerender(<Dashboard state={{ ...state, signal: 'yellow' }} effective={effective} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  expect(pill()).toHaveAttribute('data-signal', 'red');
+  expect(mark()).toHaveAttribute('data-signal', 'red');
 });
 
 test('a hive pick holds with no source configured and leaves only the tasks created in the Hive in the flow (#665)', async () => {

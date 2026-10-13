@@ -9,13 +9,13 @@ import { t } from '@/i18n';
 import { chipTitle, highestPercent, shownReadings, topAgent, usageWindows } from '@/lib/agent-usage';
 import { countdown } from '@/lib/usage';
 
-/** The usage group's forms (#223): the footer passes full until 2.5 picks one from the width. */
+/** The usage group's forms (#223): the footer picks one per step of handoff §6 (#227, footer-steps). */
 export type UsageForm = 'full' | 'compact' | 'minimal' | 'group';
 type ChipForm = Exclude<UsageForm, 'group'>;
 
 const TICK_MS = 60_000;
 const GROUP_MARKS = 3;
-const PLAN_AGENTS = planLimitAgents();
+export const PLAN_AGENTS = planLimitAgents(); // the footer's default too, so its fit key counts the agents shown here (#227)
 const CHIP = 'flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md border px-2 py-0.5';
 const BAR: Record<Exclude<ChipForm, 'minimal'>, string> = { full: 'w-14', compact: 'w-7' };
 

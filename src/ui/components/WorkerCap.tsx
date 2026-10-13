@@ -31,7 +31,7 @@ export function WorkerCap({ state, effective }: WorkerCapProps) {
 
   return (
     <div className="flex shrink-0 items-center gap-2 text-[13px]">
-      <span className="font-medium">{t('footer.workers', { active, max: effective?.maxWorkers ?? state.maxConcurrent })}</span>
+      <span className="font-medium">{t('header.workers', { active, max: effective?.maxWorkers ?? state.maxConcurrent })}</span>
       <label htmlFor="max-workers" className="ml-auto flex items-center gap-2 text-muted-foreground text-xs">
         {t('footer.max')}
         <Input

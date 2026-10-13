@@ -97,7 +97,7 @@ test('the dashboard wrapper fills the viewport height and main takes the remaini
   expect(main.closest('.h-screen')).not.toBeNull(); // main sits inside the terminal split (#251), itself inside the h-screen wrapper
 });
 
-test('the max workers control lives in the Automação tab, in neither the header nor the footer, which holds the signal strip (#146, #456)', () => {
+test('the max workers control lives in the Automação tab, in neither the header nor the footer, which holds no signal (#146, #456, #227)', () => {
   currentState = state([], worker());
   render(<App />);
   const header = document.querySelector('header')!;
@@ -105,7 +105,7 @@ test('the max workers control lives in the Automação tab, in neither the heade
   expect(within(screen.getByRole('region', { name: 'Automação' })).getByLabelText('máx.')).toBeInTheDocument();
   expect(within(header).queryByLabelText('máx.')).not.toBeInTheDocument();
   expect(within(footer).queryByLabelText('máx.')).not.toBeInTheDocument();
-  expect(within(footer).getByRole('status')).toBeInTheDocument();
+  expect(within(footer).queryByRole('status')).not.toBeInTheDocument(); // the signal is the header brand's mark (#227)
 });
 
 test('a click on a stopped task opens the panel on the details panel with no Worker tab; its iniciar button only starts it', async () => {

@@ -108,6 +108,8 @@ function windowBackground(): string {
 }
 
 const TRAFFIC_LIGHTS = { x: 14, y: 16 }; // the handoff's: 12px lights 16px from the top of a 44px header
+// #227: below this the footer's last step (handoff §6) stops fitting the usual content; a saved rectangle narrower than it is widened by Electron
+const MIN_WIDTH = 960;
 
 // Registered, not loaded: showMainWindow loads it once the port's cookie is in (#467)
 function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
@@ -116,7 +118,7 @@ function openMainWindow(port: number, bounds: MainWindowBounds): BrowserWindow {
   // The native title bar is hidden (#533): the header draws it, with the traffic lights centred in its 44px and inside its 100px left padding.
   // fullscreen only when true: an explicit false makes the window not fullscreenable on macOS (the green light's +, no full screen key, #585)
   const win = new BrowserWindow({
-    ...rect, ...(fullScreen ? { fullscreen: true } : {}), titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
+    ...rect, ...(fullScreen ? { fullscreen: true } : {}), minWidth: MIN_WIDTH, titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHTS, backgroundColor: windowBackground(), webPreferences: { preload: WINDOW_PRELOAD },
   });
   if (maximized && !fullScreen) win.maximize();
   const terminals = createTerminalWindows({ port: () => port, boundsFile: join(app.getPath('userData'), BOUNDS_FILE), background: windowBackground, secretOf, ...detach.mainWindowDeps(win), onOpenTask: openTaskOn(win), onOpenFile: openFileOn(win, focusWindow), log });
