@@ -57,3 +57,9 @@ test('taskTotals adds each running worker\'s time since its last fold to its par
     tokens: 1000, ms: 30 * MINUTE, waitingMs: 0, parts: [part('spec', 'claude', 1000, 10 * MINUTE), part('dev', 'claude', 0, 20 * MINUTE)],
   });
 });
+
+test('taskTotals counts a running commands stage\'s worker, which holds no activity, through the run its activity names (#617)', () => {
+  const commands = { stage: 'checks', at: 0, ptyId: 'p1', runId: 'p1', failed: [], workerId: 'wc', started: [] };
+  const state = { ...withWork({ ...initialState(0), tasks: [TASK] }, 'item1', { commands }), workers: [{ id: 'wc', status: 'working' as const, stage: 'checks', startedAt: ago(2 * MINUTE) }] };
+  assert.deepEqual(taskTotals(state, TASK, NOW).parts, [part('checks', undefined, 0, 2 * MINUTE)]);
+});

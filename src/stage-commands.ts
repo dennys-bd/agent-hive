@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { taskOfActivity, withActivity } from './activities.js';
-import { withResult } from './record-kit.js';
+import { withResult, withRun } from './record-kit.js';
 import { ensureActivity, none, type Reduced, releaseWorker, slugTaken, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { onSource, resolveWorkspace, stageOf } from './tasks.js';
 import { advance, haltGone } from './transit.js';
@@ -32,7 +32,7 @@ export function startCommands(given: State, task: Task, index: number, kind: Wor
   const started: Task = { ...written.task, ...(workspace === undefined ? {} : { workspace }) };
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = born.activity;
   const ptyId = randomUUID();
-  const worker: Worker = { id: slot.id, status: 'working', startedAt: new Date().toISOString(), lastEvent: { kind }, ...(slot.draining ? { draining: true } : {}) };
+  const worker: Worker = { id: slot.id, status: 'working', stage: stage.name, startedAt: new Date().toISOString(), lastEvent: { kind }, ...(slot.draining ? { draining: true } : {}) };
   const run: StageCommands = { stage: stage.name, at: 0, ptyId, runId: ptyId, failed: [], workerId: worker.id, started: [] };
   const running: Activity = { ...unstopped, commands: run };
   const held: State = { ...born.state, workers: born.state.workers.map((w, i) => (i === index ? worker : w)) };
@@ -48,10 +48,14 @@ export function freedLostRuns(state: State): State {
 }
 
 // The worker the run held frees with its end, whatever the end, and before #134's routing takes the verdict anywhere (#727): a draining one
-// leaves, any other empties for the fill, which decides what runs next under the signal
-function released(state: State, { commands }: Pick<Activity, 'commands'>): State {
+// leaves, any other empties for the fill, which decides what runs next under the signal. Its time joins the task first (#617): the worker
+// holds no activity, so releaseRun never finds it
+function released(state: State, { id, commands }: Pick<Activity, 'id' | 'commands'>): State {
   const worker = commands && state.workers.find((w) => w.id === commands.workerId);
-  return worker ? { ...state, workers: releaseWorker(state.workers, worker) } : state;
+  if (!worker) return state;
+  const task = taskOfActivity(state, id);
+  const counted = task ? withRun(state, task, worker, Date.now()) : state;
+  return { ...counted, workers: releaseWorker(counted.workers, worker) };
 }
 
 // The run `ptyId` answers for, with its activity and task; undefined for an older pty (a late exit after a stop), during a Quit (its kills

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activityOf, resultOf, withActivity } from '../src/activities.js';
+import { activityOf, resultOf, usageOf, withActivity } from '../src/activities.js';
 import { deriveEvents } from '../src/event-derive.js';
 import { describeEffect, describeEvent } from '../src/log.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
@@ -276,4 +276,15 @@ test('retry on a task out of tries runs the stage again at once with the counter
   const { state, effects } = reduce(out, { type: 'retry', taskId: ID });
   assert.ok(commandOf(effects), 'the loop runs the stage again at once');
   assert.deepEqual([live(state)?.stopped, live(state)?.error, live(state)?.tries, live(state)?.tryLog], [undefined, undefined, undefined, undefined]);
+});
+
+test('a commands stage counts its run\'s time on the task as a part with its stage and no agent, whether it passes or is stopped (#617)', () => {
+  const first = polled().state;
+  assert.equal(first.workers[0].stage, 'checks');
+  const ran: State = { ...first, workers: first.workers.map((w) => ({ ...w, startedAt: new Date(Date.now() - 5 * 60_000).toISOString() })) };
+  const passed = usageOf(ended(ended(ended(ran, 0).state, 0).state, 0).state, ID)!;
+  assert.deepEqual(passed.parts.map((p) => [p.stage, p.agent, p.tokens]), [['checks', undefined, 0]]);
+  assert.ok(passed.parts[0].ms >= 5 * 60_000 && passed.ms === passed.parts[0].ms, `the run's time: ${passed.ms}`);
+  const halted = reduce(ran, { type: 'stop', ptyId: live(ran)?.commands?.ptyId ?? 'none' }).state;
+  assert.ok(usageOf(halted, ID)!.parts[0].ms >= 5 * 60_000, 'a stop counts it too');
 });

@@ -80,7 +80,9 @@ export function sessionBaseline(state: Pick<State, 'activityRecords'>, task: Tas
  * worker's part (#617). Tokens are stored at every Stop, so they need no running share. The detail panel re-renders on the main window's
  * tick, so the time moves without a state write. */
 export function taskTotals(state: Pick<State, 'workers' | 'activities' | 'activityRecords'>, task: Task, now: number): TaskUsage {
-  return workersOf(state, task).reduce((total, worker) => addUsage(total, worker, { tokens: 0, ...runShare(worker, now) }), usageOf(state, taskId(task)) ?? NO_USAGE);
+  const commands = activityOf(state, taskId(task))?.commands; // #617: a commands stage's worker holds no activity; its run names it
+  const running = [...workersOf(state, task), ...state.workers.filter((w) => w.id === commands?.workerId)];
+  return running.reduce((total, worker) => addUsage(total, worker, { tokens: 0, ...runShare(worker, now) }), usageOf(state, taskId(task)) ?? NO_USAGE);
 }
 
 /** hive_done's result shallow-merged into the live record, a newer key winning (#99). */
