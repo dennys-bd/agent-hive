@@ -8,14 +8,18 @@ import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, projectQuery, splitBlocked, usesMe } from './github-filter.js';
 import type { Logger } from '../log.js';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PAGE_SIZE, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo, relationsQuery,
-  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
-  type ProjectsData, type RelationsData, type SelectFieldsData, type ViewerData,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PAGE_SIZE, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo,
+  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
+  type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
 import { readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
-import { blockersOf, findBlockers, relateItem } from './github-blockers.js';
+import { findBlockers, relateItem } from './github-blockers.js';
+import { applyRelations, fetchRelations } from './github-items-sync.js';
 import { readProject, type ProjectRead } from './github-project.js';
+import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
+
+export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
 
 const ITEM_LIMIT = 200; // the ceiling the gh --limit used to enforce; two pages of 100: the poll's and the filter options'
 const GHOST = 'ghost'; // what GitHub itself shows for a deleted account
@@ -72,74 +76,9 @@ async function closeVariables(gql: Gql, issueId: string, url: string | undefined
   return { ...stated, duplicateIssueId: original };
 }
 
-// Issue dependencies and sub-issues that are still OPEN, in response order, without duplicates.
-function openBlockers(issue: GhIssueRelations | null | undefined): string[] {
-  if (!issue) return [];
-  const nodes = [...(issue.blockedBy?.nodes ?? []), ...(issue.subIssues?.nodes ?? [])];
-  return [...new Set(nodes.filter((n) => n.state === 'OPEN').map((n) => String(n.number)))];
-}
-
 // An epic is any issue GitHub itself counts sub-issues for, whatever their state: the field costs nothing extra on the listing, so this is known
 // before a single relations alias is spent. A fixture (or a field GitHub did not return) with no summary reads as not an epic.
 export const isEpicItem = (content: GhItemNode['content']): boolean => (content?.subIssuesSummary?.total ?? 0) > 0;
-
-const statusOf = (item: GhItemNode): string | undefined => item.fieldValueByName?.name;
-const subIssueIds = (item: GhItemNode): string[] => (item.content?.subIssues?.nodes ?? []).map((n) => n.id);
-
-/** The items in source order with each epic's sub-issues moved right after it, in the epic's own sub-issue order, depth first; only
- * children in the epic's Status column follow it. Items with no epic above them in their column keep their relative source order (#211). */
-export function groupUnderEpics(items: GhItemNode[]): GhItemNode[] {
-  const byId = new Map(items.flatMap<[string, GhItemNode]>((item) => (item.content?.id ? [[item.content.id, item]] : [])));
-  const parentOf = new Map<GhItemNode, GhItemNode>(); // GitHub gives an issue one parent at most; "first in source order" only makes this total
-  for (const epic of items) {
-    for (const id of subIssueIds(epic)) {
-      const child = byId.get(id);
-      if (child && child !== epic && !parentOf.has(child) && statusOf(child) === statusOf(epic)) parentOf.set(child, epic);
-    }
-  }
-  const placed = new Set<GhItemNode>(); // a cycle or a duplicate can neither loop nor place a task twice
-  const walk = (item: GhItemNode): GhItemNode[] => {
-    if (placed.has(item)) return [];
-    placed.add(item);
-    const children = subIssueIds(item).flatMap((id) => {
-      const child = byId.get(id);
-      return child && parentOf.get(child) === item ? [child] : [];
-    });
-    return [item, ...children.flatMap((child) => walk(child))];
-  };
-  const roots = items.filter((item) => !parentOf.has(item));
-  return [...roots, ...items].flatMap((item) => walk(item)); // a cycle leaves its items rootless: they come last, in source order
-}
-
-/** An item's place in its tree (#28): its parent's and its children's project item ids, and which of the children GitHub has closed. */
-export interface TreeLinks { parent?: string; children: string[]; closedChildren: string[] }
-
-/** Each node's tree links over a whole listing (#28). Unlike groupUnderEpics the Status column is ignored: a tree spans stages. A sub-issue
- * with no item is left out; the node itself and repeats are skipped, so a cycle or a duplicate on the wire places nothing twice. */
-export function treeLinks(nodes: GhItemNode[]): Map<string, TreeLinks> {
-  const itemOf = new Map<string, string>(); // issue node id → project item id
-  for (const node of nodes) {
-    const issueId = node.content?.id;
-    if (issueId !== undefined && !itemOf.has(issueId)) itemOf.set(issueId, node.id);
-  }
-  const parents = new Map<string, string>(); // GitHub gives an issue one parent at most; "first in listing order" only makes this total
-  const own = nodes.map((node): [string, TreeLinks] => {
-    const children: string[] = [];
-    const closedChildren: string[] = [];
-    for (const sub of node.content?.subIssues?.nodes ?? []) {
-      const child = itemOf.get(sub.id);
-      if (child === undefined || child === node.id || children.includes(child)) continue;
-      children.push(child);
-      if (sub.state === 'CLOSED') closedChildren.push(child);
-      if (!parents.has(child)) parents.set(child, node.id);
-    }
-    return [node.id, { children, closedChildren }];
-  });
-  return new Map(own.map(([id, links]): [string, TreeLinks] => {
-    const parent = parents.get(id);
-    return [id, parent === undefined ? links : { parent, ...links }];
-  }));
-}
 
 // Only what is there (#28): a leaf, and an issue with no parent on the Project, carry none of the three keys
 const treeFields = ({ parent, children, closedChildren }: TreeLinks): Pick<Item, 'parent' | 'children' | 'closedChildren'> => ({
@@ -186,23 +125,6 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
 // #31: under show an issue with sub-issues is an epic: it never runs and its stage follows its children, by the source's own rule
 const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig): SourceItem =>
   ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt } } });
-
-// Every listed task gets its relations (#441): a stage's view filter and a source's blocked rule read blocked on any task, and a blocked task
-// refuses a session wherever it sits. relationsQuery aliases each task by its index here, a task with no
-// issue url being skipped, so `i<index>` finds its answer. #56: a task whose issue was read also gets its blocker relations both ways,
-// empty lists included, so "none" and "not read" differ
-async function withBlockers(tasks: SourceItem[], gql: Gql): Promise<SourceItem[]> {
-  const query = relationsQuery(tasks.map((c) => c.item));
-  if (!query) return tasks;
-  const data = (await gql(query)) as RelationsData;
-  return tasks.map((task, i) => {
-    const issue = data[`i${i}`]?.issue;
-    const blockedBy = openBlockers(issue);
-    const repo = issueRepo(task.item.url);
-    const blockers = issue && repo ? { blockers: blockersOf(issue, `${repo.owner}/${repo.name}`) } : {};
-    return { ...task, item: { ...task.item, ...(blockedBy.length > 0 ? { blockedBy } : {}), ...blockers } };
-  });
-}
 
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
@@ -275,16 +197,16 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   }
 
   // The poll's steps on its items (#211, #245, #441), and on the one item a field write re-read (#686): issue items in a cited column, grouped
-  // under their epics, then the filter, the hidden epics, the relations and the blocked rules. The tree links (#28) are read over every node
-  // first, before a column or a filter drops one: a child filtered out or in another column is still a child
-  async function listed(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): Promise<SourceItem[]> {
+  // under their epics, then the filter and the hidden epics. The tree links (#28) are read over every node first, before a column or a filter
+  // drops one: a child filtered out or in another column is still a child
+  function keep(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): SourceItem[] {
     const names = new Set(cited.map((c) => c.column));
     const tasks = new Map(items.flatMap<[GhItemNode, SourceItem]>((item) => {
       const task = issueItem(item, names, source.taskProps, links.get(item.id));
       return task ? [[item, task]] : [];
     }));
     // Grouped before anything is dropped: an epic the Hive does not show still lends its place to its sub-issues (#211)
-    const kept = groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
+    return groupUnderEpics([...tasks.keys()]).flatMap<SourceItem>((item) => {
       if (!matchesFilter(other, me, item)) return []; // filtered out: to the Hive it is simply not on the source
       const epic = isEpicItem(item.content);
       if (epics === 'hide' && epic) return []; // #30: not a task for the Hive: its sub-issues take its place; ignore and show list it
@@ -292,8 +214,12 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
       if (task === undefined) return [];
       return [epics === 'show' && epic ? asEpic(task, source) : task];
     });
-    // Items carry no relations; a failed query rejects the poll, never "no blockers". The blocked rules (#441) are judged on what it read.
-    return (await withBlockers(kept, gql)).filter((task) => matchesRules(blocked, task.item));
+  }
+
+  // Then the relations and the blocked rules (#441). Items carry no relations; a failed query rejects the poll, never "no blockers"
+  async function listed(items: GhItemNode[], links: Map<string, TreeLinks> = treeLinks(items)): Promise<SourceItem[]> {
+    const tasks = keep(items, links);
+    return applyRelations(tasks, await fetchRelations(gql, tasks)).filter((task) => matchesRules(blocked, task.item));
   }
 
   async function listItems(): Promise<SourceItem[]> {

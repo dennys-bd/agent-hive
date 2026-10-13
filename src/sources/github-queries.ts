@@ -80,6 +80,13 @@ export const ITEMS = `query($login: String!, $number: Int!, $after: String, $fil
   }
 }`;
 
+// #190, #189 §5: the poll's probe, 1 point. A project's updatedAt moves on an item's field write and a content edit; the rateLimit keeps the
+// source's quota reading fresh on a poll that reads nothing more
+export const PROBE = `query($login: String!, $number: Int!) {
+  rateLimit { limit remaining resetAt }
+  repositoryOwner(login: $login) { ... on ProjectV2Owner { projectV2(number: $number) { updatedAt } } }
+}`;
+
 // Each set value of an item with its field's name, of every kind the native view renders (#756); ITEM_FIELDS reads the same (#686)
 const ALL_FIELD_VALUES = `fieldValues(first: ${FIELD_VALUE_LIMIT}) {
               nodes {
@@ -316,6 +323,9 @@ export interface ItemsData {
     } | null;
   } | null;
 }
+
+/** PROBE's answer (#190): a null owner or project is the source not being there. */
+export interface ProbeData { rateLimit?: GhRateLimit | null; repositoryOwner?: { projectV2?: { updatedAt: string } | null } | null }
 // One entry per alias; the repository (null) or the issue (issue: null) may be gone by the time we ask.
 export type RelationsData = Record<string, { issue: GhIssueRelations | null } | null | undefined>;
 export interface ViewerData { viewer?: { login?: string } | null }
