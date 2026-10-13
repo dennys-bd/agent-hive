@@ -120,3 +120,8 @@ export function fakeLinks(nodes: GhPullRequest[] = []): { gql: Gql; calls: unkno
   };
   return { gql, calls };
 }
+
+/** A Gql that must never be called (#186): a round with no PR to read, or a PR's refetch. */
+export const NO_GQL: Gql = async () => {
+  throw new Error('a read called GraphQL');
+};

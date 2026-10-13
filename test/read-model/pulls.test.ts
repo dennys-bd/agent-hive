@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { pullFlagsFromRest, pullFromRest, pullsFromGql, rollupOf, runsReading, statusReading, suitesReading, WireError } from '../../src/read-model/normalize.js';
+import { reconcile, refetchIssue } from '../../src/read-model/reconcile.js';
 import type { PullFlags } from '../../src/read-model/rows.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
+import { syncScope } from '../../src/read-model/sync.js';
 import { tempDir } from '../temp-dir.js';
-import { HEAD, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, restIssue, restPr, SOURCE, T1, T2, T3 } from './fixtures.js';
+import { fakeRest, HEAD, issueRow, NO_GQL, NOW, ok, OTHER_SOURCE, prIssueRow, pullKey, REPO, restIssue, restPr, SOURCE, T1, T2, T3 } from './fixtures.js';
 
 const memory = async (): Promise<ReadModel> => (await openReadModel(':memory:')).db;
 const flags = (n: number, draft: boolean, mergedAt: string | null): PullFlags => ({ ...pullKey(n), draft, mergedAt });
@@ -135,4 +137,27 @@ test('pullsFromGql reads each aliased node\'s id, decision, merge state and chec
     { nodeId: 'PR_8', decision: null, mergeState: 'unknown', checks: 'awaiting' },
   ]);
   assert.throws(() => pullsFromGql(null), WireError);
+});
+
+test('the issues scope writes draft and merged_at for its PR items and reports pulls; the same page again writes nothing (#186)', async () => {
+  const db = await memory();
+  const page = [restIssue(1, T1), restPr(7, T1, null, { draft: true }), restPr(5, T2, T2)];
+  const first = await syncScope({ db, rest: fakeRest([ok(page, { etag: 'E1' })]).rest, source: SOURCE, now: NOW }, REPO, 'issues');
+  assert.deepEqual(first.kinds, ['issues', 'pulls']);
+  assert.deepEqual(db.prs(SOURCE, REPO, 'open').map((r) => [r.number, r.isDraft]), [[7, true]]);
+  assert.deepEqual(db.prs(SOURCE, REPO, 'merged').map((r) => r.number), [5]);
+  db.setScope(SOURCE, REPO, 'issues', { cursor: null, etag: null, syncedAt: null }); // the same page read again from the start
+  const again = await syncScope({ db, rest: fakeRest([ok(page)]).rest, source: SOURCE, now: NOW }, REPO, 'issues');
+  assert.deepEqual(again.kinds, []);
+});
+
+test('a PR the full listing or the refetch reads gets its draft and merged_at, and the change reports pulls (#186)', async () => {
+  const db = await memory();
+  db.upsertIssue(prIssueRow(5, T2, { state: 'closed', closedAt: T2 }), 'sync');
+  const listing = fakeRest([ok([restPr(5, T2, T2)]), ok([])]);
+  assert.deepEqual((await reconcile({ db, rest: listing.rest, source: SOURCE, now: NOW }, REPO)).kinds, ['pulls']);
+  assert.deepEqual(db.prs(SOURCE, REPO, 'merged').map((r) => r.number), [5]);
+  const refetch = fakeRest([ok(restPr(7, T1, null, { draft: true })), ok([])]);
+  assert.deepEqual(await refetchIssue({ db, rest: refetch.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REPO, 7), { outcome: 'changed', kinds: ['pulls'] }); // PR 7 was not stored: db.issue never reads a PR, so the snapshot sees no issues change; only its flags are new
+  assert.deepEqual(db.prs(SOURCE, REPO, 'open').map((r) => [r.number, r.isDraft]), [[7, true]]);
 });
