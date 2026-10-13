@@ -5,12 +5,14 @@ import express from 'express';
 import { initialState } from '../../src/orchestrator.js';
 import type { ReadModel, SyncKind } from '../../src/read-model/db.js';
 import type { RefetchOutcome } from '../../src/read-model/loop.js';
-import { REPO_ISSUE_LIMIT } from '../../src/read-model/views.js';
+import { PR_LIST_LIMIT, prsOf, REPO_ISSUE_LIMIT } from '../../src/read-model/views.js';
 import { ADD_COMMENT, ADD_LABELS, UPDATE_ISSUE } from '../../src/repos/github-repo-queries.js';
 import { registerRepoRoutes, type RepoReadModel, type RepoRouteDeps } from '../../src/server-repos.js';
 import type { GqlJson } from '../../src/sources/github-gql.js';
-import type { CombConfig, Exec, Workspace } from '../../src/types.js';
-import { CLOSING_PRS, COMMENT_ROW, commentRow, GQL_COMMENT, GQL_ISSUE, ISSUE_ROW, issueRow, OTHER_SOURCE, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, T3, tempModel } from './fixtures.js';
+import type { CombConfig, Exec, RepoPrs, Workspace } from '../../src/types.js';
+import {
+  CLOSING_PRS, COMMENT_ROW, commentRow, GQL_COMMENT, GQL_ISSUE, HEAD, ISSUE_ROW, issueRow, OTHER_SOURCE, prIssueRow, pullKey, REPO, REPO_ROW, SOURCE, SYNCED, T1, T2, T3, tempModel,
+} from './fixtures.js';
 
 const SITE = 'acme/site';
 const LATER = '2026-10-06T00:00:00Z';
@@ -18,7 +20,7 @@ const workspace = (name: string): Workspace => ({ name, path: `/code/${name}`, e
 const COMB: CombConfig = { prefix: 'HIVE', workspaces: [workspace('hive'), workspace('site')], sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive' };
 // each workspace's origin: /code/hive is acme/hive, /code/site is acme/site
 const exec: Exec = async (_file, args) => ({ stdout: `git@github.com:acme/${args[1] === '/code/site' ? 'site' : 'hive'}.git\n` });
-const READS = ['/repositories', '/repositories/acme/hive/issues?state=open', '/repositories/acme/hive/issues/12', '/repositories/acme/hive/labels'];
+const READS = ['/repositories', '/repositories/acme/hive/issues?state=open', '/repositories/acme/hive/issues/12', '/repositories/acme/hive/labels', '/repositories/acme/hive/pulls?state=open'];
 
 type Refetch = (db: ReadModel, repository: string, number: number) => Promise<RefetchOutcome>;
 interface Options { model?: boolean; source?: string | undefined; sourceFails?: true; refetch?: Refetch; gql?: GqlJson }
@@ -85,11 +87,11 @@ const listed = (n: number, updatedAt: string) => ({
 const NEVER_SYNCED_SITE = { repository: SITE, url: 'https://github.com/acme/site', workspace: 'site', openPrs: 0, openIssues: 0, closedIssues: 0, canPush: false, issuesEnabled: true, syncedAt: null };
 const NO_ISSUES = { state: 'open', total: 0, truncated: false, syncedAt: null, issues: [] };
 
-test('the four read routes answer a synced repository from the model and never call GraphQL (#181)', async (t) => {
+test('the five read routes answer a synced repository from the model and never call GraphQL (#181, #186)', async (t) => {
   const { base, db, gqlCalls } = await routesOn(t);
   seed(db);
   const statuses = await Promise.all(READS.map(async (path) => (await get(`${base}${path}`))[0]));
-  assert.deepEqual(statuses, [200, 200, 200, 200]);
+  assert.deepEqual(statuses, READS.map(() => 200));
   assert.equal(gqlCalls(), 0);
 });
 
@@ -170,7 +172,7 @@ test('GET …/labels answers the labels table, a label no issue carries included
   assert.deepEqual(await get(`${base}/repositories/acme/hive/labels`), [200, ['bug', 'wontfix']]);
 });
 
-test('rows stored under another source never show in any of the four answers (#181)', async (t) => {
+test('rows stored under another source never show in any of the read answers (#181)', async (t) => {
   const { base, db } = await routesOn(t);
   db.setRepo({ ...REPO_ROW, source: OTHER_SOURCE, repository: SITE, url: 'https://github.com/acme/site' });
   db.setLabels(OTHER_SOURCE, SITE, ['theirs']);
@@ -267,4 +269,57 @@ test('an answer the model cannot store still answers ok and is logged; with no l
     assert.deepEqual(await post(`${base}/repositories/acme/hive/issues/12`, { title: 'New', updatedAt: T1 }), [200, { ok: true }]);
     assert.deepEqual([db.issue(SOURCE, REPO, 12)?.title, notified, errors.length, gqlCalls()], ['T12', [], logged, 2]);
   }
+});
+
+const PULLS = '/repositories/acme/hive/pulls';
+const PR_LINK = 'https://github.com/acme/hive/pull/';
+
+// acme/hive's PRs synced: 7 open with its poll and its decision, 8 an open draft, 5 merged, 4 closed and caio's
+function seedPrs(db: ReadModel): void {
+  db.setRepo(REPO_ROW);
+  db.setScope(SOURCE, REPO, 'issues', { cursor: null, etag: null, syncedAt: SYNCED });
+  db.upsertIssue(prIssueRow(7, T2, { title: 'PR 7' }), 'sync');
+  db.upsertIssue(prIssueRow(8, T1, { title: 'PR 8' }), 'sync');
+  db.upsertIssue(prIssueRow(5, T1, { title: 'PR 5', state: 'closed', closedAt: T1 }), 'sync');
+  db.upsertIssue(prIssueRow(4, T1, { title: 'PR 4', state: 'closed', closedAt: T1, author: 'caio' }), 'sync');
+  db.setPullFlags({ ...pullKey(8), draft: true, mergedAt: null });
+  db.setPullFlags({ ...pullKey(5), draft: false, mergedAt: T1 });
+  db.setPullPoll(pullKey(7), { headSha: HEAD, mergeState: 'clean', checks: 'success' });
+  db.setPullRead(pullKey(7), { decision: 'approved', readAt: T2 });
+  db.setPullPoll(pullKey(8), { headSha: HEAD, mergeState: 'draft', checks: null });
+}
+
+test('GET …/pulls answers each state from the model with no GraphQL call: #758\'s rows, the counts, canPush and syncedAt (#186)', async (t) => {
+  const { base, db, gqlCalls } = await routesOn(t);
+  seedPrs(db);
+  const answer = (rows: unknown[]): RepoPrs => ({ rows: rows as RepoPrs['rows'], counts: { open: 2, merged: 1, closed: 1 }, truncated: false, canPush: true, syncedAt: SYNCED });
+  assert.deepEqual(await get(`${base}${PULLS}?state=open`), [200, answer([
+    { url: `${PR_LINK}7`, number: 7, title: 'PR 7', state: 'open', isDraft: false, mergeState: 'clean', updatedAt: T2, checks: 'success', decision: 'approved' },
+    { url: `${PR_LINK}8`, number: 8, title: 'PR 8', state: 'open', isDraft: true, mergeState: 'draft', updatedAt: T1 },
+  ])]);
+  assert.deepEqual(await get(`${base}${PULLS}?state=merged`), [200, answer([{ url: `${PR_LINK}5`, number: 5, title: 'PR 5', state: 'merged', isDraft: false, mergeState: 'unknown', updatedAt: T1 }])]);
+  assert.deepEqual(await get(`${base}${PULLS}?state=closed`), [200, answer([{ url: `${PR_LINK}4`, number: 4, title: 'PR 4', state: 'closed', isDraft: false, mergeState: 'unknown', updatedAt: T1 }])]);
+  assert.deepEqual(await get(`${base}${PULLS}?state=draft`), [400, { error: 'state must be open, merged or closed' }]);
+  assert.deepEqual(await get(`${base}/repositories/acme/other/pulls?state=open`), [404, { error: 'repository is not one the Hive lists' }]);
+  assert.equal(gqlCalls(), 0);
+});
+
+test('an original lists only the login\'s PRs, in its rows and its counts (#854, #186)', async (t) => {
+  const db = await tempModel(t);
+  seedPrs(db);
+  db.upsertIssue(prIssueRow(3, T1, { title: 'PR 3', author: 'Bia' }), 'sync'); // GitHub logins ignore case
+  const original = prsOf(db, SOURCE, { repository: REPO, workspace: 'hive', role: 'original', pair: 'bia/hive' }, 'closed');
+  assert.deepEqual([original.rows, original.counts], [[], { open: 3, merged: 1, closed: 0 }]);
+});
+
+test('a never-synced repository answers syncedAt null and no rows, another source\'s rows never show; past PR_LIST_LIMIT the list says truncated (#186)', async (t) => {
+  const { base, db } = await routesOn(t);
+  db.upsertIssue(prIssueRow(5, T1, { source: OTHER_SOURCE, repository: SITE }), 'sync');
+  assert.deepEqual(await get(`${base}/repositories/acme/site/pulls?state=open`), [200, { rows: [], counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: false, syncedAt: null }]);
+  db.transaction(() => {
+    for (let n = 1; n <= PR_LIST_LIMIT + 1; n += 1) db.upsertIssue(prIssueRow(n, T1), 'sync');
+  });
+  const [, body] = await get(`${base}${PULLS}?state=open`);
+  const page = body as RepoPrs;
+  assert.deepEqual([page.rows.length, page.counts.open, page.truncated], [PR_LIST_LIMIT, PR_LIST_LIMIT + 1, true]);
 });

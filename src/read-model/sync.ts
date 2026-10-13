@@ -1,9 +1,9 @@
 import type { ReadModel, SyncKind, SyncScope } from './db.js';
-import { commentFromRest, issueFromRest } from './normalize.js';
+import { commentFromRest, issueFromRest, pullFlagsFromRest } from './normalize.js';
 import type { RestGet } from './rest.js';
 import type { CommentRow, IssueRow } from './rows.js';
 
-const KINDS: readonly SyncKind[] = ['issues', 'comments', 'repo', 'labels'];
+const KINDS: readonly SyncKind[] = ['issues', 'comments', 'repo', 'labels', 'pulls'];
 // the two since-cursor scopes; repo and labels are repo-scopes.ts's
 type ListKind = Extract<SyncKind, 'issues' | 'comments'>;
 
@@ -63,22 +63,32 @@ function rowOf(deps: SyncDeps, repository: string, kind: ListKind, item: unknown
   return kind === 'issues' ? issueFromRest(source, repository, item) : commentFromRest(source, repository, item, (n) => db.nodeIdOf(source, repository, n));
 }
 
-interface PageStored { last: string | undefined; blocked: boolean; wrote: boolean }
+/** A PR item's own flags beside its issues row (#186), written wherever a PR item is read: the issues scope, the full listing and the
+ * refetch. Whether they changed; an issue item has none. */
+export function storePullFlags(deps: SyncDeps, repository: string, item: unknown): boolean {
+  const flags = pullFlagsFromRest(deps.source, repository, item);
+  return flags !== undefined && deps.db.setPullFlags(flags);
+}
 
-// One page in one transaction: the last updated_at it stored, whether a comment with no stored issue stopped it, and whether a row was written
+interface PageStored { last: string | undefined; blocked: boolean; wrote: boolean; pulls: boolean }
+
+// One page in one transaction: the last updated_at it stored, whether a comment with no stored issue stopped it, whether a row was written,
+// and whether a PR's flags changed (#186)
 function storePage(deps: SyncDeps, repository: string, kind: ListKind, items: unknown[]): PageStored {
   const { db } = deps;
   return db.transaction(() => {
     let last: string | undefined;
     let wrote = false;
+    let pulls = false;
     for (const item of items) {
       const row = rowOf(deps, repository, kind, item);
-      if (row === undefined) return { last, blocked: true, wrote };
+      if (row === undefined) return { last, blocked: true, wrote, pulls };
       const written = 'number' in row ? db.upsertIssue(row, 'sync') : db.upsertComment(row, 'sync');
       wrote = wrote || written;
+      if ('number' in row) pulls = storePullFlags(deps, repository, item) || pulls;
       last = row.updatedAt;
     }
-    return { last, blocked: false, wrote };
+    return { last, blocked: false, wrote, pulls };
   });
 }
 
@@ -97,7 +107,7 @@ async function readPages(deps: SyncDeps, repository: string, kind: ListKind, sav
       if (answer.status !== 200) throw new Error(`read model: the ${kind} of ${repository} answered HTTP ${answer.status}`);
       const page = storePage(deps, repository, kind, itemsOf(answer.body));
       read = {
-        report: mergeReports(read.report, { kinds: page.wrote ? [kind] : [], requests: { 200: 1, 304: 0 } }),
+        report: mergeReports(read.report, { kinds: [...(page.wrote ? [kind] : []), ...(page.pulls ? ['pulls' as const] : [])], requests: { 200: 1, 304: 0 } }),
         last: page.last ?? read.last, firstEtag: first ? (answer.etag ?? null) : read.firstEtag, blocked: page.blocked,
       };
       path = page.blocked ? undefined : answer.next;

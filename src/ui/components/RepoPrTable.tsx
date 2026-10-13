@@ -5,7 +5,8 @@ import { ForkEmpty } from '@/components/ForkEmpty';
 import { FlowHeader, type RepoTab } from '@/components/FlowHeader';
 import { useIsFlowShown } from '@/components/MainDock';
 import { RepoPrRow } from '@/components/RepoPrRow';
-import { useRepoRead } from '@/hooks/use-repo-issues';
+import { Syncing } from '@/components/ui/spinner';
+import { useReadModelReload, useRepoRead } from '@/hooks/use-repo-issues';
 import { reloadRepositories, repoPath } from '@/hooks/use-repositories';
 import { type MessageKey, t } from '@/i18n';
 import { gridTemplate, type WidthColumn, withWidths } from '@/lib/column-widths';
@@ -20,8 +21,15 @@ const COLUMNS: ListColumn[] = [
 ];
 const SEGMENTS: { id: PrState; label: MessageKey }[] = [{ id: 'open', label: 'prs.segment.open' }, { id: 'merged', label: 'prs.segment.merged' }, { id: 'closed', label: 'prs.segment.closed' }];
 
-// The subbar (handoff 03): abertos N / mergeados / fechados, #757's segmented; lendo… only while nothing is cached
-function Subbar({ value, open, isLoading, onChange }: { value: PrState; open: number; isLoading: boolean; onChange(state: PrState): void }) {
+const LIST_KINDS: readonly string[] = ['issues', 'pulls']; // #186: a PR moves with its issues row, its flags, its poll and its batch
+
+interface SubbarProps { value: PrState; open: number; isSyncing: boolean; isLoading: boolean; onChange(state: PrState): void }
+
+// The subbar (handoff 03): abertos N / mergeados / fechados, #757's segmented; lendo… only while nothing is cached. A list the model never
+// synced (#186) shows the syncing mark for N, silent since the body announces it: a 0 would read as no PRs
+function Subbar({ value, open, isSyncing, isLoading, onChange }: SubbarProps) {
+  // {n} ends the open segment's label in both languages: the words stay and the mark takes the number's place
+  const labelOf = (id: PrState, label: MessageKey) => (id === 'open' && isSyncing ? <>{t(label, { n: '' }).trim()} <Syncing isRepeat /></> : t(label, { n: open }));
   return (
     <div className="flex h-10 shrink-0 items-center gap-3 px-3.5 text-muted-foreground text-xs">
       <div role="radiogroup" aria-label={t('repos.tab.prs')} className="flex rounded-md bg-muted p-0.5">
@@ -31,7 +39,7 @@ function Subbar({ value, open, isLoading, onChange }: { value: PrState; open: nu
             key={id} type="button" role="radio" aria-checked={value === id} onClick={() => onChange(id)}
             className={`rounded-[5px] px-2.5 py-0.5 font-medium text-xs ${value === id ? 'bg-background text-foreground' : 'text-muted-foreground'}`}
           >
-            {t(label, { n: open })}
+            {labelOf(id, label)}
           </button>
         ))}
       </div>
@@ -49,6 +57,7 @@ function PrGrid({ repository, prs, state, onOpen, isOriginal }: { repository: st
     writeRepoListWidths(repository, 'prs', next);
   });
   const rows = prs?.rows ?? [];
+  const isSyncing = prs?.syncedAt === null;
   const columns = withWidths(COLUMNS, widths);
   const template = gridTemplate(columns);
   const footer = t(isOriginal ? 'prs.footer.original' : 'prs.footer', { n: prs?.counts.open ?? 0 });
@@ -64,7 +73,9 @@ function PrGrid({ repository, prs, state, onOpen, isOriginal }: { repository: st
             </tr>
           </thead>
           <tbody className="block">
-            {rows.map((row) => <RepoPrRow key={row.url} row={row} columns={template} state={state} canPush={prs?.canPush !== false} onOpen={onOpen} />)}
+            {isSyncing ? ( // #186: never synced, so no rows yet; one row says so instead of an empty table
+              <tr className="grid h-10 items-center px-3"><td><Syncing /></td></tr>
+            ) : rows.map((row) => <RepoPrRow key={row.url} row={row} columns={template} state={state} canPush={prs?.canPush !== false} onOpen={onOpen} />)}
           </tbody>
         </table>
       </ColumnScroll>
@@ -79,10 +90,12 @@ function PrGrid({ repository, prs, state, onOpen, isOriginal }: { repository: st
 export interface RepoPrTableProps { state: State; summary: RepoSummary; onTab(tab: RepoTab): void; onOpen?(row: PrRow): void; onRepository?(repository: string): void }
 
 /** A repository's PRs (#758, handoff 03) under the repository header's PRs tab: open, merged or closed, newest update first. Read on opening,
- * on a segment change and on atualizar, which reads the sidebar's list again too; never polled. */
+ * on a segment change, on atualizar, which reads the sidebar's list again too, and on its repository's readModel events of issues or pulls
+ * (#186); never polled. */
 export function RepoPrTable({ state, summary, onTab, onOpen, onRepository }: RepoPrTableProps) {
   const [prState, setPrState] = useState<PrState>('open');
   const { data, isLoading, reload } = useRepoRead<RepoPrs>(`${repoPath(summary.repository)}/pulls?state=${prState}`);
+  useReadModelReload(summary.repository, LIST_KINDS, reload);
   const isShown = useIsFlowShown();
   const refresh = async (): Promise<void> => {
     await Promise.all([reloadRepositories(), reload()]);
@@ -93,7 +106,7 @@ export function RepoPrTable({ state, summary, onTab, onOpen, onRepository }: Rep
       <FlowHeader state={state} tasks={[]} isShown={isShown} repository={{ summary, tab: 'prs', onTab, onRepository }} onRefresh={refresh} />
       {isElsewhere ? <ForkEmpty text={t('repos.fork.noPrs', { fork: summary.repository })} original={summary.fork?.parent} onRepository={onRepository} /> : (
         <>
-          <Subbar value={prState} open={data?.counts.open ?? summary.openPrs} isLoading={isLoading && data === undefined} onChange={setPrState} />
+          <Subbar value={prState} open={data?.counts.open ?? summary.openPrs} isSyncing={data?.syncedAt === null} isLoading={isLoading && data === undefined} onChange={setPrState} />
           <PrGrid repository={summary.repository} prs={data} state={state} onOpen={onOpen} isOriginal={summary.role === 'original'} />
         </>
       )}

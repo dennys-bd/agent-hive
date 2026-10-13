@@ -1,7 +1,9 @@
 import type { Logger } from '../log.js';
 import { POLL_INTERVAL_MS, QUOTA_RESERVE } from '../polling.js';
+import type { RepoRef } from '../repos/repositories.js';
 import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
+import { syncPulls } from './pulls.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
 import { syncLabels, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
@@ -51,9 +53,10 @@ async function repoScopes(deps: SyncDeps, repository: string): Promise<Independe
 }
 
 /** One repository's round (#180): the repo and labels scopes (#181, each independent of the rest), then issues, then comments (whose issues the first scope stored), then the full
- * listing when due. A first round that read both issue scopes from null to their end already read everything: it counts as the listing. An issue scope that throws ends
- * the round there, keeping what the earlier one stored; its own place was never written. REST only: a round never calls GraphQL. */
-export async function syncRepository(deps: SyncDeps, repository: string): Promise<RoundResult> {
+ * listing when due, then its PRs (#186). A first round that read both issue scopes from null to their end already read everything: it counts as the listing. An issue scope that throws ends
+ * the round there, keeping what the earlier one stored; its own place was never written. REST, but for the PR part's GraphQL batch: one call per 100 PRs whose updated_at moved. */
+export async function syncRepository(deps: RefetchDeps, ref: RepoRef): Promise<RoundResult> {
+  const { repository } = ref;
   let report = EMPTY_REPORT;
   let commentsBlocked = false;
   let scopesErrors: unknown[] = [];
@@ -68,7 +71,9 @@ export async function syncRepository(deps: SyncDeps, repository: string): Promis
     commentsBlocked = comments.blocked === true;
     if (issues.full && comments.full) stampReconcile(deps, repository);
     else if (reconcileDue(deps, repository)) report = mergeReports(report, await reconcile(deps, repository));
-    const error = joined(scopesErrors);
+    const pulls = await syncPulls(deps, ref);
+    report = mergeReports(report, pulls.report);
+    const error = joined([...scopesErrors, ...pulls.errors]);
     return { report, ...(error === undefined ? {} : { error }), ...(commentsBlocked ? { commentsBlocked: true as const } : {}) };
   } catch (caught) {
     const partial = caught instanceof PartialSyncError;
@@ -84,7 +89,7 @@ export async function syncRepository(deps: SyncDeps, repository: string): Promis
 export interface ReadModelLoopDeps {
   db: ReadModel;
   access(): Promise<ReadAccess | undefined>; // the login auth.github names now, and its transports; none without a login
-  repositories(): Promise<string[]>; // what listRepositories lists now; none before a config
+  repositories(): Promise<RepoRef[]>; // what listRepositories lists now, an original's role and pair included (#186); none before a config
   notify(repository: string, kinds: SyncKind[]): void; // the readModel event
   log: Pick<Logger, 'error' | 'warn' | 'debug'>;
   now?: () => Date;
@@ -132,8 +137,9 @@ function coreOf(deps: ReadModelLoopDeps): LoopCore {
 
 function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { runOnce(): Promise<void>; running(): Promise<void> | undefined } {
   let round: Promise<void> | undefined;
-  async function syncOne(sync: SyncDeps, repository: string): Promise<void> {
-    const { report, error, commentsBlocked } = await syncRepository({ ...sync, isStopped }, repository);
+  async function syncOne(sync: RefetchDeps, ref: RepoRef): Promise<void> {
+    const { repository } = ref;
+    const { report, error, commentsBlocked } = await syncRepository({ ...sync, isStopped }, ref);
     deps.log.debug(`read model: ${repository} 200=${report.requests[200]} 304=${report.requests[304]} kinds=${report.kinds.join(',') || '-'}`);
     if (commentsBlocked === true) deps.log.debug(`read model: the comments of ${repository} wait for an issue not stored yet`); // a wedged scope shows here
     if (error !== undefined) deps.log.error(`read model: the sync of ${repository} failed: ${reasonOf(error)}`);
@@ -145,9 +151,9 @@ function roundsOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => bool
       if (repositories.length === 0) return; // before a config, or none on GitHub: no login read, no request
       const sync = await core.access();
       if (sync === undefined) return;
-      for (const repository of repositories) {
+      for (const ref of repositories) {
         if (isStopped() || core.inBackoff()) return;
-        await syncOne(sync, repository);
+        await syncOne(sync, ref);
       }
     } catch (err) {
       deps.log.error(`read model: the round failed: ${reasonOf(err)}`);

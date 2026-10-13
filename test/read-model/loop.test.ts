@@ -12,7 +12,7 @@ import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
 import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
-import { deferred, fakeLinks, fakeRest, issueRow, NOW, ok, REPO, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
+import { deferred, fakeLinks, fakeRest, issueRow, NO_GQL, NOW, ok, REF, REPO, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
 
 const OTHER = 'acme/other';
 const listing = (repository: string): string[] => [`repos/${repository}/issues?state=all&per_page=100`, `repos/${repository}/issues/comments?per_page=100`];
@@ -25,7 +25,7 @@ test('the readModel event is a named frame with its repository and kinds (#180)'
 test('a repository syncs issues then comments; a first round from null that ends complete stamps the reconcile scope instead of listing (#180)', async (t) => {
   const db = await tempModel(t);
   const { rest, calls } = fakeRest([...REPO_SCOPES, ok([restIssue(1, T1)]), ok([restComment('C1', 1, T1)])]);
-  const { report, error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.equal(error, undefined);
   assert.deepEqual(report, { kinds: ['issues', 'comments', 'repo'], requests: { 200: 4, 304: 0 } });
   assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
@@ -35,7 +35,7 @@ test('a repository syncs issues then comments; a first round from null that ends
 test('a first round cut short does not count as the full listing: the listing runs in that round (#180)', async (t) => {
   const db = await tempModel(t);
   const { rest, calls } = fakeRest([...REPO_SCOPES, ok([restIssue(1, T1)]), ok([restComment('C9', 9, T1)]), ok([restIssue(1, T1)]), ok([])]);
-  await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.deepEqual(calls.slice(4).map(([path]) => path), listing(REPO));
 });
 
@@ -47,16 +47,16 @@ test('the full listing runs when the reconcile stamp is absent or older than 24 
   const stamp = (msAgo: number): void => db.setScope(SOURCE, REPO, 'reconcile', { cursor: null, etag: null, syncedAt: stampAgo(msAgo) });
   stamp(RECONCILE_EVERY_MS);
   const quiet = fakeRest(Array(4).fill({ status: 304 }));
-  await syncRepository({ db, rest: quiet.rest, source: SOURCE, now: NOW }, REPO);
+  await syncRepository({ db, rest: quiet.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.equal(quiet.calls.length, 4, 'exactly 24 h is not older than 24 h');
   stamp(RECONCILE_EVERY_MS + 1000);
   const due = fakeRest([...Array(4).fill({ status: 304 }), ok([]), ok([])]);
-  const { report } = await syncRepository({ db, rest: due.rest, source: SOURCE, now: NOW }, REPO);
+  const { report } = await syncRepository({ db, rest: due.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.deepEqual(due.calls.slice(4).map(([path]) => path), listing(REPO));
   assert.deepEqual(report.requests, { 200: 2, 304: 4 });
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
   const absent = fakeRest([...Array(4).fill({ status: 304 }), ok([]), ok([])]);
-  await syncRepository({ db, rest: absent.rest, source: SOURCE, now: NOW }, OTHER);
+  await syncRepository({ db, rest: absent.rest, gql: NO_GQL, source: SOURCE, now: NOW }, { repository: OTHER, workspace: 'hive' });
   assert.deepEqual(absent.calls.slice(4).map(([path]) => path), listing(OTHER), 'no stamp at all is due');
 });
 
@@ -67,7 +67,7 @@ test('a scope that throws ends the repository\'s round: what the issues scope st
     if (path.includes('/comments')) throw new Error('gh api: HTTP 502');
     return ok([restIssue(1, T2)]);
   };
-  const { report, error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.deepEqual(report.kinds, ['issues']);
   assert.match(String(error), /HTTP 502/);
   assert.deepEqual(db.scope(SOURCE, REPO, 'comments'), { cursor: T1, etag: 'EC', syncedAt: T1 });
@@ -82,7 +82,7 @@ function loopOn(db: ReadModel, rest: RestGet, extra: Partial<ReadModelLoopDeps> 
   const notified: [string, SyncKind[]][] = [];
   const links = fakeLinks();
   const loop = createReadModelLoop({
-    db, access: async () => ({ source: SOURCE, rest, gql: links.gql }), repositories: async () => [REPO], log: quiet, now: NOW,
+    db, access: async () => ({ source: SOURCE, rest, gql: links.gql }), repositories: async () => [REF], log: quiet, now: NOW,
     notify: (repository, kinds) => {
       notified.push([repository, kinds]);
     },
@@ -126,7 +126,7 @@ test('a round whose comments scope fails emits issues, keeps the comments cursor
     return path.startsWith('repos/acme/hive/issues') ? ok([restIssue(1, T2)]) : ok([]);
   };
   const log = { ...quiet, error: (message: string): void => { errors.push(message); } };
-  const { loop, notified } = loopOn(db, rest, { repositories: async () => [REPO, 'acme/other'], log });
+  const { loop, notified } = loopOn(db, rest, { repositories: async () => [REF, { repository: 'acme/other', workspace: 'hive' }], log });
   await loop.runOnce();
   assert.deepEqual(notified, [[REPO, ['issues', 'repo']], ['acme/other', ['repo']]]); // the next repository stored its repos row
   assert.deepEqual(db.scope(SOURCE, REPO, 'comments'), { cursor: T1, etag: 'EC', syncedAt: T1 });
@@ -356,7 +356,7 @@ test('an issues scope that answers 410 (a fork with issues disabled) still store
     if (path === labelsPath(REPO)) return ok([restLabel('bug')]);
     return { status: 410 };
   };
-  const { report, error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.match(String(error), /410/);
   assert.deepEqual(report.kinds, ['repo', 'labels']);
   assert.equal(db.repo(SOURCE, REPO)?.issuesEnabled, false);
@@ -366,7 +366,7 @@ test('an issues scope that answers 410 (a fork with issues disabled) still store
 test('a repo scope that fails does not stop labels, issues, comments or the first-round stamp; the round reports its error (#181)', async (t) => {
   const db = await tempModel(t);
   const { rest, calls } = fakeRest([{ status: 200, body: 'not a repository' }, ok([restLabel('bug')]), ok([restIssue(1, T1)]), ok([restComment('C1', 1, T1)])]);
-  const { report, error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.match(String(error), /repository/);
   assert.equal(calls.length, 4);
   assert.deepEqual(report.kinds, ['issues', 'comments', 'labels']);
@@ -380,10 +380,10 @@ test('a failing labels scope does not stop the repos row; a round stopped before
     if (path === labelsPath(REPO)) throw new Error('gh api: HTTP 502');
     return path === repoPath(REPO) ? ok(REST_REPO) : ok([]);
   };
-  const { report, error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.match(String(error), /HTTP 502/);
   assert.ok(report.kinds.includes('repo'));
   const calls: string[] = [];
-  const stopped = await syncRepository({ db, rest: async (path) => { calls.push(path); return ok([]); }, source: SOURCE, now: NOW, isStopped: () => true }, REPO);
+  const stopped = await syncRepository({ db, rest: async (path) => { calls.push(path); return ok([]); }, gql: NO_GQL, source: SOURCE, now: NOW, isStopped: () => true }, REF);
   assert.deepEqual([calls, stopped.error], [[], undefined]);
 });

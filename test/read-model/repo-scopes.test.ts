@@ -5,7 +5,7 @@ import { WireError } from '../../src/read-model/normalize.js';
 import { labelsPath, repoPath, syncLabels, syncRepo } from '../../src/read-model/repo-scopes.js';
 import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
-import { fakeRest, NOW, ok, REPO, REPO_ROW, REST_REPO, restIssue, restLabel, SOURCE, SYNCED, T1, tempModel } from './fixtures.js';
+import { fakeRest, NO_GQL, NOW, ok, REF, REPO, REPO_ROW, REST_REPO, restIssue, restLabel, SOURCE, SYNCED, T1, tempModel } from './fixtures.js';
 
 const LATER = (): Date => new Date('2026-10-12T13:00:00Z');
 
@@ -56,11 +56,11 @@ test('a malformed answer throws and leaves the stored row and its ETag as they w
 test('syncRepository runs the repo and labels scopes before issues; the round names them only when they changed (#181)', async (t) => {
   const db = await tempModel(t);
   const { rest, calls } = fakeRest([ok(REST_REPO, { etag: 'ER' }), ok([restLabel('bug')], { etag: 'EL' }), ok([restIssue(1, T1)]), ok([])]);
-  const first = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const first = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
   assert.deepEqual(first.report.kinds, ['issues', 'repo', 'labels']);
   const quiet = fakeRest([ok(REST_REPO), ok([restLabel('bug')]), { status: 304 }, { status: 304 }]);
-  const second = await syncRepository({ db, rest: quiet.rest, source: SOURCE, now: NOW }, REPO);
+  const second = await syncRepository({ db, rest: quiet.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.deepEqual(second.report, { kinds: [], requests: { 200: 2, 304: 2 } }, 'an identical 200 names no kind');
 });
 
@@ -71,7 +71,7 @@ test('a round whose repo, labels and issues scopes all fail reports every failur
     if (path === labelsPath(REPO)) throw new Error('labels HTTP 502');
     throw new Error('issues HTTP 500');
   };
-  const { error } = await syncRepository({ db, rest, source: SOURCE, now: NOW }, REPO);
+  const { error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   for (const failure of ['repo HTTP 403', 'labels HTTP 502', 'issues HTTP 500']) assert.match(String(error), new RegExp(failure));
 });
 
@@ -83,7 +83,7 @@ test('a stop after a failed repo scope still reports that failure; the stop itse
     if (path === repoPath(REPO)) throw new Error('repo HTTP 403');
     return ok([]);
   };
-  const { error } = await syncRepository({ db, rest, source: SOURCE, now: NOW, isStopped: () => calls.length >= 2 }, REPO);
+  const { error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW, isStopped: () => calls.length >= 2 }, REF);
   assert.deepEqual(calls, [repoPath(REPO), labelsPath(REPO)]);
   assert.match(String(error), /repo HTTP 403/);
   assert.doesNotMatch(String(error), /stop/i);

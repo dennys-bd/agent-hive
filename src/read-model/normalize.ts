@@ -1,7 +1,8 @@
+import { ACTIONS_APP, checkState, decisionOf, isObject, mergeState, rowChecks } from '../pr-checks.js';
 import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
-import type { ProjectPr } from '../types.js';
-import type { CommentRow, IssueRow, RepoRow } from './rows.js';
+import type { PrCheck, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
+import type { CommentRow, IssueRow, PullChecks, PullFlags, RepoRow } from './rows.js';
 
 // The wire is untrusted (#178): every field read is checked, and anything that is not GitHub's shape throws instead of storing half a row
 type Json = Record<string, unknown>;
@@ -142,3 +143,76 @@ export function repoFromRest(source: string, repository: string, json: unknown):
 
 /** A page of `GET /repos/{o}/{r}/labels` as names (#181). */
 export const labelNamesFromRest = (json: unknown): string[] => listOf(json, 'labels', 'name');
+
+function arrayOf(value: unknown, what: string): unknown[] {
+  if (!Array.isArray(value)) throw new WireError(what);
+  return value;
+}
+
+/** A PR item of the issues endpoint as its flags (#186): draft, and pull_request.merged_at, which sets merged apart from closed. An issue
+ * item has no pull_request, so none. */
+export function pullFlagsFromRest(source: string, repository: string, json: unknown): PullFlags | undefined {
+  const item = objectOf(json, 'issue');
+  const pull = optionalObject(item.pull_request, 'pull_request');
+  if (pull === undefined) return undefined;
+  return { source, nodeId: textOf(item, 'node_id'), repository, number: countOf(item, 'number'), draft: item.draft === true, mergedAt: nullableText(pull, 'merged_at') };
+}
+
+// A head SHA goes into the check paths: SHA-1, or SHA-256
+const HEAD_SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+/** `GET /repos/{o}/{r}/pulls/{n}` as what the list polls (#186): the head SHA, and mergeable_state read as GraphQL's mergeStateStatus
+ * (has_hooks is hooks, dirty conflicts, anything else unknown). */
+export function pullFromRest(json: unknown): { headSha: string; mergeState: PrMergeState } {
+  const pull = objectOf(json, 'pull request');
+  const headSha = textOf(objectOf(pull.head, 'head'), 'sha');
+  if (!HEAD_SHA.test(headSha)) throw new WireError('head.sha');
+  return { headSha, mergeState: mergeState(nullableText(pull, 'mergeable_state')?.toUpperCase()) };
+}
+
+type Bucket = PrCheck['state'];
+const WORST_FIRST: readonly Bucket[] = ['failure', 'pending', 'success'];
+const worstOf = (states: Bucket[]): Bucket | null => WORST_FIRST.find((s) => states.includes(s)) ?? null;
+
+/** Every page of `commits/{sha}/check-runs` as its worst run (#186), in checkState's buckets: a run not completed is pending. None ran: null. */
+export function runsReading(bodies: unknown[]): Bucket | null {
+  const runs = bodies.flatMap((body) => arrayOf(objectOf(body, 'check runs').check_runs, 'check_runs'));
+  return worstOf(runs.map((value) => {
+    const run = objectOf(value, 'check run');
+    return run.status === 'completed' ? checkState(nullableText(run, 'conclusion')?.toUpperCase()) : 'pending';
+  }));
+}
+
+/** `commits/{sha}/status` as its combined state (#186). No status context: null, where GitHub still answers pending. */
+export function statusReading(bodies: unknown[]): Bucket | null {
+  const status = objectOf(bodies[0], 'status');
+  return arrayOf(status.statuses, 'statuses').length === 0 ? null : checkState(textOf(status, 'state').toUpperCase());
+}
+
+/** `commits/{sha}/check-suites` as awaiting when an Actions workflow waits for a maintainer's approval (#854, #186). */
+export function suitesReading(bodies: unknown[]): 'awaiting' | null {
+  const suites = bodies.flatMap((body) => arrayOf(objectOf(body, 'check suites').check_suites, 'check_suites'));
+  const isWaiting = suites.some((value) => {
+    const suite = objectOf(value, 'check suite');
+    return suite.conclusion === 'action_required' && optionalObject(suite.app, 'app')?.slug === ACTIONS_APP;
+  });
+  return isWaiting ? 'awaiting' : null;
+}
+
+/** The list's checks from the three readings (#186): the worst of the runs and the status; with neither, awaiting when a workflow waits,
+ * else none. A stored reading that is no bucket counts as none. */
+export function rollupOf(runs: string | null, status: string | null, suites: string | null): PullChecks | null {
+  return WORST_FIRST.find((s) => s === runs || s === status) ?? (suites === 'awaiting' ? 'awaiting' : null);
+}
+
+/** One PR of the batch (#186): what the list read of it over GraphQL before. */
+export interface PullGql { nodeId: string; decision: PrReviewDecision | null; mergeState: PrMergeState; checks: PullChecks | null }
+
+/** The batch's answer (#186), one aliased node per PR (`p0`, `p1`, …), read as the list's rows were. A deleted PR answers a null node and
+ * is skipped. */
+export function pullsFromGql(json: unknown): PullGql[] {
+  return Object.values(objectOf(json, 'batch')).flatMap((node) => {
+    if (!isObject(node) || typeof node.id !== 'string') return [];
+    return [{ nodeId: node.id, decision: decisionOf(node.reviewDecision) ?? null, mergeState: mergeState(node.mergeStateStatus), checks: rowChecks(node.headCommit) ?? null }];
+  });
+}

@@ -4,7 +4,7 @@ import type { Gql, ProjectPr } from '../types.js';
 import type { SyncKind } from './db.js';
 import { closingPrsFromGql, commentFromRest, issueFromRest, WireError } from './normalize.js';
 import type { CommentRow, IssueRow, IssueView } from './rows.js';
-import { EMPTY_REPORT, mergeReports, throwIfStopped, type SyncDeps, type SyncReport } from './sync.js';
+import { EMPTY_REPORT, mergeReports, storePullFlags, throwIfStopped, type SyncDeps, type SyncReport } from './sync.js';
 
 // since never reports what was deleted or transferred (#180): the full listing and the refetch are the only ways a row leaves the model
 
@@ -59,7 +59,12 @@ export async function reconcile(deps: SyncDeps, repository: string): Promise<Syn
     const goneComments = db.nodeIds(source, repository, 'comments').filter((id) => !keptComments.has(id));
     for (const id of goneIssues) db.removeIssue(source, id);
     for (const id of goneComments) db.removeComment(source, id);
-    return [...(goneIssues.length > 0 ? ['issues' as const] : []), ...(goneComments.length > 0 ? ['comments' as const] : [])];
+    // #186: every PR item is in hand, so its flags cost no request; map, not some: each item is written
+    const flagsChanged = issues.items.map((item) => storePullFlags(deps, repository, item)).some(Boolean);
+    return [
+      ...(goneIssues.length > 0 ? ['issues' as const] : []), ...(goneComments.length > 0 ? ['comments' as const] : []),
+      ...(flagsChanged ? ['pulls' as const] : []),
+    ];
   });
   stampReconcile(deps, repository);
   return { ...mergeReports(issues.report, comments.report), kinds };
@@ -106,15 +111,17 @@ async function closingPrs(deps: RefetchDeps, repository: string, number: number)
   }
 }
 
-// One transaction: the issue, its comments, the comments GitHub no longer lists, and the closing PRs when GraphQL answered them
-function storeRefetch(deps: SyncDeps, before: Snapshot, issue: IssueRow, comments: CommentRow[], prs: ProjectPr[] | undefined): void {
+// One transaction: the issue, its comments, the comments GitHub no longer lists, the closing PRs when GraphQL answered them, and a PR's
+// flags (#186); whether those flags changed
+function storeRefetch(deps: SyncDeps, before: Snapshot, issue: IssueRow, comments: CommentRow[], prs: ProjectPr[] | undefined, item: unknown): boolean {
   const { db, source } = deps;
   const kept = new Set(comments.map((c) => c.nodeId));
-  db.transaction(() => {
+  return db.transaction(() => {
     db.upsertIssue(issue, 'sync');
     for (const comment of comments) db.upsertComment(comment, 'sync');
     for (const old of before.comments) if (!kept.has(old.nodeId)) db.removeComment(source, old.nodeId);
     if (prs !== undefined) db.setClosingPrs(source, issue.nodeId, prs);
+    return storePullFlags(deps, issue.repository, item);
   });
 }
 
@@ -129,7 +136,7 @@ export async function refetchIssue(deps: RefetchDeps, repository: string, number
   const { items } = await allItems(deps, `repos/${repository}/issues/${number}/comments?per_page=100`);
   const comments = items.flatMap((item) => commentFromRest(deps.source, repository, item, () => issue.nodeId) ?? []);
   const links = issue.kind === 'issue' ? await closingPrs(deps, repository, number) : {}; // a PR closes nothing
-  storeRefetch(deps, before, issue, comments, links.prs);
-  const kinds = changedKinds(before, snapshot(deps, repository, number));
+  const flagsChanged = storeRefetch(deps, before, issue, comments, links.prs, answer.body);
+  const kinds = [...changedKinds(before, snapshot(deps, repository, number)), ...(flagsChanged ? ['pulls' as const] : [])];
   return { outcome: kinds.length > 0 ? 'changed' : 'unchanged', kinds, ...(links.error === undefined ? {} : { linksError: links.error }) };
 }

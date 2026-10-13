@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { mergeCell } from '@/components/RepoPrRow';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { resetRepoIssues } from '@/hooks/use-repo-issues';
+import { emitReadModelEvent } from '@/lib/review-events';
 import { setLanguage } from '@/i18n';
 import { readView, resetViewState } from '@/lib/view-state';
 import type { PrRow, RepoPrs, RepoSummary, State, Task } from '../../src/types';
@@ -14,12 +15,15 @@ const SITE: RepoSummary = { repository: 'acme/site', url: 'https://github.com/ac
 const LINK = 'https://github.com/acme/site/pull/';
 const row = (n: number, extra: Partial<PrRow> = {}): PrRow => ({ url: `${LINK}${n}`, number: n, title: `PR ${n}`, state: 'open', isDraft: false, mergeState: 'clean', updatedAt: '2026-10-05T09:00:00Z', ...extra });
 const OPEN: RepoPrs = {
-  counts: { open: 3, merged: 1, closed: 0 }, truncated: false, canPush: true,
+  counts: { open: 3, merged: 1, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z',
   rows: [row(7, { checks: 'success', decision: 'approved' }), row(8, { isDraft: true, mergeState: 'draft' }), row(9, { checks: 'failure', decision: 'changes', mergeState: 'conflicts' })],
 };
-const MERGED: RepoPrs = { canPush: true, counts: { open: 3, merged: 1, closed: 0 }, truncated: true, rows: [row(5, { state: 'merged', mergeState: 'unknown' })] };
+const MERGED: RepoPrs = { canPush: true, syncedAt: '2026-10-05T09:00:00Z', counts: { open: 3, merged: 1, closed: 0 }, truncated: true, rows: [row(5, { state: 'merged', mergeState: 'unknown' })] };
 const OTHER: RepoSummary = { ...SITE, repository: 'acme/other', url: 'https://github.com/acme/other' };
-const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, rows: [] };
+const EMPTY: RepoPrs = { counts: { open: 0, merged: 0, closed: 0 }, truncated: false, canPush: true, syncedAt: '2026-10-05T09:00:00Z', rows: [] };
+const NEW: RepoSummary = { ...SITE, repository: 'acme/new', url: 'https://github.com/acme/new' };
+const UNSYNCED: RepoPrs = { ...EMPTY, syncedAt: null };
+const OPEN_PATH = '/repositories/acme/site/pulls?state=open';
 // #12 is a task of roadmap whose stack is #6 (merged) then #7
 const TASK: Task = { item: { itemId: 'roadmap:PVTI_12', id: '12', title: 'Issue 12', body: '', url: 'https://github.com/acme/site/issues/12', source: 'roadmap' }, stage: 'dev', boardColumn: 'Ready', auto: true };
 const STACK = [{ url: `${LINK}6`, state: 'merged' as const, slice: { k: 1, type: 'stacked' as const } }, { url: `${LINK}7`, state: 'open' as const, slice: { k: 2, type: 'stacked' as const } }];
@@ -34,6 +38,7 @@ const answer = async (input: RequestInfo | URL): Promise<Response> => {
   const url = String(input);
   if (url === '/repositories/acme/site/pulls?state=open') return jsonRes(OPEN);
   if (url === '/repositories/acme/other/pulls?state=open') return jsonRes(EMPTY);
+  if (url === '/repositories/acme/new/pulls?state=open') return jsonRes(UNSYNCED);
   return jsonRes(url === '/repositories/acme/site/pulls?state=merged' ? MERGED : { ok: true });
 };
 const fetchMock = vi.fn(answer);
@@ -170,4 +175,30 @@ test('a drag on a PR column\'s left-edge handle saves its width for the reposito
   expect(tracks()[3]).toBe('120px');
   expect(screen.queryByTestId('column-dividers')).not.toBeInTheDocument();
   expect(screen.getAllByRole('separator')).toHaveLength(7);
+});
+
+test('a readModel event of its repository naming pulls or issues reads the list again; another repository, or only other kinds, does not (#186)', async () => {
+  renderTable();
+  await screen.findByText('PR 7');
+  fetchMock.mockClear();
+  await act(async () => {
+    emitReadModelEvent({ repository: 'acme/other', kinds: ['pulls', 'issues'] });
+    emitReadModelEvent({ repository: 'acme/site', kinds: ['comments', 'labels', 'repo'] });
+  });
+  expect(fetchMock).not.toHaveBeenCalledWith(OPEN_PATH);
+  for (const kind of ['pulls', 'issues']) {
+    fetchMock.mockClear();
+    await act(async () => { emitReadModelEvent({ repository: 'acme/site', kinds: [kind] }); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(OPEN_PATH));
+  }
+});
+
+test('a list the model never synced shows sincronizando… in place of the open count and as the body, never an empty table (#186)', async () => {
+  render(<RepoPrTable state={state} summary={NEW} onTab={vi.fn()} />);
+  const radios = screen.getByRole('radiogroup');
+  await waitFor(() => expect(within(radios).getAllByTitle('sincronizando…')).toHaveLength(1));
+  expect(within(radios).getByRole('radio', { name: 'abertos' })).toBeInTheDocument(); // no count that reads as a number of PRs
+  expect(screen.getAllByRole('status', { name: 'sincronizando…' })).toHaveLength(1); // announced once, by the body
+  expect(within(screen.getByRole('table')).getByRole('status', { name: 'sincronizando…' })).toHaveClass('text-muted-foreground');
+  expect(screen.getAllByRole('row')).toHaveLength(2); // the header and the syncing row
 });

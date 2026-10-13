@@ -31,7 +31,7 @@ export const thread = (extra: Record<string, unknown> = {}): Record<string, unkn
 });
 
 /** What gh answers (#592, #758): `pr` for the PR query and the checks' poll, `heads` for the head queries in turn (each read of the PR asks it
- * twice: before the PR query and after the diff), `diff`, `LIST` for the list query, and `failWith` refusing every mutation. `git` answers
+ * twice: before the PR query and after the diff), `diff`, and `failWith` refusing every mutation. `git` answers
  * `git merge-tree` (#758); any other git call answers nothing. Every gh call is recorded, a mutation with the JSON it wrote to stdin. */
 export interface FakeGh {
   calls: { args: string[]; input?: unknown }[]; pr: Record<string, unknown>; heads: string[]; diff: string; failWith?: string; onMutation?: () => Promise<void>;
@@ -54,15 +54,6 @@ export function fakeGh(): FakeGh {
   };
 }
 
-/** The list query's answer (#758): PR 7 alone, open, with the three counts. */
-export const LIST = {
-  repository: {
-    viewerPermission: 'WRITE',
-    open: { totalCount: 2 }, merged: { totalCount: 1 }, closed: { totalCount: 0 },
-    rows: { totalCount: 1, nodes: [{ url: PR, number: 7, title: 'The PR', state: 'OPEN', isDraft: false, mergeStateStatus: 'CLEAN', updatedAt: AT, reviewDecision: null, headCommit: { nodes: [] } }] },
-  },
-};
-
 const json = (data: unknown): { stdout: string } => ({ stdout: JSON.stringify({ data }) });
 
 // gh as the server runs it: a mutation on stdin, the diff, the PR query, the head query; anything else is the poll's PR states (#207), nothing new
@@ -82,7 +73,6 @@ function ghOf(gh: FakeGh): Exec {
       if (gh.readFailWith !== undefined) throw new Error(`gh api graphql: ${gh.readFailWith}`); // what gh prints when GitHub answers errors (#849)
       return json({ viewer: { login: 'ana' }, resource: gh.pr });
     }
-    if (query.includes('pullRequests(')) return json(LIST);
     if (query.includes('requiredStatusCheckContexts')) return json({ p0: gh.ci ?? null }); // the CI read (#834, #854)
     if (query.includes('statusCheckRollup')) return json({ resource: gh.pr }); // the checks' poll
     if (query.includes('headRefOid')) {

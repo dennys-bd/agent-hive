@@ -1147,7 +1147,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const readAccess = () => accessFor(live?.runtime.config.auth?.github ?? 'cli', { exec, log });
   const readLoop = deps.readModel && createReadModelLoop({
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
-    repositories: async () => (live ? (await listRepositories(live.runtime.config, live.state, exec)).map((ref) => ref.repository) : []),
+    repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)

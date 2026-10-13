@@ -7,7 +7,8 @@ import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ReadModelLoop } from './read-model/loop.js';
 import { commentFromGql, issueFromGql } from './read-model/normalize.js';
 import { applyWriteAnswer, type WriteAnswer } from './read-model/write-answer.js';
-import { issuePageOf, issuesOf, summaryOf } from './read-model/views.js';
+import { issuePageOf, issuesOf, prsOf, summaryOf } from './read-model/views.js';
+import { PR_STATES } from './pull-requests.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
 import { quotaFrom } from './sources/github.js';
@@ -27,6 +28,7 @@ const EDIT_MESSAGE = `title (1 to ${TITLE_MAX} characters) or body (up to ${BODY
 const LABELS_MESSAGE = 'add and remove must be lists of label names';
 const COMMENT_MESSAGE = `body must be 1 to ${BODY_MAX} characters`;
 const STATE_MESSAGE = 'state must be open or closed';
+const PR_STATE_MESSAGE = 'state must be open, merged or closed';
 const NUMBER_MESSAGE = 'number must be an issue number';
 const UNKNOWN_REPOSITORY_MESSAGE = 'repository is not one the Hive lists';
 const STATES: readonly RepoIssues['state'][] = ['open', 'closed'];
@@ -83,13 +85,14 @@ async function listed(ctx: RepoContext, res: Response): Promise<{ state: State; 
   return { state: live.state, refs: await listRepositories(live.runtime.config, live.state, ctx.deps.exec) };
 }
 
-// The repository a route's :owner/:name names, one listRepositories gives, or undefined once the refusal is out: the Hive's login reads and
-// writes only the repositories the Hive lists
-async function named(ctx: RepoContext, req: Request, res: Response): Promise<{ state: State; repository: string } | undefined> {
+// The repository a route's :owner/:name names, one listRepositories gives, with its ref (#186: an original's role and pair), or undefined
+// once the refusal is out: the Hive's login reads and writes only the repositories the Hive lists
+async function named(ctx: RepoContext, req: Request, res: Response): Promise<{ state: State; repository: string; ref: RepoRef } | undefined> {
   const found = await listed(ctx, res);
   if (!found) return undefined;
   const repository = `${req.params.owner as string}/${req.params.name as string}`;
-  if (found.refs.some((ref) => ref.repository === repository)) return { state: found.state, repository };
+  const ref = found.refs.find((r) => r.repository === repository);
+  if (ref !== undefined) return { state: found.state, repository, ref };
   refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_REPOSITORY_MESSAGE });
   return undefined;
 }
@@ -218,12 +221,12 @@ async function readingOf(ctx: RepoContext, res: Response): Promise<Reading | und
   return { model, source };
 }
 
-type NamedReading = Reading & { repository: string };
+type NamedReading = Reading & { repository: string; ref: RepoRef };
 
 async function namedReading(ctx: RepoContext, req: Request, res: Response): Promise<NamedReading | undefined> {
   const found = await named(ctx, req, res);
   const reading = found && (await readingOf(ctx, res));
-  return found && reading ? { ...reading, repository: found.repository } : undefined;
+  return found && reading ? { ...reading, repository: found.repository, ref: found.ref } : undefined;
 }
 
 // The issue page (#181): a stored row at once, its refetch started and not awaited (the loop logs a failure; a change comes back as a
@@ -247,7 +250,7 @@ async function issuePage(res: Response, reading: NamedReading, number: number): 
   refuse(res, { status: HTTP_NOT_FOUND, message: `issue not found: ${repository}#${number}` });
 }
 
-// GET /repositories and a repository's issues, page and labels (#757), from the read model alone (#181)
+// GET /repositories and a repository's issues, page, labels and PRs (#757, #186), from the read model alone (#181)
 function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories', async (_req: Request, res: Response) => {
     const found = await listed(ctx, res);
@@ -269,6 +272,13 @@ function registerReadRoutes(app: Express, ctx: RepoContext): void {
   app.get('/repositories/:owner/:name/labels', async (req: Request, res: Response) => {
     const reading = await namedReading(ctx, req, res);
     if (reading) res.json(reading.model.db.labels(reading.source, reading.repository));
+  });
+  // #186: no GitHub call; an original lists only the login's PRs, as the search's author:@me did
+  app.get('/repositories/:owner/:name/pulls', async (req: Request, res: Response) => {
+    const state = PR_STATES.find((s) => s === req.query.state);
+    if (state === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: PR_STATE_MESSAGE });
+    const reading = await namedReading(ctx, req, res);
+    if (reading) res.json(prsOf(reading.model.db, reading.source, reading.ref, state));
   });
 }
 

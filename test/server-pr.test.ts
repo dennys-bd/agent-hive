@@ -112,16 +112,6 @@ test('taskOfPr: the task of the live activity whose record lists the link, else 
   assert.equal(taskOfPr(live, OTHER_PR), undefined);
 });
 
-test('GET …/pulls?state= answers the repository\'s rows and counts; another state is 400, an unlisted repository 404 (#758)', async (t) => {
-  const { base } = await startPrs(t, fakeGh());
-  const res = await hiveFetch(`${base}/repositories/acme/app/pulls?state=open`);
-  assert.deepEqual([res.status, await res.json()], [200, {
-    rows: [{ url: PR, number: 7, title: 'The PR', state: 'open', isDraft: false, mergeState: 'clean', updatedAt: AT }], counts: { open: 2, merged: 1, closed: 0 }, truncated: false, canPush: true,
-  }]);
-  assert.equal((await hiveFetch(`${base}/repositories/acme/app/pulls?state=draft`)).status, 400);
-  assert.equal((await hiveFetch(`${base}/repositories/acme/other/pulls?state=open`)).status, 404);
-});
-
 test('GET …/checks answers only the checks, the merge state and updatedAt, with no diff read (#758)', async (t) => {
   const gh = fakeGh();
   const running = { __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS', conclusion: null, detailsUrl: null, completedAt: null };
