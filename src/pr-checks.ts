@@ -1,10 +1,9 @@
-// A PR's head-commit checks, its review decision and its state as GitHub answers them (#758), shared by the PR page's read, its checks' poll
-// and the repository's PR list; and the reading helpers those parsers share. Pure, no node module: the UI may import it.
+// A PR's head-commit checks, its review decision and its state as GitHub answers them (#758), shared by the CI read, the PR list's rows
+// and the read model; and the reading helpers those parsers share. Pure, no node module: the UI may import it.
 import type { PrCheck, PrChecks, PrMergeState, PrReviewDecision, PrRow, PrState } from './types.js';
 
 export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 export const nodesOf = (connection: unknown): unknown[] => (isObject(connection) && Array.isArray(connection.nodes) ? (connection.nodes as unknown[]) : []);
-export const countOf = (connection: unknown): number => (isObject(connection) && typeof connection.totalCount === 'number' ? connection.totalCount : 0);
 
 /** Each node read alone (#592, #758): one GitHub answers in a shape this code cannot read is skipped and named, never failing the whole. */
 export function readable<T>(nodes: unknown[], read: (node: unknown) => T, skip: (reason: string) => void): T[] {
@@ -94,8 +93,6 @@ export const canPushOf = (permission: unknown): boolean => permission === 'ADMIN
 
 /** The head commit's check suites (#854): an Actions workflow a maintainer must approve has a suite but no check run. */
 export const SUITE_FIELDS = 'checkSuites(first: 50) { nodes { conclusion app { slug } workflowRun { workflow { name } } } }';
-/** #758's rollup with the suites beside it (#854): what the PR page, its poll and the CI read ask. */
-export const AWAITING_ROLLUP = rollupFields(`${SUITE_FIELDS} `);
 export const ACTIONS_APP = 'github-actions'; // the read model's suites reading matches it too (#186)
 
 /** The workflows awaiting a maintainer's approval on the head commit (#854): its github-actions suites concluded ACTION_REQUIRED, once each. */
@@ -108,13 +105,6 @@ export function awaitingOf(headCommit: unknown): string[] {
     return [typeof workflow === 'string' ? workflow : ACTIONS_APP];
   });
   return [...new Set(names)];
-}
-
-/** The PR's checks with the workflows awaiting approval (#854): those alone still make a box, pending, with no item. */
-export function prChecksOf(headCommit: unknown, skip: (reason: string) => void = () => undefined): PrChecks | undefined {
-  const checks = checksOf(headRollup(headCommit), skip);
-  const awaiting = awaitingOf(headCommit);
-  return awaiting.length === 0 ? checks : { ...(checks ?? { state: 'pending', items: [] }), awaiting };
 }
 
 /** A list row's checks (#758, #854): the rollup's state; with no rollup, awaiting when a workflow waits for approval. */

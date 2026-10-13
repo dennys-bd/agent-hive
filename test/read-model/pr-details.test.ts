@@ -229,7 +229,7 @@ test('the batch asks and stores the issues each PR closes (#187)', async (t) => 
 
 const AT = '2026-09-30T10:00:00Z';
 
-test('prDataOf builds the page\'s PrData from the model as #758\'s PR_QUERY fixture had it, files, threads and the on-open values aside (#187)', async () => {
+test('prDataOf builds the page\'s PrData from the model as #758\'s page fixture had it, files, threads and the on-open values aside (#187)', async () => {
   const db = await memory();
   const key = { ...pullKey(7), nodeId: 'PR_1' };
   db.setRepo(REPO_ROW);

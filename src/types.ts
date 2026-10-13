@@ -190,7 +190,7 @@ export interface AuthConfig {
   github: GithubAuth;
 }
 
-/** One GraphQL call against GitHub. Variables are scalars only; both transports carry them as such (#849: a boolean too, PR_QUERY's $open). */
+/** One GraphQL call against GitHub. Variables are scalars only; both transports carry them as such (#849: a boolean too). */
 export type Gql = (query: string, variables?: Record<string, string | number | boolean>) => Promise<unknown>;
 
 /** What the credential store holds, one key per provider. Never leaves the process except as an Authorization header. */
