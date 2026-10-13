@@ -206,7 +206,7 @@ test('a file at #180\'s schema version runs the repos and labels migration and k
   const { db, resync } = await openReadModel(path);
   t.after(() => db.close());
   assert.deepEqual([resync, peek(path, 'PRAGMA user_version')], [false, MIGRATIONS.length]);
-  assert.deepEqual(db.scope(SOURCE, REPO, 'issues'), { cursor: T1, etag: 'E', syncedAt: T2 });
+  assert.deepEqual(db.scope(SOURCE, REPO, 'issues'), { cursor: null, etag: null, syncedAt: T2 }, 'migration 3 (#186) reads the issues again from the start');
   assert.equal(db.setRepo(REPO_ROW), true);
 });
 

@@ -18,4 +18,11 @@ export const MIGRATIONS: readonly string[] = [
   `CREATE TABLE repos (source TEXT NOT NULL, repository TEXT NOT NULL, url TEXT NOT NULL, can_push INTEGER NOT NULL, issues_enabled INTEGER NOT NULL,
     fork_parent TEXT, pushed_at TEXT, PRIMARY KEY (source, repository));
   CREATE TABLE labels (source TEXT NOT NULL, repository TEXT NOT NULL, name TEXT NOT NULL, PRIMARY KEY (source, repository, name));`,
+  // #186: a PR's own fields beside its issues row, each column written by one reader. The issues scopes read again from the start (synced_at
+  // kept), so every stored PR gets its flags and no list falls back to "still syncing"
+  `CREATE TABLE pulls (source TEXT NOT NULL, node_id TEXT NOT NULL, repository TEXT NOT NULL, number INTEGER NOT NULL,
+    draft INTEGER NOT NULL DEFAULT 0, merged_at TEXT, head_sha TEXT, merge_state TEXT NOT NULL DEFAULT 'unknown', checks TEXT, decision TEXT,
+    read_at TEXT, PRIMARY KEY (source, node_id));
+  CREATE INDEX pulls_by_number ON pulls (source, repository, number);
+  UPDATE sync_scopes SET cursor = NULL, etag = NULL WHERE kind = 'issues';`,
 ];

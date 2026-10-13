@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
-import type { CommentRow, IssueRow, RepoRow } from '../../src/read-model/rows.js';
+import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
 import type { Gql, ProjectPr } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
@@ -55,6 +55,11 @@ export const COMMENT_ROW: CommentRow = {
 
 export const issueRow = (n: number, updatedAt: string, extra: Partial<IssueRow> = {}): IssueRow => ({ ...ISSUE_ROW, nodeId: `I_${n}`, number: n, title: `T${n}`, updatedAt, ...extra });
 export const commentRow = (id: string, issueNodeId: string, updatedAt = T1): CommentRow => ({ ...COMMENT_ROW, nodeId: id, issueNodeId, createdAt: updatedAt, updatedAt });
+/** A PR's issues row (#186): open, node id PR_<n>, as GitHub names a PR's node. */
+export const prIssueRow = (n: number, updatedAt: string, extra: Partial<IssueRow> = {}): IssueRow =>
+  issueRow(n, updatedAt, { nodeId: `PR_${n}`, kind: 'pr', state: 'open', closedAt: null, ...extra });
+export const pullKey = (n: number): PullKey => ({ source: SOURCE, nodeId: `PR_${n}`, repository: REPO, number: n });
+export const HEAD = 'a'.repeat(40);
 
 export const NOW = (): Date => new Date('2026-10-12T12:00:00Z');
 export const SYNCED = NOW().toISOString();

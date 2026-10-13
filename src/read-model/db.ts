@@ -1,9 +1,11 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
-import type { PrState, ProjectPr, Signal } from '../types.js';
-import type { CommentRow, IssueRow, IssueView, RepoRow, UpsertOrigin } from './rows.js';
+import type { DatabaseSync } from 'node:sqlite';
+import type { PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
+import { pullTablesOf } from './pull-tables.js';
+import type { CommentRow, IssueRow, IssueView, OpenPull, PullFlags, PullKey, PullPoll, PullRead, PullToRead, RepoRow, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
+import { nullable, type Row, text, written } from './sql.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
 export const READ_MODEL_FILE = 'read-model.sqlite';
@@ -30,10 +32,15 @@ const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open')
 const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
-/** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). */
-export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels';
-/** A row of sync_scopes (#180): the two incremental scopes, and the full listing's, whose synced_at spaces it. kind is TEXT: no migration. */
-export type ScopeKind = SyncKind | 'reconcile';
+/** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). `pulls`: a PR's own fields changed (#186). */
+export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'pulls';
+/** A part of an open PR's poll (#186): pulls/{n}, then its head's check runs, combined status and check suites. */
+export type PullPart = 'pr' | 'runs' | 'status' | 'suites';
+/** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
+ * whose cursor holds the part's own reading, so a 304 still has it. kind is TEXT: no migration. */
+export type ScopeKind = SyncKind | 'reconcile' | `pull/${number}/${PullPart}`;
+/** Which PR rows a list reads (#186): one login's on an original, and at most `limit`. */
+export interface PrFilter { author?: string; limit?: number }
 /** A scope's place in its sync: the `since` cursor, the first page's ETag, and the time of the last complete round. */
 export interface SyncScope { cursor: string | null; etag: string | null; syncedAt: string | null }
 
@@ -59,6 +66,14 @@ export interface ReadModel {
   nodeIdOf(source: string, repository: string, number: number): string | undefined; // an issue's or a PR's
   comments(source: string, issueNodeId: string): CommentRow[]; // oldest first
   nodeIds(source: string, repository: string, table: 'issues' | 'comments'): string[];
+  setPullFlags(flags: PullFlags): boolean; // #186: each pulls writer answers whether it wrote
+  setPullRead(key: PullKey, read: PullRead): boolean;
+  setPullPoll(key: PullKey, poll: PullPoll): boolean;
+  pullsToRead(source: string, repository: string, author?: string): PullToRead[]; // by number
+  openPulls(source: string, repository: string, author?: string): OpenPull[]; // by number
+  prs(source: string, repository: string, state: PrState, filter?: PrFilter): PrRow[]; // newest update first
+  prCounts(source: string, repository: string, author?: string): RepoPrs['counts'];
+  removeScopes(source: string, repository: string, prefix: string): void;
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -66,11 +81,7 @@ export interface ReadModel {
 /** `now` is the clock of the written_at window; `migrations` replaces MIGRATIONS for the tests only. */
 export interface OpenOptions { now?: () => number; migrations?: readonly string[] }
 
-type Row = Record<string, SQLOutputValue>;
 type Sqlite = typeof DatabaseSync;
-const text = (row: Row, key: string): string => String(row[key]);
-const nullable = (row: Row, key: string): string | null => (row[key] === null ? null : String(row[key]));
-const written = (result: { changes: number | bigint }): boolean => Number(result.changes) > 0;
 const paramOf = (column: string): string => column.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
 // The replace rule (#178): a newer updated_at always wins. On a tie a write wins, and a sync page wins unless the stored row was written
@@ -147,6 +158,7 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
   const dropIssue = db.prepare('DELETE FROM issues WHERE source = ? AND node_id = ?');
   const dropComments = db.prepare('DELETE FROM comments WHERE source = ? AND issue_node_id = ?');
   const dropComment = db.prepare('DELETE FROM comments WHERE source = ? AND node_id = ?');
+  const dropPull = db.prepare('DELETE FROM pulls WHERE source = ? AND node_id = ?');
   return {
     // The links have their own write: a linked PR moving does not bump the issue's updated_at, so they live outside the replace rule
     setClosingPrs: (source, issueNodeId, prs) => inTransaction(db, () => {
@@ -156,6 +168,7 @@ function removalsOf(db: DatabaseSync): Pick<ReadModel, 'setClosingPrs' | 'remove
     removeIssue: (source, nodeId) => inTransaction(db, () => {
       dropComments.run(source, nodeId);
       dropLinks.run(source, nodeId);
+      dropPull.run(source, nodeId);
       dropIssue.run(source, nodeId);
     }),
     removeComment: (source, nodeId) => { dropComment.run(source, nodeId); },
@@ -274,7 +287,10 @@ function restrict(path: string): void {
 }
 
 function modelOf(db: DatabaseSync, now: () => number): ReadModel {
-  return { ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), ...repoTablesOf(db), ...countsOf(db), transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close() };
+  return {
+    ...upsertsOf(db, now), ...removalsOf(db), ...readsOf(db), ...repoTablesOf(db), ...countsOf(db), ...pullTablesOf(db),
+    transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
+  };
 }
 
 // The handle is closed on any failure, statement preparation included, so the files can be deleted after it (Windows refuses an open one)
