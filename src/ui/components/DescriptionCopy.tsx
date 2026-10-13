@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { type ReactNode, useRef } from 'react';
 import { Copy, FileCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
@@ -6,18 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { type MessageKey, t } from '@/i18n';
 
-// A clipboard refusal's raw message never reaches the screen (m-11)
+// A clipboard refusal's raw DOMException text is not copy for a person, so the toast says it in our own words
 function copied(write: Promise<void>): void {
   write.then(() => toast.success(t('detail.copied')), () => toast.error(t('detail.copyFailed')));
 }
 
-// The rendered description as rich text, its text as the fallback, so it pastes formatted wherever rich text is taken
-function copyRendered(el: HTMLElement): Promise<void> {
+// The rendered description as rich text, its text as the fallback, so it pastes formatted wherever rich text is taken. Async so a
+// synchronous throw (no ClipboardItem) still lands in copied's error toast
+async function copyRendered(el: HTMLElement): Promise<void> {
   const blob = (text: string, type: string): Blob => new Blob([text], { type });
   return navigator.clipboard.write([new ClipboardItem({ 'text/html': blob(el.innerHTML, 'text/html'), 'text/plain': blob(el.innerText, 'text/plain') })]);
 }
 
-function CopyButton({ label, icon, onClick }: { label: MessageKey; icon: React.ReactNode; onClick(): void }) {
+function CopyButton({ label, icon, onClick }: { label: MessageKey; icon: ReactNode; onClick(): void }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>

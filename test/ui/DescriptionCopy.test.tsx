@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { toast } from 'sonner';
 import { TaskDescription } from '@/components/DescriptionCopy';
 import { setLanguage } from '@/i18n';
@@ -13,6 +13,11 @@ beforeEach(() => {
   setLanguage('pt');
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(HTMLElement.prototype, 'innerText');
 });
 
 // userEvent.setup installs its own clipboard; ours goes in after it
@@ -46,7 +51,6 @@ test('copiar writes the rendered description as html with a plain-text fallback 
   expect(await item.items['text/html']!.text()).toContain('<strong>bold</strong>');
   expect(await item.items['text/plain']!.text()).toContain('bold');
   expect(toast.success).toHaveBeenCalledWith('copiado');
-  vi.unstubAllGlobals();
 });
 
 test('a failed copy toasts the generic error, never the raw message (#283)', async () => {
