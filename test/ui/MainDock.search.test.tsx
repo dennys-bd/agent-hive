@@ -22,7 +22,7 @@ function Home({ tasks = [taskA], workers = [] as Worker[], flow = <main>fluxo</m
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={tasks} workers={workers} terminals={[]} liveActivities={work.activities} activityRecords={work.activityRecords} search={{ state: stateOf(tasks, { workers }) }}
       onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>}
-      header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      header={() => <header />}
     >
       {flow}
     </MainDock>

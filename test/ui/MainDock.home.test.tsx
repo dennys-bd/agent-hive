@@ -24,7 +24,7 @@ function Home({ workspaces = ['hive'], terminals = [] as Terminal[], tasks = [ta
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={workspaces} tasks={tasks} workers={[]} terminals={terminals}
       liveActivities={work.activities} activityRecords={work.activityRecords}
       search={{ state: stateOf(tasks, { terminals, workspaces: workspaces }) }} newActivity={newActivity}
-      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={() => <header />}
     >
       <main>fluxo</main>
     </MainDock>
@@ -123,7 +123,7 @@ test('a recent task with only its worktree left resumes its last session rather 
   render(
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[idle]} workers={[]} terminals={[]} activityRecords={activityRecords}
-      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={() => <header />}
     >
       <main>fluxo</main>
     </MainDock>,
@@ -185,7 +185,7 @@ test('picking a sleeping activity wakes nothing, though its stored layout names 
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[taskA]} workers={[]} terminals={[]} activityRecords={activityRecords}
       liveActivities={withPointedWork({ tasks: [taskA], workers: [], terminals: [], activities: [], activityRecords }).activities}
-      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>} header={() => <header />}
     >
       <main>fluxo</main>
     </MainDock>,

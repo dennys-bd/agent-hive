@@ -15,7 +15,7 @@ function Home({ flow = <main>fluxo</main>, openShortcuts }: { flow?: ReactNode; 
     <MainDock
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[]} workers={[]} terminals={[]}
       search={{ state: stateOf([]), openShortcuts }} onSelect={vi.fn()} detail={() => <p>detalhes</p>} automation={() => <p>automação</p>}
-      header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button></header>}
+      header={() => <header />}
     >
       {flow}
     </MainDock>

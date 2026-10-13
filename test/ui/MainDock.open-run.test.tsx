@@ -44,7 +44,7 @@ function Home({ workers = [workerA], terminals = [shellA], calls = [], c = taskC
       fileLinks={false} fontFamily="ui-monospace, monospace" workspaces={['hive']} tasks={[taskA, c]} workers={workers}
       liveActivities={work.activities} activityRecords={work.activityRecords}
       terminals={terminals} onSelect={(s) => calls.push(s)} detail={openers} automation={() => <p>automação</p>}
-      header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      header={() => <header />}
     >
       <main>fluxo</main>
     </MainDock>

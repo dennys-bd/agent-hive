@@ -65,3 +65,15 @@ export function ViewRail({ center, onView, hasWaiting, onOpenShortcuts, onOpenSe
     </nav>
   );
 }
+
+/** The window's body (#220): the rail, then the dock. The rail sits outside DockFrame, so the dock's percent sizes keep their meaning. With no
+ * rail (the terminal's harness) the dock is rendered as before, with no wrapper. */
+export function DockBody({ rail, children }: { rail?: ViewRailProps; children: ReactNode }) {
+  if (rail === undefined) return <>{children}</>;
+  return (
+    <div className="flex min-h-0 flex-1">
+      <ViewRail {...rail} />
+      {children}
+    </div>
+  );
+}

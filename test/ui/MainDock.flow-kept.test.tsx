@@ -23,7 +23,7 @@ function Dock() {
   return (
     <MainDock
       fileLinks={false} fontFamily="monospace" workspaces={['hive']} tasks={[]} workers={[]} terminals={[]} onSelect={vi.fn()} detail={() => <p>detalhes</p>}
-      header={(_center, go) => <header><button type="button" onClick={() => go('automation')}>fluxo</button><button type="button" onClick={() => go('activities')}>atividades</button></header>}
+      header={() => <header />}
     >
       <Flow state={state} />
     </MainDock>
