@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { advance, type EndOf, retry, take, unrouted } from '../src/transit.js';
+import { advance, type EndOf, follow, retry, take, unrouted } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
 import { FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Stage, State, Task, Transition, TryRecord } from '../src/types.js';
@@ -129,4 +129,19 @@ test('a try\'s cause and error lose their control characters and stay within FEE
   const [record] = log(advance(state, state.tasks[0], { ...FAILED, cause: '\u001b[1mbuild (1)' }).state) ?? [];
   assert.equal(record?.cause, '[1mbuild (1)');
   assert.ok(record !== undefined && record.error.length === FEEDBACK_MAX && !record.error.includes('\u001b'));
+});
+
+test('follow goes through a transition as an epic does: its sources written and its arrow kept, no try counted or recorded, no handover; a leaving action holds the task (#213)', () => {
+  const FEEDBACK: Transition = { from: 'checks', to: 'fix', when: 'feedback', sources: { board: [{ type: 'move', column: 'Fix' }] } };
+  const fed = pure(placed({ tries: { [KEY]: 1 }, tryLog: [recordOf(KEY, 1)] }, { transitions: [FEEDBACK] }), (s) => follow(s, s.tasks[0], FEEDBACK));
+  assert.deepEqual(fed.effects, [{ type: 'setColumn', itemId: ID, column: 'Fix' }]);
+  const live = activityOf(fed.state, ID);
+  assert.deepEqual([fed.state.tasks[0].stage, live?.via, live?.tries, live?.tryLog], ['fix', transitionKey(FEEDBACK), undefined, undefined], 'the arrow, and the old tries gone');
+  assert.deepEqual([live?.handover, fed.handover], [undefined, undefined], 'a feedback into a stage with a prompt hands nothing over: no run reads it');
+  const counted = activityOf(pure(placed(), (s) => follow(s, s.tasks[0], RETRY)).state, ID);
+  assert.deepEqual([counted?.tries, counted?.tryLog], [undefined, undefined], 'maxTries counts nothing');
+  const ARCHIVE: Transition = { ...RETRY, sources: { board: [{ type: 'archive' }] } };
+  const held = pure(placed(), (s) => follow(s, s.tasks[0], ARCHIVE));
+  assert.deepEqual([held.state.tasks[0].stage, held.state.tasks[0].leaving], ['checks', true], 'held until the source answers');
+  assert.deepEqual(held.effects, [{ type: 'sourceAction', itemId: ID, taskId: ID, action: { type: 'archive' } }]);
 });
