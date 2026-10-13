@@ -26,6 +26,8 @@ export const nextStep = (step: number, overflows: boolean): number => (overflows
 export function useFooterStep(ref: RefObject<HTMLElement | null>, fitKey: string): FooterStep {
   const [step, setStep] = useState(0);
   const [key, setKey] = useState(fitKey);
+  // A resize while already at step 0 would bail out of setStep(0) and never re-measure; the counter forces the render
+  const [, setResizes] = useState(0);
   // Content that shrinks (an agent gone, a rule no longer in force) frees room no resize reports: start over in this same render
   if (key !== fitKey) {
     setKey(fitKey);
@@ -46,6 +48,7 @@ export function useFooterStep(ref: RefObject<HTMLElement | null>, fitKey: string
       if (el.clientWidth === width) return;
       width = el.clientWidth;
       setStep(0);
+      setResizes((n) => n + 1);
     });
     observer.observe(el);
     return () => observer.disconnect();

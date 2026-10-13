@@ -8,7 +8,7 @@ import { effectsInForce, type RulesForm, rulesLabel } from '@/lib/rule-effects';
 
 interface RulesButtonProps { state: State; effective: EffectiveLimits; locale: string; form: RulesForm; onEditRules?(): void }
 
-// The footer's chip box (handoff 02). Footer.tsx keeps its own CHIP for the shut-down buttons; this copy goes when 2.5 settles the footer's chip.
+// The footer's chip box (handoff 02).
 const CHIP = 'h-auto gap-1.5 rounded-sm px-2 py-px text-xs font-normal text-foreground';
 // Half of the 30px footer less the 20px chip: the panel's borderless bottom edge meets the footer's top border (#224).
 const RULES_PANEL_OFFSET = 5;

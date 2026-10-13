@@ -91,7 +91,7 @@ test('the right group\'s divider resizes the detail by 5 per arrow, ArrowLeft wi
   expect(group('right')).toHaveStyle({ flexBasis: '70%' });
 });
 
-test('the first run opens the center on Home and the left panel on the Atividades tab, with Automação mounted beside it holding the signal toggle, the worker cap, the shut-down toggle and the sources; the right stays closed, and the footer holds the signal strip alone (#452, #456, #457, #746)', () => {
+test('the first run opens the center on Home and the left panel on the Atividades tab, with Automação mounted beside it holding the signal toggle, the worker cap, the shut-down toggle and the sources; the right stays closed, the footer holds no signal and the header brand\'s mark does (#452, #456, #457, #746)', () => {
   render(<Home />);
   const left = group('left')!;
   expect(screen.getByRole('heading', { name: 'Nenhuma atividade aberta' })).toBeInTheDocument();
@@ -105,7 +105,8 @@ test('the first run opens the center on Home and the left panel on the Atividade
   expect(within(automation).getByLabelText('máx.')).toBeInTheDocument();
   expect(within(automation).getByRole('button', { name: /^todas/ })).toBeInTheDocument(); // the sources (redesign 09)
   const footer = screen.getByRole('contentinfo');
-  expect(within(footer).getByRole('status')).toHaveAttribute('data-signal', 'green'); // the pill, by the manual signal before an effective one
+  expect(within(footer).queryByRole('status')).not.toBeInTheDocument(); // #227: the signal is the brand's mark
+  expect(document.querySelector('header [data-signal]')).toHaveAttribute('data-signal', 'green'); // by the manual signal before an effective one
   expect(within(footer).queryAllByRole('radio')).toEqual([]);
   expect(within(footer).getAllByRole('button').filter((b) => b.closest('[data-usage-group]') === null).map((b) => b.textContent)).toEqual(['regras nenhuma ativa', '', 'console', '', '']); // the rules button (#224); the usage group (#223) aside, the problems button (#225, icon only), the console's chip (redesign 05) and the power buttons
   expect(within(footer).queryByLabelText('máx.')).not.toBeInTheDocument();
