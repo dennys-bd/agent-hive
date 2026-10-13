@@ -23,7 +23,7 @@ test('opening a Python file runs mypy and pylint, on by default; mypy\'s answer 
   const model = new FakeModel('x', 'python');
   attachChecks(input('a.py', model));
   expect(posted()).toEqual(['/activities/a1/check/mypy {"path":"a.py"}', '/activities/a1/check/pylint {"path":"a.py"}']);
-  await vi.waitFor(() => expect(store.fileSources('a1', 'a.py')).toEqual([{ name: 'mypy', phase: 'ready' }, { name: 'pylint', phase: 'absent' }]));
+  await vi.waitFor(() => expect(store.activityStatus('a1')).toEqual([{ name: 'mypy', kind: 'checker', phase: 'ready' }])); // pylint not in the project: not shown
   await vi.waitFor(() => expect(markers.find((m) => m.owner === 'check:mypy')).toMatchObject({ model, list: [{ startLineNumber: 2, startColumn: 3, message: 'bad', severity: 8, source: 'mypy', code: 'arg-type' }] }));
   expect(store.fileCounts('a1', 'a.py')).toEqual({ errors: 1, warnings: 0, infos: 0 });
 });
@@ -61,5 +61,5 @@ test('an answer that does not read fails the checker; detaching clears the file\
   stop();
   await settle();
   expect(markers.slice(-2).map((m) => [m.owner, m.list])).toEqual([['check:mypy', []], ['check:pylint', []]]);
-  expect(store.fileSources('a1', 'a.py')).toEqual([]);
+  expect(store.activityStatus('a1')).toMatchObject([{ name: 'mypy', phase: 'failed' }]); // the file gone, its answer stays the checker's line
 });

@@ -10,7 +10,7 @@ const finding = (path: string, line: number, extra: Partial<CheckDiagnostic> = {
 test('a bound file reads its server and state; problems show only while the client is ready, and clear when it leaves ready (#780)', () => {
   store.setClient('k', 'a1', 'pyright', { phase: 'starting' }, LOG);
   store.bindFile('a1', 'src/a.py', 'k', 'python');
-  expect(store.fileServer('a1', 'src/a.py')).toEqual({ server: 'pyright', language: 'python', state: { phase: 'starting' }, log: LOG });
+  expect(store.activityStatus('a1')).toEqual([{ name: 'pyright', kind: 'server', phase: 'starting', language: 'python', log: LOG }]);
   store.setDiagnostics('k', 'src/a.py', problemsOf('src/a.py', { errors: 1 }, 'pyright'));
   expect(store.fileCounts('a1', 'src/a.py')).toEqual({ errors: 0, warnings: 0, infos: 0 });
   store.setClient('k', 'a1', 'pyright', { phase: 'ready' });
@@ -18,7 +18,7 @@ test('a bound file reads its server and state; problems show only while the clie
   store.setDiagnostics('k', 'src/b/c.py', problemsOf('src/b/c.py', { warnings: 1, infos: 3 }, 'pyright'));
   expect(store.fileCounts('a1', 'src/a.py')).toEqual({ errors: 1, warnings: 2, infos: 0 });
   expect([...store.activityCounts('a1').keys()]).toEqual(['src/a.py', 'src/b/c.py']);
-  expect(store.fileServer('a1', 'src/a.py')?.log).toEqual(LOG);
+  expect(store.activityStatus('a1')[0].log).toEqual(LOG);
   store.setClient('k', 'a1', 'pyright', { phase: 'failed', reason: 'exit code 1' });
   expect(store.activityCounts('a1').size).toBe(0);
 });
@@ -31,9 +31,9 @@ test('every change moves the snapshot; dropClient unbinds its files, unbindFile 
   store.bindFile('a1', 'x.py', 'r', 'python');
   expect(store.snapshot()).toBeGreaterThan(before);
   store.unbindFile('a1', 'x.py', 'r');
-  expect(store.fileServer('a1', 'x.py')?.server).toBe('pyright');
+  expect(store.activityStatus('a1')[0]).toEqual({ name: 'pyright', kind: 'server', phase: 'ready', language: 'python' });
   store.dropClient('k');
-  expect(store.fileServer('a1', 'x.py')).toBeUndefined();
+  expect(store.activityStatus('a1')).toEqual([{ name: 'ruff', kind: 'server', phase: 'ready' }]);
 });
 
 test('a file check replaces that checker\'s problems for its file only, a project check the activity\'s; a finding of a file check about another file is dropped (#782)', () => {
@@ -64,7 +64,7 @@ test('a running or failed check keeps its previous problems, stale, and when the
   expect(store.problems('a1')).toEqual([]);
 });
 
-test('counts sum both sources with a duplicate once, the server\'s copy kept; the file\'s sources are its checkers (#782)', () => {
+test('counts sum both sources with a duplicate once, the server\'s copy kept; the activity\'s checkers list both kinds (#782)', () => {
   store.setClient('k', 'a1', 'typescript-language-server', { phase: 'ready' });
   store.bindFile('a1', 'a.ts', 'k', 'typescript');
   store.setDiagnostics('k', 'a.ts', [{ path: 'a.ts', line: 3, column: 1, severity: 'error', message: "Cannot find name 'x'.", code: '2304', source: 'typescript-language-server', fromServer: true }]);
@@ -74,11 +74,10 @@ test('counts sum both sources with a duplicate once, the server\'s copy kept; th
   store.setClient('b', 'a1', 'biome', { phase: 'starting' }, undefined, 'biome');
   store.bindFile('a1', 'a.ts', 'b', 'typescript');
   store.bindChecks('a1', 'a.ts', ['tsc', 'mypy']);
-  expect(store.fileSources('a1', 'a.ts')).toEqual([{ name: 'biome', phase: 'starting' }, { name: 'tsc', phase: 'ready' }, { name: 'mypy', phase: 'starting' }]);
-  expect(store.fileServer('a1', 'a.ts')?.server).toBe('typescript-language-server');
+  expect(store.activityStatus('a1')).toEqual([{ name: 'typescript-language-server', kind: 'server', phase: 'ready', language: 'typescript' }, { name: 'biome', kind: 'server', phase: 'starting' }, { name: 'tsc', kind: 'checker', phase: 'ready' }, { name: 'mypy', kind: 'checker', phase: 'starting' }]);
   expect(store.answeredSources('a1')).toEqual(['typescript-language-server', 'tsc']);
   store.unbindChecks('a1', 'a.ts');
-  expect(store.fileSources('a1', 'a.ts')).toEqual([{ name: 'biome', phase: 'starting' }]);
+  expect(store.activityStatus('a1').map((s) => s.name)).toEqual(['typescript-language-server', 'biome', 'tsc']);
 });
 
 test('a file checker keeps a phase per file: one file\'s answer or failure leaves another\'s running and results alone; absent and failed do not count as a result (#782)', () => {
@@ -89,10 +88,7 @@ test('a file checker keeps a phase per file: one file\'s answer or failure leave
   expect(store.checkStatuses('a1')[0].phase).toBe('running');
   store.setCheck('a1', 'mypy', { state: 'failed', reason: 'exit code 2' }, 'b.py');
   expect(store.problems('a1')[0].problems[0].isStale).toBeUndefined();
-  expect(store.fileSources('a1', 'a.py').length).toBe(0);
-  store.bindChecks('a1', 'a.py', ['mypy']);
-  expect(store.fileSources('a1', 'a.py')).toEqual([{ name: 'mypy', phase: 'ready' }]);
-  expect(store.fileSources('a1', 'x.py')).toEqual([]);
+  expect(store.activityStatus('a1')).toEqual([{ name: 'mypy', kind: 'checker', phase: 'failed', reason: 'exit code 2' }]); // b.py's failure is the checker's line
   store.setCheck('a1', 'mypy', { state: 'absent' }, 'd.py');
   expect([store.hasCheck('a1', 'mypy', 'a.py'), store.hasCheck('a1', 'mypy', 'b.py'), store.hasCheck('a1', 'mypy', 'd.py')]).toEqual([true, false, false]);
 });

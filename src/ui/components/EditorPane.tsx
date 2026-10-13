@@ -1,6 +1,5 @@
 import type { editor } from 'monaco-editor';
 import { type RefObject, useEffect, useRef, useState } from 'react';
-import { CheckerSources, ServerStatus } from '@/components/EditorStatus';
 import { useEditorLanguages } from '@/components/editor-languages';
 import { useOpenFile } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -167,16 +166,14 @@ export function FormatFailed({ failure, onViewLog }: { failure: FormatFailure; o
   );
 }
 
-// The bar (#717, #780, #782): the path left; a save's refusal or a failed format (#749) in the middle; the language server and each checker
-// right; the problems moved to the footer and the drawer (#225). One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
+// The bar (#717, #749, #225): the path left, a save's refusal or a failed format beside it; the checkers and the problems are the footer's.
+// One row 24px tall, the pane's only header (#850). ⌘S and ⌥⌘S save from the editor
 function EditorBar({ file, error, formatFailure, onViewLog }: BarProps) {
   return (
     <div className="flex h-6 shrink-0 items-center gap-2 border-b px-2.5 text-muted-foreground text-xs leading-none">
       <span title={file.path} className="min-w-0 flex-1 truncate font-mono">{file.path}</span>
       {error !== undefined && <span role="alert" className="min-w-0 truncate text-destructive">{error}</span>}
       {formatFailure !== undefined && <FormatFailed failure={formatFailure} onViewLog={onViewLog} />}
-      <ServerStatus activityId={file.activityId} path={file.path} onViewLog={onViewLog} />
-      <CheckerSources activityId={file.activityId} path={file.path} onViewLog={onViewLog} />
     </div>
   );
 }

@@ -8,16 +8,12 @@ import type { CheckDiagnostic, CheckerId, CliCheckerId, FormatLog, LanguageId, S
 export type { Counts, Problem, ProblemGroup } from '@/lib/problems';
 /** A client's state (#780): off is a workspace out of the server's scope, which shows nothing. */
 export type ServerPhase = { phase: 'starting' } | { phase: 'ready' } | { phase: 'failed'; reason: string } | { phase: 'absent'; reason: string } | { phase: 'off' };
-export interface FileServer { server: ServerId; language: LanguageId; state: ServerPhase; log?: FormatLog }
 /** A command-line checker's answer as the store keeps it (#782); a failure's log is absent when the request itself failed. */
 export type CheckOutcome =
   | { state: 'done'; scope: 'file' | 'project'; diagnostics: CheckDiagnostic[] } | { state: 'failed'; reason: string; log?: FormatLog } | { state: 'absent' };
 export type CheckPhase = 'running' | 'done' | 'failed' | 'absent';
 /** A command-line checker of the activity (#782): at is when its last done answer came, what the list's running line names. */
 export interface CheckStatus { checker: CliCheckerId; phase: CheckPhase; at?: number; reason?: string; log?: FormatLog }
-/** One entry of the bar besides the language's own server (#782): a checker of the open file, of either kind. */
-export interface Source { name: string; phase: 'starting' | 'ready' | 'running' | 'failed' | 'absent'; reason?: string; log?: FormatLog }
-
 interface Client { activityId: string; server: ServerId; checker?: CheckerId; state: ServerPhase; log?: FormatLog; problems: ReadonlyMap<string, readonly Problem[]> }
 type TargetState = Omit<CheckStatus, 'checker'>;
 // targets: a file checker's phase per file, a project checker's under '' (its target): one file's answer never touches another's
@@ -85,15 +81,6 @@ export function unbindFile(activityId: string, path: string, key: string): void 
   notify();
 }
 
-/** The language's own server of the file the pane shows (#780); undefined when none serves it. */
-export function fileServer(activityId: string, path: string): FileServer | undefined {
-  for (const [key, language] of bound.get(fileKey(activityId, path)) ?? []) {
-    const client = clients.get(key);
-    if (client !== undefined && client.checker === undefined) return { server: client.server, language, state: client.state, ...(client.log ? { log: client.log } : {}) };
-  }
-  return undefined;
-}
-
 const toProblem = (checker: CliCheckerId) => (d: CheckDiagnostic): Problem => ({ ...d, source: checker, fromServer: false });
 
 const withTarget = (kept: Check | undefined, target: string, state: TargetState): Map<string, TargetState> => new Map([...(kept?.targets ?? []), [target, state]]);
@@ -155,35 +142,13 @@ function statusOf(check: Check): CheckStatus {
 /** The activity's command-line checkers and where each is (#782), in the order they first ran. */
 export const checkStatuses = (activityId: string | undefined): CheckStatus[] => checksOf(activityId).map(statusOf);
 
-/** The command-line checkers that run for an open file (#782): the bar shows them before their first answer. */
+/** The command-line checkers that run for an open file (#782): the footer shows them before their first answer (#225). */
 export function bindChecks(activityId: string, path: string, ids: readonly CliCheckerId[]): void {
   checkBound.set(fileKey(activityId, path), ids);
   notify();
 }
 export function unbindChecks(activityId: string, path: string): void {
   if (checkBound.delete(fileKey(activityId, path))) notify();
-}
-
-const SERVER_SOURCE: Record<ServerPhase['phase'], Source['phase'] | undefined> = { starting: 'starting', ready: 'ready', failed: 'failed', absent: 'absent', off: undefined };
-const CHECK_SOURCE: Record<CheckPhase, Source['phase']> = { running: 'running', done: 'ready', failed: 'failed', absent: 'absent' };
-
-// A checker server's client as a bar entry; none for the language's own server or one out of scope
-function serverSource(key: string): Source[] {
-  const client = clients.get(key);
-  const phase = client === undefined ? undefined : SERVER_SOURCE[client.state.phase];
-  if (client?.checker === undefined || phase === undefined) return [];
-  const reason = 'reason' in client.state ? client.state.reason : undefined;
-  return [{ name: client.checker, phase, ...(reason === undefined ? {} : { reason }), ...(client.log ? { log: client.log } : {}) }];
-}
-
-/** The bar's checkers of a file (#782): its checker servers' clients, then its command-line checkers, starting until their first answer. */
-export function fileSources(activityId: string, path: string): Source[] {
-  const servers = [...(bound.get(fileKey(activityId, path))?.keys() ?? [])].flatMap(serverSource);
-  const cli = (checkBound.get(fileKey(activityId, path)) ?? []).map((checker): Source => {
-    const state = checks.get(checkKey(activityId, checker))?.targets.get(path) ?? checks.get(checkKey(activityId, checker))?.targets.get('');
-    return { name: checker, phase: state === undefined ? 'starting' : CHECK_SOURCE[state.phase], ...(state?.reason === undefined ? {} : { reason: state.reason }), ...(state?.log ? { log: state.log } : {}) };
-  });
-  return [...servers, ...cli];
 }
 
 const readyOf = (activityId: string | undefined): Client[] => [...clients.values()].filter((c) => isIn(activityId)(c) && c.state.phase === 'ready');
