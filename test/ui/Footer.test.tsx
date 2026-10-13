@@ -1,7 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Footer } from '@/components/Footer';
+import { workersLine } from '@/components/HeaderBrand';
 import { setLanguage, t } from '@/i18n';
 import type { AgentId } from '../../src/types';
 import { FIRED, NONE, STATE } from './rules-fixtures';
@@ -159,4 +161,13 @@ describe('the steps (#227, handoff §6)', () => {
     expect(formOf()).toBe('group/short');
     expect(fixed()).toEqual(atStepZero);
   });
+});
+
+test('the shutdown confirm\'s context is the effective signal\'s pill and the header\'s workers count (#75)', async () => {
+  const user = userEvent.setup();
+  render(<Footer state={STATE} effective={FIRED} locale="pt-BR" />);
+  await user.click(within(footer()).getByRole('button', { name: t('power.shutdown.off') }));
+  const dialog = await screen.findByRole('alertdialog', { name: 'Desligar ao terminar' });
+  expect(within(dialog).getByText(FIRED.signal, { selector: '[data-signal]' })).toHaveAttribute('data-signal', FIRED.signal);
+  expect(dialog).toHaveTextContent(workersLine(STATE, FIRED));
 });

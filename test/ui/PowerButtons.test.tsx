@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { PowerButtons } from '@/components/footer/PowerButtons';
@@ -11,7 +11,7 @@ beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMo
 afterEach(() => vi.unstubAllGlobals());
 
 test('off: two icon-only buttons, coffee then power, muted, titled with what they would do (#226)', () => {
-  render(<PowerButtons keepAwake={false} armed={false} />);
+  render(<PowerButtons keepAwake={false} armed={false} signal="green" workers="workers 0/2" />);
   const [awake, shutdown] = screen.getAllByRole('button');
   expect(awake).toHaveAccessibleName('manter ligado: sem hibernar e sem desligar a tela');
   expect(shutdown).toHaveAccessibleName('desligar o computador quando todas as sessões terminarem');
@@ -24,7 +24,7 @@ test('off: two icon-only buttons, coffee then power, muted, titled with what the
 });
 
 test('on: keep awake in working and shutdown in waiting, each over 16% of its colour, titled with how to turn it off (#226)', () => {
-  render(<PowerButtons keepAwake armed />);
+  render(<PowerButtons keepAwake armed signal="green" workers="workers 0/2" />);
   const awake = screen.getByRole('button', { name: 'mantendo ligado: sem hibernar e sem desligar a tela · clique para desligar' });
   const shutdown = screen.getByRole('button', { name: 'desligando quando os workers terminarem · clique para cancelar' });
   expect(awake).toHaveAttribute('title', t('power.keepAwake.on'));
@@ -35,25 +35,38 @@ test('on: keep awake in working and shutdown in waiting, each over 16% of its co
 
 test('keep awake toggles with one click and no confirm, both ways (#226)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<PowerButtons keepAwake={false} armed={false} />);
+  const { rerender } = render(<PowerButtons keepAwake={false} armed={false} signal="green" workers="workers 0/2" />);
   await user.click(screen.getByRole('button', { name: t('power.keepAwake.off') }));
   await posted('/keep-awake', { on: true });
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  rerender(<PowerButtons keepAwake armed={false} />);
+  rerender(<PowerButtons keepAwake armed={false} signal="green" workers="workers 0/2" />);
   await user.click(screen.getByRole('button', { name: t('power.keepAwake.on') }));
   await posted('/keep-awake', { on: false });
 });
 
 test('shutdown asks before arming; armed, a click cancels at once (#226)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<PowerButtons keepAwake={false} armed={false} />);
+  const { rerender } = render(<PowerButtons keepAwake={false} armed={false} signal="green" workers="workers 0/2" />);
   await user.click(screen.getByRole('button', { name: t('power.shutdown.off') }));
   expect(fetchMock).not.toHaveBeenCalled();
   await user.click(await screen.findByRole('button', { name: t('shutdown.arm') }));
   await posted('/shutdown', { armed: true });
   await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-  rerender(<PowerButtons keepAwake={false} armed />);
+  rerender(<PowerButtons keepAwake={false} armed signal="green" workers="workers 0/2" />);
   await user.click(screen.getByRole('button', { name: t('power.shutdown.on') }));
   await posted('/shutdown', { armed: false });
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+});
+
+test('the shutdown confirm: its title, the signal pill and the workers count as its context, then the lowercase message and buttons (#75)', async () => {
+  const user = userEvent.setup();
+  render(<PowerButtons keepAwake={false} armed={false} signal="yellow" workers="workers 2/5" />);
+  await user.click(screen.getByRole('button', { name: t('power.shutdown.off') }));
+  const dialog = await screen.findByRole('alertdialog', { name: 'Desligar ao terminar' });
+  const pill = within(dialog).getByText('yellow', { selector: '[data-signal]' });
+  expect(pill).toHaveAttribute('data-signal', 'yellow');
+  expect(pill).toHaveClass('signal-pill', 'rounded-full', 'px-2', 'text-xs', 'font-medium', 'leading-[18px]');
+  expect(dialog).toHaveTextContent('workers 2/5');
+  expect(dialog).toHaveTextContent('desligar o computador quando os workers terminarem?');
+  expect(within(dialog).getByRole('button', { name: 'desligar ao terminar' })).toBeInTheDocument();
 });
