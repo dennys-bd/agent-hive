@@ -47,7 +47,7 @@ const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, h
 beforeEach(() => { setLanguage('pt'); comments = { kind: 'unsupported' }; files = []; vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 afterEach(() => vi.unstubAllGlobals());
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 
 test('clicking another task switches the panel to it directly, never closing it first (#184)', async () => {
   const user = userEvent.setup();

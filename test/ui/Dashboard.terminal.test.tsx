@@ -38,7 +38,7 @@ test('a board task\'s abrir opens its task\'s activity in the center, Atividades
   const user = userEvent.setup();
   vi.stubGlobal('hive', { focusDetached: vi.fn(async () => false), onDock: vi.fn(), onCloseKey: vi.fn(), detachedPtys: vi.fn(async () => []) });
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  await user.click(screen.getByRole('radio', { name: /fluxo/ })); // the window opens on Atividades (#746)
+  await user.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
   await user.click(screen.getAllByRole('button', { name: 'abrir' })[0]); // the board's tasks, A then B
   await vi.waitFor(() => expect(atividades()).toBeVisible());
   expect(screen.getByRole('region', { name: '#1 Task A · etapa' })).toBeVisible();
@@ -51,7 +51,7 @@ test('a run with a detached window of its own (#252) raises that window and leav
   const focusDetached = vi.fn(async () => true);
   vi.stubGlobal('hive', { focusDetached, onDock: vi.fn(), onCloseKey: vi.fn(), detachedPtys: vi.fn(async () => []) });
   render(<Dashboard state={state} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  await user.click(screen.getByRole('radio', { name: /fluxo/ })); // the window opens on Atividades (#746)
+  await user.click(screen.getByRole('button', { name: 'fluxo' })); // the window opens on Atividades (#746)
   await user.click(screen.getAllByRole('button', { name: 'abrir' })[0]);
   await vi.waitFor(() => expect(focusDetached).toHaveBeenCalledWith('W1'));
   expect(screen.getByRole('main')).toBeInTheDocument();

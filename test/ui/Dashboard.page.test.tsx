@@ -77,8 +77,8 @@ function Home({ initial, calls = [] }: { initial?: Selection; calls?: (Selection
   return <Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} selected={selected} onSelect={onSelect} />;
 }
 
-const showFlow = (): void => { fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); }; // the window opens on Atividades (#746)
-const showActivities = (): void => { fireEvent.click(screen.getByRole('radio', { name: /atividades/ })); };
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
+const showActivities = (): void => { fireEvent.click(screen.getByRole('button', { name: 'atividades' })); };
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
 const main = () => within(screen.getByRole('main'));
 const panel = () => within(screen.getByRole('complementary', { name: 'detalhe' }));

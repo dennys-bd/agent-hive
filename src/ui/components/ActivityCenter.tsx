@@ -19,7 +19,7 @@ import { type CenterLayout, type CenterNode, type CenterTabRef, groupsOf, shares
 import { bufferPath } from '@/lib/center-files';
 import * as models from '@/lib/editor-models';
 
-interface ActivityCenterProps { activity: Activity; layout?: CenterLayout; ops: CenterOps; fileLinks: boolean; fontFamily: string; bar?: ReactNode; pane?: PaneContext;
+interface ActivityCenterProps { activity: Activity; layout?: CenterLayout; ops: CenterOps; fileLinks: boolean; fontFamily: string; pane?: PaneContext;
   onOpenRun(ptyId: string): void; // #759: what the home's rows open, as the sidebar's lines open them
 }
 
@@ -91,11 +91,11 @@ function useCloseKey(activity: Activity, layout: CenterLayout | undefined, ops: 
   }), [activity, layout, ops, settings, openRun, close, confirmLoss]);
 }
 
-/** The picked activity as the window's center (#457, #458): its bar over everything (#536), then its layout's tree of groups, split side by
+/** The picked activity as the window's center (#457, #458): its layout's tree (its bar moved to the window header, #221) of groups, split side by
  * side and one above the other by the tab menu or a drag, each group a tab strip over its tabs' views (runs' terminals and the task's diffs).
  * With no tab left, the strip keeps only its + over the activity's home (#759). A run's terminal is an attach of its own, so the Terminal panel may show the same run at
  * once. A tab moved to another group remounts there, still one attach per run in the layout. */
-export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFamily, bar, pane = NO_CONTEXT, onOpenRun }: ActivityCenterProps) {
+export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFamily, pane = NO_CONTEXT, onOpenRun }: ActivityCenterProps) {
   const activity = withRestored(given, layout); // #696: the sleeping tabs a restart left
   const latest = useRef({ ops, activity });
   useEffect(() => {
@@ -133,5 +133,5 @@ export function ActivityCenter({ activity: given, layout, ops, fileLinks, fontFa
         />
       </div>
     );
-  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{bar}{body}{closer.confirm}{loss.dialog}</div>;
+  return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{body}{closer.confirm}{loss.dialog}</div>;
 }

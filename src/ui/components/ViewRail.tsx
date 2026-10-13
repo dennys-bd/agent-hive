@@ -34,9 +34,12 @@ const settingsKey = (): string | null => fixedKeys(fixedShortcut('settings'), is
 
 interface RailButtonProps { Icon: LucideIcon; label: string; keys: string | null; isActive?: boolean; disabled?: boolean; onClick?(): void; children?: ReactNode }
 
-// The handoff puts the name and the key in the title, the key as the header's view switch shows it; a screen reader gets the name alone
+/** A control's title as the handoff writes it (#220, #221): the name, then its key as this platform reads it; the name alone when unbound. */
+export const keyTitle = (label: string, keys: string | null): string => (keys === null ? label : `${label} ${displayBinding(keys, isMac())}`);
+
+// A screen reader gets the name alone; the title carries the key
 function RailButton({ Icon, label, keys, isActive = false, disabled, onClick, children }: RailButtonProps) {
-  const title = keys === null ? label : `${label} ${displayBinding(keys, isMac())}`;
+  const title = keyTitle(label, keys);
   return (
     <button
       type="button" aria-label={label} title={title} aria-current={isActive ? 'page' : undefined} disabled={disabled} onClick={onClick}

@@ -42,8 +42,8 @@ function Home({ state, calls = [] }: { state: State; calls?: (Selection | undefi
 const group = (side: string): HTMLElement | null => document.querySelector<HTMLElement>(`[data-dock="${side}"]`);
 const nav = (): HTMLElement => screen.getByRole('navigation', { name: 'Atividades' });
 const row = (label: string): HTMLElement => within(nav()).getByText(label).closest('button')!;
-// The left panel opens on Atividades (#746); the window header's fluxo shows the Automação sidebar (#533). Neither has a tab of its own (redesign 03)
-const view = (name: string): HTMLElement => screen.getByRole('radio', { name: new RegExp(name) });
+// The left panel opens on Atividades (#746); the rail's fluxo (#220) shows the Automação sidebar (#533). Neither has a tab of its own (redesign 03)
+const view = (name: string): HTMLElement => within(screen.getByRole('navigation', { name: 'views' })).getByRole('button', { name });
 const showActivities = (): void => { fireEvent.click(view('atividades')); };
 const rightKey = (): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, altKey: true, shiftKey: true }); }; // toggleRight off macOS (#452, #585)
 const home = (): HTMLElement => screen.getByRole('heading', { name: 'Nenhuma atividade aberta' });
@@ -63,7 +63,7 @@ test('the window opens on Atividades: Home in the center and the Atividades side
   render(<Home state={base} />);
   expect(home()).toBeInTheDocument(); // nothing picked (#458)
   expect(screen.queryByRole('main')).not.toBeInTheDocument();
-  expect(view('atividades')).toHaveAttribute('aria-checked', 'true');
+  expect(view('atividades')).toHaveAttribute('aria-current', 'page');
   const left = group('left')!;
   expect(within(left).queryByRole('tab')).not.toBeInTheDocument(); // each sidebar draws its own header (redesign 03, 09)
   expect(within(left).getByRole('region', { name: 'Atividades' })).toBeVisible();
@@ -101,7 +101,7 @@ test('picking an activity selects its task for Detalhes without opening its clos
   expect(calls).toEqual([{ taskId: 'A', fromActivity: true }]);
   expect(screen.queryByRole('tab', { name: 'Detalhes' })).not.toBeInTheDocument(); // the right panel stays closed
   rightKey();
-  await user.click(within(group('right')!).getByRole('radio', { name: 'detalhes' })); // an activity's sidebar opens on arquivos (redesign 07)
+  await user.click(within(document.querySelector('header') as HTMLElement).getByRole('button', { name: 'detalhes' })); // the header's pane icons (#221): an activity's sidebar opens on arquivos (redesign 07)
   expect(screen.getByRole('heading', { name: '#1 Task A' })).toBeVisible();
   await user.click(row('#2 Task B'));
   expect(screen.getByRole('heading', { name: '#2 Task B' })).toBeVisible();
@@ -141,17 +141,18 @@ test('activating another tab docked on the left, or closing the left panel, leav
   expect(screen.getByRole('main')).toBeInTheDocument();
 });
 
-test('the header lists atividades then fluxo; Cmd+1 / Cmd+2 and the switch show the Atividades and Automação tabs, the center following (#533, #746)', async () => {
+test('the rail lists atividades then fluxo and the header no view switch; Cmd+1 / Cmd+2 and the rail show the Atividades and Automação tabs, the center following (#533, #746, #221)', async () => {
   render(<Home state={base} />);
-  expect(within(document.querySelector('header')!).getAllByRole('radio').map((item) => item.textContent)).toEqual(['atividadesCtrl+1', 'fluxoCtrl+2']); // jsdom runs as off macOS
+  expect(within(document.querySelector('header') as HTMLElement).queryAllByRole('radio')).toEqual([]);
+  expect(within(screen.getByRole('navigation', { name: 'views' })).getAllByRole('button').slice(0, 2).map((b) => b.title)).toEqual(['atividades Ctrl+1', 'fluxo Ctrl+2']); // jsdom runs as off macOS
 
   fireEvent.keyDown(document.body, { key: '2', code: 'Digit2', ctrlKey: true });
   expect(screen.getByRole('main')).toBeInTheDocument();
-  expect(view('fluxo')).toHaveAttribute('aria-checked', 'true');
+  expect(view('fluxo')).toHaveAttribute('aria-current', 'page');
 
   fireEvent.keyDown(document.body, { key: '1', code: 'Digit1', ctrlKey: true });
   expect(home()).toBeInTheDocument();
-  expect(view('atividades')).toHaveAttribute('aria-checked', 'true');
+  expect(view('atividades')).toHaveAttribute('aria-current', 'page');
   expect(within(group('left')!).getByRole('region', { name: 'Atividades' })).toBeVisible();
 
   await userEvent.setup().click(view('fluxo'));
@@ -165,13 +166,14 @@ test('a board whose last poll failed shows its error above the board (#180, #533
   expect(within(screen.getByRole('main')).getByText('source notes: project not found')).toBeInTheDocument();
 });
 
-test('a picked activity shows its bar over the center: the title, the facts, dormir on the focused run and the ⋯ (#536)', async () => {
+test('a picked activity shows its bar in the window header: the title, the facts, dormir on the focused run and the ⋯ (#536, #221)', async () => {
   const user = userEvent.setup();
   render(<Home state={base} />);
   showActivities();
   await user.click(row('#1 Task A'));
   const bar = document.querySelector<HTMLElement>('[data-activity-bar]');
   expect(bar).not.toBeNull();
+  expect(document.querySelector('header')).toContainElement(bar);
   const inBar = within(bar as HTMLElement);
   expect(inBar.getByText('#1 Task A')).toBeInTheDocument();
   expect(inBar.getByText(/^etapa dev · /)).toHaveTextContent(/ tokens$/);

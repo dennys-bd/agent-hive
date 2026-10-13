@@ -9,6 +9,11 @@ const en = {
   'header.brand': 'hive', // #533
   'header.flow': 'flow',
   'header.activities': 'activities',
+  'header.signalTitle': 'signal {signal} · {effect} · click to change', // #221: the brand's title, what the signal holds back in the middle
+  'header.signalTitlePlain': 'signal {signal} · click to change', // a signal that holds nothing back
+  'header.collapseLeft': 'collapse sidebar',
+  'header.expandLeft': 'open sidebar',
+  'header.openRight': 'open right sidebar',
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
   'rail.flow': 'flow',
@@ -1857,6 +1862,11 @@ const pt: Record<MessageKey, string> = {
   'header.brand': 'hive',
   'header.flow': 'fluxo',
   'header.activities': 'atividades',
+  'header.signalTitle': 'sinal {signal} · {effect} · clique para trocar',
+  'header.signalTitlePlain': 'sinal {signal} · clique para trocar',
+  'header.collapseLeft': 'recolher lateral',
+  'header.expandLeft': 'abrir lateral',
+  'header.openRight': 'abrir lateral direita',
   'rail.label': 'views',
   'rail.activities': 'atividades',
   'rail.flow': 'fluxo',

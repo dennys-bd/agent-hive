@@ -69,7 +69,7 @@ const chip = (): HTMLElement => within(footer()).getByRole('button', { name: /^c
 const drawer = (): HTMLElement | null => screen.queryByRole('region', { name: 'console' });
 
 // Radix's ContextMenu opens once per file under jsdom (#377): this is the only test here that right-clicks a task, kept first.
-const showFlow = (): void => { fireEvent.click(screen.getByRole('radio', { name: /fluxo/ })); }; // the window opens on Atividades (#746)
+const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); }; // the window opens on Atividades (#746)
 
 test('a command run from executar › switches the footer\'s chip to it, running, and leaves the drawer closed until the chip is clicked (redesign 05)', async () => {
   const user = userEvent.setup();
@@ -150,7 +150,7 @@ test('under atividades with an activity picked, abrir como aba moves the console
   channels = [CHANNEL];
   const running: State = withTasks({ ...state, workers: [{ id: 's1', status: 'working', activityId: activityIdOf('A'), runId: 'W1', startedAt: '2026-09-27T10:00:00.000Z' }] }, [{ ...taskA, workerId: 's1' }]); // #629: the run is the activity's
   render(<Dashboard state={running} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  await user.click(screen.getByRole('radio', { name: /atividades/ })); // the window header's view (#533)
+  await user.click(screen.getByRole('button', { name: 'atividades' })); // the rail's view (#220)
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A'));
   await user.click(await within(footer()).findByRole('button', { name: 'console · test' }));
   await user.click(within(drawer()!).getByRole('button', { name: 'abrir como aba' }));
@@ -209,7 +209,7 @@ test('a console tab keeps its own channel: a pick in the drawer leaves it, and i
   channels = [CHANNEL, LINT, SETUP];
   const running: State = withTasks({ ...state, workers: [{ id: 's1', status: 'working', activityId: activityIdOf('A'), runId: 'W1', startedAt: '2026-09-27T10:00:00.000Z' }] }, [{ ...taskA, workerId: 's1' }]);
   render(<Dashboard state={running} locale="pt-BR" tick={0} onSelect={() => {}} />);
-  await user.click(screen.getByRole('radio', { name: /atividades/ }));
+  await user.click(screen.getByRole('button', { name: 'atividades' }));
   await user.click(within(screen.getByRole('navigation', { name: 'Atividades' })).getByText('#1 Task A'));
   await user.click(await within(footer()).findByRole('button', { name: 'console · test' }));
   await user.click(within(drawer()!).getByRole('button', { name: 'abrir como aba' }));
