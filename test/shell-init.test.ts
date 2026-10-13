@@ -92,7 +92,10 @@ async function typeIn(r: Rig, shell: Shell, line: string, env: NodeJS.ProcessEnv
   const full = { HOME: r.home, TERM: 'dumb', SHELL: standIn, HIVE_SECRET_FILE: '/dev/null', ...terminalEnv(r.hive, 'T1', '/usr/bin:/bin'), ...env };
   return new Promise((resolve) => {
     // the trailer's curl fails on the closed port, so the exit code is not the shell's: only stdout is read
-    const child = execFile('/bin/sh', ['-c', ptyCommand(launch)], { env: full, timeout: SHELL_TIMEOUT_MS }, (_err, stdout) =>
+    // detached: a session of its own, with no controlling terminal; an interactive shell would otherwise take over the one running the tests
+    // and stop on SIGTTIN/SIGTTOU, as a pty-less CI never does
+    const options = { env: full, timeout: SHELL_TIMEOUT_MS, encoding: 'utf8' as const, detached: true }; // execFile hands detached to spawn; its types omit it
+    const child = execFile('/bin/sh', ['-c', ptyCommand(launch)], options, (_err, stdout) =>
       resolve(stdout.split('\n').filter((l) => MARKER.test(l))));
     child.stdin?.end(); // a system rc file that prompts (compinit's insecure-dirs question) reads EOF instead of waiting for the timeout
   });
@@ -112,7 +115,7 @@ test('bash: claude and codex typed in a terminal whose ~/.bashrc puts others fir
 
 test('zsh: claude and codex typed in a terminal whose .zshrc puts others first on PATH run their shims, and ZDOTDIR is the user\'s once the shell is up: unset, unset in a login shell, a custom folder, a folder the user\'s .zshenv sets (#259)', { skip: ZSH === undefined && 'no zsh on PATH' }, async (t) => {
   const zsh: Shell = { name: 'zsh', binary: ZSH ?? '', flags: '-i' };
-  const line = `${TYPED}; echo "zdotdir=\${ZDOTDIR-unset}"; echo "user=\${HIVE_USER_ZDOTDIR-unset}"`;
+  const line = `${TYPED}; echo "zdotdir=\${ZDOTDIR-unset}"; echo "user=\${HIVE_USER_ZDOTDIR-unset}"; [[ $HISTFILE == "$HIVE_SHELL_DIR"/* ]] && echo rc:history-in-hive`; // macOS /etc/zshrc names HISTFILE from ZDOTDIR
   const r = await rig(t);
   await writeFile(join(r.home, '.zshrc'), shRc(r.fakes));
   const unset = [RC_LOADED, ...SHIM_RAN, 'zdotdir=unset', 'user=unset'];
