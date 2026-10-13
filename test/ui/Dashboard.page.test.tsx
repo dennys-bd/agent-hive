@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -82,8 +82,9 @@ const showActivities = (): void => { fireEvent.click(screen.getByRole('button', 
 const automation = () => within(screen.getByRole('region', { name: 'Automação' }));
 const main = () => within(screen.getByRole('main'));
 const bar = () => within(document.querySelector<HTMLElement>('[data-header-column="center"]')!); // the flow's bar, in the window header (#295)
+// The header's detalhes icon (#221): there while the right column shows, pressed while Detalhes is its pane; the right group draws no tab (#295)
+const detailsIcon = (): HTMLElement | null => within(screen.getAllByRole('banner')[0]).queryByRole('button', { name: 'detalhes' });
 const panel = () => within(screen.getByRole('complementary', { name: 'detalhe' }));
-const right = (): HTMLElement => document.querySelector<HTMLElement>('[data-dock="right"]')!;
 
 // Under the repository: its issue #12's page (T12's)
 async function openIssue12(user: ReturnType<typeof userEvent.setup>): Promise<void> {
@@ -119,14 +120,14 @@ test('opening a page opens the panel holding Detalhes; closed, it stays closed o
   render(<Home />); // no selection: the right panel starts closed
   showFlow();
   await user.click(await automation().findByRole('button', { name: /^site/ }));
-  expect(screen.queryByRole('tab', { name: 'Detalhes' })).not.toBeInTheDocument();
+  expect(detailsIcon()).not.toBeInTheDocument();
   await user.click(await main().findByText('Fix the pager'));
-  expect(await screen.findByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
-  await user.click(within(right()).getByRole('button', { name: 'Fechar painel' }));
+  await waitFor(() => expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true'));
+  await user.click(detailsIcon()!); // closed from the header, as the group's × did (#295)
   await user.click(await main().findByRole('tab', { name: 'arquivos 0' }));
-  expect(screen.queryByRole('tab', { name: 'Detalhes' })).not.toBeInTheDocument();
+  expect(detailsIcon()).not.toBeInTheDocument();
   await openIssue12(user);
-  expect(await screen.findByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  await waitFor(() => expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true'));
 });
 
 test('with a page open and the center under Atividades the panel shows the selection; back on the flow, the page\'s task again (#64, #596)', async () => {

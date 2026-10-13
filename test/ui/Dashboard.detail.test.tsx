@@ -34,6 +34,8 @@ vi.mock('@/hooks/use-task-files', () => ({ useTaskFiles: () => files }));
 // The board's own task, not the panel's title nor a chip's truncated copy of the same label text.
 const boardTask = (label: string): Element => screen.getAllByText(label).find((el) => el.closest('li'))!;
 // toggleRight is Ctrl+Alt+Shift+B under jsdom's platform, which is not macOS (#452, #585)
+// The header's detalhes icon (#221): there while the right column shows, pressed while Detalhes is its pane; the right group draws no tab (#295)
+const detailsIcon = (): HTMLElement | null => within(screen.getByRole('banner')).queryByRole('button', { name: 'detalhes' });
 const rightKey = (): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, altKey: true, shiftKey: true }); };
 
 // The selection as App holds it (src/ui/App.tsx): one piece of state, threaded through Dashboard down to Flow/DetailPanel.
@@ -85,7 +87,7 @@ test('a click on empty space leaves the panel open: only its X or Escape closes 
   expect(screen.getByRole('heading', { name: '#1 Task A' })).toBeInTheDocument();
 });
 
-test('the detail docks in the frame\'s right group, between the header and the workers bar, which spans the whole width; its X closes that panel and keeps the selection, the same task there when the panel opens again (#341, #342, #452)', async () => {
+test('the detail docks in the frame\'s right group, between the header and the workers bar, which spans the whole width; the header\'s detalhes icon closes that panel and keeps the selection, the same task there when the panel opens again (#341, #342, #452)', async () => {
   const user = userEvent.setup();
   const calls: (Selection | undefined)[] = [];
   render(<Home initial={{ taskId: 'A' }} calls={calls} />);
@@ -98,9 +100,9 @@ test('the detail docks in the frame\'s right group, between the header and the w
   expect(group).toContainElement(screen.getByRole('separator', { name: 'redimensionar o painel da direita' }));
   expect(frame.lastElementChild).toBe(group);
   expect(frame).not.toContainElement(screen.getByRole('contentinfo')); // the workers bar
-  expect(within(group).getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  expect(within(group).queryAllByRole('tab')).toEqual([]); // #295: the window header names it
 
-  await user.click(within(group).getByRole('button', { name: 'Fechar painel' })); // the right panel's X, not the left one's (#456)
+  await user.click(detailsIcon()!); // the active pane's icon closes the right side, as the group's × did (#221, #295)
 
   expect(calls).toEqual([]);
   expect(screen.getByRole('complementary', { name: 'detalhe', hidden: true })).not.toBeVisible(); // collapsed, the task kept
@@ -114,12 +116,12 @@ test('no board task or worker chip carries the #184 data-keeps-detail marker any
   expect(document.querySelector('[data-keeps-detail]')).toBeNull();
 });
 
-test('with no selection the Detalhes tab is still there, its body the empty state, once its panel opens (#452)', () => {
+test('with no selection Detalhes is still there, its body the empty state, once its panel opens (#452, #295)', () => {
   render(<Home calls={[]} />);
   showFlow();
-  expect(screen.queryByRole('tab', { name: 'Detalhes', hidden: true })).not.toBeInTheDocument(); // the right panel starts closed
+  expect(detailsIcon()).not.toBeInTheDocument(); // the right panel starts closed: panel-right in its place
   rightKey();
-  expect(screen.getByRole('tab', { name: 'Detalhes' })).toHaveAttribute('aria-selected', 'true');
+  expect(detailsIcon()).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByText('Nenhuma tarefa selecionada')).toBeVisible();
 });
 

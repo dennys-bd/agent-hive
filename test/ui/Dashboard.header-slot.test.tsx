@@ -62,3 +62,16 @@ test('under Atividades the home has no bar, an open activity its own and no flow
   expect(center()).toContainElement(flowBar());
   expect(center().querySelector('[data-activity-bar]')).toBeNull();
 });
+
+test('in the flow view the details pane draws no group header, no Detalhes tab and no ×: the header\'s detalhes icon names it and closes it (#221, #295)', () => {
+  render(<Home initial={{ taskId: 'A' }} />);
+  view('fluxo');
+  const right = document.querySelector<HTMLElement>('[data-dock="right"]')!;
+  expect(right).toContainElement(screen.getByRole('complementary', { name: 'detalhe' }));
+  expect(within(right).queryByRole('tablist')).not.toBeInTheDocument();
+  expect(within(right).queryByRole('button', { name: 'Fechar painel' })).not.toBeInTheDocument();
+  const icon = within(screen.getByRole('banner')).getByRole('button', { name: 'detalhes' });
+  expect(icon).toHaveAttribute('aria-pressed', 'true');
+  fireEvent.click(icon);
+  expect(within(screen.getByRole('banner')).getByRole('button', { name: 'abrir lateral direita' })).toBeEnabled();
+});

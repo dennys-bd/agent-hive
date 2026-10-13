@@ -177,11 +177,11 @@ interface DetailArgs {
   current?: Activity; isShown: boolean; sideTab: SideTab; detail: MainDockProps['detail']; onClose(): void; nav: DetailNav;
 }
 
-// Detalhes as a dock panel (#341, #452). Under Atividades with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes, as the header's icons pick (#221),
-// on a task's, arquivos alone on a local one (#633), keyed by activity so another activity's tree starts collapsed.
+// Detalhes as a dock panel (#341, #452), drawing no group header (#295): the window header's right column names it and closes it. Under Atividades
+// with an activity open it is the activity sidebar (redesign 07): arquivos or detalhes as the header's icons pick (#221), arquivos alone on a local one (#633).
 function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: DetailArgs): DockPanel {
   const title = t('dock.detail');
-  if (current === undefined) return { id: 'detail', title, body: detail({ isShown, onClose, nav }) };
+  if (current === undefined) return { id: 'detail', title, ownHeader: true, body: detail({ isShown, onClose, nav }) };
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
   const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
