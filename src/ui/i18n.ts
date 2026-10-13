@@ -3,10 +3,10 @@
 import type { Language, WorkerEvent, WorkerEventKind, Status } from '../types.js';
 
 const en = {
-  'footer.workers': 'workers {active}/{max}',
   'footer.max': 'max.',
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive', // #533
+  'header.workers': 'workers {active}/{max}', // #227: the brand's count, and the flow sidebar's worker cap
   'header.flow': 'flow',
   'header.activities': 'activities',
   'header.signalTitle': 'signal {signal} · {effect} · click to change', // #221: the brand's title, what the signal holds back in the middle
@@ -1874,10 +1874,10 @@ const en = {
 export type MessageKey = keyof typeof en;
 
 const pt: Record<MessageKey, string> = {
-  'footer.workers': 'workers {active}/{max}',
   'footer.max': 'máx.',
   'header.sourceError': 'source {name}: {error}',
   'header.brand': 'hive',
+  'header.workers': 'workers {active}/{max}',
   'header.flow': 'fluxo',
   'header.activities': 'atividades',
   'header.signalTitle': 'sinal {signal} · {effect} · clique para trocar',

@@ -43,7 +43,7 @@ test('statusText and workerEventText follow the language: tool shows the detail,
 
 test('t fills {placeholders} from vars and leaves the text alone otherwise', () => {
   setLanguage('en');
-  assert.equal(t('footer.workers', { active: 1, max: 2 }), 'workers 1/2');
+  assert.equal(t('header.workers', { active: 1, max: 2 }), 'workers 1/2');
   assert.equal(t('settings.rules.error', { n: 3, source: 'x' }), 'rule 3 (x): set a percentage 0–100, a consequence and its value');
   assert.equal(t('settings.rules.measure.session'), 'session window (5h)');
   assert.equal(t('footer.rule.cap', { n: 4 }), 'max 4 workers');
@@ -61,7 +61,7 @@ test('t fills {placeholders} from vars and leaves the text alone otherwise', () 
   assert.equal(t('settings.stages.error', { n: 2 }), 'etapa 2: informe nome e, se preenchidos, máx. workers inteiro ≥ 0 e depois de como "30m", "12h" ou "5d"');
   assert.match(t('settings.stages.maxWorkers.hint'), /etapa mais adiante pega o worker livre primeiro/);
   assert.doesNotMatch(t('settings.stages.maxWorkers.hint'), /peso/i);
-  assert.equal(t('footer.workers', { active: 1, max: 2 }), 'workers 1/2');
+  assert.equal(t('header.workers', { active: 1, max: 2 }), 'workers 1/2');
   assert.equal(t('settings.rules.error', { n: 3, source: 'x' }), 'regra 3 (x): preencha um percentual 0–100, uma consequência e o valor');
   assert.equal(t('settings.rules.effect.maxWorkers'), 'limitar workers a');
   assert.equal(t('signal.locked', { rules: 'sessão ≥ 80%' }), 'travado pela regra: sessão ≥ 80%');

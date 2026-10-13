@@ -23,11 +23,11 @@ function HiveMark({ signal }: { signal: Signal }) {
 const brandTitle = (signal: Signal, effect: string | undefined): string =>
   (effect === undefined ? t('header.signalTitlePlain', { signal }) : t('header.signalTitle', { signal, effect }));
 
-/** The header's brand (#221): the mark in the effective signal's colour, hive, then the workers as the footer counts them. A click opens the
+/** The header's brand (#221): the mark in the effective signal's colour, hive, then the workers (#227: the footer no longer counts them). A click opens the
  * signal choice, the flow sidebar's own toggle with its fired rules' floor lock and the effect hint; ⌘⌥1–3 still set the signal. */
 export function HeaderBrand({ state, effective }: HeaderBrandProps) {
   // aria-label: the two spans would read "hive· workers" as a name, and the title is the longer hint
-  const workers = t('footer.workers', { active: workerCount(state.workers), max: effective.maxWorkers ?? state.maxConcurrent });
+  const workers = t('header.workers', { active: workerCount(state.workers), max: effective.maxWorkers ?? state.maxConcurrent });
   return (
     <Popover>
       <PopoverTrigger asChild>
