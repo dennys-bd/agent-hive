@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
-import { AGENTS, agentOf, agentRefusal, ranAgent } from './agents.js';
+import { AGENTS, agentOf, agentRefusal, ranAgent, runModel } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
@@ -20,7 +20,7 @@ import type { Runtime } from './server.js';
 import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, writePrompt } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
-import type { Activity, AgentAvailability, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
+import type { Activity, AgentAvailability, AgentId, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { taskDir, ensureCheckout, ensureWorktree } from './worktree.js';
@@ -106,6 +106,18 @@ const errorMessage = (err: unknown): string => (err instanceof Error ? err.messa
 // #808: the page's grid on a launch, and no `size: undefined` key when it sent none: the host's fallback applies
 const sized = (size?: TerminalSize): Pick<PtyLaunch, 'size'> => (size === undefined ? {} : { size });
 
+// What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the picks' specialized agent
+// and args after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an agent boot did not find (#516), a
+// specialized agent the plugin no longer has (#257)
+function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[]): { agent: AgentId; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
+  const agent = worker.agent ?? agentOf(stage, config);
+  const refusal = agentRefusal(agent, agents);
+  if (refusal !== undefined) return { refusal };
+  const picked = launchRun(worker.launch, config.agentArgs[agent]);
+  if ('refusal' in picked) return picked;
+  return { agent, picked: { ...picked, model: runModel(picked.model, stage, agent, config.defaultAgent) } };
+}
+
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, events, lspDir } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
@@ -165,13 +177,13 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!ptyId) return;
     const slug = workSlug(activity, task);
     const { config, hooksPath, promptsDir, pluginDir, port } = runtime;
-    const agent = agentOf(stage, config); // the agent the reducer recorded on the worker too (#925)
-    const runner = runners[agent];
-    const refusal = agentRefusal(agent, agents); // #516: before prepare, so a missing agent leaves no worktree, setup or prompt behind
-    if (refusal !== undefined) {
-      await dispatch({ type: 'spawnFailed', ptyId, message: refusal });
+    const launch = stageLaunch(effect, config, agents); // #516, #290: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
+    if ('refusal' in launch) {
+      await dispatch({ type: 'spawnFailed', ptyId, message: launch.refusal });
       return;
     }
+    const { agent } = launch; // the agent the reducer recorded on the worker (#925), a manual start's pick included (#290)
+    const runner = runners[agent];
     let cwd: string;
     let env: Record<string, string>;
     let workspace: string;
@@ -194,9 +206,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const server = { port, ptyId, secret, withHive: true };
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
     const run: AgentRun = {
-      ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), model: stage.model, session: runSession(activity.sessionId, session),
-      protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path
-      extraArgs: config.agentArgs[agent], // #924: the stage's agent's own
+      ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
+      protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
     };
     pool.start({
       ptyId,

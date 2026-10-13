@@ -72,6 +72,12 @@ export const liveDefaultAgent = (state: Pick<State, 'defaultAgent'>): AgentId =>
 export const stageAgentIn = (state: Pick<State, 'defaultAgent'>, stage: Pick<Stage, 'agent'>): AgentId =>
   agentOf(stage, { defaultAgent: liveDefaultAgent(state) });
 
+/** The model a stage run passes (#290), resolved here only: the one picked by hand in the Start dialog; else the stage's own, when the run is
+ * the stage's agent (a stage's model is a name of that agent, #516, #927); else none: the agent's own default, no model flag. The Hive's
+ * per-agent default goes between the last two. "padrão do {agente}" in the dialog means this chain. */
+export const runModel = (picked: string | undefined, stage: Pick<Stage, 'model' | 'agent'>, agent: AgentId, defaultAgent: AgentId): string | undefined =>
+  picked ?? (agent === agentOf(stage, { defaultAgent }) ? stage.model : undefined);
+
 /** An agent as the UI and a review mention name it (#536, #925): its own label, lowercase as every label is. The one agent-to-label map. */
 export const agentName = (agent: AgentId): string => AGENTS[agent].label.toLowerCase();
 
