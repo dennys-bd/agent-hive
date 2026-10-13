@@ -25,7 +25,7 @@ test('a unified section: header with path, counts and abrir arquivo, the hunk he
   render(inSessionsPane(PANE, <DiffFile file={FILE} id="f1" layout="unified" collapsed={false} isReviewed={false} onToggle={vi.fn()} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />, openFile));
   expect(section()).toHaveTextContent('src/a.ts+1 −1');
   const rows = within(section()).getAllByRole('row');
-  expect(rows.map(cells)).toEqual([['@@ -1,2 +1,2 @@ intro'], ['1', '1', ' ', 'one'], ['2', '', '-', 'two'], ['', '2', '+', '2']]);
+  expect(rows.map(cells)).toEqual([['intro'], ['1', '1', ' ', 'one'], ['2', '', '-', 'two'], ['', '2', '+', '2']]);
   await userEvent.setup().click(screen.getByRole('button', { name: 'abrir arquivo' }));
   expect(openFile).toHaveBeenCalledWith('src/a.ts');
   expect(fetchMock).not.toHaveBeenCalled();
@@ -34,7 +34,7 @@ test('a unified section: header with path, counts and abrir arquivo, the hunk he
 test('side by side pairs the deleted and added lines on one row; collapsed shows the header only; a deleted file has no abrir arquivo (#591)', async () => {
   const onToggle = vi.fn();
   const { rerender } = render(inSessionsPane(PANE, <DiffFile file={FILE} id="f1" layout="split" collapsed={false} isReviewed={false} onToggle={onToggle} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />));
-  expect(within(section()).getAllByRole('row').map(cells)).toEqual([['@@ -1,2 +1,2 @@ intro'], ['1', ' ', 'one', '1', ' ', 'one'], ['2', '-', 'two', '2', '+', '2']]);
+  expect(within(section()).getAllByRole('row').map(cells)).toEqual([['intro'], ['1', ' ', 'one', '1', ' ', 'one'], ['2', '-', 'two', '2', '+', '2']]);
   await userEvent.setup().click(screen.getByRole('button', { name: 'recolher arquivo' }));
   expect(onToggle).toHaveBeenCalledOnce();
   rerender(inSessionsPane(PANE, <DiffFile file={{ ...FILE, status: 'deleted' }} id="f1" layout="split" collapsed isReviewed={false} onToggle={onToggle} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />));
@@ -101,4 +101,20 @@ test('side by side, each half\'s + sits in its number cell at the same place on 
   expect(found.map((p) => p.cell)).toEqual([rows[0][3], rows[1][0], rows[1][3]]);
   expect(new Set(found.map((p) => p.className)).size).toBe(1);
   expect(found[0].className.split(' ')).toEqual(expect.arrayContaining(['right-0', 'translate-x-1/2']));
+});
+
+test('the hunk header shows the function context on an 8% ring tint, the raw range in its title; lines 22px, numbers 11px with a 10px right pad (#853)', () => {
+  renderFile('unified');
+  const [head, line] = within(section()).getAllByRole('row').map((row) => within(row).getAllByRole('cell'));
+  expect(head[0].textContent).toBe('intro');
+  expect(head[0]).toHaveAttribute('title', '@@ -1,2 +1,2 @@ intro');
+  expect(head[0]).toHaveClass('bg-ring/8', 'px-3.5', 'py-1', 'text-muted-foreground');
+  expect(section().querySelector('table')).toHaveClass('leading-[22px]');
+  expect(line[0]).toHaveClass('text-[11px]', 'pr-2.5');
+});
+
+test('a hunk with no function context keeps its @@ range (#853)', () => {
+  const bare: FileDiff = { ...FILE, hunks: [{ ...FILE.hunks[0], header: '@@ -1,2 +1,2 @@' }] };
+  render(inSessionsPane(PANE, <DiffFile file={bare} id="f1" layout="unified" collapsed={false} isReviewed={false} onToggle={vi.fn()} onReviewed={vi.fn()} lines={LINES} onCloseBox={vi.fn()} />));
+  expect(within(section()).getAllByRole('row').map(cells)[0]).toEqual(['@@ -1,2 +1,2 @@']);
 });

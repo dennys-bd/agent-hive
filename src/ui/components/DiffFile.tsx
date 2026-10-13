@@ -109,7 +109,7 @@ export function DiffFile({ file, id, layout, collapsed, isReviewed, onToggle, on
       </header>
       {!collapsed && top.map((c) => <div key={c.id} className="px-2"><Conversation conversation={c} isOutdated={c.outdated} /></div>)}
       {!collapsed && !file.binary && (
-        <table className="w-full table-fixed border-collapse font-mono text-xs leading-5">
+        <table className="w-full table-fixed border-collapse font-mono text-xs leading-[22px]">
           <DiffCols layout={layout} />
           <tbody>{file.hunks.map((hunk, index) => <HunkRows key={hunk.header} hunk={hunk} layout={layout} view={hunkView(file, index, layout, lines, below, !surface.readOnly)} />)}</tbody>
         </table>

@@ -2,7 +2,7 @@ import { PlusIcon } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import type { DiffHunk, DiffLine } from '../../types';
 import { t } from '@/i18n';
-import { type DiffLayout, type SplitRow, splitRows } from '@/lib/diff-rows';
+import { type DiffLayout, hunkContext, type SplitRow, splitRows } from '@/lib/diff-rows';
 
 type Side = 'old' | 'new';
 const SIGN: Record<DiffLine['kind'], string> = { context: ' ', add: '+', del: '-' };
@@ -11,7 +11,7 @@ const SIGN: Record<DiffLine['kind'], string> = { context: ' ', add: '+', del: '-
 const GUTTER: Record<DiffLine['kind'], string> = { context: 'text-empty', add: 'bg-working/30 text-foreground', del: 'bg-destructive/30 text-foreground' };
 const BODY: Record<DiffLine['kind'], string> = { context: '', add: 'bg-working/12', del: 'bg-destructive/12' };
 const SIGN_TEXT: Record<DiffLine['kind'], string> = { context: 'text-muted-foreground', add: 'text-working', del: 'text-destructive' };
-const NUMBER = 'relative select-none px-2 text-right align-top';
+const NUMBER = 'relative select-none pl-2 pr-2.5 text-right align-top text-[11px]';
 const SIGN_CELL = 'select-none text-center align-top';
 const CODE = 'whitespace-pre pr-3';
 // A half's code is clipped at its column, so a long line never runs over the other half; unified lets it overflow into the pane's scroll
@@ -160,14 +160,14 @@ function SplitBelow({ row, view }: { row: SplitRow; view: HunkView }) {
 const lineKey = (line: DiffLine): string => `${line.old ?? ''}:${line.new ?? ''}`;
 const rowKey = (row: SplitRow): string => `${row.old?.old ?? ''}:${row.new?.new ?? ''}`;
 
-/** A hunk (#270, #591): its header on task, muted, then its lines unified or side by side, each followed by what the pane shows under it. */
+/** A hunk (#270, #591, #853): its function context on the ring tint (the raw @@ range in its title), then its lines unified or side by side, each followed by what the pane shows under it. */
 export function HunkRows({ hunk, layout, view }: { hunk: DiffHunk; layout: DiffLayout; view?: HunkView }) {
   const span = ROW_SPAN[layout];
   const rows = layout === 'split' ? splitRows(hunk) : [];
   const bars = splitBars(rows, hunk, view?.range);
   return (
     <>
-      <tr><td colSpan={span} className="bg-card px-2 text-muted-foreground">{hunk.header}</td></tr>
+      <tr><td colSpan={span} title={hunk.header} className="bg-ring/8 px-3.5 py-1 text-muted-foreground">{hunkContext(hunk.header)}</td></tr>
       {layout === 'unified'
         ? hunk.lines.map((line, index) => (
           <Fragment key={lineKey(line)}>
