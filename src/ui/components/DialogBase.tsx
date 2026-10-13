@@ -116,7 +116,9 @@ export function DialogBase({
     if (initialFocus !== 'none') (initialFocus === 'close' ? closeRef : primaryRef).current?.focus();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+    // A held key's repeats, an IME's commit (229 when isComposing is already false), and an Enter a portaled child (a select's menu) took
+    if (event.key !== 'Enter' || event.repeat || event.nativeEvent.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
+    if (!event.currentTarget.contains(event.target as Node)) return;
     const slot = slotOf(event);
     if ((slot === undefined || slot === 'primary') && isMultiLine(event.target)) return;
     event.preventDefault(); // ahead of the focused button's own Enter: on the × it confirms, never cancels

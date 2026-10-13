@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps, ReactNode } from 'react';
 import { beforeEach, expect, test, vi } from 'vitest';
@@ -91,4 +91,15 @@ test('an action closes once its promise resolves and runs once however often Ent
   await waitFor(() => expect(failing).toHaveBeenCalledTimes(1));
   expect(dialog()).toBeInTheDocument();
   expect(within(dialog()).getByRole('alert')).toHaveTextContent('recusado');
+});
+
+test('a held Enter repeat and an IME commit run nothing; the plain Enter on the focused × confirms (#75)', async () => {
+  const user = userEvent.setup();
+  const onConfirm = vi.fn();
+  await show(user, { primary: { label: 'ação', onConfirm } });
+  fireEvent.keyDown(closeAndCancel()[0], { key: 'Enter', repeat: true });
+  fireEvent.keyDown(closeAndCancel()[0], { key: 'Enter', keyCode: 229 });
+  expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.keyDown(closeAndCancel()[0], { key: 'Enter' });
+  expect(onConfirm).toHaveBeenCalledOnce();
 });
