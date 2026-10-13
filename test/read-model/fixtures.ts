@@ -4,6 +4,7 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-m
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
 import type { GhPullRequest } from '../../src/sources/github-queries.js';
+import type { RepoRef } from '../../src/repos/repositories.js';
 import type { Gql, ProjectPr } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
 
@@ -11,6 +12,7 @@ import { tempDir } from '../temp-dir.js';
 export const SOURCE = 'github:github.com:bia';
 export const OTHER_SOURCE = 'github:ghe.example.com:bia';
 export const REPO = 'acme/hive';
+export const REF: RepoRef = { repository: REPO, workspace: 'hive' };
 export const T1 = '2026-10-05T09:00:00Z';
 export const T2 = '2026-10-05T10:00:00Z';
 export const T3 = '2026-10-05T11:00:00Z';

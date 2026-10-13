@@ -10,9 +10,9 @@ export const labelsPath = (repository: string): string => `repos/${repository}/l
 
 interface Read { bodies: unknown[]; etag: string | null }
 
-// Every page from `path`, the first sent with the saved ETag; undefined on a 304, which only that first page can answer. Nothing is written
+// Every page from `path`, the first sent with the saved ETag (the PR poll's parts read through it too, #186); undefined on a 304, which only that first page can answer. Nothing is written
 // here, so a stop or a failure between pages leaves the scope as it was
-async function readAll(deps: SyncDeps, path: string, etag: string | null): Promise<Read | undefined> {
+export async function readAll(deps: SyncDeps, path: string, etag: string | null): Promise<Read | undefined> {
   const bodies: unknown[] = [];
   let next: string | undefined = path;
   let firstEtag: string | null = null;
