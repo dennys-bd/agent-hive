@@ -41,8 +41,7 @@ export interface DetailView { isShown: boolean; onClose(): void; nav: DetailNav 
 export interface MainDockProps {
   fileLinks: boolean; fontFamily: string; workspaces: string[]; tasks: Task[]; workers: Worker[];
   terminals: Terminal[]; // every live terminal (#283, #292): a task's plain terminal makes it an activity (#457)
-  // #229: "ver no fluxo" goes through the Dashboard's path to a task (its source's flow, no page, the task selected); absent: the selection alone
-  showTask?(taskId: string): void;
+  showTask?(taskId: string): void; // #229: ver no fluxo lands on the task's source flow, not just the tab; absent: the selection alone
   selected?: Selection; onSelect(selection: Selection): void; // the app's task selection: a picked activity selects its task for Detalhes (#457)
   detail(view: DetailView): ReactNode; children: ReactNode;
   consoleChannels?: ConsoleChannels; // the daemon's console channels (#353), read by the Dashboard; absent (the terminal's harness): no console
@@ -315,11 +314,7 @@ export function MainDock(props: MainDockProps) {
   const closeDetail = useCallback(() => close(detailSide), [close, detailSide]); // Escape on the shown Detalhes (#452); the X is the frame's close
   const openStart = (start: StartRequest = {}): void => (newActivity === undefined ? activateTab('automation') : setNewIn(start));
   const openNewActivity = (workspace?: string): void => openStart({ workspace });
-  const showFlow = (taskId: string): void => {
-    activateTab('automation');
-    if (showTask) showTask(taskId);
-    else onSelect({ taskId });
-  };
+  const showFlow = (taskId: string): void => { activateTab('automation'); if (showTask) showTask(taskId); else onSelect({ taskId }); };
   const searchClose = useSearchClose(current, layouts, openUserRun);
   // Markdown: Open Preview (#697) and Git: Open Changes (#668): the focused editor names its activity by id; the tab opens in the focused group,
   // as any file does

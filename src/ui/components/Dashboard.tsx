@@ -207,8 +207,9 @@ function useCenterNav(state: State | undefined, sources: SourcesNav | undefined,
   const reset = (): void => stack.reset();
   const nav: SourcePick = { ...withBefore(picks, push), tabs: picks.tabs && { ...picks.tabs, onPick: preceded(reset, picks.tabs.onPick) } };
   const dockNav = (from?: BackEntry): SourcePick => (from === undefined ? nav : withBefore(picks, () => stack.reset(from)));
+  // #229: ver no fluxo starts a new path, as a sidebar pick does: the user chose no back button to the activity it came from
   return {
-    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), showTask: preceded(reset, goTo), // #229: a jump from Atividades leaves no entry to go back to
+    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), showTask: preceded(reset, goTo),
     page: state && shownPage(state, picks),
     back: stack.top && { label: stack.top.label, onBack: stack.back },
     sidebar: { pick: preceded(reset, picks.pick), pickRepository: preceded(reset, picks.pickRepository) },

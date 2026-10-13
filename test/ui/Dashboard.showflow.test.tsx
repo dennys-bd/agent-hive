@@ -75,7 +75,7 @@ test('from a repository page, see in flow lands on the task\'s source flow with 
   await seeInFlow(user);
   expect(main().queryByRole('tab', { name: 'issues 3' })).not.toBeInTheDocument(); // the repository is gone
   expect(screen.getByRole('heading', { name: '#12 Pager breaks' })).toBeInTheDocument();
-  expect(main().queryByRole('button', { name: /^‹|fluxo ·|atividade #12/ })).not.toBeInTheDocument();
+  expect(main().queryByTitle(/^voltar( · |$)/)).not.toBeInTheDocument(); // the back button's title (#911)
 });
 
 test('with another source picked, see in flow moves the pick to the task\'s source', async () => {
