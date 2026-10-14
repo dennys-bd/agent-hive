@@ -17,7 +17,7 @@ const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, h
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); });
 
 test('right-click on a stopped local session: copiar para… ›, then limpar in the destructive colour, which posts the clear (#587)', async () => {
-  render(<CopySessionHost state={state}><LocalSessionLines workspace="hive" sessions={sessions} workers={[]} /></CopySessionHost>);
+  render(<CopySessionHost state={state}><LocalSessionLines workspace="hive" sessions={sessions} workers={[]} runs={[]} onOpenRun={vi.fn()} /></CopySessionHost>);
   fireEvent.contextMenu(screen.getByRole('button', { name: /^claude/ }));
   expect((await screen.findAllByRole('menuitem')).map((i) => i.textContent)).toEqual(['copiar para…', 'limpar']);
   expect(screen.getByRole('menuitem', { name: 'limpar' })).toHaveClass('text-destructive');
