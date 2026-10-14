@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { localActivityId } from '../src/activities.js';
 import { initialState } from '../src/orchestrator.js';
-import { type DeliverDeps, deliver } from '../src/review-deliver.js';
+import { type DeliverDeps, deliver, deliverLocal } from '../src/review-deliver.js';
 import type { Task, Effect, HiveEvent, Worker, State } from '../src/types.js';
-import { activityIdOf, withWork } from './fixtures/work.js';
+import { activityIdOf, withLocal, withWork } from './fixtures/work.js';
 
 const S1 = 'aaaaaaaa-1111-4111-8111-111111111111';
 const AT = '2026-09-29T10:00:00.000Z';
@@ -77,4 +78,60 @@ test('a live session showing a prompt, a question or a held Stop is refused with
   }
   const idle = fake([at('waiting', 'turn')]);
   assert.deepEqual(await deliver(idle.deps, 'local:1', S1, 'hi'), { ok: true, session: S1 });
+});
+
+const L1 = 'eeeeeeee-5555-4555-8555-555555555555';
+const LOCAL = localActivityId('hive');
+
+// Workspace hive with task 1 (session S1) and a local session L1. Its dispatch answers openLocalSession or newLocalSession with a spawnSession
+// and a local worker that sees its first hook `hookAfterMs` later (never when undefined)
+function fakeLocal(workers: Worker[], hookAfterMs?: number) {
+  const base = withWork({ ...initialState(0), workspaces: ['hive'], tasks: [TASK], workers }, 'local:1', { worktree: '/wt' }, { sessions: [{ id: S1, startedAt: AT, stages: ['fila'], agent: 'claude', lastUsedAt: AT }] });
+  let state: State = withLocal(base, 'hive', [{ id: L1, startedAt: AT, stages: [], agent: 'claude', lastUsedAt: AT }]);
+  const events: HiveEvent[] = [];
+  const written: [string, string][] = [];
+  const deps: DeliverDeps = {
+    state: () => state,
+    dispatch: async (event) => {
+      events.push(event);
+      if (event.type !== 'openLocalSession' && event.type !== 'newLocalSession') return [];
+      const sessionId = event.type === 'openLocalSession' ? event.sessionId : 'fresh-session-0001';
+      const worker: Worker = { id: 'X', runId: 'W9', activityId: LOCAL, status: 'working', freeSession: true, sessionId };
+      state = { ...state, workers: [...state.workers, worker] };
+      if (hookAfterMs !== undefined) setTimeout(() => { state = { ...state, workers: state.workers.map((s) => (s.runId === 'W9' ? { ...s, seenAt: AT } : s)) }; }, hookAfterMs);
+      return [{ type: 'spawnSession', worker, activity: { id: LOCAL, kind: 'local', workspace: 'hive' }, sessionId, continues: event.type === 'openLocalSession' } as Effect];
+    },
+    started: async () => undefined,
+    write: (ptyId, data) => { written.push([ptyId, data]); return true; },
+    waitMs: 200, pollMs: 5,
+  };
+  return { deps, events, written };
+}
+
+test('deliverLocal pastes into the live local run holding the session, with nothing opened (#344)', async () => {
+  const live: Worker = { id: 'A', runId: 'W1', activityId: LOCAL, status: 'working', sessionId: L1 };
+  const f = fakeLocal([live]);
+  assert.deepEqual(await deliverLocal(f.deps, 'hive', L1, 'hi'), { ok: true, session: L1 });
+  assert.deepEqual([f.written, f.events], [[['W1', PASTE('hi')]], []]);
+});
+
+test('deliverLocal resumes a stopped local session in the main checkout, or opens a new one, and pastes once its first hook lands (#344)', async () => {
+  const f = fakeLocal([], 20);
+  assert.deepEqual(await deliverLocal(f.deps, 'hive', L1, 'hi'), { ok: true, session: L1 });
+  assert.deepEqual(f.events, [{ type: 'openLocalSession', activityId: LOCAL, sessionId: L1 }]);
+  assert.deepEqual(f.written, [['W9', PASTE('hi')]]);
+  const fresh = fakeLocal([], 20);
+  assert.deepEqual(await deliverLocal(fresh.deps, 'hive', 'new', 'hi'), { ok: true, session: 'fresh-session-0001' });
+  assert.deepEqual(fresh.events, [{ type: 'newLocalSession', activityId: LOCAL }]);
+});
+
+test('deliverLocal never reaches a task\'s session or an unknown workspace, and refuses a local run showing a prompt (#344)', async () => {
+  const taskRun: Worker = { id: 'A', runId: 'W1', activityId: activityIdOf('local:1'), status: 'working', sessionId: S1 };
+  const f = fakeLocal([taskRun]);
+  assert.equal((await deliverLocal(f.deps, 'hive', S1, 'hi')).ok, false);
+  assert.equal((await deliverLocal(f.deps, 'site', 'new', 'hi')).ok, false);
+  assert.deepEqual([f.written, f.events], [[], []], 'nothing pasted, nothing opened');
+  const prompting = fakeLocal([{ id: 'B', runId: 'W2', activityId: LOCAL, status: 'approval', sessionId: L1 }]);
+  assert.equal((await deliverLocal(prompting.deps, 'hive', L1, 'hi')).ok, false);
+  assert.deepEqual(prompting.written, []);
 });

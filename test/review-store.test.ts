@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { addDraft, appendMessage, convertDrafts, createReviewStore, droppedReviews, dropStaleMarks, EMPTY_REVIEW, markAgentResolved, markReviewed, nextPin, pinned, removeDraft, replyTarget, resolve, reviewPath, setDefaultSession, settleMessage, startThread, updateDraft } from '../src/review-store.js';
+import { dirname, join } from 'node:path';
+import { addDraft, appendMessage, convertDrafts, createLocalReviewStore, createReviewStore, droppedReviews, dropStaleMarks, EMPTY_REVIEW, localReviewPath, markAgentResolved, markReviewed, nextPin, pinned, removeDraft, replyTarget, resolve, reviewPath, setDefaultSession, settleMessage, startThread, updateDraft } from '../src/review-store.js';
 import { chipText } from '../src/review-message.js';
 import { initialState } from '../src/orchestrator.js';
 import type { Task, ReviewFile } from '../src/types.js';
@@ -188,4 +188,18 @@ test('a stored file whose design anchor has no tweaks reads back with tweaks {};
   assert.deepEqual(read.drafts[0].anchor, design(1));
   assert.deepEqual(read.drafts[1].anchor, ANCHOR);
   assert.deepEqual(read.threads[0].anchor, design(1));
+});
+
+test('a workspace\'s local review sits in reviews/local/, apart from every task file, and writes nothing once its workspace left (#344)', async (t) => {
+  const home = await tempDir(t, 'reviews-');
+  const tasks = createReviewStore(home, () => true);
+  const locals = createLocalReviewStore(home, (ws) => ws === 'hive');
+  assert.equal(localReviewPath(home, 'hive'), join(home, 'reviews', 'local', 'hive.json'));
+  await tasks.update('hive', (f) => setDefaultSession(f, 'task-session'));
+  await locals.update('hive', (f) => setDefaultSession(f, 'local-session'));
+  await locals.update('gone', (f) => setDefaultSession(f, 'x'));
+  assert.deepEqual((await readdir(join(home, 'reviews'))).sort(), ['hive.json', 'local']);
+  assert.deepEqual(await readdir(join(home, 'reviews', 'local')), ['hive.json'], 'a workspace not in the State writes nothing');
+  assert.equal((JSON.parse(await readFile(reviewPath(home, 'hive'), 'utf8')) as ReviewFile).defaultSession, 'task-session', 'an item id equal to the name keeps its own file');
+  assert.equal((await locals.read('hive')).defaultSession, 'local-session');
 });

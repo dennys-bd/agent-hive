@@ -14,8 +14,8 @@ import { noCreateMessage } from '../src/create-task.js';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
 import { MEMORY_FULL_MESSAGE, MEMORY_SECRET_MESSAGE, MEMORY_TEXT_MESSAGE, memoryPath, memoryUsed, WHY_MESSAGE } from '../src/memory.js';
 import { worktreePath } from '../src/worktree.js';
-import { reviewPath } from '../src/review-store.js';
-import { activityOf, prsOf, recordOf, resultOf } from '../src/activities.js';
+import { localReviewPath, reviewPath } from '../src/review-store.js';
+import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/activities.js';
 import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -240,6 +240,42 @@ test('hive_reply resolve: true marks the thread agent-resolved and leaves it ope
   assert.equal((await onDisk()).threads[1].messages.length, 1, 'the refused call wrote nothing');
 });
 
+async function seedLocal(home: string, threads: unknown[]): Promise<void> {
+  const path = localReviewPath(home, WORKSPACE);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify({ reviewed: [], drafts: [], threads }));
+}
+const localOnDisk = async (home: string): Promise<ReviewFile> => JSON.parse(await readFile(localReviewPath(home, WORKSPACE), 'utf8')) as ReviewFile;
+// withSession's Hive plus a local session of its workspace, its id named at the spawn (#590)
+async function withLocalSession(t: TestContext) {
+  const h = await withSession(t);
+  await h.server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE) });
+  const local = h.server.getState()!.workers.find((s) => s.activityId === localActivityId(WORKSPACE) && s.status !== 'empty');
+  if (!local?.runId || !local.sessionId) throw new Error('the local run did not start');
+  return { ...h, localPty: local.runId, localSession: local.sessionId };
+}
+
+test('hive_reply from a local session appends to its workspace\'s local conversation and broadcasts the workspace\'s review event (#344)', async (t) => {
+  const h = await withLocalSession(t);
+  await seedLocal(h.home, [threadFor('T1', [h.localSession])]);
+  const client = await connect(t, h.base, h.localPty);
+  const event = await reviewEventDuring(h.base, async () => assert.deepEqual(await call(client, 'hive_reply', { thread: 'T1', text: ' fixed ', resolve: true }), { text: 'ok', isError: false }));
+  assert.deepEqual(event, { type: 'review', workspace: WORKSPACE });
+  const [thread] = (await localOnDisk(h.home)).threads;
+  assert.deepEqual([thread.messages.at(-1)?.author, thread.messages.at(-1)?.text, thread.agentResolved?.session], [{ session: h.localSession }, 'fixed', h.localSession]);
+});
+
+test('hive_reply keeps local and task conversations apart and refuses a local session that is not a participant (#344)', async (t) => {
+  const h = await withLocalSession(t);
+  await seedLocal(h.home, [threadFor('L1', ['other-session-0001']), threadFor('L2', [h.sessionId])]);
+  await seed(h.home, h.itemId, [threadFor('T1', [h.localSession])]);
+  const local = await connect(t, h.base, h.localPty);
+  assert.deepEqual(await call(local, 'hive_reply', { thread: 'L1', text: 'x' }), { text: NOT_PARTICIPANT_MESSAGE, isError: true });
+  assert.deepEqual(await call(local, 'hive_reply', { thread: 'T1', text: 'x' }), { text: UNKNOWN_THREAD_MESSAGE, isError: true }, 'a local session never reaches a task\'s file');
+  const task = await connect(t, h.base, h.ptyId);
+  assert.deepEqual(await call(task, 'hive_reply', { thread: 'L2', text: 'x' }), { text: UNKNOWN_THREAD_MESSAGE, isError: true }, 'a task\'s session never reaches a local file');
+});
+
 test('hive_done and hive_pr from a worker land in its activity\'s record (#629)', async (t) => {
   const { base, server, ptyId } = await start(t);
   const client = await connect(t, base, ptyId);
@@ -358,7 +394,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
     exec: async () => ({ stdout: '' }),
     live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, events, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());
