@@ -12,6 +12,10 @@ export const EMPTY_REVIEW: ReviewFile = { reviewed: [], drafts: [], threads: [] 
 /** The file of a task (#591): its item id encoded, so a `/` or a `:` never leaves the directory. */
 export const reviewPath = (home: string, itemId: string): string => join(home, DIR, `${encodeURIComponent(itemId)}.json`);
 
+/** A workspace's local review (#344): under reviews/local/, a folder no task file can be, since a task's file name ends in .json. The name
+ * is a WORKSPACE_NAME (no / nor :), so it goes in unencoded. */
+export const localReviewPath = (home: string, workspace: string): string => join(home, DIR, 'local', `${workspace}.json`);
+
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // ponytail: a shallow check, the Hive is the file's only writer; a deep one if a hand edit ever breaks a pane
@@ -33,6 +37,12 @@ export type ReviewStore = JsonStore<ReviewFile>;
  * so it never brings back the file its removal took. */
 export function createReviewStore(home: string, isLive: (itemId: string) => boolean): ReviewStore {
   return createJsonStore({ pathOf: (itemId) => reviewPath(home, itemId), empty: EMPTY_REVIEW, parse: parseReviewFile, isLive });
+}
+
+/** The local reviews (#344), a store of their own so no item id can ever name a workspace's file. `isLive`: whether the workspace is still
+ * in the State; its removal leaves the file (ponytail: a re-added workspace of that name sees its old comments; delete with it if that bites). */
+export function createLocalReviewStore(home: string, isLive: (workspace: string) => boolean): ReviewStore {
+  return createJsonStore({ pathOf: (workspace) => localReviewPath(home, workspace), empty: EMPTY_REVIEW, parse: parseReviewFile, isLive });
 }
 
 /** The tasks whose review file goes with a reduction (#591): every one it dropped from the State, but none a stage change dropped: that one
