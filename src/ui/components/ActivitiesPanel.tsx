@@ -192,7 +192,7 @@ function LocalEntry({ name, branch, local, sessions, workers, selected, shown, o
     <>
       {local && nav.localMenu ? nav.localMenu(local, row) : row}
       <div className={`mr-2 ml-[22px] empty:hidden ${GUIDE}`}>
-        <LocalSessionLines workspace={name} sessions={sessions} workers={workers} shown={isSelected ? shown : undefined} />
+        <LocalSessionLines workspace={name} sessions={sessions} workers={workers} runs={local?.sessions ?? []} shown={isSelected ? shown : undefined} onOpenRun={(ptyId) => onOpenRun(key, ptyId)} />
         <TerminalLines terminals={local?.terminals ?? []} shown={isSelected ? shown : undefined} onOpen={(ptyId) => onOpenRun(key, ptyId)} />
       </div>
     </>
