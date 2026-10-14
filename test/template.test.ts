@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTemplate, type RenderResult, renderTemplate, type TemplateError } from '../src/template.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { deliveredName, needsLiquid, parseTemplate, type RenderResult, renderTemplate, type TemplateError } from '../src/template.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
 const TEMPLATE = [
@@ -135,4 +137,24 @@ test('the delivered header drops variables and basedOn; a plain file renders to 
   assert.ok(delivered.ok);
   const header = parseTemplate(delivered.text).header;
   assert.deepEqual(Object.keys(header), ['name', 'description', 'model', 'tools']);
+});
+
+test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310)', () => {
+  assert.equal(needsLiquid('---\nname: x\n---\nplain\n'), false);
+  assert.equal(needsLiquid('---\nvariables:\n  a: { default: x }\n---\nplain\n'), false, 'a declared, unused variable needs no render');
+  assert.equal(needsLiquid('---\ndescription: "{{ not the body }}"\n---\nplain\n'), false);
+  assert.equal(needsLiquid('a {{ b }}'), true);
+  assert.equal(needsLiquid('---\nname: x\n---\n{% if a %}x{% endif %}\n'), true);
+  assert.equal(needsLiquid(TEMPLATE), true);
+  assert.equal(deliveredName('skills/new-build/SKILL.md.liquid'), 'skills/new-build/SKILL.md');
+  assert.equal(deliveredName('agents/planner.md.liquid'), 'agents/planner.md');
+  assert.equal(deliveredName('skills/new-build/SKILL.md'), 'skills/new-build/SKILL.md');
+  assert.equal(deliveredName('x.liquid.liquid'), 'x.liquid');
+});
+
+test('src/template.ts imports nothing from node, so the UI can bundle it as is (#310)', () => {
+  // Runs from dist/test: the TypeScript source is read as text.
+  const source = readFileSync(fileURLToPath(new URL('../../src/template.ts', import.meta.url)), 'utf8');
+  assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml']);
+  assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/);
 });

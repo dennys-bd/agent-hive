@@ -56,6 +56,7 @@ const BASED_ON_KEYS = ['name', 'repo', 'ref', 'license', 'url'];
 const YAML_POSITION = / at line \d+, column \d+:?$/;
 const LIQUID_MARK = /\{\{|\{%/;
 const LIQUID_POSITION = /, line:(\d+), col:\d+/;
+const LIQUID_SUFFIX = '.liquid';
 
 // templates: {} gives the engine an empty in-memory file system, so include, render and layout fail as render errors instead of
 // reading the server's disk; the browser build behaves the same.
@@ -238,3 +239,10 @@ export function renderTemplate(parsed: ParsedTemplate, workspace: string): Rende
     return { ok: false, errors: [liquidError(err, parsed.bodyLine)] };
   }
 }
+
+/** A file must be named .liquid when its body uses Liquid; a declared but unused variable alone does not (the lint flags it, 1.3). */
+export const needsLiquid = (text: string): boolean => hasLiquid(splitHeader(text).body);
+
+/** The name a template is delivered under: SKILL.md.liquid → SKILL.md. Claude Code ignores .liquid, so a raw template never reaches it. */
+export const deliveredName = (path: string): string =>
+  path.endsWith(LIQUID_SUFFIX) ? path.slice(0, -LIQUID_SUFFIX.length) : path;
