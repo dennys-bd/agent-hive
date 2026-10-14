@@ -1,6 +1,6 @@
 import { agentName, liveDefaultAgent } from './agents.js';
 import { sessionsOf, SESSION_ID_CHARS } from './tasks.js';
-import { type AgentId, type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type State, type ThreadAnchor } from './types.js';
+import { type AgentId, type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type Session, type State, type ThreadAnchor } from './types.js';
 
 // What a session receives (#591): one builder for a comment sent now and for a batch, so both carry the anchor and the way back.
 
@@ -18,11 +18,14 @@ export const chipText = (id: string, newLabel: string = NEW_SESSION): string => 
 /** The agent each session a message names runs (#925). */
 export type AgentOf = (session: string) => AgentId;
 
-/** The task's sessions as their records say they ran, a new session as the default agent (#925): what a delivery names its mentions with. */
-export function agentsOf(state: Pick<State, 'activityRecords' | 'defaultAgent'>, taskId: string): AgentOf {
-  const sessions = sessionsOf(state, taskId);
+/** The agent each of `sessions` ran, a new session as the default agent (#925): what a delivery names its mentions with. A task's sessions
+ * or a workspace's local ones (#344). */
+export function agentsIn(state: Pick<State, 'defaultAgent'>, sessions: readonly Pick<Session, 'id' | 'agent'>[]): AgentOf {
   return (id) => sessions.find((s) => s.id === id)?.agent ?? liveDefaultAgent(state);
 }
+
+/** The task's sessions as their records say they ran (#925). */
+export const agentsOf = (state: Pick<State, 'activityRecords' | 'defaultAgent'>, taskId: string): AgentOf => agentsIn(state, sessionsOf(state, taskId));
 
 /** A mentioned session as the agent reads it: @ its own agent and the id's first 8 characters (#925). */
 export const mentionName = (id: string, agentOf: AgentOf): string => `@${agentName(agentOf(id))} ${id === NEW_SESSION ? 'new session' : id.slice(0, SESSION_ID_CHARS)}`;

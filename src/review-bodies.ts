@@ -1,7 +1,8 @@
+import { localSessionsOf } from './local-sessions.js';
 import { sessionsOf } from './tasks.js';
 import { isScope } from './diff.js';
 import { TWEAK_NAME, TWEAKS_MAX, TWEAK_TEXT_MAX } from './design-tweaks.js';
-import { DESIGN_VIEWPORTS, type DesignRect, type DesignTarget, type DesignTweakValue, type DesignViewport, type LineAnchor, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor, type UnpinnedDesignAnchor } from './types.js';
+import { DESIGN_VIEWPORTS, type DesignRect, type DesignTarget, type DesignTweakValue, type DesignViewport, type LineAnchor, type Session, type State, NEW_SESSION, REVIEW_TEXT_MAX, type ReviewAnchor, type UnpinnedDesignAnchor } from './types.js';
 
 // What the review routes and hive_reply take from a request (#591): checked here, stored as data, never passed to git or the disk.
 
@@ -22,9 +23,15 @@ export function textOf(raw: unknown): string | undefined {
   return text === '' || text.length > REVIEW_TEXT_MAX ? undefined : text;
 }
 
-/** A session of this task, or a new one (#591): never another task's. */
-export const isTaskSession = (state: Pick<State, 'activityRecords'>, taskId: string, id: unknown): id is string =>
-  typeof id === 'string' && (id === NEW_SESSION || sessionsOf(state, taskId).some((s) => s.id === id));
+// One of `sessions`, or a new one: the recipients a review may name
+const isSessionIn = (sessions: readonly Pick<Session, 'id'>[], id: unknown): id is string =>
+  typeof id === 'string' && (id === NEW_SESSION || sessions.some((s) => s.id === id));
+
+/** A session of this task, or a new one (#591): never another task's, nor a local one. */
+export const isTaskSession = (state: Pick<State, 'activityRecords'>, taskId: string, id: unknown): id is string => isSessionIn(sessionsOf(state, taskId), id);
+
+/** A local session of the workspace, or a new one (#344): never a task's. */
+export const isLocalSession = (state: Pick<State, 'activityRecords'>, workspace: string, id: unknown): id is string => isSessionIn(localSessionsOf(state, workspace), id);
 
 /** A message's recipients (#591): one or more of the task's sessions or NEW_SESSION, each once. */
 export function recipientsOf(state: Pick<State, 'activityRecords'>, taskId: string, raw: unknown): string[] | undefined {
