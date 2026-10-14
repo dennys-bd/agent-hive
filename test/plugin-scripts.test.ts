@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -53,6 +53,12 @@ test('check-hv.mjs prints nothing and exits 0 on a clean folder, the plugin\'s s
   await writeFile(join(folder, 'home.hv.html'), screen('<section id="state-empty"><h2>empty</h2><img src="logo.svg" alt=""></section>', JSON.stringify(VALID)));
   await copyFile(join(pluginSource(), 'reference', 'skeleton.hv.html'), join(folder, 'skeleton.hv.html'));
   assert.deepEqual(await check(folder), { code: 0, stdout: '' });
+});
+
+test('the skeleton is a responsive page: its block declares desktop, tablet and mobile and no tweak (#341)', async () => {
+  const text = await readFile(join(pluginSource(), 'reference', 'skeleton.hv.html'), 'utf8');
+  const block = /<script type="application\/json" id="hv-tweaks">([\s\S]*?)<\/script>/.exec(text)?.[1] ?? 'null';
+  assert.deepEqual(parseTweaks(JSON.parse(block)), { ok: true, schema: [], viewports: ['desktop', 'tablet', 'mobile'] });
 });
 
 test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path, fetch, a missing tag, a symbolic link, a broken and an invalid block, an unknown viewport (#241, #341)', async (t) => {
