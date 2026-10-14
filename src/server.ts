@@ -27,8 +27,8 @@ import { createLogger, describeChanges, describeStages, describeEffect, describe
 import { createEventLog, type EventLog } from './events.js';
 import { createServerEvents, HOOKS_PREFIX, UI_HEADER, WRITE_METHODS } from './server-events.js';
 import { canCloseTask, mountMcp } from './mcp.js';
-import { createDeliver, type Deliver } from './review-deliver.js';
-import { createReviewStore, droppedReviews } from './review-store.js';
+import { createDeliver, createDeliverLocal, type Deliver } from './review-deliver.js';
+import { createLocalReviewStore, createReviewStore, droppedReviews } from './review-store.js';
 import { createPrReviewStore, droppedPrReviews } from './pr-review-store.js';
 import { createPtyHost, NO_PTY, type SpawnPty } from './pty-host.js';
 import { bracketedPaste } from './pty-paste.js';
@@ -46,6 +46,7 @@ import { createStageCommandRunner } from './server-stage-commands.js';
 import { registerApprovalRoutes } from './server-approval.js';
 import { registerDecompositionRoutes } from './server-decomposition.js';
 import { registerReviewThreadRoutes } from './server-review-threads.js';
+import { registerLocalReviewRoutes } from './server-review-local.js';
 import { registerProjectRoutes } from './server-project.js';
 import { canRelateItem, registerBlockerRoutes, relateItem } from './server-blockers.js';
 import { registerForkRoutes } from './server-fork.js';
@@ -149,6 +150,7 @@ export interface ServerDeps {
   setupFallback?: { config?: Config; error: string };
   proposedWorkspace?: string; // setup mode with nothing saved: the folder the Hive started in, when it is a repo's top level
   deliverReview?: Deliver; // a review message's delivery (#591); tests inject a fake, the default pastes into the session's pty
+  deliverLocalReview?: Deliver; // a local review message's delivery (#344), keyed by workspace; tests inject a fake, the default pastes into the local session's pty
   systemLanguage?: Language; // from the locale the boot saw; default en. The config's language wins when set
   /** The GitHub Device Flow's edges (fetch, sleep, the config home); tests inject fakes, the default is the real flow. */
   githubLogin?: GithubLoginDeps;
@@ -232,6 +234,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The daemon's ptys (#251) reach every spawn.
   const ptys = createPtyHost(deps.spawnPty ?? NO_PTY, (message) => log.error(message)); // #696: a ring that cannot be written
   const reviews = createReviewStore(home, (itemId) => live?.state.tasks.some((c) => taskId(c) === itemId) === true); // one file per task (#591)
+  const localReviews = createLocalReviewStore(home, (workspace) => live?.state.workspaces.includes(workspace) === true); // one file per workspace's local (#344)
   // One file per PR link (#592), kept for a PR with no task too (#758)
   const prReviews = createPrReviewStore(home);
   // The console's channels (#353), process state like the ptys: a Settings save reaches the next trim, a boot empties them. Before a config
@@ -308,6 +311,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   // A task's review file changed (#591): a named event, so the page's onmessage and the menu bar's frame reader never read it as a State
   function notifyReview(taskId: string): void {
     const data = `event: review\ndata: ${JSON.stringify({ type: 'review', taskId })}\n\n`;
+    for (const res of clients) res.write(data);
+  }
+
+  // A workspace's local review file changed (#344): the same named event, telling itself apart by its workspace field
+  function notifyLocalReview(workspace: string): void {
+    const data = `event: review\ndata: ${JSON.stringify({ type: 'review', workspace })}\n\n`;
     for (const res of clients) res.write(data);
   }
 
@@ -1125,8 +1134,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   const write = (ptyId: string, data: string): boolean => {
     try { return ptys.write(ptyId, data); } catch { return false; }
   };
-  const deliverReview = deps.deliverReview ?? createDeliver({ state: () => live?.state, dispatch, started: pool.started, write });
+  const deliverDeps = { state: () => live?.state, dispatch, started: pool.started, write };
+  const deliverReview = deps.deliverReview ?? createDeliver(deliverDeps);
   registerReviewThreadRoutes(app, { requireLive, reviews, notifyReview, log, deliver: deliverReview });
+  // A workspace's local review (#344): the same routes under /workspaces/:name, delivered to its local sessions in the main checkout
+  registerLocalReviewRoutes(app, { requireLive, log, localReviews, notifyLocalReview, deliverLocal: deps.deliverLocalReview ?? createDeliverLocal(deliverDeps) });
   registerOpenRoute(app, taskDeps); // POST /tasks/:id/open and /activities/:id/open, whose first worktree setup runs in the console (#351)
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware

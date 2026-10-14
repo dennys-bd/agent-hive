@@ -10,11 +10,12 @@ import { worktreePath } from '../src/worktree.js';
 import { LOCAL_STAGES, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
-import { withWork, savedActivityId } from './fixtures/work.js';
+import { withLocal, withWork, savedActivityId } from './fixtures/work.js';
 
 export const SESSION_A = 'aaaaaaaa-1111-4111-8111-111111111111';
 export const SESSION_B = 'bbbbbbbb-2222-4222-8222-222222222222';
 export const SESSION_OTHER = 'cccccccc-3333-4333-8333-333333333333'; // task 2's
+export const SESSION_LOCAL = 'eeeeeeee-5555-4555-8555-555555555555'; // workspace hive's local session (#344)
 export const DIFF_TEXT = ['diff --git a/a.txt b/a.txt', '--- a/a.txt', '+++ b/a.txt', '@@ -1 +1 @@', '-one', '+two', ''].join('\n');
 const AT = '2026-09-29T10:00:00.000Z';
 const session = (id: string, lastUsedAt = AT) => ({ id, startedAt: AT, stages: ['fila'], agent: 'claude' as const, lastUsedAt });
@@ -40,7 +41,8 @@ export async function startReviews(t: TestContext, extra: Partial<ServerDeps> = 
   const tasks = [task(1, {}), task(2, {})];
   // #629: a saved id survives the load
   const one = withWork({ ...initialState(0), localCount: 2, tasks }, 'local:1', { id: savedActivityId(1), slug: 'hive-1-task', worktree }, { sessions: [session(SESSION_A), session(SESSION_B, '2026-09-29T11:00:00.000Z')] });
-  await saveState(home, withWork(one, 'local:2', { id: savedActivityId(2), slug: 'hive-2-task' }, { sessions: [session(SESSION_OTHER)] })); // #629: the sessions are the records'
+  const two = withWork(one, 'local:2', { id: savedActivityId(2), slug: 'hive-2-task' }, { sessions: [session(SESSION_OTHER)] }); // #629: the sessions are the records'
+  await saveState(home, withLocal({ ...two, workspaces: ['hive'] }, 'hive', [{ ...session(SESSION_LOCAL), stages: [] }])); // #344: the workspace's local session
   const index = join(await tempDir(t, 'index-'), 'index');
   await writeFile(index, 'the real index');
   const exec: Exec = async (_file, args) => {
