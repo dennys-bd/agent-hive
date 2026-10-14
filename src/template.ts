@@ -1,6 +1,7 @@
 // Skill and agent templates (#310, node 1.1 of #309): the header, its variables and basedOn, the render for one workspace, the .liquid
 // name. Node-free on purpose: the server's per-workspace render and the UI's preview must run the same code, so the only imports are
 // liquidjs and yaml, which both ship browser builds.
+import { Liquid, LiquidError } from 'liquidjs';
 import { type Document, isMap, isNode, isScalar, LineCounter, type Pair, parseDocument, type YAMLError } from 'yaml';
 
 export type VariableKind = 'text' | 'list' | 'boolean';
@@ -44,6 +45,8 @@ export interface ParsedTemplate {
   readonly [SOURCE]: { text: string; doc: Document.Parsed };
 }
 
+export type RenderResult = { ok: true; text: string } | { ok: false; errors: TemplateError[] };
+
 const FENCE = '---';
 const HEADER_FIRST_LINE = 2; // the header starts right under the opening fence
 const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -51,6 +54,12 @@ const BUILT_IN = 'workspace';
 const DECLARATION_KEYS = ['type', 'values', 'default', 'required', 'workspaces'];
 const BASED_ON_KEYS = ['name', 'repo', 'ref', 'license', 'url'];
 const YAML_POSITION = / at line \d+, column \d+:?$/;
+const LIQUID_MARK = /\{\{|\{%/;
+const LIQUID_POSITION = /, line:(\d+), col:\d+/;
+
+// templates: {} gives the engine an empty in-memory file system, so include, render and layout fail as render errors instead of
+// reading the server's disk; the browser build behaves the same.
+const engine = new Liquid({ strictVariables: true, strictFilters: true, ownPropertyOnly: true, templates: {} });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -180,4 +189,52 @@ export function parseTemplate(text: string): ParsedTemplate {
   if (!Object.hasOwn(data, 'basedOn')) return parsed;
   const basedOn = readBasedOn(data.basedOn, headerLine(lineCounter, topPair(doc, 'basedOn')?.key));
   return 'message' in basedOn ? { ...parsed, errors: [...errors, basedOn] } : { ...parsed, basedOn };
+}
+
+const hasLiquid = (body: string): boolean => LIQUID_MARK.test(body);
+const hasDeclarations = (header: Record<string, unknown>): boolean =>
+  Object.hasOwn(header, 'variables') || Object.hasOwn(header, 'basedOn');
+
+// An explicit null in workspaces: counts as the workspace's value.
+const valueFor = (variable: TemplateVariable, workspace: string): VariableValue =>
+  Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : variable.default;
+
+const contextFor = (variables: TemplateVariable[], workspace: string): Record<string, VariableValue> => ({
+  ...Object.fromEntries(variables.map((variable) => [variable.name, valueFor(variable, workspace)])),
+  workspace,
+});
+
+// liquidjs counts lines in the body it rendered; the file line is bodyLine further down.
+function liquidError(err: unknown, bodyLine: number): TemplateError {
+  const message = firstLine(messageOf(err));
+  const inMessage = LIQUID_POSITION.exec(message);
+  const tokenLine = err instanceof LiquidError && err.token ? err.token.getPosition()[0] : 1;
+  const line = inMessage ? Number(inMessage[1]) : tokenLine;
+  return { line: bodyLine + line - 1, message: message.replace(LIQUID_POSITION, '') };
+}
+
+function deliveredHeader(parsed: ParsedTemplate): string {
+  const { text, doc } = parsed[SOURCE];
+  if (!hasDeclarations(parsed.header)) return text.slice(0, text.length - parsed.body.length);
+  // the clone, never the parse: the same parse renders every workspace
+  const delivered = doc.clone();
+  delivered.delete('variables');
+  delivered.delete('basedOn');
+  return isMap(delivered.contents) && delivered.contents.items.length > 0 ? `${FENCE}\n${String(delivered)}${FENCE}\n` : '';
+}
+
+export function renderTemplate(parsed: ParsedTemplate, workspace: string): RenderResult {
+  if (parsed.errors.length > 0) return { ok: false, errors: parsed.errors };
+  if (!hasDeclarations(parsed.header) && !hasLiquid(parsed.body)) return { ok: true, text: parsed[SOURCE].text };
+  const missing = parsed.variables.filter((variable) => variable.required && valueFor(variable, workspace) === null);
+  if (missing.length > 0) {
+    const message = (name: string): string => `variable "${name}" is required and has no value for workspace "${workspace}"`;
+    return { ok: false, errors: missing.map(({ name, line }) => ({ line, variable: name, message: message(name) })) };
+  }
+  try {
+    const body: string = hasLiquid(parsed.body) ? engine.parseAndRenderSync(parsed.body, contextFor(parsed.variables, workspace)) : parsed.body;
+    return { ok: true, text: `${deliveredHeader(parsed)}${body}` };
+  } catch (err) {
+    return { ok: false, errors: [liquidError(err, parsed.bodyLine)] };
+  }
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTemplate, type TemplateError } from '../src/template.js';
+import { parseTemplate, type RenderResult, renderTemplate, type TemplateError } from '../src/template.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
 const TEMPLATE = [
@@ -85,4 +85,54 @@ test('a YAML error, or a header that is not a mapping, answers an error at its f
   assert.deepEqual(headerErrors('- a list'), [{ line: 2, message: 'the header must be a YAML mapping' }]);
   const broken = parseTemplate(['---', 'name: a', 'name: b', '---', '{{ x }}', ''].join('\n'));
   assert.deepEqual([broken.variables, broken.header], [[], {}], 'nothing is read past a YAML error');
+});
+
+const DELIVERED_HEADER = '---\nname: new-build\ndescription: Builds a plan.\nmodel: sonnet\ntools: Read, Edit\n---\n';
+
+/** A render that must fail: its errors, and never a text. */
+function failure(result: RenderResult): TemplateError[] {
+  assert.equal(result.ok, false, 'an error never answers a text');
+  return result.ok ? [] : result.errors;
+}
+
+test('rendering takes the workspace\'s value, else the default; a null default takes the else; workspace is built in (#310)', () => {
+  const parsed = parseTemplate(TEMPLATE);
+  assert.deepEqual(renderTemplate(parsed, 'hive'), {
+    ok: true,
+    text: `${DELIVERED_HEADER}# Build for hive\nRun pnpm test.\nDelivery: single. Dry run: false. E2E: pnpm e2e.\n`,
+  });
+  assert.deepEqual(renderTemplate(parsed, 'hive-site'), {
+    ok: true,
+    text: `${DELIVERED_HEADER}# Build for hive-site\nNo test command.\nDelivery: stacked. Dry run: false. E2E: playwright test.\n`,
+  });
+});
+
+test('a required variable with no value, an undeclared variable, a bad tag and a partial each answer an error at the file line (#310)', () => {
+  assert.deepEqual(failure(renderTemplate(parseTemplate(TEMPLATE), 'other')), [
+    { line: 10, variable: 'e2eCommand', message: 'variable "e2eCommand" is required and has no value for workspace "other"' },
+  ]);
+  const undeclared = failure(renderTemplate(parseTemplate(`${TEMPLATE}Then {{ reviewer }}.\n`), 'hive'));
+  assert.deepEqual(undeclared.map((error) => error.line), [16]);
+  assert.match(undeclared[0].message, /reviewer/);
+  assert.doesNotMatch(undeclared[0].message, /line:\d/, 'the body-relative position is not repeated');
+  const unclosed = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% if dryRun %}open\n`), 'hive'));
+  assert.deepEqual(unclosed.map((error) => error.line), [16]);
+  const partial = failure(renderTemplate(parseTemplate(`${TEMPLATE}{% include 'secrets' %}\n`), 'hive'));
+  assert.deepEqual(partial.map((error) => error.line), [16], 'include has nothing to read: no file system');
+  const malformed = parseTemplate(['---', 'variables:', '  a: { scope: x }', '---', '{{ a }}', ''].join('\n'));
+  assert.deepEqual(renderTemplate(malformed, 'hive'), { ok: false, errors: malformed.errors });
+});
+
+test('the delivered header drops variables and basedOn; a plain file renders to itself byte for byte (#310)', () => {
+  const plain = '---\nname: plain\ndescription:   odd   spacing   # a comment\n---\n# Plain\n\nNo variables, no blocks.\n';
+  assert.deepEqual(renderTemplate(parseTemplate(plain), 'hive'), { ok: true, text: plain });
+  assert.deepEqual(renderTemplate(parseTemplate('no header at all\n'), 'hive'), { ok: true, text: 'no header at all\n' });
+  const kept = '---\nname: x  # kept\n---\nfor {{ workspace }}\n';
+  assert.deepEqual(renderTemplate(parseTemplate(kept), 'hive'), { ok: true, text: '---\nname: x  # kept\n---\nfor hive\n' }, 'nothing removed: the header bytes stay');
+  const onlyVariables = '---\nvariables:\n  a: { default: x }\n---\n{{ a }}\n';
+  assert.deepEqual(renderTemplate(parseTemplate(onlyVariables), 'hive'), { ok: true, text: 'x\n' }, 'nothing left: no --- block');
+  const delivered = renderTemplate(parseTemplate(TEMPLATE), 'hive');
+  assert.ok(delivered.ok);
+  const header = parseTemplate(delivered.text).header;
+  assert.deepEqual(Object.keys(header), ['name', 'description', 'model', 'tools']);
 });
