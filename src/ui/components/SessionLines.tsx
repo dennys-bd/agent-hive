@@ -126,7 +126,7 @@ function LocalLine({ workspace, session, worker, shown }: LocalLineProps) {
 // its run; copy and clear need the id. Recorded at its first SessionStart, it becomes a kept session's line; ended before, it leaves nothing
 function StartingLine({ entry, shown, onOpenRun }: { entry: ActivitySession; shown?: string; onOpenRun(ptyId: string): void }) {
   const target = entry.run.terminalId ?? entry.run.ptyId;
-  return <SessionLine agent={ranAgent(entry.run)} label={t('event.starting')} status={entry.status} isShown={target === shown} onOpen={() => onOpenRun(target)} />;
+  return <SessionLine agent={ranAgent(entry.run)} label={entry.run.session ?? t('event.starting')} status={entry.status} isShown={target === shown} onOpen={() => onOpenRun(target)} />;
 }
 
 interface LocalSessionLinesProps { workspace: string; sessions: Session[]; workers: Worker[]; runs: ActivitySession[]; shown?: string; onOpenRun(ptyId: string): void }
