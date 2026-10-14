@@ -50,9 +50,9 @@ test('targetOf heads an element by its selector and an area by its rounded size;
 test('isOnState: a comment is on the pane\'s state when its viewport, theme and settled tweaks match; a tweak the block no longer has is ignored (#241)', () => {
   const parsed = parseTweaks({ layout: { options: ['board', 'list'], default: 'board' } });
   if (!parsed.ok) throw new Error(parsed.reason);
-  const state = { viewport: 1280, theme: 'dark', schema: parsed.schema, tweaks: { layout: 'list' } } as const;
+  const state = { viewport: 'natural', theme: 'dark', schema: parsed.schema, tweaks: { layout: 'list' } } as const;
   expect(isOnState(area(1, PATH, { tweaks: { layout: 'list', gone: 'x' } }), state)).toBe(true);
   expect(isOnState(area(1, PATH), state)).toBe(false); // {}: the default, board
-  expect(isOnState(area(1, PATH, { viewport: 390, tweaks: { layout: 'list' } }), state)).toBe(false);
+  expect(isOnState(area(1, PATH, { viewport: 'mobile', tweaks: { layout: 'list' } }), state)).toBe(false);
   expect(isOnState(area(1, PATH, { theme: 'light', tweaks: { layout: 'list' } }), state)).toBe(false);
 });

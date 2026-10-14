@@ -10,7 +10,7 @@ import { activityOf, callsTo, fakeHive, type FakeHive, SESSION, withSessions } f
 
 const ELEMENT = { kind: 'element', selector: 'main > h1:nth-of-type(1)', text: 'Welcome', rect: RECT };
 const AREA = { kind: 'area', rect: { x: 40, y: 60, width: 320.4, height: 179.6 } };
-const ON_PATH = { path: PATH, viewport: 1280, theme: 'dark', tweaks: {} };
+const ON_PATH = { path: PATH, viewport: 'natural', theme: 'dark', tweaks: {} };
 
 let hive: FakeHive;
 beforeEach(() => {
@@ -114,8 +114,8 @@ test('a viewport change drops the composer, and a slow adicionar never closes a 
   await user.click(toggle());
   anchor(ELEMENT);
   await user.click(screen.getByRole('radio', { name: 'mobile' }));
-  expect(composer()).toBeNull(); // its rect was measured at 1280 px
-  await user.click(screen.getByRole('radio', { name: 'desktop' }));
+  expect(composer()).toBeNull(); // its rect was measured in natural
+  await user.click(screen.getByRole('radio', { name: 'natural' }));
   let answer: (response: Response) => void = () => undefined;
   const inner = globalThis.fetch;
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) =>

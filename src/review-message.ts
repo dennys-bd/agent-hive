@@ -1,6 +1,6 @@
 import { agentName, liveDefaultAgent } from './agents.js';
 import { sessionsOf, SESSION_ID_CHARS } from './tasks.js';
-import { type AgentId, type DesignAnchor, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type State, type ThreadAnchor } from './types.js';
+import { type AgentId, type DesignAnchor, DESIGN_VIEWPORT_PX, isDesignAnchor, NEW_SESSION, type ReviewAnchor, type ReviewMessage, type ReviewThread, type State, type ThreadAnchor } from './types.js';
 
 // What a session receives (#591): one builder for a comment sent now and for a batch, so both carry the anchor and the way back.
 
@@ -84,10 +84,14 @@ function tweaksLine({ tweaks }: DesignAnchor): string[] {
   return pairs.length === 0 ? [] : [`Tweaks: ${pairs.join(', ')}`];
 }
 
+// A fixed viewport also gives its width; natural has none worth naming, since it follows the design as it is edited (#341)
+const viewportLine = ({ viewport, theme }: DesignAnchor): string =>
+  `Viewport: ${viewport === 'natural' ? viewport : `${viewport} (${DESIGN_VIEWPORT_PX[viewport]} px)`}, theme: ${theme}`;
+
 // A design comment (#111): numbered by its pin, so a batch reads as the canvas does; the agent may propose a resolve, the user confirms it
 function designText(anchor: DesignAnchor, threadId: string, message: Outgoing, recipient: string, agentOf: AgentOf, earlier: readonly ReviewMessage[]): string {
   return [
-    `Design comment ${anchor.pin} on ${oneLine(anchor.path)} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, `Viewport: ${anchor.viewport} px, theme: ${anchor.theme}`,
+    `Design comment ${anchor.pin} on ${oneLine(anchor.path)} (conversation ${threadId}):`, `Target: ${targetOf(anchor)}`, viewportLine(anchor),
     ...tweaksLine(anchor),
     ...mentionsLine(message.mentions, recipient, agentOf), ...catchUp(earlier, agentOf), withMentionNames(message.text, message.mentions, agentOf),
     `Answer with the hive_reply tool, thread "${threadId}". Pass resolve: true when the comment is done; the user confirms it.`,

@@ -404,15 +404,15 @@ test('the this PR block\'s copy reads as the spec writes it, in both languages, 
 
 test('the design pane\'s copy reads as the spec writes it, in both languages; the editor is named the editor pane (#109)', () => {
   const keys = [
-    'design.tab', 'design.reloaded', 'design.viewport', 'design.viewport.desktop', 'design.viewport.tablet', 'design.viewport.mobile',
+    'design.tab', 'design.reloaded', 'design.viewport', 'design.viewport.natural', 'design.viewport.desktop', 'design.viewport.tablet', 'design.viewport.mobile',
     'design.zoomIn', 'design.zoomOut', 'design.fit', 'design.theme', 'design.theme.dark', 'design.theme.light', 'files.openInEditor',
   ] as const;
   assert.deepEqual(keys.map((key) => MESSAGES.en[key]), [
-    '{label} · Design {name}', 'reloaded · the agent changed {file} at {time}', 'viewport', 'desktop', 'tablet', 'mobile',
+    '{label} · Design {name}', 'reloaded · the agent changed {file} at {time}', 'viewport', 'natural', 'desktop', 'tablet', 'mobile',
     'zoom in', 'zoom out', '⌘0 fits to screen', 'design theme', 'dark', 'light', 'open in the editor pane',
   ]);
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), [
-    '{label} · Design {name}', 'recarregado · o agente alterou {file} às {time}', 'viewport', 'desktop', 'tablet', 'mobile',
+    '{label} · Design {name}', 'recarregado · o agente alterou {file} às {time}', 'viewport', 'natural', 'desktop', 'tablet', 'mobile',
     'aumentar zoom', 'diminuir zoom', '⌘0 ajusta à tela', 'tema do design', 'escuro', 'claro', 'abrir no painel do editor',
   ]);
 });

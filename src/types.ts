@@ -883,8 +883,8 @@ export interface LineAnchor { path: string; side: 'old' | 'new'; start: number; 
 export type ReviewAnchor = LineAnchor & { scope: DiffScope; excerpt: string[] };
 /** A rectangle of a design (#111), in CSS pixels of the screen at its viewport. */
 export interface DesignRect { x: number; y: number; width: number; height: number }
-/** The design pane's viewport widths (#110). */
-export const DESIGN_VIEWPORTS = [1280, 768, 390] as const;
+/** The design pane's viewports (#110), by name (#341): natural is the content's own size, the others DESIGN_VIEWPORT_PX's widths. */
+export const DESIGN_VIEWPORTS = ['natural', 'desktop', 'tablet', 'mobile'] as const;
 export type DesignViewport = (typeof DESIGN_VIEWPORTS)[number];
 /** The fixed viewports' frame widths (#109); natural's comes from the bridge's measure (#341). */
 export const DESIGN_VIEWPORT_PX = { desktop: 1280, tablet: 768, mobile: 390 } as const;

@@ -6,7 +6,7 @@ import { type FakeHive, SESSION } from './diff-harness';
 // A design file's comments in each of the handoff's five states (#113), plus a draft on another design and a line draft, which the panel leaves out
 export const PATH = 'design/Landing.hv.html';
 export const AT = (minute: number): string => `2026-10-12T14:${String(minute).padStart(2, '0')}:00.000Z`;
-export const area = (pin: number, path = PATH, state: Partial<Pick<DesignAnchor, 'viewport' | 'theme' | 'tweaks'>> = {}): DesignAnchor => ({ kind: 'area', path, viewport: 1280, theme: 'dark', tweaks: {}, rect: { x: 0, y: 0, width: 320, height: 180 }, pin, ...state });
+export const area = (pin: number, path = PATH, state: Partial<Pick<DesignAnchor, 'viewport' | 'theme' | 'tweaks'>> = {}): DesignAnchor => ({ kind: 'area', path, viewport: 'natural', theme: 'dark', tweaks: {}, rect: { x: 0, y: 0, width: 320, height: 180 }, pin, ...state });
 const LINES: ReviewAnchor = { scope: 'worktree', path: PATH, side: 'new', start: 1, end: 1, excerpt: ['x'] };
 const you = (id: string, minute: number, text: string): ReviewMessage => ({ id, author: 'user', at: AT(minute), text, to: [SESSION] });
 const agent = (id: string, minute: number, text: string): ReviewMessage => ({ id, author: { session: SESSION }, at: AT(minute), text });

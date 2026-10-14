@@ -1,8 +1,9 @@
 import { MessageCircleIcon } from 'lucide-react';
+import type { DesignViewport } from '../../types';
 import { TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { type DesignZoom, isViewport, type Viewport, VIEWPORTS } from '@/hooks/use-design-zoom';
+import type { DesignZoom } from '@/hooks/use-design-zoom';
 import { t } from '@/i18n';
 import { clockOf, type DesignTheme } from '@/lib/design-comments';
 import { STATUS_DOT } from '@/lib/status';
@@ -32,7 +33,25 @@ function ZoomControl({ zoom }: { zoom: DesignZoom }) {
 }
 
 export interface CommentsToggle { count: number; isShown: boolean; onToggle(): void; isCommenting: boolean; onComment(): void }
-interface BarProps { path: string; name: string; reloadedAt?: Date; viewport: Viewport; theme: DesignTheme; zoom: DesignZoom; comments?: CommentsToggle; onViewport(next: Viewport): void; onTheme(next: DesignTheme): void }
+interface BarProps {
+  path: string; name: string; reloadedAt?: Date; viewport: DesignViewport; viewports: readonly DesignViewport[]; theme: DesignTheme; zoom: DesignZoom;
+  comments?: CommentsToggle; onViewport(next: DesignViewport): void; onTheme(next: DesignTheme): void;
+}
+interface SwitchProps { viewport: DesignViewport; viewports: readonly DesignViewport[]; onViewport(next: DesignViewport): void }
+
+// The viewport switch (#109, #341): only when the screen offers more than natural. A click on the pressed item answers '', which matches none
+function ViewportSwitch({ viewport, viewports, onViewport }: SwitchProps) {
+  if (viewports.length <= 1) return null;
+  const pick = (next: string): void => {
+    const picked = viewports.find((item) => item === next);
+    if (picked !== undefined) onViewport(picked);
+  };
+  return (
+    <ToggleGroup type="single" size="xs" aria-label={t('design.viewport')} value={viewport} onValueChange={pick} className={TOGGLE_TRACK}>
+      {viewports.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.viewport.${item}`)}</ToggleGroupItem>)}
+    </ToggleGroup>
+  );
+}
 
 // The bar's item 7 (#114): on, an --empty border on --accent; off, the border alone
 function CommentModeButton({ isOn, onToggle }: { isOn: boolean; onToggle(): void }) {
@@ -53,14 +72,12 @@ function CommentsButton({ count, isShown, onToggle }: CommentsToggle) {
 }
 
 // The handoff's preview bar (#109), items 1–5 and, on a task's pane, 7 (#114) and 8 (#113): 26 px, one line that hides what does not fit
-export function DesignBar({ path, name, reloadedAt, viewport, theme, zoom, comments, onViewport, onTheme }: BarProps) {
+export function DesignBar({ path, name, reloadedAt, viewport, viewports, theme, zoom, comments, onViewport, onTheme }: BarProps) {
   return (
     <div className="flex h-[26px] shrink-0 items-center gap-3 overflow-hidden border-b px-2.5 text-muted-foreground text-xs">
       <span title={path} className="min-w-0 flex-1 truncate font-mono">{path}</span>
       {reloadedAt && <ReloadedMark name={name} at={reloadedAt} />}
-      <ToggleGroup type="single" size="xs" aria-label={t('design.viewport')} value={viewport} onValueChange={(next) => { if (isViewport(next)) onViewport(next); }} className={TOGGLE_TRACK}>
-        {VIEWPORTS.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.viewport.${item}`)}</ToggleGroupItem>)}
-      </ToggleGroup>
+      <ViewportSwitch viewport={viewport} viewports={viewports} onViewport={onViewport} />
       <ZoomControl zoom={zoom} />
       <ToggleGroup type="single" size="xs" aria-label={t('design.theme')} value={theme} onValueChange={(next) => { if (next === 'dark' || next === 'light') onTheme(next); }} className={TOGGLE_TRACK}>
         {THEMES.map((item) => <ToggleGroupItem key={item} value={item} className={TOGGLE_ITEM}>{t(`design.theme.${item}`)}</ToggleGroupItem>)}

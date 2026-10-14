@@ -14,9 +14,9 @@ const draft = (pin: number, text: string, state: Parameters<typeof area>[2] = {}
 // One comment per state the pane can be in, and one on a tweak the block no longer has
 const STATES: ReviewFile = {
   reviewed: [], threads: [], drafts: [
-    draft(1, 'on the default'), draft(2, 'on the list', { tweaks: { layout: 'list' } }), draft(3, 'on mobile', { viewport: 390 }),
+    draft(1, 'on the default'), draft(2, 'on the list', { tweaks: { layout: 'list' } }), draft(3, 'on mobile', { viewport: 'mobile' }),
     draft(4, 'in light', { theme: 'light' }), draft(5, 'on a gone tweak', { tweaks: { gone: 'x' } }),
-    draft(6, 'on mobile, light, list', { viewport: 390, theme: 'light', tweaks: { layout: 'list', auto: false } }),
+    draft(6, 'on mobile, light, list', { viewport: 'mobile', theme: 'light', tweaks: { layout: 'list', auto: false } }),
   ],
 };
 const tweak = (name: string, value: unknown): Record<string, unknown> => ({ hive: 'design', type: 'tweak', name, value });

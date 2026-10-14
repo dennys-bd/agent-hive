@@ -1,6 +1,6 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { matches } from '../../shortcuts';
-import type { DesignTarget, DesignTweakValue, DesignViewport, UnpinnedDesignAnchor } from '../../types';
+import { DESIGN_VIEWPORT_PX, DESIGN_VIEWPORTS, type DesignTarget, type DesignTweakValue, type DesignViewport, type UnpinnedDesignAnchor } from '../../types';
 import { DesignComposer, saveComment } from '@/components/DesignComposer';
 import { composerStyle, DesignPins } from '@/components/DesignPins';
 import { DesignBar } from '@/components/DesignBar';
@@ -11,7 +11,7 @@ import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-
 import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
 import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
-import { type DesignZoom, useDesignZoom, type Viewport, VIEWPORT_PX, viewportOf } from '@/hooks/use-design-zoom';
+import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
 import type { Activity, TaskActivity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
 import { type DesignState, type DesignTheme, isOnState, nextPin } from '@/lib/design-comments';
@@ -34,6 +34,9 @@ const DOTS: CSSProperties = { backgroundImage: 'radial-gradient(circle, var(--bo
 const FRAME_SHADOW = '0 0 0 1px var(--border), 0 4px 12px rgb(0 0 0 / .45)';
 const WITH_PANEL = 'minmax(0,1fr) 300px'; // the handoff's §2: the canvas, then the 300 px comments panel
 const CANVAS_ONLY = 'minmax(0,1fr)';
+// TEMPORARY (#341, Task 3), removed by Task 4: every viewport is offered, and natural shows at desktop's width until the pane reads the
+// bridge's measure and the screen's declared viewports
+const OFFERED: readonly DesignViewport[] = DESIGN_VIEWPORTS;
 
 const baseName = (path: string): string => path.split('/').at(-1) ?? path;
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -195,24 +198,24 @@ function CommentOverlay({ model, canvas, rects, percent, path, state, frameWidth
 
 interface DesignViewModel {
   name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
-  viewport: Viewport; theme: DesignTheme; viewportPx: DesignViewport; state: DesignState; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
+  viewport: DesignViewport; theme: DesignTheme; viewportPx: number; state: DesignState; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
   zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge; tweaks: DesignTweaksModel;
-  pickViewport(next: Viewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
+  pickViewport(next: DesignViewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
 }
 
 // The pane's state (#109, #113, #114): one owner for the bar, the canvas, its overlay and the panel
 function useDesignView({ activity, path, active }: DesignPaneProps, comments?: DesignCommentsModel): DesignViewModel {
   const canvas = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const [viewport, setViewport] = useState<Viewport>('desktop');
+  const [viewport, setViewport] = useState<DesignViewport>('natural');
   const [theme, setTheme] = useState<DesignTheme>(pageTheme);
   const mint = useMint(activity.activity.id, path);
   const reloads = useReloads(activity.activity.id, path, active);
   const [reloadedAt, setReloadedAt] = useState<Date>();
-  const viewportPx = VIEWPORT_PX[viewport];
+  const viewportPx = DESIGN_VIEWPORT_PX[viewport === 'natural' ? 'desktop' : viewport]; // TEMPORARY, see OFFERED
   const tweaks = useDesignTweaks(frame);
   const marks = useCommentCanvas(comments);
-  const state: DesignState = { viewport: viewportPx, theme, schema: tweaks.schema, tweaks: tweaks.values };
+  const state: DesignState = { viewport, theme, schema: tweaks.schema, tweaks: tweaks.values };
   const pins = useDesignPins(frame, canvas, anchorsOf(comments, state), marks.isCommenting, { onAnchor: marks.aim, onKey: marks.takeKey });
   const [size, forgetWidth] = useFrameMessages(frame, () => {
     pins.reload(); // the bridge keeps no anchor nor mode across a load (#112); before the theme, which the zoom test reads last
@@ -225,13 +228,13 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
   // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
-  const pickViewport = (next: Viewport): void => { setViewport(next); forgetWidth(); marks.close(); };
+  const pickViewport = (next: DesignViewport): void => { setViewport(next); forgetWidth(); marks.close(); };
   // A comment chosen in the list reopens on the state it was made on (#241), then scrolls to it (#114)
   const selectComment = (id: string): void => {
     marks.selectItem(id);
     const anchor = comments && [...comments.open, ...comments.resolved].find((c) => c.id === id)?.anchor;
     if (anchor !== undefined && !isOnState(anchor, state)) {
-      pickViewport(viewportOf(anchor.viewport));
+      pickViewport(anchor.viewport);
       if (anchor.theme !== theme) pickTheme(anchor.theme);
       tweaks.apply(anchor.tweaks);
     }
@@ -260,7 +263,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
       <DesignBar
-        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
+        path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} viewports={OFFERED} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
         comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
       {hasTweaksRow(view.tweaks.block) && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
