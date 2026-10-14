@@ -28,6 +28,8 @@ interface BridgeState {
   dragged: boolean;
   outline: HTMLElement;
   area: HTMLElement;
+  /** Measures the natural width again in the next frame (#341): after a theme or a tweak, which can change it. */
+  remeasure: () => void;
 }
 
 /** Runs inside the frame, joined with its siblings by bridgeScript: it reads only its argument, browser globals and the functions
@@ -38,23 +40,10 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   const { signal } = listening;
   // '*': the frame cannot know which allowed host the parent was opened on, and the parent already serves the text anchors carry
   const post = (message: Record<string, unknown>): void => window.parent.postMessage({ hive: 'design', ...message }, '*');
+  const sizes = sizeReporter(post);
   const bridge: BridgeState = {
     helpers, post, on: false, cursor: '', anchors: [], pending: false, start: null, dragged: false,
-    outline: bridgeOverlay('outline'), area: bridgeOverlay('area'),
-  };
-  let height = -1;
-  let width = -1;
-  let frameWidth = -1;
-  // The width lets the pane widen its frame for a window screen wider than the viewport (#241). It counts only when the content overflows
-  // the frame: a fitting page reports the frame's own width back, and the pane would never narrow it again. The frame's width is in the
-  // key since the same overflow is news again once the frame narrows.
-  const postSize = (): void => {
-    const wide = root.scrollWidth > root.clientWidth ? root.scrollWidth : -1;
-    if (root.scrollHeight === height && wide === width && root.clientWidth === frameWidth) return;
-    height = root.scrollHeight;
-    width = wide;
-    frameWidth = root.clientWidth;
-    post(wide < 0 ? { type: 'size', height } : { type: 'size', height, width: wide });
+    outline: bridgeOverlay('outline'), area: bridgeOverlay('area'), remeasure: () => { requestAnimationFrame(sizes.measure); },
   };
   // with no anchor there is no pin to move: a scroll then posts nothing
   const refreshPins = (): void => {
@@ -63,11 +52,12 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   const pointer = (event: MouseEvent): void => bridgePointer(bridge, event);
   window.addEventListener('message', (event: MessageEvent<unknown>) => bridgeMessage(bridge, event), { signal });
   // ready on every load: the parent reloads the frame on a version change and marks it reloaded at the ready that follows. The tweaks block
-  // after it: the parent sends its values at ready, then settles them against the block that follows (#241)
+  // after it: the parent sends its values at ready, then settles them against the block that follows (#241). The natural width is
+  // measured once the page has laid out (#341)
   window.addEventListener('load', () => {
     post({ type: 'ready' });
     postTweaks(post);
-    postSize();
+    sizes.measure();
   }, { signal });
   // capture: scroll does not bubble, and an inner scroller moves the pins as much as the page does
   window.addEventListener('scroll', refreshPins, { capture: true, signal });
@@ -75,8 +65,9 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   // capture on window: while commenting, the design's own handlers and links must not fire
   for (const type of ['mousedown', 'mousemove', 'mouseup', 'click'] as const) window.addEventListener(type, pointer, { capture: true, signal });
   window.addEventListener('keydown', (event: KeyboardEvent) => bridgeKey(bridge, event), { capture: true, signal });
+  // A resize reports the size with the last natural width, never a new measure: a 50vw element would shrink the frame in a loop (#341)
   const observer = new ResizeObserver(() => {
-    postSize();
+    sizes.postSize();
     refreshPins();
   });
   observer.observe(root);
@@ -85,6 +76,32 @@ export function designBridge(helpers: AnchorHelpers): () => void {
     observer.disconnect();
     setCommentMode(bridge, false);
   };
+}
+
+/** The frame's size reports (#108, #241, #341): its content's height; the width when the content overflows the frame, so the pane widens
+ *  it for a window screen (a fitting page would only report the frame's own width back); and natural, the content's own width. The
+ *  frame's width is in the dedupe key since the same overflow is news again once the frame narrows. */
+function sizeReporter(post: (message: Record<string, unknown>) => void): { postSize: () => void; measure: () => void } {
+  const root = document.documentElement;
+  let last = '';
+  let natural = -1;
+  const postSize = (): void => {
+    const height = root.scrollHeight;
+    const wide = root.scrollWidth > root.clientWidth ? root.scrollWidth : -1;
+    const key = `${height}:${wide}:${root.clientWidth}:${natural}`;
+    if (key === last) return;
+    last = key;
+    post({ type: 'size', height, ...(wide < 0 ? {} : { width: wide }), ...(natural < 0 ? {} : { natural }) });
+  };
+  // <html> at max-content for one synchronous read, its inline width put back before any paint
+  const measure = (): void => {
+    const was = root.style.width;
+    root.style.width = 'max-content';
+    natural = Math.ceil(root.getBoundingClientRect().width);
+    root.style.width = was;
+    postSize();
+  };
+  return { postSize, measure };
 }
 
 /** The hover outline or the drag rectangle (handoff, "Comentar"). The design's own elements are never styled: that would leak into
@@ -191,6 +208,7 @@ function bridgeMessage(bridge: BridgeState, event: MessageEvent<unknown>): void 
   if (type === 'theme' && (theme === 'dark' || theme === 'light')) {
     document.documentElement.style.colorScheme = theme;
     document.documentElement.dataset.theme = theme;
+    bridge.remeasure();
   } else if (type === 'comment-mode' && typeof on === 'boolean') {
     setCommentMode(bridge, on);
   } else if (type === 'anchors' && bridge.helpers.isAnchorList(anchors)) {
@@ -200,6 +218,7 @@ function bridgeMessage(bridge: BridgeState, event: MessageEvent<unknown>): void 
     scrollToAnchor(bridge, id);
   } else if (type === 'tweak') {
     applyTweak(name, value);
+    bridge.remeasure();
   }
 }
 
@@ -258,7 +277,7 @@ function bridgeKey(bridge: BridgeState, event: KeyboardEvent): void {
 // Joined beside the anchor functions, as siblings in the frame's one script
 const BRIDGE_FUNCTIONS = [
   bridgeOverlay, placeOverlay, dragRect, setCommentMode, schedulePins, scrollToAnchor, bridgeMessage, bridgePointer, pointerMove,
-  pointerUp, bridgeKey, postTweaks, applyTweak, designBridge,
+  pointerUp, bridgeKey, postTweaks, applyTweak, sizeReporter, designBridge,
 ];
 
 /** The bridge as the inline script the design frame route puts into every HTML page it serves (#108): inline, so it needs no route.

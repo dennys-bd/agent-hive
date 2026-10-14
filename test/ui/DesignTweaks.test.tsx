@@ -24,7 +24,7 @@ const labels = (root: HTMLElement): (string | null)[] => Array.from(root.querySe
 // The pane's part: the values held and given back, every change recorded
 function Harness({ onChange }: { onChange(name: string, value: DesignTweakValue): void }) {
   const [values, setValues] = useState(() => settle(SCHEMA, {}));
-  return <DesignTweaks block={{ status: 'ok', schema: SCHEMA }} values={values} onChange={(name, value) => { onChange(name, value); setValues((now) => ({ ...now, [name]: value })); }} />;
+  return <DesignTweaks block={{ status: 'ok', schema: SCHEMA, viewports: [] }} values={values} onChange={(name, value) => { onChange(name, value); setValues((now) => ({ ...now, [name]: value })); }} />;
 }
 
 beforeEach(() => setLanguage('en'));

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -43,6 +43,9 @@ const BLOCKS: unknown[] = [
   { a: { options: ['x'.repeat(201)], default: 'x'.repeat(201) } }, { a: { type: 'boolean', default: true, group: 'g'.repeat(201) } },
   { a: { type: 'boolean', default: true, group: 'g'.repeat(200) } },
   Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`t${i}`, { type: 'boolean', default: false }])),
+  { viewports: ['desktop', 'mobile'], ...VALID }, { viewports: ['tablet'] }, { viewports: 'desktop' }, { viewports: [] }, { viewports: null },
+  { viewports: ['desktop', 2] }, { viewports: ['natural'] }, { viewports: ['mobile', 'mobile'] },
+  { viewports: ['desktop'], ...Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`t${i}`, { type: 'boolean', default: false }])) },
 ];
 
 test('check-hv.mjs prints nothing and exits 0 on a clean folder, the plugin\'s skeleton included (#241)', async (t) => {
@@ -52,12 +55,19 @@ test('check-hv.mjs prints nothing and exits 0 on a clean folder, the plugin\'s s
   assert.deepEqual(await check(folder), { code: 0, stdout: '' });
 });
 
-test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path, fetch, a missing tag, a symbolic link, a broken and an invalid block (#241)', async (t) => {
+test('the skeleton is a responsive page: its block declares desktop, tablet and mobile and no tweak (#341)', async () => {
+  const text = await readFile(join(pluginSource(), 'reference', 'skeleton.hv.html'), 'utf8');
+  const block = /<script type="application\/json" id="hv-tweaks">([\s\S]*?)<\/script>/.exec(text)?.[1] ?? 'null';
+  assert.deepEqual(parseTweaks(JSON.parse(block)), { ok: true, schema: [], viewports: ['desktop', 'tablet', 'mobile'] });
+});
+
+test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path, fetch, a missing tag, a symbolic link, a broken and an invalid block, an unknown viewport (#241, #341)', async (t) => {
   const folder = await tempDir(t, 'hv-');
   await writeFile(join(folder, 'a.hv.html'), screen('<img src="https://x.test/a.png">\n<a href="../b.html">b</a>\n<script>fetch("data.json")</script>'));
   await writeFile(join(folder, 'b.hv.html'), screen().replace('</head>\n', ''));
   await writeFile(join(folder, 'c.hv.html'), screen(undefined, '{"layout":'));
   await writeFile(join(folder, 'd.hv.html'), screen(undefined, '{"layout":{"options":[],"default":"x"}}'));
+  await writeFile(join(folder, 'e.hv.html'), screen(undefined, '{"viewports":["watch"]}'));
   await symlink(join(folder, 'a.hv.html'), join(folder, 'link.html'));
   const { code, stdout } = await check(folder);
   const lines = stdout.trim().split('\n');
@@ -65,8 +75,9 @@ test('check-hv.mjs prints one line per finding and exits 1: a URL, a parent path
   for (const expected of [
     /link\.html: a symbolic link$/, /^a\.hv\.html:9: reaches outside/, /^a\.hv\.html:10: reaches outside/, /^a\.hv\.html:11: reaches outside/,
     /^b\.hv\.html: <\/head> is missing or out of order$/, /^c\.hv\.html: the hv-tweaks block is not JSON$/, /^d\.hv\.html: hv-tweaks: layout: options must be/,
+    /^e\.hv\.html: hv-tweaks: viewports: unknown viewport "watch"$/,
   ]) assert.ok(lines.some((line) => expected.test(line)), `${expected} not in:\n${stdout}`);
-  assert.equal(lines.length, 7, stdout);
+  assert.equal(lines.length, 8, stdout);
 });
 
 test('check-hv.mjs\'s tweak rules answer as src/design-tweaks.ts does on the same blocks, reasons included (#241)', async () => {

@@ -124,8 +124,11 @@ Technical checks of what is measurable. Report; do not fix.
 - Nothing is said by colour alone; headings nest in order; use real buttons.
 - Focus is visible, tab order is logical, nothing traps the keyboard.
 - Motion honours `prefers-reduced-motion` while keeping the state change visible.
-- Layout at 1280, 768 and 390 px with no horizontal scroll and no clipped text.
-- Touch targets at least 44 by 44 px at 390 px; Operate's density applies at 1280 px.
+- Layout at each width the screen declares in `viewports` (`desktop` 1280,
+  `tablet` 768, `mobile` 390 px) with no horizontal scroll and no clipped
+  text; a screen that declares none, at its own width.
+- Touch targets at least 44 by 44 px at 390 px when the screen declares
+  `mobile`; Operate's density applies at 1280 px, or at the screen's own width.
 - No fixed widths that break narrow screens.
 - Colours come from tokens; dark and light themes both keep contrast.
 - Every state the spec names is present.
@@ -221,13 +224,15 @@ frame, with no network.
   `id="state-<name>"`, headed by the state's name.
 - A window screen (a fixed-size app window) is drawn whole at its natural
   size, in its section: no card, border or padding around it, no `overflow`
-  that clips or scrolls it. The design pane widens its frame to it; only its
-  canvas scrolls.
+  that clips or scrolls it. The design pane shows it at its own size; only
+  its canvas scrolls.
 - Theme tokens live under `:root` (dark) and `:root[data-theme="light"]`; a
   new screen starts from the skeleton ("The skeleton" below).
 - An alternative direction the user asked for is its own file,
   `<screen>.<variant>.hv.html` (`a`, `b`…).
-- Lays out at 1280, 768 and 390 px wide; a window screen keeps its own width.
+- Declares `viewports` ("Tweaks" below) only when it lays out at 1280, 768
+  and 390 px wide (a responsive page); a window screen declares none and is
+  shown at its own size.
 - Real copy in the product's own words and languages; never lorem ipsum.
 - Scripts only show states and interactions: no `fetch`, `XMLHttpRequest`
   or `WebSocket`.
@@ -241,6 +246,7 @@ A screen declares its tweaks in one block in `<head>`:
 ```html
 <script type="application/json" id="hv-tweaks">
 {
+  "viewports": ["desktop", "mobile"],
   "layout": { "options": ["board", "list"], "default": "board", "group": "view" },
   "auto": { "type": "boolean", "default": true },
   "title": { "type": "text", "default": "Fluxo" },
@@ -250,6 +256,12 @@ A screen declares its tweaks in one block in `<head>`:
 ```
 
 - Names match `[a-z][a-z0-9-]*`; at most 32 tweaks.
+- `viewports` is reserved, not a tweak: a non-empty list of unique names
+  among `"desktop"` (1280 px), `"tablet"` (768 px) and `"mobile"` (390 px),
+  the widths the screen lays out at. The design pane always opens the screen
+  in `natural`, its own width and height, and shows a switch with the
+  declared ones; a screen without the key shows only `natural`. It has no
+  control and no `data-tweak-*` attribute, and does not count toward the 32.
 - An enum is `{options, default}`, its options unique, non-empty strings.
   Boolean, text (up to 200 characters) and number (`min`, `max`, `step`
   optional) carry a `type`. Every default fits its own definition; `group`
@@ -265,7 +277,8 @@ A screen declares its tweaks in one block in `<head>`:
 ### The skeleton
 
 `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` holds the required tags,
-an empty `hv-tweaks` block, the theme tokens under `:root` and
+an `hv-tweaks` block declaring only the three `viewports` (a responsive
+page: drop the key for a window screen), the theme tokens under `:root` and
 `:root[data-theme="light"]`, and one section. Copy it for a new screen; with
 a design system, its tokens replace the skeleton's.
 
@@ -305,5 +318,7 @@ Screenshot each enum option once, and each boolean the other way: copy the
 screen into the temporary folder with `data-tweak-<name>="<value>"` added to
 its `<html>` tag, one copy per value, the other tweaks at their default.
 
-One round at 1280 and 390 px, then delete the folder. Without a browser, say
-the screens were not seen rendered.
+One round at each width the screen declares (`desktop` 1280, `tablet` 768,
+`mobile` 390 px, as `--window-size`), or at its own width when it declares
+none, then delete the folder. Without a browser, say the screens were not
+seen rendered.

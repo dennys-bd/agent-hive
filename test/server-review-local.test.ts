@@ -10,7 +10,7 @@ import { reviewEventDuring, send, SESSION_A, SESSION_LOCAL, startReviews } from 
 
 const NEW_ID = 'ffffffff-6666-4666-8666-666666666666';
 const LOCAL = '/workspaces/hive/review';
-const DESIGN = { kind: 'area', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', tweaks: {}, rect: { x: 40, y: 120, width: 320, height: 180 } } as const;
+const DESIGN = { kind: 'area', path: 'agent/hive/designs/x/home.hv.html', viewport: 'desktop', theme: 'dark', tweaks: {}, rect: { x: 40, y: 120, width: 320, height: 180 } } as const;
 
 // A Hive whose local deliveries are recorded (a new session reached as NEW_ID) and whose task deliveries must never happen
 async function start(t: TestContext) {

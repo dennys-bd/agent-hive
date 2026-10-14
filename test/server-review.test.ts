@@ -111,13 +111,13 @@ test('drafts are added, edited and removed; the default session is set and clear
   assert.equal((await send(base, 'PUT', '/tasks/local%3A1/review/default-session', { session: SESSION_OTHER })).status, 400);
 });
 
-const DESIGN = { kind: 'element', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', tweaks: {}, selector: 'main > h1', text: 'Hi', rect: { x: 1, y: 2, width: 3, height: 4 } };
+const DESIGN = { kind: 'element', path: 'agent/hive/designs/x/home.hv.html', viewport: 'desktop', theme: 'dark', tweaks: {}, selector: 'main > h1', text: 'Hi', rect: { x: 1, y: 2, width: 3, height: 4 } };
 
 test('a design draft is pinned by the server per path, a sent pin is ignored, and a bad design anchor is refused (#111)', async (t) => {
   const { base, home } = await startReviews(t);
   const draft = (anchor: unknown) => send(base, 'POST', '/tasks/local%3A1/review/drafts', { anchor, text: 'look', session: SESSION_A });
   assert.equal((await draft({ ...DESIGN, pin: 7 })).status, 200);
-  assert.equal((await draft({ kind: 'area', path: DESIGN.path, viewport: 390, theme: 'light', tweaks: {}, rect: DESIGN.rect })).status, 200);
+  assert.equal((await draft({ kind: 'area', path: DESIGN.path, viewport: 'mobile', theme: 'light', tweaks: {}, rect: DESIGN.rect })).status, 200);
   assert.equal((await draft({ ...DESIGN, path: 'agent/hive/designs/x/other.hv.html' })).status, 200);
   assert.equal((await draft(ANCHOR)).status, 200);
   const anchors = (await onDisk(home, 'local:1')).drafts.map((d) => d.anchor);
@@ -127,7 +127,7 @@ test('a design draft is pinned by the server per path, a sent pin is ignored, an
   const pins = (await onDisk(home, 'local:1')).drafts.flatMap((d) => ('pin' in d.anchor && d.anchor.path === 'p/c.hv.html' ? [d.anchor.pin] : []));
   assert.deepEqual(pins.sort(), [1, 2], 'two drafts at once never share a pin');
   for (const bad of [
-    { ...DESIGN, viewport: 1024 }, { ...DESIGN, theme: 'sepia' }, { ...DESIGN, rect: { ...DESIGN.rect, width: -1 } }, { ...DESIGN, rect: { ...DESIGN.rect, x: 'a' } },
+    { ...DESIGN, viewport: 1280 }, { ...DESIGN, theme: 'sepia' }, { ...DESIGN, rect: { ...DESIGN.rect, width: -1 } }, { ...DESIGN, rect: { ...DESIGN.rect, x: 'a' } },
     { ...DESIGN, selector: '' }, { ...DESIGN, selector: 's'.repeat(1001) }, { ...DESIGN, text: 't'.repeat(501) }, { ...DESIGN, kind: 'circle' }, { ...DESIGN, path: '' },
   ]) assert.equal((await draft(bad)).status, 400, JSON.stringify(bad).slice(0, 80));
 });

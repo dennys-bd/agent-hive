@@ -37,6 +37,6 @@ test('a sleeping task line reads dormindo; a click continues it through the task
 });
 
 test('a stopped local line reads dormindo too (#614)', () => {
-  render(<LocalSessionLines workspace="hive" sessions={[{ ...session, stages: [] }]} workers={[]} />);
+  render(<LocalSessionLines workspace="hive" sessions={[{ ...session, stages: [] }]} workers={[]} runs={[]} onOpenRun={vi.fn()} />);
   expect(screen.getByRole('button', { name: /^claude/ })).toHaveTextContent(/^claudea1b2c3d4dormindo$/);
 });

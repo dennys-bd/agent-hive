@@ -16,7 +16,7 @@ import { StatusWord } from '@/components/StatusWord';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { t } from '@/i18n';
-import type { TaskActivity, TaskActivitySession } from '@/lib/activities';
+import type { ActivitySession, TaskActivity, TaskActivitySession } from '@/lib/activities';
 import { type CopySource, keptRef, sessionPath } from '@/lib/copy-targets';
 
 const DESTRUCTIVE = 'text-destructive focus:text-destructive';
@@ -88,7 +88,7 @@ export function TaskSessionLine({ activity, entry, shown, onOpenRun }: TaskSessi
     const target = run.terminalId ?? run.ptyId; // #696: a captured session's run lives in its terminal's pty: its line opens the terminal
     return (
       <RunSessionMenu activity={activity} run={run}>
-        <SessionLine agent={ranAgent(run)} label={run.session ?? ''} status={status} isShown={target === shown} onOpen={() => onOpenRun(target)} />
+        <SessionLine agent={ranAgent(run)} label={run.session ?? t('event.starting')} status={status} isShown={target === shown} onOpen={() => onOpenRun(target)} />
       </RunSessionMenu>
     );
   }
@@ -122,8 +122,24 @@ function LocalLine({ workspace, session, worker, shown }: LocalLineProps) {
   );
 }
 
+// A local run with no session id yet (#308): a Codex picks its own at its first prompt, so until then the line reads iniciando and only opens
+// its run; copy and clear need the id. Recorded at its first SessionStart, it becomes a kept session's line; ended before, it leaves nothing
+function StartingLine({ entry, shown, onOpenRun }: { entry: ActivitySession; shown?: string; onOpenRun(ptyId: string): void }) {
+  const target = entry.run.terminalId ?? entry.run.ptyId;
+  return <SessionLine agent={ranAgent(entry.run)} label={entry.run.session ?? t('event.starting')} status={entry.status} isShown={target === shown} onOpen={() => onOpenRun(target)} />;
+}
+
+interface LocalSessionLinesProps { workspace: string; sessions: Session[]; workers: Worker[]; runs: ActivitySession[]; shown?: string; onOpenRun(ptyId: string): void }
+
 /** A workspace's local sessions under its local activity (#587, #590), oldest first: the name or the short id, and the status while the run
- * lives; `shown`, the run the center shows while the local activity is the selected one, is marked. */
-export function LocalSessionLines({ workspace, sessions, workers, shown }: { workspace: string; sessions: Session[]; workers: Worker[]; shown?: string }) {
-  return sessions.map((session) => <LocalLine key={session.id} workspace={workspace} session={session} worker={localWorker(workers, workspace, session.id)} shown={shown} />);
+ * lives; then its live runs not kept yet, marked iniciando (#308). `shown`, the run the center shows while the local activity is the selected
+ * one, is marked. */
+export function LocalSessionLines({ workspace, sessions, workers, runs, shown, onOpenRun }: LocalSessionLinesProps) {
+  const unkept = runs.filter((r) => !sessions.some((s) => s.id === r.sessionId));
+  return (
+    <>
+      {sessions.map((session) => <LocalLine key={session.id} workspace={workspace} session={session} worker={localWorker(workers, workspace, session.id)} shown={shown} />)}
+      {unkept.map((entry) => <StartingLine key={entry.run.ptyId} entry={entry} shown={shown} onOpenRun={onOpenRun} />)}
+    </>
+  );
 }

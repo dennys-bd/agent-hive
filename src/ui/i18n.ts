@@ -646,7 +646,7 @@ const en = {
   // #109: the design pane
   'design.tab': '{label} · Design {name}',
   'design.reloaded': 'reloaded · the agent changed {file} at {time}',
-  'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
+  'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'zoom in', 'design.zoomOut': 'zoom out', 'design.fit': '⌘0 fits to screen',
   'design.theme': 'design theme', 'design.theme.dark': 'dark', 'design.theme.light': 'light',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'more…', 'design.tweaks.close': 'close', 'design.tweaks.invalid': 'the hv-tweaks block is invalid',
@@ -2577,7 +2577,7 @@ const pt: Record<MessageKey, string> = {
   'changes.base': 'base', 'changes.base.head': 'HEAD', 'changes.base.task': 'base da tarefa', 'changes.noBase': 'sem base para comparar',
   'design.tab': '{label} · Design {name}',
   'design.reloaded': 'recarregado · o agente alterou {file} às {time}',
-  'design.viewport': 'viewport', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
+  'design.viewport': 'viewport', 'design.viewport.natural': 'natural', 'design.viewport.desktop': 'desktop', 'design.viewport.tablet': 'tablet', 'design.viewport.mobile': 'mobile',
   'design.zoomIn': 'aumentar zoom', 'design.zoomOut': 'diminuir zoom', 'design.fit': '⌘0 ajusta à tela',
   'design.theme': 'tema do design', 'design.theme.dark': 'escuro', 'design.theme.light': 'claro',
   'design.tweaks': 'tweaks', 'design.tweaks.more': 'mais…', 'design.tweaks.close': 'fechar', 'design.tweaks.invalid': 'o bloco hv-tweaks é inválido',

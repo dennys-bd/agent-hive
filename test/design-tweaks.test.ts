@@ -20,9 +20,9 @@ test('parseTweaks reads each type in declared order, an enum without a type as t
     { name: 'auto', type: 'boolean', default: true },
     { name: 'title', type: 'text', default: 'Fluxo' },
     { name: 'gap', type: 'number', default: 8, min: 0, max: 24, step: 4, group: 'look' },
-  ] });
-  assert.deepEqual(parseTweaks({}), { ok: true, schema: [] });
-  assert.deepEqual(parseTweaks({ a: { type: 'enum', options: ['x'], default: 'x' } }), { ok: true, schema: [{ name: 'a', type: 'enum', options: ['x'], default: 'x' }] });
+  ], viewports: [] });
+  assert.deepEqual(parseTweaks({}), { ok: true, schema: [], viewports: [] });
+  assert.deepEqual(parseTweaks({ a: { type: 'enum', options: ['x'], default: 'x' } }), { ok: true, schema: [{ name: 'a', type: 'enum', options: ['x'], default: 'x' }], viewports: [] });
 });
 
 test('parseTweaks refuses a non-object, a bad name, empty, blank or duplicate options, a misfit default, min above max, a zero step, an unknown type, a non-string group and too many tweaks, each with a reason (#241)', () => {
@@ -58,4 +58,27 @@ test('settle fills the missing and the misfit with defaults and drops names outs
   assert.equal(sameState(schema, {}, { layout: 'board', auto: true }), true); // both at the defaults
   assert.equal(sameState(schema, { layout: 'list' }, { layout: 'grid' }), false);
   assert.equal(sameState([], { layout: 'list' }, {}), true);
+});
+
+test('parseTweaks takes viewports apart from the schema, in its order, [] when absent; it does not count toward 32 (#341)', () => {
+  assert.deepEqual(parseTweaks({ viewports: ['desktop', 'mobile'], auto: BLOCK.auto }), {
+    ok: true, schema: [{ name: 'auto', type: 'boolean', default: true }], viewports: ['desktop', 'mobile'],
+  });
+  assert.deepEqual(parseTweaks({ viewports: ['mobile', 'tablet', 'desktop'] }), { ok: true, schema: [], viewports: ['mobile', 'tablet', 'desktop'] });
+  const full = Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`t${i}`, { type: 'boolean', default: false }]));
+  const parsed = parseTweaks({ ...full, viewports: ['tablet'] });
+  assert.ok(parsed.ok);
+  assert.deepEqual([parsed.schema.length, parsed.viewports], [32, ['tablet']]);
+});
+
+test('parseTweaks refuses a viewports that is not a non-empty list of strings, names an unknown viewport or repeats one, each with its reason (#341)', () => {
+  const reasonOf = (viewports: unknown): string | undefined => {
+    const parsed = parseTweaks({ viewports, auto: BLOCK.auto });
+    return parsed.ok ? undefined : parsed.reason;
+  };
+  const LIST = 'viewports must be a non-empty list of desktop, tablet, mobile';
+  assert.deepEqual([reasonOf('desktop'), reasonOf(null), reasonOf({}), reasonOf([]), reasonOf(['desktop', 1])], [LIST, LIST, LIST, LIST, LIST]);
+  assert.equal(reasonOf(['desktop', 'natural']), 'viewports: unknown viewport "natural"'); // natural is always offered, never declared
+  assert.equal(reasonOf(['watch']), 'viewports: unknown viewport "watch"');
+  assert.equal(reasonOf(['mobile', 'mobile']), 'viewports must be unique');
 });
