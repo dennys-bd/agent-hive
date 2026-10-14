@@ -1,14 +1,9 @@
 import { type Dispatch, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type RefObject, type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { DesignViewport } from '../../types';
 import { isTextField } from '@/lib/shortcut-bindings';
 
 // The design pane's zoom and pan (#109), apart from DesignPane.tsx: the fit, the steps, ⌘0, ⌘/Ctrl + wheel and pinch, Space-drag. The zoom is
 // whole points, so the bar's label is always what the frame gets.
 
-export type Viewport = 'desktop' | 'tablet' | 'mobile';
-export const VIEWPORTS: readonly Viewport[] = ['desktop', 'tablet', 'mobile'];
-/** A viewport's frame width in px (#109, handoff §2.3). */
-export const VIEWPORT_PX: Record<Viewport, DesignViewport> = { desktop: 1280, tablet: 768, mobile: 390 };
 export const ZOOM_MIN = 10;
 export const ZOOM_MAX = 200;
 const ZOOM_STEP = 10;
@@ -16,11 +11,6 @@ const FULL = 100;
 const FIT_MARGIN_PX = 32; // the canvas's 16 px of padding on each side
 
 const clamp = (zoom: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
-
-/** The viewport whose width an anchor stored (#241). */
-export const viewportOf = (px: DesignViewport): Viewport => VIEWPORTS.find((viewport) => VIEWPORT_PX[viewport] === px) ?? 'desktop';
-
-export const isViewport = (value: string): value is Viewport => (VIEWPORTS as readonly string[]).includes(value);
 
 /** The percentage that fits `frameWidth` into the canvas's width less its margin (#109): never above 100, so a tall screen stays readable,
  *  nor under ZOOM_MIN. */

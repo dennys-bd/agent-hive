@@ -60,9 +60,9 @@ test('the bridge posts ready and the height and width on load, then each new siz
   size(900, 1440, 768); // the frame narrowed: the same overflow is news again
   observed();
   expect(sent()).toEqual([
-    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640 }, // content that fits reports no width: the frame's own is not a wish
-    { hive: 'design', type: 'size', height: 900 }, { hive: 'design', type: 'size', height: 900, width: 1440 },
-    { hive: 'design', type: 'size', height: 900, width: 1440 },
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'size', height: 640, natural: 0 }, // content that fits reports no width: the frame's own is not a wish
+    { hive: 'design', type: 'size', height: 900, natural: 0 }, { hive: 'design', type: 'size', height: 900, width: 1440, natural: 0 },
+    { hive: 'design', type: 'size', height: 900, width: 1440, natural: 0 },
   ]);
   message({ hive: 'design', type: 'theme', theme: 'light' }, null); // not from the parent
   message({ hive: 'design', type: 'theme', theme: 'blue' });
@@ -249,4 +249,43 @@ test('a tweak from the parent sets data-tweak-<name> on the root and fires hv:tw
   expect(fired.mock.calls.map(([event]) => (event as CustomEvent).detail)).toEqual([{ name: 'layout', value: 'board' }, { name: 'auto', value: true }, { name: 'gap', value: 12.5 }]);
   window.removeEventListener('hv:tweak', fired);
   for (const name of ['layout', 'auto', 'gap']) root.removeAttribute(`data-tweak-${name}`);
+});
+
+test('size carries natural, the content\'s own width read with <html> at max-content, at load and in the frame after a theme or a tweak; the inline width is put back, and a resize alone never measures (#341)', () => {
+  let observed: () => void = () => {};
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { observed = callback; }
+    observe(): void {}
+    disconnect(): void {}
+  });
+  const { sent, flush } = harness();
+  const root = document.documentElement;
+  let frameWidth = 1280;
+  let height = 600;
+  Object.defineProperty(root, 'clientWidth', { configurable: true, get: () => frameWidth });
+  Object.defineProperty(root, 'scrollWidth', { configurable: true, get: () => frameWidth });
+  Object.defineProperty(root, 'scrollHeight', { configurable: true, get: () => height });
+  root.style.width = '50%';
+  // An 879.5 px fixed-width child: at max-content <html> takes the child's width, at any other the frame's
+  const measured = vi.spyOn(root, 'getBoundingClientRect').mockImplementation(() => box(0, 0, root.style.width === 'max-content' ? 879.5 : frameWidth, height));
+  start();
+  window.dispatchEvent(new Event('load'));
+  frameWidth = 390;
+  observed(); // the frame narrowed: the last measure goes again, with no new one
+  height = 700;
+  design({ type: 'theme', theme: 'light' });
+  design({ type: 'tweak', name: 'layout', value: 'list' });
+  expect(measured).toHaveBeenCalledTimes(1); // the load's: the messages wait for the frame
+  flush();
+  expect(measured).toHaveBeenCalledTimes(3);
+  expect(root.style.width).toBe('50%');
+  expect(sent().filter((data) => (data as { type: string }).type === 'size')).toEqual([
+    { hive: 'design', type: 'size', height: 600, natural: 880 }, // measured at 1280
+    { hive: 'design', type: 'size', height: 600, natural: 880 }, // the resize to 390
+    { hive: 'design', type: 'size', height: 700, natural: 880 }, // measured again at 390; the second measure changed nothing
+  ]);
+  root.style.width = '';
+  root.style.colorScheme = '';
+  delete root.dataset.theme;
+  root.removeAttribute('data-tweak-layout');
 });

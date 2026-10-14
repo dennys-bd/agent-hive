@@ -19,6 +19,7 @@ const TWEAK_TEXT_MAX = 200;
 const TWEAK_NAME_MAX = 64;
 const TWEAK_OPTIONS_MAX = 64;
 const BOUNDS = ['min', 'max', 'step'];
+const DECLARED_VIEWPORTS = ['desktop', 'tablet', 'mobile'];
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 
@@ -72,13 +73,25 @@ function defOf(name, raw) {
   return value === undefined ? `${name}: the default does not fit` : { name, ...shape, default: value };
 }
 
+function viewportsOf(raw) {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((item) => typeof item === 'string')) {
+    return 'viewports must be a non-empty list of desktop, tablet, mobile';
+  }
+  const foreign = raw.find((item) => !DECLARED_VIEWPORTS.includes(item));
+  if (foreign !== undefined) return `viewports: unknown viewport ${JSON.stringify(foreign)}`;
+  return new Set(raw).size === raw.length ? [...raw] : 'viewports must be unique';
+}
+
 export function parseTweaks(raw) {
   if (!isRecord(raw)) return { ok: false, reason: 'the block is an object of name to definition' };
-  const entries = Object.entries(raw);
+  const { viewports: declared, ...tweaks } = raw;
+  const viewports = declared === undefined ? [] : viewportsOf(declared);
+  if (typeof viewports === 'string') return { ok: false, reason: viewports };
+  const entries = Object.entries(tweaks);
   if (entries.length > TWEAKS_MAX) return { ok: false, reason: `at most ${TWEAKS_MAX} tweaks` };
   const defs = entries.map(([name, def]) => defOf(name, def));
   const reason = defs.find((def) => typeof def === 'string');
-  return reason === undefined ? { ok: true, schema: defs } : { ok: false, reason };
+  return reason === undefined ? { ok: true, schema: defs, viewports } : { ok: false, reason };
 }
 
 // --- the check ---

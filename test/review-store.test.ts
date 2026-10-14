@@ -137,7 +137,7 @@ test('convertDrafts marks each conversation\'s first message received by the ses
   assert.deepEqual(converted.threads[0].received, { s9: 'M1' });
 });
 
-const design = (pin: number, path = 'd/home.hv.html') => ({ path, viewport: 1280 as const, theme: 'dark' as const, tweaks: {}, pin, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } });
+const design = (pin: number, path = 'd/home.hv.html') => ({ path, viewport: 'desktop' as const, theme: 'dark' as const, tweaks: {}, pin, kind: 'area' as const, rect: { x: 0, y: 0, width: 1, height: 1 } });
 
 test('nextPin is the highest pin among the path\'s design drafts and threads plus one: gaps kept, other paths and line anchors apart (#111)', () => {
   assert.equal(nextPin(EMPTY_REVIEW, 'd/home.hv.html'), 1);

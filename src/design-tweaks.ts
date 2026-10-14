@@ -1,4 +1,4 @@
-import type { DesignTweakValue } from './types.js';
+import { type DeclaredViewport, DESIGN_VIEWPORT_PX, type DesignTweakValue } from './types.js';
 
 // A design's tweaks (#241): the props of a .hv.html screen its hv-tweaks block declares. The frame's content is untrusted, so the pane parses
 // the raw block here; the review routes check a comment's values by the same limits. assets/plugin/scripts/check-hv.mjs carries a copy of
@@ -25,7 +25,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 export type TweakShape = DistributiveOmit<TweakDef, 'default'>;
 /** The block in declared order (#241). */
 export type TweakSchema = ReadonlyArray<{ name: string } & TweakDef>;
-export type ParsedTweaks = { ok: true; schema: TweakSchema } | { ok: false; reason: string };
+export type ParsedTweaks = { ok: true; schema: TweakSchema; viewports: DeclaredViewport[] } | { ok: false; reason: string };
 type Bounds = { min?: number; max?: number; step?: number };
 
 const BOUNDS = ['min', 'max', 'step'] as const;
@@ -83,14 +83,30 @@ function defOf(name: string, raw: unknown): ({ name: string } & TweakDef) | stri
   return value === undefined ? `${name}: the default does not fit` : ({ name, ...shape, default: value } as { name: string } & TweakDef);
 }
 
-/** The hv-tweaks block (#241): an object of name → definition, in declared order, or the first reason it is refused. */
+const isDeclared = (value: string): value is DeclaredViewport => Object.hasOwn(DESIGN_VIEWPORT_PX, value);
+
+// The reserved key (#341): the fixed viewports the screen lays out at. Not a tweak: no control, no attribute, not counted toward TWEAKS_MAX
+function viewportsOf(raw: unknown): DeclaredViewport[] | string {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((item): item is string => typeof item === 'string')) {
+    return 'viewports must be a non-empty list of desktop, tablet, mobile';
+  }
+  const foreign = raw.find((item) => !isDeclared(item));
+  if (foreign !== undefined) return `viewports: unknown viewport ${JSON.stringify(foreign)}`;
+  return new Set(raw).size === raw.length ? raw.filter(isDeclared) : 'viewports must be unique';
+}
+
+/** The hv-tweaks block (#241): an object of name → definition, in declared order, and its reserved viewports (#341), or the first reason
+ *  it is refused. */
 export function parseTweaks(raw: unknown): ParsedTweaks {
   if (!isRecord(raw)) return { ok: false, reason: 'the block is an object of name to definition' };
-  const entries = Object.entries(raw);
+  const { viewports: declared, ...tweaks } = raw;
+  const viewports: DeclaredViewport[] | string = declared === undefined ? [] : viewportsOf(declared);
+  if (typeof viewports === 'string') return { ok: false, reason: viewports };
+  const entries = Object.entries(tweaks);
   if (entries.length > TWEAKS_MAX) return { ok: false, reason: `at most ${TWEAKS_MAX} tweaks` };
   const defs = entries.map(([name, def]) => defOf(name, def));
   const reason = defs.find((def): def is string => typeof def === 'string');
-  return reason === undefined ? { ok: true, schema: defs.filter((def) => typeof def !== 'string') } : { ok: false, reason };
+  return reason === undefined ? { ok: true, schema: defs.filter((def) => typeof def !== 'string'), viewports } : { ok: false, reason };
 }
 
 /** Every tweak of `schema` with its value from `values` when it fits, else its default (#241); names outside the schema are dropped. */

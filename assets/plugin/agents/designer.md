@@ -35,6 +35,7 @@ A prompt may name more than one mode; run them in the table's order. With none n
 
 - One file per screen. Its combinations (a layout, an option on or off) are tweaks of the file, as "Tweaks" of `reference/design.md` says; states meant to be seen side by side are sections, one after another, each headed by its state's name.
 - A new screen starts from `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` ("The skeleton").
+- A screen declares `viewports` in its `hv-tweaks` block only when it is meant to lay out at those widths (a responsive page). The skeleton declares all three: drop the key for a window screen or any fixed-size screen, and drop the widths a screen does not lay out at. A screen without it opens in the design pane at its own size (`natural`).
 - An alternative direction the user asked for is its own file, `<screen>.<variant>.hv.html` (`a`, `b`…).
 - Every file follows "The .hv.html format" of `reference/design.md`: self-contained, no URL outside its own folder.
 
@@ -47,7 +48,7 @@ Settle the direction before the first line, as "Direction" says; with a design s
 A Claude Design export becomes one screen, faithfully: its layout, copy and look are kept.
 
 1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/import-dc.mjs" "<export>" "<tmp>"`, `<tmp>` a `mktemp -d` folder outside the repositories. It writes `tweaks.json`, the draft block of the export's props; `colours.txt`, its literal colours, most used first; and, with a browser, `default.html` and one `<tweak>-<value>.html` per value of each prop, the others at their default. It needs network for unpkg.com (the export runtime's SRI-pinned React and Babel); offline, the snapshots come out unrendered, and you work from the export's markup. Exit 2 means no browser: work from the export's markup too, and the handoff says the snapshots were not rendered.
-2. Copy `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` and put the draft block in its `hv-tweaks` script, renaming a tweak or narrowing its type where the export's says less than the screen means.
+2. Copy `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` and put the draft block in its `hv-tweaks` script, renaming a tweak or narrowing its type where the export's says less than the screen means. Keep `viewports` only when the export is a responsive page; an app window drops it.
 3. Write the default state's markup from `default.html`, then the `:root[data-tweak-<name>="<value>"]` CSS that turns it into each snapshot. Colours become tokens under `:root` and `:root[data-theme="light"]`, mapped from `colours.txt`.
 4. Keep a `<section>` only for a state the export showed side by side; every other combination is a tweak.
 

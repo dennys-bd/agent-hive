@@ -9,14 +9,14 @@ import { area, FRAME_NAME, fromBridge, mintFrame, PATH, postsToFrame } from './d
 import { activityOf, fakeHive, type FakeHive, SESSION, withSessions } from './diff-harness';
 
 type User = ReturnType<typeof userEvent.setup>;
-const BLOCK = { layout: { options: ['board', 'list'], default: 'board' }, auto: { type: 'boolean', default: true } };
+const BLOCK = { viewports: ['mobile'], layout: { options: ['board', 'list'], default: 'board' }, auto: { type: 'boolean', default: true } };
 const draft = (pin: number, text: string, state: Parameters<typeof area>[2] = {}): ReviewDraft => ({ id: `D${pin}`, anchor: area(pin, PATH, state), session: SESSION, text });
 // One comment per state the pane can be in, and one on a tweak the block no longer has
 const STATES: ReviewFile = {
   reviewed: [], threads: [], drafts: [
-    draft(1, 'on the default'), draft(2, 'on the list', { tweaks: { layout: 'list' } }), draft(3, 'on mobile', { viewport: 390 }),
+    draft(1, 'on the default'), draft(2, 'on the list', { tweaks: { layout: 'list' } }), draft(3, 'on mobile', { viewport: 'mobile' }),
     draft(4, 'in light', { theme: 'light' }), draft(5, 'on a gone tweak', { tweaks: { gone: 'x' } }),
-    draft(6, 'on mobile, light, list', { viewport: 390, theme: 'light', tweaks: { layout: 'list', auto: false } }),
+    draft(6, 'on mobile, light, list', { viewport: 'mobile', theme: 'light', tweaks: { layout: 'list', auto: false } }),
   ],
 };
 const tweak = (name: string, value: unknown): Record<string, unknown> => ({ hive: 'design', type: 'tweak', name, value });
@@ -144,4 +144,15 @@ test('a comment chosen in the list switches the pane to its viewport, theme and 
   const scroll = sent.findIndex((data) => data.type === 'scroll-to');
   expect(sent[scroll]).toEqual({ hive: 'design', type: 'scroll-to', id: 'D6' });
   expect(anchored(sent.slice(0, scroll))).toEqual(['D6']);
+});
+
+test('a comment pinned in natural reopens in natural (#341)', async () => {
+  const user = userEvent.setup();
+  showCommentsPanel(true);
+  await pane();
+  fromBridge({ type: 'tweaks', schema: BLOCK });
+  await user.click(screen.getByText('on mobile'));
+  expect(screen.getByRole('radio', { name: 'mobile' })).toHaveAttribute('aria-checked', 'true');
+  await user.click(screen.getByText('on the default'));
+  expect(screen.getByRole('radio', { name: 'natural' })).toHaveAttribute('aria-checked', 'true');
 });

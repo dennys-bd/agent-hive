@@ -258,7 +258,7 @@ test('a batch marks each new conversation received by its session, so a reply af
   assert.doesNotMatch(h.delivered.at(-1)?.text ?? '', /\none\n/);
 });
 
-const DESIGN = { kind: 'area', path: 'agent/hive/designs/x/home.hv.html', viewport: 1280, theme: 'dark', tweaks: {}, rect: { x: 40, y: 120, width: 320, height: 180 } } as const;
+const DESIGN = { kind: 'area', path: 'agent/hive/designs/x/home.hv.html', viewport: 'desktop', theme: 'dark', tweaks: {}, rect: { x: 40, y: 120, width: 320, height: 180 } } as const;
 const pinOf = (anchor: object): number | undefined => ('pin' in anchor ? (anchor.pin as number) : undefined);
 
 test('submit kind design sends only the design drafts, one message numbered by pins; no kind sends only line drafts (#111)', async (t) => {
