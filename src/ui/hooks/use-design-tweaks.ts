@@ -1,20 +1,22 @@
 import { type RefObject, useEffect, useEffectEvent, useState } from 'react';
 import { parseTweaks, settle, type TweakSchema } from '../../design-tweaks';
-import type { DesignTweakValue } from '../../types';
+import type { DeclaredViewport, DesignTweakValue } from '../../types';
 import { bridgeData } from '@/hooks/use-design-pins';
 
 // A design pane's tweaks (#241): the frame's hv-tweaks block, parsed here since the frame's content is untrusted, and the values the mounted
 // pane holds for its file, like the theme: nothing is stored. The frame forgets them on every load, so they go again after every ready.
 
-export type TweakBlock = { status: 'none' } | { status: 'invalid' } | { status: 'ok'; schema: TweakSchema };
+export type TweakBlock = { status: 'none' } | { status: 'invalid' } | { status: 'ok'; schema: TweakSchema; viewports: DeclaredViewport[] };
 type Values = Readonly<Record<string, DesignTweakValue>>;
 const NO_TWEAKS: TweakSchema = [];
+const NO_VIEWPORTS: DeclaredViewport[] = [];
 
-/** What the bridge's tweaks message says (#241): the block parsed, else invalid, whether its JSON broke or its rules fail. */
+/** What the bridge's tweaks message says (#241): the block parsed, its reserved viewports apart (#341), else invalid, whether its JSON broke
+ *  or its rules fail. */
 export function blockOf(data: Record<string, unknown>): TweakBlock {
   if (data.error !== undefined) return { status: 'invalid' };
   const parsed = parseTweaks(data.schema);
-  return parsed.ok ? { status: 'ok', schema: parsed.schema } : { status: 'invalid' };
+  return parsed.ok ? { status: 'ok', schema: parsed.schema, viewports: parsed.viewports } : { status: 'invalid' };
 }
 
 const schemaOf = (block: TweakBlock): TweakSchema => (block.status === 'ok' ? block.schema : NO_TWEAKS);
@@ -25,7 +27,7 @@ function postValues(frame: HTMLIFrameElement | null, values: Values): void {
 }
 
 export interface DesignTweaks {
-  block: TweakBlock; schema: TweakSchema; values: Values;
+  block: TweakBlock; schema: TweakSchema; values: Values; viewports: DeclaredViewport[];
   set(name: string, value: DesignTweakValue): void; apply(values: Values): void; repost(): void;
 }
 
@@ -56,5 +58,6 @@ export function useDesignTweaks(frame: RefObject<HTMLIFrameElement | null>): Des
     setHeld({ ...held, [name]: value });
     postValues(frame.current, { [name]: settle(schema, { [name]: value })[name] });
   };
-  return { block, schema, values, set, apply, repost: () => postValues(frame.current, values) };
+  const viewports = block.status === 'ok' ? block.viewports : NO_VIEWPORTS;
+  return { block, schema, values, viewports, set, apply, repost: () => postValues(frame.current, values) };
 }

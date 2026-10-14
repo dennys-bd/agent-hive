@@ -111,6 +111,7 @@ test('an empty text disables both buttons and both keys; esc closes the composer
 test('a viewport change drops the composer, and a slow adicionar never closes a composer re-aimed meanwhile (#114)', async () => {
   const user = userEvent.setup();
   await pane();
+  fromBridge({ type: 'tweaks', schema: { viewports: ['mobile'] } }); // #341: the switch shows only what the screen declares
   await user.click(toggle());
   anchor(ELEMENT);
   await user.click(screen.getByRole('radio', { name: 'mobile' }));

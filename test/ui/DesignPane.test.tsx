@@ -34,6 +34,8 @@ const percent = (): string => screen.getByTitle('⌘0 ajusta à tela').textConte
 const fromFrame = (data: unknown, source: Window | null = frame().contentWindow): void => {
   act(() => { window.dispatchEvent(new MessageEvent('message', { data, source })); });
 };
+// A block that declares viewports (#341): the switch shows only those, after natural
+const declare = (viewports: string[]): void => fromFrame({ hive: 'design', type: 'tweaks', schema: { viewports } });
 function frameWindow(): Window {
   const win = frame().contentWindow;
   if (win === null) throw new Error('the frame has no window');
@@ -92,10 +94,11 @@ test('a refused mint shows the route\'s words in place of the canvas, with no fr
   expect(document.querySelector('[data-design-canvas]')).toBeNull();
 });
 
-test('tablet and mobile set the frame to 768 and 390 px and refit; the theme goes to the frame on each ready and each toggle, and the Hive\'s stays (#109)', async () => {
+test('tablet and mobile, once declared, set the frame to 768 and 390 px and refit; the theme goes to the frame on each ready and each toggle, and the Hive\'s stays (#109, #341)', async () => {
   const user = userEvent.setup();
   render(pane());
   await screen.findByTitle(NAME);
+  declare(['desktop', 'tablet', 'mobile']);
   await user.click(screen.getByRole('radio', { name: 'tablet' }));
   expect([frame().getAttribute('width'), percent()]).toEqual(['768', '83%']);
   await user.click(screen.getByRole('radio', { name: 'mobile' }));
@@ -180,9 +183,12 @@ test('a size past the cap is held to 100 000 px, so a design cannot choke the ca
   expect(frame()).toHaveAttribute('height', '100000');
 });
 
-test('the frame takes the content\'s reported width when wider than the viewport, the viewport\'s when narrower, and fits to it; a bad width keeps the last (#241)', async () => {
+test('at desktop the frame takes the content\'s reported width when wider, desktop\'s when narrower, and fits to it; a bad width keeps the last (#241)', async () => {
+  const user = userEvent.setup();
   render(pane());
   await screen.findByTitle(NAME);
+  declare(['desktop']);
+  await user.click(screen.getByRole('radio', { name: 'desktop' }));
   fromFrame({ hive: 'design', type: 'size', height: 900, width: 1440 });
   expect([frame().getAttribute('width'), percent()]).toEqual(['1440', '44%']); // (672 − 32) / 1440
   fromFrame({ hive: 'design', type: 'size', height: 900, width: 600 });
@@ -195,6 +201,8 @@ test('a width reported at one viewport does not hold the next: mobile after a de
   const user = userEvent.setup();
   render(pane());
   await screen.findByTitle(NAME);
+  declare(['desktop', 'tablet', 'mobile']);
+  await user.click(screen.getByRole('radio', { name: 'desktop' }));
   fromFrame({ hive: 'design', type: 'size', height: 900, width: 1280 });
   await user.click(screen.getByRole('radio', { name: 'mobile' }));
   expect(frame()).toHaveAttribute('width', '390');
