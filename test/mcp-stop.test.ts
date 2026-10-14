@@ -41,7 +41,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   mountMcp(app, {
     exec: async () => ({ stdout: '' }), live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate, canRelate: () => canRelate,
-    reviews: { read: unused, update: unused }, notifyReview: () => undefined, events, memory: { read: unused, update: unused },
+    reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
   });
   const http = app.listen(0);
   t.after(() => http.close());

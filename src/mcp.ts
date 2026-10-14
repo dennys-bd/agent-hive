@@ -15,7 +15,8 @@ import { refsOf, type RelateOutcome } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
 import { MCP_ROUTE } from './hooks-settings.js';
 import { isPrUrl } from './orchestrator.js';
-import { appendMessage, markAgentResolved, type ReviewStore } from './review-store.js';
+import { appendMessage, markAgentResolved } from './review-store.js';
+import { type ReplyReviews, workerReview } from './mcp-review.js';
 import { createTask } from './create-task.js';
 import { conventionsAnswer, forkConventions, workerWorkspace } from './mcp-conventions.js';
 import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type BlockerChange, type Config, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, REVIEW_TEXT_MAX, type ReviewMessage, type State } from './types.js';
@@ -47,16 +48,15 @@ export const UNKNOWN_THREAD_MESSAGE = 'unknown conversation for this task';
 export const NOT_PARTICIPANT_MESSAGE = 'this conversation was not sent to your session';
 export const THREAD_RESOLVED_MESSAGE = 'the user already resolved this conversation';
 
-/** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. */
-export interface McpDeps {
+/** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. The
+ * review files hive_reply answers in come with ReplyReviews (#591, #344). */
+export interface McpDeps extends ReplyReviews {
   live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create'>> } | undefined; // config: the Comb's prefix and createIn (hive_create_task), the workspaces' conventions (#692)
   poll(names: string[], manual?: string[]): Promise<void>; // #846: hive_create_task on a source polls it through the route's own path
   dispatch(event: HiveEvent): Promise<Effect[]>;
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item
   relate(itemId: string, change: BlockerChange): Promise<RelateOutcome>; // hive_stop's block (#294): the blockers route's own write, relateItem
   canRelate(itemId: string): boolean; // hive_stop's block (#294): a hive task, or a task whose source relates
-  reviews: Pick<ReviewStore, 'read' | 'update'>; // a task's review file (#591): hive_reply appends to it
-  notifyReview(taskId: string): void; // the review event after its write (#591)
   events: Pick<EventLog, 'write'>; // #742: each tool call's mcp.call
   memory: Pick<MemoryStore, 'read' | 'update'>; // #797: hive_remember and hive_applied write the worker's workspace's memory
   exec: Exec; // #854: the remotes behind a fork's hive_conventions
@@ -247,35 +247,37 @@ function registerStopTool(server: McpServer, deps: McpDeps, header: string | und
   }));
 }
 
-// hive_reply (#591): a session answers a review conversation of its own task. The worker gives the task and the session, so a thread is looked
-// up only in that task's file, and only a session the conversation was delivered to may answer.
+// hive_reply (#591): a session answers a review conversation of its own task, or a local session one of its workspace's local review (#344).
+// The worker gives the file and the session, so a thread is looked up only in that file, and only a session the conversation was delivered
+// to may answer.
 function registerReplyTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_reply', {
     description: 'Answer a review conversation the user opened on your diff or design: pass the thread id the review message named and your answer. Pass resolve: true when the comment is done: the conversation reads resolved by you and stays open until the user confirms it.',
     inputSchema: { thread: z.string(), text: z.string(), resolve: z.boolean().optional() },
   }, async ({ thread, text, resolve }) => recorded(deps, header, 'hive_reply', async () => {
     const ptyId = livePtyId(deps, header);
-    const worker = ptyId === undefined ? undefined : deps.live()?.state.workers.find((s) => s.runId === ptyId);
-    const owner = ptyId === undefined ? undefined : workerTaskId(deps, ptyId);
-    if (!worker || owner === undefined) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
+    const state = deps.live()?.state;
+    const worker = ptyId === undefined ? undefined : state?.workers.find((s) => s.runId === ptyId);
+    const review = state && worker ? workerReview(deps, state, worker) : undefined;
+    if (!worker || !review) return refuse('unknown_worker', UNKNOWN_WORKER_MESSAGE);
     if (worker.sessionId === undefined) return refuse('no_session', NO_SESSION_MESSAGE);
     const body = text.trim();
     if (body === '' || body.length > REVIEW_TEXT_MAX) return refuse('bad_reply', REPLY_TEXT_MESSAGE);
-    const found = (await deps.reviews.read(owner)).threads.find((t) => t.id === thread);
+    const found = (await review.store.read(review.key)).threads.find((t) => t.id === thread);
     if (!found) return refuse('unknown_thread', UNKNOWN_THREAD_MESSAGE);
     if (!found.participants.includes(worker.sessionId)) return refuse('not_participant', NOT_PARTICIPANT_MESSAGE);
     const session = worker.sessionId;
     const message: ReviewMessage = { id: randomUUID(), author: { session }, at: new Date().toISOString(), text: body };
     // One edit: the answer, then the proposal (#111), a later call replacing the mark. The user's resolve wins: appending would reopen it
     let late = false;
-    await deps.reviews.update(owner, (file) => {
+    await review.store.update(review.key, (file) => {
       late = resolve === true && file.threads.some((t) => t.id === thread && t.resolved);
       if (late) return file;
       const replied = appendMessage(file, thread, message);
       return resolve === true ? markAgentResolved(replied, thread, session, message.at) : replied;
     });
     if (late) return refuse('thread_resolved', THREAD_RESOLVED_MESSAGE);
-    deps.notifyReview(owner);
+    review.notify();
     return reply(OK);
   }));
 }
