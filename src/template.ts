@@ -58,9 +58,19 @@ const LIQUID_MARK = /\{\{|\{%/;
 const LIQUID_POSITION = /, line:(\d+), col:\d+/;
 const LIQUID_SUFFIX = '.liquid';
 
+// The render runs synchronously on the server's event loop, so a runaway loop in a template must fail as a render error, not block it.
+const RENDER_LIMIT_MS = 1000;
+const MEMORY_LIMIT = 1e7;
 // templates: {} gives the engine an empty in-memory file system, so include, render and layout fail as render errors instead of
 // reading the server's disk; the browser build behaves the same.
-const engine = new Liquid({ strictVariables: true, strictFilters: true, ownPropertyOnly: true, templates: {} });
+const engine = new Liquid({
+  strictVariables: true,
+  strictFilters: true,
+  ownPropertyOnly: true,
+  templates: {},
+  renderLimit: RENDER_LIMIT_MS,
+  memoryLimit: MEMORY_LIMIT,
+});
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -76,7 +86,8 @@ function splitHeader(text: string): { header: string; body: string; bodyLine: nu
   const isFence = (line: string): boolean => line.trimEnd() === FENCE;
   const close = isFence(lines[0]) ? lines.findIndex((line, index) => index > 0 && isFence(line)) : -1;
   if (close < 0) return { header: '', body: text, bodyLine: 1 };
-  return { header: lines.slice(1, close).join('\n'), body: lines.slice(close + 1).join('\n'), bodyLine: close + 2 };
+  // The trailing newline keeps a CRLF header's last value from ending in \r: yaml only strips \r before a line break.
+  return { header: `${lines.slice(1, close).join('\n')}\n`, body: lines.slice(close + 1).join('\n'), bodyLine: close + 2 };
 }
 
 const headerLine = (lineCounter: LineCounter, node: unknown): number =>
@@ -221,7 +232,10 @@ function deliveredHeader(parsed: ParsedTemplate): string {
   const delivered = doc.clone();
   delivered.delete('variables');
   delivered.delete('basedOn');
-  return isMap(delivered.contents) && delivered.contents.items.length > 0 ? `${FENCE}\n${String(delivered)}${FENCE}\n` : '';
+  if (!isMap(delivered.contents) || delivered.contents.items.length === 0) return '';
+  // lineWidth 0: yaml would otherwise refold long values at 80 columns; the line ending follows the source's
+  const eol = text.startsWith(`${FENCE}\r\n`) ? '\r\n' : '\n';
+  return `${FENCE}\n${delivered.toString({ lineWidth: 0 })}${FENCE}\n`.replace(/\n/g, eol);
 }
 
 export function renderTemplate(parsed: ParsedTemplate, workspace: string): RenderResult {

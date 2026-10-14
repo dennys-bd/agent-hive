@@ -158,3 +158,25 @@ test('src/template.ts imports nothing from node, so the UI can bundle it as is (
   assert.deepEqual([...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]), ['liquidjs', 'yaml']);
   assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/);
 });
+
+test('a CRLF header reads its last value without \\r and the delivered header keeps CRLF (#310)', () => {
+  const crlf = '---\r\nname: x\r\nvariables:\r\n  v: { default: a }\r\n  flag: { type: boolean, default: false }\r\n---\r\n{{ v }}\r\n';
+  const parsed = parseTemplate(crlf);
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(parsed.variables.map((variable) => variable.default), ['a', false]);
+  assert.deepEqual(renderTemplate(parsed, 'hive'), { ok: true, text: '---\r\nname: x\r\n---\r\na\r\n' });
+});
+
+test('the delivered header keeps a long value on one line (#310)', () => {
+  const long = 'word '.repeat(40).trim();
+  const result = renderTemplate(parseTemplate(`---\ndescription: ${long}\nvariables:\n  a: { default: x }\n---\n{{ a }}\n`), 'hive');
+  assert.deepEqual(result, { ok: true, text: `---\ndescription: ${long}\n---\nx\n` });
+});
+
+test('a runaway loop fails as a render error instead of blocking (#310)', () => {
+  const started = Date.now();
+  const loop = '{% for i in (1..3000) %}{% for j in (1..3000) %}x{% endfor %}{% endfor %}';
+  const errors = failure(renderTemplate(parseTemplate(`---\nname: x\n---\n${loop}\n`), 'hive'));
+  assert.deepEqual(errors.map((error) => error.line), [4]);
+  assert.ok(Date.now() - started < 5000, 'the render limit stops it');
+});
