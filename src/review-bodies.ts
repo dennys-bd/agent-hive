@@ -33,9 +33,9 @@ export const isTaskSession = (state: Pick<State, 'activityRecords'>, taskId: str
 /** A local session of the workspace, or a new one (#344): never a task's. */
 export const isLocalSession = (state: Pick<State, 'activityRecords'>, workspace: string, id: unknown): id is string => isSessionIn(localSessionsOf(state, workspace), id);
 
-/** A message's recipients (#591): one or more of the task's sessions or NEW_SESSION, each once. */
-export function recipientsOf(state: Pick<State, 'activityRecords'>, taskId: string, raw: unknown): string[] | undefined {
-  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((id) => isTaskSession(state, taskId, id))) return undefined;
+/** A message's recipients (#591): one or more sessions `isSession` takes (a task's or a workspace's local ones, or NEW_SESSION), each once. */
+export function recipientsOf(isSession: (id: unknown) => id is string, raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0 || !raw.every((id) => isSession(id))) return undefined;
   return [...new Set(raw as string[])];
 }
 

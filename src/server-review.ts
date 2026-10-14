@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import { isScope } from './diff.js';
-import { isHash, isPath, isTaskSession, parseThreadAnchor, textOf } from './review-bodies.js';
+import { isHash, isPath, parseThreadAnchor, textOf } from './review-bodies.js';
 import { addDraft, markReviewed, pinned, removeDraft, setDefaultSession, updateDraft } from './review-store.js';
+import { type StoreSubject, type SubjectOf, taskStoreSubject } from './review-subject.js';
 import { type TaskRouteDeps, type Refusal, UNKNOWN_TASK_MESSAGE } from './server-tasks.js';
 import type { Task, ReviewFile, State } from './types.js';
 
@@ -10,6 +11,7 @@ const HTTP_BAD_REQUEST = 400;
 const HTTP_NOT_FOUND = 404;
 const HTTP_SERVER_ERROR = 500;
 const MARK_MESSAGE = 'scope deve ser stage, worktree ou commit, path um texto não vazio, hash um sha256 e reviewed true ou false';
+const TASK_PREFIX = '/tasks/:id';
 
 /** What the review routes read (#591): the live state, the store and the review event. */
 export type ReviewRouteDeps = Pick<TaskRouteDeps, 'requireLive' | 'reviews' | 'notifyReview'>;
@@ -29,53 +31,61 @@ export function liveTaskIn(deps: Pick<TaskRouteDeps, 'requireLive'>, req: Reques
   return task && { task, state: current.state };
 }
 
-export const liveTask = (deps: Pick<TaskRouteDeps, 'requireLive'>, req: Request, res: Response): Task | undefined => liveTaskIn(deps, req, res)?.task;
-
-/** An edit of the task's file then its review event (#591); the file as written, or undefined once a store failure answered 500. */
-export async function storeEdit(deps: ReviewRouteDeps, res: Response, itemId: string, edit: (file: ReviewFile) => ReviewFile): Promise<ReviewFile | undefined> {
+/** An edit of the subject's file then its review event (#591, #344); the file as written, or undefined once a store failure answered 500. */
+export async function storeEdit(subject: StoreSubject, res: Response, edit: (file: ReviewFile) => ReviewFile): Promise<ReviewFile | undefined> {
   let file: ReviewFile;
   try {
-    file = await deps.reviews.update(itemId, edit);
+    file = await subject.store.update(subject.key, edit);
   } catch (err) {
     refuse(res, { status: HTTP_SERVER_ERROR, message: errorMessage(err) });
     return undefined;
   }
-  deps.notifyReview(itemId);
+  subject.notify();
   return file;
 }
 
 /** storeEdit, then `answer`. */
-export async function writeReview(deps: ReviewRouteDeps, res: Response, itemId: string, edit: (file: ReviewFile) => ReviewFile, answer: unknown = { ok: true }): Promise<void> {
-  if (await storeEdit(deps, res, itemId, edit)) res.json(answer);
+export async function writeReview(subject: StoreSubject, res: Response, edit: (file: ReviewFile) => ReviewFile, answer: unknown = { ok: true }): Promise<void> {
+  if (await storeEdit(subject, res, edit)) res.json(answer);
 }
 
-/** The task's file as stored (#591), or undefined once its 500 is out. */
-export async function readReview(deps: ReviewRouteDeps, res: Response, itemId: string): Promise<ReviewFile | undefined> {
+/** The subject's file as stored (#591), or undefined once its 500 is out. */
+export async function readReview(subject: Pick<StoreSubject, 'key' | 'store'>, res: Response): Promise<ReviewFile | undefined> {
   try {
-    return await deps.reviews.read(itemId);
+    return await subject.store.read(subject.key);
   } catch (err) {
     refuse(res, { status: HTTP_SERVER_ERROR, message: errorMessage(err) });
     return undefined;
   }
 }
 
-/** GET /tasks/:id/review and POST /tasks/:id/review/reviewed (#591). */
+/** A task's review file, its drafts and its reviewed marks (#591). The marks are the diff pane's, so only a task has them. */
 export function registerReviewRoutes(app: Express, deps: ReviewRouteDeps): void {
-  app.get('/tasks/:id/review', async (req: Request, res: Response) => {
-    const task = liveTask(deps, req, res);
-    if (!task) return;
-    const file = await readReview(deps, res, task.item.itemId);
-    if (file) res.json(file);
-  });
-  app.post('/tasks/:id/review/reviewed', async (req: Request, res: Response) => {
-    const task = liveTask(deps, req, res);
-    if (!task) return;
+  const subjectOf: SubjectOf<StoreSubject> = (req, res) => {
+    const live = liveTaskIn(deps, req, res);
+    return live && taskStoreSubject(deps, live.state, live.task);
+  };
+  app.post(`${TASK_PREFIX}/review/reviewed`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
     const { scope, path, hash, reviewed } = (req.body ?? {}) as Record<string, unknown>;
     if (!isScope(scope) || !isPath(path) || !isHash(hash) || typeof reviewed !== 'boolean') return badRequest(res, MARK_MESSAGE);
-    await writeReview(deps, res, task.item.itemId, (file) => markReviewed(file, { scope, path, hash }, reviewed));
+    await writeReview(subject, res, (file) => markReviewed(file, { scope, path, hash }, reviewed));
   });
-  registerDraftRoutes(app, deps);
-  registerDraftRemoval(app, deps);
+  registerStoreRoutes(app, TASK_PREFIX, subjectOf);
+}
+
+/** A review's file and drafts under `prefix` (#591, #344): GET, adicionar à revisão, editar, remove and sessão padrão, on the subject
+ * `subjectOf` resolves. */
+export function registerStoreRoutes(app: Express, prefix: string, subjectOf: SubjectOf<StoreSubject>): void {
+  app.get(`${prefix}/review`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
+    const file = await readReview(subject, res);
+    if (file) res.json(file);
+  });
+  registerDraftRoutes(app, prefix, subjectOf);
+  registerDraftRemoval(app, prefix, subjectOf);
 }
 
 const DRAFT_MESSAGE = 'anchor, text (1 a 10000 caracteres) e session (uma sessão da tarefa, ou "new") são obrigatórios';
@@ -83,54 +93,51 @@ const SESSION_MESSAGE = 'session precisa ser uma sessão da tarefa, "new" ou nul
 const UNKNOWN_DRAFT_MESSAGE = 'rascunho desconhecido';
 
 // The draft a route names, or undefined once its 404 or 500 is out
-async function draftOf(deps: ReviewRouteDeps, req: Request, res: Response, task: Task): Promise<string | undefined> {
-  const file = await readReview(deps, res, task.item.itemId);
+async function draftOf(subject: StoreSubject, req: Request, res: Response): Promise<string | undefined> {
+  const file = await readReview(subject, res);
   const draft = file?.drafts.find((d) => d.id === req.params.draft);
   if (file && !draft) refuse(res, { status: HTTP_NOT_FOUND, message: UNKNOWN_DRAFT_MESSAGE });
   return draft?.id;
 }
 
 // adicionar à revisão and its editar (#591)
-function registerDraftRoutes(app: Express, deps: ReviewRouteDeps): void {
-  app.post('/tasks/:id/review/drafts', async (req: Request, res: Response) => {
-    const found = liveTaskIn(deps, req, res);
-    if (!found) return;
-    const { task, state } = found;
+function registerDraftRoutes(app: Express, prefix: string, subjectOf: SubjectOf<StoreSubject>): void {
+  app.post(`${prefix}/review/drafts`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const anchor = parseThreadAnchor(body.anchor);
     const text = textOf(body.text);
     const session = body.session;
-    if (!anchor || text === undefined || !isTaskSession(state, task.item.itemId, session)) return badRequest(res, DRAFT_MESSAGE);
+    if (!anchor || text === undefined || !subject.isSession(session)) return badRequest(res, DRAFT_MESSAGE);
     const id = randomUUID();
-    await writeReview(deps, res, task.item.itemId, (file) => addDraft(file, { id, anchor: pinned(file, anchor), session, text }), { id });
+    await writeReview(subject, res, (file) => addDraft(file, { id, anchor: pinned(file, anchor), session, text }), { id });
   });
-  app.put('/tasks/:id/review/drafts/:draft', async (req: Request, res: Response) => {
-    const found = liveTaskIn(deps, req, res);
-    if (!found) return;
-    const { task, state } = found;
+  app.put(`${prefix}/review/drafts/:draft`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
     const body = (req.body ?? {}) as Record<string, unknown>;
     const text = textOf(body.text);
     const session = body.session;
-    if (text === undefined || !isTaskSession(state, task.item.itemId, session)) return badRequest(res, DRAFT_MESSAGE);
-    const id = await draftOf(deps, req, res, task);
-    if (id !== undefined) await writeReview(deps, res, task.item.itemId, (file) => updateDraft(file, id, { text, session }));
+    if (text === undefined || !subject.isSession(session)) return badRequest(res, DRAFT_MESSAGE);
+    const id = await draftOf(subject, req, res);
+    if (id !== undefined) await writeReview(subject, res, (file) => updateDraft(file, id, { text, session }));
   });
 }
 
 // A draft dropped, and sessão padrão (#591)
-function registerDraftRemoval(app: Express, deps: ReviewRouteDeps): void {
-  app.delete('/tasks/:id/review/drafts/:draft', async (req: Request, res: Response) => {
-    const task = liveTask(deps, req, res);
-    if (!task) return;
-    const id = await draftOf(deps, req, res, task);
-    if (id !== undefined) await writeReview(deps, res, task.item.itemId, (file) => removeDraft(file, id));
+function registerDraftRemoval(app: Express, prefix: string, subjectOf: SubjectOf<StoreSubject>): void {
+  app.delete(`${prefix}/review/drafts/:draft`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
+    const id = await draftOf(subject, req, res);
+    if (id !== undefined) await writeReview(subject, res, (file) => removeDraft(file, id));
   });
-  app.put('/tasks/:id/review/default-session', async (req: Request, res: Response) => {
-    const found = liveTaskIn(deps, req, res);
-    if (!found) return;
-    const { task, state } = found;
+  app.put(`${prefix}/review/default-session`, async (req: Request, res: Response) => {
+    const subject = subjectOf(req, res);
+    if (!subject) return;
     const { session } = (req.body ?? {}) as { session?: unknown };
-    if (session !== null && !isTaskSession(state, task.item.itemId, session)) return badRequest(res, SESSION_MESSAGE);
-    await writeReview(deps, res, task.item.itemId, (file) => setDefaultSession(file, session ?? undefined));
+    if (session !== null && !subject.isSession(session)) return badRequest(res, SESSION_MESSAGE);
+    await writeReview(subject, res, (file) => setDefaultSession(file, session ?? undefined));
   });
 }
