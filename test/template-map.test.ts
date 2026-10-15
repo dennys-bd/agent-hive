@@ -278,6 +278,21 @@ test('a marker line with trailing spaces and no closer maps in linear time (#311
   assert.ok(Date.now() - started < 500);
 });
 
+test('a marker line with a closer mid-way and spaces on both sides maps in linear time (#311)', () => {
+  const spaces = ' '.repeat(80000);
+  const started = Date.now();
+  const map = buildMap(parseTemplate(`---\nname: x\n---\n{% if x${spaces}%}${spaces}z%}\n`));
+  assert.ok(Date.now() - started < 500);
+  assert.deepEqual(map.blocks.map((block) => block.kind), ['introduction']); // text after the first %} makes it inline
+});
+
+test('markers with trim flags and indentation still read their tag and condition (#311)', () => {
+  const map = buildMap(parseTemplate('---\nname: x\n---\n  {%- if a == "x-" -%}\nt\n{%- endif %}\n'));
+  const chain = map.blocks[0];
+  assert.equal(chain.kind, 'chain');
+  assert.equal(chain.kind === 'chain' ? chain.branches[0].conditionText : '', 'a == "x-"');
+});
+
 test('a plugin-prefixed name followed by a path is no reference, not even its prefix (#311)', () => {
   assert.deepEqual(refs('see /p:x/y here'), []);
   assert.deepEqual(refs('see @p:x/y here'), []);
