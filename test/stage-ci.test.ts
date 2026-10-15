@@ -7,7 +7,7 @@ import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { savedWork } from '../src/state-guards.js';
 import { startMode } from '../src/task-runs.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { Activity, CiCheck, CiPrRead, Effect, HiveEvent, Item, SourceItem, Stage, State, Transition } from '../src/types.js';
+import type { Activity, CiCheck, CiPrRead, Effect, HiveEvent, Item, SourceItem, Stage, State, TaskPr, Transition } from '../src/types.js';
 import { chained } from './fakes.js';
 
 // A wait-for-CI stage (#834): the reducer's side, end to end through reduce. The task is polled into the stage under red, so no fill spawns
@@ -33,6 +33,8 @@ const effectOf = <T extends Effect['type']>(effects: Effect[], type: T): Extract
   effects.find((e): e is Extract<Effect, { type: T }> => e.type === type);
 const LATER = '2100-01-01T00:00:00Z'; // a failure completed after any re-run the tests ask
 const outputOf = (s: State): unknown => (resultOf(s, ID)?.ci as { output?: unknown } | undefined)?.output;
+// The task's records holding `prs` (#304): what the PR poll leaves once it has read their states
+const withPrs = (s: State, prs: TaskPr[]): State => ({ ...s, activityRecords: s.activityRecords.map((r) => (r.taskIds.includes(ID) ? { ...r, prs } : r)) });
 // Every fixture is frozen deep: a rule that wrote to its input would throw here (ESM is strict mode)
 function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null) for (const child of Object.values(value)) deepFreeze(child);
@@ -378,4 +380,16 @@ test('ci.ended says failed for a failure a transition routes and for one that st
   assert.deepEqual(ended(routing, [conflicting()]), [['failed', 'warn']]);
   assert.deepEqual(ended(polled().state, [conflicting()]), [['failed', 'warn']]);
   assert.deepEqual(ended(polled().state, [pr([check('build', 'success')])]), [['passed', 'info']]);
+});
+
+test('a read with no open PR passes the wait once every PR of the task is merged; one closed without merge, or no PR at all, keeps it waiting for one (#304)', () => {
+  const waiting = polled().state;
+  const DOCS = 'https://github.com/o/docs/pull/102';
+  const merged = read(withPrs(waiting, [{ url: URL, state: 'merged' }, { url: DOCS, state: 'merged' }]), []);
+  assert.deepEqual([merged.state.tasks[0].stage, live(merged.state)?.ci, live(merged.state)?.stopped], ['review', undefined, undefined], 'the passed transition takes it on');
+  assert.deepEqual(resultOf(merged.state, ID)?.ci, { verdict: 'passed' });
+  const dropped = read(withPrs(waiting, [{ url: URL, state: 'merged' }, { url: DOCS, state: 'closed' }]), []).state;
+  assert.deepEqual([dropped.tasks[0].stage, live(dropped)?.ci?.waitingPr], ['ci', true], 'a PR closed without merge is no delivery');
+  const bare = read(waiting, []).state;
+  assert.deepEqual([bare.tasks[0].stage, live(bare)?.ci?.waitingPr], ['ci', true], 'no PR yet: waiting for one, as before');
 });

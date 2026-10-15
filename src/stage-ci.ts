@@ -1,9 +1,9 @@
-import { taskOfActivity, withActivity } from './activities.js';
+import { recordsOf, taskOfActivity, withActivity } from './activities.js';
 import { type CiVerdict, ciVerdict, cleanName } from './ci-checks.js';
-import { prNumber, prRepo } from './pull-requests.js';
+import { mergedOnly, prNumber, prRepo } from './pull-requests.js';
 import { withResult } from './record-kit.js';
 import { ensureActivity, none, type Reduced, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
-import { onSource, stageOf } from './tasks.js';
+import { onSource, stageOf, taskId } from './tasks.js';
 import { timeoutMs } from './timeout.js';
 import { advance } from './transit.js';
 import { exitOf } from './transitions.js';
@@ -147,7 +147,7 @@ function conflictOf(prs: readonly CiPrRead[]): { names: string[]; output: string
   };
 }
 
-/** One read of the wait's PRs (#834): a conflict first (#264), then the timeout, then the verdict. A wait fetching its logs, an unknown
+/** One read of the wait's PRs (#834): a conflict first (#264), then the timeout, then the verdict. With no open PR, a task whose PRs are all merged passes (#304). A wait fetching its logs, an unknown
  * activity and a Quit ignore it. The first read whose required fell back marks it, so the event log says so once. */
 export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent, { type: 'ciRead' }>): Reduced {
   const wait = waitOf(state, activityId);
@@ -158,6 +158,7 @@ export function ciRead(state: State, { activityId, at, prs }: Extract<HiveEvent,
   const verdict = ciVerdict(sinceRerun(wait.ci, prs, at), stage);
   const ci: StageCi = verdict.fellBack && !wait.ci.fellBack ? { ...wait.ci, fellBack: true } : wait.ci;
   if (timedOut(stage, ci, at)) return failCi(state, wait, timeoutOutput(stage, pendingOf(verdict)), timeoutNames(stage));
+  if (prs.length === 0 && mergedOnly(recordsOf(state, taskId(wait.task)))) return passCi(state, wait); // #304: every PR merged leaves CI nothing to decide
   if (verdict.kind === 'passed') return passCi(state, wait);
   if (verdict.kind === 'awaiting') return awaited(state, wait.activity, ci, verdict.workflows, verdict.checks);
   if (verdict.kind === 'failed') {

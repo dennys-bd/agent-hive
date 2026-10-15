@@ -15,6 +15,13 @@ export const hasOpenPr = (prs: TaskPr[] | undefined): boolean => openPrs(prs).le
 /** Every open PR link across the records, each once (#207, #629): what the poll asks GitHub about. */
 export const openPrUrls = (records: ActivityRecord[]): string[] => [...new Set(records.flatMap((r) => openPrs(r.prs).map((pr) => pr.url)))];
 
+/** Every PR of the task merged (#304): at least one across its records, and none open or closed without merge. A wait for CI with no open PR
+ * left passes on it; a dropped PR is not a delivery, so it keeps the wait. */
+export const mergedOnly = (records: ActivityRecord[]): boolean => {
+  const prs = records.flatMap((r) => r.prs ?? []);
+  return prs.length > 0 && prs.every((pr) => pr.state === 'merged');
+};
+
 /** What the PR activity query asks per link (#742), apart from the state query so a failure here never costs a merge: the PR's creation, its
  * commit count, the last commits' dates (what after_open counts against createdAt) and its head commit's check runs. checkType ALL reads every
  * attempt, not only the latest: a re-run that passed after a failure is how a flaky check shows; last, so many re-runs keep the newest. */
