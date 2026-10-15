@@ -55,6 +55,21 @@ test('from RED_AT the %, the reset and the fill turn destructive; below they sta
   expect(indicator(fiveHour)).not.toMatch(/bg-destructive/);
 });
 
+test('a window\'s label, %, reset and fill share its band: muted at 69%, yellow at 72%, destructive at 90% (#299)', () => {
+  const windows = { five_hour: { usedPercent: 69, resetsAt: ahead(99 * MIN) }, seven_day: { usedPercent: 72, resetsAt: ahead(330 * MIN) } };
+  const thirty = { thirty_day: { usedPercent: 90, resetsAt: ahead(60 * MIN) } };
+  render(<AgentUsage state={{ rateLimits: { claude: { at: ago(0), windows }, codex: { at: ago(0), windows: thirty } } }} form="full" />);
+  const claudeChip = within(screen.getByTitle(/^claude ·/));
+  const [muted, yellow] = bars(screen.getByTitle(/^claude ·/));
+  for (const text of ['5h', '69%', '1h39m']) expect(claudeChip.getByText(text)).toHaveClass('text-muted-foreground');
+  expect(indicator(muted)).toMatch(/bg-foreground/);
+  for (const text of ['sem', '72%', '5h30m']) expect(claudeChip.getByText(text)).toHaveClass('text-signal-yellow');
+  expect(indicator(yellow)).toMatch(/bg-signal-yellow/);
+  const codexChip = within(screen.getByTitle(/^codex ·/));
+  for (const text of ['30d', '90%', '1h']) expect(codexChip.getByText(text)).toHaveClass('text-destructive');
+  expect(indicator(bars(screen.getByTitle(/^codex ·/))[0])).toMatch(/bg-destructive/);
+});
+
 test('compact: 28px bars, no reset time, ↻ kept (#223)', () => {
   render(<AgentUsage state={{ rateLimits: { claude } }} form="compact" />);
   const chip = screen.getByTitle(/^claude ·/);
