@@ -2,7 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TemplateError } from '../src/template.js';
 import type { ChainSpec, Condition } from '../src/template-condition.js';
-import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../src/template-edit.js';
+import {
+  addVariable,
+  type EditResult,
+  insertChain,
+  moveBlock,
+  removeChain,
+  replaceChain,
+  setVariableValue,
+} from '../src/template-edit.js';
 
 // Text edits of a template (#311): each answers the new text with its parse and map, or an error; never throws.
 const DOC = [
@@ -116,4 +124,48 @@ test('moveBlock moves a block among its siblings, and down then up gives the inp
   const swapped = ok(moveBlock(gapped, 6, 0));
   assert.equal(swapped.text, '## A\n{% if b %}\ny\n{% endif %}\nbetween\n{% if a %}\nx\n{% endif %}\n', 'the parent\'s text keeps its slot');
   assert.equal(ok(moveBlock(swapped.text, 6, 0)).text, gapped);
+});
+
+const BODY = DOC.slice(DOC.indexOf('# Title'));
+
+test('addVariable declares a variable in flow style, creating the header when absent; a duplicate or bad name is refused (#311)', () => {
+  const created = ok(addVariable('# Plain\n\nbody\n', { name: 'dryRun', type: 'boolean', default: false }));
+  assert.ok(created.text.startsWith('---\nvariables:\n'));
+  assert.match(created.text, /^ {2}dryRun: \{ type: boolean, default: false \}$/m);
+  assert.ok(created.text.endsWith('---\n# Plain\n\nbody\n'));
+  assert.deepEqual(created.parsed.variables, [{ name: 'dryRun', kind: 'boolean', default: false, required: false, workspaces: {}, line: 3 }]);
+
+  const added = ok(addVariable(DOC, { name: 'reviewer', values: ['a', 'b'], default: 'a' }));
+  assert.deepEqual(added.parsed.variables.map((variable) => variable.name), ['testCommand', 'delivery', 'dryRun', 'reviewer']);
+  assert.deepEqual(added.text.split('\n').slice(0, 5), DOC.split('\n').slice(0, 5), 'the comment and an untouched key keep their text');
+  assert.ok(added.text.endsWith(BODY));
+
+  assert.deepEqual(refused(addVariable(DOC, { name: 'dryRun', type: 'boolean' })), {
+    line: 7,
+    variable: 'dryRun',
+    message: 'variable "dryRun" is already declared',
+  });
+  assert.equal(refused(addVariable(DOC, { name: '2fast', default: 'x' })).variable, '2fast');
+});
+
+test('setVariableValue writes a workspace\'s value and removes it with undefined, keeping the comment; an invalid value is refused at the variable\'s line (#311)', () => {
+  const set = ok(setVariableValue(DOC, 'testCommand', 'hive-site', 'vitest'));
+  assert.deepEqual(set.parsed.variables[0].workspaces, { hive: 'pnpm test', 'hive-site': 'vitest' });
+  assert.ok(set.text.includes('\n  # the test runner\n'));
+  assert.ok(set.text.endsWith(BODY));
+
+  const removed = ok(setVariableValue(set.text, 'testCommand', 'hive', undefined));
+  assert.deepEqual(removed.parsed.variables[0].workspaces, { 'hive-site': 'vitest' });
+  assert.ok(removed.text.includes('\n  # the test runner\n'));
+
+  assert.deepEqual(ok(setVariableValue(DOC, 'delivery', 'hive', 'stacked')).parsed.variables[1].workspaces, { hive: 'stacked' });
+  const invalid = refused(setVariableValue(DOC, 'delivery', 'hive', 'trunk'));
+  assert.equal(invalid.line, 6);
+  assert.match(invalid.message, /workspaces\.hive must be one of stacked, single/);
+  assert.match(refused(setVariableValue(DOC, 'dryRun', 'hive', 'yes')).message, /must be true or false/);
+  assert.deepEqual(refused(setVariableValue(DOC, 'missing', 'hive', 'x')), {
+    line: 1,
+    variable: 'missing',
+    message: 'variable "missing" is not declared',
+  });
 });

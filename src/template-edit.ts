@@ -1,9 +1,10 @@
 // Text edits of a template (#311, node 1.2 of #309): insert, replace and remove a chain, move a block, add a variable, set a variable's
 // value. Each edits whole lines (or the header's yaml Document) and answers the new text with its parse and map, so the editor reloads
 // from one place. Node-free, like src/template.ts.
+import { type Document, parseDocument } from 'yaml';
 import { type ChainSpec, chainMarkers } from './template-condition.js';
 import { buildMap, type MapBlock, type TemplateMap } from './template-map.js';
-import { type ParsedTemplate, parseTemplate, type TemplateError, type VariableValue } from './template.js';
+import { type ParsedTemplate, parseTemplate, splitHeader, type TemplateError, type VariableValue } from './template.js';
 
 export type EditResult = { ok: true; text: string; parsed: ParsedTemplate; map: TemplateMap } | { ok: false; error: TemplateError };
 
@@ -30,6 +31,7 @@ type Change = (source: Source) => string | string[] | TemplateError;
 
 const LINE_BREAK = /\r?\n/;
 const NO_LINE = 1; // an error with no line of its own points at the file's start
+const FENCE = '---';
 
 // Edits read structure only, so the map is built without a catalogue.
 function answer(text: string): EditResult {
@@ -180,5 +182,44 @@ export function moveBlock(text: string, line: number, index: number): EditResult
     }
     const others = siblings.filter((sibling) => sibling !== block);
     return reorder(source.lines, siblings, [...others.slice(0, index), block, ...others.slice(index)]);
+  });
+}
+
+// The header rewritten through a fresh Document (never the parse's own), so comments, flow style and key order survive; the fences stay
+// as written and the body is the text's own suffix. A text with no header gets one.
+function writeHeader(source: Source, change: (doc: Document.Parsed) => void): string {
+  const { header, body, bodyLine } = splitHeader(source.text);
+  const doc = parseDocument(header);
+  change(doc);
+  // lineWidth 0: yaml would otherwise fold a long description or break a flow declaration at 80 columns
+  const yamlLines = doc.toString({ lineWidth: 0 }).split('\n').slice(0, -1);
+  const hasHeader = bodyLine > 1;
+  const open = hasHeader ? source.lines[0] : FENCE;
+  const close = hasHeader ? source.lines[bodyLine - 2] : FENCE;
+  return [open, ...yamlLines, close, ''].join(source.eol) + body;
+}
+
+/** name: { … } at the end of the header's variables:, validated by the parse of the new text. */
+export function addVariable(text: string, declaration: VariableDeclaration): EditResult {
+  return edit(text, (source) => {
+    const { name, ...fields } = declaration;
+    const existing = source.parsed.variables.find((variable) => variable.name === name);
+    if (existing !== undefined) return { line: existing.line, variable: name, message: `variable "${name}" is already declared` };
+    // flow style, as the shipped templates write a declaration: one line per variable
+    return writeHeader(source, (doc) => doc.setIn(['variables', name], doc.createNode(fields, { flow: true })));
+  });
+}
+
+/** workspaces.<workspace> of a declared variable; undefined removes it, so the workspace falls back to the default. */
+export function setVariableValue(text: string, name: string, workspace: string, value: VariableValue | undefined): EditResult {
+  return edit(text, (source) => {
+    if (!source.parsed.variables.some((variable) => variable.name === name)) {
+      return { line: NO_LINE, variable: name, message: `variable "${name}" is not declared` };
+    }
+    const path = ['variables', name, 'workspaces', workspace];
+    return writeHeader(source, (doc) => {
+      if (value === undefined) doc.deleteIn(path);
+      else doc.setIn(path, value);
+    });
   });
 }
