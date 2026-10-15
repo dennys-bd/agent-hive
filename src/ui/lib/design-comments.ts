@@ -72,8 +72,8 @@ export function fileComments(review: ReviewFile, path: string): { open: DesignCo
 /** Where enviar sends (#113): how tells the footer's line, the session in focus, the user's pick, or a new session. */
 export interface Recipient { session: string; how: 'focus' | 'picked' | 'new' }
 
-/** The user's pick while it is a session of the task or a new one; else the activity's last session in focus while it is the task's; else a
- *  new session (#113). */
+/** The user's pick while it is one of the activity's sessions or a new one; else the activity's last session in focus while it is one of
+ *  them; else a new session (#113, #345). */
 export function recipientOf(focused: string | undefined, picked: string | undefined, sessions: readonly { id: string }[]): Recipient {
   const isTasks = (id: string | undefined): id is string => id !== undefined && sessions.some((s) => s.id === id);
   if (picked === NEW_SESSION || isTasks(picked)) return { session: picked, how: 'picked' };

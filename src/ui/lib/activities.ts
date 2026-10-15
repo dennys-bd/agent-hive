@@ -1,10 +1,11 @@
 // What the Activities tab lists (#457, redesign 03): every workspace's local activity (#590), then every task with a live run or a worktree,
 // whether the automation or the user started it. Derived from the State the dashboard already receives; nothing of it is stored.
 import { type LiveRun, liveRuns, localRuns, namedRun, terminalLabel } from '../../task-runs';
-import { canOpenSession, sessionsOf } from '../../tasks';
+import { canOpenSession, sessionsOf, taskLabel } from '../../tasks';
 import { activityOf, keptTerminalsIn, localActivityId, recordOf, recordsOf, workersIn } from '../../activities';
 import type { Activity as LiveActivity, ActivityRecord, Task, TaskPr, Session, SleepCause, SleptRun, Terminal, Worker, State, Status } from '../../types';
 import { type CenterLayout, groupsOf } from '@/lib/center-layout';
+import { localReview, type ReviewKey, taskReview } from '@/lib/review-events';
 import { isLive, taskState } from '@/lib/task-state';
 
 /** A run that ended with its session kept (#672): its tab stays, sleeping, until it closes or the session continues. `run` names it as its
@@ -57,6 +58,13 @@ export const localKey = (workspace: string): string => `local/${workspace}`;
 
 /** An activity's identity (#590): a task's item id, or localKey for a workspace's local activity. */
 export const activityKey = (target: RunTarget): string => (target.kind === 'local' ? localKey(target.workspace) : target.task.item.itemId);
+
+/** The review an activity's design pane reads and writes (#345): its task's, or its workspace's local one (#344). */
+export const reviewKeyOf = (target: RunTarget): ReviewKey => (target.kind === 'local' ? localReview(target.workspace) : taskReview(target.task.item.itemId));
+
+/** What an activity's panes read before their own name (#251): its task's label, or its workspace for a local activity (#590). The design
+ *  panel's sessions line names the activity by it too (#345). */
+export const activityTitle = (target: RunTarget): string => (target.kind === 'task' ? taskLabel(target.task) : target.workspace);
 
 /** Whether a new run may open in it (#590): a local activity always; a task by the rule Abrir sessão reads (#491). */
 export const canOpenIn = (target: RunTarget): boolean => target.kind === 'local' || canOpenSession(target.task, target.activity);

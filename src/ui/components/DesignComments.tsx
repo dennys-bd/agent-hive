@@ -2,10 +2,9 @@ import { XIcon } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { agentName } from '../../agents';
 import { displayBinding, matches } from '../../shortcuts';
-import { taskLabel } from '../../tasks';
 import { type AgentId, NEW_SESSION, type ReviewMessage } from '../../types';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
-import { DefaultAgentContext } from '@/components/NewRunButton';
+import { DefaultAgentContext, referenceOf } from '@/components/NewRunButton';
 import { dropDraft, replyTo, resolveThread, retryMessage, sendComment } from '@/components/review-actions';
 import { ReviewContext, type ReviewPane, sessionName } from '@/components/review-context';
 import { SessionPicker } from '@/components/SessionPicker';
@@ -17,7 +16,6 @@ import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
 import { type ReviewKey, taskReview } from '@/lib/review-events';
-import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
@@ -195,11 +193,11 @@ function PanelHeader({ tab, open, resolved, onTab, onHide }: { tab: CommentTab; 
 
 // The recipient line (#113): the session in focus, the user's pick, or the new session enviar opens, of the default agent
 function recipientLine({ recipient, sessions, activity }: DesignCommentsModel, agent: AgentId): string {
-  if (recipient.how === 'new') return t('design.send.new', { agent: agentName(agent), activity: taskRef(activity.task) });
+  if (recipient.how === 'new') return t('design.send.new', { agent: agentName(agent), activity: referenceOf(activity) });
   return t(recipient.how === 'picked' ? 'design.send.picked' : 'design.send.to', { session: sessionName(recipient.session, sessions) });
 }
 
-// The footer (#113): enviar {n} rascunhos ⌘⇧↵ across its width, over the recipient line, which opens the task's sessions to pick another
+// The footer (#113): enviar {n} rascunhos ⌘⇧↵ across its width, over the recipient line, which opens the activity's sessions to pick another
 function SendFooter({ model }: { model: DesignCommentsModel }) {
   const agent = useContext(DefaultAgentContext);
   return (
@@ -216,7 +214,7 @@ function SendFooter({ model }: { model: DesignCommentsModel }) {
 
 /** The comments panel (#113): its tabs and ×, the list, one inline box open at a time. The tab and the selection are the pane's (#114),
  *  which its pins share; rects is the bridge's answer, a null one marks its item's target removed. SessionPicker and SessionLabel read
- *  the task's sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert. */
+ *  the activity's sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert. */
 export interface DesignCommentsProps {
   model: DesignCommentsModel; tab: CommentTab; selection?: CommentSelection; rects: PinRects;
   onTab(next: CommentTab): void; onSelect(id: string): void; onHide(): void;
@@ -224,7 +222,7 @@ export interface DesignCommentsProps {
 export function DesignComments({ model, tab, selection, rects, onTab, onSelect, onHide }: DesignCommentsProps) {
   const [box, setBox] = useState<{ id: string; mode: BoxMode }>();
   const pane: ReviewPane = {
-    reviewKey: model.reviewKey, scope: 'worktree', task: taskLabel(model.activity.task), review: model.review, sessions: model.sessions,
+    reviewKey: model.reviewKey, scope: 'worktree', task: model.label, review: model.review, sessions: model.sessions,
     defaultSession: model.recipient.session, refresh: model.refresh, edit: () => undefined, isSending: false, track: (request) => request,
   };
   const items = tab === 'open' ? model.open : model.resolved;

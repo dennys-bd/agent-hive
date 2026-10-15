@@ -5,15 +5,16 @@ import { submitReview } from '@/components/review-actions';
 import { sessionName } from '@/components/review-context';
 import { useReview } from '@/hooks/use-review';
 import { t } from '@/i18n';
-import { activityKey, type TaskActivity } from '@/lib/activities';
+import { type Activity, activityKey, activityTitle, reviewKeyOf } from '@/lib/activities';
 import { type DesignComment, fileComments, type Recipient, recipientOf } from '@/lib/design-comments';
-import { type ReviewKey, taskReview } from '@/lib/review-events';
+import type { ReviewKey } from '@/lib/review-events';
 import { EMPTY_REVIEW, type ReviewSession, reviewSessions } from '@/lib/review-view';
 import { useFocusedSession } from '@/lib/session-focus';
 
-/** What a task's design pane knows of its file's comments (#113). */
+/** What a design pane knows of its file's comments (#113): a task's, or a local activity's (#345). label: what the sessions line names the
+ *  activity by, as its tabs do. */
 export interface DesignCommentsModel {
-  reviewKey: ReviewKey; activity: TaskActivity; review: ReviewFile; sessions: ReviewSession[];
+  reviewKey: ReviewKey; label: string; activity: Activity; review: ReviewFile; sessions: ReviewSession[];
   open: DesignComment[]; resolved: DesignComment[];
   drafts: number; isBusy: boolean; sendAll(): void;
   /** The one request in flight (#113): undefined at once while another runs; else its answer, the file read again after */
@@ -21,12 +22,17 @@ export interface DesignCommentsModel {
   recipient: Recipient; pick(session: string): void; refresh(): void;
 }
 
-/** A design file's comments in a task's review (#113), read as the diff pane reads it (#591): on mount, on each review event, after each
- *  action. The recipient is the user's pick for the mounted pane, else the activity's last session in focus, else a new session. */
-export function useDesignComments(activity: TaskActivity, path: string): DesignCommentsModel {
-  const reviewKey = taskReview(activity.task.item.itemId);
+// The sessions a comment may go to: a task's records' (#113); a local activity's record's, each with the status of the run holding it now,
+// since the server takes only those as a local review's recipients (#344)
+const sessionsOf = (activity: Activity): ReviewSession[] =>
+  reviewSessions(activity.kind === 'task' ? activity : { records: [activity.record], sessions: activity.kept });
+
+/** A design file's comments in the activity's review (#113, #345), read as the diff pane reads it (#591): on mount, on each review event,
+ *  after each action. The recipient is the user's pick for the mounted pane, else the activity's last session in focus, else a new session. */
+export function useDesignComments(activity: Activity, path: string): DesignCommentsModel {
+  const reviewKey = reviewKeyOf(activity);
   const { review = EMPTY_REVIEW, refresh } = useReview(reviewKey);
-  const sessions = reviewSessions(activity);
+  const sessions = sessionsOf(activity);
   const focused = useFocusedSession(activityKey(activity));
   const [picked, setPicked] = useState<string>();
   const recipient = recipientOf(focused, picked, sessions);
@@ -57,5 +63,5 @@ export function useDesignComments(activity: TaskActivity, path: string): DesignC
       for (const s of answer?.unsaved ?? []) toast.error(t('review.notSavedTo', { session: sessionName(s, sessions) }));
     }));
   };
-  return { reviewKey, activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isBusy, sendAll, run, refresh };
+  return { reviewKey, label: activityTitle(activity), activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isBusy, sendAll, run, refresh };
 }
