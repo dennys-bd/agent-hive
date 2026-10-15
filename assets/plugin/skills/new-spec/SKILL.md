@@ -1,6 +1,6 @@
 ---
 name: new-spec
-description: Spec stage for one task: resolve the conventions, read the issue (or take a free-text idea), ask the open questions in rounds, get the design approved in chat or in the Hive, write the spec, review it, then create the branch and commit. Interactive; never moves the task in its source.
+description: 'Spec stage for one task: resolve the conventions, read the issue (or take a free-text idea), ask the open questions in rounds, get the design approved in chat or in the Hive, write the spec, review it, then create the branch and commit. Interactive; never moves the task in its source.'
 ---
 
 # /hive:new-spec

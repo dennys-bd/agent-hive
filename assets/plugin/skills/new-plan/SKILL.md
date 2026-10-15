@@ -1,6 +1,6 @@
 ---
 name: new-plan
-description: Plan stage for one task: resolve the conventions, find the spec from the argument or the branch, have the planner write a sliced, indexed plan into the plans folder, review it, and commit. Asks the user in rounds only when the spec left something open; no approval gate.
+description: 'Plan stage for one task: resolve the conventions, find the spec from the argument or the branch, have the planner write a sliced, indexed plan into the plans folder, review it, and commit. Asks the user in rounds only when the spec left something open; no approval gate.'
 ---
 
 # /hive:new-plan
