@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { TemplateError } from '../src/template.js';
 import type { ChainSpec, Condition } from '../src/template-condition.js';
 import {
@@ -168,4 +170,16 @@ test('setVariableValue writes a workspace\'s value and removes it with undefined
     variable: 'missing',
     message: 'variable "missing" is not declared',
   });
+});
+
+test('the three modules import nothing from node, so the editor can bundle them as they are (#311)', () => {
+  const imports = (file: string): string[] => {
+    // Runs from dist/test: the TypeScript source is read as text.
+    const source = readFileSync(fileURLToPath(new URL(`../../src/${file}`, import.meta.url)), 'utf8');
+    assert.doesNotMatch(source, /\bprocess\.|\brequire\(|import\(/, file);
+    return [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]).sort();
+  };
+  assert.deepEqual(imports('template-condition.ts'), []);
+  assert.deepEqual(imports('template-map.ts'), ['./template-condition.js', './template.js']);
+  assert.deepEqual(imports('template-edit.ts'), ['./template-condition.js', './template-map.js', './template.js', 'yaml']);
 });
