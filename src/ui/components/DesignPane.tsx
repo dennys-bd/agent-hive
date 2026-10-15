@@ -165,9 +165,11 @@ function DesignCanvas({ canvas, frame, url, name, width, height, zoom, reloads, 
   );
 }
 
-// A click on the bar or the canvas's margin puts the focus in the pane, so ⌘0 and Space reach it; a control still takes its own focus after
+// A click on the bar or the canvas's margin puts the focus in the pane, so ⌘0 and Space reach it; a control still takes its own focus after.
+// React bubbles a portal's pointer-down here too: one inside the tweaks panel must not pull the focus out of it, or Radix closes it (#342)
 const focusPane = (event: ReactPointerEvent<HTMLElement>): void => {
-  if (!event.currentTarget.contains(document.activeElement)) event.currentTarget.focus({ preventScroll: true });
+  const pane = event.currentTarget;
+  if (event.target instanceof Node && pane.contains(event.target) && !pane.contains(document.activeElement)) pane.focus({ preventScroll: true });
 };
 
 // ⌘⇧↵ sends every draft (#113), only while the focus is in the pane: its section takes it, as ⌘0. The panel itself has no key: ⌘⌥C is openDiff on
