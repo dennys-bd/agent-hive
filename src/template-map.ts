@@ -1,7 +1,7 @@
 // The block map of a template's body (#311, node 1.2 of #309): heading blocks, conditional chains, the references each block makes,
 // start lines and the collapse structure. Node-free, like src/template.ts: the editor's outline and the server read the same map.
 import type { Condition } from './template-condition.js';
-import type { TemplateError } from './template.js';
+import type { ParsedTemplate, TemplateError } from './template.js';
 
 export type ReferenceKind = 'skill' | 'agent' | 'skill-or-agent' | 'script';
 
@@ -71,4 +71,130 @@ export function findReferences(line: string, lineNumber: number, catalogue?: Cat
     reference: { kind: 'script' as const, name: match[1], line: lineNumber },
   }));
   return [...names, ...scripts].sort((a, b) => a.at - b.at).map((found) => found.reference);
+}
+
+const HEADING = /^(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+interface Container {
+  references: Reference[];
+  children: MapBlock[];
+}
+interface RootFrame extends Container {
+  kind: 'root';
+}
+interface HeadingFrame extends Container {
+  kind: 'heading';
+  level: 2 | 3;
+  title: string;
+  line: number;
+}
+type Frame = RootFrame | HeadingFrame;
+
+// Local to one buildMap call: its frames are filled in place and handed out as the map; the parse is never touched.
+interface Builder {
+  root: RootFrame;
+  stack: Frame[];
+  errors: TemplateError[];
+  introduction: number | null; // the introduction's first line
+  catalogue?: Catalogue;
+}
+
+interface ScanState {
+  fence: string | null; // the run that opened the markdown fence the scan is in
+}
+
+type LineKind = 'text' | 'title' | 'fenced';
+
+const START: ScanState = { fence: null };
+
+const top = (b: Builder): Frame => b.stack[b.stack.length - 1];
+
+const dedupe = (references: Reference[]): Reference[] =>
+  references.filter(
+    (reference, index) => references.findIndex((other) => other.kind === reference.kind && other.name === reference.name) === index,
+  );
+
+const headingBlock = (frame: HeadingFrame, endLine: number): MapBlock => ({
+  kind: 'heading',
+  level: frame.level,
+  title: frame.title,
+  line: frame.line,
+  endLine,
+  references: dedupe(frame.references),
+  children: frame.children,
+  count: frame.children.length,
+});
+
+// Closes the innermost frame at endLine and hands its block to the frame under it; the root is never closed.
+function closeTop(b: Builder, endLine: number): void {
+  const frame = top(b);
+  if (frame.kind === 'root') return;
+  b.stack.pop();
+  top(b).children.push(headingBlock(frame, endLine));
+}
+
+// A heading closes the open headings of its level or deeper.
+function openHeading(b: Builder, level: 2 | 3, title: string, line: number): void {
+  for (let frame = top(b); frame.kind === 'heading' && frame.level >= level; frame = top(b)) closeTop(b, line - 1);
+  b.stack.push({ kind: 'heading', level, title, line, references: [], children: [] });
+}
+
+function onText(b: Builder, text: string, line: number, kind: LineKind): void {
+  const frame = top(b);
+  // the introduction is the root's text before its first block: root text after a block belongs to no block
+  if (frame.kind === 'root' && frame.children.length > 0) return;
+  if (frame.kind === 'root' && b.introduction === null && kind !== 'title' && text.trim() !== '') b.introduction = line;
+  if (kind === 'text') frame.references.push(...findReferences(text, line, b.catalogue));
+}
+
+function lineKind(state: ScanState, level: number): LineKind {
+  if (state.fence !== null) return 'fenced';
+  return level === 1 ? 'title' : 'text';
+}
+
+function nextFence(fence: string | null, text: string): string | null {
+  const match = FENCE.exec(text);
+  if (match === null) return fence;
+  if (fence === null) return match[1];
+  // a fence closes with a run of its own character at least as long, with nothing after it
+  const closes = match[1][0] === fence[0] && match[1].length >= fence.length && text.trim() === match[1];
+  return closes ? null : fence;
+}
+
+function scanLine(b: Builder, state: ScanState, raw: string, line: number): ScanState {
+  const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+  const heading = state.fence === null ? HEADING.exec(text) : null;
+  const level = heading === null ? 0 : heading[1].length;
+  if (level === 2 || level === 3) openHeading(b, level, (heading?.[2] ?? '').trim(), line);
+  onText(b, text, line, lineKind(state, level));
+  return { ...state, fence: nextFence(state.fence, text) };
+}
+
+// A final newline ends the last line instead of opening an empty one.
+function bodyLines(body: string): string[] {
+  if (body === '') return [];
+  const lines = body.split('\n');
+  return body.endsWith('\n') ? lines.slice(0, -1) : lines;
+}
+
+function closeAll(b: Builder, lastLine: number): void {
+  while (top(b).kind !== 'root') closeTop(b, lastLine);
+}
+
+function introduction(b: Builder, lastLine: number): MapBlock[] {
+  if (b.introduction === null) return [];
+  const endLine = b.root.children.length > 0 ? b.root.children[0].line - 1 : lastLine;
+  return [{ kind: 'introduction', line: b.introduction, endLine, references: dedupe(b.root.references) }];
+}
+
+export function buildMap(parsed: ParsedTemplate, catalogue?: Catalogue): TemplateMap {
+  const root: RootFrame = { kind: 'root', references: [], children: [] };
+  const b: Builder = { root, stack: [root], errors: [], introduction: null, catalogue };
+  const lines = bodyLines(parsed.body);
+  let state = START;
+  for (const [index, text] of lines.entries()) state = scanLine(b, state, text, parsed.bodyLine + index);
+  const lastLine = parsed.bodyLine + lines.length - 1;
+  closeAll(b, lastLine);
+  return { blocks: [...introduction(b, lastLine), ...root.children], errors: [...b.errors].sort((x, y) => x.line - y.line) };
 }
