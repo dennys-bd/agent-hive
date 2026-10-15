@@ -161,3 +161,12 @@ test('a heading deeper than the previous by more than one level is yellow; fence
     ['6 yellow heading skipped level: h1 to h3', '8 yellow heading skipped level: h2 to h4'],
   );
 });
+
+test('annotations sort by line, then red before yellow, then title (#312)', () => {
+  assert.deepEqual(lint([], ['Run scripts/missing.mjs, hive:ghost and `/nowhere`, then /hive:stacked-branch.']), [
+    '4 red callRequired missing baseBranch · /hive:stacked-branch · hive-site',
+    '4 yellow reference unknown skill, agent or script /nowhere',
+    '4 yellow reference unknown skill, agent or script hive:ghost',
+    '4 yellow reference unknown skill, agent or script scripts/missing.mjs',
+  ]);
+});

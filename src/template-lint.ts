@@ -178,11 +178,15 @@ function headingFindings(parsed: ParsedTemplate): LintAnnotation[] {
   return parsed.body.split('\n').reduce((walk, text, index) => headingStep(walk, text, parsed.bodyLine + index), start).findings;
 }
 
-const byLine = (a: LintAnnotation, b: LintAnnotation): number => a.line - b.line;
+const SEVERITY_RANK: Record<Severity, number> = { red: 0, yellow: 1 };
+// Code-unit order, not the locale's: the editor's counter and the tests need the same order everywhere
+const compareText = (a: string, b: string): number => Number(a > b) - Number(a < b);
+const byPosition = (a: LintAnnotation, b: LintAnnotation): number =>
+  a.line - b.line || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || compareText(a.title, b.title);
 
 export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
   // Every other check reads the header's variables, so a header that does not parse is answered alone
-  if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byLine);
+  if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byPosition);
   const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
-  return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed)].sort(byLine);
+  return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed)].sort(byPosition);
 }
