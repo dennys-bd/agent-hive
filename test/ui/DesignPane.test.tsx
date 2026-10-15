@@ -358,3 +358,30 @@ test('an item whose rect came back null shows elemento removido; one with no ans
   expect(removed[0].closest('li')).toHaveTextContent('a question');
   expect(removed[0]).toHaveClass('text-muted-foreground');
 });
+
+test('a pan from the frame takes the frame off the pointer and pans the canvas from the first move until pointerup; a zoom from the frame zooms; the same from another source, or out of shape, are dropped (#346)', async () => {
+  render(pane());
+  await screen.findByTitle(NAME);
+  const canvas = document.querySelector<HTMLElement>('[data-design-canvas]');
+  if (canvas === null) throw new Error('no canvas');
+  Object.defineProperty(canvas, 'scrollLeft', { value: 0, writable: true });
+  Object.defineProperty(canvas, 'scrollTop', { value: 0, writable: true });
+  fromFrame({ hive: 'design', type: 'pan' }, window); // not this pane's frame
+  fromFrame({ type: 'pan' });
+  expect(frame().style.pointerEvents).toBe('');
+  fromFrame({ hive: 'design', type: 'pan' });
+  expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['grabbing', 'none']);
+  fireEvent.pointerMove(window, { clientX: 300, clientY: 300 }); // the start: the frame's press has no position the pane can read
+  fireEvent.pointerMove(window, { clientX: 280, clientY: 290 });
+  expect([canvas.scrollLeft, canvas.scrollTop]).toEqual([20, 10]);
+  fireEvent.pointerUp(window, { button: 1 });
+  expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
+  fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: 100, y: 100 }, window);
+  fromFrame({ hive: 'design', type: 'zoom', deltaY: '-10', x: 100, y: 100 });
+  fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: Number.NaN, y: 100 });
+  fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: 100 });
+  fromFrame({ type: 'zoom', deltaY: -10, x: 100, y: 100 });
+  expect(percent()).toBe('50%');
+  fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: 100, y: 100 });
+  expect(percent()).toBe('55%'); // 50 × e^0.1
+});

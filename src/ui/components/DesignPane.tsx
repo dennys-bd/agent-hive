@@ -124,6 +124,32 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
   return [size, () => setSize(({ height, natural }) => ({ height, natural }))];
 }
 
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+// The bridge's zoom and pan (#346), only from this pane's frame: a ⌘ / Ctrl wheel or a pinch over the frame, anchored at its point there
+// (the frame's rect is its scaled one, from the box's top-left), and a middle press, whose drag the pane then follows on its own window.
+// A hook of its own, after the zoom: useFrameMessages runs before it, since the frame's size sets the zoom's width
+function useFrameZoom(frame: RefObject<HTMLIFrameElement | null>, zoom: DesignZoom): void {
+  const onZoom = useEffectEvent((deltaY: number, x: number, y: number): void => {
+    const rect = frame.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    const scale = zoom.zoom / FULL;
+    zoom.zoomAt(deltaY, { x, y, clientX: rect.left + x * scale, clientY: rect.top + y * scale });
+  });
+  const onPan = useEffectEvent((): void => zoom.startPan());
+  useEffect(() => {
+    const onMessage = (event: MessageEvent<unknown>): void => {
+      const data = bridgeData(event, frame.current);
+      if (data === undefined) return;
+      const { type, deltaY, x, y } = data;
+      if (type === 'pan') onPan();
+      else if (type === 'zoom' && isFiniteNumber(deltaY) && isFiniteNumber(x) && isFiniteNumber(y)) onZoom(deltaY, x, y);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [frame]);
+}
+
 // natural (#341): the content's measured width, held to mobile–desktop. A fixed viewport: its width, or a window screen's wider overflow (#241)
 const frameWidthOf = (viewport: DesignViewport, size: FrameSize): number =>
   (viewport === 'natural'
@@ -252,6 +278,7 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments: De
   });
   const width = frameWidthOf(viewport, size);
   const zoom = useDesignZoom(canvas, box, width, active && mint.status !== 'error');
+  useFrameZoom(frame, zoom);
   // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
   const pickViewport = (next: DesignViewport): void => { setViewport(next); forgetWidth(); marks.close(); };
