@@ -209,3 +209,10 @@ test('a chain whose variable or value could not be written back as one marker is
     refused(replaceChain(DOC, 15, chainOf(term)));
   }
 });
+
+test('an edit keeps every untouched line\'s own ending; new lines take the text\'s (#311)', () => {
+  const mixed = 'a\r\n{% if x %}\nb\n{% endif %}\nc\n';
+  assert.equal(ok(removeChain(mixed, 2)).text, 'a\r\nb\nc\n');
+  const crlf = 'a\r\nb\r\n';
+  assert.equal(ok(insertChain(crlf, 2, DRY)).text, 'a\r\n{% if dryRun %}\r\n{% else %}\r\n{% endif %}\r\nb\r\n');
+});

@@ -21,15 +21,16 @@ type ChainBlock = Extract<MapBlock, { kind: 'chain' }>;
 
 interface Source {
   text: string;
-  lines: string[]; // a final newline leaves an empty last element, which no block owns
-  eol: string;
+  lines: string[]; // each keeps its own line ending, so an edit never rewrites a line it did not touch
+  eol: string; // the ending of a new line: \r\n when the text has one
   parsed: ParsedTemplate;
   map: TemplateMap;
 }
 
 type Change = (source: Source) => string | string[] | TemplateError;
 
-const LINE_BREAK = /\r?\n/;
+const LINE_WITH_ENDING = /[^\n]*\n|[^\n]+$/g;
+const ENDING = /\r?\n$/;
 const NO_LINE = 1; // an error with no line of its own points at the file's start
 const FENCE = '---';
 
@@ -44,7 +45,19 @@ function answer(text: string): EditResult {
 function load(text: string): Source | TemplateError {
   const loaded = answer(text);
   if (!loaded.ok) return loaded.error;
-  return { text, lines: text.split(LINE_BREAK), eol: text.includes('\r\n') ? '\r\n' : '\n', parsed: loaded.parsed, map: loaded.map };
+  return { text, lines: text.match(LINE_WITH_ENDING) ?? [], eol: text.includes('\r\n') ? '\r\n' : '\n', parsed: loaded.parsed, map: loaded.map };
+}
+
+// Lines that moved or were dropped may meet without an ending, and the last one may carry one the text never had: only the seams change.
+function joinLines(lines: string[], source: Source): string {
+  const endsWithNewline = source.text.endsWith('\n');
+  return lines
+    .map((line, index) => {
+      if (index < lines.length - 1) return ENDING.test(line) ? line : line + source.eol;
+      if (!endsWithNewline) return line.replace(ENDING, '');
+      return ENDING.test(line) ? line : line + source.eol;
+    })
+    .join('');
 }
 
 // One path for every edit: refuse a text with errors, change it, refuse a result with errors, never throw.
@@ -53,7 +66,7 @@ function edit(text: string, change: Change): EditResult {
   if ('message' in source) return { ok: false, error: source };
   try {
     const changed = change(source);
-    if (Array.isArray(changed)) return answer(changed.join(source.eol));
+    if (Array.isArray(changed)) return answer(joinLines(changed, source));
     return typeof changed === 'string' ? answer(changed) : { ok: false, error: changed };
   } catch (err) {
     // yaml's setIn throws on a path through a scalar; an edit answers an error instead
@@ -68,7 +81,7 @@ const splice = (lines: string[], from: number, to: number, inserted: string[]): 
   ...lines.slice(to),
 ];
 
-const lastLine = (source: Source): number => source.lines.length - (source.lines[source.lines.length - 1] === '' ? 1 : 0);
+const lastLine = (source: Source): number => source.lines.length;
 
 function childLists(block: MapBlock): MapBlock[][] {
   if (block.kind === 'heading') return [block.children];
@@ -105,7 +118,7 @@ export function insertChain(text: string, line: number, chain: ChainSpec): EditR
     const after = lastLine(source) + 1;
     if (line < first || line > after) return { line, message: `a chain goes before a body line, ${first} to ${after}` };
     const problem = chainProblem(chain);
-    return problem === undefined ? splice(source.lines, line, line - 1, chainMarkers(chain)) : { line, message: problem };
+    return problem === undefined ? splice(source.lines, line, line - 1, chainMarkers(chain).map((marker) => marker + source.eol)) : { line, message: problem };
   });
 }
 
@@ -133,8 +146,8 @@ function heldBranches(lines: string[], chain: ChainBlock): HeldBranch[] {
   });
 }
 
-function rewriteChain(lines: string[], chain: ChainBlock, spec: ChainSpec): string[] | TemplateError {
-  const held = heldBranches(lines, chain);
+function rewriteChain(source: Source, chain: ChainBlock, spec: ChainSpec): string[] | TemplateError {
+  const held = heldBranches(source.lines, chain);
   const conditional = held.filter((branch) => branch.marker !== 'else');
   const otherwise = held.find((branch) => branch.marker === 'else');
   const dropped = [...conditional.slice(spec.branches.length), ...(spec.else || otherwise === undefined ? [] : [otherwise])];
@@ -143,7 +156,7 @@ function rewriteChain(lines: string[], chain: ChainBlock, spec: ChainSpec): stri
   if (holding !== undefined) {
     return { line: holding.line, message: `the {% ${holding.marker} %} branch holds text: empty it before removing it` };
   }
-  const markers = chainMarkers(spec);
+  const markers = chainMarkers(spec).map((marker) => marker + source.eol);
   const kept = spec.branches.flatMap((_, index) => [markers[index], ...(index < conditional.length ? conditional[index].body : [])]);
   const elseLines = spec.else ? [markers[spec.branches.length], ...(otherwise?.body ?? [])] : [];
   return [...kept, ...elseLines, markers[markers.length - 1]];
@@ -156,13 +169,13 @@ export function replaceChain(text: string, line: number, chain: ChainSpec): Edit
     if ('message' in found) return found;
     const problem = chainProblem(chain);
     if (problem !== undefined) return { line, message: problem };
-    const rewritten = rewriteChain(source.lines, found, chain);
+    const rewritten = rewriteChain(source, found, chain);
     return Array.isArray(rewritten) ? splice(source.lines, found.line, found.endLine, rewritten) : rewritten;
   });
 }
 
 // Siblings trade slots; the lines between two siblings (a parent's own text after a chain) stay where they are, so a move down then up
-// answers the input. Joining the lines moves the final line ending: a block leaving the end takes one, the new last one gives its own.
+// answers the input. joinLines moves the final line ending: a block leaving the end takes one, the new last one gives its own.
 function reorder(lines: string[], siblings: MapBlock[], order: MapBlock[]): string[] {
   const span = (block: MapBlock): string[] => lines.slice(block.line - 1, block.endLine);
   const gap = (index: number): string[] =>
@@ -195,8 +208,8 @@ function writeHeader(source: Source, change: (doc: Document.Parsed) => void): st
   // lineWidth 0: yaml would otherwise fold a long description or break a flow declaration at 80 columns
   const yamlLines = doc.toString({ lineWidth: 0 }).split('\n').slice(0, -1);
   const hasHeader = bodyLine > 1;
-  const open = hasHeader ? source.lines[0] : FENCE;
-  const close = hasHeader ? source.lines[bodyLine - 2] : FENCE;
+  const open = hasHeader ? source.lines[0].replace(ENDING, '') : FENCE;
+  const close = hasHeader ? source.lines[bodyLine - 2].replace(ENDING, '') : FENCE;
   return [open, ...yamlLines, close, ''].join(source.eol) + body;
 }
 
