@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TemplateError } from '../src/template.js';
 import type { ChainSpec, Condition } from '../src/template-condition.js';
-import { type EditResult, insertChain, removeChain, replaceChain } from '../src/template-edit.js';
+import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../src/template-edit.js';
 
 // Text edits of a template (#311): each answers the new text with its parse and map, or an error; never throws.
 const DOC = [
@@ -90,4 +90,30 @@ test('replaceChain rewrites the markers, adds empty branches, and refuses to dro
 
   const unless = ok(replaceChain(DOC, 15, { branches: [{ connective: 'and', terms: [{ variable: 'dryRun', op: 'isNo' }] }], else: true }));
   assert.deepEqual(unless.text.split('\n').slice(14, 19), ['{% unless dryRun %}', 'stacked text', '{% else %}', 'other text', '{% endunless %}']);
+});
+
+const titles = (result: Extract<EditResult, { ok: true }>): string[] =>
+  result.map.blocks.map((block) => (block.kind === 'heading' ? block.title : block.kind));
+
+test('moveBlock moves a block among its siblings, and down then up gives the input back byte for byte (#311)', () => {
+  const down = ok(moveBlock(DOC, 14, 2));
+  assert.deepEqual(titles(down), ['First', 'Third', 'Second']);
+  assert.ok(down.text.endsWith('third text\n## Second\n{% if delivery == "stacked" %}\nstacked text\n{% else %}\nother text\n{% endif %}'));
+  assert.equal(ok(moveBlock(down.text, 16, 1)).text, DOC);
+
+  const lastUp = ok(moveBlock(DOC, 20, 0)); // the block at the end of a text with no final newline
+  assert.deepEqual(titles(lastUp), ['Third', 'First', 'Second']);
+  assert.ok(lastUp.text.includes('## Third\nthird text\n## First\n'), 'it takes a line ending');
+  assert.ok(lastUp.text.endsWith('{% endif %}'), 'the new last block gives its own back');
+  assert.equal(ok(moveBlock(lastUp.text, 11, 2)).text, DOC);
+
+  const nested = '## A\n### One\none\n### Two\ntwo\n## B\n';
+  assert.equal(ok(moveBlock(nested, 4, 0)).text, '## A\n### Two\ntwo\n### One\none\n## B\n', 'a ### stays under its ##');
+  assert.match(refused(moveBlock(nested, 4, 2)).message, /index 2 is not a position among 2 siblings/);
+  assert.equal(refused(moveBlock(nested, 3, 0)).message, 'no heading or chain starts at line 3');
+
+  const gapped = '## A\n{% if a %}\nx\n{% endif %}\nbetween\n{% if b %}\ny\n{% endif %}\n';
+  const swapped = ok(moveBlock(gapped, 6, 0));
+  assert.equal(swapped.text, '## A\n{% if b %}\ny\n{% endif %}\nbetween\n{% if a %}\nx\n{% endif %}\n', 'the parent\'s text keeps its slot');
+  assert.equal(ok(moveBlock(swapped.text, 6, 0)).text, gapped);
 });

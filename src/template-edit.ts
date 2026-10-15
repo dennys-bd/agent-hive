@@ -157,3 +157,28 @@ export function replaceChain(text: string, line: number, chain: ChainSpec): Edit
     return Array.isArray(rewritten) ? splice(source.lines, found.line, found.endLine, rewritten) : rewritten;
   });
 }
+
+// Siblings trade slots; the lines between two siblings (a parent's own text after a chain) stay where they are, so a move down then up
+// answers the input. Joining the lines moves the final line ending: a block leaving the end takes one, the new last one gives its own.
+function reorder(lines: string[], siblings: MapBlock[], order: MapBlock[]): string[] {
+  const span = (block: MapBlock): string[] => lines.slice(block.line - 1, block.endLine);
+  const gap = (index: number): string[] =>
+    index + 1 < siblings.length ? lines.slice(siblings[index].endLine, siblings[index + 1].line - 1) : [];
+  const first = siblings[0].line;
+  const last = siblings[siblings.length - 1].endLine;
+  return [...lines.slice(0, first - 1), ...order.flatMap((block, index) => [...span(block), ...gap(index)]), ...lines.slice(last)];
+}
+
+/** The block starting at line moves to index among its siblings, under the same parent; its level never changes. */
+export function moveBlock(text: string, line: number, index: number): EditResult {
+  return edit(text, (source) => {
+    const found = findBlock(source.map.blocks, line);
+    if (found === undefined) return { line, message: `no heading or chain starts at line ${line}` };
+    const { block, siblings } = found;
+    if (!Number.isInteger(index) || index < 0 || index >= siblings.length) {
+      return { line, message: `index ${index} is not a position among ${siblings.length} siblings` };
+    }
+    const others = siblings.filter((sibling) => sibling !== block);
+    return reorder(source.lines, siblings, [...others.slice(0, index), block, ...others.slice(index)]);
+  });
+}
