@@ -314,3 +314,11 @@ test('a middle pointerdown posts pan and is cancelled, a middle mousedown is can
   expect(document.body.dispatchEvent(new MouseEvent('mousedown', init(0)))).toBe(true);
   expect(sent()).toEqual([{ hive: 'design', type: 'pan' }]);
 });
+
+test('a middle pointerup posts panEnd, so a quick middle click released in the frame never leaves it off the pointer; a main release posts nothing (#346)', () => {
+  const { sent } = harness();
+  start();
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }));
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 1 }));
+  expect(sent()).toEqual([{ hive: 'design', type: 'panEnd' }]);
+});

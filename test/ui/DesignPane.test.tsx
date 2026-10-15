@@ -376,6 +376,9 @@ test('a pan from the frame takes the frame off the pointer and pans the canvas f
   expect([canvas.scrollLeft, canvas.scrollTop]).toEqual([20, 10]);
   fireEvent.pointerUp(window, { button: 1 });
   expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
+  fromFrame({ hive: 'design', type: 'pan' }); // a quick middle click: released in the frame before the pane took the drag
+  fromFrame({ hive: 'design', type: 'panEnd' });
+  expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
   fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: 100, y: 100 }, window);
   fromFrame({ hive: 'design', type: 'zoom', deltaY: '-10', x: 100, y: 100 });
   fromFrame({ hive: 'design', type: 'zoom', deltaY: -10, x: Number.NaN, y: 100 });

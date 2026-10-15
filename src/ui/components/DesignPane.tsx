@@ -137,12 +137,14 @@ function useFrameZoom(frame: RefObject<HTMLIFrameElement | null>, zoom: DesignZo
     zoom.zoomAt(deltaY, { x, y, clientX: rect.left + x * scale, clientY: rect.top + y * scale });
   });
   const onPan = useEffectEvent((): void => zoom.startPan());
+  const onPanEnd = useEffectEvent((): void => zoom.endPan());
   useEffect(() => {
     const onMessage = (event: MessageEvent<unknown>): void => {
       const data = bridgeData(event, frame.current);
       if (data === undefined) return;
       const { type, deltaY, x, y } = data;
       if (type === 'pan') onPan();
+      else if (type === 'panEnd') onPanEnd();
       else if (type === 'zoom' && isFiniteNumber(deltaY) && isFiniteNumber(x) && isFiniteNumber(y)) onZoom(deltaY, x, y);
     };
     window.addEventListener('message', onMessage);

@@ -67,7 +67,7 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   window.addEventListener('keydown', (event: KeyboardEvent) => bridgeKey(bridge, event), { capture: true, signal });
   // capture and non-passive (#346): the frame would otherwise zoom its own page, and a design's own wheel handler must not see it first
   window.addEventListener('wheel', (event: WheelEvent) => bridgeWheel(post, event), { capture: true, passive: false, signal });
-  for (const type of ['pointerdown', 'mousedown'] as const) window.addEventListener(type, (event: MouseEvent) => bridgeMiddle(post, event), { capture: true, signal });
+  for (const type of ['pointerdown', 'mousedown', 'pointerup'] as const) window.addEventListener(type, (event: MouseEvent) => bridgeMiddle(post, event), { capture: true, signal });
   // A resize reports the size with the last natural width, never a new measure: a 50vw element would shrink the frame in a loop (#341)
   const observer = new ResizeObserver(() => {
     sizes.postSize();
@@ -287,9 +287,13 @@ function bridgeWheel(post: (message: Record<string, unknown>) => void, event: Wh
 
 /** A middle press pans the pane's canvas (#346): pan hands the drag to the pane, which takes the frame off the pointer. Its mousedown is
  *  cancelled too, posting nothing: autoscroll and the Linux primary-selection paste are mousedown's defaults, and a cancelled pointerdown
- *  does not promise to stop them. */
+ *  does not promise to stop them. Its release posts panEnd: a quick click can be released in the frame before the pane took the drag. */
 function bridgeMiddle(post: (message: Record<string, unknown>) => void, event: MouseEvent): void {
   if (event.button !== 1) return;
+  if (event.type === 'pointerup') {
+    post({ type: 'panEnd' });
+    return;
+  }
   event.preventDefault();
   if (event.type === 'pointerdown') post({ type: 'pan' });
 }

@@ -38,7 +38,7 @@ export interface DesignZoom {
   zoom: number; isPanning: boolean; isDragging: boolean;
   zoomBy(direction: 1 | -1): void;
   zoomAt(deltaY: number, anchor: ZoomAnchor): void;
-  startPan(): void;
+  startPan(): void; endPan(): void;
   onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void; onKeyUp(event: ReactKeyboardEvent<HTMLElement>): void; onBlur(): void;
   onPointerDown(event: ReactPointerEvent<HTMLElement>): void;
 }
@@ -100,7 +100,7 @@ function useAnchor(canvas: RefObject<HTMLElement | null>, box: RefObject<HTMLEle
   }, [canvas, box, view]);
 }
 
-interface Pan { isPanning: boolean; isDragging: boolean; setPanning(on: boolean): void; startPan(): void; onPointerDown(event: ReactPointerEvent<HTMLElement>): void }
+interface Pan { isPanning: boolean; isDragging: boolean; setPanning(on: boolean): void; startPan(): void; endPan(): void; onPointerDown(event: ReactPointerEvent<HTMLElement>): void }
 interface PanStart { x: number; y: number; left: number; top: number }
 
 // Space held, or the middle button, turns a drag on the canvas into its scroll. startPan begins one for the frame's middle press (#346), whose
@@ -139,7 +139,7 @@ function usePan(canvas: RefObject<HTMLElement | null>): Pan {
     event.preventDefault();
     drag({ x: event.clientX, y: event.clientY });
   };
-  return { isPanning, isDragging, setPanning, onPointerDown, startPan: () => drag(null) };
+  return { isPanning, isDragging, setPanning, onPointerDown, startPan: () => drag(null), endPan: () => endCurrent.current?.() };
 }
 
 // Space belongs to a field, and to a button, which it presses
@@ -166,7 +166,7 @@ export function useDesignZoom(canvas: RefObject<HTMLElement | null>, box: RefObj
     }
   };
   return {
-    zoom, isPanning: pan.isPanning, isDragging: pan.isDragging, startPan: pan.startPan, onPointerDown: pan.onPointerDown, onKeyDown, zoomAt,
+    zoom, isPanning: pan.isPanning, isDragging: pan.isDragging, startPan: pan.startPan, endPan: pan.endPan, onPointerDown: pan.onPointerDown, onKeyDown, zoomAt,
     zoomBy: (direction) => setView((now) => ({ exact: stepPercent(Math.round(now.exact), direction), anchor: null })),
     onKeyUp: (event) => { if (event.key === ' ') pan.setPanning(false); },
     onBlur: () => pan.setPanning(false),
