@@ -216,3 +216,12 @@ test('an edit keeps every untouched line\'s own ending; new lines take the text\
   const crlf = 'a\r\nb\r\n';
   assert.equal(ok(insertChain(crlf, 2, DRY)).text, 'a\r\n{% if dryRun %}\r\n{% else %}\r\n{% endif %}\r\nb\r\n');
 });
+
+test('replaceChain keeps the indentation and trim flags of each marker that stays in place (#311)', () => {
+  const text = '  {%- if x -%}\n  t\n  {% else -%}\n  u\n {%- endif %}\n';
+  const spec: ChainSpec = { branches: [{ connective: 'and', terms: [{ variable: 'y', op: 'hasValue' }] }], else: true };
+  assert.equal(ok(replaceChain(text, 1, spec)).text, '  {%- if y -%}\n  t\n  {% else -%}\n  u\n {%- endif %}\n');
+  const added: ChainSpec = { branches: [spec.branches[0], spec.branches[0]], else: false };
+  const dropped = '  {%- if x -%}\n  t\n  {% endif %}\n';
+  assert.equal(ok(replaceChain(dropped, 1, added)).text, '  {%- if y -%}\n  t\n{% elsif y %}\n  {% endif %}\n');
+});

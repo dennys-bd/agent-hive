@@ -146,6 +146,14 @@ function heldBranches(lines: string[], chain: ChainBlock): HeldBranch[] {
   });
 }
 
+const MARKER_STYLE = /^(\s*)\{%(-?).*?(-?)%\}/;
+
+// A marker that stays where it was keeps its indentation and trim flags; the line is only reworded.
+function styled(marker: string, original: string | undefined): string {
+  const style = original === undefined ? null : MARKER_STYLE.exec(original);
+  return style === null ? marker : `${style[1]}${marker.replace('{% ', `{%${style[2]} `).replace(' %}', ` ${style[3]}%}`)}`;
+}
+
 function rewriteChain(source: Source, chain: ChainBlock, spec: ChainSpec): string[] | TemplateError {
   const held = heldBranches(source.lines, chain);
   const conditional = held.filter((branch) => branch.marker !== 'else');
@@ -156,10 +164,12 @@ function rewriteChain(source: Source, chain: ChainBlock, spec: ChainSpec): strin
   if (holding !== undefined) {
     return { line: holding.line, message: `the {% ${holding.marker} %} branch holds text: empty it before removing it` };
   }
-  const markers = chainMarkers(spec).map((marker) => marker + source.eol);
-  const kept = spec.branches.flatMap((_, index) => [markers[index], ...(index < conditional.length ? conditional[index].body : [])]);
-  const elseLines = spec.else ? [markers[spec.branches.length], ...(otherwise?.body ?? [])] : [];
-  return [...kept, ...elseLines, markers[markers.length - 1]];
+  const written = chainMarkers(spec);
+  const at = (index: number, original: number | undefined): string =>
+    styled(written[index], original === undefined ? undefined : source.lines[original - 1]) + source.eol;
+  const kept = spec.branches.flatMap((_, index) => [at(index, conditional[index]?.line), ...(index < conditional.length ? conditional[index].body : [])]);
+  const elseLines = spec.else ? [at(spec.branches.length, otherwise?.line), ...(otherwise?.body ?? [])] : [];
+  return [...kept, ...elseLines, at(written.length - 1, chain.endLine)];
 }
 
 /** The chain's markers rewritten for new conditions, added elsif branches and the else toggled; no branch's text is lost. */
