@@ -217,7 +217,8 @@ const contextFor = (variables: TemplateVariable[], workspace: string): Record<st
 });
 
 // liquidjs counts lines in the body it rendered; the file line is bodyLine further down.
-function liquidError(err: unknown, bodyLine: number): TemplateError {
+/** A Liquid error at its file line, without liquidjs' body-relative position; the lint (#312) reports a parse error the same way. */
+export function liquidError(err: unknown, bodyLine: number): TemplateError {
   const message = firstLine(messageOf(err));
   const inMessage = LIQUID_POSITION.exec(message);
   const tokenLine = err instanceof LiquidError && err.token ? err.token.getPosition()[0] : 1;
