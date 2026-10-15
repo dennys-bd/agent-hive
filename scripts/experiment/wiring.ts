@@ -36,4 +36,4 @@ export function stopOnInterrupt(): void {
   }
 }
 
-export const evalDeps = (repoRoot: string, run: Run): EvalDeps => ({ run, launch: launchChromium, log, boot: bootEvaluated, stop, repoRoot, chromiumPath: chromium.executablePath(), tmpRoot: tmpdir() });
+export const evalDeps = (repoRoot: string, run: Run, docs: Run): EvalDeps => ({ run, docs, launch: launchChromium, log, boot: bootEvaluated, stop, repoRoot, chromiumPath: chromium.executablePath(), tmpRoot: tmpdir() });

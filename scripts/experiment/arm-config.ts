@@ -8,9 +8,22 @@ import { type RunPaths, runClaudeArgs } from './worker-rules.js';
 export const EXPERIMENT_PREFIX = 'MON'; // the sample and the evaluation; a run uses its own prefix (plan.ts runPrefix)
 export const WORKSPACE_NAME = 'agent-hive';
 export const MAX_CONCURRENT = 3; // per arm; Build caps at 2, so a pair runs at most 4 Build workers (#105, the user)
-// Every task worktree gets the workers' sandbox (sandbox.ts) before its first worker, and can run pnpm test, Merge's included
-const WORKSPACE_SETUP = `COPY ${SANDBOX_FILE}\nRUN pnpm install --frozen-lockfile`;
 const SETUP_TIMEOUT = '10m';
+const MAIN_CHECKOUT = '"$(git rev-parse --path-format=absolute --git-common-dir)/.."';
+
+/** Every task worktree gets the workers' sandbox (sandbox.ts) before its first worker, a docs worktree, and can run pnpm test, Merge's
+ *  included. The docs worktree is CLAUDE.md's setup line, but a new branch starts from the docs run branch, which holds the docs baseline,
+ *  not from origin/main, which holds the real docs and the experiment's own (#79). runBranch is a plain ref (plan.ts runBranch). */
+export function workspaceSetup(runBranch: string): string {
+  const docs = `git -C "$main/docs"`;
+  return [
+    `COPY ${SANDBOX_FILE}`,
+    `RUN main=${MAIN_CHECKOUT} && branch="$(git branch --show-current)" && ${docs} fetch -q origin && { ${docs} worktree add "$PWD/docs" "$branch" 2>/dev/null || ${docs} worktree add --no-track -b "$branch" "$PWD/docs" "origin/${runBranch}"; }`,
+    'RUN pnpm install --frozen-lockfile',
+  ].join('\n');
+}
+/** CLAUDE.md's teardown line: no --force, so a doc a worker left uncommitted fails it instead of being lost. */
+export const WORKSPACE_TEARDOWN = 'RUN git -C "$(git rev-parse --path-format=absolute --git-common-dir)/../docs" worktree remove "$PWD/docs"';
 
 export const ARM_COMMANDS: Record<Arm, Record<StageRole, string>> = {
   a: { spec: 'hive-spec', plan: 'hive-plan', build: 'hive-build' },
@@ -48,7 +61,7 @@ export function armStages(seed: StagesSeed, arm: Arm, runBranch: string): Record
 export function runConfig(seed: StagesSeed, arm: Arm, runBranch: string, workspace: string, prefix: string, paths: RunPaths): Record<string, unknown> {
   return {
     comb: {
-      prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0], setup: WORKSPACE_SETUP, setupTimeout: SETUP_TIMEOUT }],
+      prefix, workspaces: [{ name: WORKSPACE_NAME, path: workspace, env: {}, fork: null, memoryCap: MEMORY_CAP_DEFAULT, color: WORKSPACE_PRESET_COLORS[0], setup: workspaceSetup(runBranch), setupTimeout: SETUP_TIMEOUT, teardown: WORKSPACE_TEARDOWN }],
       sources: [], stages: armStages(seed, arm, runBranch), commands: [], hiveSource: true, createIn: 'hive',
     },
     baseBranch: runBranch, agentArgs: { claude: runClaudeArgs(seed.claudeArgs, runBranch, paths), codex: [] }, ...SETTINGS,

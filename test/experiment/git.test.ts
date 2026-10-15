@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { addedDocs, assertBaselineClean, BASELINE_MESSAGE, createRunBranch, dropRunWorktrees, experimentBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../scripts/experiment/git.js';
+import { assertBaselineClean, BASELINE_MESSAGE, createRunBranch, docsClone, dropRunWorktrees, experimentBaseline, resolveBaseline, sandboxPaths, strippedPackageJson, unsignedCommits } from '../../scripts/experiment/git.js';
 import { EXPERIMENT_PATHS } from '../../scripts/experiment/seed.js';
 import { tempDir } from '../temp-dir.js';
 import { fakeRun, line } from './fixtures.js';
@@ -22,28 +22,27 @@ test('strippedPackageJson drops the experiment scripts and test glob; assertBase
   assert.ok(!/experiment/i.test(pkg), pkg);
   assert.equal(JSON.parse(pkg).scripts['test:node'], 'node --test "dist/test/*.test.js"');
   assert.deepEqual(Object.keys(JSON.parse(pkg).scripts), ['test', 'test:node', 'start'], 'a script named or running anything of the experiment goes, whatever its prefix');
-  assert.doesNotThrow(() => assertBaselineClean('src/a.ts\ndocs/handoff_monitor/README.md\n', pkg));
+  assert.doesNotThrow(() => assertBaselineClean('src/a.ts\nsrc/b.ts\n', pkg));
   for (const path of EXPERIMENT_PATHS) assert.throws(() => assertBaselineClean(`${path}/x.ts\n${path}\n`, pkg), /experiment/, path);
   assert.throws(() => assertBaselineClean('src/a.ts\n', PKG), /package\.json/);
 });
 
-test('experimentBaseline builds an orphan commit of the source tree without the experiment, with the handoff, on a private index (#105)', async (t) => {
+test('experimentBaseline builds an orphan commit of the source tree without the experiment, on a private index; the handoff goes to the docs baseline (#105, #79)', async (t) => {
   const scratch = await tempDir(t, 'base-');
   const { run, calls } = fakeRun((call) => {
     const [cmd] = call.args;
     if (cmd === 'show') return PKG;
     if (cmd === 'hash-object') return `blob-${call.args.at(-1)?.split('/').at(-1)}\n`;
     if (cmd === 'write-tree') return 'tree1\n';
-    if (cmd === 'ls-tree') return 'src/a.ts\ndocs/handoff_monitor/README.md\n';
+    if (cmd === 'ls-tree') return 'src/a.ts\n';
     return cmd === 'commit-tree' ? 'base1234567890\n' : '';
   });
-  const files = [{ from: '/seed/handoff/README.md', to: 'docs/handoff_monitor/README.md' }];
-  assert.equal(await experimentBaseline(run, { source: 'src1', files, scratch }), 'base1234567890');
+  assert.equal(await experimentBaseline(run, { source: 'src1', scratch }), 'base1234567890');
   const lines = calls.map(line);
   assert.equal(lines[0], 'git read-tree src1');
   assert.equal(lines[1], `git rm -r -q --cached --ignore-unmatch -- ${EXPERIMENT_PATHS.join(' ')}`);
   assert.ok(lines.includes('git update-index --add --cacheinfo 100644,blob-package.json,package.json'));
-  assert.ok(lines.includes('git update-index --add --cacheinfo 100644,blob-README.md,docs/handoff_monitor/README.md'));
+  assert.equal(lines.filter((l) => l.startsWith('git update-index')).length, 1, 'only package.json is added');
   assert.ok(lines.includes(`git commit-tree tree1 -m ${BASELINE_MESSAGE}`), 'no -p: an orphan commit');
   assert.ok(lines.includes('git update-ref refs/bases/monitor-view-base12345678 base1234567890'));
   const indexed = calls.filter((c) => ['read-tree', 'rm', 'update-index', 'write-tree'].includes(c.args[0]));
@@ -82,14 +81,6 @@ test('dropRunWorktrees removes only the worktrees and branches of this run prefi
   assert.ok(!done.some((l) => /MBBBBBB|mbbbbbb|TEST-/.test(l) || l.endsWith(' main')));
 });
 
-test('addedDocs lists the specs and plans the run branch added, specs first, each sorted (#105)', async () => {
-  const { run, calls } = fakeRun(() => 'docs/superpowers/plans/2026-10-02-b.md\ndocs/superpowers/specs/2026-10-02-a.md\ndocs/superpowers/specs/2026-10-01-z.md\n');
-  assert.deepEqual(await addedDocs(run, 'abc', BRANCH), [
-    { kind: 'spec', path: 'docs/superpowers/specs/2026-10-01-z.md' }, { kind: 'spec', path: 'docs/superpowers/specs/2026-10-02-a.md' }, { kind: 'plan', path: 'docs/superpowers/plans/2026-10-02-b.md' },
-  ]);
-  assert.deepEqual(calls[0].args, ['diff', '--name-only', '--diff-filter=A', `abc...origin/${BRANCH}`, '--', 'docs/superpowers/specs', 'docs/superpowers/plans']);
-});
-
 test('sandboxPaths reads the clone\'s git folder and origin as git answers them, absolute (#105)', async () => {
   const { run, calls } = fakeRun((call) => (call.args[0] === 'rev-parse' ? '/lab/hive/.git\n' : '/lab/hive.git\n'));
   assert.deepEqual(await sandboxPaths(run), { gitDir: '/lab/hive/.git', origin: '/lab/hive.git' });
@@ -100,4 +91,17 @@ test('unsignedCommits turns signing off in the clone only: a sandboxed worker ca
   const { run, calls } = fakeRun(() => '');
   await unsignedCommits(run);
   assert.deepEqual(calls.map(line), ['git config --local commit.gpgsign false', 'git config --local tag.gpgsign false']);
+});
+
+test('docsClone runs git in docs/ and returns its paths; a missing clone, or one whose origin is not local, is refused (#79)', async (t) => {
+  const root = await tempDir(t, 'lab-');
+  const answer = (origin: string) => fakeRun((call) => (call.args[0] === 'remote' ? `${origin}\n` : `${join(root, 'docs', '.git')}\n`));
+  await assert.rejects(docsClone(answer('/lab/hive-docs.git').run, root), /no docs clone/);
+  await mkdir(join(root, 'docs', '.git'), { recursive: true });
+  const local = answer('/lab/hive-docs.git');
+  const { docs, paths } = await docsClone(local.run, root);
+  assert.deepEqual(paths, { gitDir: join(root, 'docs', '.git'), origin: '/lab/hive-docs.git' });
+  await docs('git', ['status']);
+  assert.ok(local.calls.every((c) => c.cwd === join(root, 'docs')), 'every call runs in the docs clone');
+  await assert.rejects(docsClone(answer('git@github.com:someone/docs.git').run, root), /must be a local repository/);
 });

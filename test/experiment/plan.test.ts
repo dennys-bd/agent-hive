@@ -7,7 +7,7 @@ import {
 } from '../../scripts/experiment/plan.js';
 
 const NIGHT = new Date(2026, 9, 1, 21, 30);
-const base = { id: 'skills-x', source: 'src0', baseline: 'abc' };
+const base = { id: 'skills-x', source: 'src0', baseline: 'abc', docsSource: 'dsrc0', docsBaseline: 'dabc' };
 
 test('runOrder lists the pairs as slots, A1 B1 A2 B2 (#105)', () => {
   assert.deepEqual(runOrder(2).map((r) => r.id), ['a1', 'b1', 'a2', 'b2']);
@@ -67,11 +67,11 @@ test('parseManifest reads what newManifest wrote and refuses anything else (#105
   const m = startAttempt(newManifest({ ...base, seedHash: 'h', runs: 2, now: NIGHT }), runRef('a', 1), 'aaaaaa', NIGHT, false);
   assert.deepEqual(parseManifest(JSON.parse(JSON.stringify(m))), m);
   for (const bad of [{ ...m, baseline: '-x' }, { ...m, baseline: 'a..b' }, { ...m, baseline: 'a b' }, { ...m, source: '--upload-pack=x' }, { ...m, source: 'HEAD@{1}' }, { ...m, id: '../x' }, { ...m, id: 'Skills X' }]) assert.throws(() => parseManifest(bad), /manifest/, JSON.stringify(bad));
-  for (const bad of [null, {}, { ...m, runs: '2' }, { ...m, source: undefined }, { ...m, attempts: undefined }, { ...m, attempts: [{ token: 'x' }] }, { ...m, attempts: [{ ...m.attempts[0], token: '../../x' }] }, { ...m, attempts: [{ ...m.attempts[0], token: 'AAAAAA' }] }]) assert.throws(() => parseManifest(bad), /manifest/);
+  for (const bad of [null, {}, { ...m, runs: '2' }, { ...m, source: undefined }, { ...m, docsBaseline: undefined }, { ...m, docsBaseline: '-x' }, { ...m, attempts: undefined }, { ...m, attempts: [{ token: 'x' }] }, { ...m, attempts: [{ ...m.attempts[0], token: '../../x' }] }, { ...m, attempts: [{ ...m.attempts[0], token: 'AAAAAA' }] }]) assert.throws(() => parseManifest(bad), /manifest/);
 });
 
 test('seedDrift names a changed seed for a re-judge instead of refusing it: finished runs are judged against today\'s scenarios and handoff (#105)', () => {
-  const m = newManifest({ id: 'skills-x', source: 's', baseline: 'b', seedHash: 'a42b2fc7aaaa', runs: 1, now: new Date('2026-10-05T00:00:00Z') });
+  const m = newManifest({ ...base, seedHash: 'a42b2fc7aaaa', runs: 1, now: new Date('2026-10-05T00:00:00Z') });
   assert.equal(seedDrift(m, 'a42b2fc7aaaa'), undefined);
   assert.equal(seedDrift(m, '1ea20388bbbb'), 'experiment skills-x: the seed changed since its runs (a42b2fc7 → 1ea20388); judging them against the current scenarios, handoff and sample');
 });

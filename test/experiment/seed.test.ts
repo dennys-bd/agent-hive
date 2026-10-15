@@ -137,7 +137,7 @@ test('forbiddenWords finds what would tell a worker it is an experiment, past pn
   assert.deepEqual(forbiddenWords('Execute `pnpm test` and call hive_done {"testsGreen": true}.'), []);
 });
 
-test('handoffFiles lists the whole handoff folder as laid out under docs/handoff_monitor/, and skips a .DS_Store (#105)', async (t) => {
+test('handoffFiles lists the whole handoff folder as laid out under the docs baseline at agent/handoff_monitor/, and skips a .DS_Store (#105, #79)', async (t) => {
   const dir = await tempDir(t, 'seed-');
   const handoff = join(dir, 'handoff');
   await mkdir(join(handoff, 'png'), { recursive: true });

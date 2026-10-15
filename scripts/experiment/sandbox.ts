@@ -9,18 +9,21 @@ const SECRET_READS = ['~/.ssh', '~/.aws', '~/.config/gh', '~/.gnupg'];
 // pnpm install runs in the setup, outside the sandbox; the registry is for a worker adding a package, localhost for the Hive's own tests
 const ALLOWED_DOMAINS = ['registry.npmjs.org', 'localhost', '127.0.0.1'];
 
-// plugins: each open run's <home>/plugin, re-allowed by exact path (a glob in allowRead does not take) inside the denied state folder
-export interface SandboxPaths { gitDir: string; origin: string; state: string; plugins?: readonly string[] }
+/** A clone the workers commit into: its git folder and its origin. */
+export interface RepoPaths { gitDir: string; origin: string }
+// repos: the code clone and the docs clone (#79). plugins: each open run's <home>/plugin, re-allowed by exact path (a glob in allowRead
+// does not take) inside the denied state folder
+export interface SandboxPaths { repos: readonly RepoPaths[]; state: string; plugins?: readonly string[] }
 
 /** Claude Code's Bash sandbox for every worker of both arms: commands inside it run without a prompt, none may run outside it, and the
- *  session stops if it cannot start. Writes reach the worktree (the sandbox's default), the clone's git folder (a worktree's commits land
- *  there) and a local origin (the Merge push); nothing else. */
+ *  session stops if it cannot start. Writes reach the worktree (the sandbox's default, its docs worktree included), each clone's git folder
+ *  (a worktree's commits land there) and a local origin (the Merge push); nothing else. */
 export function sandboxSettings(p: SandboxPaths): Record<string, unknown> {
   return {
     sandbox: {
       enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false, failIfUnavailable: true,
       filesystem: {
-        allowWrite: [p.gitDir, ...(isAbsolute(p.origin) ? [p.origin] : [])], denyRead: [...SECRET_READS, p.state],
+        allowWrite: p.repos.flatMap((r) => [r.gitDir, ...(isAbsolute(r.origin) ? [r.origin] : [])]), denyRead: [...SECRET_READS, p.state],
         ...(p.plugins && p.plugins.length > 0 ? { allowRead: [...p.plugins] } : {}),
       },
       network: { allowedDomains: ALLOWED_DOMAINS, allowLocalBinding: true }, // the Hive's own tests listen on localhost ports

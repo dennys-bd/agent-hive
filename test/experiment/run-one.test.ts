@@ -13,10 +13,10 @@ import { BRANCH, clock, fakeChild, fakeRun, line, PREFIX, SEED, snap, task, TOKE
 
 const NIGHT = new Date('2026-10-01T22:00:00.000Z');
 
-function depsWith(git: ReturnType<typeof fakeRun>, client: WatchClient, events: string[]): RunDeps {
+function depsWith(git: ReturnType<typeof fakeRun>, client: WatchClient, events: string[], docs = fakeRun()): RunDeps {
   const time = clock(NIGHT);
   return {
-    run: git.run, now: time.now, sleep: time.sleep, log: () => undefined,
+    run: git.run, docs: docs.run, now: time.now, sleep: time.sleep, log: () => undefined,
     boot: async (home, runJs) => { events.push(`boot ${runJs}`); return { home, address: { port: 1, secret: 'x' }, child: fakeChild().child }; },
     stop: async () => { events.push('stop'); },
     client: () => client,
@@ -33,7 +33,7 @@ function sequence(snapshots: Snapshot[], events: string[]): WatchClient {
 }
 
 const context = (root: string, arm: 'a' | 'b', unpaired = false) => ({
-  dir: join(root, 'exp'), root, state: join(root, 'state'), baseline: 'base1', token: TOKEN, arm, seed: SEED, runJs: '/dist/src/run.js', timeoutMs: 3_600_000, unpaired,
+  dir: join(root, 'exp'), root, state: join(root, 'state'), baseline: 'base1', docsBaseline: 'docsbase1', token: TOKEN, arm, seed: SEED, runJs: '/dist/src/run.js', timeoutMs: 3_600_000, unpaired,
 });
 const allDone = snap([task(1, 'Done'), task(2, 'Done'), task(3, 'Done')]);
 
@@ -41,7 +41,8 @@ test('executeRun branches at the baseline, writes the home under <state>/homes/<
   const root = await tempDir(t, 'run-');
   const git = fakeRun((call) => (call.args[0] === 'diff' ? ' 3 files changed, 10 insertions(+), 2 deletions(-)\n' : ''));
   const events: string[] = [];
-  const metrics = await executeRun(context(root, 'b'), depsWith(git, sequence([snap([task(1, 'Done'), task(2, 'Spec'), task(3, 'Done')]), allDone], events), events));
+  const docs = fakeRun();
+  const metrics = await executeRun(context(root, 'b'), depsWith(git, sequence([snap([task(1, 'Done'), task(2, 'Spec'), task(3, 'Done')]), allDone], events), events, docs));
   assert.deepEqual(events, ['boot /dist/src/run.js', 'green', 'auto local:2', 'stop']);
   assert.deepEqual([metrics.token, metrics.outcome, metrics.diff, metrics.unpaired], [TOKEN, 'done', { files: 3, insertions: 10, deletions: 2 }, undefined]);
   assert.deepEqual(await readJson(join(root, 'exp', TOKEN, 'metrics.json')), metrics);
@@ -54,6 +55,8 @@ test('executeRun branches at the baseline, writes the home under <state>/homes/<
   const order = git.calls.map(line);
   assert.ok(order.includes(`git branch -f ${BRANCH} base1`));
   assert.ok(order.includes(`git branch --list hive/${PREFIX}-* --format=%(refname:short)`), 'cleanup touches only this run prefix');
+  assert.deepEqual(docs.calls.map(line), [`git ls-remote --heads origin refs/heads/${BRANCH}`, `git branch -f ${BRANCH} docsbase1`, `git push -u origin ${BRANCH}`, 'git worktree prune'],
+    'the docs run branch at the docs baseline, for the setup to branch from (#79); the docs task branches stay for the evaluation');
 });
 
 test('executeRun stops the daemon and records an error when the daemon stops answering; a run made alone is unpaired (#105)', async (t) => {

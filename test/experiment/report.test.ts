@@ -24,7 +24,7 @@ const RECORDS: RunRecord[] = [
   { ref: runRef('b', 1), token: 'bbbbb1', metrics: metrics('bbbbb1', 'done', 200), evaluation: { booted: true, testsGreen: true }, clicks: [click('S1', false), click('S2', true), click('S3', true)], judge: judge(6, 9, 8), shots: [] },
   { ref: runRef('b', 2), token: 'bbbbb2', metrics: metrics('bbbbb2', 'error', 50, 'MBBBBB2-1: spawn failed'), shots: [] },
 ];
-const manifestOf = (runs: number) => newManifest({ id: 'skills-x', source: 'src0', baseline: 'abc123', seedHash: 'h', runs, now: NIGHT });
+const manifestOf = (runs: number) => newManifest({ id: 'skills-x', source: 'src0', baseline: 'abc123', docsSource: 'dsrc0', docsBaseline: 'dabc123', seedHash: 'h', runs, now: NIGHT });
 
 test('stat is the mean, min and max of the values, and nothing for none (#105)', () => {
   assert.deepEqual(stat([4, 6, 8]), { mean: 6, min: 4, max: 8, n: 3 });

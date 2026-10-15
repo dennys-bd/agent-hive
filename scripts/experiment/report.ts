@@ -84,7 +84,7 @@ function interruptedSection(manifest: Manifest): string {
 
 /** report.md: the only place that names the arms. */
 export function renderReport(manifest: Manifest, records: readonly RunRecord[]): string {
-  const head = [`# Skills A/B experiment ${manifest.id}`, '', `Source \`${manifest.source.slice(0, 12)}\` · baseline \`${manifest.baseline.slice(0, 12)}\` · seed \`${manifest.seedHash.slice(0, 12)}\` · ${manifest.runs} pairs · created ${manifest.createdAt}`, '', ...ARM_LINES].join('\n');
+  const head = [`# Skills A/B experiment ${manifest.id}`, '', `Source \`${manifest.source.slice(0, 12)}\` · baseline \`${manifest.baseline.slice(0, 12)}\` · docs baseline \`${manifest.docsBaseline.slice(0, 12)}\` · seed \`${manifest.seedHash.slice(0, 12)}\` · ${manifest.runs} pairs · created ${manifest.createdAt}`, '', ...ARM_LINES].join('\n');
   const perArm = table(['measure', 'A mean', 'A min–max', 'B mean', 'B min–max'], aggregate(records).map(({ label, arms }) => [label, ...cells(arms.a), ...cells(arms.b)]));
   const clicks = table(['scenario', 'A', 'B'], clickRates(records).map(({ scenario, arms }) => [scenario, `${arms.a.passed}/${arms.a.total}`, `${arms.b.passed}/${arms.b.total}`]));
   const sections = [head, `## Per arm\n\n${perArm}`, `## Click scenarios passed\n\n${clicks}`, `## Runs\n\n${table(RUN_HEAD, records.map(runRow))}`, shotSection(records), interruptedSection(manifest)];
