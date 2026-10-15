@@ -138,6 +138,24 @@ test('Space held in the pane turns the canvas to grab and lets a drag pass over 
   expect([canvas?.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
 });
 
+test('a middle press on the canvas pans it with the pointer, the frame off the pointer and the cursor grabbing, until pointerup; a main press does not pan (#346)', async () => {
+  render(pane());
+  await screen.findByTitle(NAME);
+  const canvas = document.querySelector<HTMLElement>('[data-design-canvas]');
+  if (canvas === null) throw new Error('no canvas');
+  Object.defineProperty(canvas, 'scrollLeft', { value: 100, writable: true });
+  Object.defineProperty(canvas, 'scrollTop', { value: 50, writable: true });
+  fireEvent.pointerDown(canvas, { button: 0, clientX: 200, clientY: 200 });
+  expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['', '']);
+  fireEvent.pointerDown(canvas, { button: 1, clientX: 200, clientY: 200 });
+  expect([canvas.style.cursor, frame().style.pointerEvents]).toEqual(['grabbing', 'none']);
+  fireEvent.pointerMove(window, { clientX: 170, clientY: 180 });
+  expect([canvas.scrollLeft, canvas.scrollTop]).toEqual([130, 70]);
+  fireEvent.pointerUp(window, { button: 1 });
+  fireEvent.pointerMove(window, { clientX: 0, clientY: 0 });
+  expect([canvas.scrollLeft, canvas.scrollTop, canvas.style.cursor, frame().style.pointerEvents]).toEqual([130, 70, '', '']);
+});
+
 // One poll answered: a window focus asks at once (use-file-version.ts), and a macrotask lets its promise chain settle
 async function poll(): Promise<void> {
   await act(async () => {
