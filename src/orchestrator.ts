@@ -278,7 +278,8 @@ function createTask(state: State, { title, body, stage: name, prefix, workspace,
 }
 
 // The auto switch (#164, #573): off takes the task out of the fill, the delete-activity stages (unless nonAutoTasks, #496) and every automatic
-// prompt; a worker already running is left to finish its stage. Unknown or missing task: nothing (the route refused it; a race is a no-op).
+// prompt, but not out of a wait for CI, which holds no worker (#304); a worker already running is left to finish its stage. Unknown or missing
+// task: nothing (the route refused it; a race is a no-op).
 // On hands the task back to the fill, which never picks a stopped activity, so its stopped mark goes (#892); off leaves the mark. A failure's
 // stop keeps it: its error still bars the fill until a manual start or retry, and the mark is what shows that stop.
 function setAuto(state: State, id: string, auto: boolean): Reduced {

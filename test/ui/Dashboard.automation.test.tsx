@@ -67,3 +67,17 @@ test('a hive pick holds with no source configured and leaves only the tasks crea
   expect(within(screen.getByRole('main')).getByText('#1 Task A')).toBeInTheDocument();
   expect(within(screen.getByRole('main')).queryByText('#2 Task B')).not.toBeInTheDocument();
 });
+
+test('a card in a wait-for-CI stage offers tentar de novo only while the effective signal\'s row runs no workerless stage (#304, #727)', () => {
+  const ciStage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi' as const, ciChecks: 'all' as const, rerunOnce: false };
+  const taskC: Task = { item: { itemId: 'C', id: '3', title: 'Task C', body: '', url: '' }, stage: 'ci', boardColumn: 'CI', auto: false };
+  const signals = { ...SIGNALS_DEFAULTS, red: { ...SIGNALS_DEFAULTS.red, workerless: false } };
+  const ci: State = { ...state, signals, stages: [...state.stages, ciStage], tasks: [...state.tasks, taskC] };
+  const limits = (signal: 'green' | 'red') => ({ signal, floor: { signal: 'green' as const }, signalRules: [], capRules: [], disabledRules: [], stageCaps: {}, stageCapRules: {} });
+  const card = (): HTMLElement => within(screen.getByRole('main')).getByText('#3 Task C').closest('li')!;
+  const { rerender } = render(<Dashboard state={ci} effective={limits('green')} locale="pt-BR" tick={0} onSelect={() => {}} />);
+  showFlow();
+  expect(within(card()).queryByRole('button', { name: 'tentar de novo' })).not.toBeInTheDocument(); // green runs it: the wait starts on its own
+  rerender(<Dashboard state={ci} effective={limits('red')} locale="pt-BR" tick={0} onSelect={() => {}} />);
+  expect(within(card()).getByRole('button', { name: 'tentar de novo' })).toBeInTheDocument(); // a rule brought red, whose row is off
+});

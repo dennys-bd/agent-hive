@@ -1,5 +1,5 @@
 import { GitPullRequestIcon } from 'lucide-react';
-import { type MouseEvent, useContext, useRef, useState } from 'react';
+import { createContext, type MouseEvent, useContext, useRef, useState } from 'react';
 import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
@@ -38,13 +38,27 @@ export function useOpenActivity(task: Task, state: State): (() => void) | undefi
 }
 
 /** The task's one button (#542). */
-export type TaskAction = 'details' | 'approve' | 'open' | 'continue' | 'delete' | 'start';
+export type TaskAction = 'details' | 'approve' | 'open' | 'continue' | 'delete' | 'start' | 'retry';
+
+/** Whether the effective signal's row runs workerless stages (#727): a wait for CI starts on its own only then (#304). Dashboard provides it
+ * from the effective limits the server sends; true, green's fixed row, where nothing provides it. */
+export const WorkerlessContext = createContext(true);
+
+type ActionState = Pick<State, 'stages' | 'workers' | 'terminals' | 'deleteActivity' | 'activities' | 'activityRecords' | 'workspaces' | 'sourceWorkspaces' | 'tasks'>;
+
+// #304: a wait for CI starts on its own on the next tick, auto on or off, while the task is neither stopped nor failed, has a workspace
+// (dueActions skips one without) and the signal's row runs workerless stages; otherwise a start is a retry
+function ciAction(task: Task, state: ActionState, workerless: boolean): TaskAction | undefined {
+  const live = activityOf(state, task.item.itemId);
+  const placed = resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
+  return workerless && placed && !live?.stopped && live?.error === undefined ? undefined : 'retry';
+}
 
 /** Which button the task shows (#542), by priority: out of tries → abrir, to its details (#913); an approval no live session holds back → aprovar (#829); a live session (aguardando você
  * among them, an approval pending or not) → abrir; the stage already ran and stopped → continuar; a delete-activity stage → excluir, while
- * removalBlocker lets it run (#228); it can start → iniciar. None for a missing task (its fechar / manter), a blocked one and one with
- * nothing to run. */
-export function taskAction(task: Task, state: Pick<State, 'stages' | 'workers' | 'terminals' | 'deleteActivity' | 'activities' | 'activityRecords'>): TaskAction | undefined {
+ * removalBlocker lets it run (#228); a wait-for-CI stage → none while the wait will start by itself, else tentar de novo (#304); it can start →
+ * iniciar. None for a missing task (its fechar / manter), a blocked one and one with nothing to run. */
+export function taskAction(task: Task, state: ActionState, workerless = true): TaskAction | undefined {
   if (task.missing) return undefined;
   if (isExhausted(task, state)) return 'details';
   if (answerableActivity(task, state) !== undefined) return 'approve';
@@ -52,13 +66,16 @@ export function taskAction(task: Task, state: Pick<State, 'stages' | 'workers' |
   const mode = startMode(task, state);
   if (typeof mode === 'object' && mode.continue) return 'continue';
   if (mode !== 'start' && typeof mode !== 'object') return undefined; // #812: { continue: false } offers iniciar; reiniciar etapa… is in the menu
-  if (stageOf(state.stages, task.stage)?.action !== 'deleteActivity') return 'start';
+  const action = stageOf(state.stages, task.stage)?.action;
+  if (action === 'waitForCi') return ciAction(task, state, workerless);
+  if (action !== 'deleteActivity') return 'start';
   return removalBlocker(task, state) === undefined ? 'delete' : undefined;
 }
 
 // details and open both read abrir on purpose (#913): the first opens the details panel, where continuar stays, the second the session
 const ACTION_LABEL: Record<TaskAction, MessageKey> = {
   details: 'task.open', approve: 'approval.approve', open: 'task.open', continue: 'task.continue', delete: 'activity.delete.button', start: 'task.start',
+  retry: 'task.retry',
 };
 
 type Tone = Status | 'destructive';
@@ -187,7 +204,8 @@ function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?
   const [isStarting, setIsStarting] = useState(false);
   const opener = useOpenStarted();
   const openActivity = useOpenActivity(task, state);
-  const action = taskAction(task, state);
+  const workerless = useContext(WorkerlessContext);
+  const action = taskAction(task, state, workerless);
   const id = encodeURIComponent(task.item.itemId);
   const work = `/activities/${encodeURIComponent(workIdOf(state, task.item.itemId) ?? '')}`; // the live activity, else a deleted one's record a continue resumes from (#629)
   const started = (): void => opener?.(task.item.itemId); // a run is coming: its task goes to the center once it shows (#457)
@@ -198,6 +216,7 @@ function TaskButton({ task, state, onOpen }: { task: Task; state: State; onOpen?
     continue: () => void actThen(`${work}/continue`, started, { size: shownSize() }),
     delete: () => void act(`/tasks/${id}/start`), // the stage's own git: no run to show
     start: () => setIsStarting(true),
+    retry: () => setIsStarting(true), // #304: what start did in a CI stage, under the name that says it
   };
   return (
     <>

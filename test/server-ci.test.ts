@@ -78,6 +78,18 @@ test('nothing waiting sends no query; a wait with no open PR sends none either a
   assert.deepEqual([bare.queries, bare.events], [[], [{ type: 'ciRead', activityId: activityIdOf('local:1'), at: new Date(NOW).toISOString(), prs: [] }]]);
 });
 
+test('a task with one PR merged and one open reads only the open one; a merged PR drops out of the read (#304)', async () => {
+  const MERGED = 'https://github.com/acme/app/pull/303';
+  const OPEN = 'https://github.com/acme/app/pull/305';
+  const state = withWork({ ...initialState(1), tasks: [task(1)] }, 'local:1', { ci: WAIT }, { prs: [{ url: MERGED, state: 'merged' }, { url: OPEN, state: 'open' }] });
+  const h = harness(state, () => ({ p0: rollup('h1', [run('build', null)]) }));
+  await h.reader.readAll();
+  assert.equal(h.queries.length, 1);
+  assert.ok(h.queries[0].includes(`p0: resource(url: "${OPEN}")`));
+  assert.equal(h.queries[0].includes(MERGED), false);
+  assert.deepEqual(h.events.map((e) => (e.type === 'ciRead' ? [e.activityId, e.prs.map((p) => p.url)] : e.type)), [[activityIdOf('local:1'), [OPEN]]]);
+});
+
 test('a query that fails logs and only ticks each wait\'s clock; a PR the answer left out ticks its activity\'s clock, never a false pass; readOne reads only its activity (#834)', async () => {
   const state = stateOf([[task(1), { ci: WAIT }, [APP]], [task(2), { ci: WAIT }, [SITE]]]);
   const at = new Date(NOW).toISOString();

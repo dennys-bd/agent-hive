@@ -166,7 +166,8 @@ export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task =>
 export const inAction = (activity: Pick<Activity, 'commands' | 'ci'> | undefined): boolean => activity?.commands !== undefined || activity?.ci !== undefined;
 
 /** A task a stage may act on: stopped, no delete activity in flight, still on the source, not carrying a failure that waits for a manual start, with
- * auto on (#164, #573) unless `nonAutoToo` (a delete-activity stage under nonAutoTasks, #496; the fill never passes it), not stopped by the
+ * auto on (#164, #573) unless `nonAutoToo` (a wait-for-CI stage, #304: it holds no worker and runs nothing; a delete-activity stage under
+ * nonAutoTasks, #496; the fill never passes it), not stopped by the
  * user or by a run that died (#283), not leaving the source (#286), not awaiting approval (#268), not running its worktree setup (#351) or a stage
  * action (#755, #834), and not a show epic (#31: its children run, it never does, by the fill or by a stage action). */
 const isIdle = (task: Task, activity: Activity | undefined, nonAutoToo = false): boolean =>
@@ -506,15 +507,15 @@ export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => {
 
 /** Stopped tasks in an action stage whose delay has passed (#755: was dueDeletions), in source order, that no session run holds: a manual
  * Claude session on a task that is not manual (#208) runs inside the worktree, and git never removes one with a session inside; a terminal
- * does not hold it: a delete-activity stage closes it (#573). A task without auto is taken by a delete-activity stage only when the scope's
- * nonAutoTasks is on (#496). Blockers are about starting work, so they do not matter here; an orphan's activity is deleted like any other
+ * does not hold it: a delete-activity stage closes it (#573). A task without auto is taken by a wait-for-CI stage always (#304: auto governs whether a worker starts, and a wait holds none) and by a
+ * delete-activity stage only when the scope's nonAutoTasks is on (#496). Blockers are about starting work, so they do not matter here; an orphan's activity is deleted like any other
  * (shouldWrite already keeps its source untouched). A workerless stage is due only while the signal's row runs them (#727). */
 export function dueActions(state: Pick<State, 'tasks' | 'stages' | 'deleteActivity' | 'workspaces' | 'sourceWorkspaces'> & WorkersState, now: number, workerless: boolean): Task[] {
   return state.tasks.filter((c) => {
     const stage = stageOf(state.stages, c.stage);
     if (stage?.action === undefined || stage.action === 'commands' || !workerless) return false; // #727: a commands stage is the fill's; the others follow the workerless row
     const live = activityOf(state, taskId(c));
-    const nonAuto = stage.action === 'deleteActivity' && state.deleteActivity.nonAutoTasks; // #755: the scope widens its own stage only
+    const nonAuto = stage.action === 'waitForCi' || (stage.action === 'deleteActivity' && state.deleteActivity.nonAutoTasks); // #304; #755: the scope widens its own stage only
     const allowed = isIdle(c, live, nonAuto);
     const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
     return allowed && placed && !hasSessionRun(c, state) && isDue(c, stage, now);
