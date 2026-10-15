@@ -121,3 +121,18 @@ test('calling a Hive skill whose required variable has no value in a workspace i
     },
   ]);
 });
+
+test('a render error is one annotation naming its workspaces; a workspace missing a required variable is not rendered (#312)', () => {
+  const both = lintTemplate(template([], ["{% include 'secrets' %}"]), INPUT);
+  assert.deepEqual(both.map(({ line, severity, check, workspaces }) => [line, severity, check, workspaces]), [[4, 'red', 'render', ['hive', 'hive-site']]]);
+  assert.match(both[0].title, /secrets/);
+  assert.equal(both[0].body, 'The render for hive, hive-site fails here.');
+
+  const partial = lintTemplate(template(['variables:', '  a: { required: true, workspaces: { hive: x } }'], ['{{ a }}', "{% include 'secrets' %}"]), INPUT);
+  assert.deepEqual(partial.map(({ line, check, workspaces }) => [line, check, workspaces]), [
+    [4, 'required', ['hive-site']],
+    [7, 'render', ['hive']],
+  ]);
+
+  assert.deepEqual(lint([], ['{{ reviewer }}']), ['4 red undeclared undeclared variable reviewer'], 'no render error repeats a static one');
+});

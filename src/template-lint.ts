@@ -1,7 +1,7 @@
 // The structural lint of a skill or agent template (#312, node 1.3 of #309): the annotations the editor shows on every change (4.1).
 // Pure and node-free like src/template.ts: it reads the parse and what the caller gives, never the disk, so the UI runs the same code.
 import { Liquid, type StaticAnalysis } from 'liquidjs';
-import { liquidError, type ParsedTemplate, type TemplateVariable } from './template.js';
+import { liquidError, type ParsedTemplate, renderTemplate, type TemplateVariable } from './template.js';
 import { type TemplateRef, templateRefs } from './template-refs.js';
 import type { ItemKind } from './types.js';
 
@@ -123,10 +123,29 @@ function referenceFindings(parsed: ParsedTemplate, input: LintInput): LintAnnota
   return [...uniqueBy(unknown, (annotation) => `${annotation.line} ${annotation.title}`), ...uniqueBy(calls, (call) => call.key).map((call) => call.annotation)];
 }
 
+// Catches what only a render shows (a partial, the render limit) without repeating a static finding or a workspace's same error
+function renderFindings(parsed: ParsedTemplate, workspaces: string[], statics: LintAnnotation[]): LintAnnotation[] {
+  const redLines = new Set(statics.filter((annotation) => annotation.severity === 'red').map((annotation) => annotation.line));
+  // A workspace missing a required variable is already reported; its render would only say it again
+  const renderable = workspaces.filter((workspace) => parsed.variables.every((variable) => missingIn(variable, [workspace]).length === 0));
+  const errors = renderable
+    .flatMap((workspace) => {
+      const result = renderTemplate(parsed, workspace);
+      return result.ok ? [] : result.errors.map((error) => ({ line: error.line, message: error.message, workspace }));
+    })
+    .filter((error) => !redLines.has(error.line));
+  const keyOf = (error: { line: number; message: string }): string => `${error.line}\n${error.message}`;
+  return uniqueBy(errors, keyOf).map((first) => {
+    const failing = errors.filter((error) => keyOf(error) === keyOf(first)).map((error) => error.workspace);
+    return finding(first.line, 'red', 'render', first.message, `The render for ${failing.join(', ')} fails here.`, failing);
+  });
+}
+
 const byLine = (a: LintAnnotation, b: LintAnnotation): number => a.line - b.line;
 
 export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
   // Every other check reads the header's variables, so a header that does not parse is answered alone
   if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byLine);
-  return [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)].sort(byLine);
+  const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
+  return [...statics, ...renderFindings(parsed, input.workspaces, statics)].sort(byLine);
 }
