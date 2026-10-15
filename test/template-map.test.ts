@@ -283,3 +283,11 @@ test('a plugin-prefixed name followed by a path is no reference, not even its pr
   assert.deepEqual(refs('see @p:x/y here'), []);
   assert.deepEqual(refs('Run /new-pr: it opens the PR.'), [['skill', 'new-pr']]);
 });
+
+test('Node.js and Next.js in prose are no scripts, a lowercase file name or any path is (#311)', () => {
+  assert.deepEqual(refs('Built with Node.js and Next.js.'), []);
+  assert.deepEqual(refs('Run slice_index.py and scripts/Slice.py.'), [
+    ['script', 'slice_index.py'],
+    ['script', 'scripts/Slice.py'],
+  ]);
+});

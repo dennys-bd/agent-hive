@@ -51,7 +51,12 @@ const WORD_START = '(?<=^|[\\s(\\[`"\'])';
 // A name followed by :x is the head of a p:x name that failed further on, so it is no name either.
 const WORD_END = '(?![\\w/-]|\\.\\w|:[a-z0-9])';
 const WORD = new RegExp(`${WORD_START}(\\\\?)([/@]?)((?:${NAME}:)?${NAME})${WORD_END}`, 'g');
-const SCRIPT = new RegExp(`${WORD_START}((?:[\\w.-]+/)*[\\w-][\\w.-]*\\.(?:py|sh|js|mjs|ts))${WORD_END}`, 'g');
+// Prose names such as Node.js and Next.js are no scripts: a bare file name is lowercase, only a path may use any case.
+const EXTENSION = '\\.(?:py|sh|js|mjs|ts)';
+const SCRIPT = new RegExp(
+  `${WORD_START}((?:[\\w.-]+/)+[\\w-][\\w.-]*${EXTENSION}|[a-z0-9_-]+${EXTENSION})${WORD_END}`,
+  'g',
+);
 
 function nameKind(sigil: string, name: string, catalogue?: Catalogue): ReferenceKind | undefined {
   if (sigil === '/') return 'skill';
