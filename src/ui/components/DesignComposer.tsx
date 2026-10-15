@@ -18,10 +18,10 @@ const SEND_KEY = 'CmdOrCtrl+Enter';
 /** adicionar and enviar agora (#114), through the panel's one request at a time: a draft for the footer's recipient, or this one comment
  *  sent to it. True once the server took it; a refusal is act's toast. */
 export async function saveComment(model: DesignCommentsModel, anchor: UnpinnedDesignAnchor, text: string, isSend: boolean): Promise<boolean> {
-  const { taskId, recipient } = model;
+  const { reviewKey, recipient } = model;
   const done = await model.run(() => (isSend
-    ? sendComment(taskId, { anchor, text, to: [recipient.session] })
-    : saveDraft(taskId, { anchor, text, session: recipient.session })));
+    ? sendComment(reviewKey, { anchor, text, to: [recipient.session] })
+    : saveDraft(reviewKey, { anchor, text, session: recipient.session })));
   return done !== undefined;
 }
 

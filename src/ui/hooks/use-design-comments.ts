@@ -7,13 +7,13 @@ import { useReview } from '@/hooks/use-review';
 import { t } from '@/i18n';
 import { activityKey, type TaskActivity } from '@/lib/activities';
 import { type DesignComment, fileComments, type Recipient, recipientOf } from '@/lib/design-comments';
-import { taskReview } from '@/lib/review-events';
+import { type ReviewKey, taskReview } from '@/lib/review-events';
 import { EMPTY_REVIEW, type ReviewSession, reviewSessions } from '@/lib/review-view';
 import { useFocusedSession } from '@/lib/session-focus';
 
 /** What a task's design pane knows of its file's comments (#113). */
 export interface DesignCommentsModel {
-  taskId: string; activity: TaskActivity; review: ReviewFile; sessions: ReviewSession[];
+  reviewKey: ReviewKey; activity: TaskActivity; review: ReviewFile; sessions: ReviewSession[];
   open: DesignComment[]; resolved: DesignComment[];
   drafts: number; isBusy: boolean; sendAll(): void;
   /** The one request in flight (#113): undefined at once while another runs; else its answer, the file read again after */
@@ -24,8 +24,8 @@ export interface DesignCommentsModel {
 /** A design file's comments in a task's review (#113), read as the diff pane reads it (#591): on mount, on each review event, after each
  *  action. The recipient is the user's pick for the mounted pane, else the activity's last session in focus, else a new session. */
 export function useDesignComments(activity: TaskActivity, path: string): DesignCommentsModel {
-  const taskId = activity.task.item.itemId;
-  const { review = EMPTY_REVIEW, refresh } = useReview(taskReview(taskId));
+  const reviewKey = taskReview(activity.task.item.itemId);
+  const { review = EMPTY_REVIEW, refresh } = useReview(reviewKey);
   const sessions = reviewSessions(activity);
   const focused = useFocusedSession(activityKey(activity));
   const [picked, setPicked] = useState<string>();
@@ -52,10 +52,10 @@ export function useDesignComments(activity: TaskActivity, path: string): DesignC
   // batch again, hold it the same way if it bites
   const sendAll = (): void => {
     if (drafts === 0) return;
-    void run(() => submitReview(taskId, [], { kind: 'design', path, to: recipient.session }).then((answer) => {
+    void run(() => submitReview(reviewKey, [], { kind: 'design', path, to: recipient.session }).then((answer) => {
       for (const s of answer?.failed ?? []) toast.error(t('review.notDeliveredTo', { session: sessionName(s, sessions) }));
       for (const s of answer?.unsaved ?? []) toast.error(t('review.notSavedTo', { session: sessionName(s, sessions) }));
     }));
   };
-  return { taskId, activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isBusy, sendAll, run, refresh };
+  return { reviewKey, activity, review, sessions, ...comments, drafts, recipient, pick: setPicked, isBusy, sendAll, run, refresh };
 }

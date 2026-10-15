@@ -20,7 +20,7 @@ const isLine = (item: { anchor: ThreadAnchor }): boolean => !isDesignAnchor(item
 
 /** The diff pane's surface (#592): what #591's components did through the pane, now behind the shared shape. */
 export function sessionsSurface(pane: ReviewPane, view: SessionsView): ReviewSurface {
-  const { taskId, scope, review } = pane;
+  const { reviewKey, scope, review } = pane;
   const withScope = (anchor: SurfaceAnchor): ReviewAnchor => ({ ...anchor, scope });
   const reread = (): void => pane.refresh();
   return {
@@ -29,19 +29,19 @@ export function sessionsSurface(pane: ReviewPane, view: SessionsView): ReviewSur
     drafts: (path) => review.drafts.filter(onFile(scope, path)),
     counts: { drafts: review.drafts.filter(isLine).length, open: review.threads.filter((thread) => isLine(thread) && !thread.resolved).length },
     reviewed: view.reviewed, mark: view.mark, edit: pane.edit,
-    comment: (anchor, text, { to, mentions, replaces } = {}) => pane.track(sendComment(taskId, { anchor: withScope(anchor), text, ...(mentions === undefined ? { to } : { mentions }) }))
-      .then(() => (replaces === undefined ? undefined : dropDraft(taskId, replaces))) // an edited draft sent now leaves the review
+    comment: (anchor, text, { to, mentions, replaces } = {}) => pane.track(sendComment(reviewKey, { anchor: withScope(anchor), text, ...(mentions === undefined ? { to } : { mentions }) }))
+      .then(() => (replaces === undefined ? undefined : dropDraft(reviewKey, replaces))) // an edited draft sent now leaves the review
       .then(reread),
-    addDraft: (anchor, text, session = pane.defaultSession) => saveDraft(taskId, { anchor: withScope(anchor), text, session }).then(reread),
-    editDraft: (id, text, session = pane.defaultSession) => editDraft(taskId, id, { text, session }).then(reread),
-    reply: (id, text, mentions) => pane.track(replyTo(taskId, id, { text, ...(mentions === undefined ? {} : { mentions }) })).then(reread),
-    resolve: (id, resolved) => resolveThread(taskId, id, resolved).then(reread),
+    addDraft: (anchor, text, session = pane.defaultSession) => saveDraft(reviewKey, { anchor: withScope(anchor), text, session }).then(reread),
+    editDraft: (id, text, session = pane.defaultSession) => editDraft(reviewKey, id, { text, session }).then(reread),
+    reply: (id, text, mentions) => pane.track(replyTo(reviewKey, id, { text, ...(mentions === undefined ? {} : { mentions }) })).then(reread),
+    resolve: (id, resolved) => resolveThread(reviewKey, id, resolved).then(reread),
     submit: { canSubmit: view.submit.canSubmit, submit: view.submit.submit, errors: errorsOf(view.submit, pane.sessions) },
     openFile: (file) => view.openFile(file.path),
     sessions: {
       defaultSession: pane.defaultSession, isSending: pane.isSending,
-      chooseDefault: (session) => void chooseDefaultSession(taskId, session).then(reread),
-      retry: (id, message) => void pane.track(retryMessage(taskId, id, message)).then(reread),
+      chooseDefault: (session) => void chooseDefaultSession(reviewKey, session).then(reread),
+      retry: (id, message) => void pane.track(retryMessage(reviewKey, id, message)).then(reread),
     },
   };
 }

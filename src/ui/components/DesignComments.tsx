@@ -16,7 +16,7 @@ import type { CommentSelection, CommentTab, PinRects } from '@/hooks/use-design-
 import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
-import { taskReview } from '@/lib/review-events';
+import { type ReviewKey, taskReview } from '@/lib/review-events';
 import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
@@ -50,23 +50,23 @@ function wordOf(item: DesignComment, sessions: ReviewPane['sessions']): string {
 // enviar on a draft (#113): sent now as a conversation to the footer's recipient; the draft goes once the thread is stored, a refusal keeps
 // it. The server pins every new thread (#111), so the sent comment takes the file's next pin
 async function sendDraft(model: DesignCommentsModel, item: DesignComment): Promise<unknown> {
-  const sent = await sendComment(model.taskId, { anchor: item.anchor, text: item.text, to: [model.recipient.session] });
-  return sent === undefined ? undefined : dropDraft(model.taskId, item.id);
+  const sent = await sendComment(model.reviewKey, { anchor: item.anchor, text: item.text, to: [model.recipient.session] });
+  return sent === undefined ? undefined : dropDraft(model.reviewKey, item.id);
 }
 
 // reabrir (#113): resolve false drops resolved and the agent's mark, so the thread reads com o agente; a note then goes to its reply target
-async function reopen(taskId: string, thread: string, note: string): Promise<unknown> {
-  const done = await resolveThread(taskId, thread, false);
-  return done === undefined || note === '' ? done : replyTo(taskId, thread, { text: note });
+async function reopen(key: ReviewKey, thread: string, note: string): Promise<unknown> {
+  const done = await resolveThread(key, thread, false);
+  return done === undefined || note === '' ? done : replyTo(key, thread, { text: note });
 }
 
 // The handoff's actions per state (#113): resolver and confirmar both resolve, which keeps an agent's mark (#111); reabrir and responder
 // open the item's box
 function actionsOf(item: DesignComment, model: DesignCommentsModel, run: Run, openBox: (mode: BoxMode) => void): Action[] {
-  const { taskId } = model;
-  const resolve = (): void => void run(() => resolveThread(taskId, item.id, true));
+  const { reviewKey } = model;
+  const resolve = (): void => void run(() => resolveThread(reviewKey, item.id, true));
   if (item.state === 'draft') {
-    return [{ key: 'design.action.delete', run: () => void run(() => dropDraft(taskId, item.id)) }, { key: 'design.action.send', run: () => void run(() => sendDraft(model, item)) }];
+    return [{ key: 'design.action.delete', run: () => void run(() => dropDraft(reviewKey, item.id)) }, { key: 'design.action.send', run: () => void run(() => sendDraft(model, item)) }];
   }
   if (item.state === 'agent') return [{ key: 'design.action.resolve', run: resolve }];
   if (item.state === 'replied') return [{ key: 'design.action.reply', run: () => openBox('reply') }, { key: 'design.action.resolve', run: resolve }];
@@ -156,11 +156,11 @@ function CommentItem({ item, model, isSelected, isFromPin, isRemoved, box, onSel
   const row = useRef<HTMLLIElement>(null);
   // A pin's click selects an item the list may hold out of view (#114); an item's own click is in view already
   useEffect(() => { if (isSelected && isFromPin) row.current?.scrollIntoView({ block: 'nearest' }); }, [isSelected, isFromPin]);
-  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.taskId, item.id, message.id))} /> : null);
+  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.reviewKey, item.id, message.id))} /> : null);
   const [first, ...later] = item.messages;
   // The box closes only once the server took the request: a refusal (undefined) keeps it open with the typed text
   const submit = async (text: string): Promise<void> => {
-    const done = await run(() => (box === 'reply' ? replyTo(model.taskId, item.id, { text }) : reopen(model.taskId, item.id, text)));
+    const done = await run(() => (box === 'reply' ? replyTo(model.reviewKey, item.id, { text }) : reopen(model.reviewKey, item.id, text)));
     if (done !== undefined) onBox(undefined);
   };
   return (
@@ -224,7 +224,7 @@ export interface DesignCommentsProps {
 export function DesignComments({ model, tab, selection, rects, onTab, onSelect, onHide }: DesignCommentsProps) {
   const [box, setBox] = useState<{ id: string; mode: BoxMode }>();
   const pane: ReviewPane = {
-    taskId: model.taskId, scope: 'worktree', task: taskLabel(model.activity.task), review: model.review, sessions: model.sessions,
+    reviewKey: model.reviewKey, scope: 'worktree', task: taskLabel(model.activity.task), review: model.review, sessions: model.sessions,
     defaultSession: model.recipient.session, refresh: model.refresh, edit: () => undefined, isSending: false, track: (request) => request,
   };
   const items = tab === 'open' ? model.open : model.resolved;

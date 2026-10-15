@@ -54,10 +54,11 @@ export function DiffView({ tab, label, active, activity, onScope }: DiffViewProp
   const [layout, setLayout] = useDiffLayout();
   const prefix = useId();
   const sectionId = (path: string): string => `${prefix}${path}`;
-  const { review, refresh: reread } = useReview(taskReview(tab.task));
+  const reviewKey = taskReview(tab.task);
+  const { review, refresh: reread } = useReview(reviewKey);
   const isReviewed = (file: FileDiff): boolean => isReviewedIn(review, tab.scope, file);
   const mark = (file: FileDiff, reviewed: boolean): void => {
-    void markFile(tab.task, { scope: tab.scope, path: file.path, hash: file.hash, reviewed }).then(reread);
+    void markFile(reviewKey, { scope: tab.scope, path: file.path, hash: file.hash, reviewed }).then(reread);
   };
   const nav = useFileNav({ files, sectionId, isReviewed, mark });
   const lines = useLineSelection();
@@ -65,12 +66,12 @@ export function DiffView({ tab, label, active, activity, onScope }: DiffViewProp
   const boxAnchor = selectionAnchor(files, tab.scope, lines.box);
   const target = editing ?? (boxAnchor === undefined ? undefined : { anchor: boxAnchor });
   const closeBox = (): void => { setEditing(undefined); lines.close(); };
-  const submit = useReviewSubmit(tab.task, review, reread);
+  const submit = useReviewSubmit(reviewKey, review, reread);
   const tracked = useTracked();
   const sessions = reviewSessions(activity);
   const file = review ?? EMPTY_REVIEW;
   const pane: ReviewPane = {
-    taskId: tab.task, scope: tab.scope, task: taskLabel(activity.task), review: file, sessions, defaultSession: defaultSessionOf(file, sessions),
+    reviewKey, scope: tab.scope, task: taskLabel(activity.task), review: file, sessions, defaultSession: defaultSessionOf(file, sessions),
     refresh: reread, edit: (next) => { lines.close(); setEditing(next); }, ...tracked,
   };
   return (

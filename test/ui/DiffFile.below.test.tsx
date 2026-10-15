@@ -7,6 +7,7 @@ import { EMPTY_REVIEW } from '@/lib/review-view';
 import type { FileDiff, ReviewAnchor, ReviewThread } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import { inSessionsPane } from './diff-harness';
+import { taskReview } from '@/lib/review-events';
 
 // What shows under a line (#591): the box and the conversations, in the half of their anchor side by side
 const FILE: FileDiff = { path: 'src/a.ts', status: 'modified', hash: 'a'.repeat(64), hunks: [{ header: '@@ -1,2 +1,2 @@', lines: [
@@ -15,7 +16,7 @@ const FILE: FileDiff = { path: 'src/a.ts', status: 'modified', hash: 'a'.repeat(
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ ok: true }));
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => vi.unstubAllGlobals());
-const PANE: ReviewPane = { taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, sessions: [], defaultSession: 'new', refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request };
+const PANE: ReviewPane = { reviewKey: taskReview('I1'), scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, sessions: [], defaultSession: 'new', refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request };
 const LINES = { isDragging: false, select: vi.fn(), begin: vi.fn(), extend: vi.fn(), comment: vi.fn(), close: vi.fn() };
 const anchor = (side: 'old' | 'new', n: number, text: string): ReviewAnchor => ({ scope: 'worktree', path: 'src/a.ts', side, start: n, end: n, excerpt: [text] });
 const thread = (at: ReviewAnchor): ReviewThread => ({ id: 'T1', anchor: at, participants: [], messages: [{ id: 'M1', author: 'user', at: '2026-09-30T10:00:00Z', text: 'hi' }] });
