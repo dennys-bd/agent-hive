@@ -2,6 +2,7 @@
 // Pure and node-free like src/template.ts: it reads the parse and what the caller gives, never the disk, so the UI runs the same code.
 import { Liquid, type StaticAnalysis } from 'liquidjs';
 import { liquidError, type ParsedTemplate, type TemplateVariable } from './template.js';
+import { type TemplateRef, templateRefs } from './template-refs.js';
 import type { ItemKind } from './types.js';
 
 export type Severity = 'yellow' | 'red';
@@ -29,6 +30,8 @@ export interface LintInput {
 }
 
 const BUILT_IN = 'workspace';
+// item-sources.ts names the plugin's origin too, but it reads the disk, so the lint cannot import it
+const HIVE_ORIGIN = 'hive';
 const HEADER_BODY = 'The header must parse before anything else is checked.';
 
 // Parses and analyses, never renders. The strict settings of template.ts's engine make a parse error here the one a render meets;
@@ -86,10 +89,44 @@ function requiredFindings(parsed: ParsedTemplate, workspaces: string[]): LintAnn
   });
 }
 
+// What a reference reaches: a Hive item, whose required variables the call needs; 'other' (a script, a workspace skill, the template
+// itself, whose own required variables are the required check's); or nothing
+function target(ref: TemplateRef, input: LintInput): LintItem | 'other' | undefined {
+  if (ref.kind === 'script') return input.scripts.includes(ref.name) ? 'other' : undefined;
+  if (input.self.origin === HIVE_ORIGIN && input.self.name === ref.name) return 'other';
+  const hive = input.catalogue.find((item) => item.origin === HIVE_ORIGIN && item.name === ref.name);
+  if (hive !== undefined || ref.kind === 'hive') return hive;
+  const isWorkspaceSkill = input.catalogue.some((item) => item.origin !== HIVE_ORIGIN && item.kind === 'skill' && item.name === ref.name);
+  return isWorkspaceSkill ? 'other' : undefined;
+}
+
+// The called item's own value is read: a name declared in two skills is two variables
+function callFindings(ref: TemplateRef, item: LintItem, workspaces: string[]): { key: string; annotation: LintAnnotation }[] {
+  return item.variables.flatMap((variable) => {
+    const missing = missingIn(variable, workspaces);
+    if (missing.length === 0) return [];
+    const names = missing.join(', ');
+    const title = `missing ${variable.name} · ${ref.text} · ${names}`;
+    const body = `${ref.text} requires "${variable.name}", which has no value for ${names}.`;
+    return [{ key: `${ref.line} ${variable.name}`, annotation: finding(ref.line, 'red', 'callRequired', title, body, missing) }];
+  });
+}
+
+function referenceFindings(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
+  const refs = templateRefs(parsed).map((ref) => ({ ref, reached: target(ref, input) }));
+  const unknown = refs
+    .filter(({ reached }) => reached === undefined)
+    .map(({ ref }) =>
+      finding(ref.line, 'yellow', 'reference', `unknown skill, agent or script ${ref.text}`, `${ref.text} is not a Hive skill or agent, a workspace's skill or one of the plugin's scripts.`),
+    );
+  const calls = refs.flatMap(({ ref, reached }) => (typeof reached === 'object' ? callFindings(ref, reached, input.workspaces) : []));
+  return [...uniqueBy(unknown, (annotation) => `${annotation.line} ${annotation.title}`), ...uniqueBy(calls, (call) => call.key).map((call) => call.annotation)];
+}
+
 const byLine = (a: LintAnnotation, b: LintAnnotation): number => a.line - b.line;
 
 export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
   // Every other check reads the header's variables, so a header that does not parse is answered alone
   if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byLine);
-  return [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces)].sort(byLine);
+  return [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)].sort(byLine);
 }

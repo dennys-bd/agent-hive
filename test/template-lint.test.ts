@@ -6,6 +6,9 @@ import { type ParsedTemplate, parseTemplate } from '../src/template.js';
 import { type LintAnnotation, type LintInput, type LintItem, lintTemplate } from '../src/template-lint.js';
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
+// Escaped, so the linter does not read a plain string's ${...} as a template mistake.
+const PLUGIN_ROOT = `\${CLAUDE_PLUGIN_ROOT}`;
+
 const STACKED: LintItem = {
   origin: 'hive',
   kind: 'skill',
@@ -85,5 +88,36 @@ test('neither template-refs.ts nor template-lint.ts imports from node, so the UI
     return [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
   };
   assert.deepEqual(imports('template-refs.ts'), ['./template.js']);
-  assert.deepEqual(imports('template-lint.ts'), ['liquidjs', './template.js', './types.js']);
+  assert.deepEqual(imports('template-lint.ts'), ['liquidjs', './template.js', './template-refs.js', './types.js']);
+});
+
+test('a reference to nothing is yellow; a Hive item, a workspace skill, a script and the template itself resolve (#312)', () => {
+  assert.deepEqual(lint([], ['Run `/nowhere`.', 'Ask hive:ghost.', 'Then scripts/missing.mjs.', 'Not hive:deploy either.']), [
+    '4 yellow reference unknown skill, agent or script /nowhere',
+    '5 yellow reference unknown skill, agent or script hive:ghost',
+    '6 yellow reference unknown skill, agent or script scripts/missing.mjs',
+    '7 yellow reference unknown skill, agent or script hive:deploy',
+  ]);
+  assert.deepEqual(lint([], [`Run \`/deploy\`, hive:architect, \`/hive:x\` and \`node "${PLUGIN_ROOT}/scripts/check-hv.mjs"\`.`]), []);
+});
+
+test('calling a Hive skill whose required variable has no value in a workspace is red on the calling line (#312)', () => {
+  assert.deepEqual(lintTemplate(template([], ['Then run `/stacked-branch`.', 'And /hive:stacked-branch twice: /hive:stacked-branch.']), INPUT), [
+    {
+      line: 4,
+      severity: 'red',
+      check: 'callRequired',
+      title: 'missing baseBranch · /stacked-branch · hive-site',
+      body: '/stacked-branch requires "baseBranch", which has no value for hive-site.',
+      workspaces: ['hive-site'],
+    },
+    {
+      line: 5,
+      severity: 'red',
+      check: 'callRequired',
+      title: 'missing baseBranch · /hive:stacked-branch · hive-site',
+      body: '/hive:stacked-branch requires "baseBranch", which has no value for hive-site.',
+      workspaces: ['hive-site'],
+    },
+  ]);
 });
