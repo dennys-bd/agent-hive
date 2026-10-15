@@ -242,6 +242,7 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const ready = tree.status === 'ready' ? tree.tree : undefined;
   const { loaded, marks: nestedMarks } = useIgnoredFolders(activity.id, isShown, view.expanded, ready?.ignored.folders);
   const root = ready?.root;
+  const branch = activity.branch ?? ready?.branch; // a local activity has none of its own: its checkout's, from the tree (#713)
   const marks = { ...ready?.marks, ...nestedMarks }; // #1, #289: a nested repository's marks count for its folders too, collapsed ones' included
   const rows = ready ? visibleRows(buildTree(ready.files, ready.marks, view.showHidden, ready.folders, ready.ignored, loaded), view.expanded) : [];
   const [selection, setSelection] = useState<TreeSelection>(NO_SELECTION);
@@ -265,7 +266,7 @@ function FilesBody({ target, view, isShown, onView, onOpen }: FilesBodyProps) {
   const isRootTarget = drag.hovered === '';
   return (
     <>
-      {activity.branch !== undefined && <p className="truncate px-3 pb-2 font-mono text-muted-foreground text-xs">{activity.branch}</p>}
+      {branch !== undefined && <p className="truncate px-3 pb-2 font-mono text-muted-foreground text-xs">{branch}</p>}
       <RootMenu actions={ops.actions}>
         <div ref={container} data-testid="files-tree" data-drop-target={isRootTarget || undefined} tabIndex={-1} {...treeClipboard(activity.id, root, selectedOf)} className={`flex min-h-0 flex-1 flex-col focus:outline-none${isRootTarget ? ' bg-muted' : ''}`} {...drag.area}>
           <TreeBody tree={tree} marks={marks} rows={rows} activityId={activity.id} expanded={view.expanded} drag={drag} selection={selection} actions={ops.actions} edit={edit} onToggle={folders.toggle} onSelect={select} onMenu={onMenu} />

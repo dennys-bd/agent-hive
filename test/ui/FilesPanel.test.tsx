@@ -346,6 +346,12 @@ test('a local activity shows its checkout\'s tree and the ⋯, with no arquivos 
   expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/activities/local%3Ahive/tree');
 });
 
+test('a local activity heads its tree with the branch the tree answers, the checkout\'s (#713)', async () => {
+  fetchMock.mockImplementationOnce(async () => json({ ...TREE, branch: 'main' }));
+  render(localSide());
+  expect(await screen.findByText('main')).toBeInTheDocument();
+});
+
 test('a drag in a local activity\'s tree posts to its own tree/move (#633)', async () => {
   render(localSide());
   drag(await screen.findByRole('button', { name: 'README.md' }), screen.getByRole('button', { name: 'src' }));

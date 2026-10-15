@@ -181,6 +181,13 @@ test('taskTree answers the ignored entries outermost and sorted, whatever order 
   assert.deepEqual([tree.folders, tree.ignored], [['empty'], { files: ['a.log', 'z.log'], folders: ['docs', 'node_modules', 'vendor/lib'] }]);
 });
 
+test('taskTree answers the branch its root has out, and none on a detached HEAD or when git fails (#713)', async () => {
+  const execWith = (branch: () => string): Exec => async (_file, args) => ({ stdout: args.includes('--show-current') ? branch() : '' });
+  assert.equal((await taskTree('/wt', execWith(() => 'main\n'), async () => false)).branch, 'main');
+  assert.equal('branch' in (await taskTree('/wt', execWith(() => '\n'), async () => false)), false, 'detached: no branch');
+  assert.equal('branch' in (await taskTree('/wt', execWith(() => { throw new Error('fatal'); }), async () => false)), false, 'a failed read is no branch, not a failed tree');
+});
+
 test('GET /activities/:id/tree/folder lists a folder\'s children from disk, sorted, .git left out, running no git; a path outside the root, under .git, missing or not a string is refused, running no git (HIVE-22, #1)', async (t) => {
   const f = await startTree(t, (repo) => [task(1, { worktree: worktreePath(repo, 'hive-1-task') })]);
   const wt = worktreePath(f.repo, 'hive-1-task');
