@@ -115,3 +115,45 @@ export function removeChain(text: string, line: number): EditResult {
     return source.lines.filter((_, index) => !markers.has(index + 1));
   });
 }
+
+interface HeldBranch {
+  line: number;
+  marker: string;
+  body: string[];
+}
+
+// What each branch holds: the lines between its marker and the next one.
+function heldBranches(lines: string[], chain: ChainBlock): HeldBranch[] {
+  return chain.branches.map((branch, index) => {
+    const next = index + 1 < chain.branches.length ? chain.branches[index + 1].line : chain.endLine;
+    return { line: branch.line, marker: branch.marker, body: lines.slice(branch.line, next - 1) };
+  });
+}
+
+function rewriteChain(lines: string[], chain: ChainBlock, spec: ChainSpec): string[] | TemplateError {
+  const held = heldBranches(lines, chain);
+  const conditional = held.filter((branch) => branch.marker !== 'else');
+  const otherwise = held.find((branch) => branch.marker === 'else');
+  const dropped = [...conditional.slice(spec.branches.length), ...(spec.else || otherwise === undefined ? [] : [otherwise])];
+  // dropping text the user wrote is data loss: they empty the branch first
+  const holding = dropped.find((branch) => branch.body.some((text) => text.trim() !== ''));
+  if (holding !== undefined) {
+    return { line: holding.line, message: `the {% ${holding.marker} %} branch holds text: empty it before removing it` };
+  }
+  const markers = chainMarkers(spec);
+  const kept = spec.branches.flatMap((_, index) => [markers[index], ...(index < conditional.length ? conditional[index].body : [])]);
+  const elseLines = spec.else ? [markers[spec.branches.length], ...(otherwise?.body ?? [])] : [];
+  return [...kept, ...elseLines, markers[markers.length - 1]];
+}
+
+/** The chain's markers rewritten for new conditions, added elsif branches and the else toggled; no branch's text is lost. */
+export function replaceChain(text: string, line: number, chain: ChainSpec): EditResult {
+  return edit(text, (source) => {
+    const found = chainAt(source, line);
+    if ('message' in found) return found;
+    const problem = chainProblem(chain);
+    if (problem !== undefined) return { line, message: problem };
+    const rewritten = rewriteChain(source.lines, found, chain);
+    return Array.isArray(rewritten) ? splice(source.lines, found.line, found.endLine, rewritten) : rewritten;
+  });
+}

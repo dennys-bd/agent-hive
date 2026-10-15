@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { TemplateError } from '../src/template.js';
-import type { ChainSpec } from '../src/template-condition.js';
-import { type EditResult, insertChain, removeChain } from '../src/template-edit.js';
+import type { ChainSpec, Condition } from '../src/template-condition.js';
+import { type EditResult, insertChain, removeChain, replaceChain } from '../src/template-edit.js';
 
 // Text edits of a template (#311): each answers the new text with its parse and map, or an error; never throws.
 const DOC = [
@@ -68,4 +68,26 @@ test('removeChain keeps every branch\'s text; edits refuse a bad line, an empty 
   assert.match(refused(insertChain(DOC, 12, { branches: [], else: false })).message, /at least one condition/);
   assert.deepEqual(refused(removeChain(DOC, 16)), { line: 16, message: 'no chain starts at line 16' });
   assert.deepEqual(refused(removeChain('## A\n{% if dryRun %}\ntext\n', 2)), { line: 2, message: '{% if %} is never closed' });
+});
+
+const deliveryIs = (value: string): Condition => ({ connective: 'and', terms: [{ variable: 'delivery', op: 'is', value }] });
+
+test('replaceChain rewrites the markers, adds empty branches, and refuses to drop a branch that holds text (#311)', () => {
+  const grown = ok(replaceChain(DOC, 15, { branches: [deliveryIs('stacked'), deliveryIs('single')], else: true }));
+  assert.deepEqual(grown.text.split('\n').slice(14, 20), [
+    '{% if delivery == "stacked" %}',
+    'stacked text',
+    '{% elsif delivery == "single" %}',
+    '{% else %}',
+    'other text',
+    '{% endif %}',
+  ]);
+  assert.equal(ok(replaceChain(grown.text, 15, { branches: [deliveryIs('stacked')], else: true })).text, DOC, 'an empty elsif is dropped');
+
+  const dropped = refused(replaceChain(DOC, 15, { branches: [deliveryIs('stacked')], else: false }));
+  assert.equal(dropped.line, 17);
+  assert.match(dropped.message, /holds text/);
+
+  const unless = ok(replaceChain(DOC, 15, { branches: [{ connective: 'and', terms: [{ variable: 'dryRun', op: 'isNo' }] }], else: true }));
+  assert.deepEqual(unless.text.split('\n').slice(14, 19), ['{% unless dryRun %}', 'stacked text', '{% else %}', 'other text', '{% endunless %}']);
 });
