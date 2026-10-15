@@ -75,8 +75,9 @@ export function findReferences(line: string, lineNumber: number, catalogue?: Cat
 
 const HEADING = /^(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
-// A marker alone on its line; an inline {% if %}…{% endif %} fails the anchors and stays text.
-const MARKER = /^\s*\{%-?\s*(if|unless|elsif|else|endif|endunless)(?:\s+((?:(?!-?%\}).)*?))?\s*-?%\}\s*$/;
+// A marker alone on its line; an inline {% if %}…{% endif %} fails the anchors and stays text. The condition cannot start with
+// whitespace: \s+ and a group that may also start with it split a run of spaces in cubically many ways (ReDoS).
+const MARKER = /^\s*\{%-?\s*(if|unless|elsif|else|endif|endunless)(?:\s+(\S(?:(?!-?%\}).)*?))?\s*-?%\}\s*$/;
 const LITERAL_TAG = /\{%-?\s*(raw|endraw|comment|endcomment)\s*-?%\}/g;
 
 type ChainTag = 'if' | 'unless';
@@ -259,7 +260,7 @@ function nextLiteral(literal: ScanState['literal'], text: string): ScanState['li
 function scanLine(b: Builder, state: ScanState, raw: string, line: number): ScanState {
   const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
   // markers count inside a markdown fence (Liquid renders them there), not inside raw or comment
-  const marker = state.literal === null ? MARKER.exec(text) : null;
+  const marker = state.literal === null && text.trimEnd().endsWith('%}') ? MARKER.exec(text) : null; // the cheap test bounds a failing scan
   if (marker !== null && onMarker(b, marker[1] as MarkerTag, (marker[2] ?? '').trim(), line)) return state;
   const heading = state.fence === null ? HEADING.exec(text) : null;
   const level = heading === null ? 0 : heading[1].length;

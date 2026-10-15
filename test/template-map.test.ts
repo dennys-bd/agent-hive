@@ -265,3 +265,15 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   ]);
   assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 110 }]);
 });
+
+test('a marker line with thousands of spaces maps in linear time (#311)', () => {
+  const started = Date.now();
+  buildMap(parseTemplate(`---\nname: x\n---\n{% if ${' '.repeat(20000)}x`));
+  assert.ok(Date.now() - started < 500);
+});
+
+test('a marker line with trailing spaces and no closer maps in linear time (#311)', () => {
+  const started = Date.now();
+  buildMap(parseTemplate(`---\nname: x\n---\n{% if x${' '.repeat(20000)}`));
+  assert.ok(Date.now() - started < 500);
+});
