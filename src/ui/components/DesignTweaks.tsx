@@ -1,5 +1,5 @@
 import { XIcon } from 'lucide-react';
-import { type KeyboardEvent, useState } from 'react';
+import { type KeyboardEvent, type PointerEvent, useRef, useState } from 'react';
 import { fitValue, TWEAK_TEXT_MAX, type TweakSchema } from '../../design-tweaks';
 import type { DesignTweakValue } from '../../types';
 import { TOGGLE_ITEM, TOGGLE_TRACK } from '@/components/DesignComments';
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { TweakBlock } from '@/hooks/use-design-tweaks';
+import { useTweakOverflow } from '@/hooks/use-tweak-overflow';
 import { t } from '@/i18n';
 
 // The design pane's tweaks (#241): the controls a screen's hv-tweaks block declares, a row under the bar and the floating panel more… opens
@@ -92,14 +93,41 @@ function groupsOf(schema: TweakSchema): { name?: string; tweaks: Tweak[] }[] {
   return [...(loose.length > 0 ? [{ tweaks: loose }] : []), ...names.map((name) => ({ name, tweaks: schema.filter((tweak) => tweak.group === name) }))];
 }
 
-function TweaksPanel({ schema, values, onChange }: { schema: TweakSchema; values: Values; onChange: OnChange }) {
-  const [isOpen, setOpen] = useState(false);
+interface Offset { x: number; y: number }
+
+// The panel's header drags it (#342): the offset goes on CSS translate, apart from the transform Radix positions it with. The close button
+// keeps its click.
+function useDragOffset(): { offset: Offset; handle: { onPointerDown(e: PointerEvent<HTMLElement>): void; onPointerMove(e: PointerEvent<HTMLElement>): void; onPointerUp(): void } } {
+  const [offset, setOffset] = useState<Offset>({ x: 0, y: 0 });
+  const start = useRef<{ x: number; y: number; from: Offset } | null>(null);
+  return {
+    offset,
+    handle: {
+      onPointerDown: (event) => {
+        if (event.button !== 0 || (event.target as Element).closest('button') !== null) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        start.current = { x: event.clientX, y: event.clientY, from: offset };
+      },
+      onPointerMove: (event) => {
+        const drag = start.current;
+        if (drag !== null) setOffset({ x: drag.from.x + event.clientX - drag.x, y: drag.from.y + event.clientY - drag.y });
+      },
+      onPointerUp: () => { start.current = null; },
+    },
+  };
+}
+
+interface PanelProps { schema: TweakSchema; values: Values; onChange: OnChange; isOpen: boolean; setOpen(open: boolean): void }
+
+// The offset outlives a close: the panel stays mounted while more… shows, so it opens again where it was dragged to, never persisted
+function TweaksPanel({ schema, values, onChange, isOpen, setOpen }: PanelProps) {
+  const { offset, handle } = useDragOffset();
   const title = t('design.tweaks');
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
-      <PopoverTrigger asChild><Button type="button" size="xs" variant="ghost" className="shrink-0 text-muted-foreground">{t('design.tweaks.more')}</Button></PopoverTrigger>
-      <PopoverContent aria-label={title} align="end" className="w-72 p-0 text-xs">
-        <div className="flex h-[30px] items-center border-b px-2.5">
+      <PopoverTrigger asChild><Button type="button" size="xs" variant="ghost" data-tweak-more className="absolute right-0 shrink-0 bg-background text-muted-foreground">{t('design.tweaks.more')}</Button></PopoverTrigger>
+      <PopoverContent aria-label={title} align="end" style={{ translate: `${offset.x}px ${offset.y}px` }} className="w-72 p-0 text-xs">
+        <div {...handle} className="flex h-[30px] cursor-move touch-none select-none items-center border-b px-2.5">
           <h2 className="font-medium">{title}</h2>
           <Button type="button" size="icon-xs" variant="ghost" className="ml-auto" aria-label={t('design.tweaks.close')} title={t('design.tweaks.close')} onClick={() => setOpen(false)}><XIcon /></Button>
         </div>
@@ -114,20 +142,34 @@ function TweaksPanel({ schema, values, onChange }: { schema: TweakSchema; values
   );
 }
 
+// A control past the row's end stays in its layout, so the others never move as it leaves, but no one sees or reaches it (#342)
+const HIDDEN = { 'aria-hidden': true, inert: true, className: 'invisible flex shrink-0' } as const;
+
+function TweakRow({ schema, values, onChange }: { schema: TweakSchema; values: Values; onChange: OnChange }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [isOpen, setOpen] = useState(false);
+  const fits = useTweakOverflow(row, schema.map((tweak) => tweak.name));
+  return (
+    <div ref={row} className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch overflow-hidden">
+      {schema.map((tweak, index) => (
+        <span key={tweak.name} data-tweak-item {...(isOpen || index >= fits ? HIDDEN : { className: 'flex shrink-0' })}>
+          <Labelled tweak={tweak} value={values[tweak.name] ?? tweak.default} onChange={onChange} />
+        </span>
+      ))}
+      {fits < schema.length && <TweaksPanel schema={schema} values={values} onChange={onChange} isOpen={isOpen} setOpen={setOpen} />}
+    </div>
+  );
+}
+
 export interface DesignTweaksProps { block: Exclude<TweakBlock, { status: 'none' }>; values: Values; onChange: OnChange }
 
 /** The tweaks row (#241): under the bar while the file has a block, valid or not. Invalid: its words, no control and no toast (m-11). */
 export function DesignTweaks({ block, values, onChange }: DesignTweaksProps) {
   return (
-    <div role="toolbar" aria-label={t('design.tweaks')} className="flex h-[30px] shrink-0 items-center gap-3 overflow-x-auto border-b px-2.5 text-muted-foreground text-xs">
+    <div role="toolbar" aria-label={t('design.tweaks')} className="flex h-[30px] shrink-0 items-center border-b px-2.5 text-muted-foreground text-xs">
       {block.status === 'invalid'
         ? <span className="text-destructive">{t('design.tweaks.invalid')}</span>
-        : (
-          <>
-            {block.schema.map((tweak) => <Labelled key={tweak.name} tweak={tweak} value={values[tweak.name] ?? tweak.default} onChange={onChange} />)}
-            <TweaksPanel schema={block.schema} values={values} onChange={onChange} />
-          </>
-        )}
+        : <TweakRow schema={block.schema} values={values} onChange={onChange} />}
     </div>
   );
 }

@@ -156,3 +156,22 @@ test('a comment pinned in natural reopens in natural (#341)', async () => {
   await user.click(screen.getByText('on the default'));
   expect(screen.getByRole('radio', { name: 'natural' })).toHaveAttribute('aria-checked', 'true');
 });
+
+test('a pointer-down, a typed value and a drag inside the open more… panel leave it open; a pointer-down outside closes it (#342)', async () => {
+  const user = userEvent.setup();
+  await pane();
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(80); // every control 80px in a 200px row: they overflow
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200);
+  fromBridge({ type: 'tweaks', schema: { ...BLOCK, title: { type: 'text', default: 'Flow' } } });
+  await user.click(screen.getByRole('button', { name: 'mais…' }));
+  const panel = (): HTMLElement => screen.getByRole('dialog', { name: 'tweaks' });
+  const title = screen.getByRole('textbox', { name: 'title' });
+  await user.click(title);
+  await user.type(title, 's{Enter}');
+  await user.click(screen.getByRole('switch', { name: 'auto' }));
+  await user.pointer([{ keys: '[MouseLeft>]', target: screen.getByRole('heading', { name: 'tweaks' }) }, { coords: { x: 30, y: 30 } }, { keys: '[/MouseLeft]' }]);
+  expect(panel()).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'title' })).toHaveValue('Flows');
+  await user.click(document.body);
+  expect(screen.queryByRole('dialog', { name: 'tweaks' })).toBeNull();
+});
