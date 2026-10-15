@@ -277,3 +277,9 @@ test('a marker line with trailing spaces and no closer maps in linear time (#311
   buildMap(parseTemplate(`---\nname: x\n---\n{% if x${' '.repeat(20000)}`));
   assert.ok(Date.now() - started < 500);
 });
+
+test('a plugin-prefixed name followed by a path is no reference, not even its prefix (#311)', () => {
+  assert.deepEqual(refs('see /p:x/y here'), []);
+  assert.deepEqual(refs('see @p:x/y here'), []);
+  assert.deepEqual(refs('Run /new-pr: it opens the PR.'), [['skill', 'new-pr']]);
+});

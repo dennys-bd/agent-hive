@@ -48,7 +48,8 @@ const NAME = '[a-z0-9][a-z0-9-]*';
 // A word starts at the line's start, after whitespace or after one of ( [ ` " ' — so src/ui, /Users/me/x and me@mail.com hold none.
 const WORD_START = '(?<=^|[\\s(\\[`"\'])';
 // A name ends where no path (/), longer name (-) or file extension (.x) goes on: /x/y and p:x//url are not calls.
-const WORD_END = '(?![\\w/-]|\\.\\w)';
+// A name followed by :x is the head of a p:x name that failed further on, so it is no name either.
+const WORD_END = '(?![\\w/-]|\\.\\w|:[a-z0-9])';
 const WORD = new RegExp(`${WORD_START}(\\\\?)([/@]?)((?:${NAME}:)?${NAME})${WORD_END}`, 'g');
 const SCRIPT = new RegExp(`${WORD_START}((?:[\\w.-]+/)*[\\w-][\\w.-]*\\.(?:py|sh|js|mjs|ts))${WORD_END}`, 'g');
 
