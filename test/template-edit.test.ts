@@ -225,3 +225,10 @@ test('replaceChain keeps the indentation and trim flags of each marker that stay
   const dropped = '  {%- if x -%}\n  t\n  {% endif %}\n';
   assert.equal(ok(replaceChain(dropped, 1, added)).text, '  {%- if y -%}\n  t\n{% elsif y %}\n  {% endif %}\n');
 });
+
+test('addVariable refuses names that would reach Object.prototype (#311)', () => {
+  for (const name of ['__proto__', 'constructor', 'prototype']) {
+    const error = refused(addVariable(DOC, { name, type: 'boolean' }));
+    assert.ok(error.message.includes(name), error.message);
+  }
+});

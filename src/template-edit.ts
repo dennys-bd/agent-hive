@@ -33,6 +33,8 @@ const LINE_WITH_ENDING = /[^\n]*\n|[^\n]+$/g;
 const ENDING = /\r?\n$/;
 const NO_LINE = 1; // an error with no line of its own points at the file's start
 const FENCE = '---';
+// Names that reach Object.prototype when the header is read back into a plain object.
+const PROTOTYPE_NAMES = ['__proto__', 'constructor', 'prototype'];
 
 // Edits read structure only, so the map is built without a catalogue.
 function answer(text: string): EditResult {
@@ -227,6 +229,7 @@ function writeHeader(source: Source, change: (doc: Document.Parsed) => void): st
 export function addVariable(text: string, declaration: VariableDeclaration): EditResult {
   return edit(text, (source) => {
     const { name, ...fields } = declaration;
+    if (PROTOTYPE_NAMES.includes(name)) return { line: NO_LINE, variable: name, message: `"${name}" is not a name a variable can take` };
     const existing = source.parsed.variables.find((variable) => variable.name === name);
     if (existing !== undefined) return { line: existing.line, variable: name, message: `variable "${name}" is already declared` };
     // flow style, as the shipped templates write a declaration: one line per variable
