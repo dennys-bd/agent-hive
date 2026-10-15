@@ -6,7 +6,7 @@ description: Build stage for one task: resolve the conventions, then slice by sl
 # /hive:new-build
 
 Implements an approved plan on the task's branch, slice by slice, writes
-the walkthrough and opens the PRs. It is the last stage of `/hive:flow`
+the walkthrough and opens the PRs. It is the last stage of the Hive's flow
 and also works on its own. The only GitHub interaction is
 `gh pr create`; moving the task in its source is not this skill's job.
 

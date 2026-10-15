@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type ParsedTemplate, parseTemplate } from '../src/template.js';
 import { type LintAnnotation, type LintInput, type LintItem, lintTemplate } from '../src/template-lint.js';
@@ -169,4 +169,38 @@ test('annotations sort by line, then red before yellow, then title (#312)', () =
     '4 yellow reference unknown skill, agent or script hive:ghost',
     '4 yellow reference unknown skill, agent or script scripts/missing.mjs',
   ]);
+});
+
+const PLUGIN = new URL('../../assets/plugin/', import.meta.url); // this file runs from dist/test/
+// These five ship an unquoted description holding ": ", which is not valid YAML (reported as a real problem of the plugin, #312). Their
+// body is still linted, with the description quoted in memory; drop an entry here once its file quotes the description.
+const UNQUOTED_DESCRIPTION = new Set(['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec']);
+const quoteDescription = (text: string): string => text.replace(/^description: (.*)$/m, (_, value: string) => `description: ${JSON.stringify(value)}`);
+
+test('every shipped skill and agent lints clean against a catalogue of the plugin and its scripts (#312)', () => {
+  const text = (path: string): string => readFileSync(new URL(path, PLUGIN), 'utf8');
+  const read = (path: string, name: string): ParsedTemplate =>
+    parseTemplate(UNQUOTED_DESCRIPTION.has(name) ? quoteDescription(text(path)) : text(path));
+  const skills = readdirSync(new URL('skills/', PLUGIN), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => ({ kind: 'skill' as const, name: entry.name, path: `skills/${entry.name}/SKILL.md` }));
+  const agents = readdirSync(new URL('agents/', PLUGIN))
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => ({ kind: 'specialist' as const, name: file.slice(0, -'.md'.length), path: `agents/${file}` }));
+  const shipped = [...skills, ...agents].map((item) => ({ ...item, parsed: read(item.path, item.name) }));
+  const catalogue: LintItem[] = shipped.map(({ kind, name, parsed }) => ({ origin: 'hive', kind, name, variables: parsed.variables }));
+  const scripts = readdirSync(new URL('scripts/', PLUGIN)).map((file) => `scripts/${file}`);
+  assert.ok(skills.length > 0 && agents.length > 0 && scripts.length > 0, 'the plugin was read');
+  for (const { kind, name, path, parsed } of shipped) {
+    const input: LintInput = { self: { origin: 'hive', kind, name }, catalogue, workspaces: ['hive', 'hive-site'], scripts };
+    assert.deepEqual(lintTemplate(parsed, input), [], path);
+  }
+});
+
+test('the five skills with an unquoted description answer one YAML error on line 3 until their file is fixed (#312)', () => {
+  for (const name of UNQUOTED_DESCRIPTION) {
+    const path = `skills/${name}/SKILL.md`;
+    const annotations = lintTemplate(parseTemplate(readFileSync(new URL(path, PLUGIN), 'utf8')), { ...INPUT, self: { origin: 'hive', kind: 'skill', name } });
+    assert.ok(annotations.length === 0 || (annotations.length === 1 && annotations[0].line === 3 && annotations[0].check === 'parse'), path);
+  }
 });
