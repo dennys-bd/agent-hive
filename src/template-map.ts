@@ -1,6 +1,6 @@
 // The block map of a template's body (#311, node 1.2 of #309): heading blocks, conditional chains, the references each block makes,
 // start lines and the collapse structure. Node-free, like src/template.ts: the editor's outline and the server read the same map.
-import type { Condition } from './template-condition.js';
+import { type Condition, parseCondition } from './template-condition.js';
 import type { ParsedTemplate, TemplateError } from './template.js';
 
 export type ReferenceKind = 'skill' | 'agent' | 'skill-or-agent' | 'script';
@@ -75,6 +75,12 @@ export function findReferences(line: string, lineNumber: number, catalogue?: Cat
 
 const HEADING = /^(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+// A marker alone on its line; an inline {% if %}…{% endif %} fails the anchors and stays text.
+const MARKER = /^\s*\{%-?\s*(if|unless|elsif|else|endif|endunless)(?:\s+((?:(?!-?%\}).)*?))?\s*-?%\}\s*$/;
+const LITERAL_TAG = /\{%-?\s*(raw|endraw|comment|endcomment)\s*-?%\}/g;
+
+type ChainTag = 'if' | 'unless';
+type MarkerTag = ChainTag | 'elsif' | 'else' | 'endif' | 'endunless';
 
 interface Container {
   references: Reference[];
@@ -89,7 +95,19 @@ interface HeadingFrame extends Container {
   title: string;
   line: number;
 }
-type Frame = RootFrame | HeadingFrame;
+interface OpenChain {
+  tag: ChainTag;
+  line: number;
+  branches: MapBranch[];
+}
+interface BranchFrame extends Container {
+  kind: 'branch';
+  chain: OpenChain;
+  marker: MapBranch['marker'];
+  conditionText: string;
+  line: number;
+}
+type Frame = RootFrame | HeadingFrame | BranchFrame;
 
 // Local to one buildMap call: its frames are filled in place and handed out as the map; the parse is never touched.
 interface Builder {
@@ -102,11 +120,12 @@ interface Builder {
 
 interface ScanState {
   fence: string | null; // the run that opened the markdown fence the scan is in
+  literal: 'raw' | 'comment' | null; // inside {% raw %} or {% comment %}, markers are not tags
 }
 
 type LineKind = 'text' | 'title' | 'fenced';
 
-const START: ScanState = { fence: null };
+const START: ScanState = { fence: null, literal: null };
 
 const top = (b: Builder): Frame => b.stack[b.stack.length - 1];
 
@@ -126,15 +145,82 @@ const headingBlock = (frame: HeadingFrame, endLine: number): MapBlock => ({
   count: frame.children.length,
 });
 
+function branchCondition(marker: MapBranch['marker'], text: string): Condition | null {
+  if (marker === 'else') return null;
+  const condition = parseCondition(text);
+  if (marker !== 'unless') return condition;
+  // unless v is "v is no"; any other unless negates a whole condition, which the model cannot hold
+  const term = condition?.terms.length === 1 ? condition.terms[0] : undefined;
+  return term?.op === 'hasValue' ? { connective: 'and', terms: [{ variable: term.variable, op: 'isNo' }] } : null;
+}
+
+const branchOf = (frame: BranchFrame): MapBranch => ({
+  marker: frame.marker,
+  conditionText: frame.conditionText,
+  condition: branchCondition(frame.marker, frame.conditionText),
+  line: frame.line,
+  references: dedupe(frame.references),
+  children: frame.children,
+});
+
+const chainBlock = (chain: OpenChain, endLine: number): MapBlock => ({
+  kind: 'chain',
+  tag: chain.tag,
+  line: chain.line,
+  endLine,
+  branches: chain.branches,
+});
+
+const branchFrame = (chain: OpenChain, marker: MapBranch['marker'], conditionText: string, line: number): BranchFrame => ({
+  kind: 'branch',
+  chain,
+  marker,
+  conditionText,
+  line,
+  references: [],
+  children: [],
+});
+
 // Closes the innermost frame at endLine and hands its block to the frame under it; the root is never closed.
 function closeTop(b: Builder, endLine: number): void {
   const frame = top(b);
   if (frame.kind === 'root') return;
   b.stack.pop();
-  top(b).children.push(headingBlock(frame, endLine));
+  if (frame.kind === 'heading') top(b).children.push(headingBlock(frame, endLine));
+  else frame.chain.branches.push(branchOf(frame));
 }
 
-// A heading closes the open headings of its level or deeper.
+const nearestBranch = (b: Builder): BranchFrame | undefined =>
+  [...b.stack].reverse().find((frame): frame is BranchFrame => frame.kind === 'branch');
+
+function closeThrough(b: Builder, frame: Frame, endLine: number): void {
+  while (b.stack.includes(frame)) closeTop(b, endLine);
+}
+
+// Answers false when the marker has no chain to belong to: the line is then text, with an error at it.
+function onMarker(b: Builder, tag: MarkerTag, conditionText: string, line: number): boolean {
+  if (tag === 'if' || tag === 'unless') {
+    b.stack.push(branchFrame({ tag, line, branches: [] }, tag, conditionText, line));
+    return true;
+  }
+  const branch = nearestBranch(b);
+  if (branch === undefined) {
+    b.errors.push({ line, message: `{% ${tag} %} with no open {% if %} or {% unless %}` });
+    return false;
+  }
+  // a later marker closes everything opened inside the branch: headings never outlive it
+  closeThrough(b, branch, line - 1);
+  const { chain } = branch;
+  if (tag === 'elsif' || tag === 'else') {
+    b.stack.push(branchFrame(chain, tag, tag === 'else' ? '' : conditionText, line));
+    return true;
+  }
+  if (tag !== `end${chain.tag}`) b.errors.push({ line, message: `{% ${tag} %} closes an {% ${chain.tag} %}` });
+  top(b).children.push(chainBlock(chain, line));
+  return true;
+}
+
+// A heading closes the open headings of its level or deeper, never past an open branch.
 function openHeading(b: Builder, level: 2 | 3, title: string, line: number): void {
   for (let frame = top(b); frame.kind === 'heading' && frame.level >= level; frame = top(b)) closeTop(b, line - 1);
   b.stack.push({ kind: 'heading', level, title, line, references: [], children: [] });
@@ -162,13 +248,24 @@ function nextFence(fence: string | null, text: string): string | null {
   return closes ? null : fence;
 }
 
+function nextLiteral(literal: ScanState['literal'], text: string): ScanState['literal'] {
+  return [...text.matchAll(LITERAL_TAG)].reduce<ScanState['literal']>((open, match) => {
+    const tag = match[1];
+    if (open === null) return tag === 'raw' || tag === 'comment' ? tag : null;
+    return tag === `end${open}` ? null : open;
+  }, literal);
+}
+
 function scanLine(b: Builder, state: ScanState, raw: string, line: number): ScanState {
   const text = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+  // markers count inside a markdown fence (Liquid renders them there), not inside raw or comment
+  const marker = state.literal === null ? MARKER.exec(text) : null;
+  if (marker !== null && onMarker(b, marker[1] as MarkerTag, (marker[2] ?? '').trim(), line)) return state;
   const heading = state.fence === null ? HEADING.exec(text) : null;
   const level = heading === null ? 0 : heading[1].length;
   if (level === 2 || level === 3) openHeading(b, level, (heading?.[2] ?? '').trim(), line);
   onText(b, text, line, lineKind(state, level));
-  return { ...state, fence: nextFence(state.fence, text) };
+  return { fence: nextFence(state.fence, text), literal: nextLiteral(state.literal, text) };
 }
 
 // A final newline ends the last line instead of opening an empty one.
@@ -178,8 +275,14 @@ function bodyLines(body: string): string[] {
   return body.endsWith('\n') ? lines.slice(0, -1) : lines;
 }
 
+// What is still open at the end closes at the last line; an open chain is also an error at its first marker.
 function closeAll(b: Builder, lastLine: number): void {
-  while (top(b).kind !== 'root') closeTop(b, lastLine);
+  for (let frame = top(b); frame.kind !== 'root'; frame = top(b)) {
+    closeTop(b, lastLine);
+    if (frame.kind !== 'branch') continue;
+    b.errors.push({ line: frame.chain.line, message: `{% ${frame.chain.tag} %} is never closed` });
+    top(b).children.push(chainBlock(frame.chain, lastLine));
+  }
 }
 
 function introduction(b: Builder, lastLine: number): MapBlock[] {
