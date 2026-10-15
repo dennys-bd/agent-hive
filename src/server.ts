@@ -20,7 +20,7 @@ import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
-import { excludeFromGit, prepareHome, type ProtocolPaths } from './hooks-settings.js';
+import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import { createLogger, describeChanges, describeStages, describeEffect, describeEvent, type Logger } from './log.js';
@@ -74,6 +74,8 @@ import { registerOpenRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
+import { createCustomStore } from './custom-store.js';
+import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
 import { configFrom, hiveSourceRefusal, movedStages, workspacesRefusal, renamesRefusal, setupRefusal } from './settings-save.js';
@@ -1117,6 +1119,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
+  // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
+  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: () => undefined });
+  registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: pluginSource(), log });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });
