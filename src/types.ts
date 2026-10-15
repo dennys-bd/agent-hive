@@ -816,10 +816,12 @@ export type GitMark = 'M' | 'A' | 'D';
  * its empty folders (#818), relative; and its root, absolute (#818): copy path, the clipboard and the untitled save need it, and a local
  * activity has no worktree on the page; and what git ignores, with the nested repositories (HIVE-22), outermost. A `D` path is in `marks`
  * only, never in `files`: its folders take the mark (#903). `checkout` (#131) is the root relative to the workspace's main checkout, absent
- * when the root is that checkout. */
+ * when the root is that checkout. `branch` (#713) is the branch the root has out, absent on a detached HEAD: a local activity has no branch of
+ * its own, and the tree's polling follows a checkout switch. */
 export interface TaskTree {
   root: string;
   checkout?: string;
+  branch?: string;
   files: string[];
   marks: Record<string, GitMark>;
   folders: string[];

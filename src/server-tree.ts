@@ -120,19 +120,21 @@ function ignoredOf(listing: string, nested: readonly string[]): IgnoredEntries {
 }
 
 /** Every path of the worktree git does not ignore (tracked, and untracked not excluded), minus the deleted ones, with their marks (a deleted path's `D` in the marks only, #903); its empty
- *  folders (#818); what git ignores and its nested repositories (HIVE-22); and its root, absolute. */
+ *  folders (#818); what git ignores and its nested repositories (HIVE-22); its root, absolute; and the branch it has out (#713). */
 export async function taskTree(worktree: string, exec: Exec, hasGit: (folder: string) => Promise<boolean> = holdsGit): Promise<TaskTree> {
-  const [listed, status, directories, ignored] = await Promise.all([
+  const [listed, status, directories, ignored, branch] = await Promise.all([
     git(worktree, ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], exec),
     git(worktree, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], exec),
     git(worktree, ['ls-files', '-z', '--others', '--directory', '--exclude-standard'], exec),
     git(worktree, IGNORED_ARGS, exec),
+    // #713: read with every poll, so a checkout switch shows; a detached HEAD or a failed read is no branch, never a failed tree
+    git(worktree, ['branch', '--show-current'], exec).then((out) => out.trim(), () => ''),
   ]);
   const { marks, deleted } = parseStatus(status);
   // An unmerged path lists once per stage; an untracked nested repo lists as `dir/`, a folder git will not look into, so it is left out here
   const files = [...new Set(listed.split('\0'))].filter((path) => path !== '' && !path.endsWith('/') && !deleted.has(path));
   const { empty, nested } = await emptyFolders(worktree, directories, files, hasGit);
-  return { root: worktree, files, marks, folders: empty, ignored: ignoredOf(ignored, nested) };
+  return { root: worktree, ...(branch === '' ? {} : { branch }), files, marks, folders: empty, ignored: ignoredOf(ignored, nested) };
 }
 
 // The tree's root, also POST /activities/:id/tree/move's (#594). A task's folder on disk: its worktree, or its workspace's checkout for a
