@@ -17,7 +17,7 @@ async function serve(t: TestContext, f: Fixture): Promise<{ base: string; lines:
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
-  const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined });
+  const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
   registerPluginRoutes(app, {
     requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces } } } }),
     store,
@@ -77,6 +77,9 @@ test('each refusal answers its status: 400 bad body, name or path; 404 unknown i
   assert.equal(await status('POST', '/api/items', { kind: 'specialist', name: 'new-build' }), 409, "name_taken: a shipped skill's name");
   assert.equal(await status('PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: 'a' }), 200);
   assert.equal(await status('POST', `${at(BUILD)}/versions`, { name: 'mine', from: 'original' }), 409, 'exists');
+  assert.equal(await status('POST', '/api/items', { kind: 'skill', name: 'own' }), 201);
+  assert.equal(await status('POST', `${at('hive:own')}/versions`, { name: 'two', from: 'mine' }), 200);
+  assert.equal(await status('DELETE', `${at('hive:own')}/versions/mine`), 409, 'in_use');
   const [locked, body] = await call(base, 'PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: 'b' });
   assert.equal(locked, 409);
   assert.match((body as { error: string }).error, /read-only/);

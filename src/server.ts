@@ -1120,7 +1120,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
   // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
-  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: () => undefined });
+  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: () => undefined, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: pluginSource(), log });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings

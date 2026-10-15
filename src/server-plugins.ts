@@ -26,6 +26,7 @@ const STATUS: Record<RefusalCode, number> = {
   exists: HTTP_CONFLICT,
   name_taken: HTTP_CONFLICT,
   original_locked: HTTP_CONFLICT,
+  in_use: HTTP_CONFLICT,
 };
 
 const NEW_ITEM = z.object({ kind: z.enum(ITEM_KINDS), name: z.string() });

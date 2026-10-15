@@ -1,16 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { chmod, readdir, readFile, rm, stat, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCustomStore, type StoreResult } from '../src/custom-store.js';
 import { isRefusal } from '../src/custom-versions.js';
 import { readCatalogue, readItem } from '../src/items-catalogue.js';
+import { fakeLog } from './fakes.js';
 import { assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, REPO_SKILL, SKILL, snapshot } from './custom-fixture.js';
 
 const REVIEWER = 'hive:my-reviewer';
 const BOTH = ['agent-hive', 'hive-site'];
 const open = (f: Fixture, changes: string[][] = []) =>
-  createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: (ws) => changes.push(ws) });
+  createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: (ws) => changes.push(ws), log: fakeLog().log });
 const item = async (f: Fixture, id: string) => (await readCatalogue(f)).find((i) => i.id === id);
 const codeOf = (result: StoreResult): string | undefined => (isRefusal(result) ? result.code : undefined);
 const json = async (path: string): Promise<unknown> => JSON.parse(await readFile(path, 'utf8'));
@@ -156,4 +157,103 @@ test('names with / or .., and paths with .. or a leading /, are refused; nothing
   }
   assert.deepEqual(await readdir(f.home), [], 'not even custom/ was created');
   await assertUntouched(f);
+});
+
+test('a symlinked specialist file or skill folder in a repository is never followed, listed or asked for by id (#315)', async (t) => {
+  const f = await fixture(t);
+  const outside = join(f.home, 'outside');
+  await put(outside, { 'secret.md': 'secret', 'skill/SKILL.md': 'secret' });
+  await symlink(join(outside, 'secret.md'), join(f.site, '.claude/agents/evil.md'));
+  await symlink(join(outside, 'skill'), join(f.site, '.claude/skills/linked'));
+  assert.equal(await item(f, 'hive-site:evil'), undefined);
+  assert.equal(await item(f, 'hive-site:linked'), undefined);
+  assert.equal(isRefusal(await readItem(f, 'hive-site:evil', null)), true);
+  assert.equal(isRefusal(await readItem(f, 'hive-site:linked', null)), true);
+  assert.equal(codeOf(await open(f).saveFile('hive-site:linked', null, 'SKILL.md', 'x')), 'unknown_item');
+});
+
+test('deleteFile refuses the main file whatever its case, as a case-insensitive disk would resolve it (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'skill.MD')), 'bad_path');
+});
+
+test('a version whose copy fails leaves no half-made folder behind (#315)', async (t) => {
+  const f = await fixture(t);
+  const script = join(f.pluginSource, 'skills/new-build/scripts/run.sh');
+  await chmod(script, 0o000);
+  t.after(() => chmod(script, 0o644));
+  await assert.rejects(open(f).createVersion(BUILD, 'broken', 'original'));
+  await assert.rejects(stat(buildDir(f, 'broken')));
+  await assert.rejects(open(f).saveFile(BUILD, null, 'SKILL.md', 'x'));
+  await assert.rejects(stat(buildDir(f, 'mine')));
+});
+
+test('reverting a version re-parents the versions made from it onto its own from (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  await store.createVersion(BUILD, 'child', 'mine');
+  await store.revert(BUILD, 'mine');
+  assert.deepEqual((await item(f, BUILD))?.versions.map((v) => [v.name, v.from]), [['child', 'original']]);
+});
+
+test('reverting a user-created version that still has workspaces while others remain is refused with in_use (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.createItem('skill', 'mine-skill');
+  const id = 'hive:mine-skill';
+  await store.createVersion(id, 'other', 'mine');
+  assert.equal(codeOf(await store.revert(id, 'mine')), 'in_use');
+  assert.equal((await item(f, id))?.versions.length, 2);
+  for (const w of f.workspaces) await store.assign(id, w.name, 'other');
+  assert.deepEqual(await store.revert(id, 'mine'), { workspaces: [] });
+  assert.deepEqual((await item(f, id))?.versions.map((v) => [v.name, v.from]), [['other', null]]);
+});
+
+test('a rename whose version.json cannot be written puts the folder back (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  await chmod(buildDir(f, 'mine'), 0o555);
+  t.after(() => chmod(buildDir(f, 'mine'), 0o755).catch(() => undefined));
+  await assert.rejects(store.renameVersion(BUILD, 'mine', 'baseline'));
+  await stat(buildDir(f, 'mine/version.json'));
+  await assert.rejects(stat(buildDir(f, 'baseline')));
+});
+
+test('a rename may move only the main file, between its .md and .md.liquid names (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'other.md', 'x', 'SKILL.md')), 'bad_path');
+  assert.equal((await readFile(buildDir(f, 'mine/files/SKILL.md'), 'utf8')), 'x');
+});
+
+test('a path that is a folder, or goes through a file, is a bad_path refusal and not an I/O error (#315)', async (t) => {
+  const f = await fixture(t);
+  const store = open(f);
+  await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'scripts', 'x')), 'bad_path');
+  assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'SKILL.md/x', 'x')), 'bad_path');
+  assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'scripts')), 'bad_path');
+  assert.equal(codeOf(await store.deleteFile(BUILD, 'mine', 'SKILL.md/x')), 'bad_path');
+});
+
+test('a plugin.json that is missing or not JSON writes no hiveVersion and the save still works (#315)', async (t) => {
+  const f = await fixture(t);
+  await rm(join(f.pluginSource, '.claude-plugin/plugin.json'));
+  assert.deepEqual(await open(f).saveFile(BUILD, null, 'SKILL.md', 'x'), { workspaces: BOTH });
+  assert.equal('hiveVersion' in (await json(buildDir(f, 'mine/version.json')) as object), false);
+  await put(f.pluginSource, { '.claude-plugin/plugin.json': '{nope' });
+  assert.deepEqual(await open(f).createVersion(BUILD, 'next', 'original'), { workspaces: [] });
+});
+
+test('an onChange that throws is logged, and the write still answers success (#315)', async (t) => {
+  const f = await fixture(t);
+  const { log, lines } = fakeLog();
+  const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => { throw new Error('render failed'); }, log });
+  assert.deepEqual(await store.saveFile(BUILD, null, 'SKILL.md', 'x'), { workspaces: BOTH });
+  assert.ok(lines.some((l) => l.startsWith('ERROR') && l.includes('render failed')), lines.join('\n'));
 });

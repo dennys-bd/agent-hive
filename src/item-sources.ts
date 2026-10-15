@@ -1,7 +1,7 @@
 // Where an item's files are (#315): the origin's (the shipped plugin, a workspace's main checkout's .claude/) and the custom store's under
 // <home>/custom/. Read-only: the catalogue and the store share these reads, and only custom-store.ts writes.
 import type { Dirent } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
+import { lstat, readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { FILES_DIR, mainFiles } from './custom-versions.js';
 import { isRecord } from './rate-limits.js';
@@ -77,13 +77,19 @@ export async function childFolders(dir: string): Promise<string[]> {
     .sort();
 }
 
+// A repository's symlink, FIFO or folder named `x.md` is not a file the Hive may read: only regular files count
+async function regularFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(orMissing<Dirent[]>([]));
+  return entries.filter((e) => e.isFile()).map((e) => e.name);
+}
+
 /** The names an origin offers for a kind: its skill folders, its specialists' `<name>.md` / `.md.liquid`. Listed as-is, even a name the
  * name rule would refuse: the rule is for names the user types. */
 export async function originNames(sources: ItemSources, origin: string, kind: ItemKind): Promise<string[]> {
   const root = kindRoot(sources, origin, kind);
   if (root === undefined) return [];
   if (kind === 'skill') return childFolders(root);
-  const files = await readdir(root).catch(orMissing<string[]>([]));
+  const files = await regularFiles(root);
   return [...new Set(files.flatMap((file) => SPECIALIST_FILE.exec(file)?.[1] ?? []))].sort();
 }
 
@@ -94,10 +100,13 @@ export async function originFiles(sources: ItemSources, ref: ItemRef): Promise<F
   const main = mainFiles(ref.kind, ref.name);
   if (ref.kind === 'skill') {
     const dir = join(root, ref.name);
+    // A symlinked skill folder reaches outside the repository when its id is asked for directly
+    const info = await lstat(dir).catch(orMissing(undefined));
+    if (!info?.isDirectory()) return undefined;
     const paths = await listFiles(dir);
     return paths.some((p) => main.includes(p)) ? { dir, paths } : undefined;
   }
-  const names = new Set(await readdir(root).catch(orMissing<string[]>([])));
+  const names = new Set(await regularFiles(root));
   const paths = main.filter((file) => names.has(file));
   return paths.length === 0 ? undefined : { dir: root, paths };
 }
@@ -134,6 +143,7 @@ export async function sameFiles(origin: FileSet | undefined, base: string): Prom
 
 /** The shipped plugin's `version`, kept in a Hive version's version.json as the version of its base. */
 export async function pluginVersion(pluginSource: string): Promise<string | undefined> {
-  const raw: unknown = JSON.parse(await readFile(join(pluginSource, '.claude-plugin', 'plugin.json'), 'utf8'));
+  // A plugin without a readable plugin.json only loses the hiveVersion note; the write it belongs to goes on
+  const raw: unknown = await readFile(join(pluginSource, '.claude-plugin', 'plugin.json'), 'utf8').then(JSON.parse).catch(() => undefined);
   return isRecord(raw) && typeof raw.version === 'string' ? raw.version : undefined;
 }

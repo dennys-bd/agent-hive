@@ -7,6 +7,7 @@ import { BASE_DIR, FILES_DIR, isName, isRefusal, isVersionName, mainFiles, NAME_
 import { isInside } from './ide.js';
 import { customRoot, type FileSet, HIVE_ORIGIN, itemDir, type ItemRef, type ItemSources, listFiles, originFiles, pluginVersion, resolveRef, versionDir, versionFiles } from './item-sources.js';
 import { findItem } from './items-catalogue.js';
+import type { Logger } from './log.js';
 import type { CatalogueItem, ItemKind, ItemVersion } from './types.js';
 
 export const MINE = 'mine';
@@ -18,6 +19,7 @@ export interface CustomStoreDeps {
   pluginSource: string;
   workspaces(): ItemSources['workspaces'];
   onChange(workspaces: string[]): void;
+  log: Pick<Logger, 'error'>;
 }
 export interface CustomStore {
   saveFile(id: string, version: string | null, path: string, text: string, from?: string): Promise<StoreResult>;
@@ -58,10 +60,29 @@ async function copyAll({ dir, paths }: FileSet, to: string): Promise<void> {
 
 // version.json goes last: a folder without one is a half-made version, which the catalogue reports instead of using
 async function writeVersion(dir: string, json: VersionJson, files: FileSet, base?: FileSet): Promise<void> {
-  await copyAll(files, join(dir, FILES_DIR));
-  if (base !== undefined) await copyAll(base, join(dir, BASE_DIR));
-  await writeVersionJson(dir, json);
+  try {
+    await copyAll(files, join(dir, FILES_DIR));
+    if (base !== undefined) await copyAll(base, join(dir, BASE_DIR));
+    await writeVersionJson(dir, json);
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true });
+    throw err;
+  }
 }
+
+// A target that is a folder, or sits behind a file, is the caller's bad path, not a server fault
+const PATH_ERRORS = new Set(['EISDIR', 'ERR_FS_EISDIR', 'ENOTDIR', 'ENOENT', 'EEXIST']);
+async function orBadPath<T>(job: () => Promise<T>): Promise<T | StoreRefusal> {
+  try {
+    return await job();
+  } catch (err) {
+    if (PATH_ERRORS.has((err as NodeJS.ErrnoException).code ?? '')) return refusal('bad_path', PATH_MESSAGE);
+    throw err;
+  }
+}
+
+// Case-insensitive disks resolve SKILL.md and skill.md to one file
+const isMainFile = (item: CatalogueItem, file: string): boolean => mainFiles(item.kind, item.name).some((m) => m.toLowerCase() === file.toLowerCase());
 
 async function editVersionJson(dir: string, name: string, edit: (json: VersionJson) => VersionJson): Promise<void> {
   await writeVersionJson(dir, edit(parseVersionJson(await readFile(join(dir, VERSION_FILE), 'utf8'), name)));
@@ -87,11 +108,15 @@ async function saveFile(s: ItemSources, id: string, version: string | null, path
   if (isRefusal(item)) return item;
   const target = version === null ? await createMine(s, item) : versionOf(item, version);
   if (isRefusal(target)) return target;
+  // Only the main file may move, and only between its .md and .md.liquid names
+  if (old !== undefined && isMainFile(item, old) !== isMainFile(item, file)) return refusal('bad_path', PATH_MESSAGE);
   const files = join(storeDir(s, item, target.name), FILES_DIR);
-  await mkdir(dirname(join(files, file)), { recursive: true });
-  await writeFile(join(files, file), text);
-  if (old !== undefined) await rm(join(files, old), { force: true }); // the .md → .md.liquid rename (#310)
-  return { workspaces: target.workspaces };
+  const failed = await orBadPath(async () => {
+    await mkdir(dirname(join(files, file)), { recursive: true });
+    await writeFile(join(files, file), text);
+    if (old !== undefined) await rm(join(files, old), { force: true }); // the .md → .md.liquid rename (#310)
+  });
+  return failed ?? { workspaces: target.workspaces };
 }
 
 async function deleteFile(s: ItemSources, id: string, version: string, path: string): Promise<StoreResult> {
@@ -99,11 +124,11 @@ async function deleteFile(s: ItemSources, id: string, version: string, path: str
   if (file === undefined) return refusal('bad_path', PATH_MESSAGE);
   const item = await found(s, id);
   if (isRefusal(item)) return item;
-  if (mainFiles(item.kind, item.name).includes(file)) return refusal('bad_path', `${file} is the ${item.kind}'s main file`);
+  if (isMainFile(item, file)) return refusal('bad_path', `${file} is the ${item.kind}'s main file`);
   const target = versionOf(item, version);
   if (isRefusal(target)) return target;
-  await rm(join(storeDir(s, item, version), FILES_DIR, file), { force: true });
-  return { workspaces: target.workspaces };
+  const failed = await orBadPath(() => rm(join(storeDir(s, item, version), FILES_DIR, file), { force: true }));
+  return failed ?? { workspaces: target.workspaces };
 }
 
 // What a new version copies: the origin's files, which are also its base, or another version's files with that version's base
@@ -144,8 +169,14 @@ async function renameVersion(s: ItemSources, id: string, version: string, name: 
   if (isRefusal(target)) return target;
   const to = storeDir(s, item, name);
   if (await exists(to)) return refusal('exists', `${id} already has a version ${name}`);
-  await rename(storeDir(s, item, version), to);
-  await editVersionJson(to, version, (json) => ({ ...json, name }));
+  const from = storeDir(s, item, version);
+  await rename(from, to);
+  try {
+    await editVersionJson(to, version, (json) => ({ ...json, name }));
+  } catch (err) {
+    await rename(to, from); // the folder's name and its version.json must agree
+    throw err;
+  }
   for (const other of item.versions.filter((v) => v.from === version)) {
     await editVersionJson(storeDir(s, item, other.name), other.name, (json) => ({ ...json, from: name }));
   }
@@ -176,9 +207,14 @@ async function revert(s: ItemSources, id: string, version: string): Promise<Stor
   if (isRefusal(item)) return item;
   const target = versionOf(item, version);
   if (isRefusal(target)) return target;
+  const isLast = item.userCreated && item.versions.length === 1;
+  if (item.userCreated && !isLast && target.workspaces.length > 0) return refusal('in_use', `${id}: assign its workspaces to another version first`);
   await rm(storeDir(s, item, version), { recursive: true, force: true });
+  for (const other of item.versions.filter((v) => v.from === version)) {
+    await editVersionJson(storeDir(s, item, other.name), other.name, (json) => ({ ...json, from: target.from }));
+  }
   // A user-created item has no original to fall back to: its last version takes the item with it
-  if (item.userCreated && item.versions.length === 1) await rm(itemDir(s.home, item), { recursive: true, force: true });
+  if (isLast) await rm(itemDir(s.home, item), { recursive: true, force: true });
   return { workspaces: target.workspaces };
 }
 
@@ -197,11 +233,19 @@ async function createItem(s: ItemSources, kind: ItemKind, name: string): Promise
 
 export function createCustomStore(deps: CustomStoreDeps): CustomStore {
   let chain: Promise<unknown> = Promise.resolve();
+  // The write already happened: a render that fails is logged, never turned into a failed write
+  function notify(workspaces: string[]): void {
+    try {
+      deps.onChange(workspaces);
+    } catch (err) {
+      deps.log.error(`custom store: onChange failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   // A failed write rejects its own caller only: the chain goes on with the next one
   function queued(job: (s: ItemSources) => Promise<StoreResult>): Promise<StoreResult> {
     const next = chain.then(async () => {
       const result = await job({ home: deps.home, pluginSource: deps.pluginSource, workspaces: deps.workspaces() });
-      if (!isRefusal(result)) deps.onChange(result.workspaces);
+      if (!isRefusal(result)) notify(result.workspaces);
       return result;
     });
     chain = next.catch(() => undefined);
