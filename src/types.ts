@@ -1,6 +1,7 @@
 import type { LogLevel } from './log.js';
 import type { PtyHost, PtyKeep } from './pty-host.js';
 import type { TerminalSize } from './terminal-wire.js';
+import type { BasedOn } from './template.js';
 
 export type Language = 'pt' | 'en';
 
@@ -1852,3 +1853,36 @@ export interface MemoryStats {
   last?: { at: string; task: string; stage?: string; cited: number }; // the latest such run, and the distinct ids its session cited
 }
 export const MEMORY_STATS_DAYS = 7;
+
+/** The plugins view's items (#315): a skill is a folder, a specialist one file. `specialist` is the glossary's specialized agent; `agent`
+ * stays the harness. Skill first: one name per origin, and a skill wins a repository's clash. */
+export const ITEM_KINDS = ['skill', 'specialist'] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];
+export type ItemState = 'original' | 'customized' | 'update available' | 'workspace';
+
+export interface ItemVersion {
+  name: string;
+  from: string | null; // 'original', a version name, or null (user-created)
+  workspaces: string[];
+  unknownWorkspaces: string[]; // listed in version.json, absent from the config: kept, never deleted silently
+  updateAvailable: boolean;
+  hiveVersion?: string;
+}
+
+export interface CatalogueItem {
+  id: string; // `${origin}:${name}`: one name per origin, skill or specialist
+  origin: string; // 'hive' or a workspace name
+  kind: ItemKind;
+  name: string;
+  description: string;
+  basedOn?: BasedOn;
+  userCreated: boolean;
+  state: ItemState; // update available > customized > original; 'workspace' for a repository item with no version
+  versions: ItemVersion[];
+  onOriginal: string[]; // workspaces that use the original (empty for a user-created item)
+  files: string[]; // relative paths of the original, or of the first version for a user-created item
+  error?: { message: string; line?: number }; // the header did not parse, a version.json did not, or a skill took the name
+}
+
+export interface ItemFile { path: string; text: string }
+export interface ItemRead { item: CatalogueItem; version: string | null; files: ItemFile[] } // version null: the original
