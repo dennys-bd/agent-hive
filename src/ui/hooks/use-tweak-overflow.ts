@@ -33,7 +33,8 @@ function measure(row: HTMLElement): number {
 export function useTweakOverflow(row: RefObject<HTMLElement | null>, names: readonly string[]): number {
   const [fits, setFits] = useState(names.length);
   const controls = names.join('\n');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: controls is the trigger of a new measure, not a value it uses
+  const hasTrigger = fits < names.length; // more… mounts after the first measure: measure again with its real width, and observe it
+  // biome-ignore lint/correctness/useExhaustiveDependencies: controls and hasTrigger are the triggers of a new measure, not values it uses
   useLayoutEffect(() => {
     const element = row.current;
     if (element === null) return undefined;
@@ -41,8 +42,8 @@ export function useTweakOverflow(row: RefObject<HTMLElement | null>, names: read
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    for (const item of element.querySelectorAll(':scope > [data-tweak-item]')) observer.observe(item);
+    for (const item of element.querySelectorAll(':scope > [data-tweak-item], :scope > [data-tweak-more]')) observer.observe(item);
     return () => observer.disconnect();
-  }, [row, controls]);
+  }, [row, controls, hasTrigger]);
   return fits;
 }

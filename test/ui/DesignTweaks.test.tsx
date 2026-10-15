@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -37,7 +37,7 @@ function overflowing(): void {
 }
 
 beforeEach(() => setLanguage('en'));
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 test('the row shows one control per tweak in declared order: a select per enum, a switch per boolean, an input per text and number; all fitting, no more… (#241, #342)', () => {
   render(<Harness onChange={vi.fn()} />);
@@ -115,4 +115,19 @@ test('the panel is dragged by its header and keeps its place when closed and ope
   await user.click(screen.getByRole('button', { name: 'close' }));
   await user.click(screen.getByRole('button', { name: 'more…' }));
   expect(screen.getByRole('dialog', { name: 'tweaks' }).style.translate).toBe('30px 15px');
+});
+
+test('widened until every control fits while the panel is open: the panel and more… leave and the row shows them all (#342)', async () => {
+  overflowing();
+  const user = userEvent.setup();
+  const callbacks: ((entries: unknown[]) => void)[] = []; // the row's observer, and Radix's own, which reads its entries
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: (entries: unknown[]) => void) { callbacks.push(callback); } observe(): void {} unobserve(): void {} disconnect(): void {} });
+  render(<Harness onChange={vi.fn()} />);
+  await user.click(screen.getByRole('button', { name: 'more…' }));
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1000);
+  act(() => { for (const callback of callbacks) callback([]); });
+  const row = screen.getByRole('toolbar', { name: 'tweaks' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(within(row).queryByRole('button', { name: 'more…' })).toBeNull();
+  expect(shown(row)).toEqual(['layout', 'density', 'auto', 'title', 'gap']);
 });

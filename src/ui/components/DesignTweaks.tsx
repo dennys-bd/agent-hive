@@ -97,14 +97,19 @@ interface Offset { x: number; y: number }
 
 // The panel's header drags it (#342): the offset goes on CSS translate, apart from the transform Radix positions it with. The close button
 // keeps its click.
-function useDragOffset(): { offset: Offset; handle: { onPointerDown(e: PointerEvent<HTMLElement>): void; onPointerMove(e: PointerEvent<HTMLElement>): void; onPointerUp(): void } } {
+interface DragHandle {
+  onPointerDown(e: PointerEvent<HTMLElement>): void; onPointerMove(e: PointerEvent<HTMLElement>): void; onPointerUp(): void;
+  onPointerCancel(): void; onLostPointerCapture(): void;
+}
+
+function useDragOffset(): { offset: Offset; handle: DragHandle } {
   const [offset, setOffset] = useState<Offset>({ x: 0, y: 0 });
   const start = useRef<{ x: number; y: number; from: Offset } | null>(null);
   return {
     offset,
     handle: {
       onPointerDown: (event) => {
-        if (event.button !== 0 || (event.target as Element).closest('button') !== null) return;
+        if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button') !== null)) return;
         event.currentTarget.setPointerCapture(event.pointerId);
         start.current = { x: event.clientX, y: event.clientY, from: offset };
       },
@@ -113,6 +118,8 @@ function useDragOffset(): { offset: Offset; handle: { onPointerDown(e: PointerEv
         if (drag !== null) setOffset({ x: drag.from.x + event.clientX - drag.x, y: drag.from.y + event.clientY - drag.y });
       },
       onPointerUp: () => { start.current = null; },
+      onPointerCancel: () => { start.current = null; },
+      onLostPointerCapture: () => { start.current = null; },
     },
   };
 }
@@ -149,6 +156,7 @@ function TweakRow({ schema, values, onChange }: { schema: TweakSchema; values: V
   const row = useRef<HTMLDivElement>(null);
   const [isOpen, setOpen] = useState(false);
   const fits = useTweakOverflow(row, schema.map((tweak) => tweak.name));
+  if (isOpen && fits >= schema.length) setOpen(false); // widened until all fit: more… leaves, and the row must not stay hidden behind it
   return (
     <div ref={row} className="relative flex min-w-0 flex-1 items-center gap-3 self-stretch overflow-hidden">
       {schema.map((tweak, index) => (
