@@ -189,3 +189,21 @@ test('every shipped skill and agent lints clean against a catalogue of the plugi
     assert.deepEqual(lintTemplate(parsed, input), [], path);
   }
 });
+
+test('two Hive skills called on one line that miss the same variable name each get their annotation (#312)', () => {
+  const required = parseTemplate('---\nvariables:\n  v: { required: true }\n---\n{{ v }}\n').variables;
+  const catalogue: LintItem[] = ['a', 'b'].map((name) => ({ origin: 'hive', kind: 'skill', name, variables: required }));
+  assert.deepEqual(brief(lintTemplate(template([], ['Run `/a` and `/b`.']), { ...INPUT, catalogue })), [
+    '4 red callRequired missing v · /a · hive, hive-site',
+    '4 red callRequired missing v · /b · hive, hive-site',
+  ]);
+});
+
+test('a runaway render stops the other workspaces once the budget is spent, so one lint costs about one render limit (#312)', () => {
+  const workspaces = ['a', 'b', 'c', 'd'];
+  const started = Date.now();
+  const annotations = lintTemplate(template([], ['{% for i in (1..99999999) %}{{ i }}{% endfor %}']), { ...INPUT, workspaces });
+  assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+  assert.equal(annotations.length, 1);
+  assert.equal(annotations[0].check, 'render');
+});

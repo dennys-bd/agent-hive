@@ -30,6 +30,7 @@ export interface LintInput {
 }
 
 const BUILT_IN = 'workspace';
+const RENDER_BUDGET_MS = 1000; // the render limit of src/template.ts: one runaway render's worth per lint
 // item-sources.ts names the plugin's origin too, but it reads the disk, so the lint cannot import it
 const HIVE_ORIGIN = 'hive';
 const HEADER_BODY = 'The header must parse before anything else is checked.';
@@ -110,7 +111,7 @@ function callFindings(ref: TemplateRef, item: LintItem, workspaces: string[]): {
     const names = missing.join(', ');
     const title = `missing ${variable.name} · ${ref.text} · ${names}`;
     const body = `${ref.text} requires "${variable.name}", which has no value for ${names}.`;
-    return [{ key: `${ref.line} ${variable.name}`, annotation: finding(ref.line, 'red', 'callRequired', title, body, missing) }];
+    return [{ key: `${ref.line} ${ref.name} ${variable.name}`, annotation: finding(ref.line, 'red', 'callRequired', title, body, missing) }];
   });
 }
 
@@ -125,17 +126,32 @@ function referenceFindings(parsed: ParsedTemplate, input: LintInput): LintAnnota
   return [...uniqueBy(unknown, (annotation) => `${annotation.line} ${annotation.title}`), ...uniqueBy(calls, (call) => call.key).map((call) => call.annotation)];
 }
 
+interface RenderError {
+  line: number;
+  message: string;
+  workspace: string;
+}
+
+// Each render may take the engine's whole limit, and the lint runs on every change: past the budget the remaining workspaces are not
+// rendered, so a runaway loop costs one limit per lint, not one per workspace.
+// ponytail: a skipped workspace's own render error shows only once the others render faster; a worker if that ever matters
+function renderWithin(parsed: ParsedTemplate, workspaces: string[]): RenderError[] {
+  const deadline = Date.now() + RENDER_BUDGET_MS;
+  const errors: RenderError[] = [];
+  for (const workspace of workspaces) {
+    if (Date.now() > deadline) break;
+    const result = renderTemplate(parsed, workspace);
+    if (!result.ok) errors.push(...result.errors.map((error) => ({ line: error.line, message: error.message, workspace })));
+  }
+  return errors;
+}
+
 // Catches what only a render shows (a partial, the render limit) without repeating a static finding or a workspace's same error
 function renderFindings(parsed: ParsedTemplate, workspaces: string[], statics: LintAnnotation[]): LintAnnotation[] {
   const redLines = new Set(statics.filter((annotation) => annotation.severity === 'red').map((annotation) => annotation.line));
   // A workspace missing a required variable is already reported; its render would only say it again
   const renderable = workspaces.filter((workspace) => parsed.variables.every((variable) => missingIn(variable, [workspace]).length === 0));
-  const errors = renderable
-    .flatMap((workspace) => {
-      const result = renderTemplate(parsed, workspace);
-      return result.ok ? [] : result.errors.map((error) => ({ line: error.line, message: error.message, workspace }));
-    })
-    .filter((error) => !redLines.has(error.line));
+  const errors = renderWithin(parsed, renderable).filter((error) => !redLines.has(error.line));
   const keyOf = (error: { line: number; message: string }): string => `${error.line}\n${error.message}`;
   return uniqueBy(errors, keyOf).map((first) => {
     const failing = errors.filter((error) => keyOf(error) === keyOf(first)).map((error) => error.workspace);
@@ -169,7 +185,7 @@ function headingStep(walk: HeadingWalk, text: string, line: number): HeadingWalk
   const level = heading[1].length;
   const { previous } = walk;
   if (previous === null || level <= previous + 1) return { ...walk, previous: level };
-  const body = `An h${level} right under an h${previous} skips a level; the map (1.2) nests it as an h${previous + 1}.`;
+  const body = `An h${level} right under an h${previous} skips a level; the block map nests it as an h${previous + 1}.`;
   return { ...walk, previous: level, findings: [...walk.findings, finding(line, 'yellow', 'heading', `skipped level: h${previous} to h${level}`, body)] };
 }
 

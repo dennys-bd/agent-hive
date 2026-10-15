@@ -43,3 +43,13 @@ test('a reference inside a fenced block counts; the bare form only inside inline
     { line: 5, kind: 'hive', name: 'new-spec', text: '/hive:new-spec' },
   ]);
 });
+
+test('hive:<name> inside a URL or a path is not a reference (#312)', () => {
+  assert.deepEqual(refsOf('See https://h/hive:y and a/hive:z.'), []);
+});
+
+test('a line of thousands of unclosed backticks is scanned in linear time (#312)', () => {
+  const started = Date.now();
+  assert.deepEqual(refsOf(`${'`'.repeat(100_000)}a`), []);
+  assert.ok(Date.now() - started < 500, `took ${Date.now() - started} ms`);
+});

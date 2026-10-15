@@ -10,8 +10,8 @@ export interface TemplateRef {
   text: string;
 }
 
-// hive:<name>, with or without the slash, never inside a word: agent-hive:x is no reference
-const HIVE_REF = /(?<![\w-])\/?hive:([A-Za-z0-9][\w-]*)/g;
+// hive:<name>, with or without the slash, never inside a word or a path: agent-hive:x and a/hive:x are no reference
+const HIVE_REF = /(?<![\w/-])\/?hive:([A-Za-z0-9][\w-]*)/g;
 // The plugin's root scripts/, alone or under ${CLAUDE_PLUGIN_ROOT}/; dist/scripts/x is another folder, a sentence's final dot not the file's
 const SCRIPT_REF = /(?:\$\{CLAUDE_PLUGIN_ROOT\}\/|(?<![\w./-]))(scripts\/[\w-]+(?:\.[\w-]+)*)/g;
 // Only inside inline code, so a prose path such as /tmp never is one; it starts the span or a word and is not a path, a namespace or a file
@@ -34,7 +34,12 @@ const toFound = (kind: RefKind, match: RegExpExecArray, offset = 0): Found => ({
   text: match[0],
 });
 
+// Matching code spans backtracks quadratically on a long run of backticks with no closing run; a line this long is no prose
+// ponytail: a longer line's bare references are not found, a backtick scanner if one ever needs to be
+const CODE_SPAN_LINE_LIMIT = 2000;
+
 function bareRefs(line: string): Found[] {
+  if (line.length > CODE_SPAN_LINE_LIMIT) return [];
   return [...line.matchAll(INLINE_CODE)].flatMap((span) =>
     [...span[2].matchAll(BARE_REF)]
       .filter((match) => !CLAUDE_COMMANDS.has(match[1]))
