@@ -1,6 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { CenterLayout } from '@/lib/center-layout';
+import { resetViewState } from '@/lib/view-state';
 import { jsonResponse } from '../fakes';
 import { REVIEW } from './design-review';
 import { Center, resetCenterTest, seed, STAGE, strips } from './center-harness';
@@ -36,4 +37,15 @@ test('the design tab shows its open count in a pill before its ×, beside the ta
   const tab = document.querySelector<HTMLElement>('[data-tab-key="design:design/Landing.hv.html"]');
   expect(await within(tab as HTMLElement).findByText('4')).toHaveClass('bg-accent');
   expect(strips()).toEqual([['Claude', 'Landing.hv.html']]); // the pill sits outside the tab\'s name
+});
+
+test('a local activity\'s design tab shows its open count too, read from the workspace\'s review (#345)', async () => {
+  resetViewState({ centerLayouts: { 'local/hive': { root: { kind: 'group', id: 'g1', tabs: [{ kind: 'design', path: 'design/Landing.hv.html' }], active: 0 }, focused: 'g1' } } });
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/workspaces/hive/review') return jsonResponse(REVIEW);
+    return url.includes('/design-frame') ? jsonResponse({ url: '/design-frame/tok/Landing.hv.html' }) : jsonResponse({ version: 'v1' });
+  }));
+  render(<Center runs={[]} local="hive" />);
+  const tab = document.querySelector<HTMLElement>('[data-tab-key="design:design/Landing.hv.html"]');
+  expect(await within(tab as HTMLElement).findByText('4')).toHaveClass('bg-accent');
 });

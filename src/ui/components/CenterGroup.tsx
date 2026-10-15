@@ -26,7 +26,7 @@ import type { CenterOps } from '@/hooks/use-center-layouts';
 import { useConsoleChannelsContext } from '@/hooks/use-console';
 import { useFileTone } from '@/hooks/use-diagnostics';
 import { t } from '@/i18n';
-import { type Activity, activityKey, activityTitle, runStatus, sleepingOf } from '@/lib/activities';
+import { type Activity, activityKey, activityTitle, reviewKeyOf, runStatus, sleepingOf } from '@/lib/activities';
 import type { CopySource } from '@/lib/copy-targets';
 import { type CenterTabRef, type ConsoleRef, consoleRef, type Edge, refKey, runsOf, type TabGroup } from '@/lib/center-layout';
 import { bufferPath } from '@/lib/center-files';
@@ -210,7 +210,7 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
             <TabDot item={item} activity={activity} />
             <span className={tone}>{text}</span>
           </button>
-          {item.kind === 'design' && activity.kind === 'task' && <DesignCountPill taskId={activity.task.item.itemId} path={item.path} />}
+          {item.kind === 'design' && <DesignCountPill reviewKey={reviewKeyOf(activity)} path={item.path} />}
           <Button type="button" size="icon-xs" variant="ghost" className="size-4" aria-label={`${t('center.close')} ${text}`} onClick={close}><XIcon /></Button>
         </div>
       </ContextMenuTrigger>
