@@ -217,6 +217,8 @@ export function setVariableValue(text: string, name: string, workspace: string, 
       return { line: NO_LINE, variable: name, message: `variable "${name}" is not declared` };
     }
     const path = ['variables', name, 'workspaces', workspace];
+    // nothing to remove is a success that leaves the text byte for byte as it was (deleteIn would throw on the missing parent)
+    if (value === undefined && !parseDocument(splitHeader(source.text).header).hasIn(path)) return source.text;
     return writeHeader(source, (doc) => {
       if (value === undefined) doc.deleteIn(path);
       else doc.setIn(path, value);

@@ -183,3 +183,10 @@ test('the three modules import nothing from node, so the editor can bundle them 
   assert.deepEqual(imports('template-map.ts'), ['./template-condition.js', './template.js']);
   assert.deepEqual(imports('template-edit.ts'), ['./template-condition.js', './template-map.js', './template.js', 'yaml']);
 });
+
+test('removing a workspace value that is not there is a no-op success (#311)', () => {
+  const text = '---\nvariables:\n  v: { type: boolean }\n---\nbody\n';
+  const done = setVariableValue(text, 'v', 'ws', undefined);
+  assert.ok(done.ok);
+  assert.equal(done.text, text);
+});
