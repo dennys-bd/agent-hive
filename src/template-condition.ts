@@ -96,6 +96,23 @@ function formatTerm({ variable, op, value }: ConditionTerm): string {
   }
 }
 
+// What formatTerm cannot write back as one marker that parses to the same term; the edits refuse it before writing anything.
+const UNWRITABLE_TEXT = /[\r\n]|\{%|%\}|\{\{|\}\}/;
+
+function termProblem({ variable, op, value }: ConditionTerm): string | undefined {
+  if (!BARE.test(variable) || KEYWORDS.includes(variable)) return `"${variable}" is not a variable name`;
+  if (op !== 'is' && op !== 'isNot' && op !== 'contains') return undefined;
+  // a boolean is hasValue or isNo: "v == false" would read back as isNo, so is(false) could not round-trip
+  if (typeof value === 'boolean') return `${op} cannot take the boolean ${value}: use hasValue or isNo`;
+  if (typeof value !== 'string') return undefined;
+  if (UNWRITABLE_TEXT.test(value)) return `the value [${value}] holds a line break or a Liquid delimiter`;
+  return value.includes('"') && value.includes("'") ? `the value [${value}] holds both kinds of quote` : undefined;
+}
+
+/** The first reason a condition cannot be written as a marker's text, or undefined. */
+export const conditionProblem = (condition: Condition): string | undefined =>
+  condition.terms.map(termProblem).find((problem) => problem !== undefined);
+
 export const formatCondition = (condition: Condition): string => condition.terms.map(formatTerm).join(` ${condition.connective} `);
 
 // unless is the root design's way of writing "is no" on a first branch; anywhere else isNo is written v == false

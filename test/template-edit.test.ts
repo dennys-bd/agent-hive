@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { TemplateError } from '../src/template.js';
-import type { ChainSpec, Condition } from '../src/template-condition.js';
+import type { ChainSpec, Condition, ConditionTerm } from '../src/template-condition.js';
 import {
   addVariable,
   type EditResult,
@@ -189,4 +189,23 @@ test('removing a workspace value that is not there is a no-op success (#311)', (
   const done = setVariableValue(text, 'v', 'ws', undefined);
   assert.ok(done.ok);
   assert.equal(done.text, text);
+});
+
+test('a chain whose variable or value could not be written back as one marker is refused, naming the input (#311)', () => {
+  const chainOf = (term: ConditionTerm): ChainSpec => ({ branches: [{ connective: 'and', terms: [term] }], else: false });
+  const bad: [ConditionTerm, string][] = [
+    [{ variable: 'v', op: 'is', value: 'a"b\'c' }, 'a"b\'c'],
+    [{ variable: 'v', op: 'is', value: 'a\nb' }, 'a\nb'],
+    [{ variable: 'v', op: 'is', value: 'x" %}{% comment %}' }, 'x" %}{% comment %}'],
+    [{ variable: 'v', op: 'is', value: 'a {{ b' }, 'a {{ b'],
+    [{ variable: 'v %}{% raw', op: 'hasValue' }, 'v %}{% raw'],
+    [{ variable: 'and', op: 'hasValue' }, 'and'],
+    [{ variable: 'v', op: 'is', value: false }, 'false'],
+    [{ variable: 'v', op: 'contains', value: true }, 'true'],
+  ];
+  for (const [term, named] of bad) {
+    const error = refused(insertChain(DOC, 12, chainOf(term)));
+    assert.ok(error.message.includes(named), `${JSON.stringify(term)} names its input: ${error.message}`);
+    refused(replaceChain(DOC, 15, chainOf(term)));
+  }
 });

@@ -2,7 +2,7 @@
 // value. Each edits whole lines (or the header's yaml Document) and answers the new text with its parse and map, so the editor reloads
 // from one place. Node-free, like src/template.ts.
 import { type Document, parseDocument } from 'yaml';
-import { type ChainSpec, chainMarkers } from './template-condition.js';
+import { type ChainSpec, chainMarkers, conditionProblem } from './template-condition.js';
 import { buildMap, type MapBlock, type TemplateMap } from './template-map.js';
 import { type ParsedTemplate, parseTemplate, splitHeader, type TemplateError, type VariableValue } from './template.js';
 
@@ -94,7 +94,8 @@ function chainAt(source: Source, line: number): ChainBlock | TemplateError {
 
 function chainProblem(chain: ChainSpec): string | undefined {
   if (chain.branches.length === 0) return 'a chain needs at least one condition';
-  return chain.branches.some((condition) => condition.terms.length === 0) ? 'a condition needs at least one term' : undefined;
+  if (chain.branches.some((condition) => condition.terms.length === 0)) return 'a condition needs at least one term';
+  return chain.branches.map(conditionProblem).find((problem) => problem !== undefined);
 }
 
 /** An empty chain, its markers only, before line; the line after the body's last appends. */
