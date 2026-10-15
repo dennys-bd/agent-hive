@@ -4,6 +4,7 @@ import type { ProjectItem, RepoSummary, SidebarsPerView, SourceConfig, SourceSyn
 import { taskOfPr } from '../../activities';
 import { issueOfLink, issueUrl, taskOfIssue } from '../../repos/issue-task';
 import { prLink, prNumber, prRepo, repoName } from '../../pull-requests';
+import { behaviourOf } from '../../signals';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
 import { WorkspaceColorsContext } from '@/lib/workspace-color';
@@ -28,6 +29,7 @@ import { activityPane } from '@/components/PaneHeader';
 import { StartDialog } from '@/components/StartDialog';
 import { TreeHoverContext } from '@/components/tree-hover';
 import { Flow } from '@/components/Flow';
+import { WorkerlessContext } from '@/components/FlowTask';
 import { PrPage, type PrRef } from '@/components/PrPage';
 import { ProjectTable } from '@/components/ProjectTable';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
@@ -301,39 +303,42 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
       {/* the dock frame between the header and the footer (#342): the flow, with the Automação tab (#456), the Activities list (#457) and
           the task's detail (#341) each docked as a tab on the left or the right (a run's terminal is a tab of its activity, redesign 07); the console (#353) a drawer over the center, opened by its chip in the footer (redesign 05). Detalhes is always a tab (#452): App drops a selection whose task went, a render late, and the detail
           shows its empty state meanwhile */}
-      <MainDock
-        showTask={showTask}
-        sidebarsPerView={sidebarsPerView}
-        fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
-        tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
-        // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
-        // signal and the worker cap stay in the flow sidebar (redesign 09)
-        footer={(shown, file) => (
-          <Footer
-            state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />}
-            checkers={<Checkers activityId={shown} path={file} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
-          />
-        )}
-        header={(shell) => <Header shell={shell} state={state} effective={limits} />}
-        automation={() => (
-          <AutomationPanel
-            state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={sidebar.pick}
-            repository={picks.repo?.repository} onRepository={sidebar.pickRepository}
-          />
-        )}
-        search={{ state, effective: limits, openSettings: onOpenSettings, openShortcuts }}
-        newActivity={(dialog) => <StartDialog state={state} {...dialog} />}
-        activityMenu={(task, showFlow, row) => <ActivityMenu task={task} state={state} onShowFlow={showFlow}>{row}</ActivityMenu>}
-        activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
-        paneContext={(activity) => activityPane(activity, state)}
-        copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
-        detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(nav, repositories)} />}
-      >
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {hasSource && <SyncErrors syncs={state.syncs} />}
-          <NavScrollContext.Provider value={pending}><Center state={state} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
-        </main>
-      </MainDock>
+      {/* #304: the cards hide a CI stage's button while the wait starts on its own, by the reducer's own rule (gateOf's workerless row) */}
+      <WorkerlessContext.Provider value={behaviourOf(limits.signal, state.signals).workerless}>
+        <MainDock
+          showTask={showTask}
+          sidebarsPerView={sidebarsPerView}
+          fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
+          tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
+          // redesign 02 and #225: the signal, the workers, the rules, the shown activity's checkers and problems, the console and shut down; the manual
+          // signal and the worker cap stay in the flow sidebar (redesign 09)
+          footer={(shown, file) => (
+            <Footer
+              state={state} effective={limits} locale={locale} onEditRules={onEditRules} console={<ConsoleChip console={consoleChannels} />}
+              checkers={<Checkers activityId={shown} path={file} />} problems={<ProblemsButton activityId={shown} console={consoleChannels} />}
+            />
+          )}
+          header={(shell) => <Header shell={shell} state={state} effective={limits} />}
+          automation={() => (
+            <AutomationPanel
+              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={sidebar.pick}
+              repository={picks.repo?.repository} onRepository={sidebar.pickRepository}
+            />
+          )}
+          search={{ state, effective: limits, openSettings: onOpenSettings, openShortcuts }}
+          newActivity={(dialog) => <StartDialog state={state} {...dialog} />}
+          activityMenu={(task, showFlow, row) => <ActivityMenu task={task} state={state} onShowFlow={showFlow}>{row}</ActivityMenu>}
+          activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
+          paneContext={(activity) => activityPane(activity, state)}
+          copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
+          detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(nav, repositories)} />}
+        >
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {hasSource && <SyncErrors syncs={state.syncs} />}
+            <NavScrollContext.Provider value={pending}><Center state={state} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
+          </main>
+        </MainDock>
+      </WorkerlessContext.Provider>
       <CrashDialog state={state} onSelect={(taskId) => onSelect({ taskId })} />
     </div>
   );

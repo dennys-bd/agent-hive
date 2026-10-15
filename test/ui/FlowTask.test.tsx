@@ -55,6 +55,37 @@ test('taskAction picks one button by priority: aprovar while no session of the t
   expect(actionOf(task({ stage: 'review' }))).toBeUndefined();
 });
 
+const ciStage: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
+const inCi = (extra: Partial<WithWork> = {}): WithWork => task({ stage: 'ci', boardColumn: 'CI', ...extra });
+const atCi = (c: WithWork): State => state(c, [], { stages: [...stages, ciStage] });
+
+test('in a wait-for-CI stage the card has no button while the wait starts on its own, auto on or off; tentar de novo for a stopped task, an error, no workspace or a workerless row that is off; a prompt stage keeps iniciar (#304)', () => {
+  expect(taskAction(inCi(), atCi(inCi()))).toBeUndefined();
+  expect(taskAction(inCi({ auto: false }), atCi(inCi({ auto: false })))).toBeUndefined();
+  const stopped = inCi({ stopped: true });
+  expect(taskAction(stopped, atCi(stopped))).toBe('retry');
+  const erred = inCi({ error: 'CI failed: build' });
+  expect(taskAction(erred, atCi(erred))).toBe('retry');
+  const failed = inCi({ stopped: true, error: 'CI failed: build, test' }); // what a CI failure leaves: both
+  expect(taskAction(failed, atCi(failed))).toBe('retry');
+  expect(taskAction(inCi(), { ...atCi(inCi()), workspaces: [], sourceWorkspaces: {} })).toBe('retry'); // no workspace: dueActions skips it, the dialog picks one
+  expect(taskAction(inCi(), atCi(inCi()), false)).toBe('retry'); // the signal's row runs no workerless stage: the wait never starts by itself
+  expect(taskAction(task(), state(task()), false)).toBe('start'); // the row is about workerless stages only
+});
+
+test('tentar de novo opens the Start dialog as iniciar does; it reads try again in English (#304)', async () => {
+  const user = userEvent.setup();
+  const failed = inCi({ stopped: true, error: 'CI failed: build' });
+  render(<Flow state={atCi(failed)} />);
+  expect(within(tile()).queryByRole('button', { name: 'iniciar' })).not.toBeInTheDocument();
+  await user.click(within(tile()).getByRole('button', { name: 'tentar de novo' }));
+  expect(await screen.findByRole('dialog', { name: 'Iniciar #1' })).toBeInTheDocument();
+  cleanup();
+  setLanguage('en');
+  render(<Flow state={atCi(failed)} />);
+  expect(within(tile()).getByRole('button', { name: 'try again' })).toBeInTheDocument();
+});
+
 test('the face (#134): the workspace square before the id, the workspace\'s name as its title, the title on two lines at most, no workspace line nor branch; the auto badge and the status on one line; the border takes the status colour (#542)', () => {
   const { rerender } = render(<Flow state={state(task({ workerId: 's1', branch: 'hive/1-task-1' }), [working()])} />);
   expect(tile()).toHaveClass('rounded-lg', 'bg-background', 'border-working');
