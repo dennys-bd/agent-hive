@@ -7,6 +7,7 @@ import { useReview } from '@/hooks/use-review';
 import { t } from '@/i18n';
 import { activityKey, type TaskActivity } from '@/lib/activities';
 import { type DesignComment, fileComments, type Recipient, recipientOf } from '@/lib/design-comments';
+import { taskReview } from '@/lib/review-events';
 import { EMPTY_REVIEW, type ReviewSession, reviewSessions } from '@/lib/review-view';
 import { useFocusedSession } from '@/lib/session-focus';
 
@@ -24,7 +25,7 @@ export interface DesignCommentsModel {
  *  action. The recipient is the user's pick for the mounted pane, else the activity's last session in focus, else a new session. */
 export function useDesignComments(activity: TaskActivity, path: string): DesignCommentsModel {
   const taskId = activity.task.item.itemId;
-  const { review = EMPTY_REVIEW, refresh } = useReview(taskId);
+  const { review = EMPTY_REVIEW, refresh } = useReview(taskReview(taskId));
   const sessions = reviewSessions(activity);
   const focused = useFocusedSession(activityKey(activity));
   const [picked, setPicked] = useState<string>();

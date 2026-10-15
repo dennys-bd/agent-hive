@@ -14,6 +14,7 @@ import { useReview } from '@/hooks/use-review';
 import { useReviewSubmit } from '@/hooks/use-review-submit';
 import { type MessageKey, t } from '@/i18n';
 import type { TaskActivity } from '@/lib/activities';
+import { taskReview } from '@/lib/review-events';
 import { defaultSessionOf, EMPTY_REVIEW, isReviewedIn, reviewSessions, selectionAnchor } from '@/lib/review-view';
 
 /** How a diff tab's scope reads (#270, #591): after the task in the tab's label, and in its strip. */
@@ -53,7 +54,7 @@ export function DiffView({ tab, label, active, activity, onScope }: DiffViewProp
   const [layout, setLayout] = useDiffLayout();
   const prefix = useId();
   const sectionId = (path: string): string => `${prefix}${path}`;
-  const { review, refresh: reread } = useReview(tab.task);
+  const { review, refresh: reread } = useReview(taskReview(tab.task));
   const isReviewed = (file: FileDiff): boolean => isReviewedIn(review, tab.scope, file);
   const mark = (file: FileDiff, reviewed: boolean): void => {
     void markFile(tab.task, { scope: tab.scope, path: file.path, hash: file.hash, reviewed }).then(reread);

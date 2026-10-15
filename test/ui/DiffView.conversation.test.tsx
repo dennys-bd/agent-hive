@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import type { ReviewThread } from '../../src/types';
-import { emitReviewEvent } from '@/lib/review-events';
+import { emitReviewEvent, taskReview } from '@/lib/review-events';
 import { activityOf, callsTo, task, fakeHive, type FakeHive, holdRoute, LABEL, renderPane, SESSION, SESSIONS, withSessions } from './diff-harness';
 
 let hive: FakeHive;
@@ -70,7 +70,7 @@ test('a reply the pane is still sending is not shown não entregue; once its ans
   await user.type(within(conversation).getByRole('textbox', { name: 'responder' }), 'and?{Enter}');
   const sent = { id: 'M2', author: 'user' as const, at: '2026-09-29T10:02:00.000Z', text: 'and?', failed: true as const, pending: [SESSION] };
   hive.review = { ...hive.review, threads: [thread({ messages: [...thread().messages, sent] })] };
-  emitReviewEvent('I1');
+  emitReviewEvent(taskReview('I1'));
   expect(await within(conversation).findByText('and?')).toBeInTheDocument();
   expect(conversation).not.toHaveTextContent('não entregue');
   held.release();

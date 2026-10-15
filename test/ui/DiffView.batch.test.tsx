@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { emitReviewEvent } from '@/lib/review-events';
+import { emitReviewEvent, taskReview } from '@/lib/review-events';
 import { activityOf, callsTo, fakeHive, type FakeHive, holdRoute, LABEL, renderPane, SESSION, withSessions } from './diff-harness';
 
 let hive: FakeHive;
@@ -81,10 +81,10 @@ test('a batch delivered but not saved is named in the footer, and its drafts sta
   await user.click(within(footer()).getByRole('button', { name: /enviar revisão/ }));
   expect(callsTo(hive, 'POST', '/tasks/I1/review/submit').map((c) => c.body)).toEqual([{ skip: [] }, { skip: [SESSION] }]);
   hive.review = { ...hive.review, drafts: [mine] };
-  emitReviewEvent('I1');
+  emitReviewEvent(taskReview('I1'));
   await waitFor(() => expect(within(footer()).getByRole('button', { name: /enviar revisão/ })).toBeDisabled());
   hive.review = { ...hive.review, drafts: [{ ...mine, text: 'later, edited' }] };
-  emitReviewEvent('I1');
+  emitReviewEvent(taskReview('I1'));
   await waitFor(() => expect(within(footer()).queryByRole('alert')).toBeNull());
   expect(within(footer()).getByRole('button', { name: /enviar revisão/ })).toBeEnabled();
 });

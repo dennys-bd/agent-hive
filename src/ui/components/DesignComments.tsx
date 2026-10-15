@@ -16,6 +16,7 @@ import type { CommentSelection, CommentTab, PinRects } from '@/hooks/use-design-
 import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
+import { taskReview } from '@/lib/review-events';
 import { taskRef } from '@/lib/operations-activity';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
@@ -249,7 +250,7 @@ export function DesignComments({ model, tab, selection, rects, onTab, onSelect, 
  *  with the pane behind another tab too. ponytail: two reads per design tab, this and the pane's; lift the pane's count up to its tab if
  *  that ever shows */
 export function DesignCountPill({ taskId, path }: { taskId: string; path: string }) {
-  const { review } = useReview(taskId);
+  const { review } = useReview(taskReview(taskId));
   const count = review === undefined ? 0 : fileComments(review, path).open.length;
   return count > 0 ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-muted-foreground tabular-nums">{count}</span> : null;
 }
