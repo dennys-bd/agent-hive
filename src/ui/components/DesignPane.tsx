@@ -12,7 +12,7 @@ import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBrid
 import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
-import type { Activity, TaskActivity } from '@/lib/activities';
+import type { Activity } from '@/lib/activities';
 import { getJson } from '@/lib/api';
 import { type DesignState, type DesignTheme, isOnState, nextPin } from '@/lib/design-comments';
 import { isMac, isTextField } from '@/lib/shortcut-bindings';
@@ -224,7 +224,7 @@ interface DesignViewModel {
 }
 
 // The pane's state (#109, #113, #114): one owner for the bar, the canvas, its overlay and the panel
-function useDesignView({ activity, path, active }: DesignPaneProps, comments?: DesignCommentsModel): DesignViewModel {
+function useDesignView({ activity, path, active }: DesignPaneProps, comments: DesignCommentsModel): DesignViewModel {
   const canvas = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<DesignViewport>('natural');
@@ -250,7 +250,7 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
   // A comment chosen in the list reopens on the state it was made on (#241), then scrolls to it (#114)
   const selectComment = (id: string): void => {
     marks.selectItem(id);
-    const anchor = comments && [...comments.open, ...comments.resolved].find((c) => c.id === id)?.anchor;
+    const anchor = [...comments.open, ...comments.resolved].find((c) => c.id === id)?.anchor;
     if (anchor !== undefined && !isOnState(anchor, state)) {
       pickViewport(anchor.viewport);
       if (anchor.theme !== theme) pickTheme(anchor.theme);
@@ -270,30 +270,30 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments?: D
 const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status: 'none' }> =>
   block.status === 'invalid' || (block.status === 'ok' && block.schema.length > 0);
 
-// The pane itself (#109, #113): comments only on a task's
-function DesignView({ comments, ...props }: DesignPaneProps & { comments?: DesignCommentsModel }) {
+// The pane itself (#109, #113): every activity's has its comments, a local one's in its workspace's review (#345)
+function DesignView({ comments, ...props }: DesignPaneProps & { comments: DesignCommentsModel }) {
   const { path, label, active } = props;
   const view = useDesignView(props, comments);
   const { name, canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
-    if (!takeCommentKey(event, marks) && (comments === undefined || !takeSendKey(event, comments, marks.isPanelShown))) zoom.onKeyDown(event);
+    if (!takeCommentKey(event, marks) && !takeSendKey(event, comments, marks.isPanelShown)) zoom.onKeyDown(event);
   };
   return (
     <section data-design-pane aria-label={label} tabIndex={-1} onPointerDownCapture={focusPane} onKeyDown={onKeyDown} onKeyUp={zoom.onKeyUp} onBlur={zoom.onBlur} style={active ? SHOWN : COLLAPSED} className="flex min-h-0 min-w-0 flex-col overflow-hidden outline-none">
       <DesignBar
         path={path} name={name} reloadedAt={reloadedAt} viewport={viewport} viewports={view.viewports} theme={theme} zoom={zoom} onViewport={view.pickViewport} onTheme={view.pickTheme}
-        comments={comments && { count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
+        comments={{ count: comments.open.length, isShown: marks.isPanelShown, onToggle: () => marks.setPanelShown(!marks.isPanelShown), isCommenting: marks.isCommenting, onComment: marks.toggle }}
       />
       {hasTweaksRow(view.tweaks.block) && <DesignTweaks block={view.tweaks.block} values={view.tweaks.values} onChange={view.pickTweak} />}
-      <div style={{ gridTemplateColumns: comments !== undefined && marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
+      <div style={{ gridTemplateColumns: marks.isPanelShown ? WITH_PANEL : CANVAS_ONLY }} className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] gap-px bg-border">
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
             <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
-              {comments && <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} state={view.state} frameWidth={width} />}
+              <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} state={view.state} frameWidth={width} />
             </DesignCanvas>
           )}
-        {comments !== undefined && marks.isPanelShown && (
+        {marks.isPanelShown && (
           <DesignComments
             model={comments} tab={marks.tab} selection={marks.selection} rects={pins.rects} onTab={marks.setTab} onHide={() => marks.setPanelShown(false)}
             onSelect={view.selectComment}
@@ -304,15 +304,9 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments?: Desig
   );
 }
 
-// A task's pane (#113): its review holds the comments. A local activity has none, so its pane has no panel, button nor send key
-function TaskDesignPane(props: DesignPaneProps & { activity: TaskActivity }) {
+/** The design pane (#109): the preview bar over the canvas, and the comments panel beside it (#113), a task's or a local activity's (#345).
+ *  No PaneHeader above it: the bar names the path. Collapsed like PreviewPane while another tab shows. */
+export function DesignPane(props: DesignPaneProps) {
   const comments = useDesignComments(props.activity, props.path);
   return <DesignView {...props} comments={comments} />;
-}
-
-/** The design pane (#109): the preview bar over the canvas, and on a task's pane the comments panel beside it (#113). No PaneHeader above
- *  it: the bar names the path. Collapsed like PreviewPane while another tab shows. */
-export function DesignPane(props: DesignPaneProps) {
-  const { activity } = props;
-  return activity.kind === 'task' ? <TaskDesignPane {...props} activity={activity} /> : <DesignView {...props} />;
 }
