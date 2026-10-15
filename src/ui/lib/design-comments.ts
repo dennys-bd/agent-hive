@@ -75,8 +75,8 @@ export interface Recipient { session: string; how: 'focus' | 'picked' | 'new' }
 /** The user's pick while it is one of the activity's sessions or a new one; else the activity's last session in focus while it is one of
  *  them; else a new session (#113, #345). */
 export function recipientOf(focused: string | undefined, picked: string | undefined, sessions: readonly { id: string }[]): Recipient {
-  const isTasks = (id: string | undefined): id is string => id !== undefined && sessions.some((s) => s.id === id);
-  if (picked === NEW_SESSION || isTasks(picked)) return { session: picked, how: 'picked' };
-  if (isTasks(focused)) return { session: focused, how: 'focus' };
+  const isOffered = (id: string | undefined): id is string => id !== undefined && sessions.some((s) => s.id === id);
+  if (picked === NEW_SESSION || isOffered(picked)) return { session: picked, how: 'picked' };
+  if (isOffered(focused)) return { session: focused, how: 'focus' };
   return { session: NEW_SESSION, how: 'new' };
 }
