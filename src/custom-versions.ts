@@ -14,7 +14,10 @@ export const NAME_MESSAGE = 'a name is lowercase letters, digits and dashes, sta
 export const PATH_MESSAGE = 'a file path is relative, with no .. and no leading /';
 
 export type RefusalCode = 'bad_name' | 'bad_path' | 'unknown_item' | 'unknown_version' | 'unknown_workspace' | 'exists' | 'name_taken' | 'original_locked';
-export interface StoreRefusal { code: RefusalCode; message: string }
+export interface StoreRefusal {
+  code: RefusalCode;
+  message: string;
+}
 export const refusal = (code: RefusalCode, message: string): StoreRefusal => ({ code, message });
 export const isRefusal = (value: object): value is StoreRefusal => 'code' in value;
 
@@ -28,18 +31,28 @@ export function safeFilePath(path: unknown): string | undefined {
 }
 
 /** The file Claude Code reads first: SKILL.md of a skill folder, <name>.md of a specialist; .liquid when it is a template (#310). */
-export const mainFiles = (kind: ItemKind, name: string): string[] =>
-kind === 'skill' ? ['SKILL.md', 'SKILL.md.liquid'] : [`${name}.md`, `${name}.md.liquid`];
+export const mainFiles = (kind: ItemKind, name: string): string[] => (kind === 'skill' ? ['SKILL.md', 'SKILL.md.liquid'] : [`${name}.md`, `${name}.md.liquid`]);
 
-export interface VersionJson { name: string; from: string | null; workspaces: string[]; hiveVersion?: string }
+export interface VersionJson {
+  name: string;
+  from: string | null;
+  workspaces: string[];
+  hiveVersion?: string;
+}
 
 const VERSION_JSON = z.object({ name: z.string().regex(NAME), from: z.string().nullable(), workspaces: z.array(z.string()), hiveVersion: z.string().optional() });
 
 /** The version.json of the folder `folder`. Throws an Error naming the version, which the catalogue shows on the item instead of failing. */
 export function parseVersionJson(text: string, folder: string): VersionJson {
-  const fail = (why: string): never => { throw new Error(`version ${folder}: ${why}`); };
+  const fail = (why: string): never => {
+    throw new Error(`version ${folder}: ${why}`);
+  };
   let raw: unknown;
-  try { raw = JSON.parse(text); } catch { fail('version.json is not JSON'); }
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    fail('version.json is not JSON');
+  }
   const parsed = VERSION_JSON.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

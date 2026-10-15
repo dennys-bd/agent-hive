@@ -19,8 +19,7 @@ test('safeFilePath answers a relative normalized path and refuses .., a leading 
 });
 
 test('parseVersionJson answers a valid file and names the version in every refusal (#315)', () => {
-  assert.deepEqual(parseVersionJson('{"name":"mine","from":"original","workspaces":["a"],"hiveVersion":"0.1.0"}', 'mine'),
-    { name: 'mine', from: 'original', workspaces: ['a'], hiveVersion: '0.1.0' });
+  assert.deepEqual(parseVersionJson('{"name":"mine","from":"original","workspaces":["a"],"hiveVersion":"0.1.0"}', 'mine'), { name: 'mine', from: 'original', workspaces: ['a'], hiveVersion: '0.1.0' });
   assert.deepEqual(parseVersionJson('{"name":"mine","from":null,"workspaces":[]}', 'mine'), { name: 'mine', from: null, workspaces: [] });
   for (const text of ['{', '[]', '{"name":"mine","from":1,"workspaces":[]}', '{"name":"other","from":null,"workspaces":[]}']) {
     assert.throws(() => parseVersionJson(text, 'mine'), /^Error: version mine: /, text);
