@@ -33,6 +33,8 @@ const BUILT_IN = 'workspace';
 // item-sources.ts names the plugin's origin too, but it reads the disk, so the lint cannot import it
 const HIVE_ORIGIN = 'hive';
 const HEADER_BODY = 'The header must parse before anything else is checked.';
+const HEADING = /^ {0,3}(#{1,6})(?:[ \t]|$)/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 // Parses and analyses, never renders. The strict settings of template.ts's engine make a parse error here the one a render meets;
 // templates: {} keeps a partial off the disk
@@ -141,11 +143,46 @@ function renderFindings(parsed: ParsedTemplate, workspaces: string[], statics: L
   });
 }
 
+interface Fence {
+  mark: string;
+  length: number;
+}
+interface HeadingWalk {
+  fence: Fence | null;
+  previous: number | null;
+  findings: LintAnnotation[];
+}
+
+// CommonMark's rule: the same mark, at least as long, nothing after it; so a ```` block can quote a ``` one
+function closes(fence: Fence, text: string): boolean {
+  const match = FENCE.exec(text);
+  return match !== null && match[1][0] === fence.mark && match[1].length >= fence.length && text.slice(match[0].length).trim() === '';
+}
+
+// A fence often quotes another file's headings, so they are not this file's levels
+function headingStep(walk: HeadingWalk, text: string, line: number): HeadingWalk {
+  if (walk.fence !== null) return closes(walk.fence, text) ? { ...walk, fence: null } : walk;
+  const fence = FENCE.exec(text);
+  if (fence !== null) return { ...walk, fence: { mark: fence[1][0], length: fence[1].length } };
+  const heading = HEADING.exec(text);
+  if (heading === null) return walk;
+  const level = heading[1].length;
+  const { previous } = walk;
+  if (previous === null || level <= previous + 1) return { ...walk, previous: level };
+  const body = `An h${level} right under an h${previous} skips a level; the map (1.2) nests it as an h${previous + 1}.`;
+  return { ...walk, previous: level, findings: [...walk.findings, finding(line, 'yellow', 'heading', `skipped level: h${previous} to h${level}`, body)] };
+}
+
+function headingFindings(parsed: ParsedTemplate): LintAnnotation[] {
+  const start: HeadingWalk = { fence: null, previous: null, findings: [] };
+  return parsed.body.split('\n').reduce((walk, text, index) => headingStep(walk, text, parsed.bodyLine + index), start).findings;
+}
+
 const byLine = (a: LintAnnotation, b: LintAnnotation): number => a.line - b.line;
 
 export function lintTemplate(parsed: ParsedTemplate, input: LintInput): LintAnnotation[] {
   // Every other check reads the header's variables, so a header that does not parse is answered alone
   if (parsed.errors.length > 0) return parsed.errors.map((error) => finding(error.line, 'red', 'parse', error.message, HEADER_BODY)).sort(byLine);
   const statics = [...variableFindings(parsed), ...requiredFindings(parsed, input.workspaces), ...referenceFindings(parsed, input)];
-  return [...statics, ...renderFindings(parsed, input.workspaces, statics)].sort(byLine);
+  return [...statics, ...renderFindings(parsed, input.workspaces, statics), ...headingFindings(parsed)].sort(byLine);
 }

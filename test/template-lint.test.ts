@@ -136,3 +136,28 @@ test('a render error is one annotation naming its workspaces; a workspace missin
 
   assert.deepEqual(lint([], ['{{ reviewer }}']), ['4 red undeclared undeclared variable reviewer'], 'no render error repeats a static one');
 });
+
+test('a heading deeper than the previous by more than one level is yellow; fences and the first heading are not checked (#312)', () => {
+  assert.deepEqual(
+    lint([], [
+      '### first',
+      '# A',
+      '### skipped',
+      '## B',
+      '#### skipped again',
+      '```md',
+      '# quoted',
+      '#### quoted',
+      '```',
+      '````markdown',
+      '```mermaid',
+      '```',
+      '###### inside the outer fence',
+      '````',
+      '## C',
+      '####### not a heading',
+      '#no space',
+    ]),
+    ['6 yellow heading skipped level: h1 to h3', '8 yellow heading skipped level: h2 to h4'],
+  );
+});
