@@ -316,6 +316,24 @@ test('dueDeletions takes a task without auto only when the scope\'s nonAutoTasks
   assert.deepEqual(dues([noAuto], STAGES, NOW, runsOf([], [shellOn(1)]), NON_AUTO).map((c) => c.item.id), ['1'], 'a terminal holds nothing: deleting closes it (#573)');
 });
 
+const CI_WAIT: LegacyStage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
+const CHECKS: LegacyStage = { name: 'checks', from: { board: ['Checks'] }, action: 'commands', commands: ['build'], onMissing: 'fail' };
+
+test('dueActions takes a task without auto into a due wait-for-CI stage; stopped, an error or a commands stage still keep it out, and a delete-activity stage still follows nonAutoTasks (#304)', () => {
+  const stages = [...STAGES, CI_WAIT, CHECKS];
+  const noAuto = task(1, CI_WAIT, { auto: false });
+  assert.deepEqual(dues([noAuto], stages, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS).map((c) => c.item.id), ['1'], 'waiting for CI holds no worker: auto does not govern it');
+  const held: [WithWork, string][] = [
+    [{ ...noAuto, stopped: true }, 'stopped: waits for a manual retry'],
+    [{ ...noAuto, error: 'CI failed: build' }, 'carries an error'],
+    [task(1, CHECKS, { auto: false }), 'a commands stage is the fill\'s: it still needs auto'],
+  ];
+  for (const [c, why] of held) assert.deepEqual(dues([c], stages, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS), [], why);
+  const cleanable = task(1, AT_ONCE, { auto: false });
+  assert.deepEqual(dues([cleanable], stages, NOW, NO_RUNS, DELETE_ACTIVITY_DEFAULTS), [], 'delete activity: nonAutoTasks off');
+  assert.deepEqual(dues([cleanable], stages, NOW, NO_RUNS, NON_AUTO).map((c) => c.item.id), ['1'], 'delete activity: nonAutoTasks on');
+});
+
 test('sessionsOf reads every record of the task, oldest first; continuable drops the sessions a live worker holds and the automatic worker\'s own while it runs (#164, #629)', () => {
   const session = (id: string): Session => ({ id, startedAt: ago(HOUR), stages: ['dev'], agent: 'claude' as const, lastUsedAt: ago(HOUR) });
   assert.deepEqual(sessionsOf(NO_WORK, 'item1'), []);

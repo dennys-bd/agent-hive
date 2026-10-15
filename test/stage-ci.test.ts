@@ -173,8 +173,11 @@ test('a manual start of a failed wait starts over with no re-run spent and the e
   assert.deepEqual(reduce(state, { type: 'start', itemId: ID }).effects, [], 'already waiting');
 });
 
-test('auto off or an after not yet passed keeps the wait from starting (#834)', () => {
-  assert.equal(effectOf(reduce(base(), { type: 'poll', source: 'board', items: [listed('CI', { autoOnEntry: false })] }).effects, 'ciRead'), undefined);
+test('auto off no longer keeps the wait from starting; an after not yet passed still does (#834, #304)', () => {
+  const off = reduce(base(), { type: 'poll', source: 'board', items: [listed('CI', { autoOnEntry: false })] });
+  assert.equal(off.state.tasks[0].auto, false);
+  assert.ok(effectOf(off.effects, 'ciRead'), 'the wait starts under auto off');
+  assert.ok(live(off.state)?.ci);
   assert.equal(effectOf(polled({ after: '5d' }).effects, 'ciRead'), undefined);
 });
 
