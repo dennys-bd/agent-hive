@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { deliveredName, needsLiquid, parseTemplate, type RenderResult, renderTemplate, type TemplateError } from '../src/template.js';
+import { deliveredName, needsLiquid, parseTemplate, type RenderResult, renderTemplate, splitHeader, type TemplateError } from '../src/template.js';
 
 // The Liquid render pipeline (#310): a skill or agent template's header, its variables, the render for one workspace, the .liquid name.
 const TEMPLATE = [
@@ -179,4 +179,9 @@ test('a runaway loop fails as a render error instead of blocking (#310)', () => 
   const errors = failure(renderTemplate(parseTemplate(`---\nname: x\n---\n${loop}\n`), 'hive'));
   assert.deepEqual(errors.map((error) => error.line), [4]);
   assert.ok(Date.now() - started < 5000, 'the render limit stops it');
+});
+
+test('splitHeader answers the header text, the body as a suffix of the text and the body\'s first line (#311)', () => {
+  assert.deepEqual(splitHeader('---\nname: x\n---\n# Body\n'), { header: 'name: x\n', body: '# Body\n', bodyLine: 4 });
+  assert.deepEqual(splitHeader('# No header\n'), { header: '', body: '# No header\n', bodyLine: 1 });
 });

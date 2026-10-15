@@ -81,7 +81,8 @@ const messageOf = (err: unknown): string => (err instanceof Error ? err.message 
 
 // Claude Code's frontmatter rule: a header only when the first line is a fence, up to the next fence line. The body is a suffix of the
 // text, so a render can keep the header's bytes when it removes nothing.
-function splitHeader(text: string): { header: string; body: string; bodyLine: number } {
+// Exported for the header edits of src/template-edit.ts (#311): one header reader, not two.
+export function splitHeader(text: string): { header: string; body: string; bodyLine: number } {
   const lines = text.split('\n');
   const isFence = (line: string): boolean => line.trimEnd() === FENCE;
   const close = isFence(lines[0]) ? lines.findIndex((line, index) => index > 0 && isFence(line)) : -1;
