@@ -291,3 +291,20 @@ test('Node.js and Next.js in prose are no scripts, a lowercase file name or any 
     ['script', 'scripts/Slice.py'],
   ]);
 });
+
+test('a line with 300000 references maps without throwing, each reference once (#311)', () => {
+  const map = buildMap(parseTemplate(`---\nname: x\n---\n${'/a '.repeat(300000)}\n`));
+  assert.deepEqual(map.errors, []);
+  assert.deepEqual(map.blocks[0].kind === 'introduction' ? map.blocks[0].references : [], [{ kind: 'skill', name: 'a', line: 4 }]);
+});
+
+test('chains nest 100 deep at most; the next one is an error at its marker, text from there (#311)', () => {
+  const build = (depth: number) => {
+    const open = Array.from({ length: depth }, (_, index) => `{% if v${index} %}`);
+    return buildMap(parseTemplate(`---\nname: x\n---\n${[...open, 'text', ...open.map(() => '{% endif %}')].join('\n')}\n`));
+  };
+  assert.deepEqual(build(100).errors, []);
+  const [first] = build(101).errors;
+  assert.equal(first.line, 4 + 100);
+  assert.match(first.message, /100/);
+});

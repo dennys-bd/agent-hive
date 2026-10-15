@@ -132,14 +132,23 @@ interface ScanState {
 
 type LineKind = 'text' | 'title' | 'fenced';
 
+// Every consumer of the map walks it recursively: the cap keeps a hostile text from overflowing the stack.
+const MAX_CHAIN_DEPTH = 100;
+
 const START: ScanState = { fence: null, literal: null };
 
 const top = (b: Builder): Frame => b.stack[b.stack.length - 1];
 
-const dedupe = (references: Reference[]): Reference[] =>
-  references.filter(
-    (reference, index) => references.findIndex((other) => other.kind === reference.kind && other.name === reference.name) === index,
-  );
+// First occurrence of each kind and name, in order; a Set keeps it linear on a line that names thousands.
+function dedupe(references: Reference[]): Reference[] {
+  const seen = new Set<string>();
+  return references.filter((reference) => {
+    const key = `${reference.kind}\0${reference.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 const headingBlock = (frame: HeadingFrame, endLine: number): MapBlock => ({
   kind: 'heading',
@@ -197,8 +206,13 @@ function closeTop(b: Builder, endLine: number): void {
   else frame.chain.branches.push(branchOf(frame));
 }
 
-const nearestBranch = (b: Builder): BranchFrame | undefined =>
-  [...b.stack].reverse().find((frame): frame is BranchFrame => frame.kind === 'branch');
+function nearestBranch(b: Builder): BranchFrame | undefined {
+  for (let index = b.stack.length - 1; index >= 0; index--) {
+    const frame = b.stack[index];
+    if (frame.kind === 'branch') return frame;
+  }
+  return undefined;
+}
 
 function closeThrough(b: Builder, frame: Frame, endLine: number): void {
   while (b.stack.includes(frame)) closeTop(b, endLine);
@@ -207,6 +221,10 @@ function closeThrough(b: Builder, frame: Frame, endLine: number): void {
 // Answers false when the marker has no chain to belong to: the line is then text, with an error at it.
 function onMarker(b: Builder, tag: MarkerTag, conditionText: string, line: number): boolean {
   if (tag === 'if' || tag === 'unless') {
+    if (b.stack.filter((frame) => frame.kind === 'branch').length >= MAX_CHAIN_DEPTH) {
+      b.errors.push({ line, message: `chains nest ${MAX_CHAIN_DEPTH} deep at most` });
+      return false;
+    }
     b.stack.push(branchFrame({ tag, line, branches: [] }, tag, conditionText, line));
     return true;
   }
@@ -238,7 +256,8 @@ function onText(b: Builder, text: string, line: number, kind: LineKind): void {
   // the introduction is the root's text before its first block: root text after a block belongs to no block
   if (frame.kind === 'root' && frame.children.length > 0) return;
   if (frame.kind === 'root' && b.introduction === null && kind !== 'title' && text.trim() !== '') b.introduction = line;
-  if (kind === 'text') frame.references.push(...findReferences(text, line, b.catalogue));
+  // a loop, not push(...): spreading a line of hundreds of thousands of references overflows the call stack
+  if (kind === 'text') for (const reference of findReferences(text, line, b.catalogue)) frame.references.push(reference);
 }
 
 function lineKind(state: ScanState, level: number): LineKind {
