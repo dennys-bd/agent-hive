@@ -103,12 +103,12 @@ async function createMine(s: ItemSources, item: CatalogueItem): Promise<Target |
 async function saveFile(s: ItemSources, id: string, version: string | null, path: string, text: string, from?: string): Promise<StoreResult> {
   const file = safeFilePath(path);
   const old = from === undefined ? undefined : safeFilePath(from);
-  if (file === undefined || (from !== undefined && (old === undefined || old === file))) return refusal('bad_path', PATH_MESSAGE);
+  if (file === undefined || (from !== undefined && (old === undefined || old.toLowerCase() === file.toLowerCase()))) return refusal('bad_path', PATH_MESSAGE); // APFS: a case-only rename is one file, the rm would delete it
   const item = await found(s, id);
   if (isRefusal(item)) return item;
   const target = version === null ? await createMine(s, item) : versionOf(item, version);
   if (isRefusal(target)) return target;
-  // Only the main file may move, and only between its .md and .md.liquid names
+  // A rename never turns the main file into another file or another file into the main one
   if (old !== undefined && isMainFile(item, old) !== isMainFile(item, file)) return refusal('bad_path', PATH_MESSAGE);
   const files = join(storeDir(s, item, target.name), FILES_DIR);
   const failed = await orBadPath(async () => {
@@ -209,10 +209,11 @@ async function revert(s: ItemSources, id: string, version: string): Promise<Stor
   if (isRefusal(target)) return target;
   const isLast = item.userCreated && item.versions.length === 1;
   if (item.userCreated && !isLast && target.workspaces.length > 0) return refusal('in_use', `${id}: assign its workspaces to another version first`);
-  await rm(storeDir(s, item, version), { recursive: true, force: true });
+  // Re-parent first: a failed edit then leaves the version in place instead of children pointing at nothing
   for (const other of item.versions.filter((v) => v.from === version)) {
     await editVersionJson(storeDir(s, item, other.name), other.name, (json) => ({ ...json, from: target.from }));
   }
+  await rm(storeDir(s, item, version), { recursive: true, force: true });
   // A user-created item has no original to fall back to: its last version takes the item with it
   if (isLast) await rm(itemDir(s.home, item), { recursive: true, force: true });
   return { workspaces: target.workspaces };

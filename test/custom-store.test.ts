@@ -134,6 +134,7 @@ test('a save with from renames the file (.md to .md.liquid); deleteFile removes 
   const f = await fixture(t);
   const store = open(f);
   await store.saveFile(BUILD, null, 'SKILL.md', 'x');
+  assert.equal(codeOf(await store.saveFile(BUILD, 'mine', 'skill.md', 'x', 'SKILL.md')), 'bad_path', 'a case-only rename is one file on APFS');
   assert.deepEqual(await store.saveFile(BUILD, 'mine', 'SKILL.md.liquid', '{{ x }}', 'SKILL.md'), { workspaces: BOTH });
   const paths = async () => {
     const read = await readItem(f, BUILD, 'mine');
