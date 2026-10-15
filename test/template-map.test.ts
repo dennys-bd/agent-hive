@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { parseTemplate } from '../src/template.js';
 import type { Condition } from '../src/template-condition.js';
-import { buildMap, type Catalogue, findReferences } from '../src/template-map.js';
+import { buildMap, type Catalogue, findReferences, type MapBlock } from '../src/template-map.js';
 
 // The block map of a template's body (#311): references, heading blocks, conditional chains, start lines and collapse structure.
 const CATALOGUE: Catalogue = { skills: ['hive:new-pr', 'tdd-loop'], agents: ['hive:tdd', 'reviewer'] };
@@ -200,4 +202,66 @@ test('unbalanced markers answer the blocks built plus an error at the marker\'s 
   const [hidden] = literal.blocks;
   assert.ok(hidden.kind === 'heading');
   assert.deepEqual(hidden.children, []);
+});
+
+// Runs from dist/test: the repository root is two folders up.
+const REPO = new URL('../../', import.meta.url);
+const NEW_BUILD = readFileSync(fileURLToPath(new URL('assets/plugin/skills/new-build/SKILL.md', REPO)), 'utf8');
+const SHIPPED_AGENTS = readdirSync(fileURLToPath(new URL('assets/plugin/agents/', REPO)))
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => `hive:${file.slice(0, -'.md'.length)}`);
+
+type HeadingBlock = Extract<MapBlock, { kind: 'heading' }>;
+
+test('the map of the shipped new-build skill: its ## blocks in order with their lines, and the agents each one names (#311)', () => {
+  const map = buildMap(parseTemplate(NEW_BUILD), { skills: [], agents: SHIPPED_AGENTS });
+  assert.deepEqual(map.errors, []);
+  const [introduction, ...sections] = map.blocks;
+  assert.deepEqual(introduction, { kind: 'introduction', line: 8, endLine: 12, references: [{ kind: 'skill', name: 'hive:flow', line: 9 }] });
+  const headings = sections.filter((block): block is HeadingBlock => block.kind === 'heading');
+  assert.equal(headings.length, sections.length, 'no chain in this file');
+  assert.deepEqual(
+    headings.map((block) => [block.level, block.title, block.line, block.count]),
+    [
+      [2, 'Input', 13, 0],
+      [2, 'Conventions', 27, 0],
+      [2, 'No questions', 40, 0],
+      [2, 'Working tree', 47, 0],
+      [2, 'Model routing', 51, 0],
+      [2, 'Stage 1 — Slices', 65, 0],
+      [2, 'Stage 2 — Security review', 102, 0],
+      [2, "Stage 3 — Check against the spec's Done", 112, 0],
+      [2, 'Stage 4 — UI check', 120, 0],
+      [2, 'Stage 5 — Walkthrough', 129, 0],
+      [2, 'Stage 6 — PR', 152, 0],
+      [2, 'End', 159, 0],
+      [2, 'Subagent substitution', 167, 0],
+      [2, 'Stops', 174, 0],
+    ],
+  );
+  const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
+  const named = Object.fromEntries(headings.map((block) => [block.title, agentsOf(block).map((reference) => reference.name)]));
+  assert.deepEqual(named, {
+    Input: [],
+    Conventions: [],
+    'No questions': [],
+    'Working tree': [],
+    'Model routing': ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer', 'hive:security-reviewer'],
+    'Stage 1 — Slices': ['hive:tdd', 'hive:build-fixer', 'hive:code-reviewer'],
+    'Stage 2 — Security review': ['hive:security-reviewer'],
+    "Stage 3 — Check against the spec's Done": [],
+    'Stage 4 — UI check': [],
+    'Stage 5 — Walkthrough': [],
+    'Stage 6 — PR': [],
+    End: [],
+    'Subagent substitution': [],
+    Stops: ['hive:build-fixer'],
+  });
+  const section = (title: string): HeadingBlock => headings.filter((block) => block.title === title)[0];
+  assert.deepEqual(agentsOf(section('Stage 1 — Slices')), [
+    { kind: 'agent', name: 'hive:tdd', line: 82 },
+    { kind: 'agent', name: 'hive:build-fixer', line: 89 },
+    { kind: 'agent', name: 'hive:code-reviewer', line: 92 },
+  ]);
+  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 110 }]);
 });
