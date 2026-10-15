@@ -40,7 +40,7 @@ const HTTP_REDIRECT = 300; // ui.action is 2xx only
 const NOT_ACTIONS: readonly string[] = ['/view-state/:key'];
 export const HOOKS_PREFIX = '/hooks/';
 export const UI_HEADER = 'x-hive-ui'; // every dashboard write carries it; the value is irrelevant
-export const WRITE_METHODS: readonly string[] = ['POST', 'PUT', 'DELETE']; // #591: the review's PUT and DELETE routes too
+export const WRITE_METHODS: readonly string[] = ['POST', 'PUT', 'PATCH', 'DELETE']; // #591: the review's PUT and DELETE routes too; #315: a version's rename
 const UNMATCHED = 'unmatched';
 
 // A recorder's body run so a throw stays here: one line with the method's name and the error's class, never its message (a derivation's
@@ -106,7 +106,7 @@ function idCorrelation(state: State | undefined, id: unknown): Correlation {
   return state.activities.some((a) => a.id === id) || state.activityRecords.some((r) => r.id === id) ? { activity_id: id } : {};
 }
 
-// A write the dashboard made: the gate let a POST, PUT or DELETE outside the hooks through only with the UI's header
+// A write the dashboard made: the gate let a POST, PUT, PATCH or DELETE outside the hooks through only with the UI's header
 const isUiWrite = (req: Request): boolean => WRITE_METHODS.includes(req.method) && !req.path.startsWith(HOOKS_PREFIX) && req.header(UI_HEADER) !== undefined;
 
 // The HTTP answers: the route's pattern, never the URL (a path or a query can carry a task's text), and never a body. A request no route

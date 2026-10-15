@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 // Dev only: `pnpm dev` serves src/ui with HMR and forwards the API to a Hive already running (run:headless or hive).
-const API_ROUTES = ['/events', '/setup', '/ptys', '/tasks', '/config', '/signal', '/board'];
+const API_ROUTES = ['/events', '/setup', '/ptys', '/tasks', '/config', '/signal', '/board', '/api'];
 const HIVE_PORT = process.env.HIVE_PORT ?? '47821';
 
 const page = (name: string): string => fileURLToPath(new URL(`./src/ui/${name}`, import.meta.url)); // absolute: Rollup resolves inputs against the cwd
