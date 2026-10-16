@@ -83,6 +83,7 @@ function ItemHead({ item, editor, workspaces }: ItemProps) {
 export function PluginsHead({ plugins, editor, workspaces }: { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[] }) {
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
+  if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
   return item === undefined ? null : <ItemHead item={item} editor={editor} workspaces={workspaces} />;

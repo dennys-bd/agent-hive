@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import type { Plugins } from '@/hooks/use-plugins';
 import { t } from '@/i18n';
 import { isSettingsClosed, onShortcutKey, type PanelId } from '@/lib/dock-layout';
-import { basedOnTitle, countOf, groupsOf, isListSection, KIND_OF, markOf, type PluginScreen, type Section, SECTIONS, sectionOfScreen } from '@/lib/plugins';
+import { basedOnTitle, countOf, groupsOf, isListSection, itemIdOf, KIND_OF, markOf, type PluginScreen, type Section, SECTIONS, sectionOfScreen } from '@/lib/plugins';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 
 export interface PluginsSidebarProps { plugins: Plugins; workspaces: readonly string[]; isShown: boolean; activate(id: PanelId): void }
@@ -38,12 +38,12 @@ function ItemRow({ item, isOpen, onOpen }: { item: CatalogueItem; isOpen: boolea
 
 // The open section's items by origin (decision 7), searched as the user types (decision 4)
 function Groups({ plugins, items, kind, workspaces }: { plugins: Plugins; items: CatalogueItem[]; kind: ItemKind; workspaces: readonly string[] }) {
-  const { screen } = plugins;
+  const open = itemIdOf(plugins.screen); // an update screen marks its item's row (#325)
   return groupsOf(items, kind, workspaces, plugins.query).map((group) => (
     <fieldset key={group.origin} aria-label={group.origin} className="flex min-w-0 flex-col gap-px pt-1.5 pl-2">
       <div className="flex items-center gap-1.5 px-2 pb-0.5 text-[11px] text-muted-foreground"><OriginMark origin={group.origin} />{group.origin}</div>
       {group.items.map((item) => (
-        <ItemRow key={item.id} item={item} isOpen={screen.kind === 'item' && screen.id === item.id} onOpen={() => plugins.open({ kind: 'item', id: item.id })} />
+        <ItemRow key={item.id} item={item} isOpen={item.id === open} onOpen={() => plugins.open({ kind: 'item', id: item.id })} />
       ))}
     </fieldset>
   ));
@@ -62,7 +62,7 @@ function SectionBlock({ section, plugins, workspaces, isActive }: SectionProps) 
         <span className="flex-1">{t(`plugins.section.${section}`)}</span>
         {count !== undefined && <span className="font-normal text-muted-foreground text-xs">{count}</span>}
       </button>
-      {isActive && isListSection(section) && plugins.screen.kind === 'item' && <Groups plugins={plugins} items={items} kind={KIND_OF[section]} workspaces={workspaces} />}
+      {isActive && isListSection(section) && itemIdOf(plugins.screen) !== undefined && <Groups plugins={plugins} items={items} kind={KIND_OF[section]} workspaces={workspaces} />}
     </div>
   );
 }
