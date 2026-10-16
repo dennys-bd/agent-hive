@@ -13,7 +13,7 @@ export const BASE_DIR = 'base';
 export const NAME_MESSAGE = 'a name is lowercase letters, digits and dashes, starting with a letter or a digit';
 export const PATH_MESSAGE = 'a file path is relative, with no .. and no leading /';
 
-export type RefusalCode = 'bad_name' | 'bad_path' | 'unknown_item' | 'unknown_version' | 'unknown_workspace' | 'exists' | 'name_taken' | 'original_locked' | 'in_use';
+export type RefusalCode = 'bad_name' | 'bad_path' | 'unknown_item' | 'unknown_version' | 'unknown_workspace' | 'exists' | 'name_taken' | 'original_locked' | 'in_use' | 'no_update' | 'stale' | 'unresolved';
 export interface StoreRefusal {
   code: RefusalCode;
   message: string;
