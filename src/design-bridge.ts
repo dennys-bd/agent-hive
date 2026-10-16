@@ -65,6 +65,9 @@ export function designBridge(helpers: AnchorHelpers): () => void {
   // capture on window: while commenting, the design's own handlers and links must not fire
   for (const type of ['mousedown', 'mousemove', 'mouseup', 'click'] as const) window.addEventListener(type, pointer, { capture: true, signal });
   window.addEventListener('keydown', (event: KeyboardEvent) => bridgeKey(bridge, event), { capture: true, signal });
+  // capture and non-passive (#346): the frame would otherwise zoom its own page, and a design's own wheel handler must not see it first
+  window.addEventListener('wheel', (event: WheelEvent) => bridgeWheel(post, event), { capture: true, passive: false, signal });
+  for (const type of ['pointerdown', 'mousedown', 'pointerup'] as const) window.addEventListener(type, (event: MouseEvent) => bridgeMiddle(post, event), { capture: true, signal });
   // A resize reports the size with the last natural width, never a new measure: a 50vw element would shrink the frame in a loop (#341)
   const observer = new ResizeObserver(() => {
     sizes.postSize();
@@ -274,10 +277,31 @@ function bridgeKey(bridge: BridgeState, event: KeyboardEvent): void {
   bridge.post({ type: 'key', key: event.key });
 }
 
+/** ⌘ / Ctrl + wheel, and a pinch (Chromium sends it as a ctrl-wheel), zoom the pane's canvas, not the frame's page (#346): the point goes
+ *  with it, in the frame's own unscaled px, so the pane keeps it under the cursor. Any other wheel scrolls the design as it always did. */
+function bridgeWheel(post: (message: Record<string, unknown>) => void, event: WheelEvent): void {
+  if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return;
+  event.preventDefault();
+  post({ type: 'zoom', deltaY: event.deltaY, x: event.clientX, y: event.clientY });
+}
+
+/** A middle press pans the pane's canvas (#346): pan hands the drag to the pane, which takes the frame off the pointer. Its mousedown is
+ *  cancelled too, posting nothing: autoscroll and the Linux primary-selection paste are mousedown's defaults, and a cancelled pointerdown
+ *  does not promise to stop them. Its release posts panEnd: a quick click can be released in the frame before the pane took the drag. */
+function bridgeMiddle(post: (message: Record<string, unknown>) => void, event: MouseEvent): void {
+  if (event.button !== 1) return;
+  if (event.type === 'pointerup') {
+    post({ type: 'panEnd' });
+    return;
+  }
+  event.preventDefault();
+  if (event.type === 'pointerdown') post({ type: 'pan' });
+}
+
 // Joined beside the anchor functions, as siblings in the frame's one script
 const BRIDGE_FUNCTIONS = [
   bridgeOverlay, placeOverlay, dragRect, setCommentMode, schedulePins, scrollToAnchor, bridgeMessage, bridgePointer, pointerMove,
-  pointerUp, bridgeKey, postTweaks, applyTweak, sizeReporter, designBridge,
+  pointerUp, bridgeKey, bridgeWheel, bridgeMiddle, postTweaks, applyTweak, sizeReporter, designBridge,
 ];
 
 /** The bridge as the inline script the design frame route puts into every HTML page it serves (#108): inline, so it needs no route.

@@ -124,6 +124,34 @@ function useFrameMessages(frame: RefObject<HTMLIFrameElement | null>, onReady: (
   return [size, () => setSize(({ height, natural }) => ({ height, natural }))];
 }
 
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+
+// The bridge's zoom and pan (#346), only from this pane's frame: a ⌘ / Ctrl wheel or a pinch over the frame, anchored at its point there
+// (the frame's rect is its scaled one, from the box's top-left), and a middle press, whose drag the pane then follows on its own window.
+// A hook of its own, after the zoom: useFrameMessages runs before it, since the frame's size sets the zoom's width
+function useFrameZoom(frame: RefObject<HTMLIFrameElement | null>, zoom: DesignZoom): void {
+  const onZoom = useEffectEvent((deltaY: number, x: number, y: number): void => {
+    const rect = frame.current?.getBoundingClientRect();
+    if (rect === undefined) return;
+    const scale = zoom.zoom / FULL;
+    zoom.zoomAt(deltaY, { x, y, clientX: rect.left + x * scale, clientY: rect.top + y * scale });
+  });
+  const onPan = useEffectEvent((): void => zoom.startPan());
+  const onPanEnd = useEffectEvent((): void => zoom.endPan());
+  useEffect(() => {
+    const onMessage = (event: MessageEvent<unknown>): void => {
+      const data = bridgeData(event, frame.current);
+      if (data === undefined) return;
+      const { type, deltaY, x, y } = data;
+      if (type === 'pan') onPan();
+      else if (type === 'panEnd') onPanEnd();
+      else if (type === 'zoom' && isFiniteNumber(deltaY) && isFiniteNumber(x) && isFiniteNumber(y)) onZoom(deltaY, x, y);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [frame]);
+}
+
 // natural (#341): the content's measured width, held to mobile–desktop. A fixed viewport: its width, or a window screen's wider overflow (#241)
 const frameWidthOf = (viewport: DesignViewport, size: FrameSize): number =>
   (viewport === 'natural'
@@ -142,21 +170,28 @@ const postTheme = (frame: HTMLIFrameElement | null, theme: DesignTheme): void =>
   frame?.contentWindow?.postMessage({ hive: 'design', type: 'theme', theme }, '*');
 };
 
-interface CanvasProps { canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>; url?: string; name: string; width: number; height: number; zoom: DesignZoom; reloads: number; isCommenting: boolean; children?: ReactNode }
+interface CanvasProps { canvas: RefObject<HTMLDivElement | null>; box: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>; url?: string; name: string; width: number; height: number; zoom: DesignZoom; reloads: number; isCommenting: boolean; children?: ReactNode }
+
+// The bridge sets the crosshair inside the frame only (#112): the margin takes it here. grabbing while a pan is under way (#346)
+function canvasCursor(zoom: DesignZoom, isCommenting: boolean): string | undefined {
+  if (zoom.isDragging) return 'grabbing';
+  if (zoom.isPanning) return 'grab';
+  return isCommenting ? 'crosshair' : undefined;
+}
 
 // The canvas scrolls a box the zoomed frame's size, and the frame inside it keeps its own size and scales from its top-left corner: a
-// transform alone leaves the layout box, so the canvas would not scroll to a zoomed frame's edges. The box does not clip (overflow visible)
-function DesignCanvas({ canvas, frame, url, name, width, height, zoom, reloads, isCommenting, children }: CanvasProps) {
+// transform alone leaves the layout box, so the canvas would not scroll to a zoomed frame's edges. The box does not clip (overflow visible).
+// While Space is held or a pan is under way the frame is off the pointer, so the drag's moves reach the pane's window (#346)
+function DesignCanvas({ canvas, box, frame, url, name, width, height, zoom, reloads, isCommenting, children }: CanvasProps) {
   const scale = zoom.zoom / FULL;
-  // The bridge sets the crosshair inside the frame only (#112): the margin takes it here
-  const cursor = zoom.isPanning ? 'grab' : (isCommenting ? 'crosshair' : undefined);
+  const isFrameOff = zoom.isPanning || zoom.isDragging;
   return (
-    <div ref={canvas} data-design-canvas onPointerDown={zoom.onPointerDown} style={{ ...DOTS, cursor }} className="min-h-0 flex-1 overflow-auto bg-background p-4">
-      <div data-design-box style={{ width: width * scale, height: height * scale, boxShadow: FRAME_SHADOW }} className="relative mx-auto rounded-md">
+    <div ref={canvas} data-design-canvas onPointerDown={zoom.onPointerDown} style={{ ...DOTS, cursor: canvasCursor(zoom, isCommenting) }} className="min-h-0 flex-1 overflow-auto bg-background p-4">
+      <div ref={box} data-design-box style={{ width: width * scale, height: height * scale, boxShadow: FRAME_SHADOW }} className="relative mx-auto rounded-md">
         {url !== undefined && (
           <iframe
             key={reloads} ref={frame} src={url} title={name} sandbox="allow-scripts" width={width} height={height} className="block rounded-md border-0"
-            style={{ transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: zoom.isPanning ? 'none' : undefined }}
+            style={{ transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: isFrameOff ? 'none' : undefined }}
           />
         )}
         {children}
@@ -217,7 +252,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, state, frameWidth
 }
 
 interface DesignViewModel {
-  name: string; canvas: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
+  name: string; canvas: RefObject<HTMLDivElement | null>; box: RefObject<HTMLDivElement | null>; frame: RefObject<HTMLIFrameElement | null>;
   viewport: DesignViewport; viewports: DesignViewport[]; theme: DesignTheme; state: DesignState; width: number; height: number; mint: Mint; reloads: Reloads; reloadedAt?: Date;
   zoom: DesignZoom; marks: CommentCanvas; pins: PinsBridge; tweaks: DesignTweaksModel;
   pickViewport(next: DesignViewport): void; pickTheme(next: DesignTheme): void; pickTweak(name: string, value: DesignTweakValue): void; selectComment(id: string): void;
@@ -226,6 +261,7 @@ interface DesignViewModel {
 // The pane's state (#109, #113, #114): one owner for the bar, the canvas, its overlay and the panel
 function useDesignView({ activity, path, active }: DesignPaneProps, comments: DesignCommentsModel): DesignViewModel {
   const canvas = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null); // the zoom's anchor reference (#346)
   const frame = useRef<HTMLIFrameElement>(null);
   const [viewport, setViewport] = useState<DesignViewport>('natural');
   const [theme, setTheme] = useState<DesignTheme>(pageTheme);
@@ -243,7 +279,8 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments: De
     if (reloads.take()) setReloadedAt(new Date());
   });
   const width = frameWidthOf(viewport, size);
-  const zoom = useDesignZoom(canvas, width, active && mint.status !== 'error');
+  const zoom = useDesignZoom(canvas, box, width, active && mint.status !== 'error');
+  useFrameZoom(frame, zoom);
   // An aimed rect was measured in another theme, viewport or set of tweaks: any change drops the composer
   const pickTheme = (next: DesignTheme): void => { setTheme(next); postTheme(frame.current, next); marks.close(); };
   const pickViewport = (next: DesignViewport): void => { setViewport(next); forgetWidth(); marks.close(); };
@@ -260,7 +297,7 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments: De
   };
   const pickTweak = (name: string, value: DesignTweakValue): void => { tweaks.set(name, value); marks.close(); };
   return {
-    name: baseName(path), canvas, frame, viewport, viewports: switchOf(tweaks.viewports, viewport), theme, state, width, height: size.height ?? width * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
+    name: baseName(path), canvas, box, frame, viewport, viewports: switchOf(tweaks.viewports, viewport), theme, state, width, height: size.height ?? width * FRAME_ASPECT, mint, reloads, reloadedAt, zoom, marks, pins, tweaks, pickTheme, pickTweak,
     pickViewport,
     selectComment,
   };
@@ -274,7 +311,7 @@ const hasTweaksRow = (block: TweakBlock): block is Exclude<TweakBlock, { status:
 function DesignView({ comments, ...props }: DesignPaneProps & { comments: DesignCommentsModel }) {
   const { path, label, active } = props;
   const view = useDesignView(props, comments);
-  const { name, canvas, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
+  const { name, canvas, box, frame, viewport, theme, width, height, mint, reloads, reloadedAt, zoom, marks, pins } = view;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
     if (!takeCommentKey(event, marks) && !takeSendKey(event, comments, marks.isPanelShown)) zoom.onKeyDown(event);
   };
@@ -289,7 +326,7 @@ function DesignView({ comments, ...props }: DesignPaneProps & { comments: Design
         {mint.status === 'error'
           ? <p role="alert" className="bg-background p-3 text-destructive text-xs">{mint.message}</p>
           : (
-            <DesignCanvas canvas={canvas} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
+            <DesignCanvas canvas={canvas} box={box} frame={frame} url={mint.status === 'ready' ? mint.url : undefined} name={name} width={width} height={height} zoom={zoom} reloads={reloads.count} isCommenting={marks.isCommenting}>
               <CommentOverlay model={comments} canvas={marks} rects={pins.rects} percent={zoom.zoom} path={path} state={view.state} frameWidth={width} />
             </DesignCanvas>
           )}

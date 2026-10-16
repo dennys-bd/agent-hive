@@ -62,4 +62,11 @@ test('the real bridgeScript body runs in jsdom with every function it reaches jo
     { hive: 'design', type: 'ready' }, { hive: 'design', type: 'tweaks', schema: {} }, { hive: 'design', type: 'size', height: 0, natural: 0 },
   ]);
   flush(); // #341: the tweak's remeasure, through the joined sizeReporter
+  // #346: the joined bridgeWheel and bridgeMiddle run too
+  p.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -2, clientX: 3, clientY: 4, ctrlKey: true }));
+  p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 1 }));
+  expect(errors).toEqual([]);
+  expect(posted.mock.calls.slice(-2).map(([data]) => data)).toEqual([
+    { hive: 'design', type: 'zoom', deltaY: -2, x: 3, y: 4 }, { hive: 'design', type: 'pan' },
+  ]);
 });

@@ -289,3 +289,36 @@ test('size carries natural, the content\'s own width read with <html> at max-con
   delete root.dataset.theme;
   root.removeAttribute('data-tweak-layout');
 });
+
+test('a ⌘ or Ctrl wheel posts zoom with its deltaY and its point in the frame and is cancelled; a plain wheel, or one with no deltaY, posts nothing and is not cancelled (#346)', () => {
+  const { sent } = harness();
+  start();
+  const wheel = (init: WheelEventInit): boolean => document.body.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init }));
+  expect(wheel({ deltaY: -3, clientX: 40, clientY: 25, metaKey: true })).toBe(false);
+  expect(wheel({ deltaY: 2.5, clientX: 10, clientY: 5, ctrlKey: true })).toBe(false); // a pinch: Chromium sends it as a ctrl-wheel
+  expect(wheel({ deltaY: 100, clientX: 10, clientY: 5 })).toBe(true); // scrolls the screen as it always did
+  expect(wheel({ deltaX: 30, ctrlKey: true })).toBe(true);
+  expect(sent()).toEqual([
+    { hive: 'design', type: 'zoom', deltaY: -3, x: 40, y: 25 },
+    { hive: 'design', type: 'zoom', deltaY: 2.5, x: 10, y: 5 },
+  ]);
+});
+
+test('a middle pointerdown posts pan and is cancelled, a middle mousedown is cancelled and posts nothing; a main-button press posts nothing and is not cancelled (#346)', () => {
+  const { sent } = harness();
+  start();
+  const init = (button: number): MouseEventInit => ({ bubbles: true, cancelable: true, button });
+  expect(document.body.dispatchEvent(new PointerEvent('pointerdown', init(1)))).toBe(false);
+  expect(document.body.dispatchEvent(new MouseEvent('mousedown', init(1)))).toBe(false); // autoscroll and the Linux paste are mousedown's
+  expect(document.body.dispatchEvent(new PointerEvent('pointerdown', init(0)))).toBe(true);
+  expect(document.body.dispatchEvent(new MouseEvent('mousedown', init(0)))).toBe(true);
+  expect(sent()).toEqual([{ hive: 'design', type: 'pan' }]);
+});
+
+test('a middle pointerup posts panEnd, so a quick middle click released in the frame never leaves it off the pointer; a main release posts nothing (#346)', () => {
+  const { sent } = harness();
+  start();
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }));
+  document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 1 }));
+  expect(sent()).toEqual([{ hive: 'design', type: 'panEnd' }]);
+});
