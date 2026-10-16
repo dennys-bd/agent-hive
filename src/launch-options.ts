@@ -6,12 +6,11 @@ import type { AgentRun } from './agents/runner.js';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from './agents/claude-models.js';
 import { agentRoles, CODEX_PLUGIN } from './agents/codex-home.js';
 import { CLAUDE_MODEL } from './config-agent-args.js';
-import { pluginSource } from './hooks-settings.js';
 import { isLaunchArgs, isLaunchModel, savedLaunch } from './launch-pick.js';
 import type { Logger } from './log.js';
 import { isRecord } from './rate-limits.js';
 import type { Refusal, TaskRouteDeps } from './server-tasks.js';
-import type { AgentId, Exec, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
+import type { AgentId, Config, Exec, Language, LaunchOption, LaunchOptions, LaunchPick } from './types.js';
 import { MESSAGES } from './ui/i18n.js';
 
 const HTTP_BAD_REQUEST = 400;
@@ -26,8 +25,9 @@ const pluginMessage = (err: unknown, language: Language): string => `${MESSAGES[
 /** One of the Hive plugin's agents as a session runs it (#257): hive:<name>, its description, and the body Codex gets as instructions. */
 export interface SpecializedAgent { name: string; description: string; instructions: string }
 
-/** The Hive plugin's agents, sorted by file as agentRoles reads them. Throws on an agent file with a bad frontmatter. */
-export const specializedAgents = (source: string = pluginSource()): SpecializedAgent[] =>
+/** A plugin folder's agents, sorted by file as agentRoles reads them (#316: the run's workspace's folder, or the fallback). Throws on an agent
+ * file with a bad frontmatter. */
+export const specializedAgents = (source: string): SpecializedAgent[] =>
   agentRoles(source).map((role) => ({ name: `${CODEX_PLUGIN}:${role.name}`, description: role.description, instructions: role.instructions }));
 
 // One entry of `codex debug models`, narrowed from unknown: a slug the routes would admit as a model, its display name as the hint when it adds one
@@ -57,10 +57,10 @@ async function codexModels(exec: Exec, log: Pick<Logger, 'info'>): Promise<Launc
   }
 }
 
-/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's from its CLI, the plugin's agents for both, each agent's config args.
- * Throws when the plugin's agents cannot be read. */
-export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agentArgs: Record<AgentId, string[]>): Promise<LaunchOptions> {
-  const agents = specializedAgents().map(({ name, description }) => ({ name, description }));
+/** GET /launch-options' answer (#257): Claude's hand-kept models, Codex's from its CLI, `pluginDir`'s agents for both (#316), each agent's config
+ * args. Throws when the folder's agents cannot be read. */
+export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agentArgs: Record<AgentId, string[]>, pluginDir: string): Promise<LaunchOptions> {
+  const agents = specializedAgents(pluginDir).map(({ name, description }) => ({ name, description }));
   const codex = await codexModels(exec, log);
   return {
     claude: { aliases: [...CLAUDE_ALIASES], versions: [...CLAUDE_VERSIONS], specializedAgents: agents, args: [...agentArgs.claude] },
@@ -68,13 +68,22 @@ export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agent
   };
 }
 
-/** GET /launch-options (#257). A plugin agent file that cannot be read answers 500 with its reason. */
-export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'log' | 'language'>): void {
-  app.get('/launch-options', async (_req: Request, res: Response) => {
+// The dialog's workspace (#316): one the config has, else none, which lists the fallback's agents. Never a refusal, so no new message
+function askedWorkspace(req: Request, config: Pick<Config, 'comb'>): string | undefined {
+  const asked = req.query.workspace;
+  return typeof asked === 'string' && config.comb.workspaces.some((w) => w.name === asked) ? asked : undefined;
+}
+
+/** GET /launch-options (#257), ?workspace=<name> for that workspace's agents (#316). A plugin agent file that cannot be read answers 500 with
+ * its reason. */
+export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'log' | 'language' | 'plugin'>): void {
+  app.get('/launch-options', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
     try {
-      res.json(await launchOptions(deps.exec, deps.log, current.runtime.config.agentArgs));
+      await deps.plugin.ready(); // a store change the dialog just made is listed
+      const { config } = current.runtime;
+      res.json(await launchOptions(deps.exec, deps.log, config.agentArgs, deps.plugin.dir(askedWorkspace(req, config))));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: pluginMessage(err, deps.language()) });
     }
@@ -104,12 +113,12 @@ export function checkLaunch(body: unknown, agent: AgentId | undefined, roles: re
   return Object.keys(launch).length === 0 ? {} : { launch };
 }
 
-/** checkLaunch at an open route (#257): the plugin's agents are read only when the request names one; a plugin it cannot read is a 500 with
- * the reason. */
-export function askedLaunch(body: unknown, agent: AgentId | undefined, language: Language): { launch?: LaunchPick } | Refusal {
+/** checkLaunch at an open route (#257): `pluginDir`'s agents, the folder of the workspace the session runs in (#316), are read only when the
+ * request names one; a plugin it cannot read is a 500 with the reason. */
+export function askedLaunch(body: unknown, agent: AgentId | undefined, language: Language, pluginDir: string): { launch?: LaunchPick } | Refusal {
   const isNamed = isRecord(body) && body.specializedAgent !== undefined;
   try {
-    return checkLaunch(body, agent, isNamed ? specializedAgents().map((a) => a.name) : [], language);
+    return checkLaunch(body, agent, isNamed ? specializedAgents(pluginDir).map((a) => a.name) : [], language);
   } catch (err) {
     return { status: HTTP_SERVER_ERROR, message: pluginMessage(err, language) };
   }
