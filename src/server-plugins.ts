@@ -3,12 +3,13 @@
 // hive.log only.
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
+import { previewUpdate } from './custom-merge.js';
 import { type CustomStore, MINE } from './custom-store.js';
 import { isRefusal, type RefusalCode, type StoreRefusal } from './custom-versions.js';
 import { HIVE_ORIGIN, type ItemSources, itemId } from './item-sources.js';
 import { findItem, readCatalogue, readItem } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { ITEM_KINDS } from './types.js';
+import { ITEM_KINDS, UPDATE_CHOICES } from './types.js';
 
 const HTTP_CREATED = 201;
 const HTTP_NO_CONTENT = 204;
@@ -38,6 +39,7 @@ const DELETE_FILE = z.object({ version: z.string(), path: z.string() });
 const NEW_VERSION = z.object({ name: z.string(), from: z.string() });
 const RENAME = z.object({ name: z.string() });
 const ASSIGN = z.object({ workspace: z.string(), version: z.string().nullable() });
+const APPLY_UPDATE = z.object({ token: z.string(), choices: z.record(z.string(), z.enum(UPDATE_CHOICES)) });
 
 export interface PluginRouteDeps {
   requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces'] } } } } | undefined;
@@ -150,9 +152,27 @@ function registerVersionRoutes(app: Express, deps: PluginRouteDeps): void {
   }));
 }
 
+// The update of one version (#324): GET previews it and writes nothing; POST applies it and answers the version read, as every write does
+function registerUpdateRoutes(app: Express, deps: PluginRouteDeps): void {
+  app.get('/api/items/:id/versions/:version/update', route(deps, async (req, res, s) => {
+    const preview = await previewUpdate(s, idOf(req), String(req.params.version));
+    if (isRefusal(preview)) return refuse(res, preview);
+    res.json(preview);
+  }));
+  app.post('/api/items/:id/versions/:version/update', route(deps, async (req, res, s) => {
+    const body = bodyOf(APPLY_UPDATE, req, res);
+    if (!body) return;
+    const version = String(req.params.version);
+    const done = await deps.store.applyUpdate(idOf(req), version, body.token, body.choices);
+    if (isRefusal(done)) return refuse(res, done);
+    await answerRead(res, s, idOf(req), version);
+  }));
+}
+
 /** GET/POST /api/items and the custom store's writes (#315), behind the server's host, secret and x-hive-ui gates. */
 export function registerPluginRoutes(app: Express, deps: PluginRouteDeps): void {
   registerItemRoutes(app, deps);
   registerFileRoutes(app, deps);
   registerVersionRoutes(app, deps);
+  registerUpdateRoutes(app, deps);
 }
