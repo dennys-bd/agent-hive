@@ -9,6 +9,7 @@ import { runners } from './agents/registry.js';
 import type { AgentRun } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
+import type { PluginRender } from './plugin-render.js';
 import type { Runtime } from './server.js';
 import { errorMessage } from './server-review.js';
 import { taskProtocol } from './server-spawn.js';
@@ -46,6 +47,7 @@ export interface TerminalRouteDeps {
   home: string; // where the shim is, which the agents walk skips
   recordStart(runtime: Runtime, activity: Activity, task: Task, stage: string): Promise<void>; // #812: the spawner's, for a captured session
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
+  plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, which a terminal's agent loads as any run does
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -105,9 +107,10 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
   // #803: a captured agent is a free session of the terminal's activity, so it loads its workspace's language servers, a local activity's too
   const workspace = (task === undefined ? undefined : taskWorkspace(runtime.config, task)?.name) ?? activity?.workspace;
+  await deps.plugin.ready(); // #316: a render queued by a save or the plugins store lands before this run reads its folder
   const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : undefined;
   return {
-    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: runtime.pluginDir,
+    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
     lspPluginDir: workspace === undefined ? undefined : deps.lspDir(workspace),
     ...(protocolPath === undefined ? {} : { protocolPath, protocolText: await readFile(protocolPath, 'utf8') }),
     extraArgs: runtime.config.agentArgs[agent],

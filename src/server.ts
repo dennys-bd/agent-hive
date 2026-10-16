@@ -75,6 +75,7 @@ import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
+import { createPluginRender } from './plugin-render.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
@@ -226,6 +227,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
   const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
+  const pluginRender = createPluginRender({ home, pluginSource: pluginSource(), log }); // #316: one plugin folder per workspace, which every agent run of it loads
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read
   const memoryFields = runMemory(memory, () => live?.runtime.config);
   const lspFields = runLspServers(workerLsp, () => live?.runtime.config);
@@ -248,7 +250,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir }); // dispatch and fail are hoisted; workerOf is called later
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
@@ -749,6 +751,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     const { hooksPath, promptsDir, pluginDir, protocol } = await prepareHome(home, port, Object.values(runners)); // #924: every agent's own files, found or not, as hooks.json always was
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
+    await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
     for (const { path } of config.comb.workspaces) await excludeFromGit(path); // each workspace keeps its worktrees in <path>/.hive/ (#179)
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.events.setLevel(config.logLevel); // one switch for both files (#742)
@@ -1120,7 +1123,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
   // The plugins view's items (#315): the catalogue and the custom store under <home>/custom/. onChange is #316's per-workspace render, a no-op until it lands
-  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: () => undefined, log });
+  const customStore = createCustomStore({ home, pluginSource: pluginSource(), workspaces: () => live?.runtime.config.comb.workspaces ?? [], onChange: (workspaces) => { if (live) void pluginRender.write(live.runtime.config, workspaces); }, log });
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: pluginSource(), log });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
@@ -1148,7 +1151,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender }); // wake, forget (#696); the shim's register under /hooks/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, exec, gql: cliGqlJson(gh) }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)

@@ -117,8 +117,9 @@ export function askedLaunch(body: unknown, agent: AgentId | undefined, language:
 
 /** What a free session's picks add to its run (#257): the model, the config's args then its own, and its specialized agent with the body
  * Codex gets as instructions; or why it cannot start: an agent the plugin no longer has, or a plugin it cannot read. The picks are checked
- * again (savedLaunch): a worker loaded from a hand-edited state.json never puts an option where a value goes. */
-export function launchRun(launch: LaunchPick | undefined, configArgs: readonly string[], roles: () => readonly SpecializedAgent[] = specializedAgents): Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> | { refusal: string } {
+ * again (savedLaunch): a worker loaded from a hand-edited state.json never puts an option where a value goes. `roles` are the run's plugin
+ * folder's agents (#316). */
+export function launchRun(launch: LaunchPick | undefined, configArgs: readonly string[], roles: () => readonly SpecializedAgent[]): Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> | { refusal: string } {
   const kept = savedLaunch(launch).launch;
   const base = { ...(kept?.model === undefined ? {} : { model: kept.model }), extraArgs: [...configArgs, ...(kept?.args ?? [])] };
   const name = kept?.specializedAgent;
