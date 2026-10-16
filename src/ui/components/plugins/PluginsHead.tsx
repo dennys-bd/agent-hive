@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { CatalogueItem } from '../../../types';
+import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { STATE_LOOK } from '@/components/plugins/marks';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plug
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
+const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
 const ALL = '*'; // the filter's "all workspaces": no workspace may be named `*` (WORKSPACE_NAME)
 const META: Record<ListSection, MessageKey> = { skills: 'plugins.list.meta.skills', specialists: 'plugins.list.meta.specialists' };
 const NEW: Record<ListSection, MessageKey> = { skills: 'plugins.list.newSkill', specialists: 'plugins.list.newSpecialist' };
@@ -71,11 +72,20 @@ function ItemActions({ item, editor, workspaces }: ItemProps) {
 
 function ItemHead({ item, editor, workspaces }: ItemProps) {
   const look = STATE_LOOK[item.state];
-  const chip = <span className={`rounded-full border px-1.5 font-normal text-[11px] ${look.chip}`}>{t(look.label)}</span>;
+  const chip = <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>;
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
   const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
   return <Head title={item.name} isMono chip={chip} meta={meta}><ItemActions item={item} editor={editor} workspaces={workspaces} /></Head>;
+}
+
+const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
+
+/** The update screen's head (#325, decision 5): the item's mono name, the yellow chip, and `hive <from> → <to>` once the preview answers.
+ * The update screen portals it, since only it holds the preview. */
+export function UpdateHead({ item, preview }: { item: CatalogueItem; preview?: UpdatePreview }) {
+  const look = STATE_LOOK['update available'];
+  return <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)} />;
 }
 
 /** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. The version
