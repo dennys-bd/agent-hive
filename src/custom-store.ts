@@ -3,7 +3,7 @@
 // render) only after a write that happened. The Hive never writes to the shipped plugin or to a workspace's repository.
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { applyUpdate, type UpdateChoices } from './custom-merge.js';
+import { applyUpdate, recoverStaging, type UpdateChoices } from './custom-merge.js';
 import { BASE_DIR, FILES_DIR, isName, isRefusal, isVersionName, mainFiles, NAME_MESSAGE, ORIGINAL, PATH_MESSAGE, parseVersionJson, refusal, safeFilePath, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
 import { customRoot, type FileSet, HIVE_ORIGIN, itemDir, type ItemRef, type ItemSources, listFiles, originFiles, pluginVersion, resolveRef, versionDir, versionFiles } from './item-sources.js';
@@ -235,7 +235,10 @@ async function createItem(s: ItemSources, kind: ItemKind, name: string): Promise
 }
 
 export function createCustomStore(deps: CustomStoreDeps): CustomStore {
-  let chain: Promise<unknown> = Promise.resolve();
+  // A crash between an update's two renames left the version in the staging area: it goes back before any read or write is queued
+  let chain: Promise<unknown> = recoverStaging(deps.home).catch((err: unknown) => {
+    deps.log.error(`custom store: staging recovery failed: ${err instanceof Error ? err.message : String(err)}`);
+  });
   // The write already happened: a render that fails is logged, never turned into a failed write
   function notify(workspaces: string[]): void {
     try {

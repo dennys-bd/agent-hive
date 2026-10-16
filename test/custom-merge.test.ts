@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { previewUpdate } from '../src/custom-merge.js';
+import { previewUpdate, recoverStaging } from '../src/custom-merge.js';
 import { createCustomStore, type CustomStore } from '../src/custom-store.js';
 import { isRefusal, type StoreRefusal } from '../src/custom-versions.js';
 import { listFiles } from '../src/item-sources.js';
@@ -216,4 +216,23 @@ test("a workspace item's version merges like a Hive one, and its version.json ge
   assert.equal(await readFile(join(dir, 'files/SKILL.md'), 'utf8'), mine.replace('Deploy.', 'Deploy now.'));
   assert.deepEqual(await json(join(dir, 'version.json')), { name: 'mine', from: 'original', workspaces: ['hive-site'] });
   assert.equal(codeOf(await store.applyUpdate(DEPLOY, 'mine', token, {})), 'no_update');
+});
+
+test('a crash between the swap renames is undone: the version comes back from staging, and an unrelated leftover is removed (#324)', async (t) => {
+  const { f } = await customized(t);
+  const work = join(f.home, 'custom-staging/hive/new-build/mine');
+  await mkdir(work, { recursive: true });
+  await rename(buildDir(f, 'mine'), join(work, 'old'));
+  await mkdir(join(f.home, 'custom-staging/hive/deploy/mine/stray'), { recursive: true });
+  await recoverStaging(f.home);
+  assert.deepEqual(await texts(buildDir(f, 'mine/files')), { 'SKILL.md': MINE, 'scripts/run.sh': 'echo hi\n' });
+  await assert.rejects(stat(join(f.home, 'custom-staging')), 'the staging area is empty again');
+});
+
+test('a file with a NUL byte changed on both sides is a whole-file conflict, not a failed merge (#324)', async (t) => {
+  const { f, store } = await customized(t, MINE, { 'skills/new-build/data.bin': 'a\0b\n' });
+  await store.saveFile(BUILD, 'mine', 'data.bin', 'a\0mine\n');
+  await ship(f, { 'skills/new-build/data.bin': 'a\0hive\n' });
+  const conflicts = (await preview(f)).changes.filter((c) => c.kind === 'conflict');
+  assert.deepEqual(conflicts.map((c) => c.kind === 'conflict' && c.id), ['data.bin#file']);
 });

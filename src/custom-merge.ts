@@ -3,13 +3,13 @@
 // merge the preview showed.
 import { isUtf8 } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffTexts, type Hunk, mergeTexts, resolveMerge, type Segment } from './custom-merge-git.js';
 import { BASE_DIR, FILES_DIR, isRefusal, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
-import { customRoot, type FileSet, HIVE_ORIGIN, type ItemSources, listFiles, originFiles, pluginVersion, versionDir, versionFiles } from './item-sources.js';
+import { childFolders, customRoot, type FileSet, HIVE_ORIGIN, type ItemSources, listFiles, originFiles, pluginVersion, versionDir, versionFiles } from './item-sources.js';
 import { findItem } from './items-catalogue.js';
 import type { CatalogueItem, ItemVersion, UpdateChange, UpdateChoice, UpdateConflict, UpdatePreview } from './types.js';
 
@@ -61,7 +61,8 @@ interface Update {
 }
 
 const same = (a: Buffer | undefined, b: Buffer | undefined): boolean => (a === undefined || b === undefined ? a === b : a.equals(b));
-const isText = (...files: (Buffer | undefined)[]): boolean => files.every((file) => file === undefined || isUtf8(file));
+// git treats a file with a NUL byte as binary even when it is valid UTF-8
+const isText = (...files: (Buffer | undefined)[]): boolean => files.every((file) => file === undefined || (isUtf8(file) && !file.includes(0)));
 const linesOf = (text: string): string[] => text.split(/\r?\n/);
 const bare = (lines: readonly string[]): string[] => lines.map((line) => line.replace(/\r?\n$/, ''));
 const headingOf = (lines: readonly string[], above: number, file: string): string => lines.slice(0, above).filter((line) => HEADING.test(line)).pop() ?? file;
@@ -202,6 +203,7 @@ async function changesOf(dir: string, merge: FileMerge): Promise<Change[]> {
 /** What applying a version's update would change: clean changes and conflicts, ordered by file, then by position. Writes nothing. */
 export function previewUpdate(s: ItemSources, id: string, version: string): Promise<UpdatePreview | StoreRefusal> {
   return withTempDir(async (dir) => {
+    await recoverStaging(s.home);
     const update = await loadUpdate(s, id, version, dir);
     if (isRefusal(update)) return update;
     const changes: Change[] = [];
@@ -240,24 +242,51 @@ async function nextJson(s: ItemSources, update: Update, dir: string): Promise<Ve
   return { name: json.name, from: json.from, workspaces: json.workspaces, ...(hiveVersion === undefined ? {} : { hiveVersion }) };
 }
 
-// The new version is written whole in the staging area, version.json last, then swapped in by two renames on one disk. A failure before
-// the swap leaves the version as it was
+// The version's own work folder, <home>/custom-staging/<origin>/<name>/<version>/: an apply of another item never touches it
+const workDir = (s: ItemSources, update: Update): string => join(s.home, STAGING_DIR, update.item.origin, update.item.name, update.version.name);
+const OLD = 'old';
+const exists = (path: string): Promise<boolean> =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
+
+/** After a crash between the swap's two renames the only copy of a version is its work folder's old/: it goes back in place. Everything
+ * else in the staging area is a crashed apply's leftover and is removed. Runs before every apply and when the store starts. */
+export async function recoverStaging(home: string): Promise<void> {
+  const staging = join(home, STAGING_DIR);
+  for (const origin of await childFolders(staging)) {
+    for (const name of await childFolders(join(staging, origin))) {
+      for (const version of await childFolders(join(staging, origin, name))) {
+        const old = join(staging, origin, name, version, OLD);
+        const target = versionDir(home, { origin, name }, version);
+        if (isInside(customRoot(home), target) && !(await exists(target)) && (await exists(old))) {
+          await mkdir(dirname(target), { recursive: true });
+          await rename(old, target);
+        }
+      }
+    }
+  }
+  await rm(staging, { recursive: true, force: true });
+}
+
+// The new version is written whole in its work folder, version.json last, then swapped in by two renames on one disk. A failure before
+// the swap leaves the version as it was; a crash between the renames is undone by recoverStaging
 async function swapIn(s: ItemSources, update: Update, files: Side): Promise<void> {
   const target = versionDir(s.home, update.item, update.version.name);
   if (!isInside(customRoot(s.home), target)) throw new Error(`${target} is outside the custom store`);
-  const staging = join(s.home, STAGING_DIR);
-  await rm(staging, { recursive: true, force: true }); // whatever a crashed apply left
-  const fresh = join(staging, randomUUID());
+  const work = workDir(s, update);
+  const fresh = join(work, randomUUID());
   try {
     await mkdir(fresh, { recursive: true });
     await writeAll(join(fresh, FILES_DIR), files);
     await writeAll(join(fresh, BASE_DIR), update.shipped);
     await writeVersionJson(fresh, await nextJson(s, update, target));
   } catch (err) {
-    await rm(staging, { recursive: true, force: true });
+    await rm(work, { recursive: true, force: true });
     throw err;
   }
-  const old = join(staging, 'old');
+  const old = join(work, OLD);
   await rename(target, old);
   try {
     await rename(fresh, target);
@@ -265,13 +294,16 @@ async function swapIn(s: ItemSources, update: Update, files: Side): Promise<void
     await rename(old, target);
     throw err;
   }
-  await rm(staging, { recursive: true, force: true });
+  // The update is in place: a cleanup that fails must not turn it into a failed write; the next recoverStaging removes the leftover.
+  // The whole area goes: applies are queued one at a time, and recoverStaging already put back anything a crash had left there
+  await rm(join(s.home, STAGING_DIR), { recursive: true, force: true }).catch(() => undefined);
 }
 
 /** Applies a version's update as previewed: stale when the three inputs changed since the token, unresolved while a conflict has no
  * choice. Choices that match no conflict are ignored. Answers the version's workspaces. */
 export function applyUpdate(s: ItemSources, id: string, version: string, token: string, choices: UpdateChoices): Promise<{ workspaces: string[] } | StoreRefusal> {
   return withTempDir(async (dir) => {
+    await recoverStaging(s.home);
     const update = await loadUpdate(s, id, version, dir);
     if (isRefusal(update)) return update;
     if (update.token !== token) return refusal('stale', `${id}: version ${version} or the shipped files changed since the preview`);
