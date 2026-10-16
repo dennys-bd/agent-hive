@@ -5,7 +5,7 @@ import { headerColumns } from '@/lib/header-columns';
 
 // The dock's sizes are percent of the frame alone (DockFrame's measure); the header spans the rail plus the frame
 const layout = (sizes: Record<Side, number>, open: Record<Side, boolean> = { left: true, right: true }): ViewLayout =>
-  ({ docks: { automation: 'left', activities: 'left', detail: 'right' }, sizes, open });
+  ({ docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes, open });
 
 test('the rail is the 44px the left column adds to its share of the frame (#221)', () => {
   expect(RAIL_WIDTH).toBe(44);

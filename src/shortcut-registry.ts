@@ -4,8 +4,8 @@ import type { OperationId } from './types.js';
 import type { MessageKey } from './ui/i18n.js';
 
 /** Where a key acts (#585), the atalhos section's cards in order: everywhere, with an activity shown, with the focus in the files tree (#818),
- * with the flow shown, in a dialog, on the Settings page (#689). */
-export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'dialogs', 'settings'] as const;
+ * with the flow shown, with the plugins view shown (#313), in a dialog, on the Settings page (#689). */
+export const SHORTCUT_SCOPES = ['global', 'activities', 'files', 'flow', 'plugins', 'dialogs', 'settings'] as const;
 export type ShortcutScope = (typeof SHORTCUT_SCOPES)[number];
 
 /** A default per platform (#585): macOS's, and the one Linux and Windows share, where Ctrl alone would take a key the terminal reads. null:
@@ -40,6 +40,7 @@ const fixed = (id: FixedShortcutId, scope: ShortcutScope, keys: FixedShortcut['k
 export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('viewActivities', both('CmdOrCtrl+1'), 'global'), // the header's first view takes Cmd+1 (#746)
   row('viewFlow', both('CmdOrCtrl+2'), 'global'),
+  row('viewPlugins', both('CmdOrCtrl+3'), 'global'), // #313: the rail's third view
   row('search', { mac: 'CmdOrCtrl+P', other: 'CmdOrCtrl+Shift+P' }, 'global'),
   row('searchOperations', { mac: 'CmdOrCtrl+Shift+P', other: 'F1' }, 'global'),
   row('newActivity', { mac: 'CmdOrCtrl+N', other: 'CmdOrCtrl+Shift+N' }, 'global'),
@@ -119,6 +120,7 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   row('zoomReset', both('CmdOrCtrl+0'), 'flow'),
   // The handoff's ⇧1: Shift+digit types and is no binding (#585), so fit is a fixed key the flow matches by hand, as it does I, L and A
   fixed('zoomFit', 'flow', same(['Shift+1'])),
+  row('searchPlugins', both('CmdOrCtrl+F'), 'plugins'), // #313: the plugins sidebar's search; it acts only with that view shown, so it meets no other ⌘F
   row('confirm', both('CmdOrCtrl+Enter'), 'dialogs'),
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),

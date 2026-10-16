@@ -182,7 +182,7 @@ test('a session under an activity shows its run\'s tab in the activity\'s center
   expect(session()).not.toHaveAttribute('aria-current'); // the pick stays (#458), but the board is the center now
 });
 
-const CLOSED_LEFT: DockLayout = { docks: { automation: 'left', activities: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: false, right: false }) };
+const CLOSED_LEFT: DockLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: false, right: false }) };
 const isLeftOpen = (): boolean | undefined => (readView('dockLayout') as DockLayout | undefined)?.open.activities.left;
 const toggleLeft = (): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true }); }; // off macOS (#585)
 

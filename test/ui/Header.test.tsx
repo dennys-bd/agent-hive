@@ -11,11 +11,11 @@ import type { EffectiveLimits, Signal, State } from '../../src/types';
 import { activityIdOf } from '../fixtures/work';
 import { stateOf } from './search-fixtures';
 
-const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
+const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
 const LEFT_CLOSED: ViewLayout = { ...LAYOUT, open: { left: false, right: true } };
 const shellOf = (extra: Partial<HeaderShell> = {}): HeaderShell => ({
   center: 'activities', layout: LAYOUT, rightShown: true, canOpenRight: true,
-  panes: { active: 'files', enabled: { files: true, details: true }, pick: vi.fn() }, ...extra,
+  panes: { active: 'files', enabled: { files: true, details: true, variables: false }, pick: vi.fn() }, ...extra,
 });
 // One worker the cap counts, against a cap of 5
 const STATE: State = { ...stateOf([]), maxConcurrent: 5, workers: [{ id: 's1', status: 'working', activityId: activityIdOf('A'), runId: 'W1' }] };
@@ -184,15 +184,15 @@ test('the center column holds the activity\'s bar; without one, only the empty s
 test('the right column always shows arquivos then detalhes, a pane the side cannot show disabled, the active one pressed and named at the end; a click picks the pane, active or not (#221)', async () => {
   const user = userEvent.setup();
   const pick = vi.fn();
-  const { rerender } = render(header(shellOf({ panes: { active: 'files', enabled: { files: true, details: false }, pick } })));
+  const { rerender } = render(header(shellOf({ panes: { active: 'files', enabled: { files: true, details: false, variables: false }, pick } })));
   const right = column('right') as HTMLElement;
-  expect(within(right).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['arquivos', 'detalhes']);
+  expect(within(right).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['arquivos', 'detalhes', 'variáveis']);
   expect(within(right).getByRole('button', { name: 'detalhes' })).toBeDisabled();
   expect(within(right).getByRole('button', { name: 'arquivos' })).toHaveAttribute('aria-pressed', 'true');
   expect(within(right).getByRole('button', { name: 'arquivos' })).toHaveClass('bg-accent', 'text-foreground');
   expect(right.lastElementChild).toHaveTextContent('arquivos');
   await user.click(within(right).getByRole('button', { name: 'arquivos' })); // the active one
-  rerender(header(shellOf({ panes: { active: 'details', enabled: { files: true, details: true }, pick } })));
+  rerender(header(shellOf({ panes: { active: 'details', enabled: { files: true, details: true, variables: false }, pick } })));
   expect(within(column('right') as HTMLElement).getByRole('button', { name: 'arquivos' })).toHaveAttribute('aria-pressed', 'false');
   await user.click(within(column('right') as HTMLElement).getByRole('button', { name: 'arquivos' })); // an inactive one
   expect(pick.mock.calls).toEqual([['files'], ['files']]);
@@ -221,11 +221,22 @@ test('no view switch and no usage; the header drags the window and each of its o
   expect(container.querySelector('[data-icon]')).toBeNull();
   expect(banner()).toHaveClass('[-webkit-app-region:drag]');
   const buttons = within(banner()).getAllByRole('button');
-  expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['hive · workers 1/5', 'recolher lateral', 'arquivos', 'detalhes']);
+  expect(buttons.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['hive · workers 1/5', 'recolher lateral', 'arquivos', 'detalhes', 'variáveis']);
   for (const button of buttons) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
   cleanup();
   render(header(shellOf({ layout: LEFT_CLOSED })));
   const closed = within(banner()).getAllByRole('button');
-  expect(closed.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['abrir lateral', 'hive', 'arquivos', 'detalhes']);
+  expect(closed.map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual(['abrir lateral', 'hive', 'arquivos', 'detalhes', 'variáveis']);
   for (const button of closed) expect(button).toHaveClass('[-webkit-app-region:no-drag]');
+});
+
+test('the right column ends on variáveis: in plugins arquivos and detalhes are disabled with the plugins tooltip; elsewhere variáveis is, with its own (#313)', () => {
+  const { rerender } = render(header(shellOf({ center: 'plugins', panes: { active: 'variables', enabled: { files: false, details: false, variables: true }, pick: vi.fn() } })));
+  const right = (): HTMLElement => column('right') as HTMLElement;
+  expect(within(right()).getAllByRole('button').map((b) => b.getAttribute('title'))).toEqual(['arquivos · indisponível em plugins', 'detalhes · indisponível em plugins', 'variáveis']);
+  expect(within(right()).getByRole('button', { name: 'variáveis' })).toHaveAttribute('aria-pressed', 'true');
+  rerender(header(shellOf()));
+  expect(within(right()).getByRole('button', { name: 'variáveis' })).toBeDisabled();
+  expect(within(right()).getByRole('button', { name: 'variáveis' })).toHaveAttribute('title', 'variáveis · só em plugins');
+  expect(within(right()).getByRole('button', { name: 'arquivos' })).toHaveAttribute('title', 'arquivos');
 });

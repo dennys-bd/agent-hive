@@ -47,7 +47,7 @@ afterEach(() => vi.unstubAllGlobals());
 const panelKey = (side: Side): void => { fireEvent.keyDown(document.body, { key: 'B', ctrlKey: true, shiftKey: true, altKey: side === 'right' }); };
 const ALL_OPEN: Record<Side, boolean> = { left: true, right: true };
 const seed = (detail: Side, open: Record<Side, boolean> = ALL_OPEN): void =>
-  resetViewState({ dockLayout: { docks: { automation: 'left', activities: 'left', detail }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView(open) } });
+  resetViewState({ dockLayout: { docks: { automation: 'left', activities: 'left', plugins: 'left', detail }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView(open) } });
 // The board's own task, not the detail's title
 const boardTask = (label: string): Element => screen.getAllByText(label).find((el) => el.closest('li'))!;
 // The window opens on Atividades (#746): a test about the board or Detalhes beside it shows the flow first. Switching views never opens a side (#821)
@@ -56,7 +56,7 @@ const detailsIcon = (): HTMLElement | null => within(screen.getByRole('banner'))
 const showFlow = (): void => { fireEvent.click(screen.getByRole('button', { name: 'fluxo' })); };
 
 test('the panels are fixed: Detalhes sits alone in the right panel beside the center and no group draws a tab to move it; a stored layout with Detalhes on the left reads as the defaults (#342, #452, #295)', () => {
-  resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'left', activities: 'left', detail: 'left' } } });
+  resetViewState({ dockLayout: { ...DEFAULT_DOCK_LAYOUT, docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'left' } } });
   render(<Home initial={{ taskId: 'A' }} />);
   showFlow();
   const right = group('right')!;

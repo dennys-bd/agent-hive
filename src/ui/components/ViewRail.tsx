@@ -1,4 +1,4 @@
-import { BoxesIcon, KeyboardIcon, LayersIcon, type LucideIcon, SettingsIcon, WaypointsIcon } from 'lucide-react';
+import { BoxesIcon, KeyboardIcon, LayersIcon, type LucideIcon, PuzzleIcon, SettingsIcon, WaypointsIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { CenterMode } from '@/hooks/use-activity';
 import { type MessageKey, t } from '@/i18n';
@@ -20,10 +20,11 @@ export interface ViewRailProps {
 /** The rail's width in px (#220): the header's left column adds it to the left group's share of the frame (#221). */
 export const RAIL_WIDTH = 44;
 
-// Keyed by VIEW_SHORTCUTS' tabs, so the rail and ⌘1 / ⌘2 read one list
+// Keyed by VIEW_SHORTCUTS' tabs, so the rail and ⌘1 / ⌘2 / ⌘3 read one list
 const VIEW: Record<CenterMode, { Icon: LucideIcon; label: MessageKey }> = {
   activities: { Icon: LayersIcon, label: 'rail.activities' },
   automation: { Icon: WaypointsIcon, label: 'rail.flow' },
+  plugins: { Icon: PuzzleIcon, label: 'rail.plugins' },
 };
 const CELL = 'relative flex h-9 w-11 shrink-0 items-center justify-center';
 const ACTIVE = 'text-foreground shadow-[inset_2px_0_0_var(--foreground)]';

@@ -55,10 +55,10 @@ const settings: Operation = {
   id: 'settings', group: 'global', label: () => t('search.op.settings'), available: (ctx) => ctx.nav.openSettings !== undefined, run: (ctx) => ctx.nav.openSettings?.(),
 };
 
-/** atividades, fluxo (#746); the two sides, the console; nova atividade, novo terminal (the workspace picker with no activity open, as ⌘T),
+/** atividades, fluxo, plugins (#746, #313); the two sides, the console; nova atividade, novo terminal (the workspace picker with no activity open, as ⌘T),
  * the shortcut map (#639); then sinal ›, pausar regra › and configurações. */
 export const GLOBAL_OPERATIONS: readonly Operation[] = [
-  keyed('viewActivities', 'shortcuts.viewActivities'), keyed('viewFlow', 'shortcuts.viewFlow'),
+  keyed('viewActivities', 'shortcuts.viewActivities'), keyed('viewFlow', 'shortcuts.viewFlow'), keyed('viewPlugins', 'shortcuts.viewPlugins'),
   keyed('toggleLeft', 'shortcuts.toggleLeft'), keyed('toggleRight', 'shortcuts.toggleRight'), keyed('toggleConsole', 'shortcuts.toggleConsole'),
   keyed('newActivity', 'shortcuts.newActivity'), keyed('newTerminal', 'shortcuts.newTerminal'), keyed('shortcutMap', 'shortcuts.shortcutMap'),
   signal, pause, settings,

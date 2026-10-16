@@ -4,7 +4,8 @@
 // included: there is one user, so no migration. Which tab each group shows is not stored: it follows what the user last opened. The panel keys
 // live here too (#452): they name a side, not a panel. There is no bottom side since redesign 05: a layout that docks a panel there reads as
 // the defaults. There is no terminal panel since redesign 07: a run is a tab of its activity's center. Each view keeps its own sizes and open
-// flags (#821), the docks shared; a layout from before #821 reads as the defaults whole.
+// flags (#821), the docks shared; a layout from before #821 reads as the defaults whole. plugins (#313) is the third view; a layout from before
+// it reads with its defaults, the other two views kept.
 import { isEditorKey } from '@/lib/monaco-keys';
 import { isRecording, pressed, pressedFixed } from '@/lib/shortcut-bindings';
 import { readView, writeView } from '@/lib/view-state';
@@ -12,10 +13,12 @@ import type { FixedShortcutId } from '../../shortcut-registry';
 import type { OperationId } from '../../types';
 
 export type Side = 'left' | 'right';
-export type PanelId = 'automation' | 'activities' | 'detail';
-/** The dashboard's two views (#533, #821); use-activity's CenterMode is an alias of it. */
-export type ViewId = 'activities' | 'automation';
-export const VIEWS: readonly ViewId[] = ['activities', 'automation'];
+export type PanelId = 'automation' | 'activities' | 'plugins' | 'detail';
+/** The dashboard's three views (#533, #821, #313); use-activity's CenterMode is an alias of it. */
+export type ViewId = 'activities' | 'automation' | 'plugins';
+export const VIEWS: readonly ViewId[] = ['activities', 'automation', 'plugins'];
+/** Whether a dock tab is a view's (#313): its click switches the center instead of opening its side. */
+export const isView = (panel: PanelId): panel is ViewId => (VIEWS as readonly PanelId[]).includes(panel);
 /** One view's sides as DockFrame draws them (#821). sizes: percent of the frame's width. open: whether each side's panel shows (#452). */
 export interface ViewLayout { docks: Record<PanelId, Side>; sizes: Record<Side, number>; open: Record<Side, boolean> }
 // docks stays though every panel is fixed (#295): DockFrame, shownBySide, use-dock and MainDock place the panels by it
@@ -28,19 +31,19 @@ export type ActiveTabs = Partial<Record<Side, PanelId>>;
 
 export const SIDES: readonly Side[] = ['left', 'right'];
 /** Also the order of the tabs in a shared group: Activities first, the tab its side opens on (#457, #746), Automação right after it (#456). */
-export const PANELS: readonly PanelId[] = ['activities', 'automation', 'detail'];
+export const PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins', 'detail'];
 /** The tabs that decide the center (#458), locked to the left panel: "the center follows the left tab" then has one meaning. */
-export const LOCKED_PANELS: readonly PanelId[] = ['activities', 'automation'];
+export const LOCKED_PANELS: readonly PanelId[] = ['activities', 'automation', 'plugins'];
 export const isLocked = (panel: PanelId): boolean => LOCKED_PANELS.includes(panel);
 // A group has one edge to drag, so the size belongs to the side. The bounds keep a column (or a strip) of the view visible.
 export const SIDE_BOUNDS: Record<Side, { min: number; max: number }> = { left: { min: 15, max: 70 }, right: { min: 15, max: 70 } };
 // The left panel starts open on Activities (#457, #746), with Automação (#456) beside it; the first task or session opens its own panel
 // through activation (#452).
 /** The same value for every view (#821). */
-export const inEveryView = <T>(value: T): Record<ViewId, T> => ({ activities: value, automation: value });
+export const inEveryView = <T>(value: T): Record<ViewId, T> => ({ activities: value, automation: value, plugins: value });
 
 export const DEFAULT_DOCK_LAYOUT: DockLayout = {
-  docks: { automation: 'left', activities: 'left', detail: 'right' },
+  docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' },
   sizes: inEveryView({ left: 30, right: 30 }),
   open: inEveryView({ left: true, right: false }),
 };
@@ -63,7 +66,7 @@ export const sideOf = (layout: DockLayout, view: ViewId): ViewLayout => ({ docks
 // `value` on `side` in the `targets` views; every other view and side kept as it is
 function setIn<T>(byView: Record<ViewId, Record<Side, T>>, targets: readonly ViewId[], side: Side, value: T): Record<ViewId, Record<Side, T>> {
   const at = (view: ViewId): Record<Side, T> => (targets.includes(view) ? { ...byView[view], [side]: value } : byView[view]);
-  return { activities: at('activities'), automation: at('automation') };
+  return { activities: at('activities'), automation: at('automation'), plugins: at('plugins') };
 }
 
 /** `change` on `side` (#821): in `view` alone while the side is kept per view, else in every view, so the two stay equal and the side behaves as
@@ -98,24 +101,26 @@ function sidesOf<T>(value: unknown, isValue: SideCheck<T>): Record<Side, T> | un
   return isValue('left', left) && isValue('right', right) ? { left, right } : undefined;
 }
 
-// Every view's sides (#821); undefined when a view is missing, which the flat shape from before #821 always is
-function viewsOf<T>(value: unknown, isValue: SideCheck<T>): Record<ViewId, Record<Side, T>> | undefined {
+// Every view's sides (#821); undefined when activities or automation is missing, which the flat shape from before #821 always is. A layout
+// from before #313 has no plugins: it takes `pluginsDefault`; one that has it must have it right
+function viewsOf<T>(value: unknown, isValue: SideCheck<T>, pluginsDefault: Record<Side, T>): Record<ViewId, Record<Side, T>> | undefined {
   if (!isObject(value)) return undefined;
   const activities = sidesOf(value.activities, isValue);
   const automation = sidesOf(value.automation, isValue);
-  return activities && automation ? { activities, automation } : undefined;
+  const plugins = value.plugins === undefined ? pluginsDefault : sidesOf(value.plugins, isValue);
+  return activities && automation && plugins ? { activities, automation, plugins } : undefined;
 }
 
 // What writeDockLayout wrote, rebuilt from the known keys only; undefined for anything else, a layout from before #353, #456, #457 or #821 included.
 function parseLayout(value: unknown): DockLayout | undefined {
   if (!isObject(value) || !isObject(value.docks)) return undefined;
-  const { automation, activities, detail } = value.docks; // a stored console (before redesign 05) or terminal side (before redesign 07) is ignored
-  // Every panel is fixed (#458, #295): Automação and Atividades on the left, Detalhes on the right; a layout with one elsewhere is not one
+  const { automation, activities, detail, plugins = 'left' } = value.docks; // a stored console (before redesign 05) or terminal side (before redesign 07) is ignored
+  // Every panel is fixed (#458, #295): the three views on the left, Detalhes on the right; a layout with one elsewhere is not one
   // writeDockLayout wrote since, and reads as the defaults whole (one user, no migration)
-  if (automation !== 'left' || activities !== 'left' || detail !== 'right') return undefined;
-  const sizes = viewsOf(value.sizes, isSize);
-  const open = viewsOf(value.open, isFlag);
-  return sizes && open ? { docks: { automation, activities, detail }, sizes, open } : undefined;
+  if (automation !== 'left' || activities !== 'left' || plugins !== 'left' || detail !== 'right') return undefined;
+  const sizes = viewsOf(value.sizes, isSize, DEFAULT_DOCK_LAYOUT.sizes.plugins);
+  const open = viewsOf(value.open, isFlag, DEFAULT_DOCK_LAYOUT.open.plugins);
+  return sizes && open ? { docks: { automation, activities, plugins, detail }, sizes, open } : undefined;
 }
 
 /** The saved layout, or the defaults when there is none or it is not what writeDockLayout wrote. */
@@ -145,6 +150,9 @@ const RUN_EVENT = 'hive:run-shortcut';
 // A keydown listener on window in the capture phase, stopped there, so a shortcut works with the focus inside xterm and the key never
 // reaches the pty. The bindings are read at each key; a Settings key field that is recording keeps the key. `accepts` (#818): a key it
 // refuses goes on to wherever it was going, unprevented (the files tree's keys act only with the focus in the tree). Returns the unsubscribe.
+// #689: the dashboard stays mounted under the Settings page, whose own ⌘F searches the settings; a view's ⌘F leaves the key to it
+export const isSettingsClosed = (): boolean => document.querySelector('[data-settings-page]') === null;
+
 export function onShortcutKey<T>(shortcuts: ReadonlyArray<[T, OperationId]>, act: (value: T) => void, accepts: (event: KeyboardEvent) => boolean = () => true): () => void {
   const listener = (event: KeyboardEvent): void => {
     const hit = isRecording(event.target) ? undefined : shortcuts.find(([, id]) => pressed(event, id) && !isEditorKey(id, event.target)); // #780: ⌘. in the editor is its quick fix
@@ -173,8 +181,8 @@ export const runShortcut = (id: OperationId): void => {
 /** The toggleLeft and toggleRight shortcuts call `toggle` with their side (#452; rebindable, #449). */
 export const onPanelKey = (toggle: (side: Side) => void): (() => void) => onShortcutKey(SIDE_SHORTCUTS, toggle);
 
-// The header's views (#533), activities first (#746): Cmd+1 atividades, the Atividades tab; Cmd+2 fluxo, the Automação tab.
-export const VIEW_SHORTCUTS: ReadonlyArray<[PanelId, OperationId]> = [['activities', 'viewActivities'], ['automation', 'viewFlow']];
+// The header's views (#533), activities first (#746): Cmd+1 atividades, the Atividades tab; Cmd+2 fluxo, the Automação tab; Cmd+3 plugins (#313).
+export const VIEW_SHORTCUTS: ReadonlyArray<[PanelId, OperationId]> = [['activities', 'viewActivities'], ['automation', 'viewFlow'], ['plugins', 'viewPlugins']];
 
 /** The viewActivities and viewFlow shortcuts call `go` with their tab. */
 export const onViewKey = (go: (panel: PanelId) => void): (() => void) => onShortcutKey(VIEW_SHORTCUTS, go);

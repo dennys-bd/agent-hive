@@ -101,3 +101,16 @@ test('without a header, as in the terminal\'s harness, there is no rail (#220)',
   );
   expect(screen.queryByRole('navigation', { name: 'views' })).not.toBeInTheDocument();
 });
+
+test("the rail's third view is plugins, Ctrl+3 as its click; Ctrl+1 and Ctrl+2 still reach atividades and fluxo (#313)", () => {
+  render(<Window />);
+  fireEvent.keyDown(window, { key: '3', code: 'Digit3', ctrlKey: true });
+  expect(railButton('plugins')).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('main', { hidden: true })).not.toBeVisible(); // the flow is not the center
+  fireEvent.keyDown(window, { key: '2', code: 'Digit2', ctrlKey: true });
+  expect(railButton('fluxo')).toHaveAttribute('aria-current', 'page');
+  fireEvent.keyDown(window, { key: '1', code: 'Digit1', ctrlKey: true });
+  expect(railButton('atividades')).toHaveAttribute('aria-current', 'page');
+  fireEvent.click(railButton('plugins'));
+  expect(railButton('plugins')).toHaveAttribute('aria-current', 'page');
+});

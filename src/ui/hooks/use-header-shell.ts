@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import type { CenterMode } from '@/hooks/use-activity';
+import type { MessageKey } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 import type { PanelId, Side, ViewLayout } from '@/lib/dock-layout';
 
-/** A pane the right side shows (#221): the activity sidebar's arquivos and detalhes, the panes the header's icons name. */
-export type RightPane = 'files' | 'details';
+/** A pane the right side shows (#221): the activity sidebar's arquivos and detalhes, and plugins' variáveis (#313). */
+export type RightPane = 'files' | 'details' | 'variables';
+type SidePane = Exclude<RightPane, 'variables'>; // the activity sidebar's own tabs
 
 /** What MainDock hands the window header (#221): the center's view, the layout DockFrame draws, whether the right column shows, the activity's
  * bar, the right panes and whether the right side can open at all. Here rather than in MainDock, which is at its line limit. */
@@ -18,13 +20,20 @@ export interface HeaderShell {
 }
 
 interface ShellArgs {
-  center: CenterMode; current?: Activity; layout: ViewLayout; isHome: boolean; bar?: ReactNode; sideTab: RightPane;
-  setSideTab(tab: RightPane): void; activateTab(id: PanelId): void; close(side: Side): void;
+  center: CenterMode; current?: Activity; layout: ViewLayout; isHome: boolean; bar?: ReactNode; sideTab: SidePane;
+  setSideTab(tab: SidePane): void; activateTab(id: PanelId): void; close(side: Side): void;
 }
 
-// The pane the right group shows today: Detalhes under the flow; under atividades the side's tab on a task's activity and arquivos alone on a
-// local one (#633); none on the home, which hides the side
-function activePane(center: CenterMode, current: Activity | undefined, sideTab: RightPane): RightPane | undefined {
+/** The tooltip of a pane the shown view never has (#313): the others in plugins, variáveis outside it; undefined while the pane is the view's. */
+export function paneHint(center: CenterMode, pane: RightPane): MessageKey | undefined {
+  if (center === 'plugins') return pane === 'variables' ? undefined : 'header.pane.unavailable';
+  return pane === 'variables' ? 'header.pane.onlyPlugins' : undefined;
+}
+
+// The pane the right group shows today: variáveis in plugins (#313), Detalhes under the flow; under atividades the side's tab on a task's
+// activity and arquivos alone on a local one (#633); none on the home, which hides the side
+function activePane(center: CenterMode, current: Activity | undefined, sideTab: SidePane): RightPane | undefined {
+  if (center === 'plugins') return 'variables';
   if (center === 'automation') return 'details';
   if (current === undefined) return undefined;
   return current.kind === 'task' ? sideTab : 'files';
@@ -41,11 +50,12 @@ export function useHeaderShell({ center, current, layout, isHome, bar, sideTab, 
       return;
     }
     activateTab('detail');
-    setSideTab(pane);
+    if (pane !== 'variables') setSideTab(pane);
   };
+  const enabled = { files: isActivities && current !== undefined, details: center === 'automation' || (isActivities && current?.kind === 'task'), variables: center === 'plugins' };
   return {
     center, layout, bar: isActivities ? bar : undefined, canOpenRight: !isHome, // nothing to open on the home
     rightShown: layout.open.right, // Detalhes is always the right group (#295)
-    panes: { active, enabled: { files: isActivities && current !== undefined, details: !isActivities || current?.kind === 'task' }, pick },
+    panes: { active, enabled, pick },
   };
 }

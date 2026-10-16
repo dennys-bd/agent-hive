@@ -17,6 +17,7 @@ const en = {
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
   'rail.flow': 'flow',
+  'rail.plugins': 'plugins',
   'rail.monitor': 'monitor · soon',
   'rail.shortcutMap': 'shortcut map',
   'rail.settings': 'settings',
@@ -270,6 +271,9 @@ const en = {
   'detail.copyFailed': 'Unexpected error',
   'files.tab.files': 'files',
   'files.tab.details': 'details',
+  'files.tab.variables': 'variables',
+  'header.pane.unavailable': '{pane} · unavailable in plugins',
+  'header.pane.onlyPlugins': '{pane} · only in plugins',
   'files.menu.collapseAll': 'collapse all',
   'files.menu.showHidden': 'show hidden files',
   'files.menu.reveal': 'show in folder',
@@ -1644,12 +1648,14 @@ const en = {
   'shortcuts.clear': 'clear the terminal', // #448
   'shortcuts.findInTerminal': 'find in terminal', // #12
   'shortcuts.viewFlow': 'go to flow', // #533
+  'shortcuts.viewPlugins': 'go to plugins', // #313
   'shortcuts.viewActivities': 'go to activities',
   'shortcuts.newActivity': 'new activity', // redesign 08
   'shortcuts.search': 'search',
   'shortcuts.searchOperations': 'search commands', // #584
   'shortcuts.searchTasks': 'search tasks', // #542
   'shortcuts.searchSettings': 'search settings', // #689
+  'shortcuts.searchPlugins': 'search plugins', // #313
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
@@ -1725,6 +1731,7 @@ const en = {
   'shortcuts.scope.activities': 'activities',
   'shortcuts.scope.files': 'files tree',
   'shortcuts.scope.flow': 'flow',
+  'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.dialogs': 'dialogs and feedback',
   'shortcuts.scope.settings': 'settings',
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
@@ -1933,6 +1940,37 @@ const en = {
   'settings.signal.onOpen.hint': 'if the Hive closed on red, it opens on red',
   'settings.signal.onOpen.last': 'the last signal',
   'settings.signal.footnote': 'the most restrictive of the manual signal and usage rules wins · starting by hand, continue and free sessions bypass the signal · "shut down when done" follows the flow\'s signal',
+  // #313: the plugins view
+  'dock.plugins': 'Plugins',
+  'plugins.search': 'search',
+  'plugins.loadFailed': 'could not read the plugins; see hive.log',
+  'plugins.legend': 'states',
+  'plugins.section.skills': 'skills',
+  'plugins.section.specialists': 'specialists',
+  'plugins.section.mcp': 'mcp',
+  'plugins.section.protocol': 'protocol',
+  'plugins.state.original': 'hive original',
+  'plugins.state.customized': 'customized',
+  'plugins.state.updateAvailable': 'update available',
+  'plugins.state.workspace': 'from workspace',
+  'plugins.basedOn': 'based on {name} · {repo} · {license}',
+  'plugins.usage.stage': '{stage} stage',
+  'plugins.usage.caller': 'called by {name}',
+  'plugins.list.meta.skills': 'from the hive (plugin) and from each workspace (its skills folder). the hive resolves variables and conditionals before handing them over.',
+  'plugins.list.meta.specialists': 'from the hive (plugin) and from each workspace (its agents folder). the hive resolves variables and conditionals before handing them over.',
+  'plugins.list.hivePath': 'hive plugin',
+  'plugins.list.filter': 'workspaces',
+  'plugins.list.allWorkspaces': 'all workspaces',
+  'plugins.list.newSkill': 'new skill',
+  'plugins.list.newSpecialist': 'new specialist',
+  'plugins.new.name': 'name',
+  'plugins.new.skillName': 'new skill name',
+  'plugins.new.specialistName': 'new specialist name',
+  'plugins.new.group': 'group',
+  'plugins.new.badName': 'a name is lowercase letters, digits and dashes',
+  'plugins.new.taken': 'that name is taken',
+  'plugins.new.unknownWorkspace': 'that workspace is no longer in the settings',
+  'plugins.new.failed': 'could not create it; see hive.log',
 };
 
 export type MessageKey = keyof typeof en;
@@ -1952,6 +1990,7 @@ const pt: Record<MessageKey, string> = {
   'rail.label': 'views',
   'rail.activities': 'atividades',
   'rail.flow': 'fluxo',
+  'rail.plugins': 'plugins',
   'rail.monitor': 'monitor · em breve',
   'rail.shortcutMap': 'mapa de atalhos',
   'rail.settings': 'configurações',
@@ -2205,6 +2244,9 @@ const pt: Record<MessageKey, string> = {
   'detail.copyFailed': 'Erro inesperado',
   'files.tab.files': 'arquivos',
   'files.tab.details': 'detalhes',
+  'files.tab.variables': 'variáveis',
+  'header.pane.unavailable': '{pane} · indisponível em plugins',
+  'header.pane.onlyPlugins': '{pane} · só em plugins',
   'files.menu.collapseAll': 'recolher tudo',
   'files.menu.showHidden': 'mostrar arquivos ocultos',
   'files.menu.reveal': 'mostrar na pasta',
@@ -3573,12 +3615,14 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.clear': 'limpar o terminal',
   'shortcuts.findInTerminal': 'buscar no terminal', // #12
   'shortcuts.viewFlow': 'ir para fluxo',
+  'shortcuts.viewPlugins': 'ir para plugins', // #313
   'shortcuts.viewActivities': 'ir para atividades',
   'shortcuts.newActivity': 'nova atividade',
   'shortcuts.search': 'buscar',
   'shortcuts.searchOperations': 'buscar comandos', // #584
   'shortcuts.searchTasks': 'buscar tarefas', // #542
   'shortcuts.searchSettings': 'buscar configuração', // #689
+  'shortcuts.searchPlugins': 'buscar nos plugins', // #313
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
@@ -3654,6 +3698,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.activities': 'atividades',
   'shortcuts.scope.files': 'árvore de arquivos',
   'shortcuts.scope.flow': 'fluxo',
+  'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.dialogs': 'diálogos e feedback',
   'shortcuts.scope.settings': 'configurações',
   'shortcuts.soon': '(em breve)',
@@ -3861,6 +3906,37 @@ const pt: Record<MessageKey, string> = {
   'settings.signal.onOpen.hint': 'se o Hive fechou em red, abre em red',
   'settings.signal.onOpen.last': 'o último sinal',
   'settings.signal.footnote': 'vale o sinal mais restritivo entre o manual e as regras de uso · iniciar à mão, continuar e sessões livres passam por cima do sinal · "desligar quando terminar" segue o sinal do fluxo',
+  // #313: the plugins view
+  'dock.plugins': 'Plugins',
+  'plugins.search': 'buscar',
+  'plugins.loadFailed': 'não foi possível ler os plugins; veja o hive.log',
+  'plugins.legend': 'estados',
+  'plugins.section.skills': 'skills',
+  'plugins.section.specialists': 'especialistas',
+  'plugins.section.mcp': 'mcp',
+  'plugins.section.protocol': 'protocolo',
+  'plugins.state.original': 'original da hive',
+  'plugins.state.customized': 'customizada',
+  'plugins.state.updateAvailable': 'atualização disponível',
+  'plugins.state.workspace': 'do workspace',
+  'plugins.basedOn': 'baseada em {name} · {repo} · {license}',
+  'plugins.usage.stage': 'etapa {stage}',
+  'plugins.usage.caller': 'chamada por {name}',
+  'plugins.list.meta.skills': 'da hive (plugin) e de cada workspace (a pasta skills dele). a hive resolve variáveis e condicionais antes de entregar.',
+  'plugins.list.meta.specialists': 'da hive (plugin) e de cada workspace (a pasta agents dele). a hive resolve variáveis e condicionais antes de entregar.',
+  'plugins.list.hivePath': 'plugin da hive',
+  'plugins.list.filter': 'workspaces',
+  'plugins.list.allWorkspaces': 'todos os workspaces',
+  'plugins.list.newSkill': 'nova skill',
+  'plugins.list.newSpecialist': 'novo especialista',
+  'plugins.new.name': 'nome',
+  'plugins.new.skillName': 'nome da nova skill',
+  'plugins.new.specialistName': 'nome do novo especialista',
+  'plugins.new.group': 'grupo',
+  'plugins.new.badName': 'um nome tem letras minúsculas, dígitos e hífens',
+  'plugins.new.taken': 'esse nome já existe',
+  'plugins.new.unknownWorkspace': 'esse workspace não está mais nas configurações',
+  'plugins.new.failed': 'não foi possível criar; veja o hive.log',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

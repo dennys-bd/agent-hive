@@ -1175,13 +1175,13 @@ export interface CombConfig {
 /** The Hive's operations a key can start (#449, #585, #573: was OperationId, which named the operation, not its key);
  * src/shortcut-registry.ts holds each one's defaults per platform, scope and name. The fixed keys are not shortcuts (#481): FIXED_SHORTCUTS there. */
 export type OperationId =
-  | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
+  | 'viewFlow' | 'viewActivities' | 'viewPlugins' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'newSessionDialog' | 'openDiff' | 'newFile' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
-  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings'; // #689
+  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins'; // #689, #313
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
 export type Shortcuts = Partial<Record<OperationId, string | null>>;
 
@@ -1869,6 +1869,9 @@ export interface ItemVersion {
   hiveVersion?: string;
 }
 
+/** Where an item is used (#313): a configured stage runs the skill, or another item's main text names it (by its id). */
+export type ItemUsage = { kind: 'stage'; stage: string } | { kind: 'caller'; id: string };
+
 export interface CatalogueItem {
   id: string; // `${origin}:${name}`: one name per origin, skill or specialist
   origin: string; // 'hive' or a workspace name
@@ -1881,6 +1884,7 @@ export interface CatalogueItem {
   versions: ItemVersion[];
   onOriginal: string[]; // workspaces that use the original (empty for a user-created item)
   files: string[]; // relative paths of the original, or of the first version for a user-created item
+  usage: ItemUsage[]; // #313: stages first, then callers; the catalogue's list computes it, a single item's read (findItem) answers []
   error?: { message: string; line?: number }; // the header did not parse, a version.json did not, or a skill took the name
 }
 

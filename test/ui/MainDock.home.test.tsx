@@ -48,7 +48,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const DETAIL_RIGHT: DockLayout = { docks: { automation: 'left', activities: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: true, right: true }) }; // Detalhes alone on the right
+const DETAIL_RIGHT: DockLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: inEveryView({ left: 30, right: 30 }), open: inEveryView({ left: true, right: true }) }; // Detalhes alone on the right
 
 test('the window opens on the home, which hides the right side without closing it: under Automação it shows, and the home hides it again (redesign 08, #746)', () => {
   resetViewState({ dockLayout: DETAIL_RIGHT });

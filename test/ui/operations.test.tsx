@@ -34,11 +34,11 @@ test('with nothing open and nothing focused only the global group lists, in the 
   const ctx = ctxOf(stateOf([]));
   const ops = operationsFor(ctx);
   expect(ops.map((op) => text(op, ctx))).toEqual([
-    'ir para atividades', 'ir para fluxo', 'abrir ou fechar o painel da esquerda', 'abrir ou fechar o painel da direita', 'abrir ou fechar o console',
+    'ir para atividades', 'ir para fluxo', 'ir para plugins', 'abrir ou fechar o painel da esquerda', 'abrir ou fechar o painel da direita', 'abrir ou fechar o console',
     'nova atividade', 'novo terminal', 'o mapa de atalhos', 'sinal',
   ]);
   expect(new Set(ops.map((op) => op.group))).toEqual(new Set(['global']));
-  expect(ops.map((op) => op.shortcut)).toEqual(['viewActivities', 'viewFlow', 'toggleLeft', 'toggleRight', 'toggleConsole', 'newActivity', 'newTerminal', 'shortcutMap', undefined]);
+  expect(ops.map((op) => op.shortcut)).toEqual(['viewActivities', 'viewFlow', 'viewPlugins', 'toggleLeft', 'toggleRight', 'toggleConsole', 'newActivity', 'newTerminal', 'shortcutMap', undefined]);
 });
 
 test('a global operation does what its key does: its run reaches the key\'s own listener (#584)', () => {
