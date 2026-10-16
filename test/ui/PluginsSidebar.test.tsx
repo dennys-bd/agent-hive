@@ -15,6 +15,7 @@ function Sidebar({ activate = vi.fn(), isShown = true }: { activate?: (id: Panel
     <>
       <PluginsSidebar plugins={plugins} workspaces={WORKSPACES} isShown={isShown} activate={activate} />
       <button type="button" onClick={() => plugins.open({ kind: 'item', id: 'hive:new-build' })}>open-item</button>
+      <button type="button" onClick={() => plugins.open({ kind: 'update', id: 'hive:new-plan', version: 'mine' })}>open-update</button>
       <output data-testid="screen">{JSON.stringify(plugins.screen)}</output>
     </>
   );
@@ -112,4 +113,14 @@ test("a failed read says so in the sidebar, in the user's language, never in the
   render(<Sidebar />);
   expect(await screen.findByRole('alert')).toHaveTextContent('não foi possível ler os plugins; veja o hive.log');
   expect(screen.queryByText(/EACCES/)).not.toBeInTheDocument();
+});
+
+test("an item's update screen selects that item's row and its section, and shows the section's groups, as the item screen does (#325)", async () => {
+  stubFetch();
+  render(<Sidebar />);
+  await waitFor(() => expect(screen.getByRole('button', { name: /^skills/ })).toHaveTextContent('skills5'));
+  fireEvent.click(screen.getByRole('button', { name: 'open-update' }));
+  expect(row('new-plan')).toHaveAttribute('aria-current', 'true');
+  expect(screen.getByRole('button', { name: /^skills/ })).toHaveAttribute('aria-current', 'true');
+  expect(screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))).toEqual(['hive', 'agent-hive', 'hive-site']);
 });

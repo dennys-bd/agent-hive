@@ -12,14 +12,22 @@ export const KIND_OF: Record<ListSection, ItemKind> = { skills: 'skill', special
 export const sectionOf = (kind: ItemKind): ListSection => (kind === 'skill' ? 'skills' : 'specialists');
 export const isListSection = (section: Section): section is ListSection => section === 'skills' || section === 'specialists';
 
-/** What the centre shows (#313): a section's list, one item, or the mcp or protocol screen. */
-export type PluginScreen = { kind: 'list'; section: ListSection } | { kind: 'item'; id: string } | { kind: 'mcp' } | { kind: 'protocol' };
+/** What the centre shows (#313): a section's list, one item, one version's update (#325), or the mcp or protocol screen. */
+export type PluginScreen =
+  | { kind: 'list'; section: ListSection }
+  | { kind: 'item'; id: string }
+  | { kind: 'update'; id: string; version: string }
+  | { kind: 'mcp' }
+  | { kind: 'protocol' };
 export interface ItemGroup { origin: string; items: CatalogueItem[] }
 
-/** The sidebar section a screen belongs to; undefined for an item the catalogue no longer has. */
+/** The item a screen shows (#325): its own, or the one whose version it updates; undefined for a list, mcp and protocol. */
+export const itemIdOf = (screen: PluginScreen): string | undefined => (screen.kind === 'item' || screen.kind === 'update' ? screen.id : undefined);
+
+/** The sidebar section a screen belongs to; an update's is its item's (#325); undefined for an item the catalogue no longer has. */
 export function sectionOfScreen(screen: PluginScreen, items: readonly CatalogueItem[]): Section | undefined {
   if (screen.kind === 'list') return screen.section;
-  if (screen.kind !== 'item') return screen.kind;
+  if (screen.kind === 'mcp' || screen.kind === 'protocol') return screen.kind;
   const item = items.find((i) => i.id === screen.id);
   return item && sectionOf(item.kind);
 }

@@ -1,5 +1,5 @@
 // The plugins view's items (#315): the catalogue's reads and the custom store's writes. A write answers what the screen shows next: the
-// item, or the version it wrote. A refusal answers the store's own message; anything the disk throws is a 500 whose detail goes to
+// item, or the version it wrote. A refusal answers the store's own message and its code (#325: the update screen tells a stale token from an update that is gone); anything the disk throws is a 500 whose detail goes to
 // hive.log only.
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
@@ -51,7 +51,7 @@ export interface PluginRouteDeps {
 type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[]) => Promise<void>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-const refuse = (res: Response, refused: StoreRefusal): void => void res.status(STATUS[refused.code]).json({ error: refused.message });
+const refuse = (res: Response, refused: StoreRefusal): void => void res.status(STATUS[refused.code]).json({ error: refused.message, code: refused.code });
 const idOf = (req: Request): string => String(req.params.id);
 
 // A body the schema refuses is a 400 naming its first field; names and paths are the store's to check

@@ -134,7 +134,7 @@ test("POST /api/items with a workspace origin writes the stub in that workspace'
   assert.deepEqual(await snapshot(f.pluginSource), f.initial.plugin, 'the shipped plugin is never written');
 });
 
-test('the update routes: GET previews, POST applies and answers the version read; stale and no update are 409, unresolved 400 (#324)', async (t) => {
+test('the update routes: GET previews, POST applies and answers the version read; stale and no update are 409 naming their code, unresolved 400 (#324, #325)', async (t) => {
   const f = await fixture(t);
   const { base } = await serve(t, f);
   await put(f.pluginSource, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A PR.') });
@@ -144,11 +144,13 @@ test('the update routes: GET previews, POST applies and answers the version read
   const [status, body] = await call(base, 'GET', update);
   const { token, changes } = body as UpdatePreview;
   assert.deepEqual([status, changes.map((change) => change.kind)], [200, ['conflict']]);
-  assert.equal((await call(base, 'POST', update, { token: 'old', choices: {} }))[0], 409, 'stale');
+  const [stale, staleBody] = await call(base, 'POST', update, { token: 'old', choices: {} });
+  assert.deepEqual([stale, (staleBody as { code?: string }).code], [409, 'stale']);
   assert.equal((await call(base, 'POST', update, { token, choices: {} }))[0], 400, 'unresolved');
   assert.equal((await call(base, 'POST', update, { token, choices: { 'SKILL.md#0': 'both' } }))[0], 400, 'a choice is mine or hive');
   const [applied, read] = await call(base, 'POST', update, { token, choices: { 'SKILL.md#0': 'hive' } });
   assert.deepEqual([applied, (read as ItemRead).version, (read as ItemRead).item.state], [200, 'mine', 'customized']);
   assert.equal((read as ItemRead).files.find((file) => file.path === 'SKILL.md')?.text, skillDoc('Take the issue URL.', 'A PR.'));
-  assert.equal((await call(base, 'GET', update))[0], 409, 'no update once applied');
+  const [gone, goneBody] = await call(base, 'GET', update);
+  assert.deepEqual([gone, (goneBody as { code?: string }).code], [409, 'no_update'], 'no update once applied');
 });

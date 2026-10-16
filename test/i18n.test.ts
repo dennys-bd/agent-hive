@@ -519,3 +519,20 @@ test('the link confirm\'s copy (#75): a sentence-case title with no question mar
   assert.deepEqual(keys.map((key) => MESSAGES.pt[key]), ['Abrir link', 'sempre confiar em {host}', 'abrir']);
   assert.equal('link.confirm.cancel' in MESSAGES.en || 'link.confirm.cancel' in MESSAGES.pt, false);
 });
+
+test("the plugins update screen's copy reads as the handoff writes it, in both languages, the counts by number (#325)", () => {
+  setLanguage('pt');
+  assert.equal(t('plugins.update.title', { name: 'new-plan' }), 'a hive atualizou new-plan');
+  assert.equal(tPlural('plugins.update.clean', 2, { n: 2 }), '2 mudanças entram sem conflito');
+  assert.equal(tPlural('plugins.update.passages', 1, { n: 1 }), '1 trecho você editou e a hive também');
+  assert.equal(tPlural('plugins.update.left', 1, { n: 1 }), '1 conflito por decidir · até lá o worker usa a sua versão atual');
+  assert.deepEqual(
+    [t('plugins.update.keepMine'), t('plugins.update.useHive'), t('plugins.update.later'), t('plugins.update.apply'), t('plugins.update.status.choose')],
+    ['manter a minha', 'usar a da hive', 'depois', 'aplicar atualização', 'escolher abaixo'],
+  );
+  setLanguage('en');
+  assert.equal(t('plugins.update.meta', { from: '0.14', to: '0.15' }), 'hive 0.14 → 0.15');
+  assert.equal(tPlural('plugins.update.clean', 1, { n: 1 }), '1 change applies cleanly');
+  assert.equal(tPlural('plugins.update.passages', 2, { n: 2 }), '2 passages were edited by you and by the hive');
+  assert.equal(tPlural('plugins.update.left', 2, { n: 2 }), '2 conflicts left · until then the worker uses your current version');
+});
