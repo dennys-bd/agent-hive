@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react';
 import type { CatalogueItem } from '../../../types';
+import { Confirm } from '@/components/Confirm';
 import { STATE_LOOK } from '@/components/plugins/marks';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { ItemEditor } from '@/hooks/use-item-editor';
 import type { Plugins } from '@/hooks/use-plugins';
 import { type MessageKey, t } from '@/i18n';
-import { HIVE_ORIGIN, type ListSection, sectionOf } from '@/lib/plugins';
+import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plugins';
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
@@ -42,18 +44,47 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
   );
 }
 
-function ItemHead({ item }: { item: CatalogueItem }) {
-  const look = STATE_LOOK[item.state];
-  const chip = <span className={`rounded-full border px-1.5 font-normal text-[11px] ${look.chip}`}>{t(look.label)}</span>;
-  return <Head title={item.name} isMono chip={chip} meta={t(`plugins.section.${sectionOf(item.kind)}`)} />;
+interface ItemProps { item: CatalogueItem; editor: ItemEditor; workspaces: readonly string[] }
+
+// The head's actions (decisions 11, 12): the test is HIVE-25's, drawn disabled; revert only for a Hive item with a version open, never in the
+// preview. The reviewer slot draws nothing until 4.1 and 4.3
+function ItemActions({ item, editor, workspaces }: ItemProps) {
+  const viewAs = item.origin === HIVE_ORIGIN ? editor.viewAs : undefined;
+  const target = viewAs ?? workspaces[0];
+  const version = editor.read?.item.id === item.id ? editor.read.version : null;
+  const canRevert = item.origin === HIVE_ORIGIN && !item.userCreated && version !== null && viewAs === undefined;
+  return (
+    <>
+      {target !== undefined && (
+        // a disabled button gets no pointer events: its wrapper carries the tooltip
+        <span title={t('plugins.head.soon')} className={NO_DRAG}><Button type="button" size="sm" variant="outline" disabled>{t('plugins.head.test', { workspace: target })}</Button></span>
+      )}
+      {canRevert && (
+        <Confirm
+          title={t('plugins.revert.title')} message={t('plugins.revert.message', { version })} confirmLabel={t('plugins.revert.confirm')} onConfirm={editor.revert}
+          trigger={<Button type="button" size="sm" variant="outline" className={NO_DRAG}>{t('plugins.head.revert')}</Button>}
+        />
+      )}
+    </>
+  );
 }
 
-/** The header's centre in the plugins view (#313, decision 17). The slots 3.5 and later fill (the version selector, the reviewer, revert) are
- * not drawn. An item the catalogue no longer has heads nothing. */
-export function PluginsHead({ plugins, workspaces }: { plugins: Plugins; workspaces: readonly string[] }) {
+function ItemHead({ item, editor, workspaces }: ItemProps) {
+  const look = STATE_LOOK[item.state];
+  const chip = <span className={`rounded-full border px-1.5 font-normal text-[11px] ${look.chip}`}>{t(look.label)}</span>;
+  // decision 10: the open file's mtime; the original answers none, so the part goes
+  const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
+  const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
+  return <Head title={item.name} isMono chip={chip} meta={meta}><ItemActions item={item} editor={editor} workspaces={workspaces} /></Head>;
+}
+
+/** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. The version
+ * selector (3.6) and the reviewer (4.1) are not drawn yet. An item the catalogue no longer has heads nothing. */
+export function PluginsHead({ plugins, editor, workspaces }: { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[] }) {
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
-  return item === undefined ? null : <ItemHead item={item} />;
+  return item === undefined ? null : <ItemHead item={item} editor={editor} workspaces={workspaces} />;
 }
+

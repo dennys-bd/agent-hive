@@ -16,7 +16,7 @@ export function PluginsView({ plugins, editor, workspaces, fontFamily }: Plugins
   const { screen } = plugins;
   return (
     <div data-plugins-screen={screen.kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <HeaderSlot><PluginsHead plugins={plugins} workspaces={workspaces} /></HeaderSlot>
+      <HeaderSlot><PluginsHead plugins={plugins} editor={editor} workspaces={workspaces} /></HeaderSlot>
       {screen.kind === 'list' && <ListScreen key={screen.section} plugins={plugins} section={screen.section} workspaces={workspaces} />}
       {editor.item?.kind === 'skill' && <SkillEditor editor={editor} items={plugins.items ?? NO_ITEMS} fontFamily={fontFamily} />}
     </div>
