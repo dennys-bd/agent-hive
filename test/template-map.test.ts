@@ -217,7 +217,7 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   const map = buildMap(parseTemplate(NEW_BUILD), { skills: [], agents: SHIPPED_AGENTS });
   assert.deepEqual(map.errors, []);
   const [introduction, ...sections] = map.blocks;
-  assert.deepEqual(introduction, { kind: 'introduction', line: 8, endLine: 12, references: [{ kind: 'skill', name: 'hive:flow', line: 9 }] });
+  assert.deepEqual(introduction, { kind: 'introduction', line: 8, endLine: 12, references: [] }); // #312 made it "the Hive's flow": hive:flow is no skill
   const headings = sections.filter((block): block is HeadingBlock => block.kind === 'heading');
   assert.equal(headings.length, sections.length, 'no chain in this file');
   assert.deepEqual(
