@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { emitConsoleChange } from '@/lib/console-events';
 import { emitEditorInstall } from '@/lib/editor-install-events';
-import { emitPrReviewEvent, emitReadModelEvent, emitReviewEvent } from '@/lib/review-events';
+import { emitPrReviewEvent, emitReadModelEvent, emitReviewEvent, localReview, taskReview } from '@/lib/review-events';
 import type { EditorInstallEvent, EffectiveLimits, EventsPayload, State } from '../../types.js';
 
 const RERENDER_MS = 30_000;
@@ -23,9 +23,10 @@ export function useHiveState(): { state: State | undefined; effective: Effective
         setEffective(payload.effective);
       }
     };
-    source.addEventListener('review', (event) => { // a task's review file changed (#591): the panes showing it read it again
-      const { taskId } = JSON.parse((event as MessageEvent<string>).data) as { taskId?: unknown };
-      if (typeof taskId === 'string') emitReviewEvent(taskId);
+    source.addEventListener('review', (event) => { // a task's review file changed (#591), or a workspace's local one (#344): the panes showing it read it again
+      const { taskId, workspace } = JSON.parse((event as MessageEvent<string>).data) as { taskId?: unknown; workspace?: unknown };
+      if (typeof taskId === 'string') emitReviewEvent(taskReview(taskId));
+      else if (typeof workspace === 'string') emitReviewEvent(localReview(workspace));
     });
     source.addEventListener('prReview', (event) => { // a PR's review file changed (#592): the PR page on that link reads it again
       const { url } = JSON.parse((event as MessageEvent<string>).data) as { url?: unknown };

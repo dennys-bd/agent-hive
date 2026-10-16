@@ -5,9 +5,11 @@ import { DesignComments } from '@/components/DesignComments';
 import { useDesignComments } from '@/hooks/use-design-comments';
 import { useCommentCanvas } from '@/hooks/use-design-pins';
 import { setLanguage } from '@/i18n';
-import type { TaskActivity } from '@/lib/activities';
+import type { Activity, LocalActivity } from '@/lib/activities';
 import { clockOf } from '@/lib/design-comments';
 import { rememberFocus } from '@/lib/session-focus';
+import type { Session } from '../../src/types';
+import { localPairOf } from '../fixtures/work';
 import { area, AT, PATH, REVIEW } from './design-review';
 import { activityOf, callsTo, fakeHive, type FakeHive, holdRoute, SESSION, SESSIONS, withSessions } from './diff-harness';
 
@@ -16,12 +18,12 @@ beforeEach(() => { setLanguage('pt'); hive = fakeHive(); hive.review = REVIEW; }
 afterEach(() => vi.unstubAllGlobals());
 
 const NO_RECTS = new Map();
-function Panel({ activity }: { activity: TaskActivity }) {
+function Panel({ activity }: { activity: Activity }) {
   const model = useDesignComments(activity, PATH);
   const canvas = useCommentCanvas(model); // the pane's tab and selection (#114)
   return <DesignComments model={model} tab={canvas.tab} selection={canvas.selection} rects={NO_RECTS} onTab={canvas.setTab} onSelect={canvas.selectItem} onHide={() => undefined} />;
 }
-const panel = (activity: TaskActivity = activityOf(withSessions())) => render(<Panel activity={activity} />);
+const panel = (activity: Activity = activityOf(withSessions())) => render(<Panel activity={activity} />);
 // An item by its text, and the words of its buttons
 const item = (text: string): HTMLElement => screen.getByText(text).closest('li') as HTMLElement;
 const actions = (text: string): string[] => within(item(text)).getAllByRole('button').map((b) => b.textContent ?? '');
@@ -159,4 +161,33 @@ test('a refused reply keeps the box and its text; the box closes once the reply 
   refuse = false;
   await user.click(within(screen.getByRole('group', { name: 'responder' })).getByRole('button', { name: 'responder' }));
   await waitFor(() => expect(screen.queryByRole('group', { name: 'responder' })).toBeNull());
+});
+
+// Workspace hive's local activity (#345): its record keeps one local session, no run holds it
+const LOCAL_SESSION: Session = { ...SESSIONS[0], id: 'cccccccc-0000-4000-8000-000000000000' };
+const local = (): LocalActivity => ({ kind: 'local', ...localPairOf('hive', [LOCAL_SESSION]), workspace: 'hive', runs: [], sessions: [], kept: [{ session: LOCAL_SESSION, status: 'empty' }] });
+const postedLocal = (url: string): unknown[] => callsTo(hive, 'POST', `/workspaces/hive/review${url}`).map((c) => c.body);
+
+test('on a local activity the panel reads the workspace\'s review, retries, resolves and replies through its routes, and names the workspace (#345)', async () => {
+  const user = userEvent.setup();
+  const [withAgent, ...rest] = REVIEW.threads;
+  hive.answers['GET /workspaces/hive/review'] = { ...REVIEW, threads: [{ ...withAgent, participants: [], messages: [{ ...withAgent.messages[0], failed: true, pending: [SESSION] }] }, ...rest] };
+  panel(local());
+  await screen.findByText('a draft');
+  expect(screen.getByText('nenhuma sessão em foco · abre uma sessão nova de claude em hive')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'reenviar' }));
+  await waitFor(() => expect(within(item('a question')).getByRole('button', { name: 'resolver' })).toBeEnabled());
+  await user.click(within(item('a question')).getByRole('button', { name: 'resolver' }));
+  await waitFor(() => expect(within(item('a question')).getByRole('button', { name: 'responder' })).toBeEnabled());
+  await user.click(within(item('a question')).getByRole('button', { name: 'responder' }));
+  await user.type(screen.getByRole('textbox', { name: 'responder' }), 'blue');
+  await user.click(within(screen.getByRole('group', { name: 'responder' })).getByRole('button', { name: 'responder' }));
+  await waitFor(() => expect(postedLocal('/threads/T2/messages')).toEqual([{ text: 'blue' }]));
+  expect(postedLocal('/threads/T4/messages/m4/retry')).toHaveLength(1);
+  expect(postedLocal('/threads/T2/resolve')).toEqual([{ resolved: true }]);
+  expect(hive.calls.some((c) => c.url.startsWith('/tasks/'))).toBe(false);
+  screen.getByRole('button', { name: 'sessão' }).focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByText('sessões de hive')).toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: /cccccccc/ })).toBeInTheDocument();
 });

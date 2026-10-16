@@ -6,7 +6,6 @@ import { type CloseTabSettings, type ConfirmLoss, forgetRun, noticeInput, notice
 import { CopyToSub } from '@/components/CopySession';
 import { CONTEXT_KIT } from '@/components/menu-kit';
 import type { LiveRun } from '../../task-runs';
-import { taskLabel } from '../../tasks';
 import { DesignPane } from '@/components/DesignPane';
 import { DesignCountPill } from '@/components/DesignComments';
 import { EditorPane } from '@/components/EditorPane';
@@ -27,7 +26,7 @@ import type { CenterOps } from '@/hooks/use-center-layouts';
 import { useConsoleChannelsContext } from '@/hooks/use-console';
 import { useFileTone } from '@/hooks/use-diagnostics';
 import { t } from '@/i18n';
-import { type Activity, activityKey, runStatus, sleepingOf } from '@/lib/activities';
+import { type Activity, activityKey, activityTitle, reviewKeyOf, runStatus, sleepingOf } from '@/lib/activities';
 import type { CopySource } from '@/lib/copy-targets';
 import { type CenterTabRef, type ConsoleRef, consoleRef, type Edge, refKey, runsOf, type TabGroup } from '@/lib/center-layout';
 import { bufferPath } from '@/lib/center-files';
@@ -42,8 +41,6 @@ export interface CenterGroupProps {
 }
 
 const baseName = (path: string): string => path.split('/').at(-1) ?? path;
-// What an activity's panes read before their own name (#251): its task's label, or its workspace for a local activity (#590)
-const activityTitle = (activity: Activity): string => (activity.kind === 'task' ? taskLabel(activity.task) : activity.workspace);
 
 /** A tab's text in its strip (#457, #458): a run's own label (#489: what runs in it, never its kind); a diff's scope; a file's name
  * (#717); Preview and its name (#697); Alterações and its name (#668); console. */
@@ -213,7 +210,7 @@ function CenterTab({ item, index, group, groups, activity, ops, drag, onClose, o
             <TabDot item={item} activity={activity} />
             <span className={tone}>{text}</span>
           </button>
-          {item.kind === 'design' && activity.kind === 'task' && <DesignCountPill taskId={activity.task.item.itemId} path={item.path} />}
+          {item.kind === 'design' && <DesignCountPill reviewKey={reviewKeyOf(activity)} path={item.path} />}
           <Button type="button" size="icon-xs" variant="ghost" className="size-4" aria-label={`${t('center.close')} ${text}`} onClick={close}><XIcon /></Button>
         </div>
       </ContextMenuTrigger>

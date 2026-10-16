@@ -7,7 +7,7 @@ import { setLanguage } from '@/i18n';
 import type { Activity } from '@/lib/activities';
 import type { ReviewFile, Task } from '../../src/types';
 import { jsonResponse } from '../fakes';
-import { localPairOf, taskPairOf } from '../fixtures/work';
+import { taskPairOf } from '../fixtures/work';
 import { area, PATH as REVIEW_PATH, REVIEW, stubScrollIntoView, unstubScrollIntoView } from './design-review';
 
 const PATH = 'design/Landing.hv.html';
@@ -222,7 +222,6 @@ test('a pointer down on the canvas puts the focus in the pane, so ⌘0 and Space
   expect(document.activeElement).toBe(screen.getByRole('region', { name: LABEL }));
 });
 
-const local: Activity = { kind: 'local', ...localPairOf('hive'), workspace: 'hive', runs: [], sessions: [], kept: [] };
 const region = (): HTMLElement => screen.getByRole('region', { name: LABEL });
 const panel = (): HTMLElement | null => screen.queryByRole('complementary', { name: 'comentários' });
 // Off macOS (jsdom's platform): ⌘⇧↵ is Ctrl+Shift+Enter
@@ -272,15 +271,6 @@ test('the comments panel starts closed and keeps the last choice across two moun
   expect([second.getAttribute('aria-pressed'), panels().length]).toEqual(['true', 2]);
   await user.click(within(panels()[1]).getByRole('button', { name: 'esconder' }));
   expect([first.getAttribute('aria-pressed'), panels().length]).toEqual(['false', 0]);
-});
-
-test('a local activity\'s pane has no comments button nor panel, and reads no review (#113)', async () => {
-  render(<DesignPane activity={local} path={PATH} label={LABEL} active />);
-  await screen.findByTitle(NAME);
-  expect(screen.queryByRole('button', { name: 'comentários' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'comentar' })).toBeNull();
-  expect(screen.queryByRole('complementary')).toBeNull();
-  expect(fetchMock.mock.calls.some(([url]) => url.includes('/review'))).toBe(false);
 });
 
 test('the comentar toggle and C post comment-mode and turn the canvas to a crosshair; C in a text field does nothing; the bridge\'s c and Esc reach the same mode (#114)', async () => {

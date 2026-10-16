@@ -2,10 +2,9 @@ import { XIcon } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { agentName } from '../../agents';
 import { displayBinding, matches } from '../../shortcuts';
-import { taskLabel } from '../../tasks';
 import { type AgentId, NEW_SESSION, type ReviewMessage } from '../../types';
 import { SUBMIT_KEY } from '@/components/DiffFooter';
-import { DefaultAgentContext } from '@/components/NewRunButton';
+import { DefaultAgentContext, referenceOf } from '@/components/NewRunButton';
 import { dropDraft, replyTo, resolveThread, retryMessage, sendComment } from '@/components/review-actions';
 import { ReviewContext, type ReviewPane, sessionName } from '@/components/review-context';
 import { SessionPicker } from '@/components/SessionPicker';
@@ -16,7 +15,7 @@ import type { CommentSelection, CommentTab, PinRects } from '@/hooks/use-design-
 import { useReview } from '@/hooks/use-review';
 import { type MessageKey, t, tPlural } from '@/i18n';
 import { clockOf, type CommentState, type DesignComment, fileComments, targetOf } from '@/lib/design-comments';
-import { taskRef } from '@/lib/operations-activity';
+import type { ReviewKey } from '@/lib/review-events';
 import { isMac } from '@/lib/shortcut-bindings';
 import { STATUS_DOT } from '@/lib/status';
 
@@ -49,23 +48,23 @@ function wordOf(item: DesignComment, sessions: ReviewPane['sessions']): string {
 // enviar on a draft (#113): sent now as a conversation to the footer's recipient; the draft goes once the thread is stored, a refusal keeps
 // it. The server pins every new thread (#111), so the sent comment takes the file's next pin
 async function sendDraft(model: DesignCommentsModel, item: DesignComment): Promise<unknown> {
-  const sent = await sendComment(model.taskId, { anchor: item.anchor, text: item.text, to: [model.recipient.session] });
-  return sent === undefined ? undefined : dropDraft(model.taskId, item.id);
+  const sent = await sendComment(model.reviewKey, { anchor: item.anchor, text: item.text, to: [model.recipient.session] });
+  return sent === undefined ? undefined : dropDraft(model.reviewKey, item.id);
 }
 
 // reabrir (#113): resolve false drops resolved and the agent's mark, so the thread reads com o agente; a note then goes to its reply target
-async function reopen(taskId: string, thread: string, note: string): Promise<unknown> {
-  const done = await resolveThread(taskId, thread, false);
-  return done === undefined || note === '' ? done : replyTo(taskId, thread, { text: note });
+async function reopen(key: ReviewKey, thread: string, note: string): Promise<unknown> {
+  const done = await resolveThread(key, thread, false);
+  return done === undefined || note === '' ? done : replyTo(key, thread, { text: note });
 }
 
 // The handoff's actions per state (#113): resolver and confirmar both resolve, which keeps an agent's mark (#111); reabrir and responder
 // open the item's box
 function actionsOf(item: DesignComment, model: DesignCommentsModel, run: Run, openBox: (mode: BoxMode) => void): Action[] {
-  const { taskId } = model;
-  const resolve = (): void => void run(() => resolveThread(taskId, item.id, true));
+  const { reviewKey } = model;
+  const resolve = (): void => void run(() => resolveThread(reviewKey, item.id, true));
   if (item.state === 'draft') {
-    return [{ key: 'design.action.delete', run: () => void run(() => dropDraft(taskId, item.id)) }, { key: 'design.action.send', run: () => void run(() => sendDraft(model, item)) }];
+    return [{ key: 'design.action.delete', run: () => void run(() => dropDraft(reviewKey, item.id)) }, { key: 'design.action.send', run: () => void run(() => sendDraft(model, item)) }];
   }
   if (item.state === 'agent') return [{ key: 'design.action.resolve', run: resolve }];
   if (item.state === 'replied') return [{ key: 'design.action.reply', run: () => openBox('reply') }, { key: 'design.action.resolve', run: resolve }];
@@ -155,11 +154,11 @@ function CommentItem({ item, model, isSelected, isFromPin, isRemoved, box, onSel
   const row = useRef<HTMLLIElement>(null);
   // A pin's click selects an item the list may hold out of view (#114); an item's own click is in view already
   useEffect(() => { if (isSelected && isFromPin) row.current?.scrollIntoView({ block: 'nearest' }); }, [isSelected, isFromPin]);
-  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.taskId, item.id, message.id))} /> : null);
+  const markOf = (message: ReviewMessage): ReactNode => (message.failed && !isBusy ? <Undelivered onRetry={() => void run(() => retryMessage(model.reviewKey, item.id, message.id))} /> : null);
   const [first, ...later] = item.messages;
   // The box closes only once the server took the request: a refusal (undefined) keeps it open with the typed text
   const submit = async (text: string): Promise<void> => {
-    const done = await run(() => (box === 'reply' ? replyTo(model.taskId, item.id, { text }) : reopen(model.taskId, item.id, text)));
+    const done = await run(() => (box === 'reply' ? replyTo(model.reviewKey, item.id, { text }) : reopen(model.reviewKey, item.id, text)));
     if (done !== undefined) onBox(undefined);
   };
   return (
@@ -194,11 +193,11 @@ function PanelHeader({ tab, open, resolved, onTab, onHide }: { tab: CommentTab; 
 
 // The recipient line (#113): the session in focus, the user's pick, or the new session enviar opens, of the default agent
 function recipientLine({ recipient, sessions, activity }: DesignCommentsModel, agent: AgentId): string {
-  if (recipient.how === 'new') return t('design.send.new', { agent: agentName(agent), activity: taskRef(activity.task) });
+  if (recipient.how === 'new') return t('design.send.new', { agent: agentName(agent), activity: referenceOf(activity) });
   return t(recipient.how === 'picked' ? 'design.send.picked' : 'design.send.to', { session: sessionName(recipient.session, sessions) });
 }
 
-// The footer (#113): enviar {n} rascunhos ⌘⇧↵ across its width, over the recipient line, which opens the task's sessions to pick another
+// The footer (#113): enviar {n} rascunhos ⌘⇧↵ across its width, over the recipient line, which opens the activity's sessions to pick another
 function SendFooter({ model }: { model: DesignCommentsModel }) {
   const agent = useContext(DefaultAgentContext);
   return (
@@ -215,7 +214,7 @@ function SendFooter({ model }: { model: DesignCommentsModel }) {
 
 /** The comments panel (#113): its tabs and ×, the list, one inline box open at a time. The tab and the selection are the pane's (#114),
  *  which its pins share; rects is the bridge's answer, a null one marks its item's target removed. SessionPicker and SessionLabel read
- *  the task's sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert. */
+ *  the activity's sessions and agents through ReviewContext; a design has no diff scope nor line box, so the pane's scope and edit are inert. */
 export interface DesignCommentsProps {
   model: DesignCommentsModel; tab: CommentTab; selection?: CommentSelection; rects: PinRects;
   onTab(next: CommentTab): void; onSelect(id: string): void; onHide(): void;
@@ -223,7 +222,7 @@ export interface DesignCommentsProps {
 export function DesignComments({ model, tab, selection, rects, onTab, onSelect, onHide }: DesignCommentsProps) {
   const [box, setBox] = useState<{ id: string; mode: BoxMode }>();
   const pane: ReviewPane = {
-    taskId: model.taskId, scope: 'worktree', task: taskLabel(model.activity.task), review: model.review, sessions: model.sessions,
+    reviewKey: model.reviewKey, scope: 'worktree', task: model.label, review: model.review, sessions: model.sessions,
     defaultSession: model.recipient.session, refresh: model.refresh, edit: () => undefined, isSending: false, track: (request) => request,
   };
   const items = tab === 'open' ? model.open : model.resolved;
@@ -245,11 +244,11 @@ export function DesignComments({ model, tab, selection, rects, onTab, onSelect, 
   );
 }
 
-/** The design tab's open count (#113, handoff §1): a pill before its ×, above zero only. Its own read of the review, so the count shows
+/** The design tab's open count (#113, handoff §1): a pill before its ×, above zero only, on a task's tab and a local activity's (#345). Its own read of the review, so the count shows
  *  with the pane behind another tab too. ponytail: two reads per design tab, this and the pane's; lift the pane's count up to its tab if
  *  that ever shows */
-export function DesignCountPill({ taskId, path }: { taskId: string; path: string }) {
-  const { review } = useReview(taskId);
+export function DesignCountPill({ reviewKey, path }: { reviewKey: ReviewKey; path: string }) {
+  const { review } = useReview(reviewKey);
   const count = review === undefined ? 0 : fileComments(review, path).open.length;
   return count > 0 ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-muted-foreground tabular-nums">{count}</span> : null;
 }

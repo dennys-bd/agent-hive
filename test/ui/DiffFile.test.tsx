@@ -8,6 +8,7 @@ import { EMPTY_REVIEW } from '@/lib/review-view';
 import type { FileDiff } from '../../src/types';
 import { jsonResponse } from '../fakes';
 import { inSessionsPane } from './diff-harness';
+import { taskReview } from '@/lib/review-events';
 
 const FILE: FileDiff = { path: 'src/a.ts', status: 'modified', hash: 'a'.repeat(64), hunks: [{ header: '@@ -1,2 +1,2 @@ intro', lines: [
   { kind: 'context', text: 'one', old: 1, new: 1 }, { kind: 'del', text: 'two', old: 2 }, { kind: 'add', text: '2', new: 2 },
@@ -15,7 +16,7 @@ const FILE: FileDiff = { path: 'src/a.ts', status: 'modified', hash: 'a'.repeat(
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ ok: true }));
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => vi.unstubAllGlobals());
-const PANE: ReviewPane = { taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, sessions: [], defaultSession: 'new', refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request };
+const PANE: ReviewPane = { reviewKey: taskReview('I1'), scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, sessions: [], defaultSession: 'new', refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request };
 const LINES = { isDragging: false, select: vi.fn(), begin: vi.fn(), extend: vi.fn(), comment: vi.fn(), close: vi.fn() };
 const cells = (row: HTMLElement): string[] => within(row).getAllByRole('cell').map((c) => c.textContent ?? '');
 const section = (): HTMLElement => screen.getByRole('region', { name: 'src/a.ts' });

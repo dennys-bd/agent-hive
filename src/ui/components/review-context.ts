@@ -5,11 +5,12 @@ import { type AgentId, type DiffScope, type LineAnchor, NEW_SESSION, type Review
 import { DefaultAgentContext } from '@/components/NewRunButton';
 import type { CommentTarget } from '@/components/review-surface';
 import { t } from '@/i18n';
+import type { ReviewKey } from '@/lib/review-events';
 import type { ReviewSession } from '@/lib/review-view';
 
-/** What a diff pane's review components share (#591). */
+/** What a diff pane's review components share (#591), and the design panel's (#113). reviewKey: the review its actions go to (#345). */
 export interface ReviewPane {
-  taskId: string; scope: DiffScope; task: string; review: ReviewFile; sessions: ReviewSession[]; defaultSession: string;
+  reviewKey: ReviewKey; scope: DiffScope; task: string; review: ReviewFile; sessions: ReviewSession[]; defaultSession: string;
   refresh(): void; edit(target: CommentTarget): void;
   isSending: boolean; track<T>(request: Promise<T>): Promise<T>; // the pane's sends in flight (a comment, a reply, a reenviar)
 }

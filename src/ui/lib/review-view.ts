@@ -13,7 +13,7 @@ export const isReviewedIn = (review: ReviewFile | undefined, scope: DiffScope, f
 
 export interface ReviewSession { id: string; status: Status; lastUsedAt: string; agent: AgentId } // agent: #925, the session's own
 
-/** The task's sessions as the review offers them (#591), oldest first, each with the status of the worker running it now, else empty. */
+/** The activity's sessions as the review offers them (#591, #345: a task's or a local activity's), oldest first, each with the status of the worker running it now, else empty. */
 // An activity as reviewSessions reads it: structural, since activities.ts is UI-only and this file also compiles for node
 type SessionSource = { records: { sessions: Session[] }[]; sessions: { status: Status; session?: { id: string } }[] };
 

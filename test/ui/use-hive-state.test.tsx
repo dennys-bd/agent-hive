@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { useHiveState } from '@/hooks/use-hive-state';
 import { onConsoleChange } from '@/lib/console-events';
 import { onEditorInstall } from '@/lib/editor-install-events';
-import { onPrReviewEvent, onReadModelEvent, onReviewEvent } from '@/lib/review-events';
+import { onPrReviewEvent, onReadModelEvent, onReviewEvent, taskReview } from '@/lib/review-events';
 
 class FakeSource {
   static last: FakeSource | undefined;
@@ -21,8 +21,21 @@ test('a named review event reaches the review listeners with its task, never the
   const stop = onReviewEvent(heard);
   const { result } = renderHook(() => useHiveState());
   FakeSource.last?.listeners.review?.(new MessageEvent('review', { data: '{"type":"review","taskId":"I1"}' }));
-  expect(heard).toHaveBeenCalledWith('I1');
+  expect(heard).toHaveBeenCalledWith(taskReview('I1'));
   expect(result.current.state).toBeUndefined();
+  stop();
+});
+
+test('a local review event reaches the review listeners with its workspace\'s key; one naming neither a task nor a workspace is dropped (#345)', () => {
+  vi.stubGlobal('EventSource', FakeSource);
+  const heard = vi.fn();
+  const stop = onReviewEvent(heard);
+  renderHook(() => useHiveState());
+  const review = (data: unknown): void => FakeSource.last?.listeners.review?.(new MessageEvent('review', { data: JSON.stringify(data) }));
+  review({ type: 'review', workspace: 'hive' });
+  review({ type: 'review', workspace: 7 });
+  review({ type: 'review' });
+  expect(heard.mock.calls).toEqual([['/workspaces/hive']]);
   stop();
 });
 

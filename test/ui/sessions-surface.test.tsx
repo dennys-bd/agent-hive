@@ -5,6 +5,7 @@ import { setLanguage } from '@/i18n';
 import { EMPTY_REVIEW } from '@/lib/review-view';
 import type { FileDiff, ReviewDraft, ReviewThread } from '../../src/types';
 import { jsonResponse } from '../fakes';
+import { taskReview } from '@/lib/review-events';
 
 const SESSION = 'abcdef12-0000-4000-8000-000000000000';
 const AT = '2026-09-30T10:00:00.000Z';
@@ -21,7 +22,7 @@ const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =
 beforeEach(() => { setLanguage('pt'); fetchMock.mockClear(); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => vi.unstubAllGlobals());
 const paneOf = (): ReviewPane => ({
-  taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: { ...EMPTY_REVIEW, threads: [THREAD], drafts: [DRAFT] },
+  reviewKey: taskReview('I1'), scope: 'worktree', task: '#1 Task 1', review: { ...EMPTY_REVIEW, threads: [THREAD], drafts: [DRAFT] },
   sessions: [{ id: SESSION, status: 'working', lastUsedAt: AT, agent: 'claude' }], defaultSession: SESSION, refresh: vi.fn(), edit: vi.fn(), isSending: false, track: (request) => request,
 });
 const VIEW = { openFile: vi.fn(), reviewed: () => false, mark: vi.fn(), submit: { failed: [SESSION], unsaved: [], canSubmit: true, submit: vi.fn() } };

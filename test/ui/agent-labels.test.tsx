@@ -14,6 +14,7 @@ import { setLanguage } from '@/i18n';
 import { liveRuns } from '../../src/task-runs';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, type AgentId, type BaseOptions, type State, type Task } from '../../src/types';
 import { activityIdOf, taskPairOf, withPointedWork } from '../fixtures/work';
+import { taskReview } from '@/lib/review-events';
 
 // #925: no second agent ships until 3.1 adds codex, so this file adds one. AGENTS gains its facts (agentName reads them, so it is rebuilt
 // over the mocked map), AGENT_IDS lists it. Its id is a cast: no production id is added
@@ -63,7 +64,7 @@ test('a new local session posts its agent as the kind; a continued one posts non
 
 test('a review names a mentioned session by its own agent, on the page and in what the session receives (#925)', () => {
   const pane: ReviewPane = {
-    taskId: 'I1', scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, defaultSession: S, refresh: vi.fn(), edit: vi.fn(), isSending: false,
+    reviewKey: taskReview('I1'), scope: 'worktree', task: '#1 Task 1', review: EMPTY_REVIEW, defaultSession: S, refresh: vi.fn(), edit: vi.fn(), isSending: false,
     track: (request) => request, sessions: [{ id: S, status: 'working', lastUsedAt: 'T', agent: AGENT }],
   };
   render(<ReviewContext.Provider value={pane}><SessionLabel id={S} /></ReviewContext.Provider>);
