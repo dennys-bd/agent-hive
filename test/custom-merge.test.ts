@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { previewUpdate } from '../src/custom-merge.js';
 import { createCustomStore, type CustomStore } from '../src/custom-store.js';
 import { isRefusal, type StoreRefusal } from '../src/custom-versions.js';
+import { listFiles } from '../src/item-sources.js';
+import { findItem } from '../src/items-catalogue.js';
 import type { UpdatePreview } from '../src/types.js';
 import { BUILD, DEPLOY, type Fixture, fixture, put, REPO_SKILL, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
@@ -127,4 +129,91 @@ test('a version with no update, an unknown item or version, and an item the Hive
   const gone = await previewUpdate(f, BUILD, 'mine');
   assert.equal(codeOf(gone), 'no_update');
   assert.match((gone as StoreRefusal).message, /the Hive no longer ships new-build/);
+});
+
+const BOTH = ['agent-hive', 'hive-site'];
+const json = async (path: string): Promise<unknown> => JSON.parse(await readFile(path, 'utf8'));
+// Every file under `dir` with its text: what a version's files/ holds after an apply
+const texts = async (dir: string): Promise<Record<string, string>> =>
+  Object.fromEntries(await Promise.all((await listFiles(dir)).map(async (path) => [path, await readFile(join(dir, path), 'utf8')] as const)));
+
+test('applying a clean update stores the merged text, the shipped files as base/ and the new hiveVersion; the item reads customized (#324)', async (t) => {
+  const { f } = await customized(t);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A pull request.') });
+  const { token } = await preview(f);
+  const changes: string[][] = [];
+  assert.deepEqual(await open(f, changes).applyUpdate(BUILD, 'mine', token, {}), { workspaces: BOTH });
+  assert.deepEqual(changes, [BOTH], "onChange re-renders the version's workspaces");
+  assert.deepEqual(await texts(buildDir(f, 'mine/files')), { 'SKILL.md': skillDoc('Take the issue number.', 'A pull request.'), 'scripts/run.sh': 'echo hi\n' });
+  assert.deepEqual(await snapshot(buildDir(f, 'mine/base')), await snapshot(join(f.pluginSource, 'skills/new-build')));
+  assert.deepEqual(await json(buildDir(f, 'mine/version.json')), { name: 'mine', from: 'original', workspaces: BOTH, hiveVersion: '0.2.0' });
+  assert.equal((await findItem(f, BUILD))?.state, 'customized');
+  await assert.rejects(stat(join(f.home, 'custom-staging')), 'nothing is left in the staging area');
+});
+
+test('a conflict needs a choice: unresolved without one, mine keeps the line, hive takes the shipped one; the other version stays update available (#324)', async (t) => {
+  const { f, store } = await customized(t);
+  await store.createVersion(BUILD, 'other', 'original');
+  await store.saveFile(BUILD, 'other', 'SKILL.md', skillDoc('Take the issue id.', 'A PR.'));
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue URL.', 'A PR.') });
+  const { token } = await preview(f, 'mine');
+  const refused = await store.applyUpdate(BUILD, 'mine', token, {});
+  assert.equal(codeOf(refused), 'unresolved');
+  assert.match((refused as StoreRefusal).message, /SKILL\.md#0/);
+  assert.deepEqual(await store.applyUpdate(BUILD, 'mine', token, { 'SKILL.md#0': 'mine', 'ghost.md#3': 'hive' }), { workspaces: BOTH }, 'an unknown id is ignored');
+  assert.equal(await readFile(buildDir(f, 'mine/files/SKILL.md'), 'utf8'), MINE);
+  const versions = async () => (await findItem(f, BUILD))?.versions.map((v) => [v.name, v.updateAvailable]);
+  assert.deepEqual(await versions(), [['mine', false], ['other', true]]);
+  assert.deepEqual(await store.applyUpdate(BUILD, 'other', (await preview(f, 'other')).token, { 'SKILL.md#0': 'hive' }), { workspaces: [] });
+  assert.equal(await readFile(buildDir(f, 'other/files/SKILL.md'), 'utf8'), skillDoc('Take the issue URL.', 'A PR.'));
+  assert.deepEqual(await versions(), [['mine', false], ['other', false]]);
+});
+
+test('a token from before a save to the version is refused stale, and the save stays (#324)', async (t) => {
+  const { f, store } = await customized(t);
+  await ship(f, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A pull request.') });
+  const { token } = await preview(f);
+  await store.saveFile(BUILD, 'mine', 'SKILL.md', 'saved after the preview\n');
+  assert.equal(codeOf(await store.applyUpdate(BUILD, 'mine', token, {})), 'stale');
+  assert.equal(await readFile(buildDir(f, 'mine/files/SKILL.md'), 'utf8'), 'saved after the preview\n');
+});
+
+test('a whole-file conflict keeps or drops the file as chosen; the clean adds and removals always apply (#324)', async (t) => {
+  const kept = await fileCases(t);
+  await kept.store.applyUpdate(BUILD, 'mine', (await preview(kept.f)).token, { 'scripts/edited.sh#file': 'mine', 'scripts/gone.sh#file': 'hive' });
+  assert.deepEqual(await texts(buildDir(kept.f, 'mine/files')), { 'SKILL.md': BASE, 'scripts/edited.sh': 'a mine\n', 'scripts/gone.sh': 'g2\n', 'scripts/new.sh': 'n\n' });
+  const dropped = await fileCases(t);
+  await dropped.store.applyUpdate(BUILD, 'mine', (await preview(dropped.f)).token, { 'scripts/edited.sh#file': 'hive', 'scripts/gone.sh#file': 'mine' });
+  assert.deepEqual(await texts(buildDir(dropped.f, 'mine/files')), { 'SKILL.md': BASE, 'scripts/new.sh': 'n\n' });
+});
+
+test('a SKILL.md.liquid version keeps its .liquid name; an untouched SKILL.md takes the shipped SKILL.md.liquid name (#324)', async (t) => {
+  const liquid = await liquidVersion(t);
+  await liquid.store.applyUpdate(BUILD, 'mine', (await preview(liquid.f)).token, {});
+  assert.deepEqual(await texts(buildDir(liquid.f, 'mine/files')), { 'SKILL.md.liquid': skillDoc('Take {{ issue }}.', 'A pull request.'), 'scripts/run.sh': 'echo hi\n' });
+  const untouched = await untouchedMain(t);
+  await untouched.store.applyUpdate(BUILD, 'mine', (await preview(untouched.f)).token, {});
+  assert.deepEqual(await texts(buildDir(untouched.f, 'mine/files')), { 'SKILL.md.liquid': skillDoc('Take {{ issue }}.', 'A PR.'), 'scripts/run.sh': 'echo mine\n' });
+  assert.equal((await findItem(untouched.f, BUILD))?.state, 'customized');
+});
+
+test('a CRLF file keeps its line endings after apply (#324)', async (t) => {
+  const crlf = (first: string, last: string): string => `${first}\r\ntwo\r\nthree\r\nfour\r\n${last}\r\n`;
+  const { f, store } = await customized(t, BASE, { 'skills/new-build/notes.md': crlf('one', 'five') });
+  await store.saveFile(BUILD, 'mine', 'notes.md', crlf('ONE', 'five'));
+  await ship(f, { 'skills/new-build/notes.md': crlf('one', 'FIVE') });
+  const answer = await preview(f);
+  assert.deepEqual(answer.changes, [{ kind: 'clean', file: 'notes.md', heading: 'notes.md', removed: ['five'], added: ['FIVE'] }]);
+  await store.applyUpdate(BUILD, 'mine', answer.token, {});
+  assert.equal(await readFile(buildDir(f, 'mine/files/notes.md'), 'utf8'), crlf('ONE', 'FIVE'));
+});
+
+test("a workspace item's version merges like a Hive one, and its version.json gets no hiveVersion (#324)", async (t) => {
+  const { f, store, mine } = await workspaceVersion(t);
+  const { token } = await preview(f, 'mine', DEPLOY);
+  assert.deepEqual(await store.applyUpdate(DEPLOY, 'mine', token, {}), { workspaces: ['hive-site'] });
+  const dir = join(f.home, 'custom/hive-site/deploy/mine');
+  assert.equal(await readFile(join(dir, 'files/SKILL.md'), 'utf8'), mine.replace('Deploy.', 'Deploy now.'));
+  assert.deepEqual(await json(join(dir, 'version.json')), { name: 'mine', from: 'original', workspaces: ['hive-site'] });
+  assert.equal(codeOf(await store.applyUpdate(DEPLOY, 'mine', token, {})), 'no_update');
 });

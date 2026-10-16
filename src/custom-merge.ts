@@ -2,19 +2,23 @@
 // (custom-merge-git.ts). The preview writes nothing; apply recomputes the same merge, and a token over the three inputs proves it is the
 // merge the preview showed.
 import { isUtf8 } from 'node:buffer';
-import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { diffTexts, type Hunk, mergeTexts, resolveMerge, type Segment } from './custom-merge-git.js';
-import { BASE_DIR, isRefusal, mainFiles, refusal, type StoreRefusal } from './custom-versions.js';
-import { type FileSet, HIVE_ORIGIN, type ItemSources, listFiles, originFiles, pluginVersion, versionDir, versionFiles } from './item-sources.js';
+import { BASE_DIR, FILES_DIR, isRefusal, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
+import { isInside } from './ide.js';
+import { customRoot, type FileSet, HIVE_ORIGIN, type ItemSources, listFiles, originFiles, pluginVersion, versionDir, versionFiles } from './item-sources.js';
 import { findItem } from './items-catalogue.js';
-import type { CatalogueItem, ItemVersion, UpdateChange, UpdateConflict, UpdatePreview } from './types.js';
+import type { CatalogueItem, ItemVersion, UpdateChange, UpdateChoice, UpdateConflict, UpdatePreview } from './types.js';
 
 const WHOLE = 'file'; // the id suffix of a whole-file conflict
 const HEADING = /^#{1,6}\s/;
 const EMPTY = Buffer.alloc(0);
+const STAGING_DIR = 'custom-staging'; // beside custom/: the catalogue never lists it, and a rename out of it stays on the same disk
+
+export type UpdateChoices = Readonly<Partial<Record<string, UpdateChoice>>>;
 
 type Side = ReadonlyMap<string, Buffer>;
 interface Sides {
@@ -205,5 +209,81 @@ export function previewUpdate(s: ItemSources, id: string, version: string): Prom
     const from = update.version.hiveVersion;
     const to = update.item.origin === HIVE_ORIGIN ? await pluginVersion(s.pluginSource) : undefined;
     return { version, ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }), token: update.token, changes };
+  });
+}
+
+function conflictIds(merge: FileMerge): string[] {
+  if (merge.kind === 'whole') return [`${merge.path}#${WHOLE}`];
+  if (merge.kind === 'merged') return [];
+  return merge.segments.filter((segment) => typeof segment !== 'string').map((_, n) => `${merge.path}#${n}`);
+}
+
+// A merge's bytes as chosen; undefined drops the file (a whole-file conflict resolved to the side that has none)
+function chosenBytes(merge: FileMerge, choices: UpdateChoices): Buffer | undefined {
+  const pick = (id: string): UpdateChoice => choices[id] ?? 'mine'; // applyUpdate refuses a missing choice before it gets here
+  if (merge.kind === 'merged') return merge.result;
+  if (merge.kind === 'whole') return merge[pick(`${merge.path}#${WHOLE}`)];
+  return Buffer.from(resolveMerge(merge.segments, (n) => pick(`${merge.path}#${n}`)));
+}
+
+async function writeAll(dir: string, files: Side): Promise<void> {
+  for (const [path, bytes] of files) {
+    await mkdir(dirname(join(dir, path)), { recursive: true });
+    await writeFile(join(dir, path), bytes);
+  }
+}
+
+// Every field kept but hiveVersion, which follows the new base: the plugin's version for a Hive item, none for a workspace's
+async function nextJson(s: ItemSources, update: Update, dir: string): Promise<VersionJson> {
+  const json = parseVersionJson(await readFile(join(dir, VERSION_FILE), 'utf8'), update.version.name);
+  const hiveVersion = update.item.origin === HIVE_ORIGIN ? await pluginVersion(s.pluginSource) : undefined;
+  return { name: json.name, from: json.from, workspaces: json.workspaces, ...(hiveVersion === undefined ? {} : { hiveVersion }) };
+}
+
+// The new version is written whole in the staging area, version.json last, then swapped in by two renames on one disk. A failure before
+// the swap leaves the version as it was
+async function swapIn(s: ItemSources, update: Update, files: Side): Promise<void> {
+  const target = versionDir(s.home, update.item, update.version.name);
+  if (!isInside(customRoot(s.home), target)) throw new Error(`${target} is outside the custom store`);
+  const staging = join(s.home, STAGING_DIR);
+  await rm(staging, { recursive: true, force: true }); // whatever a crashed apply left
+  const fresh = join(staging, randomUUID());
+  try {
+    await mkdir(fresh, { recursive: true });
+    await writeAll(join(fresh, FILES_DIR), files);
+    await writeAll(join(fresh, BASE_DIR), update.shipped);
+    await writeVersionJson(fresh, await nextJson(s, update, target));
+  } catch (err) {
+    await rm(staging, { recursive: true, force: true });
+    throw err;
+  }
+  const old = join(staging, 'old');
+  await rename(target, old);
+  try {
+    await rename(fresh, target);
+  } catch (err) {
+    await rename(old, target);
+    throw err;
+  }
+  await rm(staging, { recursive: true, force: true });
+}
+
+/** Applies a version's update as previewed: stale when the three inputs changed since the token, unresolved while a conflict has no
+ * choice. Choices that match no conflict are ignored. Answers the version's workspaces. */
+export function applyUpdate(s: ItemSources, id: string, version: string, token: string, choices: UpdateChoices): Promise<{ workspaces: string[] } | StoreRefusal> {
+  return withTempDir(async (dir) => {
+    const update = await loadUpdate(s, id, version, dir);
+    if (isRefusal(update)) return update;
+    if (update.token !== token) return refusal('stale', `${id}: version ${version} or the shipped files changed since the preview`);
+    const missing = update.merges.flatMap(conflictIds).filter((conflict) => choices[conflict] === undefined);
+    if (missing.length > 0) return refusal('unresolved', `choose mine or hive for ${missing.join(', ')}`);
+    const files = new Map(
+      update.merges.flatMap((merge): [string, Buffer][] => {
+        const bytes = chosenBytes(merge, choices);
+        return bytes === undefined ? [] : [[update.outPath(merge.path), bytes]];
+      }),
+    );
+    await swapIn(s, update, files);
+    return { workspaces: update.version.workspaces };
   });
 }

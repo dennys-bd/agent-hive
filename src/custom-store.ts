@@ -3,6 +3,7 @@
 // render) only after a write that happened. The Hive never writes to the shipped plugin or to a workspace's repository.
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { applyUpdate, type UpdateChoices } from './custom-merge.js';
 import { BASE_DIR, FILES_DIR, isName, isRefusal, isVersionName, mainFiles, NAME_MESSAGE, ORIGINAL, PATH_MESSAGE, parseVersionJson, refusal, safeFilePath, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
 import { isInside } from './ide.js';
 import { customRoot, type FileSet, HIVE_ORIGIN, itemDir, type ItemRef, type ItemSources, listFiles, originFiles, pluginVersion, resolveRef, versionDir, versionFiles } from './item-sources.js';
@@ -29,6 +30,7 @@ export interface CustomStore {
   assign(id: string, workspace: string, version: string | null): Promise<StoreResult>;
   revert(id: string, version: string): Promise<StoreResult>;
   createItem(kind: ItemKind, name: string): Promise<StoreResult>;
+  applyUpdate(id: string, version: string, token: string, choices: UpdateChoices): Promise<StoreResult>;
 }
 
 const exists = (path: string): Promise<boolean> =>
@@ -260,5 +262,7 @@ export function createCustomStore(deps: CustomStoreDeps): CustomStore {
     assign: (id, workspace, version) => queued((s) => assign(s, id, workspace, version)),
     revert: (id, version) => queued((s) => revert(s, id, version)),
     createItem: (kind, name) => queued((s) => createItem(s, kind, name)),
+    // Queued like a save, so an apply never interleaves with one, and onChange re-renders the version's workspaces after it (#324)
+    applyUpdate: (id, version, token, choices) => queued((s) => applyUpdate(s, id, version, token, choices)),
   };
 }
