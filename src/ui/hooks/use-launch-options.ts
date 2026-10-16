@@ -10,6 +10,7 @@ export function useLaunchOptions(workspace?: string): LaunchOptions | undefined 
   const [options, setOptions] = useState<LaunchOptions>();
   useEffect(() => {
     let isLive = true;
+    setOptions(undefined); // another workspace's agents are never offered while its own list loads
     const query = workspace === undefined ? '' : `?workspace=${encodeURIComponent(workspace)}`;
     getJson<LaunchOptions>(`/launch-options${query}`).then((answer) => { if (isLive) setOptions(answer); }, (err: Error) => { toast.error(err.message); });
     return () => { isLive = false; };

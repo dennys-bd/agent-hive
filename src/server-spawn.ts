@@ -209,6 +209,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
     const server = { port, ptyId, secret, withHive: true };
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
+    await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before launch reads the folder
     const run: AgentRun = {
       ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
       protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
@@ -261,6 +262,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
     const [mcpPath, promptPath, protocolText] = files;
+    await plugin.ready(); // #316: as spawn's, after the last await
     const run: AgentRun = {
       ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
       session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),

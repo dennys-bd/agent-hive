@@ -108,6 +108,7 @@ async function renderTemplates(tmp: string, workspace: string, log: Pick<Logger,
       failed.add(itemPath(path));
       continue;
     }
+    await rm(join(tmp, deliveredName(path)), GONE); // a symlink left there by hand is replaced, never written through
     await writeFile(join(tmp, deliveredName(path)), result.text);
     await rm(join(tmp, path));
   }
@@ -126,7 +127,7 @@ async function swap(dir: string, tmp: string, old: string): Promise<void> {
     await rename(old, dir).catch(() => undefined);
     throw err;
   }
-  await rm(old, GONE);
+  await rm(old, GONE).catch(() => undefined); // the new folder is in: a leftover .old-* goes with the next write
 }
 
 // What a write needs besides its config; `present` is the set of workspaces with a folder, shared with dir()
@@ -177,8 +178,8 @@ async function sweep(ctx: Ctx, config: RenderConfig): Promise<void> {
     if (workspace !== undefined && kept.has(workspace)) continue;
     if (workspace !== undefined) ctx.present.delete(workspace); // before the folder goes: a launch in between must not name it
     const dir = join(ctx.root, entry);
+    await removeCodexWorkspace(dir, ctx.env()); // first: once the folder is gone, nothing names its Codex copy
     await rm(dir, GONE);
-    await removeCodexWorkspace(dir, ctx.env());
   }
 }
 
