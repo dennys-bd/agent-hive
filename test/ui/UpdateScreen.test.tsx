@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { CatalogueItem, ItemVersion, UpdateConflict, UpdatePreview } from '../../src/types';
 import { PluginsView } from '@/components/plugins/PluginsView';
+import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
 import { setLanguage } from '@/i18n';
 import { itemOf, json, WORKSPACES } from './plugins-fixtures';
@@ -32,6 +33,7 @@ function stubUpdate({ catalogue = [PLAN], preview = () => json(PREVIEW), apply =
   let items = catalogue;
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     if (path === '/api/items') return json(items);
+    if (!path.endsWith('/update')) return json({ error: 'not stubbed' }, 404); // the editor's read of the item it returns to (#319)
     if (init?.method !== 'POST') return preview();
     const answer = apply();
     if (answer.ok) items = [APPLIED];
@@ -48,9 +50,10 @@ const reads = (mock: FetchMock, path: string): number => mock.mock.calls.filter(
 // The view as the dock mounts it, outside a header slot provider, so the head renders in place
 function View() {
   const plugins = usePlugins(true);
+  const editor = useItemEditor(plugins);
   return (
     <>
-      <PluginsView plugins={plugins} workspaces={WORKSPACES} />
+      <PluginsView plugins={plugins} editor={editor} workspaces={WORKSPACES} fontFamily="monospace" />
       <button type="button" onClick={() => plugins.open({ kind: 'update', id: PLAN.id, version: 'mine' })}>open-update</button>
     </>
   );
@@ -164,4 +167,32 @@ test('a read with no update left reads the catalogue again and opens the item (#
   await enter(user);
   await waitFor(() => expect(isOnItem()).toBe(true));
   expect(reads(fetchMock, '/api/items')).toBe(2);
+});
+
+test("an item in update available heads its chip as a button that opens its first updated version's update; one updated version has no select (#325)", async () => {
+  const user = userEvent.setup();
+  const fetchMock = stubUpdate();
+  render(<View />);
+  await user.click(await screen.findByRole('button', { name: /^new-plan/ }));
+  await user.click(screen.getByRole('button', { name: 'update available' }));
+  expect(await screen.findByText('hive 0.14 → 0.15')).toBeInTheDocument();
+  expect(reads(fetchMock, PATH)).toBe(1);
+  expect(rows(screen.getByRole('list', { name: 'changes' }))).toHaveLength(3);
+  expect(screen.getByRole('region', { name: HIVE })).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'version' })).not.toBeInTheDocument();
+});
+
+test('with two updated versions the head selects between them, the up-to-date one left out; choosing tdd reads its update (#325)', async () => {
+  const user = userEvent.setup();
+  const fetchMock = stubUpdate({ catalogue: [{ ...PLAN, versions: [updated('mine'), updated('tdd'), { ...updated('old'), updateAvailable: false }] }] });
+  render(<View />);
+  await user.click(await screen.findByRole('button', { name: /^new-plan/ }));
+  await user.click(screen.getByRole('button', { name: 'update available' }));
+  await screen.findByText('hive 0.14 → 0.15');
+  // the keyboard opens it: in jsdom the mouse click's pointerup lands on the first item and closes the list at once
+  screen.getByRole('combobox', { name: 'version' }).focus();
+  await user.keyboard('{Enter}');
+  expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual(['mine', 'tdd']);
+  await user.click(screen.getByRole('option', { name: 'tdd' }));
+  await waitFor(() => expect(reads(fetchMock, '/api/items/hive%3Anew-plan/versions/tdd/update')).toBe(1));
 });
