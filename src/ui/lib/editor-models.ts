@@ -85,8 +85,8 @@ export async function readFile(activityId: string, path: string): Promise<FileTe
 
 type Languages = ReadonlyArray<{ id: string; extensions?: string[]; filenames?: string[] }>;
 
-// Monaco's language for the file: by its name (Dockerfile), else by its extension; plaintext for neither
-function languageOf(languages: Languages, path: string): string {
+// Monaco's language for the file: by its name (Dockerfile), else by its extension; plaintext for neither (#319: the skill editor's files too)
+export function languageOf(languages: Languages, path: string): string {
   const name = path.split('/').at(-1) ?? path;
   const dot = name.lastIndexOf('.');
   const extension = dot > 0 ? name.slice(dot).toLowerCase() : '';

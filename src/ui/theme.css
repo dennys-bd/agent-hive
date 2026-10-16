@@ -22,6 +22,7 @@
   --input: #2a313b;
   --ring: #3b82f6;
   --empty: #3a4250;
+  --template-branch: #151a20; /* #319: a conditional block's lines in the skill editor (handoff 11b) */
   --working: #2e9e5b;
   --waiting: #e0b52a;
   --review: #3b82f6;
@@ -65,6 +66,7 @@
   --input: #e3e7ed;
   --ring: #2563eb;
   --empty: #c3c9d3;
+  --template-branch: #eceff3;
   --working: #1a7f45;
   --waiting: #9a6700;
   --review: #2563eb;

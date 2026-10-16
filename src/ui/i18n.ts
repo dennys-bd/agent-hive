@@ -1976,6 +1976,7 @@ const en = {
   'plugins.file.taken': 'that file already exists',
   'plugins.file.badPath': 'a file path is relative, with no ..',
   'plugins.file.failed': 'could not create the file',
+  'plugins.editor.conditions': 'conditions',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3947,6 +3948,7 @@ const pt: Record<MessageKey, string> = {
   'plugins.file.taken': 'esse arquivo já existe',
   'plugins.file.badPath': 'um caminho de arquivo é relativo, sem ..',
   'plugins.file.failed': 'não foi possível criar o arquivo',
+  'plugins.editor.conditions': 'condições',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

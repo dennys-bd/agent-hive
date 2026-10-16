@@ -115,3 +115,10 @@
 .monaco-editor .hive-change-add::before { background: var(--working); }
 .monaco-editor .hive-change-modify::before { background: var(--waiting); }
 .monaco-editor .hive-change-delete::before { content: ''; position: absolute; top: -4px; left: 3px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 4px solid var(--destructive); }
+
+/* #319: the skill editor's template marks (handoff 11b, 11m): neutrals only, colour stays for status */
+.monaco-editor .template-pill { background: var(--muted); border-radius: 4px; }
+.monaco-editor .template-ref { text-decoration: underline; text-underline-offset: 3px; }
+.monaco-editor .template-marker { color: var(--muted-foreground); }
+.monaco-editor .template-branch { background: var(--template-branch); box-shadow: inset 3px 0 0 var(--empty); }
+.monaco-editor .template-dim { opacity: 0.35; }
