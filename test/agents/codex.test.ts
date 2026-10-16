@@ -200,8 +200,8 @@ test('a specialized agent\'s instructions follow the protocol after a blank line
 
 const HEADLESS: HeadlessRun = { dir: '/t', schema: '{"type":"object"}', schemaPath: '/t/schema.json', answerPath: '/t/answer.txt' };
 
-test('the headless run is exec in a read-only sandbox, no session kept, no MCP server, the schema and the -o file; -m only when given; the prompt on stdin (#330)', () => {
-  const head = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '-c', 'mcp_servers={}', '--output-schema', '/t/schema.json', '-o', '/t/answer.txt'];
+test('the headless run is exec in a read-only sandbox, no session kept, none of the user config (so none of its MCP servers), the schema and the -o file; -m only when given; the prompt on stdin (#330)', () => {
+  const head = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema', '/t/schema.json', '-o', '/t/answer.txt'];
   assert.deepEqual(codexRunner.headless(HEADLESS), [...head, '-']);
   assert.deepEqual(codexRunner.headless({ ...HEADLESS, model: 'gpt-5' }), [...head, '-m', 'gpt-5', '-']);
 });

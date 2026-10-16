@@ -42,10 +42,12 @@ async function gone(pid: number): Promise<boolean> {
 
 test("Claude's answer is its structured_output: the prompt on stdin, its own temp folder, no hostEnv, nothing left behind (#330)", async (t) => {
   const cli = await fakeCli(t, 'claude',
-    `prompt="$(cat)"; printf '{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":1,"text":"%s|%s|%s"}}' "$prompt" "\${CLAUDECODE:-unset}" "$(basename "$PWD")"`);
-  const result = await runHeadless(input('claude'), { env: cli.env, tmpRoot: cli.tmpRoot });
+    `prompt="$(cat)"; printf '{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":1,"text":"%s|%s|%s|%s|%s"}}' "$prompt" "\${CLAUDECODE:-unset}" "\${HIVE_SECRET:-unset}" "\${HIVE_MCP_SECRET:-unset}" "$(basename "$PWD")"`);
+  // every runner's hostEnv and the Hive's own, whatever the run's agent: a Hive started inside a Codex run holds the outer HIVE_MCP_SECRET
+  const env = { ...cli.env, HIVE_SECRET: 'hive', HIVE_MCP_SECRET: 'outer' };
+  const result = await runHeadless(input('claude'), { env, tmpRoot: cli.tmpRoot });
   assert.ok('answer' in result, JSON.stringify(result));
-  assert.match((JSON.parse(result.answer) as { text: string }).text, /^the prompt\|unset\|hive-headless-/);
+  assert.match((JSON.parse(result.answer) as { text: string }).text, /^the prompt\|unset\|unset\|unset\|hive-headless-/);
   assert.deepEqual(await readdir(cli.tmpRoot), []);
 });
 

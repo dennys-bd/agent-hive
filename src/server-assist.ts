@@ -8,6 +8,7 @@ import { applyProposal, ASSIST_SCHEMA, assistPrompt, type AssistTarget, parsePro
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
 import type { ItemSources } from './item-sources.js';
+import { isLaunchModel } from './launch-pick.js';
 import { readCatalogue, readItem } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { bodyOf, ITEMS_ERROR_MESSAGE } from './server-plugins.js';
@@ -36,7 +37,7 @@ const ASSIST_BODY = z.object({
   request: z.string().min(1),
   selection: z.object({ startLine: z.number().int(), endLine: z.number().int() }).optional(),
   agent: z.enum(AGENT_IDS).optional(),
-  model: z.string().min(1).optional(),
+  model: z.string().refine(isLaunchModel, 'not a model name').optional(), // the open routes' rule: never a leading '-', bounded
 });
 type AssistBody = z.infer<typeof ASSIST_BODY>;
 
@@ -86,15 +87,22 @@ async function prepare(res: Response, deps: AssistRouteDeps, sources: ItemSource
   return { agent, ...(body.model === undefined ? {} : { model: body.model }), prompt, target, text: body.text };
 }
 
-async function runAndAnswer(res: Response, deps: AssistRouteDeps, id: string, run: Prepared): Promise<void> {
+// res, not req: req's close fires as soon as express.json has read the body; res's before the answer means the client went away. Listened
+// to before any await, since close fires once: a client gone while the item is read must not leave a run going for nobody
+function cancelOnClose(res: Response): AbortSignal {
   const controller = new AbortController();
-  // res, not req: req's close fires as soon as express.json has read the body; res's before the answer means the client went away
   res.on('close', () => {
     if (!res.writableFinished) controller.abort();
   });
-  const input: HeadlessInput = { agent: run.agent, ...(run.model === undefined ? {} : { model: run.model }), prompt: run.prompt, schema: ASSIST_SCHEMA, signal: controller.signal };
-  const result = await (deps.runHeadless ?? runHeadless)(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
-  if (controller.signal.aborted) return void deps.log.info(`assist: ${id} cancelled`);
+  return controller.signal;
+}
+
+async function runAndAnswer(res: Response, deps: AssistRouteDeps, id: string, run: Prepared, signal: AbortSignal): Promise<void> {
+  const input: HeadlessInput = { agent: run.agent, ...(run.model === undefined ? {} : { model: run.model }), prompt: run.prompt, schema: ASSIST_SCHEMA, signal };
+  const result = signal.aborted
+    ? undefined
+    : await (deps.runHeadless ?? runHeadless)(input).catch((err: unknown): HeadlessResult => ({ failure: 'could not start', detail: errorMessage(err) }));
+  if (result === undefined || signal.aborted) return void deps.log.info(`assist: ${id} cancelled`);
   if ('failure' in result) {
     deps.log.warn(`assist: ${id} ${run.agent} run failed: ${result.failure}: ${clip(result.detail)}`);
     return fail(res, HTTP_BAD_GATEWAY, MESSAGES.run_failed, 'run_failed');
@@ -118,19 +126,18 @@ export function registerAssistRoutes(app: Express, deps: AssistRouteDeps): void 
     if (!body) return;
     const id = String(req.params.id);
     const { config } = current.runtime;
+    // busy before any read: a second request costs no catalogue I/O, and no await between this check and the add
+    if (inFlight.has(id)) return fail(res, HTTP_CONFLICT, MESSAGES.busy, 'busy');
+    inFlight.add(id);
+    const signal = cancelOnClose(res);
     try {
       const run = await prepare(res, deps, { home: deps.home, pluginSource: deps.pluginSource, workspaces: config.comb.workspaces }, id, body, config.defaultAgent);
-      if (!run) return;
-      if (inFlight.has(id)) return fail(res, HTTP_CONFLICT, MESSAGES.busy, 'busy'); // no await between this check and the add
-      inFlight.add(id);
-      try {
-        await runAndAnswer(res, deps, id, run);
-      } finally {
-        inFlight.delete(id);
-      }
+      if (run) await runAndAnswer(res, deps, id, run, signal);
     } catch (err) {
       deps.log.error(`assist: ${id} failed: ${errorMessage(err)}`);
       if (!res.headersSent) fail(res, HTTP_SERVER_ERROR, ITEMS_ERROR_MESSAGE);
+    } finally {
+      inFlight.delete(id);
     }
   });
 }

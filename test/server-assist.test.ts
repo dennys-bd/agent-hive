@@ -106,6 +106,8 @@ test('400 for a bad body or a selection outside the text; 404 for an unknown ite
   const status = async (id: string, body: unknown): Promise<number> => (await ask(base, id, body))[0];
   assert.equal(await status(BUILD, { ...BODY, request: undefined }), 400);
   assert.equal(await status(BUILD, { ...BODY, agent: 'gemini' }), 400);
+  assert.equal(await status(BUILD, { ...BODY, model: '--help' }), 400, 'a model never reads as an option');
+  assert.equal(await status(BUILD, { ...BODY, model: 'x'.repeat(101) }), 400);
   assert.equal(await status(BUILD, { ...BODY, selection: { startLine: 6, endLine: 6 } }), 400);
   assert.equal(await status('hive:nope', BODY), 404);
   assert.equal(await status(BUILD, { ...BODY, version: 'ghost' }), 404);
