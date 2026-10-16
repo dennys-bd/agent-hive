@@ -1,6 +1,8 @@
 // The plugins view's pure parts (#313): which items a section and a group show, an item's mark, its usage line. Compiled by the main tsc too,
 // hence the .js imports.
-import type { CatalogueItem, ItemKind } from '../../types.js';
+import type { Catalogue } from '../../template-map.js';
+import { deliveredName } from '../../template.js';
+import type { CatalogueItem, ItemKind, ItemRead } from '../../types.js';
 import { t } from '../i18n.js';
 
 /** The Hive plugin's origin, as item-sources.ts names it; that module reads the disk, so the UI keeps its own copy. */
@@ -57,4 +59,29 @@ export function usageText(item: CatalogueItem, items: readonly CatalogueItem[]):
   if (item.usage.length === 0) return NO_USAGE;
   const nameOf = (id: string): string => items.find((i) => i.id === id)?.name ?? id;
   return item.usage.map((use) => (use.kind === 'stage' ? t('plugins.usage.stage', { stage: use.stage }) : t('plugins.usage.caller', { name: nameOf(use.id) }))).join(', ');
+}
+
+const MINE = 'mine'; // custom-store.ts's MINE: that module reads the disk
+
+/** The version the editor opens until 3.6's selector (#319, decision 4): mine when the item has it, else its first, else the original. */
+export const openVersionOf = (item: CatalogueItem): string | null =>
+  item.versions.some((v) => v.name === MINE) ? MINE : (item.versions[0]?.name ?? null);
+
+/** The file the editor opens first (#319): the one delivered as the item's main file, else the first. */
+export function mainPathOf({ item, files }: ItemRead): string | undefined {
+  const main = item.kind === 'skill' ? 'SKILL.md' : `${item.name}.md`;
+  return files.find((file) => deliveredName(file.path) === main)?.path ?? files[0]?.path;
+}
+
+/** The map's catalogue (#319, decision 16): what a bare word in a text may name, a Hive item under the plugin's namespace. */
+export function catalogueOf(items: readonly CatalogueItem[]): Catalogue {
+  const nameOf = (item: CatalogueItem): string => (item.origin === HIVE_ORIGIN ? `hive:${item.name}` : item.name);
+  return { skills: items.filter((i) => i.kind === 'skill').map(nameOf), agents: items.filter((i) => i.kind === 'specialist').map(nameOf) };
+}
+
+/** The head's "saved 14:31" (#319, decision 10): the time today, the short date before it on another day. */
+export function savedLabel(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso);
+  const time = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return at.toDateString() === now.toDateString() ? time : `${at.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} ${time}`;
 }

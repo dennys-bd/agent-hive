@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { CatalogueItem, ItemVersion } from '../../src/types';
+import type { CatalogueItem, ItemRead, ItemVersion } from '../../src/types';
 import type { BasedOn } from '../../src/template';
 
 const version = (name: string): ItemVersion => ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false });
@@ -28,6 +28,67 @@ export function stubFetch(post: (body: unknown) => Response = (body) => json(ite
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     if (path === '/api/items' && init?.method === 'POST') return post(JSON.parse(String(init.body)));
     return path === '/api/items' ? json(catalogue()) : json({ ok: true });
+  });
+  vi.stubGlobal('fetch', mock);
+  return mock;
+}
+
+/** new-build's template in the editor's tests (#319). Lines: header 1–6, `# new-build` 7, the introduction 9, `## Input` 11, a chain 14–18
+ * (if 14, else 16, endif 18), `## Stops` 20. */
+export const BUILD_TEXT = [
+  '---',
+  'name: new-build',
+  'description: builds the plan',
+  'variables:',
+  '  delivery: { values: [stacked, single], default: single, workspaces: { hive-site: stacked } }',
+  '---',
+  '# new-build',
+  '',
+  'Intro, then /hive:new-pr.',
+  '',
+  '## Input',
+  '',
+  'Read the plan for {{ workspace }}.',
+  '{% if delivery == "stacked" %}',
+  'One PR per slice.',
+  '{% else %}',
+  'A single PR.',
+  '{% endif %}',
+  '',
+  '## Stops',
+  '',
+  'Stop at the end.',
+  '',
+].join('\n');
+/** new-spec's original: a plain SKILL.md with a header and no Liquid. */
+export const SPEC_TEXT = '---\nname: new-spec\ndescription: writes the task spec\n---\n# new-spec\n\n## Input\n\nThe issue.\n';
+
+/** A read as GET /api/items/:id answers it: the catalogue's item, the version, each file (with savedAt when given). */
+export function readOf(id: string, version: string | null, files: Record<string, string>, savedAt?: string): ItemRead {
+  const item = CATALOGUE.find((i) => i.id === id) ?? itemOf(id);
+  return { item, version, files: Object.entries(files).map(([path, text]) => ({ path, text, ...(savedAt === undefined ? {} : { savedAt }) })) };
+}
+
+export interface SaveBody { version: string | null; path: string; text: string; from?: string }
+/** The editor's server (#319): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. */
+export interface ItemsServer {
+  catalogue: CatalogueItem[];
+  reads: Record<string, ItemRead>;
+  save?(id: string, body: SaveBody): Response;
+  revert?(id: string, version: string): Response;
+}
+
+/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], PUT …/files and DELETE …/versions/:version. */
+export function stubItems(server: ItemsServer) {
+  const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
+    const url = new URL(path, 'http://hive');
+    const [, , , rawId, , version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions', version
+    if (rawId === undefined) return json(server.catalogue);
+    const id = decodeURIComponent(rawId);
+    if (init?.method === 'PUT') return server.save?.(id, JSON.parse(String(init.body)) as SaveBody) ?? json({ error: 'no save' }, 500);
+    if (init?.method === 'DELETE') return server.revert?.(id, decodeURIComponent(version ?? '')) ?? json({ error: 'no revert' }, 500);
+    const read = server.reads[`${id}@${url.searchParams.get('version') ?? ''}`];
+    return read === undefined ? json({ error: `no item ${id}` }, 404) : json(read);
   });
   vi.stubGlobal('fetch', mock);
   return mock;
