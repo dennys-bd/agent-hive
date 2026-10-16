@@ -203,7 +203,6 @@ async function changesOf(dir: string, merge: FileMerge): Promise<Change[]> {
 /** What applying a version's update would change: clean changes and conflicts, ordered by file, then by position. Writes nothing. */
 export function previewUpdate(s: ItemSources, id: string, version: string): Promise<UpdatePreview | StoreRefusal> {
   return withTempDir(async (dir) => {
-    await recoverStaging(s.home);
     const update = await loadUpdate(s, id, version, dir);
     if (isRefusal(update)) return update;
     const changes: Change[] = [];
@@ -283,7 +282,7 @@ async function swapIn(s: ItemSources, update: Update, files: Side): Promise<void
     await writeAll(join(fresh, BASE_DIR), update.shipped);
     await writeVersionJson(fresh, await nextJson(s, update, target));
   } catch (err) {
-    await rm(work, { recursive: true, force: true });
+    await rm(work, { recursive: true, force: true }).catch(() => undefined); // the write's own error is the one to report
     throw err;
   }
   const old = join(work, OLD);
