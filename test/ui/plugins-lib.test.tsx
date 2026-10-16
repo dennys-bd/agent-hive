@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { basedOnTitle, countOf, groupsOf, markOf, sectionOfScreen, usageText } from '@/lib/plugins';
+import { basedOnTitle, countOf, groupsOf, itemIdOf, markOf, sectionOfScreen, usageText } from '@/lib/plugins';
 import { CATALOGUE, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
@@ -39,4 +39,9 @@ test("sectionOfScreen: a list's section, an item's kind, and mcp and protocol as
   expect(sectionOfScreen({ kind: 'item', id: 'hive:architect' }, CATALOGUE)).toBe('specialists');
   expect(sectionOfScreen({ kind: 'protocol' }, CATALOGUE)).toBe('protocol');
   expect(sectionOfScreen({ kind: 'item', id: 'hive:gone' }, CATALOGUE)).toBeUndefined();
+});
+
+test("an update screen belongs to its item: its section is the item kind's, and itemIdOf names the item for it as for the item screen (#325)", () => {
+  expect(sectionOfScreen({ kind: 'update', id: 'hive:architect', version: 'mine' }, CATALOGUE)).toBe('specialists');
+  expect([itemIdOf({ kind: 'update', id: 'hive:new-plan', version: 'mine' }), itemIdOf({ kind: 'item', id: 'hive:new-plan' }), itemIdOf({ kind: 'mcp' })]).toEqual(['hive:new-plan', 'hive:new-plan', undefined]);
 });

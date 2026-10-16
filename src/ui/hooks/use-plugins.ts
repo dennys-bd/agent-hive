@@ -8,6 +8,7 @@ export interface NewItem { kind: ItemKind; name: string; origin: string } // ori
 export interface Plugins {
   items?: CatalogueItem[]; // undefined until the first read answers
   hasFailed: boolean;
+  reload(): Promise<void>; // reads the catalogue again: the update screen's after an apply or a gone update (#325)
   screen: PluginScreen; open(screen: PluginScreen): void;
   query: string; setQuery(query: string): void;
   filter?: string; setFilter(workspace: string | undefined): void; // the list's; never kept (decision 12)
@@ -60,5 +61,5 @@ export function usePlugins(isShown: boolean): Plugins {
       return REFUSAL[statusOf(err)] ?? 'plugins.new.failed';
     }
   }, [load, open]);
-  return { items, hasFailed, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create };
+  return { items, hasFailed, reload: load, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create };
 }
