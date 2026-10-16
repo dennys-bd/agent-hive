@@ -11,7 +11,7 @@ import type { HookPayload } from '../types.js';
 import { agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexWorkspace, roleFile, tomlString } from './codex-home.js';
 import { readCodexPlanLimits } from './codex-limits.js';
 import { ownsRollout, readRollout, rolloutFiles } from './codex-transcript.js';
-import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
+import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
 export const MCP_SECRET_ENV = 'HIVE_MCP_SECRET';
@@ -93,6 +93,13 @@ function hookPayload(raw: HookPayload): HookPayload | undefined {
   return raw.hook_event_name === 'SessionEnd' ? undefined : raw;
 }
 
+// #330: exec reads the prompt from stdin (-) and writes its last message, under the schema, to -o's file. A read-only sandbox, no rollout kept,
+// and the user's own MCP servers replaced by none: a -c of the whole table replaces it, where a dotted key would merge
+const headless = (run: HeadlessRun): string[] => [
+  'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '-c', 'mcp_servers={}', '--output-schema', run.schemaPath,
+  '-o', run.answerPath, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), '-',
+];
+
 export const codexRunner: AgentRunner = {
   hostEnv: [MCP_SECRET_ENV], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
@@ -100,6 +107,8 @@ export const codexRunner: AgentRunner = {
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
   copy: (run, from) => ['fork', from, ...overrides(run), TRUST_FLAG, ...run.extraArgs],
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear, §8), as Claude's
+  headless,
+  headlessAnswer: (_stdout, answerFile) => (answerFile?.trim() ? answerFile.trim() : undefined), // stdout is exec's progress, never the answer
   // its shim (#932); the roles' old folder (#316); the fallback folder's copy and roles, which hooks-settings' prepareHome copied first. The run
   // inherits the Hive's CODEX_HOME, so it reads this copy. Each workspace's are the render's (plugin-render.ts)
   prepareHome: async (home) => {

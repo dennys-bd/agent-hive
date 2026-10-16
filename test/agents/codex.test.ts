@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { codexRunner } from '../../src/agents/codex.js';
 import { agentRoles, marketplaceName, pluginCacheDir, roleFile, tomlString } from '../../src/agents/codex-home.js';
-import type { AgentRun } from '../../src/agents/runner.js';
+import type { AgentRun, HeadlessRun } from '../../src/agents/runner.js';
 import { hookCommand, PLUGIN_DIR, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
@@ -196,4 +196,18 @@ test('a specialized agent\'s instructions follow the protocol after a blank line
   assert.equal(developerText({ ...RUN, withHive: false, specializedAgent: designer }), designer.instructions);
   assert.equal(developerText(STAGE_RUN), PROTOCOL, 'no agent: the protocol alone, as before');
   assert.equal(developerText(RUN), undefined);
+});
+
+const HEADLESS: HeadlessRun = { dir: '/t', schema: '{"type":"object"}', schemaPath: '/t/schema.json', answerPath: '/t/answer.txt' };
+
+test('the headless run is exec in a read-only sandbox, no session kept, no MCP server, the schema and the -o file; -m only when given; the prompt on stdin (#330)', () => {
+  const head = ['exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '-c', 'mcp_servers={}', '--output-schema', '/t/schema.json', '-o', '/t/answer.txt'];
+  assert.deepEqual(codexRunner.headless(HEADLESS), [...head, '-']);
+  assert.deepEqual(codexRunner.headless({ ...HEADLESS, model: 'gpt-5' }), [...head, '-m', 'gpt-5', '-']);
+});
+
+test("headlessAnswer reads Codex's -o file, never its stdout; a missing or blank file is no answer (#330)", () => {
+  assert.equal(codexRunner.headlessAnswer('progress lines', '{"from":1,"to":1,"text":"x"}\n'), '{"from":1,"to":1,"text":"x"}');
+  assert.equal(codexRunner.headlessAnswer('{"from":1}', undefined), undefined);
+  assert.equal(codexRunner.headlessAnswer('', '  \n'), undefined);
 });
