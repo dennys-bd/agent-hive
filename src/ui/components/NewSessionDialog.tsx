@@ -74,7 +74,7 @@ interface NewSessionDialogProps { target: RunTarget; defaultAgent: AgentId; agen
 /** Nova sessão (#257, handoff §2): a free session in the activity with a picked agent, model, specialized agent and arguments, only for this
  * session (the config is never written). Enter opens from any field while no menu is open; Esc, × or cancel closes. */
 export function NewSessionDialog({ target, defaultAgent, agents, onOpen, onClose }: NewSessionDialogProps) {
-  const options = useLaunchOptions();
+  const options = useLaunchOptions(target.kind === 'local' ? target.workspace : target.activity.workspace); // #316: the agents its workspace gets
   const [picks, setPicks] = useState<SessionPicks>({ agent: defaultAgent, model: '', specializedAgent: '', args: '' });
   const [menu, setMenu] = useState<Menu>();
   const canOpen = isAvailable(picks.agent, agents);

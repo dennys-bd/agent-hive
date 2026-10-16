@@ -40,7 +40,7 @@ test('the dialog reads /launch-options as it opens, names the task and its branc
   shown();
   expect(screen.getByRole('dialog', { name: 'Nova sessão' })).toBeInTheDocument();
   expect(screen.getByText('#1 Task 1')).toBeInTheDocument();
-  expect(fetchMock).toHaveBeenCalledWith('/launch-options');
+  expect(fetchMock).toHaveBeenCalledWith('/launch-options?workspace=hive'); // #316: the activity's workspace's agents
   expect(await screen.findByText('claude --permission-mode auto')).toBeInTheDocument(); // runs: the global args once they came
   expect(screen.getByText('hive/1-task-1')).toBeInTheDocument(); // in: the branch
   await user.keyboard('{Enter}');

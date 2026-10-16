@@ -579,3 +579,8 @@ test('while the start prepares the worktree the submit says so and offers no ver
   expect(await screen.findByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
 });
+
+test('sessão livre reads the launch options of the task\'s workspace (#316)', async () => {
+  render(<StartDialog state={state()} taskId="I4" initialMode="free" onClose={vi.fn()} />);
+  await waitFor(() => expect(fetchMock.mock.calls.map(([url]) => String(url))).toContain('/launch-options?workspace=site'));
+});
