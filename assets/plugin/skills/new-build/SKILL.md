@@ -1,12 +1,12 @@
 ---
 name: new-build
-description: Build stage for one task: resolve the conventions, then slice by slice TDD from the plan, build-fix (at most 3 tries per failure) and a code review of the slice; then one security review, the check against the spec's Done, the UI check, the walkthrough and the PRs. Autonomous, no questions; never moves the task in its source.
+description: 'Build stage for one task: resolve the conventions, then slice by slice TDD from the plan, build-fix (at most 3 tries per failure) and a code review of the slice; then one security review, the check against the spec''s Done, the UI check, the walkthrough and the PRs. Autonomous, no questions; never moves the task in its source.'
 ---
 
 # /hive:new-build
 
 Implements an approved plan on the task's branch, slice by slice, writes
-the walkthrough and opens the PRs. It is the last stage of `/hive:flow`
+the walkthrough and opens the PRs. It is the last stage of the Hive's flow
 and also works on its own. The only GitHub interaction is
 `gh pr create`; moving the task in its source is not this skill's job.
 

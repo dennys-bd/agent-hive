@@ -1,6 +1,6 @@
 ---
 name: decomposition
-description: Decomposition stage for one goal: resolve the conventions, read the goal, then build a tree layer by layer (each layer's design first, then the split, stopping at nodes one agent finishes in one pass), pausing for the user where a mistake would spread, and write and commit the decomposition file where a spec goes, for the Hive to turn into issues and a PR. Interactive; never writes to GitHub itself and never pushes.
+description: 'Decomposition stage for one goal: resolve the conventions, read the goal, then build a tree layer by layer (each layer''s design first, then the split, stopping at nodes one agent finishes in one pass), pausing for the user where a mistake would spread, and write and commit the decomposition file where a spec goes, for the Hive to turn into issues and a PR. Interactive; never writes to GitHub itself and never pushes.'
 ---
 
 # /hive:decomposition
