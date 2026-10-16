@@ -31,6 +31,7 @@ function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: Templa
   const latest = useRef(props);
   useEffect(() => { latest.current = props; });
   const { modelKey, path } = props;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: modelKey is not read inside, but a new key must rebuild the model
   useEffect(() => {
     const element = host.current;
     if (element === null) return undefined;
@@ -97,6 +98,7 @@ export function TemplateText(props: TemplateTextProps) {
     <div className="flex min-h-0 min-w-0 flex-1">
       <div ref={host} className="min-h-0 min-w-0 flex-1" />
       {chips.length > 0 && (
+        // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
         <div role="group" aria-label={t('plugins.editor.conditions')} className="relative w-[230px] shrink-0 overflow-hidden border-l">
           {chips.map((chip) => (
             <button

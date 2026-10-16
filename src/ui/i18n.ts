@@ -1977,6 +1977,10 @@ const en = {
   'plugins.file.badPath': 'a file path is relative, with no ..',
   'plugins.file.failed': 'could not create the file',
   'plugins.editor.conditions': 'conditions',
+  'plugins.map.label': 'map',
+  'plugins.map.introduction': 'introduction',
+  'plugins.map.subsections': '{count} subsections',
+  'plugins.map.drag': 'drag',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3949,6 +3953,10 @@ const pt: Record<MessageKey, string> = {
   'plugins.file.badPath': 'um caminho de arquivo é relativo, sem ..',
   'plugins.file.failed': 'não foi possível criar o arquivo',
   'plugins.editor.conditions': 'condições',
+  'plugins.map.label': 'mapa',
+  'plugins.map.introduction': 'introdução',
+  'plugins.map.subsections': '{count} subseções',
+  'plugins.map.drag': 'arrastar',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
