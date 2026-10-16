@@ -100,7 +100,7 @@ export function UpdateScreen({ plugins, id, version }: { plugins: Plugins; id: s
   const left = (preview?.changes.filter(isConflict) ?? []).filter((conflict) => update.choices[conflict.id] === undefined).length;
   return (
     <section aria-label={t('plugins.update.screen')} className="flex min-h-0 flex-1 flex-col">
-      <HeaderSlot><UpdateHead item={item} preview={preview} /></HeaderSlot>
+      <HeaderSlot><UpdateHead item={item} version={version} preview={preview} onVersion={(next) => open({ kind: 'update', id, version: next })} /></HeaderSlot>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
         {notice && <p role="alert" className={`text-xs ${notice === 'plugins.update.stale' ? 'text-muted-foreground' : 'text-destructive'}`}>{t(notice)}</p>}
         {preview && <Body item={item} preview={preview} choices={update.choices} choose={update.choose} />}

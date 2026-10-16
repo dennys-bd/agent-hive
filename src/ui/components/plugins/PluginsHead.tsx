@@ -43,19 +43,36 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
   );
 }
 
-function ItemHead({ item }: { item: CatalogueItem }) {
+// decision 2: until the version menu (#320) exists, the chip is the way into a version's update: the first with one, in catalogue order
+function ItemHead({ item, onUpdate }: { item: CatalogueItem; onUpdate(version: string): void }) {
   const look = STATE_LOOK[item.state];
-  const chip = <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>;
+  const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
+  const chip = updated === undefined
+    ? <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>
+    : <button type="button" title={t('plugins.update.review')} onClick={() => onUpdate(updated.name)} className={`${CHIP} ${look.chip} ${NO_DRAG} hover:bg-accent`}>{t(look.label)}</button>;
   return <Head title={item.name} isMono chip={chip} meta={t(`plugins.section.${sectionOf(item.kind)}`)} />;
 }
 
 const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
 
-/** The update screen's head (#325, decision 5): the item's mono name, the yellow chip, and `hive <from> → <to>` once the preview answers.
- * The update screen portals it, since only it holds the preview. */
-export function UpdateHead({ item, preview }: { item: CatalogueItem; preview?: UpdatePreview }) {
+export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void }
+
+/** The update screen's head (#325, decisions 3 and 5): the item's mono name, the yellow chip, `hive <from> → <to>` once the preview answers;
+ * a select of the versions with an update when there are two or more, since nothing else reaches the second one until #320. The update
+ * screen portals it, since only it holds the preview. */
+export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProps) {
   const look = STATE_LOOK['update available'];
-  return <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)} />;
+  const updated = item.versions.filter((v) => v.updateAvailable);
+  return (
+    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)}>
+      {updated.length >= 2 && (
+        <Select value={version} onValueChange={onVersion}>
+          <SelectTrigger size="sm" aria-label={t('plugins.update.version')} className={NO_DRAG}><SelectValue /></SelectTrigger>
+          <SelectContent>{updated.map((v) => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
+        </Select>
+      )}
+    </Head>
+  );
 }
 
 /** The header's centre in the plugins view (#313, decision 17). The slots 3.5 and later fill (the version selector, the reviewer, revert) are
@@ -66,5 +83,5 @@ export function PluginsHead({ plugins, workspaces }: { plugins: Plugins; workspa
   if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
-  return item === undefined ? null : <ItemHead item={item} />;
+  return item === undefined ? null : <ItemHead item={item} onUpdate={(version) => plugins.open({ kind: 'update', id: item.id, version })} />;
 }

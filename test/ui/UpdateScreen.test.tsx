@@ -165,3 +165,31 @@ test('a read with no update left reads the catalogue again and opens the item (#
   await waitFor(() => expect(isOnItem()).toBe(true));
   expect(reads(fetchMock, '/api/items')).toBe(2);
 });
+
+test("an item in update available heads its chip as a button that opens its first updated version's update; one updated version has no select (#325)", async () => {
+  const user = userEvent.setup();
+  const fetchMock = stubUpdate();
+  render(<View />);
+  await user.click(await screen.findByRole('button', { name: /^new-plan/ }));
+  await user.click(screen.getByRole('button', { name: 'update available' }));
+  expect(await screen.findByText('hive 0.14 → 0.15')).toBeInTheDocument();
+  expect(reads(fetchMock, PATH)).toBe(1);
+  expect(rows(screen.getByRole('list', { name: 'changes' }))).toHaveLength(3);
+  expect(screen.getByRole('region', { name: HIVE })).toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'version' })).not.toBeInTheDocument();
+});
+
+test('with two updated versions the head selects between them, the up-to-date one left out; choosing tdd reads its update (#325)', async () => {
+  const user = userEvent.setup();
+  const fetchMock = stubUpdate({ catalogue: [{ ...PLAN, versions: [updated('mine'), updated('tdd'), { ...updated('old'), updateAvailable: false }] }] });
+  render(<View />);
+  await user.click(await screen.findByRole('button', { name: /^new-plan/ }));
+  await user.click(screen.getByRole('button', { name: 'update available' }));
+  await screen.findByText('hive 0.14 → 0.15');
+  // the keyboard opens it: in jsdom the mouse click's pointerup lands on the first item and closes the list at once
+  screen.getByRole('combobox', { name: 'version' }).focus();
+  await user.keyboard('{Enter}');
+  expect((await screen.findAllByRole('option')).map((option) => option.textContent)).toEqual(['mine', 'tdd']);
+  await user.click(screen.getByRole('option', { name: 'tdd' }));
+  await waitFor(() => expect(reads(fetchMock, '/api/items/hive%3Anew-plan/versions/tdd/update')).toBe(1));
+});
