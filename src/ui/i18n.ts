@@ -1981,6 +1981,13 @@ const en = {
   'plugins.map.introduction': 'introduction',
   'plugins.map.subsections': '{count} subsections',
   'plugins.map.drag': 'drag',
+  'plugins.file.tabs': 'files',
+  'plugins.file.new': 'new file',
+  'plugins.file.name': 'new file name',
+  'plugins.file.unsaved': 'unsaved',
+  'plugins.mode.label': 'mode',
+  'plugins.mode.visual': 'visual',
+  'plugins.mode.text': 'text',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3957,6 +3964,13 @@ const pt: Record<MessageKey, string> = {
   'plugins.map.introduction': 'introdução',
   'plugins.map.subsections': '{count} subseções',
   'plugins.map.drag': 'arrastar',
+  'plugins.file.tabs': 'arquivos',
+  'plugins.file.new': 'novo arquivo',
+  'plugins.file.name': 'nome do novo arquivo',
+  'plugins.file.unsaved': 'não salvo',
+  'plugins.mode.label': 'modo',
+  'plugins.mode.visual': 'visual',
+  'plugins.mode.text': 'texto',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
