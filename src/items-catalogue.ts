@@ -5,11 +5,51 @@ import { join } from 'node:path';
 import { BASE_DIR, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE } from './custom-versions.js';
 import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
 import { parseTemplate } from './template.js';
-import type { CatalogueItem, ItemRead, ItemState, ItemVersion } from './types.js';
+import { templateRefs } from './template-refs.js';
+import type { CatalogueItem, ItemRead, ItemState, ItemUsage, ItemVersion, Stage } from './types.js';
 
 type Header = Pick<CatalogueItem, 'description' | 'basedOn' | 'error'>;
 const NAME_TAKEN_MESSAGE = 'name taken by a skill';
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+export type StageRef = Pick<Stage, 'name' | 'prompt'>;
+type UsageTarget = Pick<CatalogueItem, 'id' | 'origin' | 'kind' | 'name'>;
+// An item with its main file's text, what usageOf scans; '' for an item with no main file
+interface Entry { item: CatalogueItem; text: string }
+
+const NAME_END = '(?![\\w-])'; // new-build is not new-build-fast
+// Repository names are listed as the disk has them (originNames), so a name is escaped before it becomes a pattern
+const escapeName = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// What runs a skill as a stage: `/hive:<name>` for the Hive's, `/<name>` for a repository's, never inside a path or a URL. A specialist is
+// never a stage's command. A stage prompt is plain prose, not a template, so it is not read through templateRefs
+function stagePattern(item: UsageTarget): RegExp | undefined {
+  if (item.kind !== 'skill') return undefined;
+  const command = item.origin === HIVE_ORIGIN ? `hive:${escapeName(item.name)}` : escapeName(item.name);
+  return new RegExp(`(?<![\\w./:-])/${command}${NAME_END}`);
+}
+
+// Whether a reference of src/template-refs.ts (the one definition of a reference, shared with the lint) names the item. Hive items are named
+// by `hive:<name>` (a skill also by `/<name>`); a repository's skill by `/<name>`. A repository's specialist has no namespace, so nothing names it.
+// ponytail: a bare `/name` counts only inside inline code, as templateRefs reads it; prose is not scanned
+const names = (item: UsageTarget, ref: { kind: string; name: string }): boolean => {
+  if (ref.name !== item.name) return false;
+  if (item.origin === HIVE_ORIGIN) return ref.kind === 'hive' || (ref.kind === 'bare' && item.kind === 'skill');
+  return ref.kind === 'bare' && item.kind === 'skill';
+};
+
+/** Each item's usage (#313), aligned with `items`: the stages whose prompt runs it, in config order, then every other item whose main text
+ * (texts[i] is items[i]'s) names it, in catalogue order. An item sharing an id (a name clash) is never its own caller.
+ * ponytail: every text is parsed once and tested against every item, O(n²); a catalogue is tens of items. */
+export function usageOf(items: readonly UsageTarget[], texts: readonly string[], stages: readonly StageRef[]): ItemUsage[][] {
+  const refs = texts.map((text) => (text === '' ? [] : templateRefs(parseTemplate(text))));
+  return items.map((item) => {
+    const stage = stagePattern(item);
+    const ran = stage === undefined ? [] : stages.filter((s) => s.prompt !== undefined && stage.test(s.prompt)).map((s): ItemUsage => ({ kind: 'stage', stage: s.name }));
+    const callers = items.filter((other, i) => other.id !== item.id && (refs[i] ?? []).some((ref) => names(item, ref)));
+    return [...ran, ...callers.map((c): ItemUsage => ({ kind: 'caller', id: c.id }))];
+  });
+}
 
 // The main file's header through #310's parser. One that does not parse leaves the item listed with its error, so the user can fix it
 function headerOf(text: string | undefined): Header {
@@ -67,17 +107,18 @@ function stateOf(origin: string, versions: ItemVersion[]): ItemState {
 }
 
 // An item from its origin and its custom folder; undefined when neither holds it
-async function readEntry(sources: ItemSources, ref: ItemRef): Promise<CatalogueItem | undefined> {
+async function readEntry(sources: ItemSources, ref: ItemRef): Promise<Entry | undefined> {
   const origin = await originFiles(sources, ref);
   const { versions, error: versionError } = await readVersions(sources, ref, origin);
   if (origin === undefined && versions.length === 0 && versionError === undefined) return undefined;
   const first = versions[0];
   const shown = origin ?? (first === undefined ? undefined : await versionFiles(sources.home, ref, first.name));
-  const header = headerOf(shown && (await mainText(ref, shown)));
+  const text = shown && (await mainText(ref, shown));
+  const header = headerOf(text);
   const used = new Set(versions.flatMap((v) => v.workspaces));
   const users = origin === undefined ? [] : ref.origin === HIVE_ORIGIN ? sources.workspaces.map((w) => w.name) : [ref.origin];
   const error = header.error ?? (versionError === undefined ? undefined : { message: versionError });
-  return {
+  const item: CatalogueItem = {
     id: itemId(ref),
     ...ref,
     description: header.description,
@@ -87,8 +128,10 @@ async function readEntry(sources: ItemSources, ref: ItemRef): Promise<CatalogueI
     versions,
     onOriginal: users.filter((w) => !used.has(w)),
     files: shown?.paths ?? [],
+    usage: [], // readCatalogue fills it: usage needs every item's text
     ...(error === undefined ? {} : { error }),
   };
+  return { item, text: text ?? '' };
 }
 
 // One name per origin (#315): a repository's specialist whose name its skill took is shown with the clash, never stored or delivered.
@@ -104,37 +147,41 @@ async function takenEntry(sources: ItemSources, ref: ItemRef): Promise<Catalogue
     versions: [],
     onOriginal: [],
     files: files?.paths ?? [],
+    usage: [],
     error: { message: NAME_TAKEN_MESSAGE },
   };
 }
 
-async function originItems(sources: ItemSources, origin: string): Promise<CatalogueItem[]> {
+async function originItems(sources: ItemSources, origin: string): Promise<Entry[]> {
   const [skills, specialists, stored] = await Promise.all([originNames(sources, origin, 'skill'), originNames(sources, origin, 'specialist'), childFolders(originDir(sources.home, origin))]);
   const names = [...new Set([...skills, ...specialists, ...stored])].sort((a, b) => a.localeCompare(b, 'en'));
   const items = await Promise.all(
-    names.map(async (name): Promise<CatalogueItem[]> => {
+    names.map(async (name): Promise<Entry[]> => {
       const ref = await resolveRef(sources, { origin, name });
       const entry = ref && (await readEntry(sources, ref));
       const taken = skills.includes(name) && specialists.includes(name) ? [await takenEntry(sources, { origin, kind: 'specialist', name })] : [];
-      return [...(entry === undefined ? [] : [entry]), ...taken];
+      return [...(entry === undefined ? [] : [entry]), ...taken.map((item): Entry => ({ item, text: '' }))];
     }),
   );
   return items.flat();
 }
 
-/** Every item: `hive` first, then the workspaces in config order. */
-export async function readCatalogue(sources: ItemSources): Promise<CatalogueItem[]> {
+/** Every item: `hive` first, then the workspaces in config order, each with its usage (#313) from `stages` and the items' texts. */
+export async function readCatalogue(sources: ItemSources, stages: readonly StageRef[] = []): Promise<CatalogueItem[]> {
   // ponytail: a workspace named `hive` would share the Hive origin's ids and folders; its repository items are not listed
   const origins = [HIVE_ORIGIN, ...sources.workspaces.map((w) => w.name).filter((name) => name !== HIVE_ORIGIN)];
-  return (await Promise.all(origins.map((origin) => originItems(sources, origin)))).flat();
+  const entries = (await Promise.all(origins.map((origin) => originItems(sources, origin)))).flat();
+  const usage = usageOf(entries.map((e) => e.item), entries.map((e) => e.text), stages);
+  return entries.map((e, i) => ({ ...e.item, usage: usage[i] ?? [] }));
 }
 
-/** One item by id; undefined for a malformed id, an origin the config does not have, or no such item. */
+/** One item by id, its usage [] (only the whole catalogue knows who names it); undefined for a malformed id, an origin the config does not
+ * have, or no such item. */
 export async function findItem(sources: ItemSources, id: string): Promise<CatalogueItem | undefined> {
   const key = parseItemId(id);
   if (key === undefined || (key.origin !== HIVE_ORIGIN && !sources.workspaces.some((w) => w.name === key.origin))) return undefined;
   const ref = await resolveRef(sources, key);
-  return ref && readEntry(sources, ref);
+  return ref && (await readEntry(sources, ref))?.item;
 }
 
 /** An item with the files of its original (version null) or of one version. */

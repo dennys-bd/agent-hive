@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { type CustomStore, MINE } from './custom-store.js';
 import { isRefusal, type RefusalCode, type StoreRefusal } from './custom-versions.js';
 import { HIVE_ORIGIN, type ItemSources, itemId } from './item-sources.js';
-import { findItem, readCatalogue, readItem } from './items-catalogue.js';
+import { findItem, readCatalogue, readItem, type StageRef } from './items-catalogue.js';
 import type { Logger } from './log.js';
 import { ITEM_KINDS } from './types.js';
 
@@ -37,13 +37,13 @@ const RENAME = z.object({ name: z.string() });
 const ASSIGN = z.object({ workspace: z.string(), version: z.string().nullable() });
 
 export interface PluginRouteDeps {
-  requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces'] } } } } | undefined;
+  requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces']; stages: readonly StageRef[] } } } } | undefined;
   store: CustomStore;
   home: string;
   pluginSource: string;
   log: Pick<Logger, 'error'>;
 }
-type Handle = (req: Request, res: Response, sources: ItemSources) => Promise<void>;
+type Handle = (req: Request, res: Response, sources: ItemSources, stages: readonly StageRef[]) => Promise<void>;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const refuse = (res: Response, refused: StoreRefusal): void => void res.status(STATUS[refused.code]).json({ error: refused.message });
@@ -63,7 +63,8 @@ function route(deps: PluginRouteDeps, handle: Handle) {
     const current = deps.requireLive(res);
     if (!current) return;
     try {
-      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: current.runtime.config.comb.workspaces });
+      const { comb } = current.runtime.config;
+      await handle(req, res, { home: deps.home, pluginSource: deps.pluginSource, workspaces: comb.workspaces }, comb.stages);
     } catch (err) {
       deps.log.error(`plugins: ${req.method} ${req.path} failed: ${errorMessage(err)}`);
       res.status(HTTP_SERVER_ERROR).json({ error: ITEMS_ERROR_MESSAGE });
@@ -85,8 +86,8 @@ async function answerItem(res: Response, sources: ItemSources, id: string): Prom
 }
 
 function registerItemRoutes(app: Express, deps: PluginRouteDeps): void {
-  app.get('/api/items', route(deps, async (_req, res, s) => {
-    res.json(await readCatalogue(s));
+  app.get('/api/items', route(deps, async (_req, res, s, stages) => {
+    res.json(await readCatalogue(s, stages));
   }));
   app.get('/api/items/:id', route(deps, async (req, res, s) => {
     const { version } = req.query;

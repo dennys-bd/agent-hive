@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { isRefusal } from '../src/custom-versions.js';
-import { readCatalogue, readItem } from '../src/items-catalogue.js';
+import { readCatalogue, readItem, usageOf } from '../src/items-catalogue.js';
+import type { CatalogueItem } from '../src/types.js';
 import { ARCHITECT, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, REPO_SPECIALIST, SKILL, SPECIALIST } from './custom-fixture.js';
 
 const find = async (f: Fixture, id: string) => (await readCatalogue(f)).find((i) => i.id === id);
@@ -110,4 +111,41 @@ test('a repository that ships a skill and a specialist of one name lists the ski
   assert.deepEqual(deploys[1]?.files, ['deploy.md']);
   const read = await readItem(f, DEPLOY, null);
   assert.equal(isRefusal(read) ? read.code : read.item.kind, 'skill', 'the id addresses the skill');
+});
+
+const target = (id: string, kind: CatalogueItem['kind']): Pick<CatalogueItem, 'id' | 'origin' | 'kind' | 'name'> => {
+  const [origin = '', name = ''] = id.split(':');
+  return { id, origin, kind, name };
+};
+
+test('usageOf: a skill a stage runs, a caller by /hive:name, by hive:name and by /name, and an item named by nobody; a path or a longer name is no call (#313)', () => {
+  const items = [target('hive:new-build', 'skill'), target('hive:new-pr', 'skill'), target('hive:architect', 'specialist'), target('hive-site:deploy', 'skill'), target('hive:lonely', 'skill')];
+  const texts = [
+    'Open the PR with `/hive:new-pr`, after hive:architect reviews.\n', // new-build calls new-pr and the specialist
+    'Deploy the preview first: `/deploy`, never /tmp or deploy.\n', // new-pr calls the repository's skill by its command, in inline code (the references of src/template-refs.ts)
+    'Read docs/new-pr.md, never new-build-fast.\n', // neither is a call
+    '',
+    '',
+  ];
+  const stages = [{ name: 'build', prompt: '/hive:new-build {url}' }, { name: 'wait' }, { name: 'ship', prompt: 'run /deploy then stop' }];
+  assert.deepEqual(usageOf(items, texts, stages), [
+    [{ kind: 'stage', stage: 'build' }],
+    [{ kind: 'caller', id: 'hive:new-build' }],
+    [{ kind: 'caller', id: 'hive:new-build' }],
+    [{ kind: 'stage', stage: 'ship' }, { kind: 'caller', id: 'hive:new-pr' }],
+    [],
+  ]);
+});
+
+test('readCatalogue answers each item with its usage, from the stages given and the main texts; without stages none runs anything (#313)', async (t) => {
+  const f = await fixture(t);
+  await put(f.pluginSource, { 'skills/new-build/SKILL.md': `${SKILL}Dispatch hive:architect.\n` });
+  const items = await readCatalogue(f, [{ name: 'build', prompt: '/hive:new-build {url}' }]);
+  assert.deepEqual(items.map((i) => [i.id, i.usage]), [
+    [ARCHITECT, [{ kind: 'caller', id: BUILD }]],
+    [BUILD, [{ kind: 'stage', stage: 'build' }]],
+    [DEPLOY, []],
+    [HELPER, []],
+  ]);
+  assert.deepEqual((await readCatalogue(f)).find((i) => i.id === BUILD)?.usage, []);
 });

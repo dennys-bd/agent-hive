@@ -7,19 +7,19 @@ import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, ItemRead } from '../src/types.js';
+import type { CatalogueItem, ItemRead, Stage } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
-async function serve(t: TestContext, f: Fixture): Promise<{ base: string; lines: string[] }> {
+async function serve(t: TestContext, f: Fixture, stages: Stage[] = []): Promise<{ base: string; lines: string[] }> {
   const app = express();
   app.use(express.json());
   const { log, lines } = fakeLog();
   const store = createCustomStore({ home: f.home, pluginSource: f.pluginSource, workspaces: () => f.workspaces, onChange: () => undefined, log });
   registerPluginRoutes(app, {
-    requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces } } } }),
+    requireLive: () => ({ runtime: { config: { comb: { workspaces: f.workspaces, stages } } } }),
     store,
     home: f.home,
     pluginSource: f.pluginSource,
@@ -103,4 +103,12 @@ test('the daemon serves /api/items, and a PATCH without x-hive-ui is refused by 
   assert.equal((await hiveFetch(`${base}/api/items`)).status, 409, 'registered, and waiting for a config like every live route');
   const res = await hiveFetch(`${base}${at(BUILD)}/versions/mine`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"name":"x"}' });
   assert.deepEqual([res.status, await res.json()], [403, { error: 'origem não permitida' }]);
+});
+
+test("GET /api/items answers each item's usage from the config's stages (#313)", async (t) => {
+  const f = await fixture(t);
+  const { base } = await serve(t, f, [{ name: 'build', from: {}, prompt: '/hive:new-build {url}' }]);
+  const items = (await call(base, 'GET', '/api/items'))[1] as CatalogueItem[];
+  assert.deepEqual(items.find((i) => i.id === BUILD)?.usage, [{ kind: 'stage', stage: 'build' }]);
+  assert.deepEqual(items.find((i) => i.id === DEPLOY)?.usage, []);
 });
