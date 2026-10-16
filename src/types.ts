@@ -1175,13 +1175,13 @@ export interface CombConfig {
 /** The Hive's operations a key can start (#449, #585, #573: was OperationId, which named the operation, not its key);
  * src/shortcut-registry.ts holds each one's defaults per platform, scope and name. The fixed keys are not shortcuts (#481): FIXED_SHORTCUTS there. */
 export type OperationId =
-  | 'viewFlow' | 'viewActivities' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
+  | 'viewFlow' | 'viewActivities' | 'viewPlugins' | 'search' | 'searchOperations' | 'newActivity' | 'runCommand' | 'toggleConsole' | 'problems'
   | 'toggleLeft' | 'toggleRight' | 'shortcutMap' | 'fullScreen' | 'closeWindow'
   | 'newTerminal' | 'newSession' | 'newSessionDialog' | 'openDiff' | 'newFile' | 'close' | 'nextTab' | 'prevTab' | 'splitSame' | 'splitTerminalVertical'
   | 'splitTerminalHorizontal' | 'clear' | 'findInTerminal' | 'nextPane' | 'prevPane' | 'nextActivity' | 'prevActivity' | 'toggleSideTab' | 'sleepSession' | 'sleepAll'
   | 'searchTasks' | 'refreshFlow' | 'goBack' | 'zoomOut' | 'zoomIn' | 'zoomReset' // #911: back from a page; #910: the flow canvas's zoom
   | 'treeNewFile' | 'treeNewFolder' | 'treeRename' | 'treeDelete' | 'treeReveal' | 'treeOpenTerminal' | 'treeCopyPath' | 'treeCopyRelativePath' | 'treeCopyCheckoutPath' // #818, #131
-  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings'; // #689
+  | 'confirm' | 'feedbackQueue' | 'switchStartMode' | 'searchSettings' | 'searchPlugins'; // #689, #313
 /** Only the user's changes (#449): a normalized Electron accelerator rebinds, null turns off, a missing id is the registry's default. */
 export type Shortcuts = Partial<Record<OperationId, string | null>>;
 

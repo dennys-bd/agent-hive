@@ -1644,12 +1644,14 @@ const en = {
   'shortcuts.clear': 'clear the terminal', // #448
   'shortcuts.findInTerminal': 'find in terminal', // #12
   'shortcuts.viewFlow': 'go to flow', // #533
+  'shortcuts.viewPlugins': 'go to plugins', // #313
   'shortcuts.viewActivities': 'go to activities',
   'shortcuts.newActivity': 'new activity', // redesign 08
   'shortcuts.search': 'search',
   'shortcuts.searchOperations': 'search commands', // #584
   'shortcuts.searchTasks': 'search tasks', // #542
   'shortcuts.searchSettings': 'search settings', // #689
+  'shortcuts.searchPlugins': 'search plugins', // #313
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
@@ -1725,6 +1727,7 @@ const en = {
   'shortcuts.scope.activities': 'activities',
   'shortcuts.scope.files': 'files tree',
   'shortcuts.scope.flow': 'flow',
+  'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.dialogs': 'dialogs and feedback',
   'shortcuts.scope.settings': 'settings',
   'shortcuts.soon': '(soon)', // #585: an operation that does not exist yet
@@ -3573,12 +3576,14 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.clear': 'limpar o terminal',
   'shortcuts.findInTerminal': 'buscar no terminal', // #12
   'shortcuts.viewFlow': 'ir para fluxo',
+  'shortcuts.viewPlugins': 'ir para plugins', // #313
   'shortcuts.viewActivities': 'ir para atividades',
   'shortcuts.newActivity': 'nova atividade',
   'shortcuts.search': 'buscar',
   'shortcuts.searchOperations': 'buscar comandos', // #584
   'shortcuts.searchTasks': 'buscar tarefas', // #542
   'shortcuts.searchSettings': 'buscar configuração', // #689
+  'shortcuts.searchPlugins': 'buscar nos plugins', // #313
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
@@ -3654,6 +3659,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.scope.activities': 'atividades',
   'shortcuts.scope.files': 'árvore de arquivos',
   'shortcuts.scope.flow': 'fluxo',
+  'shortcuts.scope.plugins': 'plugins',
   'shortcuts.scope.dialogs': 'diálogos e feedback',
   'shortcuts.scope.settings': 'configurações',
   'shortcuts.soon': '(em breve)',
