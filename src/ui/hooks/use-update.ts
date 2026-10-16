@@ -53,13 +53,14 @@ export function useUpdate(id: string, version: string, leave: () => Promise<void
     void readPreview(path).then((read) => { if (isLive) landOpening(read); });
     return () => { isLive = false; };
   }, [path]);
-  // decision 13: a stale token reads the update again with no choice made, since the conflicts may differ; 14: a gone update leaves;
-  // 15: anything else says so and keeps the choices
+  // decision 13: a stale token reads the update again with no choice made, since the conflicts may differ (a failed re-read keeps the
+  // preview and the choices made on it); 14: a gone update leaves; 15: anything else says so and keeps the choices
   const refused = useCallback(async (code: unknown): Promise<void> => {
     if (code === 'no_update') return leave();
     if (code !== 'stale') return setNotice('plugins.update.applyFailed');
+    if (!(await land(await readPreview(path)))) return;
     setChoices({});
-    if (await land(await readPreview(path))) setNotice('plugins.update.stale');
+    setNotice('plugins.update.stale');
   }, [leave, land, path]);
   const apply = useCallback(async (): Promise<void> => {
     if (preview === undefined) return;

@@ -144,6 +144,17 @@ test('a stale apply reads the update again, clears the choice and says so; a fai
   expect(reads(fetchMock, '/api/items')).toBe(2);
 });
 
+test('a stale apply whose re-read fails keeps the preview and the choice made on it (#325)', async () => {
+  const user = userEvent.setup();
+  let previews = 0;
+  stubUpdate({ preview: () => (++previews === 1 ? json(PREVIEW) : json({ error: 'EIO' }, 500)), apply: () => json({ error: 'changed', code: 'stale' }, 409) });
+  await openUpdate(user);
+  await user.click(screen.getByRole('button', { name: 'keep mine' }));
+  await user.click(screen.getByRole('button', { name: 'apply update' }));
+  expect(await screen.findByText('could not read the update')).toHaveAttribute('role', 'alert');
+  expect(screen.getByRole('button', { name: 'keep mine' })).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('a side whose file was deleted shows file deleted in its column (#325)', async () => {
   const user = userEvent.setup();
   stubUpdate({ preview: () => json({ ...PREVIEW, changes: [{ ...CONFLICT, hive: null }] }) });
