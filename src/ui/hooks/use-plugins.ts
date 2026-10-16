@@ -13,12 +13,13 @@ export interface Plugins {
   filter?: string; setFilter(workspace: string | undefined): void; // the list's; never kept (decision 12)
   isCreating: boolean; setCreating(isCreating: boolean): void;
   create(item: NewItem): Promise<MessageKey | undefined>; // undefined: created, opened, read again
+  reload(): Promise<void>; // the catalogue again, after a write of the editor (#319)
 }
 
 const LIST: PluginScreen = { kind: 'list', section: 'skills' };
 // A refusal's HTTP status as the copy the field shows (decision 22): the server's own words never reach the screen
 const REFUSAL: Readonly<Record<number, MessageKey>> = { 400: 'plugins.new.badName', 404: 'plugins.new.unknownWorkspace', 409: 'plugins.new.taken' };
-const statusOf = (err: unknown): number => (err instanceof Error && 'status' in err && typeof err.status === 'number' ? err.status : 0);
+export const statusOf = (err: unknown): number => (err instanceof Error && 'status' in err && typeof err.status === 'number' ? err.status : 0);
 
 /** The plugins view's state (#313): the catalogue, read on entering the view and after each write it makes (decision 21: nothing else writes
  * items while it is open, so no polling), the open screen, the search, the list's workspace filter and the new-item field. */
@@ -60,5 +61,5 @@ export function usePlugins(isShown: boolean): Plugins {
       return REFUSAL[statusOf(err)] ?? 'plugins.new.failed';
     }
   }, [load, open]);
-  return { items, hasFailed, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create };
+  return { items, hasFailed, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create, reload: load };
 }

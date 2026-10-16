@@ -1971,6 +1971,11 @@ const en = {
   'plugins.new.taken': 'that name is taken',
   'plugins.new.unknownWorkspace': 'that workspace is no longer in the settings',
   'plugins.new.failed': 'could not create it; see hive.log',
+  'plugins.editor.saveFailed': 'could not save the file',
+  'plugins.editor.revertFailed': 'could not go back to the original',
+  'plugins.file.taken': 'that file already exists',
+  'plugins.file.badPath': 'a file path is relative, with no ..',
+  'plugins.file.failed': 'could not create the file',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3937,6 +3942,11 @@ const pt: Record<MessageKey, string> = {
   'plugins.new.taken': 'esse nome já existe',
   'plugins.new.unknownWorkspace': 'esse workspace não está mais nas configurações',
   'plugins.new.failed': 'não foi possível criar; veja o hive.log',
+  'plugins.editor.saveFailed': 'não foi possível salvar o arquivo',
+  'plugins.editor.revertFailed': 'não foi possível voltar para a original',
+  'plugins.file.taken': 'esse arquivo já existe',
+  'plugins.file.badPath': 'um caminho de arquivo é relativo, sem ..',
+  'plugins.file.failed': 'não foi possível criar o arquivo',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
