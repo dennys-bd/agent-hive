@@ -55,7 +55,7 @@ const refuse = (res: Response, refused: StoreRefusal): void => void res.status(S
 const idOf = (req: Request): string => String(req.params.id);
 
 // A body the schema refuses is a 400 naming its first field; names and paths are the store's to check
-function bodyOf<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
+export function bodyOf<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
   const parsed = schema.safeParse(req.body ?? {});
   if (parsed.success) return parsed.data;
   const issue = parsed.error.issues[0];

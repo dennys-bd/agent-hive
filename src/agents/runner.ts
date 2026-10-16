@@ -33,11 +33,23 @@ export interface LspServerEntry { command: string; args: string[]; extensionToLa
 /** A workspace's servers, each named after its binary (#803). */
 export type LspServers = Readonly<Record<string, LspServerEntry>>;
 
+/** One headless run (#330): no pty, no hook, no Hive MCP server; a prompt in on stdin and one answer out. Every path is inside `dir`, the
+ * run's own temp folder. `schema` is the answer's JSON Schema as text (Claude takes it inline), `schemaPath` the same text on disk (Codex). */
+export interface HeadlessRun {
+  dir: string;
+  schema: string;
+  schemaPath: string;
+  answerPath: string; // where an agent that writes its last message to a file (Codex's -o) puts it
+  model?: string;
+}
+
 export interface AgentRunner {
   hostEnv: readonly string[]; // what no child of the Hive may inherit from the process the Hive was started from
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
   clear(run: AgentRun): LaunchArg[] | undefined;
+  headless(run: HeadlessRun): string[]; // #330: the argv after the command; the prompt goes on stdin
+  headlessAnswer(stdout: string, answerFile: string | undefined): string | undefined; // #330: the final message's text; answerFile: answerPath's content
   strayPattern(ptyId: string): string; // #927: what killStray / isStrayAlive match in this agent's argv for the run of ptyId
   runEnv(server: McpServer): Record<string, string>; // #927: what the run's env carries for this agent, over the workspace's (the MCP secret for Codex)
   // #928: the agent's hook as the reducer reads it, before anything else reads it; undefined drops it. The body is any local process's

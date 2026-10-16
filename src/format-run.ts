@@ -21,7 +21,8 @@ export type FormatOutcome = { text: string } | { error: string; log: FormatLog }
 /** A run's outcome, with the tool's refusal by its project's own config (#749): only its console run tells, and the save goes on as typed. */
 export type RunOutcome = FormatOutcome | { declined: true };
 
-interface Ran { stdout?: Buffer; stderr: string; failure?: string }
+export interface Ran { stdout?: Buffer; stderr: string; failure?: string }
+export const CANCELLED = 'cancelled';
 interface Process { command: string; args: string[]; env: NodeJS.ProcessEnv }
 
 // Why a run failed, in the words its console run ends with. Never an error's message: Node writes the command line into it, and a custom
@@ -53,35 +54,40 @@ export function collect(stream: Readable | null, cap: number, onOver: () => void
   return () => Buffer.concat(chunks);
 }
 
-// The process with `input` on its stdin, its output capped at EDITOR_FILE_MAX, in a group of its own (spawn: execFile drops `detached`). The
-// timer and the cap settle at once and kill the group, so a grandchild still holding the pipe never holds the save. A stdin error (EPIPE: it
-// exited without reading) is left to the close event, which carries the tool's exit code and stderr
-function run({ command, args, env }: Process, input: string, cwd: string, timeoutMs: number): Promise<Ran> {
+/** The process with `input` on its stdin, its output capped at EDITOR_FILE_MAX, in a group of its own (spawn: execFile drops `detached`). The
+ * timer, the cap and the signal's abort (#330: the headless run's cancel) settle at once and kill the group, so a grandchild still holding the
+ * pipe never holds the caller. A failure keeps the stdout it got: a CLI may say why there (claude -p --output-format json). A stdin error
+ * (EPIPE: it exited without reading) is left to the close event, which carries the exit code and stderr. */
+export function runCapped({ command, args, env }: Process, input: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<Ran> {
   return new Promise((resolve) => {
     let settled = false;
     const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
     const stop = (failure: string): void => {
       if (settled) return; // once reaped, the pid may be another group's
       killGroup(child.pid);
-      settle({ stderr: stderr().toString('utf8'), failure });
+      settle({ stdout: stdout(), stderr: stderr().toString('utf8'), failure });
     };
     const over = (): void => stop(`output over ${EDITOR_FILE_MAX} bytes`);
     const stdout = collect(child.stdout, EDITOR_FILE_MAX, over);
     const stderr = collect(child.stderr, EDITOR_FILE_MAX, over);
     const timer = setTimeout(() => stop(`timed out after ${timeoutMs} ms`), timeoutMs);
+    const cancel = (): void => stop(CANCELLED);
+    signal?.addEventListener('abort', cancel, { once: true });
     function settle(ran: Ran): void {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
       resolve(ran);
     }
     child.on('error', (err: NodeJS.ErrnoException) => settle({ stderr: '', failure: err.code === 'ENOENT' ? `${command} not found` : `failed to run (${err.code ?? 'unknown'})` }));
-    child.on('close', (code, signal) => {
+    child.on('close', (code, killedBy) => {
       const err = stderr().toString('utf8');
-      settle(code === 0 ? { stdout: stdout(), stderr: err } : { stderr: err, failure: failureOf(code, signal) });
+      settle(code === 0 ? { stdout: stdout(), stderr: err } : { stdout: stdout(), stderr: err, failure: failureOf(code, killedBy) });
     });
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(input);
+    if (signal?.aborted) cancel(); // aborted before the spawn: there is still a group to kill
   });
 }
 
@@ -117,7 +123,7 @@ export async function runFormatter(pick: FormatterPick, text: string, ctx: Forma
   const channel = formatChannel(ctx.workspace.name, pick.name);
   const runId = randomUUID();
   ctx.consoleStore.begin(channel, runId, runHeader(ctx.label, new Date()));
-  const ran = await run(processOf(pick, ctx), text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
+  const ran = await runCapped(processOf(pick, ctx), text, ctx.cwd, ctx.timeoutMs ?? FORMAT_TIMEOUT_MS);
   if (ran.stderr !== '') ctx.consoleStore.append(runId, crlf(ran.stderr));
   const outcome = outcomeOf(ran);
   if ('text' in outcome) {

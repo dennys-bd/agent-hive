@@ -4,7 +4,8 @@ import { claudeLspPlugin, claudeMcpConfig, prepareClaudeHome } from './claude-ho
 import { mcpConfigPattern } from '../hooks-settings.js';
 import { parseRateLimits, readPlanLimits } from './claude-limits.js';
 import { countMessages, ownsTranscript, readTranscript, sessionFiles, transcriptDir } from './claude-transcript.js';
-import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
+import { isRecord } from '../rate-limits.js';
+import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js';
 
 const MODEL_FLAG = '--model'; // what a stage's modelo is passed behind, as typed (#516)
 const PROTOCOL_FLAG = '--append-system-prompt-file'; // the Hive's protocol (#167): appended to Claude Code's own system prompt, never replacing it
@@ -31,12 +32,37 @@ const sessionWords = (session: AgentRun['session']): string[] =>
 const copyWords = (from: string, id: string, name: string | undefined): string[] =>
   ['--resume', from, '--fork-session', '--session-id', id, ...(name === undefined ? [] : [`--name=${name}`])];
 
+// #330: the prompt on stdin, the answer as JSON under the schema. --tools "" leaves no tool, --strict-mcp-config with no --mcp-config no MCP
+// server, and nothing of the run is kept or offered as a slash command
+const headless = (run: HeadlessRun): string[] => [
+  '-p', '--output-format', 'json', '--json-schema', run.schema, '--tools', '', '--strict-mcp-config', '--no-session-persistence',
+  '--disable-slash-commands', ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]),
+];
+
+// #330: -p --output-format json prints one result object. Under --json-schema the answer is its structured_output (an object, or its text);
+// without it, the text is its result. An error result is no answer
+function headlessAnswer(stdout: string): string | undefined {
+  let json: unknown;
+  try {
+    json = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(json) || json.is_error === true) return undefined;
+  const { structured_output: structured, result } = json;
+  if (typeof structured === 'string') return structured;
+  if (structured !== undefined && structured !== null) return JSON.stringify(structured);
+  return typeof result === 'string' && result !== '' ? result : undefined;
+}
+
 export const claudeRunner: AgentRunner = {
   // CLAUDECODE: a Hive started from inside Claude Code would stop the child from starting; CLAUDE_CODE_CHILD_SESSION turns its transcript off
   hostEnv: ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION'],
   launch: (run) => [...hiveFlags(run), ...run.extraArgs, ...agentWords(run), ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), ...sessionWords(run.session)],
   copy: (run, from, name) => (run.session === undefined ? undefined : [...hiveFlags(run), ...run.extraArgs, ...copyWords(from, run.session.id, name)]),
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear): there is no argv to render
+  headless,
+  headlessAnswer: (stdout) => headlessAnswer(stdout),
   strayPattern: (ptyId) => mcpConfigPattern(ptyId), // its --mcp-config path holds the pty id (#696)
   runEnv: () => ({}), // the secret is in its MCP file (0600) and curl's header file
   hookPayload: (raw) => raw, // the reducer's hook rules are Claude Code's own events (#928)

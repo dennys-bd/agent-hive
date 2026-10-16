@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AGENTS } from '../../src/agents.js';
 import { runners } from '../../src/agents/registry.js';
-import type { AgentRun } from '../../src/agents/runner.js';
+import type { AgentRun, HeadlessRun } from '../../src/agents/runner.js';
 import { ptyCommand } from '../../src/spawn.js';
 import { shellQuote } from '../../src/shell-init.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
@@ -124,4 +124,22 @@ test('a specialized agent goes behind --agent, after the agent\'s args and befor
   const { specializedAgent: _gone, ...plain } = run;
   assert.deepEqual(runners.claude.launch(plain).slice(-6), [...EXTRA, '--model', 'opus', '--session-id', ID]);
   assert.equal(runners.claude.launch(plain).includes('--agent'), false);
+});
+
+const HEADLESS: HeadlessRun = { dir: '/t', schema: '{"type":"object"}', schemaPath: '/t/schema.json', answerPath: '/t/answer.txt' };
+
+test('the headless run asks for JSON under the schema, with no tool, MCP server, saved session or slash command; --model only when given (#330)', () => {
+  const base = ['-p', '--output-format', 'json', '--json-schema', '{"type":"object"}', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands'];
+  assert.deepEqual(runners.claude.headless(HEADLESS), base);
+  assert.deepEqual(runners.claude.headless({ ...HEADLESS, model: 'opus' }), [...base, '--model', 'opus']);
+});
+
+test("headlessAnswer reads Claude's structured_output, else its result; an error result or a stdout that is not JSON is no answer (#330)", () => {
+  const answer = (stdout: string): string | undefined => runners.claude.headlessAnswer(stdout, undefined);
+  assert.equal(answer('{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":2,"text":"x"}}'), '{"from":1,"to":2,"text":"x"}');
+  assert.equal(answer('{"type":"result","is_error":false,"structured_output":"{\\"from\\":1}"}'), '{"from":1}');
+  assert.equal(answer('{"type":"result","is_error":false,"result":"{\\"from\\":1}"}'), '{"from":1}');
+  assert.equal(answer('{"type":"result","is_error":true,"result":"rate limited"}'), undefined);
+  assert.equal(answer('{"type":"result","is_error":false,"result":""}'), undefined);
+  assert.equal(answer('not json'), undefined);
 });
