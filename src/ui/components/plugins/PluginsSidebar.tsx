@@ -5,7 +5,7 @@ import { LEGEND, OriginMark, STATE_LOOK, StateDot } from '@/components/plugins/m
 import { Input } from '@/components/ui/input';
 import type { Plugins } from '@/hooks/use-plugins';
 import { t } from '@/i18n';
-import { onShortcutKey, type PanelId } from '@/lib/dock-layout';
+import { isSettingsClosed, onShortcutKey, type PanelId } from '@/lib/dock-layout';
 import { basedOnTitle, countOf, groupsOf, isListSection, KIND_OF, markOf, type PluginScreen, type Section, SECTIONS, sectionOfScreen } from '@/lib/plugins';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 
@@ -82,7 +82,7 @@ export function PluginsSidebar({ plugins, workspaces, isShown, activate }: Plugi
   useEffect(() => (isShown ? onShortcutKey([[true, 'searchPlugins']], () => {
     activate('plugins');
     search.current?.focus();
-  }) : undefined), [isShown, activate]);
+  }, isSettingsClosed) : undefined), [isShown, activate]);
   const active = sectionOfScreen(plugins.screen, plugins.items ?? NO_ITEMS);
   return (
     <nav aria-label={t('dock.plugins')} className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-3">

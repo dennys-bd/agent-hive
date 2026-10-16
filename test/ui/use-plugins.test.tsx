@@ -53,3 +53,29 @@ test("a refused create answers its status's copy and stays on the list; a failed
   await waitFor(() => expect(odd.result.current.hasFailed).toBe(true));
   expect(odd.result.current.items).toBeUndefined();
 });
+
+test("the list's workspace filter is dropped on another section's list and on leaving the view, kept on the same list (#313, decision 12)", async () => {
+  stubFetch();
+  const { result, rerender } = renderHook(({ isShown }) => usePlugins(isShown), { initialProps: { isShown: true } });
+  await waitFor(() => expect(result.current.items).toBeDefined());
+  act(() => result.current.setFilter('hive-site'));
+  act(() => result.current.open({ kind: 'list', section: 'skills' }));
+  expect(result.current.filter).toBe('hive-site');
+  act(() => result.current.open({ kind: 'list', section: 'specialists' }));
+  expect(result.current.filter).toBeUndefined();
+  act(() => result.current.setFilter('hive-site'));
+  rerender({ isShown: false });
+  expect(result.current.filter).toBeUndefined();
+});
+
+test('a read that answers after a newer one is dropped: the newer catalogue stays (#313)', async () => {
+  const answers: Array<(r: Response) => void> = [];
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => answers.push(resolve))));
+  const { result, rerender } = renderHook(({ isShown }) => usePlugins(isShown), { initialProps: { isShown: true } });
+  rerender({ isShown: false });
+  rerender({ isShown: true });
+  await waitFor(() => expect(answers).toHaveLength(2));
+  await act(async () => answers[1]?.(json([itemOf('hive:fresh')])));
+  await act(async () => answers[0]?.(json(CATALOGUE)));
+  expect(result.current.items?.map((i) => i.id)).toEqual(['hive:fresh']);
+});

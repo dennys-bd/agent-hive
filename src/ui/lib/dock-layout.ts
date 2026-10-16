@@ -150,6 +150,9 @@ const RUN_EVENT = 'hive:run-shortcut';
 // A keydown listener on window in the capture phase, stopped there, so a shortcut works with the focus inside xterm and the key never
 // reaches the pty. The bindings are read at each key; a Settings key field that is recording keeps the key. `accepts` (#818): a key it
 // refuses goes on to wherever it was going, unprevented (the files tree's keys act only with the focus in the tree). Returns the unsubscribe.
+// #689: the dashboard stays mounted under the Settings page, whose own ⌘F searches the settings; a view's ⌘F leaves the key to it
+export const isSettingsClosed = (): boolean => document.querySelector('[data-settings-page]') === null;
+
 export function onShortcutKey<T>(shortcuts: ReadonlyArray<[T, OperationId]>, act: (value: T) => void, accepts: (event: KeyboardEvent) => boolean = () => true): () => void {
   const listener = (event: KeyboardEvent): void => {
     const hit = isRecording(event.target) ? undefined : shortcuts.find(([, id]) => pressed(event, id) && !isEditorKey(id, event.target)); // #780: ⌘. in the editor is its quick fix

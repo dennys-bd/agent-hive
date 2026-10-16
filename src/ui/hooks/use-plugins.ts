@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CatalogueItem, ItemKind } from '../../types';
 import type { MessageKey } from '@/i18n';
 import { getJson, postJson } from '@/lib/api';
@@ -25,18 +25,28 @@ const statusOf = (err: unknown): number => (err instanceof Error && 'status' in 
 export function usePlugins(isShown: boolean): Plugins {
   const [items, setItems] = useState<CatalogueItem[]>();
   const [hasFailed, setFailed] = useState(false);
-  const [screen, open] = useState<PluginScreen>(LIST);
+  const [screen, setScreen] = useState<PluginScreen>(LIST);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<string>();
   const [isCreating, setCreating] = useState(false);
+  const reads = useRef(0);
+  // The filter belongs to one list (decision 12): another section's list starts unfiltered
+  const open = useCallback((next: PluginScreen): void => {
+    if (next.kind === 'list' && (screen.kind !== 'list' || screen.section !== next.section)) setFilter(undefined);
+    setScreen(next);
+  }, [screen]);
   // The server logs a failed read's detail (ITEMS_ERROR_MESSAGE); anything but a list is a failure too
+  // A read that answers after a newer one would put back an older catalogue: only the latest read lands
   const load = useCallback(async (): Promise<void> => {
+    const n = ++reads.current;
     const read = await getJson<unknown>('/api/items').catch(() => undefined);
+    if (n !== reads.current) return;
     if (Array.isArray(read)) setItems(read as CatalogueItem[]);
     setFailed(!Array.isArray(read));
   }, []);
   useEffect(() => {
     if (isShown) void load();
+    else setFilter(undefined); // never kept across a visit
   }, [isShown, load]);
   const create = useCallback(async ({ kind, name, origin }: NewItem): Promise<MessageKey | undefined> => {
     try {
@@ -49,6 +59,6 @@ export function usePlugins(isShown: boolean): Plugins {
     } catch (err) {
       return REFUSAL[statusOf(err)] ?? 'plugins.new.failed';
     }
-  }, [load]);
+  }, [load, open]);
   return { items, hasFailed, screen, open, query, setQuery, filter, setFilter, isCreating, setCreating, create };
 }

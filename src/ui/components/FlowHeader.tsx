@@ -11,7 +11,7 @@ import { useIsFlowShown } from '@/components/MainDock';
 import { Button } from '@/components/ui/button';
 import { useBackKeys } from '@/hooks/use-back-stack';
 import { t } from '@/i18n';
-import { onShortcutKey } from '@/lib/dock-layout';
+import { isSettingsClosed, onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
 
@@ -67,9 +67,6 @@ function shownWorkspaces(tasks: Task[], state: Pick<State, 'workspaces' | 'sourc
   const used = new Set(tasks.map((c) => resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks)));
   return state.workspaces.filter((name) => used.has(name));
 }
-
-// #689: the dashboard stays mounted under the Settings page, whose own ⌘F searches the settings; the key goes on unprevented
-const isSettingsClosed = (): boolean => document.querySelector('[data-settings-page]') === null;
 
 // buscar tarefas (#542), or the repository's search (#757): the searchTasks key focuses it; the header stays mounted under Atividades (#596), so the key is bound only while the flow shows. Esc clears
 // it and leaves, and its preventDefault keeps the detail panel's own Escape (#426) from closing the panel too. 200px in a source's or a repository's header (#756)

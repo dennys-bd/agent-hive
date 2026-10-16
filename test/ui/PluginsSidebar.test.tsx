@@ -81,6 +81,17 @@ test('typing filters the items by name or description; Ctrl+F opens the side and
   expect(activate).toHaveBeenCalledTimes(1);
 });
 
+test('Ctrl+F is left to Settings while its page is open over the view (#313, #689)', async () => {
+  stubFetch();
+  const activate = vi.fn();
+  render(<Sidebar activate={activate} />);
+  const page = document.body.appendChild(document.createElement('div'));
+  page.setAttribute('data-settings-page', '');
+  fireEvent.keyDown(window, { key: 'f', code: 'KeyF', ctrlKey: true });
+  expect(activate).not.toHaveBeenCalled();
+  page.remove();
+});
+
 test('a section opens its screen and an item its own, marked; the legend lists the four states (#313)', async () => {
   const user = userEvent.setup();
   stubFetch();

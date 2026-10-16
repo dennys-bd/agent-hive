@@ -15,6 +15,7 @@ export function NewItemField({ kind, workspaces, initialOrigin, onCreate, onCanc
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState(initialOrigin);
   const [error, setError] = useState<MessageKey>();
+  const [isSending, setSending] = useState(false);
   useEffect(() => {
     input.current?.focus(); // the field opens to be typed in; autoFocus is refused by the lint
   }, []);
@@ -24,9 +25,13 @@ export function NewItemField({ kind, workspaces, initialOrigin, onCreate, onCanc
       onCancel();
       return;
     }
-    if (event.key !== 'Enter') return;
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing || isSending) return; // an IME's Enter commits the text; a second Enter would answer 409
     event.preventDefault();
-    void onCreate({ kind, name: name.trim(), origin }).then(setError);
+    setSending(true);
+    void onCreate({ kind, name: name.trim(), origin }).then((refused) => {
+      setSending(false);
+      setError(refused);
+    });
   };
   const groups = [HIVE_ORIGIN, ...workspaces.filter((w) => w !== HIVE_ORIGIN)];
   return (
