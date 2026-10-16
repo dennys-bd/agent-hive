@@ -28,6 +28,7 @@ function Probe({ shell }: { shell: HeaderShell }) {
       <p data-testid="shell">{JSON.stringify(facts)}</p>
       <button type="button" onClick={() => panes.pick('files')}>pick arquivos</button>
       <button type="button" onClick={() => panes.pick('details')}>pick detalhes</button>
+      <button type="button" onClick={() => panes.pick('variables')}>pick variáveis</button>
     </header>
   );
 }
@@ -79,9 +80,9 @@ test('with an activity open its bar is in the header and none sits over the cent
 test('the shell\'s panes: none on the home; both on a task\'s activity, the active one closing the side and another opening it on its pane; arquivos alone on a local one; detalhes alone under the flow (#221)', () => {
   resetViewState({ dockLayout: DETAIL_RIGHT });
   render(<Window />);
-  expect(shell()).toEqual({ active: null, enabled: { files: false, details: false }, rightShown: false, canOpenRight: false, left: true });
+  expect(shell()).toEqual({ active: null, enabled: { files: false, details: false, variables: false }, rightShown: false, canOpenRight: false, left: true });
   openActivity(/#1 Task A/);
-  expect(shell()).toEqual({ active: 'files', enabled: { files: true, details: true }, rightShown: true, canOpenRight: true, left: true });
+  expect(shell()).toEqual({ active: 'files', enabled: { files: true, details: true, variables: false }, rightShown: true, canOpenRight: true, left: true });
   pick('pick detalhes');
   expect(shell()).toMatchObject({ active: 'details', rightShown: true });
   pick('pick detalhes'); // the active one: the side closes, as the group's × does
@@ -107,4 +108,16 @@ test('Cmd+B and Cmd+Shift+B still toggle the sides, and the shell follows (#452,
   expect(shell()).toMatchObject({ left: false });
   sideKey('left');
   expect(shell()).toMatchObject({ left: true });
+});
+
+test("in plugins the shell's pane is variáveis alone: arquivos and detalhes off, the right side opening with its key and the active pick closing it (#313)", () => {
+  render(<Window />);
+  fireEvent.click(railButton('plugins'));
+  expect(shell()).toEqual({ active: 'variables', enabled: { files: false, details: false, variables: true }, rightShown: false, canOpenRight: true, left: true });
+  sideKey('right');
+  expect(shell()).toMatchObject({ active: 'variables', rightShown: true });
+  pick('pick variáveis'); // the active one: the side closes, as the group's × does
+  expect(shell()).toMatchObject({ rightShown: false });
+  fireEvent.click(railButton('fluxo'));
+  expect(shell()).toMatchObject({ active: 'details', enabled: { variables: false } });
 });

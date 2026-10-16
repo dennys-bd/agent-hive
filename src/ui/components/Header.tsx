@@ -1,11 +1,12 @@
-import { FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
+import { BracesIcon, FolderTreeIcon, ListIcon, type LucideIcon, PanelLeftIcon, PanelRightIcon } from 'lucide-react';
 import type { EffectiveLimits, State } from '../../types.js';
 import { HeaderBrand } from '@/components/HeaderBrand';
 import { useHeaderSlotRef } from '@/components/HeaderSlot';
 import { Button } from '@/components/ui/button';
 import { keyTitle } from '@/components/ViewRail';
 import { useIsFullScreen } from '@/hooks/use-full-screen';
-import type { HeaderShell, RightPane } from '@/hooks/use-header-shell';
+import type { CenterMode } from '@/hooks/use-activity';
+import { type HeaderShell, paneHint, type RightPane } from '@/hooks/use-header-shell';
 import { t } from '@/i18n';
 import { runShortcut } from '@/lib/dock-layout';
 import { headerColumns } from '@/lib/header-columns';
@@ -18,8 +19,9 @@ interface HeaderProps extends BrandProps { shell: HeaderShell }
 // The header drags the window: each of its own controls opts out to keep its clicks; the empty space and the bar's text keep dragging
 const NO_DRAG = '[-webkit-app-region:no-drag]';
 const ICON_BUTTON = `size-7 ${NO_DRAG}`; // the handoff's ghost 28×28 around a 16px icon
-// Always both, in order: a pane the side cannot show is disabled, never removed, so the row does not jump (more panes are coming)
-const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['details', ListIcon]];
+// Always all three, in order: a pane the view cannot show is disabled, never removed, so the row does not jump. variáveis is #313's, last so
+// the other views' row keeps its place
+const PANES: ReadonlyArray<[RightPane, LucideIcon]> = [['files', FolderTreeIcon], ['details', ListIcon], ['variables', BracesIcon]];
 
 interface SideButtonProps { Icon: LucideIcon; label: string; keys: string | null; disabled?: boolean; className?: string; onClick(): void }
 
@@ -65,15 +67,18 @@ function LeftColumn({ width, isOpen, isFullScreen, state, effective }: BrandProp
   );
 }
 
-// The right column: one icon per pane, the shown one on --accent, then the shown pane's name at the column's end
-function RightColumn({ width, panes }: { width?: string; panes: HeaderShell['panes'] }) {
+// The right column: one icon per pane, the shown one on --accent, then the shown pane's name at the column's end. A pane the view never has
+// says so in its title (#313)
+function RightColumn({ width, center, panes }: { width?: string; center: CenterMode; panes: HeaderShell['panes'] }) {
   return (
     <div data-header-column="right" style={{ width }} className="flex shrink-0 items-center gap-1 overflow-hidden border-l px-2">
       {PANES.map(([pane, Icon]) => {
         const isActive = panes.active === pane;
+        const label = t(`files.tab.${pane}`);
+        const hint = paneHint(center, pane);
         return (
           <Button
-            key={pane} type="button" variant="ghost" size="icon" aria-label={t(`files.tab.${pane}`)} title={t(`files.tab.${pane}`)} aria-pressed={isActive}
+            key={pane} type="button" variant="ghost" size="icon" aria-label={label} title={hint === undefined ? label : t(hint, { pane: label })} aria-pressed={isActive}
             disabled={!panes.enabled[pane]} onClick={() => panes.pick(pane)} className={`${ICON_BUTTON} ${isActive ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}
           >
             <Icon aria-hidden="true" className="size-4" />
@@ -102,7 +107,7 @@ export function Header({ shell, state, effective }: HeaderProps) {
         {/* #295: no activity bar, the slot the flow's bar portals into; an element of its own, so React keeps the closed lead before it */}
         {shell.bar ?? <div ref={registerSlot} data-header-slot className="flex h-full min-w-0 flex-1 items-center" />}
       </div>
-      {shell.rightShown ? <RightColumn width={widths.right} panes={shell.panes} /> : (
+      {shell.rightShown ? <RightColumn width={widths.right} center={shell.center} panes={shell.panes} /> : (
         <div className="flex shrink-0 items-center pr-2">
           <SideButton Icon={PanelRightIcon} label={t('header.openRight')} keys={binding('toggleRight')} disabled={!shell.canOpenRight} onClick={() => runShortcut('toggleRight')} />
         </div>
