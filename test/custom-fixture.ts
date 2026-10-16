@@ -12,6 +12,9 @@ export const SKILL = '---\nname: new-build\ndescription: Build it\n---\n# new-bu
 export const SPECIALIST = '---\nname: architect\ndescription: Designs\n---\nYou design.\n';
 export const REPO_SKILL = '---\nname: deploy\ndescription: Deploys the site\n---\nDeploy.\n';
 export const REPO_SPECIALIST = '---\nname: helper\ndescription: Helps\n---\nHelp.\n';
+/** A SKILL.md with Markdown sections, for the update merge (#324): its Input and Output lines are the ones the tests edit. */
+export const skillDoc = (input: string, output: string): string =>
+  `---\nname: new-build\ndescription: Build it\n---\n# new-build\n\n## Input\n\n${input}\n\n## Steps\n\nStep one.\nStep two.\n\n## Output\n\n${output}\n`;
 
 type Snapshot = Record<string, string>;
 export interface Fixture extends ItemSources {

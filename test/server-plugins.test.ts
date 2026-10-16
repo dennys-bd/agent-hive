@@ -7,8 +7,8 @@ import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, ItemRead, Stage } from '../src/types.js';
-import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, snapshot } from './custom-fixture.js';
+import type { CatalogueItem, ItemRead, Stage, UpdatePreview } from '../src/types.js';
+import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -132,4 +132,23 @@ test("POST /api/items with a workspace origin writes the stub in that workspace'
   assert.equal(await status({ kind: 'skill', name: 'empty', origin: 'hive-site' }), 409, 'a skill folder with no SKILL.md yet');
   assert.equal(await status({ kind: 'skill', name: 'x', origin: 'ghost' }), 404);
   assert.deepEqual(await snapshot(f.pluginSource), f.initial.plugin, 'the shipped plugin is never written');
+});
+
+test('the update routes: GET previews, POST applies and answers the version read; stale and no update are 409, unresolved 400 (#324)', async (t) => {
+  const f = await fixture(t);
+  const { base } = await serve(t, f);
+  await put(f.pluginSource, { 'skills/new-build/SKILL.md': skillDoc('Take the issue.', 'A PR.') });
+  await call(base, 'PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: skillDoc('Take the issue number.', 'A PR.') });
+  await put(f.pluginSource, { 'skills/new-build/SKILL.md': skillDoc('Take the issue URL.', 'A PR.') });
+  const update = `${at(BUILD)}/versions/mine/update`;
+  const [status, body] = await call(base, 'GET', update);
+  const { token, changes } = body as UpdatePreview;
+  assert.deepEqual([status, changes.map((change) => change.kind)], [200, ['conflict']]);
+  assert.equal((await call(base, 'POST', update, { token: 'old', choices: {} }))[0], 409, 'stale');
+  assert.equal((await call(base, 'POST', update, { token, choices: {} }))[0], 400, 'unresolved');
+  assert.equal((await call(base, 'POST', update, { token, choices: { 'SKILL.md#0': 'both' } }))[0], 400, 'a choice is mine or hive');
+  const [applied, read] = await call(base, 'POST', update, { token, choices: { 'SKILL.md#0': 'hive' } });
+  assert.deepEqual([applied, (read as ItemRead).version, (read as ItemRead).item.state], [200, 'mine', 'customized']);
+  assert.equal((read as ItemRead).files.find((file) => file.path === 'SKILL.md')?.text, skillDoc('Take the issue URL.', 'A PR.'));
+  assert.equal((await call(base, 'GET', update))[0], 409, 'no update once applied');
 });

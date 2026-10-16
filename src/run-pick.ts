@@ -36,8 +36,9 @@ function pickRefusal(state: State, task: Task, language: Language): Refusal | un
 
 /** The run picks a start's body asks for (#290): none asked is none ({}), so today's start is unchanged; else the agent (one this machine has),
  * the session (new, previous or one of the task's, recorded by that agent) and #257's launch, checked with no continueId: a stage resume runs
- * the stage's prompt with the new picks. Absent fields stay the stage's. A 400 names the field, a 409 the run that takes no picks. */
-export function parseRunPick(body: unknown, state: State, task: Task, agents: readonly AgentAvailability[], language: Language): { runPick?: RunPick } | Refusal {
+ * the stage's prompt with the new picks. Absent fields stay the stage's. A 400 names the field, a 409 the run that takes no picks. `pluginDir`
+ * is the task's workspace's plugin folder, whose agents a specialized agent must be one of (#316). */
+export function parseRunPick(body: unknown, state: State, task: Task, agents: readonly AgentAvailability[], language: Language, pluginDir: string): { runPick?: RunPick } | Refusal {
   const asked: Record<string, unknown> = isRecord(body) ? body : {};
   if (PICK_FIELDS.every((field) => asked[field] === undefined)) return {};
   const refused = pickRefusal(state, task, language);
@@ -46,7 +47,7 @@ export function parseRunPick(body: unknown, state: State, task: Task, agents: re
   if (agent === undefined || (asked.agent !== undefined && !isAvailable(agent, agents))) return refusal('agent', language);
   const resume = resumeOf(asked.session, state, task, agent);
   if (resume === undefined) return refusal('session', language);
-  const launch = askedLaunch(asked, agent, language);
+  const launch = askedLaunch(asked, agent, language, pluginDir);
   if ('status' in launch) return launch;
   return { runPick: { ...(asked.agent === undefined ? {} : { agent }), ...resume, ...launch } };
 }

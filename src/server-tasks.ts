@@ -8,6 +8,7 @@ import { baseRemote, workspaceBase } from './fork.js';
 import { discardOrphan } from './server-orphan.js';
 import { AWAITING_MESSAGE } from './server-approval.js';
 import { LOCAL_BASES, LOCAL_MESSAGE, startLocal } from './server-local.js';
+import type { PluginRender } from './plugin-render.js';
 import type { ReviewStore } from './review-store.js';
 import { registerDiffRoutes } from './server-diff.js';
 import { registerReviewRoutes } from './server-review.js';
@@ -85,6 +86,7 @@ export interface TaskRouteDeps {
   poll(names: string[], manual?: string[]): Promise<void>; // #846: the poll loop's one-source path, after a task is created on a source; manual: items born with auto off
   latest(): State | undefined; // #846: the state after that poll
   events?: Pick<EventLog, 'write'>; // #742: a delete's teardown steps and a first open's setup steps to worktree.step
+  plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: each workspace's plugin folder: a session's specialized agents are read from its workspace's
 }
 
 export type LiveView = NonNullable<ReturnType<TaskRouteDeps['requireLive']>>;
@@ -124,7 +126,7 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
-  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language()); // #290: the run picks, before any git
+  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), deps.plugin.dir(workspace.name)); // #290: the run picks, before any git; #316: its workspace's agents
   if ('status' in picked) return picked;
   const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };

@@ -6,6 +6,7 @@ import { activityOf } from '../src/activities.js';
 import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { sessionsOf } from '../src/tasks.js';
 import { AGENT_IDS, type AgentId, type Exec } from '../src/types.js';
+import { pluginSource } from '../src/hooks-settings.js';
 import { specializedAgents } from '../src/launch-options.js';
 import { fakeSpawn, plainArgs } from './fakes.js';
 import { SESSION_A, send, startReviews } from './review-server.js';
@@ -114,7 +115,7 @@ test('a codex open with a model and a specialized agent runs codex with -m and t
   assert.deepEqual(plainArgs(workers[0].launch).slice(-2), ['-m', 'gpt-5.6-terra']);
   const argv = workers[0].launch.agent?.argv ?? [];
   const developer = argv.flatMap((arg) => (typeof arg !== 'string' && arg[1].startsWith('developer_instructions=') ? [JSON.parse(arg[1].slice('developer_instructions='.length)) as string] : []))[0];
-  const designer = specializedAgents().find((a) => a.name === 'hive:designer');
+  const designer = specializedAgents(pluginSource()).find((a) => a.name === 'hive:designer');
   assert.ok(designer && developer?.endsWith(`\n\n${designer.instructions}`), 'the protocol first, then the agent');
 });
 

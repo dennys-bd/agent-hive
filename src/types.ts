@@ -1890,3 +1890,33 @@ export interface CatalogueItem {
 
 export interface ItemFile { path: string; text: string }
 export interface ItemRead { item: CatalogueItem; version: string | null; files: ItemFile[] } // version null: the original
+
+/** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */
+export const UPDATE_CHOICES = ['mine', 'hive'] as const;
+export type UpdateChoice = (typeof UPDATE_CHOICES)[number];
+
+export interface UpdateChange {
+  kind: 'clean';
+  file: string;
+  heading: string; // nearest heading above the change in the version's text, else the file path
+  removed: string[]; // lines of the version's text the update replaces
+  added: string[]; // lines it puts in their place
+}
+
+export interface UpdateConflict {
+  kind: 'conflict';
+  id: string; // `${file}#${n}`, n counting from 0 in the merge output; `${file}#file` for a whole-file conflict
+  file: string;
+  heading: string;
+  mine: string[] | null; // null: the side has no such file (deleted)
+  hive: string[] | null;
+  base: string[];
+}
+
+export interface UpdatePreview {
+  version: string;
+  from?: string; // version.json's hiveVersion
+  to?: string; // the shipped plugin's version
+  token: string; // sha256 of the three inputs; apply must send it back
+  changes: (UpdateChange | UpdateConflict)[]; // ordered by file, then by position
+}

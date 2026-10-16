@@ -9,6 +9,7 @@ import { createServer, type HiveServer } from '../src/server.js';
 import type { RecordInput } from '../src/events.js';
 import type { OpenResult, SettingsBody } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { pluginRenderPath } from '../src/plugin-render.js';
 import { workerLspPath } from '../src/worker-lsp.js';
 import { AUTH, GITHUB_ENTRY, STAGES, WORKSPACE, fakeEvents, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, tempHive, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -68,7 +69,7 @@ test('every claude run in the workspace gets its plugin as a second --plugin-dir
   const shell = (await (await postJson(`${base}/activities/${LOCAL}/shell`)).json()) as OpenResult;
   assert.equal(launchFlag(launchOf(workers, shell.ptyId), '--plugin-dir', 1), undefined, 'a shell runs no claude');
   const [, ...argv] = (await (await hiveFetch(`${base}/hooks/terminals/${shell.ptyId}/session`, { method: 'POST', body: new URLSearchParams({ agent: 'claude' }) })).text()).split('\n');
-  assert.deepEqual(argv.slice(4, 8), ['--plugin-dir', join(home, 'plugin'), '--plugin-dir', dir], 'a terminal\'s claude, after the Hive\'s own');
+  assert.deepEqual(argv.slice(4, 8), ['--plugin-dir', pluginRenderPath(home, WORKSPACE), '--plugin-dir', dir], 'a terminal\'s claude: its workspace\'s plugin folder (#316), then the language servers');
   const spawned = records.filter((r) => r.event === 'run.spawned').at(-1) as Record<string, unknown> | undefined;
   assert.deepEqual(spawned?.lsp_servers, ['gopls'], 'a local session\'s run.spawned, through its activity\'s workspace');
 });

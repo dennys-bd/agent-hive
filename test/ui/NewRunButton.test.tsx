@@ -285,7 +285,7 @@ test('padrão and newSession\'s key follow the default agent (#257)', async () =
 
 test('newSessionDialog\'s key and nova sessão… open the dialog; its Enter opens the default agent as claude\'s item does (#257)', async () => {
   const user = userEvent.setup();
-  fetchMock.mockImplementation(async (path: string) => answer(path === '/launch-options' ? OPTIONS : { ok: true, ptyId: 'W4' }));
+  fetchMock.mockImplementation(async (path: string) => answer(path.startsWith('/launch-options') ? OPTIONS : { ok: true, ptyId: 'W4' }));
   render(<RunOpenerContext.Provider value={openRun}><Center c={task()} /></RunOpenerContext.Provider>);
   await user.keyboard('{Control>}{Alt>}{Shift>}S{/Shift}{/Alt}{/Control}'); // newSessionDialog off macOS (#585)
   expect(await screen.findByRole('dialog', { name: 'Nova sessão' })).toBeInTheDocument();
