@@ -16,10 +16,9 @@ import { LocalMenu } from '@/components/LocalMenu';
 import { type SearchHost, useQuickActions } from '@/components/quick-actions';
 import { useSleptNotices } from '@/components/sleep-notice';
 import { DockBody } from '@/components/ViewRail';
-import {
-  DiffOpenerContext, dockedTab, FileOpenerContext, type OpenDiff, type OpenFile, type OpenFileHow, IssueOpenerContext, type OpenPr, type OpenRun, PrOpenerContext, type OpenStarted, RunOpenerContext, StartedTaskContext,
-} from '@/components/terminal-tabs';
-import { type ConsoleChannels, ConsoleChannelsContext, ConsoleContext, type OpenConsole, type OpenStageOutput, shownChannel, StageOutputContext, useConsoleOpener } from '@/hooks/use-console';
+import { Openers } from '@/components/DockOpeners';
+import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
+import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
 import type { BackEntry } from '@/hooks/use-back-stack';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
@@ -185,29 +184,6 @@ function detailPanel({ current, isShown, sideTab, detail, onClose, nav }: Detail
   const details = isTask(current) ? detail({ isShown: isShown && sideTab === 'details', onClose, nav }) : undefined; // a local activity has no task to detail
   const body = <ActivitySide key={activityKey(current)} target={current} tab={sideTab} isShown={isShown} details={details} />;
   return { id: 'detail', title, ownHeader: true, body };
-}
-
-interface OpenersProps { openRun: OpenRun; openStarted: OpenStarted; openDiff: OpenDiff; openPr?: OpenPr; openIssue?: OpenPr; openFile: OpenFile; openConsole: OpenConsole; openStageOutput: OpenStageOutput; children: ReactNode }
-
-// Every opener the dock hands the page below it (#251, #353, #457, #458, #717, #755): the flow's tasks, Detalhes and the chips reach the dock through these
-function Openers({ openRun, openStarted, openDiff, openPr, openIssue, openFile, openConsole, openStageOutput, children }: OpenersProps) {
-  return (
-    <RunOpenerContext.Provider value={openRun}>
-        <StartedTaskContext.Provider value={openStarted}>
-          <DiffOpenerContext.Provider value={openDiff}>
-            <PrOpenerContext.Provider value={openPr}>
-              <IssueOpenerContext.Provider value={openIssue}>
-                <FileOpenerContext.Provider value={openFile}>
-                  <ConsoleContext.Provider value={openConsole}>
-                    <StageOutputContext.Provider value={openStageOutput}>{children}</StageOutputContext.Provider>
-                  </ConsoleContext.Provider>
-                </FileOpenerContext.Provider>
-              </IssueOpenerContext.Provider>
-            </PrOpenerContext.Provider>
-          </DiffOpenerContext.Provider>
-        </StartedTaskContext.Provider>
-    </RunOpenerContext.Provider>
-  );
 }
 
 // fechar tab (#452) from the search: a run of the shown activity closes as ⌘W closes it, its pane alone on a split tab (#641), a terminal by
