@@ -2002,6 +2002,33 @@ const en = {
   'plugins.mode.label': 'mode',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'text',
+  // #325: the plugins update screen
+  'plugins.update.screen': 'update',
+  'plugins.update.review': 'review the update',
+  'plugins.update.meta': 'hive {from} → {to}',
+  'plugins.update.metaBare': 'hive update',
+  'plugins.update.version': 'version',
+  'plugins.update.title': 'the hive updated {name}',
+  'plugins.update.summary': 'what changed between the old and new original, applied on top of your version.',
+  'plugins.update.clean.one': '{n} change applies cleanly',
+  'plugins.update.clean.other': '{n} changes apply cleanly',
+  'plugins.update.passages.one': '{n} passage was edited by you and by the hive',
+  'plugins.update.passages.other': '{n} passages were edited by you and by the hive',
+  'plugins.update.changes': 'changes',
+  'plugins.update.status.clean': 'applied cleanly',
+  'plugins.update.status.choose': 'choose below',
+  'plugins.update.yours': 'your version',
+  'plugins.update.fromHive': 'new from the hive',
+  'plugins.update.keepMine': 'keep mine',
+  'plugins.update.useHive': 'use the hive one',
+  'plugins.update.fileDeleted': 'file deleted',
+  'plugins.update.left.one': '{n} conflict left · until then the worker uses your current version',
+  'plugins.update.left.other': '{n} conflicts left · until then the worker uses your current version',
+  'plugins.update.apply': 'apply update',
+  'plugins.update.later': 'later',
+  'plugins.update.stale': 'the update changed while it was open; review it again',
+  'plugins.update.readFailed': 'could not read the update',
+  'plugins.update.applyFailed': 'could not apply the update',
 };
 
 export type MessageKey = keyof typeof en;
@@ -3999,6 +4026,33 @@ const pt: Record<MessageKey, string> = {
   'plugins.mode.label': 'modo',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'texto',
+  // #325: the plugins update screen
+  'plugins.update.screen': 'atualização',
+  'plugins.update.review': 'revisar a atualização',
+  'plugins.update.meta': 'hive {from} → {to}',
+  'plugins.update.metaBare': 'atualização da hive',
+  'plugins.update.version': 'versão',
+  'plugins.update.title': 'a hive atualizou {name}',
+  'plugins.update.summary': 'o que mudou entre a original antiga e a nova, aplicado sobre a sua versão.',
+  'plugins.update.clean.one': '{n} mudança entra sem conflito',
+  'plugins.update.clean.other': '{n} mudanças entram sem conflito',
+  'plugins.update.passages.one': '{n} trecho você editou e a hive também',
+  'plugins.update.passages.other': '{n} trechos você editou e a hive também',
+  'plugins.update.changes': 'mudanças',
+  'plugins.update.status.clean': 'aplicada sem conflito',
+  'plugins.update.status.choose': 'escolher abaixo',
+  'plugins.update.yours': 'sua versão',
+  'plugins.update.fromHive': 'nova da hive',
+  'plugins.update.keepMine': 'manter a minha',
+  'plugins.update.useHive': 'usar a da hive',
+  'plugins.update.fileDeleted': 'arquivo apagado',
+  'plugins.update.left.one': '{n} conflito por decidir · até lá o worker usa a sua versão atual',
+  'plugins.update.left.other': '{n} conflitos por decidir · até lá o worker usa a sua versão atual',
+  'plugins.update.apply': 'aplicar atualização',
+  'plugins.update.later': 'depois',
+  'plugins.update.stale': 'a atualização mudou enquanto estava aberta; revise de novo',
+  'plugins.update.readFailed': 'não foi possível ler a atualização',
+  'plugins.update.applyFailed': 'não foi possível aplicar a atualização',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
@@ -4036,7 +4090,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
