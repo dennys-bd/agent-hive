@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { CatalogueItem } from '../../../types';
+import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { STATE_LOOK } from '@/components/plugins/marks';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,6 +9,7 @@ import { HIVE_ORIGIN, type ListSection, sectionOf } from '@/lib/plugins';
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
+const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
 const ALL = '*'; // the filter's "all workspaces": no workspace may be named `*` (WORKSPACE_NAME)
 const META: Record<ListSection, MessageKey> = { skills: 'plugins.list.meta.skills', specialists: 'plugins.list.meta.specialists' };
 const NEW: Record<ListSection, MessageKey> = { skills: 'plugins.list.newSkill', specialists: 'plugins.list.newSpecialist' };
@@ -44,8 +45,17 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
 
 function ItemHead({ item }: { item: CatalogueItem }) {
   const look = STATE_LOOK[item.state];
-  const chip = <span className={`rounded-full border px-1.5 font-normal text-[11px] ${look.chip}`}>{t(look.label)}</span>;
+  const chip = <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>;
   return <Head title={item.name} isMono chip={chip} meta={t(`plugins.section.${sectionOf(item.kind)}`)} />;
+}
+
+const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
+
+/** The update screen's head (#325, decision 5): the item's mono name, the yellow chip, and `hive <from> → <to>` once the preview answers.
+ * The update screen portals it, since only it holds the preview. */
+export function UpdateHead({ item, preview }: { item: CatalogueItem; preview?: UpdatePreview }) {
+  const look = STATE_LOOK['update available'];
+  return <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)} />;
 }
 
 /** The header's centre in the plugins view (#313, decision 17). The slots 3.5 and later fill (the version selector, the reviewer, revert) are
