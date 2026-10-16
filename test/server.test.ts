@@ -10,6 +10,7 @@ import { renderMcpConfig } from '../src/agents/claude-home.js';
 import { PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { type Logger, shortId } from '../src/log.js';
 import { initialState, reduce } from '../src/orchestrator.js';
+import { pluginRenderPath } from '../src/plugin-render.js';
 import { PLAN_LIMITS_INTERVAL_MS } from '../src/rate-limits.js';
 import { keepAwakeCommand, shutdownCommand } from '../src/platform-commands.js';
 import { HOUR_MS } from '../src/usage.js';
@@ -295,7 +296,7 @@ test('saving the settings starts one worker with the launch: mode, cwd, port, ho
     agent: {
       command: 'claude',
       argv: [
-        ['--mcp-config', join(home, 'prompts', `${worker.runId}.mcp.json`)], ['--settings', join(home, 'hooks.json')], ['--plugin-dir', join(home, 'plugin')],
+        ['--mcp-config', join(home, 'prompts', `${worker.runId}.mcp.json`)], ['--settings', join(home, 'hooks.json')], ['--plugin-dir', pluginRenderPath(home, WORKSPACE)],
         ['--append-system-prompt-file', join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'stage.md')], // a stage run is told how to end it (#167), its workspace's memory under it (#797)
         '--session-id', work0(server)!.sessionId!, // #629: the activity's
       ],

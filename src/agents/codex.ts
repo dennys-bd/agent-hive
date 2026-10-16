@@ -1,13 +1,14 @@
 // Codex behind the runner contract (#927). Every Hive setting reaches it as a `-c key=value` override on the argv (finding.codex-surface §1,
 // §5, §6, §13), so a run needs no file in the user's CODEX_HOME but the plugin copy (#934). Its session id is its own, learned from the first SessionStart (§3).
-import { dirname } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { AGENTS } from '../agents.js';
-import { hookCommand, MCP_ROUTE, pluginSource, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
+import { hookCommand, MCP_ROUTE, PLUGIN_DIR, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
 import { isRecord } from '../rate-limits.js';
 import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
 import type { HookPayload } from '../types.js';
-import { type AgentRole, agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexHome, roleFile, tomlString } from './codex-home.js';
+import { agentRoles, CODEX_PLUGIN, marketplaceName, prepareCodexWorkspace, roleFile, tomlString } from './codex-home.js';
 import { readCodexPlanLimits } from './codex-limits.js';
 import { ownsRollout, readRollout, rolloutFiles } from './codex-transcript.js';
 import type { AgentRun, AgentRunner, LaunchArg } from './runner.js';
@@ -38,19 +39,15 @@ const mcpOverrides = ({ port, ptyId }: AgentRun): LaunchArg[] => [
   override('mcp_servers.hive.default_tools_approval_mode', tomlString('approve')),
 ];
 
-// Read on the first launch, not at import: a missing assets/plugin fails that launch loudly instead of every import of this module
-let roles: readonly AgentRole[] | undefined;
-const hiveRoles = (): readonly AgentRole[] => {
-  roles ??= agentRoles(pluginSource());
-  return roles;
-};
+const LEGACY_ROLES_DIR = join('codex', 'agents'); // <home>/codex/agents: where the roles lived before #316; removed on boot
 
-// #934: the skills as the plugin prepareHome copied into Codex's cache, by a dotted key that merges with the user's enabled plugins (a whole
-// `plugins=` table would replace them); then each agent as a role whose file prepareHome wrote, under the name the skills dispatch, hive:<name>
-const pluginOverrides = (home: string): LaunchArg[] => [
-  override(`plugins.${CODEX_PLUGIN}@${marketplaceName(home)}.enabled`, 'true'),
-  ...hiveRoles().map((role) =>
-    override(`agents.${CODEX_PLUGIN}:${role.name}`, `{description=${tomlString(role.description)},config_file=${tomlString(roleFile(home, role.name))}}`)),
+// #934, #316: the skills as the render copied the run's plugin folder into Codex's cache, by a dotted key that merges with the user's enabled
+// plugins (a whole `plugins=` table would replace them); then each agent of that folder as a role, under the name the skills dispatch,
+// hive:<name>. Read on every launch with no cache (about ten small files): a render may have swapped the folder since the last one
+const pluginOverrides = (pluginDir: string): LaunchArg[] => [
+  override(`plugins.${CODEX_PLUGIN}@${marketplaceName(pluginDir)}.enabled`, 'true'),
+  ...agentRoles(pluginDir).map((role) =>
+    override(`agents.${CODEX_PLUGIN}:${role.name}`, `{description=${tomlString(role.description)},config_file=${tomlString(roleFile(pluginDir, role.name))}}`)),
 ];
 
 // The Hive's protocol, then a specialized agent's own instructions after a blank line (#257): Codex has no flag that runs a session as an
@@ -64,7 +61,7 @@ function developerOverride({ protocolText, specializedAgent }: AgentRun): Launch
 export const overrides = (run: AgentRun): LaunchArg[] => [
   ...CODEX_HOOK_EVENTS.map((event) => hookOverride(event, run.port)),
   ...(run.withHive ? mcpOverrides(run) : []),
-  ...pluginOverrides(dirname(run.pluginDir)), // every run, local or not, as Claude's --plugin-dir; the home is <home>/plugin's parent (#100)
+  ...pluginOverrides(run.pluginDir), // every run, local or not, as Claude's --plugin-dir: its workspace's folder, <home>/plugin outside one (#316)
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
   ...developerOverride(run),
   override('check_for_update_on_startup', 'false'), // the update screen takes the first keys: an Enter runs npm install -g (§13)
@@ -103,8 +100,13 @@ export const codexRunner: AgentRunner = {
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
   copy: (run, from) => ['fork', from, ...overrides(run), TRUST_FLAG, ...run.extraArgs],
   clear: () => undefined, // a clear is /clear typed inside the session (SessionStart source=clear, §8), as Claude's
-  // its shim (#932), then the plugin and the roles (#934). The run inherits the Hive's CODEX_HOME, so it reads this copy
-  prepareHome: async (home) => { await installShim(home, AGENTS.codex); await prepareCodexHome(home, process.env); },
+  // its shim (#932); the roles' old folder (#316); the fallback folder's copy and roles, which hooks-settings' prepareHome copied first. The run
+  // inherits the Hive's CODEX_HOME, so it reads this copy. Each workspace's are the render's (plugin-render.ts)
+  prepareHome: async (home) => {
+    await installShim(home, AGENTS.codex);
+    await rm(join(home, LEGACY_ROLES_DIR), { recursive: true, force: true });
+    await prepareCodexWorkspace(join(home, PLUGIN_DIR), process.env);
+  },
   mcpConfig: () => '', // the server goes through -c: writeMcpConfig writes no file
   lspPlugin: () => [],
   transcriptDir: () => undefined, // #929: rollouts live under date folders, not per cwd: removal and copy find nothing in a dir

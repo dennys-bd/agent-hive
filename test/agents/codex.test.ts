@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, stat } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
-import { createHash } from 'node:crypto';
 import { codexRunner } from '../../src/agents/codex.js';
-import { agentRoles, tomlString } from '../../src/agents/codex-home.js';
+import { agentRoles, marketplaceName, pluginCacheDir, roleFile, tomlString } from '../../src/agents/codex-home.js';
 import type { AgentRun } from '../../src/agents/runner.js';
-import { hookCommand, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
+import { hookCommand, PLUGIN_DIR, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
@@ -21,7 +21,8 @@ const ID = '01a12d45-1dff-7000-8000-000000000001';
 const CWD = '/repo/.hive/worktrees/hive-1-task';
 const PROMPT = '/h/prompts/hive-1-task.md';
 const PROTOCOL = 'Call hive_done when "done".\nA path: C:\\work\\x\tand a tab.';
-const RUN: AgentRun = { ptyId: PTY, cwd: CWD, port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: [] };
+const PLUGIN_FOLDER = pluginSource(); // #316: a run's roles are read from its own plugin folder, so the fixture's folder must hold agents
+const RUN: AgentRun = { ptyId: PTY, cwd: CWD, port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: PLUGIN_FOLDER, extraArgs: [] };
 
 const hook = (event: string): LaunchArg => ['-c', `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand(4242))}}]}]`];
 const STOP: LaunchArg = ['-c', `hooks.Stop=[{hooks=[{type="command",command=${JSON.stringify(hookCommand(4242, STOP_HOOK_TIMEOUT_S))},timeout=${STOP_HOOK_TIMEOUT_S}}]}]`];
@@ -34,11 +35,11 @@ const MCP: LaunchArg[] = [
 ];
 const PROTOCOL_ARG: LaunchArg = ['-c', `developer_instructions=${JSON.stringify(PROTOCOL)}`];
 const STARTUP: LaunchArg[] = [['-c', 'check_for_update_on_startup=false'], ['-c', `projects={"${CWD}"={trust_level="trusted"}}`]];
-// #934: the skills as the plugin boot copied into Codex's cache, then one role per agent; <home> is RUN.pluginDir's parent, /h
-const MARKETPLACE = `agent-hive-${createHash('sha256').update('/h').digest('hex').slice(0, 8)}`;
+// #934, #316: the skills as the render copied the run's folder into Codex's cache, then one role per agent of that folder
+const MARKETPLACE = marketplaceName(PLUGIN_FOLDER);
 const PLUGIN: LaunchArg = ['-c', `plugins.hive@${MARKETPLACE}.enabled=true`];
 const AGENT_NAMES = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
-const ROLES: LaunchArg[] = agentRoles(pluginSource()).map((role) => ['-c', `agents.hive:${role.name}={description=${JSON.stringify(role.description)},config_file="/h/codex/agents/${role.name}.toml"}`]);
+const ROLES: LaunchArg[] = agentRoles(PLUGIN_FOLDER).map((role) => ['-c', `agents.hive:${role.name}={description=${JSON.stringify(role.description)},config_file=${tomlString(roleFile(PLUGIN_FOLDER, role.name))}}`]);
 const HIVE_PLUGIN: LaunchArg[] = [PLUGIN, ...ROLES];
 const TAIL = ['--dangerously-bypass-hook-trust', '--sandbox', 'workspace-write', '-m', 'gpt-5.6-terra'];
 const STAGE_RUN: AgentRun = { ...RUN, protocolText: PROTOCOL, model: 'gpt-5.6-terra', extraArgs: ['--sandbox', 'workspace-write'] };
@@ -104,12 +105,22 @@ test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear ty
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });
 
-test('prepareHome writes an executable <home>/bin/codex: the codex shim, which registers as codex (#932)', async (t) => {
+test('prepareHome writes the codex shim, removes the old <home>/codex/agents and prepares the fallback folder: its roles under <home>/.codex/plugin (#932, #316)', async (t) => {
   const home = await tempDir(t, 'home-');
+  const codex = await tempDir(t, 'codex-');
+  const previous = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = codex;
+  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
+  await cp(pluginSource(), join(home, PLUGIN_DIR), { recursive: true }); // hooks-settings' prepareHome copies it before the runners' hooks
+  await mkdir(join(home, 'codex', 'agents'), { recursive: true });
+  await writeFile(join(home, 'codex', 'agents', 'tdd.toml'), 'old');
   await codexRunner.prepareHome(home, 4242);
   const path = shimPath(home, AGENTS.codex);
   assert.equal((await stat(path)).mode & 0o777, 0o755);
   assert.match(await readFile(path, 'utf8'), /^cli=codex$/m);
+  assert.deepEqual((await readdir(join(home, '.codex', 'plugin'))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
+  await assert.rejects(stat(join(home, 'codex', 'agents')), { code: 'ENOENT' });
+  assert.ok((await readdir(join(pluginCacheDir(codex, join(home, PLUGIN_DIR)), 'skills'))).length > 0, 'the fallback\'s copy in Codex\'s cache');
 });
 
 test('a PermissionRequest becomes the permission_prompt Notification the reducer reads, its description the question (#928, finding §4)', () => {
@@ -158,7 +169,7 @@ test('a forged body never throws: odd event names, tool inputs, tool names and a
 
 test('every run enables the Hive\'s plugin by a dotted key and names one hive:<name> role per agent, word for word; never the whole plugins table (#934)', () => {
   assert.deepEqual(ROLES.map(([, pair]) => pair.slice('agents.hive:'.length, pair.indexOf('='))), AGENT_NAMES);
-  assert.deepEqual(ROLES[0], ['-c', 'agents.hive:architect={description="System design specialist. Consulted on the architectural path of /hive:new-spec, before the spec is written, for trade-offs between approaches, component boundaries and interface changes. Returns a recommendation; never writes files.",config_file="/h/codex/agents/architect.toml"}']);
+  assert.deepEqual(ROLES[0], ['-c', `agents.hive:architect={description="System design specialist. Consulted on the architectural path of /hive:new-spec, before the spec is written, for trade-offs between approaches, component boundaries and interface changes. Returns a recommendation; never writes files.",config_file=${tomlString(roleFile(PLUGIN_FOLDER, 'architect'))}}`]);
   for (const run of [STAGE_RUN, { ...RUN, withHive: false }]) {
     const words = codexRunner.launch(run).flat();
     assert.ok(words.includes(PLUGIN[1]), 'a local run too, as Claude\'s --plugin-dir');
@@ -166,10 +177,13 @@ test('every run enables the Hive\'s plugin by a dotted key and names one hive:<n
   }
 });
 
-test('the home is the run\'s plugin dir\'s parent: another home is another marketplace and other role files (#934)', () => {
-  const words = codexRunner.launch({ ...RUN, pluginDir: '/other/plugin' }).flat();
-  assert.ok(words.includes(`plugins.hive@agent-hive-${createHash('sha256').update('/other').digest('hex').slice(0, 8)}.enabled=true`));
-  assert.ok(words.some((word) => word.startsWith('agents.hive:tdd=') && word.endsWith(`config_file=${tomlString('/other/codex/agents/tdd.toml')}}`)));
+test('the run\'s plugin folder names its marketplace and its roles: another workspace\'s folder is another marketplace with roles of its own (#934, #316)', async (t) => {
+  const other = join(await tempDir(t, 'home-'), 'plugins', 'b');
+  await cp(pluginSource(), other, { recursive: true });
+  const words = codexRunner.launch({ ...RUN, pluginDir: other }).flat();
+  assert.notEqual(marketplaceName(other), MARKETPLACE);
+  assert.ok(words.includes(`plugins.hive@${marketplaceName(other)}.enabled=true`));
+  assert.ok(words.some((word) => word.startsWith('agents.hive:tdd=') && word.endsWith(`config_file=${tomlString(join(dirname(other), '.codex', 'b', 'tdd.toml'))}}`)));
 });
 
 // The text of a launch's developer_instructions override, as Codex reads the TOML string

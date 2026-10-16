@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { type AgentRole, agentRoles, codexHome, marketplaceName, pluginCacheDir, prepareCodexHome, readAgent, renderRole, roleFile, tomlString } from '../../src/agents/codex-home.js';
+import { type AgentRole, agentRoles, codexHome, marketplaceName, pluginCacheDir, prepareCodexWorkspace, readAgent, removeCodexWorkspace, renderRole, roleFile, rolesDir, tomlString } from '../../src/agents/codex-home.js';
 import { pluginSource } from '../../src/hooks-settings.js';
 import { tempDir } from '../temp-dir.js';
 
@@ -23,9 +23,11 @@ test('a home\'s marketplace is agent-hive- and the first 8 hex of sha256(home): 
   assert.notEqual(marketplaceName('/h'), marketplaceName('/h2'));
 });
 
-test('the plugin goes to <codexHome>/plugins/cache/<marketplace>/hive/current, a role to <home>/codex/agents/<name>.toml (#934)', () => {
-  assert.equal(pluginCacheDir('/c', '/h'), join('/c', 'plugins', 'cache', marketplaceName('/h'), 'hive', 'current'));
-  assert.equal(roleFile('/h', 'planner'), '/h/codex/agents/planner.toml');
+test('a plugin folder\'s copy goes to its own marketplace\'s cache, its roles to <parent>/.codex/<folder> (#934, #316)', () => {
+  assert.equal(pluginCacheDir('/c', '/h/plugins/a'), join('/c', 'plugins', 'cache', marketplaceName('/h/plugins/a'), 'hive', 'current'));
+  assert.equal(rolesDir('/h/plugins/a'), '/h/plugins/.codex/a');
+  assert.equal(rolesDir('/h/plugin'), '/h/.codex/plugin', 'the boot fallback');
+  assert.equal(roleFile('/h/plugins/a', 'planner'), '/h/plugins/.codex/a/planner.toml');
 });
 
 test('renderRole writes the instructions as one TOML string, and sandbox_mode only for a read-only agent (#934)', () => {
@@ -96,43 +98,54 @@ async function userCodexHome(t: Parameters<typeof tempDir>[0]): Promise<string> 
   return dir;
 }
 
-test('prepareCodexHome copies the five skills into Codex\'s cache and writes one role per agent; config.toml and skills/ stay as they were (#934)', async (t) => {
+// A workspace's plugin folder as the render leaves it: here the shipped plugin, under <home>/plugins/<name>
+async function workspaceFolder(home: string, name: string): Promise<string> {
+  const dir = join(home, 'plugins', name);
+  await cp(pluginSource(), dir, { recursive: true });
+  return dir;
+}
+
+test('prepareCodexWorkspace copies the folder into its marketplace\'s cache and writes one role per agent under rolesDir; config.toml and skills/ stay (#934, #316)', async (t) => {
   const codex = await userCodexHome(t);
-  const home = await tempDir(t, 'home-');
-  await prepareCodexHome(home, { CODEX_HOME: codex });
-  const cache = pluginCacheDir(codex, home);
+  const dir = await workspaceFolder(await tempDir(t, 'home-'), 'a');
+  await prepareCodexWorkspace(dir, { CODEX_HOME: codex });
+  const cache = pluginCacheDir(codex, dir);
   assert.deepEqual((await readdir(join(cache, 'skills'))).sort(), SKILLS);
   for (const skill of SKILLS) {
-    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md'), 'utf8'), await readFile(join(pluginSource(), 'skills', skill, 'SKILL.md'), 'utf8'), skill);
+    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md'), 'utf8'), skill);
   }
-  assert.deepEqual((await readdir(join(home, 'codex', 'agents'))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
-  for (const role of agentRoles(pluginSource())) assert.equal(await readFile(roleFile(home, role.name), 'utf8'), renderRole(role), role.name);
+  assert.deepEqual((await readdir(rolesDir(dir))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
+  for (const role of agentRoles(dir)) assert.equal(await readFile(roleFile(dir, role.name), 'utf8'), renderRole(role), role.name);
   assert.equal(await readFile(join(codex, 'config.toml'), 'utf8'), USER_CONFIG);
   assert.deepEqual(await readdir(join(codex, 'skills')), ['mine']);
   assert.equal(await readFile(join(codex, 'skills', 'mine', 'SKILL.md'), 'utf8'), USER_SKILL);
   assert.deepEqual((await readdir(codex)).sort(), ['config.toml', 'plugins', 'skills'], 'nothing else written under CODEX_HOME');
 });
 
-test('a second boot replaces what the first left in the cache and in the roles: a file the plugin no longer has goes (#934)', async (t) => {
+test('a second prepare replaces what the first left in the cache and in the roles: a file the folder no longer has goes (#934, #316)', async (t) => {
   const codex = await userCodexHome(t);
-  const home = await tempDir(t, 'home-');
-  await prepareCodexHome(home, { CODEX_HOME: codex });
-  const cache = pluginCacheDir(codex, home);
+  const dir = await workspaceFolder(await tempDir(t, 'home-'), 'a');
+  await prepareCodexWorkspace(dir, { CODEX_HOME: codex });
+  const cache = pluginCacheDir(codex, dir);
   await writeFile(join(cache, 'stale.md'), 'old');
-  await writeFile(roleFile(home, 'gone'), 'old');
-  await prepareCodexHome(home, { CODEX_HOME: codex });
+  await writeFile(roleFile(dir, 'gone'), 'old');
+  await prepareCodexWorkspace(dir, { CODEX_HOME: codex });
   assert.equal((await readdir(cache)).includes('stale.md'), false);
-  assert.equal((await readdir(join(home, 'codex', 'agents'))).includes('gone.toml'), false);
+  assert.equal((await readdir(rolesDir(dir))).includes('gone.toml'), false);
   assert.deepEqual((await readdir(join(cache, 'skills'))).sort(), SKILLS);
 });
 
-test('two homes on one CODEX_HOME get two marketplaces, and one\'s boot leaves the other\'s copy (#934)', async (t) => {
+test('two workspaces get two marketplaces; one\'s prepare leaves the other\'s copy, and removing one leaves the other whole (#934, #316)', async (t) => {
   const codex = await userCodexHome(t);
-  const [one, two] = [await tempDir(t, 'home-'), await tempDir(t, 'home-')];
-  await prepareCodexHome(one, { CODEX_HOME: codex });
-  await prepareCodexHome(two, { CODEX_HOME: codex });
-  await prepareCodexHome(one, { CODEX_HOME: codex });
-  assert.notEqual(marketplaceName(one), marketplaceName(two));
-  assert.deepEqual((await readdir(join(codex, 'plugins', 'cache'))).sort(), [marketplaceName(one), marketplaceName(two)].sort());
-  assert.deepEqual((await readdir(join(pluginCacheDir(codex, two), 'skills'))).sort(), SKILLS);
+  const home = await tempDir(t, 'home-');
+  const [a, b] = [await workspaceFolder(home, 'a'), await workspaceFolder(home, 'b')];
+  await prepareCodexWorkspace(a, { CODEX_HOME: codex });
+  await prepareCodexWorkspace(b, { CODEX_HOME: codex });
+  await prepareCodexWorkspace(a, { CODEX_HOME: codex });
+  assert.notEqual(marketplaceName(a), marketplaceName(b));
+  assert.deepEqual((await readdir(join(codex, 'plugins', 'cache'))).sort(), [marketplaceName(a), marketplaceName(b)].sort());
+  assert.deepEqual((await readdir(join(pluginCacheDir(codex, b), 'skills'))).sort(), SKILLS);
+  await removeCodexWorkspace(a, { CODEX_HOME: codex });
+  assert.deepEqual(await readdir(join(codex, 'plugins', 'cache')), [marketplaceName(b)]);
+  assert.deepEqual(await readdir(join(home, 'plugins', '.codex')), ['b'], 'a\'s roles went with it');
 });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { activityOf, localActivityId } from '../src/activities.js';
 import type { AgentRun } from '../src/agents/runner.js';
 import { codexRunner } from '../src/agents/codex.js';
+import { pluginSource } from '../src/hooks-settings.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { initialState, reduce, type Reduced } from '../src/orchestrator.js';
 import { runSession } from '../src/spawn.js';
@@ -105,7 +106,7 @@ test('a codex session with its id, put to sleep, keeps a record of codex with th
   const { state: woken, effects } = reduce(slept, { type: 'openSession', activityId: workId(slept, ITEM.itemId), continueId: CODEX_SESSION });
   const spawn = spawnOf(effects);
   assert.deepEqual([spawn?.continues, spawn?.sessionId, spawn?.worker.agent, woken.slept], [true, CODEX_SESSION, 'codex', []]);
-  const run: AgentRun = { ptyId: 'W2', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: '/h/plugin', extraArgs: [], session: runSession(spawn?.sessionId, 'continue') };
+  const run: AgentRun = { ptyId: 'W2', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: pluginSource(), extraArgs: [], session: runSession(spawn?.sessionId, 'continue') };
   assert.deepEqual(codexRunner.launch(run).slice(0, 2), ['resume', CODEX_SESSION]);
 });
 

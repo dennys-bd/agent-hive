@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useContext, useEffect, useId, useRef, useState } from 'react';
 import { activityOf, workIdOf } from '../../activities';
 import { startMode, startsFresh } from '../../task-runs';
-import { canOpenSession, HIVE_SOURCE } from '../../tasks';
+import { canOpenSession, HIVE_SOURCE, resolveWorkspace } from '../../tasks';
 import { DISCARD_FAILED, type Task, type OpenResult, type State } from '../../types';
 import { act, attachRun } from '@/components/actions';
 import { DefaultAgentContext } from '@/components/NewRunButton';
@@ -195,16 +195,16 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
 const isCustomizable = (task: Task | undefined, state: State): boolean =>
   task !== undefined && startsFresh(startMode(task, state)) && activityOf(state, task.item.itemId)?.handover === undefined;
 
-// The run fields with the agents' lists (#290), fetched once when they first show: the stages box alone asks for nothing
-function RunFieldsLoaded(props: Omit<RunFieldsProps, 'options'>) {
-  return <RunFields {...props} options={useLaunchOptions()} />;
+// The run fields with the agents' lists (#290), fetched once when they first show, for the run's workspace (#316): the stages box alone asks for nothing
+function RunFieldsLoaded({ workspace, ...props }: Omit<RunFieldsProps, 'options'> & { workspace?: string }) {
+  return <RunFields {...props} options={useLaunchOptions(workspace)} />;
 }
 
 // The run part of the dialog (#290): the stages box in executar etapas, the run fields in sessão livre. Only a stage run resolves an empty
 // model through the stage (stageModel); a free session's is the agent's default
-function RunSection({ id, mode, task, state, run }: { id: string; mode: StartMode; task?: Task; state: State; run: RunPickState }) {
+function RunSection({ id, mode, task, state, run, workspace }: { id: string; mode: StartMode; task?: Task; state: State; run: RunPickState; workspace?: string }) {
   const fields = (initial?: RunPicks): ReactNode => (
-    <RunFieldsLoaded id={id} task={task} state={state} picks={run.picks} initial={initial} onPicks={run.set}
+    <RunFieldsLoaded id={id} workspace={workspace} task={task} state={state} picks={run.picks} initial={initial} onPicks={run.set}
       stageModel={mode === 'stages' ? run.stageModel : undefined}
       locked={mode === 'free' && task !== undefined ? resumedLaunch(run.picks, task, state) : undefined} />
   );
@@ -229,6 +229,8 @@ export function StartDialog(props: StartDialogProps) {
   const id = useId();
   const { task, picked, mode, setMode, run, error, pending, isCreating, base, isBlocked, pick, create, close, submit, choices, held } = useStart(props);
   const stagesOff = task === undefined || hasStagesToRun(task.stage, state.stages) ? undefined : t('start.noStages', { stage: task.stage });
+  // #316: the lists of the workspace the run goes in: the task's, else the one the base field picked
+  const runWorkspace = (task && resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks)) ?? base.choice.workspace;
   // #774: a pick with nothing to run lands on sessão livre; any other pick leaves the mode where the user put it
   const pickTask = (itemId: string): void => { pick(itemId); if (nothingToRun(state, itemId)) setMode('free'); };
   // confirm starts (#585: was a fixed ⌘↵), switchStartMode flips the mode; both read their binding at each key
@@ -256,7 +258,7 @@ export function StartDialog(props: StartDialogProps) {
         )}
         <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
         <BaseField id={id} mode={mode} choice={base.choice} workspaces={state.workspaces} onChange={base.setChoice} onWorkspace={base.pickWorkspace} />
-        <RunSection id={id} mode={mode} task={task} state={state} run={run} />
+        <RunSection id={id} mode={mode} task={task} state={state} run={run} workspace={runWorkspace} />
         {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={isCreating} onClick={close}>{t('base.cancel')}</Button>

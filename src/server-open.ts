@@ -197,7 +197,7 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   if (kind !== 'terminal' && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
   const asked = promptOf(body, workspaceBase(current.runtime.config, taskWorkspace(current.runtime.config, task)).remote);
   if ('status' in asked) return refuse(res, asked);
-  const picked = askedLaunch(body, agent, deps.language()); // #257: before any worktree, as every check here
+  const picked = askedLaunch(body, agent, deps.language(), deps.plugin.dir(taskWorkspace(current.runtime.config, task)?.name)); // #257: before any worktree, as every check here; #316: the session's workspace's agents
   if ('status' in picked) return refuse(res, picked);
   const offered = typeof continueId === 'string' && worktreeSessions(task, current.state).some((s) => s.id === continueId); // a repo session opens from the sidebar (#208)
   if (agent !== undefined && continueId !== undefined && !offered) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });

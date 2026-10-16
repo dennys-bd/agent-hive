@@ -1,11 +1,11 @@
 // The Hive's plugin in Codex's shape (#934, finding.codex-surface §10, §11). The skills go as a plugin in Codex's plugin cache, turned on by a -c
-// override; each agent goes as a role file in the Hive's home, named by another. Neither the user's config.toml nor their skills are written.
+// override; each agent goes as a role file beside the plugin folder, named by another. One copy and one set of roles per plugin folder (#316):
+// each workspace's, and the boot fallback's. Neither the user's config.toml nor their skills are written.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { pluginSource } from '../hooks-settings.js';
+import { basename, dirname, join } from 'node:path';
 
 /** The plugin's name in Codex, and the prefix the skills dispatch every agent under (hive:<name>), as for Claude. */
 export const CODEX_PLUGIN = 'hive';
@@ -13,7 +13,7 @@ export const CODEX_PLUGIN = 'hive';
 const MARKETPLACE_PREFIX = 'agent-hive-';
 const MARKETPLACE_HASH_CHARS = 8;
 const PLUGIN_VERSION_DIR = 'current'; // Codex loads whatever the version folder is called (probed)
-const ROLES_DIR = join('codex', 'agents');
+const ROLES_DIR = '.codex'; // <parent>/.codex/<folder>: beside the plugin folder, never in it, so the folder stays what Claude loads (#316)
 const READ_ONLY_ROLE = 'sandbox_mode = "read-only"\n';
 const AGENTS_DIR = 'agents';
 const AGENT_SUFFIX = '.md';
@@ -35,15 +35,19 @@ export const tomlString = (text: string): string => JSON.stringify(text).replace
 /** Where Codex reads its plugins; the user's auth and sessions stay there too. */
 export const codexHome = (env: NodeJS.ProcessEnv): string => env.CODEX_HOME || join(homedir(), '.codex'); // empty is unset, as Codex reads it: never a cwd-relative tree
 
-/** One name per Hive home, so two Hives sharing a CODEX_HOME never wipe each other's copy. Hex: no '.', which Codex splits -c keys on.
- * Hashed as given, so boot's `home` and launch's dirname(run.pluginDir) name the same marketplace. */
-export const marketplaceName = (home: string): string =>
-  `${MARKETPLACE_PREFIX}${createHash('sha256').update(home).digest('hex').slice(0, MARKETPLACE_HASH_CHARS)}`;
+/** One name per plugin folder (#316): every workspace has a marketplace of its own, and two Hives sharing a CODEX_HOME never wipe each other's
+ * copy. Hex: no '.', which Codex splits -c keys on. Hashed as given, so the render's folder and the run's pluginDir name the same marketplace. */
+export const marketplaceName = (pluginDir: string): string =>
+  `${MARKETPLACE_PREFIX}${createHash('sha256').update(pluginDir).digest('hex').slice(0, MARKETPLACE_HASH_CHARS)}`;
 
-export const pluginCacheDir = (codexHome: string, home: string): string =>
-  join(codexHome, 'plugins', 'cache', marketplaceName(home), CODEX_PLUGIN, PLUGIN_VERSION_DIR);
+const marketplaceDir = (codexHome: string, pluginDir: string): string => join(codexHome, 'plugins', 'cache', marketplaceName(pluginDir));
 
-export const roleFile = (home: string, name: string): string => join(home, ROLES_DIR, `${name}.toml`);
+export const pluginCacheDir = (codexHome: string, pluginDir: string): string => join(marketplaceDir(codexHome, pluginDir), CODEX_PLUGIN, PLUGIN_VERSION_DIR);
+
+/** A plugin folder's roles (#316): <home>/plugins/<ws> -> <home>/plugins/.codex/<ws>; the boot fallback <home>/plugin -> <home>/.codex/plugin. */
+export const rolesDir = (pluginDir: string): string => join(dirname(pluginDir), ROLES_DIR, basename(pluginDir));
+
+export const roleFile = (pluginDir: string, name: string): string => join(rolesDir(pluginDir), `${name}.toml`);
 
 /** A role's config file: the agent's body as developer_instructions, read-only when it never writes. */
 export const renderRole = (role: AgentRole): string =>
@@ -82,14 +86,21 @@ export function agentRoles(source: string): AgentRole[] {
     .map((file) => readAgent(file, readFileSync(join(dir, file), 'utf8')));
 }
 
-/** Codex's copy of the Hive's plugin and the roles' files, for `home`. Wiped and rewritten on every boot, as <home>/plugin is: upgrading the
- * Hive refreshes them, and a skill or agent deleted upstream stops existing. Nothing else under CODEX_HOME is touched. */
-export async function prepareCodexHome(home: string, env: NodeJS.ProcessEnv): Promise<void> {
-  const cache = pluginCacheDir(codexHome(env), home);
+/** Codex's copy of one plugin folder and its roles' files (#934, #316): wiped and rewritten on every render of the folder, so a skill or an agent
+ * it no longer has stops existing. Nothing else under CODEX_HOME is touched. */
+export async function prepareCodexWorkspace(dir: string, env: NodeJS.ProcessEnv): Promise<void> {
+  const cache = pluginCacheDir(codexHome(env), dir);
   await rm(cache, { recursive: true, force: true });
-  await cp(pluginSource(), cache, { recursive: true }); // creates plugins/cache/<marketplace>/hive on the way
-  const roles = join(home, ROLES_DIR);
+  await cp(dir, cache, { recursive: true }); // creates plugins/cache/<marketplace>/hive on the way
+  const roles = rolesDir(dir);
   await rm(roles, { recursive: true, force: true });
   await mkdir(roles, { recursive: true });
-  await Promise.all(agentRoles(pluginSource()).map((role) => writeFile(roleFile(home, role.name), renderRole(role))));
+  await Promise.all(agentRoles(dir).map((role) => writeFile(roleFile(dir, role.name), renderRole(role))));
+}
+
+/** A removed workspace's Codex copy and roles (#316): its whole marketplace, found by hashing the folder it had. Never by the agent-hive- prefix:
+ * another Hive may share this CODEX_HOME. */
+export async function removeCodexWorkspace(dir: string, env: NodeJS.ProcessEnv): Promise<void> {
+  await rm(marketplaceDir(codexHome(env), dir), { recursive: true, force: true });
+  await rm(rolesDir(dir), { recursive: true, force: true });
 }
