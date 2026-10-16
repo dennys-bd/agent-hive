@@ -1,6 +1,7 @@
 // The custom store (#315): the user's versions and items under <home>/custom/<origin>/<name>/<version>/. One promise chain per
 // store, so two quick clicks never interleave; every write answers the workspaces it affects, or a refusal, and tells onChange (#316's
-// render) only after a write that happened. The Hive never writes to the shipped plugin or to a workspace's repository.
+// render) only after a write that happened. The Hive never writes to the shipped plugin; in a workspace's repository it only creates a new
+// item's stub under `.claude/` (#313) and never commits it.
 import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { BASE_DIR, FILES_DIR, isName, isRefusal, isVersionName, mainFiles, NAME_MESSAGE, ORIGINAL, PATH_MESSAGE, parseVersionJson, refusal, safeFilePath, type StoreRefusal, VERSION_FILE, type VersionJson, writeVersionJson } from './custom-versions.js';
@@ -28,7 +29,7 @@ export interface CustomStore {
   renameVersion(id: string, version: string, name: string): Promise<StoreResult>;
   assign(id: string, workspace: string, version: string | null): Promise<StoreResult>;
   revert(id: string, version: string): Promise<StoreResult>;
-  createItem(kind: ItemKind, name: string): Promise<StoreResult>;
+  createItem(kind: ItemKind, name: string, origin?: string): Promise<StoreResult>;
 }
 
 const exists = (path: string): Promise<boolean> =>
@@ -219,6 +220,9 @@ async function revert(s: ItemSources, id: string, version: string): Promise<Stor
   return { workspaces: target.workspaces };
 }
 
+// The header every new item starts with, on either side
+const stubOf = (name: string): string => `---\nname: ${name}\ndescription: ""\n---\n`;
+
 async function createItem(s: ItemSources, kind: ItemKind, name: string): Promise<StoreResult> {
   if (!isName(name)) return refusal('bad_name', NAME_MESSAGE);
   const ref: ItemRef = { origin: HIVE_ORIGIN, kind, name };
@@ -227,9 +231,27 @@ async function createItem(s: ItemSources, kind: ItemKind, name: string): Promise
   const dir = storeDir(s, ref, MINE);
   const workspaces = s.workspaces.map((w) => w.name);
   await mkdir(join(dir, FILES_DIR), { recursive: true });
-  await writeFile(join(dir, FILES_DIR, mainFiles(kind, name)[0] ?? name), `---\nname: ${name}\ndescription: ""\n---\n`);
+  await writeFile(join(dir, FILES_DIR, mainFiles(kind, name)[0] ?? name), stubOf(name));
   await writeVersionJson(dir, { name: MINE, from: null, workspaces });
   return { workspaces };
+}
+
+// A workspace's own item (#313): its stub in the main checkout's .claude/, as Claude Code lays it out. The same name rule and the same last
+// guard as the store's writes: nothing outside .claude/
+async function createWorkspaceItem(s: ItemSources, kind: ItemKind, name: string, origin: string): Promise<StoreResult> {
+  if (!isName(name)) return refusal('bad_name', NAME_MESSAGE);
+  const workspace = s.workspaces.find((w) => w.name === origin);
+  if (workspace === undefined) return refusal('unknown_workspace', `no workspace ${origin}`);
+  const root = join(workspace.path, '.claude');
+  const file = kind === 'skill' ? join(root, 'skills', name, 'SKILL.md') : join(root, 'agents', `${name}.md`);
+  if (!isInside(root, file)) throw new Error(`${file} is outside ${root}`);
+  const ref: ItemRef = { origin, kind, name };
+  // One name per origin, across kinds; a skill folder with no SKILL.md yet still holds its name on disk
+  const isTaken = (await resolveRef(s, ref)) !== undefined || (await exists(itemDir(s.home, ref))) || (kind === 'skill' && (await exists(dirname(file))));
+  if (isTaken) return refusal('name_taken', `${origin} already has an item named ${name}`);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, stubOf(name), { flag: 'wx' }); // wx: a file that appeared since the check is never overwritten
+  return { workspaces: [origin] };
 }
 
 export function createCustomStore(deps: CustomStoreDeps): CustomStore {
@@ -259,6 +281,6 @@ export function createCustomStore(deps: CustomStoreDeps): CustomStore {
     renameVersion: (id, version, name) => queued((s) => renameVersion(s, id, version, name)),
     assign: (id, workspace, version) => queued((s) => assign(s, id, workspace, version)),
     revert: (id, version) => queued((s) => revert(s, id, version)),
-    createItem: (kind, name) => queued((s) => createItem(s, kind, name)),
+    createItem: (kind, name, origin) => queued((s) => (origin === undefined || origin === HIVE_ORIGIN ? createItem(s, kind, name) : createWorkspaceItem(s, kind, name, origin))),
   };
 }

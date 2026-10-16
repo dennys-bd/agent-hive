@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
@@ -8,7 +8,7 @@ import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
 import type { CatalogueItem, ItemRead, Stage } from '../src/types.js';
-import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER } from './custom-fixture.js';
+import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -111,4 +111,25 @@ test("GET /api/items answers each item's usage from the config's stages (#313)",
   const items = (await call(base, 'GET', '/api/items'))[1] as CatalogueItem[];
   assert.deepEqual(items.find((i) => i.id === BUILD)?.usage, [{ kind: 'stage', stage: 'build' }]);
   assert.deepEqual(items.find((i) => i.id === DEPLOY)?.usage, []);
+});
+
+const STUB = (name: string): string => `---\nname: ${name}\ndescription: ""\n---\n`;
+
+test("POST /api/items with a workspace origin writes the stub in that workspace's .claude/ and answers the item; a bad name, a taken name and an unknown workspace are refused (#313)", async (t) => {
+  const f = await fixture(t);
+  const { base } = await serve(t, f);
+  const [created, skill] = await call(base, 'POST', '/api/items', { kind: 'skill', name: 'preview', origin: 'hive-site' });
+  assert.deepEqual([created, (skill as CatalogueItem).id, (skill as CatalogueItem).state], [201, 'hive-site:preview', 'workspace']);
+  assert.equal(await readFile(join(f.site, '.claude/skills/preview/SKILL.md'), 'utf8'), STUB('preview'));
+  const agentHive = f.workspaces[0]?.path ?? ''; // agent-hive has no .claude/ yet
+  assert.equal((await call(base, 'POST', '/api/items', { kind: 'specialist', name: 'checker', origin: 'agent-hive' }))[0], 201);
+  assert.equal(await readFile(join(agentHive, '.claude/agents/checker.md'), 'utf8'), STUB('checker'));
+  await mkdir(join(f.site, '.claude/skills/empty'), { recursive: true });
+  const status = async (body: object): Promise<number> => (await call(base, 'POST', '/api/items', body))[0];
+  assert.equal(await status({ kind: 'skill', name: '../x', origin: 'hive-site' }), 400);
+  assert.equal(await status({ kind: 'specialist', name: 'deploy', origin: 'hive-site' }), 409, "the repository's skill holds the name");
+  assert.equal(await status({ kind: 'skill', name: 'helper', origin: 'hive-site' }), 409, 'and its specialist');
+  assert.equal(await status({ kind: 'skill', name: 'empty', origin: 'hive-site' }), 409, 'a skill folder with no SKILL.md yet');
+  assert.equal(await status({ kind: 'skill', name: 'x', origin: 'ghost' }), 404);
+  assert.deepEqual(await snapshot(f.pluginSource), f.initial.plugin, 'the shipped plugin is never written');
 });

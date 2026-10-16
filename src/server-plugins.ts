@@ -29,7 +29,7 @@ const STATUS: Record<RefusalCode, number> = {
   in_use: HTTP_CONFLICT,
 };
 
-const NEW_ITEM = z.object({ kind: z.enum(ITEM_KINDS), name: z.string() });
+const NEW_ITEM = z.object({ kind: z.enum(ITEM_KINDS), name: z.string(), origin: z.string().optional() });
 const SAVE_FILE = z.object({ version: z.string().nullable(), path: z.string(), text: z.string(), from: z.string().optional() });
 const DELETE_FILE = z.object({ version: z.string(), path: z.string() });
 const NEW_VERSION = z.object({ name: z.string(), from: z.string() });
@@ -96,9 +96,9 @@ function registerItemRoutes(app: Express, deps: PluginRouteDeps): void {
   app.post('/api/items', route(deps, async (req, res, s) => {
     const body = bodyOf(NEW_ITEM, req, res);
     if (!body) return;
-    const done = await deps.store.createItem(body.kind, body.name);
+    const done = await deps.store.createItem(body.kind, body.name, body.origin);
     if (isRefusal(done)) return refuse(res, done);
-    res.status(HTTP_CREATED).json(await findItem(s, itemId({ origin: HIVE_ORIGIN, name: body.name })));
+    res.status(HTTP_CREATED).json(await findItem(s, itemId({ origin: body.origin ?? HIVE_ORIGIN, name: body.name })));
   }));
 }
 
