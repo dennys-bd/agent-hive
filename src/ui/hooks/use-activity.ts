@@ -4,7 +4,7 @@ import type { Selection } from '@/components/DetailPanel';
 import { type Activity, activityKey } from '@/lib/activities';
 import { type CenterTabRef, consoleRef } from '@/lib/center-layout';
 import type { Dock } from '@/hooks/use-dock';
-import type { PanelId, ViewId } from '@/lib/dock-layout';
+import { isView, type PanelId, type ViewId } from '@/lib/dock-layout';
 
 /** What the center should open once its run is there (#457, #458): a tab of the activity's layout, or with no tab a started task's stage
  * run. A new object on every request, so opening a tab already in the layout shows it again. */
@@ -95,11 +95,11 @@ export function useActivity(activities: Activity[], onSelect: (selection: Select
   const openFile = useCallback((key: string, path: string, kind: FileTabKind = 'file') => openWith(key, { tab: { kind, path } }), [openWith]);
   const openConsole = useCallback((key: string, channel?: string, locked?: boolean, run?: string) => openWith(key, { tab: consoleRef(channel, locked, run) }), [openWith]);
   const openStarted = useCallback((taskId: string) => setPicked({ key: taskId, hasShown: false, request: {}, isDeferred: true }), []);
-  // Automação and Atividades switch the view (#533, #821): the panel becomes its side's tab without opening it, so the view's own state decides
-  // whether the left side shows. Any other tab is clicked on an open side: it activates (#452)
+  // Every view switches the center (#533, #821, #313): its panel becomes its side's tab without opening it, so the view's own state decides
+  // whether the left side shows. A view other than Atividades quiets a pending start. Any other tab is clicked on an open side: it activates (#452)
   const activateTab = useCallback((panel: PanelId) => {
-    if (panel === 'automation') setPicked(quiet);
-    if (panel !== 'automation' && panel !== 'activities') {
+    if (panel === 'automation' || panel === 'plugins') setPicked(quiet);
+    if (!isView(panel)) {
       activate(panel);
       return;
     }

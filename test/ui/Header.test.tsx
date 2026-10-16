@@ -11,7 +11,7 @@ import type { EffectiveLimits, Signal, State } from '../../src/types';
 import { activityIdOf } from '../fixtures/work';
 import { stateOf } from './search-fixtures';
 
-const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
+const LAYOUT: ViewLayout = { docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' }, sizes: { left: 30, right: 30 }, open: { left: true, right: true } };
 const LEFT_CLOSED: ViewLayout = { ...LAYOUT, open: { left: false, right: true } };
 const shellOf = (extra: Partial<HeaderShell> = {}): HeaderShell => ({
   center: 'activities', layout: LAYOUT, rightShown: true, canOpenRight: true,

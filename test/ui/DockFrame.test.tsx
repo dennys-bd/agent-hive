@@ -35,7 +35,7 @@ test('the frame is the left group, the center column and the right group, the si
 });
 
 test('a side with no panel renders nothing, and there is no bottom group in the center column (#342)', () => {
-  render(<Frame layout={{ ...FLAT, docks: { automation: 'left', activities: 'right', detail: 'right' } }} />);
+  render(<Frame layout={{ ...FLAT, docks: { ...FLAT.docks, activities: 'right' } }} />);
   const center = screen.getByRole('main').parentElement!;
   expect(Array.from(center.children)).toEqual([screen.getByRole('main')]);
   expect(group('left')).toBeNull();

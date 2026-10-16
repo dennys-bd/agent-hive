@@ -17,6 +17,7 @@ const en = {
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
   'rail.flow': 'flow',
+  'rail.plugins': 'plugins',
   'rail.monitor': 'monitor · soon',
   'rail.shortcutMap': 'shortcut map',
   'rail.settings': 'settings',
@@ -1955,6 +1956,7 @@ const pt: Record<MessageKey, string> = {
   'rail.label': 'views',
   'rail.activities': 'atividades',
   'rail.flow': 'fluxo',
+  'rail.plugins': 'plugins',
   'rail.monitor': 'monitor · em breve',
   'rail.shortcutMap': 'mapa de atalhos',
   'rail.settings': 'configurações',

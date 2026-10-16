@@ -149,8 +149,8 @@ function centerView({ selection, layouts, fileLinks, fontFamily, flow, home, pan
       <FlowShownContext.Provider value={isFlow}>{flow}</FlowShownContext.Provider>
     </div>
   );
-  // one fragment in both cases: the flow keeps its place in the tree, so switching does not remount it
-  const activityView = isFlow ? null : current === undefined
+  // one fragment in every view: the flow keeps its place in the tree, so switching does not remount it
+  const activityView = selection.center !== 'activities' ? null : current === undefined
     ? home
     : <ActivityCenter key={activityKey(current)} activity={current} layout={layouts.layout} ops={layouts} fileLinks={fileLinks} fontFamily={fontFamily} pane={pane} onOpenRun={(ptyId) => selection.openRun(activityKey(current), ptyId)} />;
   return <>{flowView}{activityView}</>;

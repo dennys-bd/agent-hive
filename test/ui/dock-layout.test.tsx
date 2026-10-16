@@ -1,8 +1,8 @@
 import { fireEvent } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import {
-  CENTER_MIN, clampSideSize, DEFAULT_DOCK_LAYOUT, type DockLayout, inEveryView, LOCKED_PANELS, onPanelKey, onQuickKey, onShortcutKey, onViewKey, PANELS, readDockLayout, runShortcut, shownBySide, sideOf, syncSide,
-  VIEW_SHORTCUTS, withSide, writeDockLayout,
+  CENTER_MIN, clampSideSize, DEFAULT_DOCK_LAYOUT, type DockLayout, inEveryView, isView, LOCKED_PANELS, onPanelKey, onQuickKey, onShortcutKey, onViewKey, PANELS, readDockLayout, runShortcut, shownBySide, sideOf, syncSide,
+  VIEW_SHORTCUTS, VIEWS, withSide, writeDockLayout,
 } from '@/lib/dock-layout';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import { readView, resetViewState } from '@/lib/view-state';
@@ -12,11 +12,11 @@ const readStored = (value: unknown): DockLayout => {
   resetViewState({ dockLayout: value });
   return readDockLayout();
 };
-// Every value at a bound of its side, the two views different, every open flag set; the docks are the only ones there are (#295)
+// Every value of activities and automation at a bound of its side, plugins apart from its defaults, every open flag set (#295, #313)
 const LAYOUT: DockLayout = {
-  docks: { automation: 'left', activities: 'left', detail: 'right' },
-  sizes: { activities: { left: 15, right: 70 }, automation: { left: 70, right: 15 } },
-  open: { activities: { left: false, right: true }, automation: { left: true, right: false } },
+  docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' },
+  sizes: { activities: { left: 15, right: 70 }, automation: { left: 70, right: 15 }, plugins: { left: 40, right: 20 } },
+  open: { activities: { left: false, right: true }, automation: { left: true, right: false }, plugins: { left: false, right: true } },
 };
 const ALL_OPEN = { left: true, right: true };
 
@@ -24,9 +24,9 @@ afterEach(() => vi.restoreAllMocks());
 
 test('readDockLayout returns the defaults when nothing is saved: Automação on the left, the detail on the right, 30/30, only the left side open (#342, #353, #452, #456, #484)', () => {
   expect(DEFAULT_DOCK_LAYOUT).toEqual({
-    docks: { automation: 'left', activities: 'left', detail: 'right' },
-    sizes: { activities: { left: 30, right: 30 }, automation: { left: 30, right: 30 } },
-    open: { activities: { left: true, right: false }, automation: { left: true, right: false } },
+    docks: { automation: 'left', activities: 'left', plugins: 'left', detail: 'right' },
+    sizes: { activities: { left: 30, right: 30 }, automation: { left: 30, right: 30 }, plugins: { left: 30, right: 30 } },
+    open: { activities: { left: true, right: false }, automation: { left: true, right: false }, plugins: { left: true, right: false } },
   });
   resetViewState();
   expect(readDockLayout()).toEqual(DEFAULT_DOCK_LAYOUT);
@@ -100,7 +100,7 @@ test('onPanelKey names the left and right side for Ctrl+Shift+B and Ctrl+Alt+Shi
 });
 
 test('the console is no dock panel since redesign 05, it is a drawer over the center; a layout saved with its side still reads, the side dropped (#537)', () => {
-  expect(PANELS).toEqual(['activities', 'automation', 'detail']);
+  expect(PANELS).toEqual(['activities', 'automation', 'plugins', 'detail']);
   const withConsole = { ...LAYOUT, docks: { ...LAYOUT.docks, console: 'bottom' } };
   expect(readStored(withConsole)).toEqual(LAYOUT);
 });
@@ -127,7 +127,7 @@ test('Automação docks on the left by default, right after Atividades in tab or
 });
 
 test('every panel is fixed: Automação and Atividades on the left, Detalhes on the right; a stored layout with any of them elsewhere reads as the defaults whole (#458, #295)', () => {
-  expect(LOCKED_PANELS).toEqual(['activities', 'automation']);
+  expect(LOCKED_PANELS).toEqual(['activities', 'automation', 'plugins']);
   for (const docks of [{ ...LAYOUT.docks, automation: 'right' }, { ...LAYOUT.docks, activities: 'right' }, { ...LAYOUT.docks, detail: 'left' }]) {
     expect(readStored({ ...LAYOUT, docks })).toEqual(DEFAULT_DOCK_LAYOUT);
   }
@@ -176,14 +176,15 @@ test('runShortcut acts through the listener its key reaches, even with the key t
   expect(toggle.mock.calls).toEqual([['left']]);
 });
 
-test('the header\'s views list Atividades first: Ctrl+1 (⌘1 on macOS) goes to the activities and Ctrl+2 to the flow (#533, #746)', () => {
-  expect(VIEW_SHORTCUTS).toEqual([['activities', 'viewActivities'], ['automation', 'viewFlow']]);
+test('the header\'s views list Atividades first: Ctrl+1 (⌘1 on macOS) goes to the activities and Ctrl+2 to the flow and Ctrl+3 to plugins (#533, #746, #313)', () => {
+  expect(VIEW_SHORTCUTS).toEqual([['activities', 'viewActivities'], ['automation', 'viewFlow'], ['plugins', 'viewPlugins']]);
   const go = vi.fn();
   const stop = onViewKey(go);
   fireEvent.keyDown(window, { key: '1', code: 'Digit1', ctrlKey: true });
   fireEvent.keyDown(window, { key: '2', code: 'Digit2', ctrlKey: true });
+  fireEvent.keyDown(window, { key: '3', code: 'Digit3', ctrlKey: true });
   stop();
-  expect(go.mock.calls).toEqual([['activities'], ['automation']]);
+  expect(go.mock.calls).toEqual([['activities'], ['automation'], ['plugins']]);
 });
 
 test('onQuickKey names searchOperations for F1, search for Ctrl+Shift+P and shortcutMap for Ctrl+/, off macOS (#584, #585, #639)', () => {
@@ -206,15 +207,15 @@ test('a soon shortcut never fires, not even on its planned key, which it leaves 
 
 test('sideOf is one view\'s flat layout: the shared docks with that view\'s sizes and open flags (#821)', () => {
   expect(sideOf(LAYOUT, 'automation')).toEqual({ docks: LAYOUT.docks, sizes: { left: 70, right: 15 }, open: { left: true, right: false } });
-  expect(inEveryView(1)).toEqual({ activities: 1, automation: 1 });
+  expect(inEveryView(1)).toEqual({ activities: 1, automation: 1, plugins: 1 });
 });
 
 test('withSide per view changes that view alone and shared writes both; a size is clamped; already as asked it is the same layout back, the input untouched (#821)', () => {
   const closed = withSide(LAYOUT, 'automation', 'left', { open: false }, true);
-  expect(closed.open).toEqual({ activities: { left: false, right: true }, automation: { left: false, right: false } });
+  expect(closed.open).toEqual({ activities: { left: false, right: true }, automation: { left: false, right: false }, plugins: { left: false, right: true } });
   expect(closed.sizes).toBe(LAYOUT.sizes);
   const wider = withSide({ ...LAYOUT, open: inEveryView({ left: false, right: true }) }, 'activities', 'right', { size: 40 }, false); // no left open: no room to keep (#295)
-  expect(wider.sizes).toEqual({ activities: { left: 15, right: 40 }, automation: { left: 70, right: 40 } });
+  expect(wider.sizes).toEqual({ activities: { left: 15, right: 40 }, automation: { left: 70, right: 40 }, plugins: { left: 40, right: 40 } });
   expect(withSide(LAYOUT, 'automation', 'left', { size: 90 }, true).sizes.automation.left).toBe(70);
   expect(withSide(LAYOUT, 'activities', 'left', { open: false }, true)).toBe(LAYOUT);
   expect(withSide(LAYOUT, 'activities', 'left', { open: false }, false)).not.toBe(LAYOUT); // the flow's left is still open
@@ -223,8 +224,8 @@ test('withSide per view changes that view alone and shared writes both; a size i
 
 test('syncSide copies one view\'s open flag and size for one side to the other view, the other side untouched (#821)', () => {
   const synced = syncSide(LAYOUT, 'activities', 'left');
-  expect(synced.open).toEqual({ activities: { left: false, right: true }, automation: { left: false, right: false } });
-  expect(synced.sizes).toEqual({ activities: { left: 15, right: 70 }, automation: { left: 15, right: 15 } });
+  expect(synced.open).toEqual({ activities: { left: false, right: true }, automation: { left: false, right: false }, plugins: { left: false, right: true } });
+  expect(synced.sizes).toEqual({ activities: { left: 15, right: 70 }, automation: { left: 15, right: 15 }, plugins: { left: 15, right: 20 } });
 });
 
 test('onShortcutKey with accepts acts only on a key it accepts, and leaves a refused one to the page, not prevented (#818)', () => {
@@ -249,4 +250,17 @@ test('a side resized while the other is open stops where the center would go und
   const wide: DockLayout = { docks: DEFAULT_DOCK_LAYOUT.docks, sizes: inEveryView({ left: 70, right: 70 }), open: inEveryView(ALL_OPEN) };
   expect(readStored(wide)).toEqual(wide); // no migration: a resize of the wide side fixes it
   expect(withSide(wide, 'activities', 'right', { size: 70 }, true).sizes.activities.right).toBe(15); // the left at 70 leaves 10, floored at the right's own 15
+});
+
+test('plugins is the third view, docked on the left and locked there; a layout stored before it reads with its defaults and keeps the other two views, one with it wrong reads as the defaults whole (#313)', () => {
+  expect(VIEWS).toEqual(['activities', 'automation', 'plugins']);
+  expect([isView('plugins'), isView('activities'), isView('detail')]).toEqual([true, true, false]);
+  const { plugins: _docks, ...docks } = LAYOUT.docks;
+  const { plugins: _sizes, ...sizes } = LAYOUT.sizes;
+  const { plugins: _open, ...open } = LAYOUT.open;
+  expect(readStored({ docks, sizes, open })).toEqual({
+    ...LAYOUT, sizes: { ...LAYOUT.sizes, plugins: { left: 30, right: 30 } }, open: { ...LAYOUT.open, plugins: { left: true, right: false } },
+  });
+  expect(readStored({ ...LAYOUT, docks: { ...LAYOUT.docks, plugins: 'right' } })).toEqual(DEFAULT_DOCK_LAYOUT);
+  expect(readStored({ ...LAYOUT, open: { ...LAYOUT.open, plugins: { left: 'yes' } } })).toEqual(DEFAULT_DOCK_LAYOUT);
 });
