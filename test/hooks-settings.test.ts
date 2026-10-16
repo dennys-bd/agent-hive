@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runners } from '../src/agents/registry.js';
@@ -89,6 +90,13 @@ test('prepareHome copies the Hive plugin into <home>/plugin on every boot, wipin
   await prepareHome(home, 4242, [runners.claude]);
   await assert.rejects(stat(stale), 'the copy is a wipe, not a merge');
   assert.ok(await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'), 'and the fresh copy is back');
+});
+
+test('prepareHome copies <home>/plugin before any runner\'s hook, which Codex\'s reads (#316)', async (t) => {
+  const home = join(await tempDir(t, ''), 'agent-hive');
+  let isCopied = false;
+  await prepareHome(home, 4242, [{ prepareHome: async (h) => { isCopied = existsSync(join(h, PLUGIN_DIR, '.claude-plugin', 'plugin.json')); } }]);
+  assert.equal(isCopied, true);
 });
 
 test('prepareHome with no runner writes the shared files only: no hooks.json and no shim for an agent boot did not find (#924)', async (t) => {
