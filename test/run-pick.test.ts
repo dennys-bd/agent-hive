@@ -27,7 +27,7 @@ function stateWith(column: string, sessions: Session[] = []): State {
   return withWork(polled, ID, { worktree: '/wt/hive-1-task-1' }, { sessions });
 }
 const taskIn = (state: State): Task => state.tasks.find((t) => t.item.itemId === ID)!;
-const parse = (body: unknown, state: State, agents: AgentAvailability[] = BOTH) => parseRunPick(body, state, taskIn(state), agents, 'en', pluginSource());
+const parse = (body: unknown, state: State, agents: AgentAvailability[] = BOTH) => parseRunPick(body, state, taskIn(state), agents, 'en', () => pluginSource());
 const refused = (answer: ReturnType<typeof parse>): Refusal | undefined => ('status' in answer ? answer : undefined);
 
 test('a body with no pick is no pick: today\'s start (#290)', () => {

@@ -186,6 +186,14 @@ async function openFirst(deps: OpenRouteDeps, current: LiveView, task: Task, pla
   await openNow(deps, current, plan.task, open, res);
 }
 
+// #317: the workspace whose plugin folder a run's picks are checked against: the popup's choice on a first open, as planWorktree places it, else
+// the task's own. None is the route's existing refusal (#179): 409 workspace <name> is gone, 400 choose a workspace
+function launchWorkspace(current: LiveView, task: Task, activity: Activity | undefined, body: unknown): Workspace | Refusal {
+  const isOpen = activity?.worktree !== undefined && !activity.worktreeGone;
+  const placed = isOpen ? task : placedTask(current.state, task, (body as { workspace?: unknown } | undefined)?.workspace);
+  return 'status' in placed ? placed : workspaceOf(current.runtime.config, placed, current.state.tasks);
+}
+
 // One open, on a task (#164, #237, #283): a first one makes the activity, a later one opens in it (#629). The request is checked before
 // anything else, so a bad one never creates a worktree.
 async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, body: unknown, res: Response): Promise<void> {
@@ -197,7 +205,10 @@ async function openOn(deps: OpenRouteDeps, current: LiveView, taskId: string, bo
   if (kind !== 'terminal' && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: KIND_MESSAGE });
   const asked = promptOf(body, workspaceBase(current.runtime.config, taskWorkspace(current.runtime.config, task)).remote);
   if ('status' in asked) return refuse(res, asked);
-  const picked = askedLaunch(body, agent, deps.language(), deps.plugin.dir(taskWorkspace(current.runtime.config, task)?.name)); // #257: before any worktree, as every check here; #316: the session's workspace's agents
+  const workspace = launchWorkspace(current, task, activity, body); // #317: no run outside its workspace's plugin folder
+  if ('status' in workspace) return refuse(res, workspace);
+  await deps.plugin.ready(); // #316: a render a save or the plugins store queued lands before the picks read the folder
+  const picked = askedLaunch(body, agent, deps.language(), () => deps.plugin.dir(workspace.name)); // #257: before any worktree, as every check here
   if ('status' in picked) return refuse(res, picked);
   const offered = typeof continueId === 'string' && worktreeSessions(task, current.state).some((s) => s.id === continueId); // a repo session opens from the sidebar (#208)
   if (agent !== undefined && continueId !== undefined && !offered) return refuse(res, { status: HTTP_CONFLICT, message: NOT_CONTINUABLE_MESSAGE });

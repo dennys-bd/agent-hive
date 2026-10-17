@@ -51,7 +51,7 @@ test('executeRun branches at the baseline, writes the home under <state>/homes/<
   assert.ok(config.comb.stages[0].prompt?.startsWith('/hive:new-spec'));
   const args = config.agentArgs.claude;
   const allowed = args[args.indexOf('--allowedTools') + 1] ?? '';
-  for (const rule of [`Bash(git push origin HEAD:${BRANCH}*)`, `Read(/${runHome(join(root, 'state'), TOKEN)}/plugin/**)`]) assert.ok(allowed.includes(rule), rule);
+  for (const rule of [`Bash(git push origin HEAD:${BRANCH}*)`, `Read(/${runHome(join(root, 'state'), TOKEN)}/plugins/**)`]) assert.ok(allowed.includes(rule), rule);
   const order = git.calls.map(line);
   assert.ok(order.includes(`git branch -f ${BRANCH} base1`));
   assert.ok(order.includes(`git branch --list hive/${PREFIX}-* --format=%(refname:short)`), 'cleanup touches only this run prefix');

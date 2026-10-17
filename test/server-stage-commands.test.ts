@@ -26,7 +26,7 @@ const E2E: Command = { name: 'e2e', impls: [{ workspace: 'site', command: 'pnpm 
 const DEPLOY: Command = { name: 'deploy', impls: [{ workspace: 'site', command: 'fly deploy' }], menu: false, env: {} };
 const runtimeWith = (commands: Command[], stage: Stage = STAGE): Runtime => ({
   config: parseConfig(combConfig({ stages: [stage], commands, workspaces: [{ name: 'hive', path: '/repo', env: { FROM: 'workspace' }, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] })),
-  sources: new Map(), hooksPath: '/hive/hooks.json', promptsDir: '/hive/prompts', pluginDir: '/hive/plugin', protocol: { stage: '/hive/stage.md', session: '/hive/session.md' }, port: 4321,
+  sources: new Map(), hooksPath: '/hive/hooks.json', promptsDir: '/hive/prompts', protocol: { stage: '/hive/stage.md', session: '/hive/session.md' }, port: 4321,
 });
 const effect = (at: number, stage: Stage = STAGE): Extract<Effect, { type: 'stageCommand' }> => ({ type: 'stageCommand', activity: ACTIVITY, task: TASK, stage, at, ptyId: `P${at}` });
 

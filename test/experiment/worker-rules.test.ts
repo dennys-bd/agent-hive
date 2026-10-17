@@ -100,10 +100,10 @@ test('the read-only shell tools the workers run are allowed, and their writing f
   for (const command of WRITING) assert.notEqual(bashDecision(allow, deny, command), 'allow', command);
 });
 
-test('a worker reads its home\'s plugin copy and nothing else of the state folder: no experiment, no daemon file of any home (#105)', async () => {
+test('a worker reads its home\'s plugin folders and nothing else of the state folder: no experiment, no daemon file of any home (#105)', async () => {
   const { allow, deny } = await workerRules();
-  assert.ok(allow.includes(`Read(/${HOME}/plugin/**)`));
-  for (const path of [`${HOME}/plugin/reference/conventions.md`, `${HOME}/plugin/skills/new-spec/SKILL.md`]) assert.equal(readDecision(allow, deny, path), 'allow', path);
+  assert.ok(allow.includes(`Read(/${HOME}/plugins/**)`));
+  for (const path of [`${HOME}/plugins/hive/reference/conventions.md`, `${HOME}/plugins/hive/skills/new-spec/SKILL.md`]) assert.equal(readDecision(allow, deny, path), 'allow', path);
   const blind = [`${STATE}/experiments/skills-x/manifest.json`, `${STATE}/experiments/skills-x/abc123/metrics.json`, `${HOME}/hive.secret`, `${HOME}/hive.port`,
     ...['hive.secret', 'hive.port', 'hive.config.json', 'hive.log', 'state.json', 'hooks.json', 'daemon.out', 'prompts/MABC-1.md', 'protocol/x', 'reviews/x.json', 'pr-reviews/y.json']
       .map((name) => `${OTHER_HOME}/${name}`)];

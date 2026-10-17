@@ -3,10 +3,46 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pluginSource } from '../src/hooks-settings.js';
+import { parseTemplate, renderTemplate } from '../src/template.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
 const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+
+const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
+
+// #317: the variables each skill declares, confirmed against its text and the reference sections it follows
+const VARIABLES: Record<string, string[]> = {
+  'new-spec': ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'sliceMin', 'sliceMax', 'featureFlags'],
+  'new-plan': ['docsRepo', 'specsDir', 'plansDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'sliceMin', 'sliceMax', 'featureFlags', 'testCommand'],
+  'new-build': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'uiCheck', 'testCommand'],
+  'new-pr': ['docsRepo', 'specsDir', 'plansDir', 'walkthroughsDir', 'designsDir', 'docsLanguage', 'chatLanguage', 'delivery', 'testCommand'],
+  decomposition: ['docsRepo', 'specsDir', 'docsLanguage', 'chatLanguage', 'decompositionLabel'],
+};
+// What a skill's list says for a workspace with no value: the default, or today's behaviour without one. Also reference/conventions.md's default column
+const NO_VALUE: Record<string, string> = {
+  docsRepo: 'none: the docs live in this repository',
+  specsDir: '`docs/hive/specs`', plansDir: '`docs/hive/plans`', walkthroughsDir: '`docs/hive/walkthroughs`', designsDir: '`docs/hive/designs`',
+  docsLanguage: '`English`', chatLanguage: 'the Hive\'s `hiveLanguage`, else the language the user writes in',
+  delivery: '`single`', sliceMin: '`300`', sliceMax: '`550`', featureFlags: '`none`',
+  uiCheck: 'none: no automatic visual check', testCommand: 'the test gate the repository\'s agent instructions file names', decompositionLabel: '`decomposed`',
+};
+
+// A template rendered for `workspace`; a failure names its first error
+function renderedFor(text: string, workspace = 'a'): string {
+  const result = renderTemplate(parseTemplate(text), workspace);
+  if (!result.ok) return assert.fail(`${result.errors[0]?.line}: ${result.errors[0]?.message}`);
+  return result.text;
+}
+
+// A version's header for workspace a, as the plugins view keeps it: each named declaration's own line gains a workspaces: entry
+function valued(text: string, values: Record<string, string>): string {
+  return Object.entries(values).reduce((acc, [name, value]) => {
+    const next = acc.replace(new RegExp(`^( {2}${name}: \\{ .*) \\}$`, 'm'), `$1, workspaces: { a: ${value} } }`);
+    assert.notEqual(next, acc, `${name} is declared on a line of its own`);
+    return next;
+  }, text);
+}
 
 const frontmatter = (text: string): Record<string, string> => {
   const block = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -26,12 +62,12 @@ test('the plugin ships the manifest, the five skills, the ten agents and the two
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
-  for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md'], `skills/${skill} is one file`);
+  for (const skill of SKILLS) assert.deepEqual(await readdir(join(PLUGIN, 'skills', skill)), ['SKILL.md.liquid'], `skills/${skill} is one file`);
 });
 
 test('every skill and agent declares the frontmatter Claude Code reads, with the name of its own file', async () => {
   for (const skill of SKILLS) {
-    const front = frontmatter(await readFile(join(PLUGIN, 'skills', skill, 'SKILL.md'), 'utf8'));
+    const front = frontmatter(await skillText(skill));
     assert.equal(front.name, skill, `skills/${skill} declares its own name`);
     assert.ok((front.description ?? '').length > 40, `skills/${skill} has a description worth dispatching on`);
   }
@@ -55,7 +91,7 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
     join(PLUGIN, 'reference', 'skeleton.hv.html'),
     join(PLUGIN, 'scripts', 'check-hv.mjs'),
     join(PLUGIN, 'scripts', 'import-dc.mjs'),
-    ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md')),
+    ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md.liquid')),
     ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
   ];
   for (const file of files) {
@@ -67,7 +103,7 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
   }
   // every agent the skills name is one this plugin ships
   for (const skill of SKILLS) {
-    const text = await readFile(join(PLUGIN, 'skills', skill, 'SKILL.md'), 'utf8');
+    const text = await skillText(skill);
     for (const [, name] of text.matchAll(/`hive:([a-z-]+)`/g)) {
       assert.ok(AGENTS.includes(name) || SKILLS.includes(name), `skills/${skill} names hive:${name}, which this plugin does not ship`);
     }
@@ -76,9 +112,51 @@ test('the plugin depends on no other plugin: no ecc: or superpowers: reference a
 
 test('every new-* skill resolves the conventions from the one reference text', async () => {
   for (const skill of SKILLS) {
-    const text = await readFile(join(PLUGIN, 'skills', skill, 'SKILL.md'), 'utf8');
+    const text = await skillText(skill);
     assert.match(text, /reference\/conventions\.md/, `skills/${skill} does not read reference/conventions.md`);
   }
+});
+
+test('every shipped skill parses with no error, declares the variables its text reads, and renders for a workspace with no value to the defaults (#317)', async () => {
+  for (const skill of SKILLS) {
+    const text = await skillText(skill);
+    const parsed = parseTemplate(text);
+    assert.deepEqual(parsed.errors, [], skill);
+    assert.deepEqual(parsed.variables.map((v) => v.name), VARIABLES[skill], skill);
+    const rendered = renderedFor(text);
+    for (const name of VARIABLES[skill]) assert.ok(rendered.includes(`\n- \`${name}\`: ${NO_VALUE[name]}\n`), `${skill}: ${name}`);
+    assert.doesNotMatch(rendered, /\{\{|\{%/, `${skill}: no Liquid is left`);
+  }
+});
+
+test('new-build rendered with delivery stacked and testCommand pnpm test for its workspace carries both; another workspace keeps the defaults (#317)', async () => {
+  const text = valued(await skillText('new-build'), { delivery: 'stacked', testCommand: 'pnpm test' });
+  const mine = renderedFor(text);
+  assert.ok(mine.includes('\n- `delivery`: `stacked`\n'), mine);
+  assert.ok(mine.includes('\n- `testCommand`: `pnpm test`\n'), mine);
+  assert.ok(renderedFor(text, 'b').includes(`\n- \`delivery\`: ${NO_VALUE.delivery}\n`));
+});
+
+test('no shipped skill, raw or rendered, resolves a convention through hive_conventions or the agent instructions file (#317)', async () => {
+  for (const skill of SKILLS) {
+    const raw = await skillText(skill);
+    for (const text of [raw, renderedFor(raw)]) {
+      assert.doesNotMatch(text, /resolve the conventions as it says/, skill);
+      assert.doesNotMatch(text, /`conventions`/, skill);
+      assert.doesNotMatch(text, /## Hive conventions/, skill);
+      assert.doesNotMatch(text, /sliceSize\.max|`sliceSize` only/, `${skill}: sliceSize is sliceMin and sliceMax`);
+    }
+  }
+});
+
+test('reference/conventions.md names every variable with its default, the variables panel that sets it, and what hive_conventions is still read for (#317)', async () => {
+  const text = await readFile(join(PLUGIN, 'reference', 'conventions.md'), 'utf8');
+  for (const [name, fallback] of Object.entries(NO_VALUE)) {
+    assert.ok(text.includes(`| \`${name}\` |`), `${name} has a row`);
+    assert.ok(text.includes(`| ${fallback} |`), `${name}'s default`);
+  }
+  for (const part of ['variables panel', '`approval`, `stage`, `fork` and `hiveLanguage`', '<home>/custom/hive/<skill>/<version>/']) assert.ok(text.includes(part), part);
+  assert.equal(text.includes('| `sliceSize` |'), false, 'sliceSize is sliceMin and sliceMax');
 });
 
 test('the docs folders default under docs/hive, and no plugin file names the old docs/specs, docs/plans or docs/walkthroughs', async () => {
@@ -96,7 +174,7 @@ test('the docs folders default under docs/hive, and no plugin file names the old
 });
 
 test('every gh call /hive:new-pr makes for the docs PR names the docs repository, since GH_REPO names the code one', async () => {
-  const text = await readFile(join(PLUGIN, 'skills', 'new-pr', 'SKILL.md'), 'utf8');
+  const text = await skillText('new-pr');
   const calls = text.match(/gh pr \w+[^`\n]*<docs (?:PR|head|base)>[^`\n]*/g) ?? [];
   assert.ok(calls.length >= 4, 'new-pr lists, creates, edits and views the docs PR');
   for (const call of calls) assert.match(call, /-R <docs repo>/, `${call} does not pass -R <docs repo>`);

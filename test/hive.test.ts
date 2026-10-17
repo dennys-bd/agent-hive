@@ -463,7 +463,7 @@ test('bootHive keeps its own files in the home: the repo gets only the exclude l
   assert.equal(server.getState()?.signal, 'yellow', 'the repo\'s state.json (red) was not read');
   // WAL keeps a -wal and a -shm beside the read model while it is open (#180): its side files, not files of their own
   const own = (await readdir(home)).filter((name) => !/^read-model\.sqlite-(wal|shm)$/.test(name)).sort();
-  assert.deepEqual(own, ['.codex', 'bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugin', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json']);
+  assert.deepEqual(own, ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json']);
   assert.deepEqual((await readdir(repo)).sort(), ['.git', '.hive', 'hive.config.json']);
   assert.deepEqual(await readdir(join(repo, '.hive')), ['state.json'], 'nothing new under the repo\'s .hive/: no log, no hooks, no prompts');
   assert.equal(await readFile(join(repo, 'hive.config.json'), 'utf8'), leftover, 'never rewritten, never deleted');

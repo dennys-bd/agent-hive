@@ -176,7 +176,7 @@ test('every shipped skill and agent lints clean against a catalogue of the plugi
   const read = (path: string): ParsedTemplate => parseTemplate(readFileSync(new URL(path, PLUGIN), 'utf8'));
   const skills = readdirSync(new URL('skills/', PLUGIN), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => ({ kind: 'skill' as const, name: entry.name, path: `skills/${entry.name}/SKILL.md` }));
+    .map((entry) => ({ kind: 'skill' as const, name: entry.name, path: `skills/${entry.name}/SKILL.md.liquid` }));
   const agents = readdirSync(new URL('agents/', PLUGIN))
     .filter((file) => file.endsWith('.md'))
     .map((file) => ({ kind: 'specialist' as const, name: file.slice(0, -'.md'.length), path: `agents/${file}` }));

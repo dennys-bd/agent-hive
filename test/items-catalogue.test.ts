@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
+import { pluginSource } from '../src/hooks-settings.js';
 import { isRefusal } from '../src/custom-versions.js';
 import { readCatalogue, readItem, usageOf } from '../src/items-catalogue.js';
 import type { CatalogueItem } from '../src/types.js';
@@ -24,6 +25,17 @@ test("the catalogue lists the shipped items under hive, then each workspace's .c
   const build = items[1];
   assert.deepEqual([build.description, build.files, build.onOriginal, build.userCreated], ['Build it', ['SKILL.md', 'scripts/run.sh'], ['agent-hive', 'hive-site'], false]);
   assert.deepEqual(items[2].onOriginal, ['hive-site'], 'a repository item is used by its own workspace');
+});
+
+test('the real shipped plugin lists its five SKILL.md.liquid skills, each with its description, its template file and no error (#317)', async (t) => {
+  const f = await fixture(t);
+  const skills = (await readCatalogue({ ...f, pluginSource: pluginSource() })).filter((i) => i.kind === 'skill' && i.id.startsWith('hive:'));
+  assert.deepEqual(skills.map((i) => i.id.slice('hive:'.length)), ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec']);
+  for (const skill of skills) {
+    assert.deepEqual(skill.files.filter((file) => file.startsWith('SKILL')), ['SKILL.md.liquid'], skill.id);
+    assert.ok(skill.description.length > 40, skill.id);
+    assert.equal(skill.error, undefined, skill.id);
+  }
 });
 
 test('a version whose base/ no longer matches the origin answers update available, and the item names which version has one (#315)', async (t) => {
