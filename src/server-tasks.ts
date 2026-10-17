@@ -71,7 +71,7 @@ export interface TaskRouteDeps {
    * call time, a POST /settings may have changed them; the source is the live one. */
   requireLive(res: Response): {
     state: State;
-    runtime: { config: Pick<Config, 'agentArgs' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string; pluginDir: string };
+    runtime: { config: Pick<Config, 'agentArgs' | 'branch' | 'baseBranch' | 'comb' | 'editor'>; sources: ReadonlyMap<string, Pick<Source, 'comments' | 'create'>>; promptsDir: string };
   } | undefined;
   dispatch(event: HiveEvent, size?: TerminalSize): Promise<Effect[]>; // #808: size, the page's grid, reaches only the spawns this event causes
   language(): Language; // the Hive's effective language, the config's else the system's: a kept-both item's " - copy" suffix (#594)

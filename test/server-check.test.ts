@@ -31,7 +31,7 @@ async function serve(t: AfterHost, editor: EditorConfig = EDITOR_DEFAULTS): Prom
   const state = withLocal(initialState(0), 'hive');
   const app = express();
   app.use(express.json());
-  registerCheckRoutes(app, { requireLive: () => ({ state, runtime: { config, sources: new Map(), promptsDir: '', pluginDir: '' } }), consoleStore: createConsoleStore(() => 5000) });
+  registerCheckRoutes(app, { requireLive: () => ({ state, runtime: { config, sources: new Map(), promptsDir: '' } }), consoleStore: createConsoleStore(() => 5000) });
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));

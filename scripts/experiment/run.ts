@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stopDaemon } from '../../src/daemon.js';
+import { PLUGINS_DIR } from '../../src/plugin-render.js';
 import { DEFAULT_BASELINE, DEFAULT_RUNS, type ExperimentOptions, parseExperimentArgs } from './args.js';
 import { createDaemonClient } from './daemon-client.js';
 import { untilDeadline } from './deadline.js';
@@ -64,10 +65,10 @@ async function begin(night: Night, ref: RunRef, alone: boolean): Promise<string>
 }
 
 // The sandbox file is shared by both runs of a pair; rewritten after each draws its token, in turn, so the last write names every open
-// run's plugin copy, which the plugin skills read their conventions from
+// run's plugin folders, which hold the skills each workspace renders (#317)
 let sandboxWrites = Promise.resolve();
 function allowPlugins(night: Night): Promise<void> {
-  const plugins = openAttempts(night.store.get()).map((a) => join(runHome(night.state, a.token), 'plugin'));
+  const plugins = openAttempts(night.store.get()).map((a) => join(runHome(night.state, a.token), PLUGINS_DIR));
   sandboxWrites = sandboxWrites.then(() => installSandbox(night.root, night.repos[0].gitDir, sandboxSettings({ repos: night.repos, state: night.state, plugins })));
   return sandboxWrites;
 }

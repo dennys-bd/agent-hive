@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { codexRunner } from '../../src/agents/codex.js';
-import { agentRoles, marketplaceName, pluginCacheDir, roleFile, tomlString } from '../../src/agents/codex-home.js';
+import { agentRoles, marketplaceName, roleFile, tomlString } from '../../src/agents/codex-home.js';
 import type { AgentRun, HeadlessRun } from '../../src/agents/runner.js';
-import { hookCommand, PLUGIN_DIR, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
+import { hookCommand, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
 import type { HookPayload, LaunchArg } from '../../src/types.js';
@@ -105,22 +106,21 @@ test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear ty
   assert.deepEqual([await codexRunner.countMessages('/x.jsonl'), await codexRunner.planLimits({ env: { CODEX_HOME: await tempDir(t, 'codex-') } }), codexRunner.statusLimits({}, 0)], [0, undefined, undefined]);
 });
 
-test('prepareHome writes the codex shim, removes the old <home>/codex/agents and prepares the fallback folder: its roles under <home>/.codex/plugin (#932, #316)', async (t) => {
+test('prepareHome writes the codex shim and removes the old <home>/codex/agents; it prepares no plugin folder, since every run loads its workspace\'s render (#932, #317)', async (t) => {
   const home = await tempDir(t, 'home-');
   const codex = await tempDir(t, 'codex-');
   const previous = process.env.CODEX_HOME;
   process.env.CODEX_HOME = codex;
   t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous; });
-  await cp(pluginSource(), join(home, PLUGIN_DIR), { recursive: true }); // hooks-settings' prepareHome copies it before the runners' hooks
   await mkdir(join(home, 'codex', 'agents'), { recursive: true });
   await writeFile(join(home, 'codex', 'agents', 'tdd.toml'), 'old');
   await codexRunner.prepareHome(home, 4242);
   const path = shimPath(home, AGENTS.codex);
   assert.equal((await stat(path)).mode & 0o777, 0o755);
   assert.match(await readFile(path, 'utf8'), /^cli=codex$/m);
-  assert.deepEqual((await readdir(join(home, '.codex', 'plugin'))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
   await assert.rejects(stat(join(home, 'codex', 'agents')), { code: 'ENOENT' });
-  assert.ok((await readdir(join(pluginCacheDir(codex, join(home, PLUGIN_DIR)), 'skills'))).length > 0, 'the fallback\'s copy in Codex\'s cache');
+  assert.equal(existsSync(join(home, '.codex')), false, 'no fallback roles');
+  assert.deepEqual(await readdir(codex), [], 'nothing in Codex\'s home');
 });
 
 test('a PermissionRequest becomes the permission_prompt Notification the reducer reads, its description the question (#928, finding §4)', () => {

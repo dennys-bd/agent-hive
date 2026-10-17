@@ -1,6 +1,6 @@
 // The Hive's plugin in Codex's shape (#934, finding.codex-surface §10, §11). The skills go as a plugin in Codex's plugin cache, turned on by a -c
-// override; each agent goes as a role file beside the plugin folder, named by another. One copy and one set of roles per plugin folder (#316):
-// each workspace's, and the boot fallback's. Neither the user's config.toml nor their skills are written.
+// override; each agent goes as a role file beside the plugin folder, named by another. One copy and one set of roles per plugin folder:
+// each workspace's (#316). Neither the user's config.toml nor their skills are written.
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -44,7 +44,7 @@ const marketplaceDir = (codexHome: string, pluginDir: string): string => join(co
 
 export const pluginCacheDir = (codexHome: string, pluginDir: string): string => join(marketplaceDir(codexHome, pluginDir), CODEX_PLUGIN, PLUGIN_VERSION_DIR);
 
-/** A plugin folder's roles (#316): <home>/plugins/<ws> -> <home>/plugins/.codex/<ws>; the boot fallback <home>/plugin -> <home>/.codex/plugin. */
+/** A plugin folder's roles (#316): <home>/plugins/<ws> -> <home>/plugins/.codex/<ws>. */
 export const rolesDir = (pluginDir: string): string => join(dirname(pluginDir), ROLES_DIR, basename(pluginDir));
 
 export const roleFile = (pluginDir: string, name: string): string => join(rolesDir(pluginDir), `${name}.toml`);

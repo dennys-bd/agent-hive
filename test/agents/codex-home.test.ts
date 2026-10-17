@@ -26,7 +26,6 @@ test('a home\'s marketplace is agent-hive- and the first 8 hex of sha256(home): 
 test('a plugin folder\'s copy goes to its own marketplace\'s cache, its roles to <parent>/.codex/<folder> (#934, #316)', () => {
   assert.equal(pluginCacheDir('/c', '/h/plugins/a'), join('/c', 'plugins', 'cache', marketplaceName('/h/plugins/a'), 'hive', 'current'));
   assert.equal(rolesDir('/h/plugins/a'), '/h/plugins/.codex/a');
-  assert.equal(rolesDir('/h/plugin'), '/h/.codex/plugin', 'the boot fallback');
   assert.equal(roleFile('/h/plugins/a', 'planner'), '/h/plugins/.codex/a/planner.toml');
 });
 

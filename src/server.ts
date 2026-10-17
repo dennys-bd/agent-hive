@@ -124,7 +124,6 @@ export interface Runtime {
   sources: Map<string, Source>; // one per comb.sources entry, namespaced (#180)
   hooksPath: string;
   promptsDir: string;
-  pluginDir: string;
   protocol: ProtocolPaths; // the protocol files (#167): what a stage run and a free session on a task are told of the Hive's tools
   port: number; // the port listen() bound (#466): hooks.json, the MCP URL, the exit trailer and HIVE_PORT all name it
 }
@@ -749,7 +748,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function activate(config: Config, sources: Map<string, Source>): Promise<Runtime> {
     if (boundPort === undefined) throw new Error('listen() precisa executar antes de configure()');
     const port = boundPort;
-    const { hooksPath, promptsDir, pluginDir, protocol } = await prepareHome(home, port, Object.values(runners)); // #924: every agent's own files, found or not, as hooks.json always was
+    const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners)); // #924: every agent's own files, found or not, as hooks.json always was
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
@@ -757,7 +756,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     log.setLevel(config.logLevel); // read from the file on every save: a hand edit switches the level without a restart
     wiring.events.setLevel(config.logLevel); // one switch for both files (#742)
     log.info(`config port=${port} sources=${config.comb.sources.map((b) => `${b.name}:${b.type}`).join(',') || 'none'} logLevel=${config.logLevel} stages=${describeStages(config.comb.stages)}`);
-    return { config, sources, hooksPath, promptsDir, pluginDir, protocol, port };
+    return { config, sources, hooksPath, promptsDir, protocol, port };
   }
 
   async function configure(config: Config, sources: Map<string, Source>): Promise<void> {
