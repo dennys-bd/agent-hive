@@ -111,7 +111,7 @@ test('prepareCodexWorkspace copies the folder into its marketplace\'s cache and 
   const cache = pluginCacheDir(codex, dir);
   assert.deepEqual((await readdir(join(cache, 'skills'))).sort(), SKILLS);
   for (const skill of SKILLS) {
-    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md'), 'utf8'), skill);
+    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), skill);
   }
   assert.deepEqual((await readdir(rolesDir(dir))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
   for (const role of agentRoles(dir)) assert.equal(await readFile(roleFile(dir, role.name), 'utf8'), renderRole(role), role.name);

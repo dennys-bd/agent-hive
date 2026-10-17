@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { marketplaceName, pluginCacheDir, rolesDir } from '../src/agents/codex-home.js';
 import { listFiles } from '../src/item-sources.js';
 import { pluginSource } from '../src/hooks-settings.js';
+import { deliveredName, parseTemplate, renderTemplate } from '../src/template.js';
 import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
 import { put, snapshot } from './custom-fixture.js';
 import { tempDir } from './temp-dir.js';
@@ -41,11 +42,18 @@ test('pluginRenderPath is <home>/plugins/<encoded name>, and throws for a name t
   for (const name of ['', '.', '..', '.codex', '.tmp-a']) assert.throws(() => pluginRenderPath('/h', name), name);
 });
 
-test('with no version and no user item, a workspace\'s folder is the shipped plugin byte for byte, path for path (#316)', async (t) => {
+test('with no version and no user item, a workspace\'s folder is the shipped plugin with every template rendered with its defaults, path for path (#316, #317)', async (t) => {
   const r = await rig(t);
-  const render = r.create(pluginSource());
-  await render.write(config(r.repo, 'a'));
-  assert.deepEqual(await snapshot(pluginRenderPath(r.home, 'a')), await snapshot(pluginSource()));
+  await r.create(pluginSource()).write(config(r.repo, 'a'));
+  const shipped = await snapshot(pluginSource());
+  assert.ok(Object.keys(shipped).some((path) => path.endsWith('.liquid')), 'the shipped plugin has templates');
+  const expected = Object.fromEntries(Object.entries(shipped).map(([path, bytes]) => {
+    if (!path.endsWith('.liquid')) return [path, bytes];
+    const result = renderTemplate(parseTemplate(Buffer.from(bytes, 'base64').toString('utf8')), 'a');
+    if (!result.ok) return assert.fail(`${path}: ${result.errors[0]?.message}`);
+    return [deliveredName(path), Buffer.from(result.text).toString('base64')];
+  }));
+  assert.deepEqual(await snapshot(pluginRenderPath(r.home, 'a')), expected);
 });
 
 test('a SKILL.md.liquid with a conditional reaches each workspace as SKILL.md with its own branch, and no .liquid file is left (#316)', async (t) => {
