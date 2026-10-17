@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { needsLiquid } from '../../template';
 import { moveBlock } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
@@ -134,6 +134,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const { buffers, set, settle, dropItem } = useBuffers();
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
+  const saving = useRef(false);
   const view = useViewState(id);
   const chosen = paths[id];
   const path = read && (read.files.some((file) => file.path === chosen) ? chosen : mainPathOf(read));
@@ -148,7 +149,12 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     item, read, hasFailed, path, textOf, isDirty,
     openFile: (p) => { setPath(p); setNote(undefined); },
     edit: (text) => { if (path !== undefined) set(id, path, text); },
-    save: () => (context !== undefined && isDirty(context.path) ? saveFile(context) : Promise.resolve()),
+    save: async () => {
+      // A second ⌘S during a rename's flight would send `from` for a file the first one already moved
+      if (context === undefined || !isDirty(context.path) || saving.current) return;
+      saving.current = true;
+      try { await saveFile(context); } finally { saving.current = false; }
+    },
     newFile: (p) => (context === undefined ? Promise.resolve<MessageKey>('plugins.file.failed') : createFile(context, p.trim())),
     revert: () => (context === undefined ? Promise.resolve() : revertVersion(context)),
     move: (line, index) => {

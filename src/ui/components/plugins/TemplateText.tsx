@@ -67,8 +67,11 @@ function useLook(view: View | undefined, { text, isReadOnly, fontFamily, hidden,
     marks.set(decorations.map(toDecoration));
     return () => marks.clear();
   }, [view, decorations]);
+  // A reveal is one click: a view rebuilt for another "view as" must not replay the last one on lines of the old look
+  const applied = useRef<number>(undefined);
   useEffect(() => {
-    if (view === undefined || reveal === undefined) return;
+    if (view === undefined || reveal === undefined || applied.current === reveal.n) return;
+    applied.current = reveal.n;
     view.setPosition({ lineNumber: reveal.line, column: 1 });
     view.revealLineInCenter(reveal.line);
     view.focus();

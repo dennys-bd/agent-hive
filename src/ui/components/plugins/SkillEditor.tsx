@@ -24,7 +24,8 @@ function useFileLook({ editor, items, item, path }: BodyProps) {
   const parsed = useMemo(() => parseTemplate(text), [text]);
   const map = useMemo(() => buildMap(parsed, catalogue), [parsed, catalogue]);
   const workspace = item.origin === HIVE_ORIGIN ? editor.viewAs : undefined; // a workspace item has no variables (decision 27)
-  const preview = useMemo(() => (workspace === undefined ? undefined : previewTemplate(parsed, map, workspace)), [parsed, map, workspace]);
+  // Only a markdown file is rendered (decision 14): a script under "view as" stays its own text, read-only
+  const preview = useMemo(() => (workspace === undefined || !isMd ? undefined : previewTemplate(parsed, map, workspace)), [parsed, map, workspace, isMd]);
   const look = useMemo(() => {
     if (preview?.ok) return previewLook(preview);
     return isMd ? templateLook({ text, parsed, map, catalogue, mode: editor.mode }) : plainLook(text);
