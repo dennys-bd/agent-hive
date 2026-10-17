@@ -11,7 +11,7 @@ const ALLOWED_DOMAINS = ['registry.npmjs.org', 'localhost', '127.0.0.1'];
 
 /** A clone the workers commit into: its git folder and its origin. */
 export interface RepoPaths { gitDir: string; origin: string }
-// repos: the code clone and the docs clone (#79). plugins: each open run's <home>/plugin, re-allowed by exact path (a glob in allowRead
+// repos: the code clone and the docs clone (#79). plugins: each open run's <home>/plugins/<workspace>, re-allowed by exact path (a glob in allowRead
 // does not take) inside the denied state folder
 export interface SandboxPaths { repos: readonly RepoPaths[]; state: string; plugins?: readonly string[] }
 

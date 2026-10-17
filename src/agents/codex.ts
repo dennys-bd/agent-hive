@@ -1,5 +1,5 @@
 // Codex behind the runner contract (#927). Every Hive setting reaches it as a `-c key=value` override on the argv (finding.codex-surface §1,
-// §5, §6, §13), so a run needs no file in the user's CODEX_HOME but the plugin copy (#934). Its session id is its own, learned from the first SessionStart (§3).
+// §5, §6, §13), so a run needs no file in the user's CODEX_HOME but the workspace's plugin copy (#934, #317). Its session id is its own, learned from the first SessionStart (§3).
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AGENTS } from '../agents.js';

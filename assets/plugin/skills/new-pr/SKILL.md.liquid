@@ -1,6 +1,6 @@
 ---
 name: new-pr
-description: 'Opens the pull requests for the current task: resolves the conventions, finds the repository''s PR template, reads the commits and the diff, pushes with -u and creates one PR, or one per slice, with gh, after the docs PR when docsRepo is set; every body carries the walkthrough. Runs on its own on any branch, and as the last stage of /hive:new-build.'
+description: 'Opens the pull requests for the current task: reads the workspace''s conventions, finds the repository''s PR template, reads the commits and the diff, pushes with -u and creates one PR, or one per slice, with gh, after the docs PR when docsRepo is set; every body carries the walkthrough. Runs on its own on any branch, and as the last stage of /hive:new-build.'
 variables:
   docsRepo: { default: null }
   specsDir: { default: docs/hive/specs }
