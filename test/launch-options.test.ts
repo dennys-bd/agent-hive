@@ -1,15 +1,15 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { cp } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
 import { CLAUDE_ALIASES, CLAUDE_VERSIONS } from '../src/agents/claude-models.js';
-import { PLUGIN_DIR, pluginSource } from '../src/hooks-settings.js';
+import { pluginSource } from '../src/hooks-settings.js';
 import { launchRun, parseCodexModels, registerLaunchOptionsRoute, specializedAgents } from '../src/launch-options.js';
 import { createPluginRender, type PluginRender } from '../src/plugin-render.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
+import { MESSAGES } from '../src/ui/i18n.js';
 import type { Exec, LaunchOptions } from '../src/types.js';
 import { put } from './custom-fixture.js';
 import { send, settingsBody, startReviews } from './review-server.js';
@@ -48,7 +48,7 @@ test('GET /launch-options lists Claude\'s hand-kept models, Codex\'s in visible-
   const { workspaces: _saved, ...rest } = settingsBody('');
   const agentArgs = { claude: ['--permission-mode', 'auto'], codex: ['--sandbox', 'workspace-write'] };
   assert.equal((await send(base, 'POST', '/settings', { ...rest, agentArgs })).status, 200, 'an API save that omits workspaces keeps them');
-  const res = await send(base, 'GET', '/launch-options');
+  const res = await send(base, 'GET', '/launch-options?workspace=hive');
   assert.equal(res.status, 200);
   const options = (await res.json()) as LaunchOptions;
   assert.deepEqual([options.claude.aliases, options.claude.versions], [[...CLAUDE_ALIASES], [...CLAUDE_VERSIONS]]);
@@ -61,7 +61,7 @@ test('GET /launch-options lists Claude\'s hand-kept models, Codex\'s in visible-
 test('a codex debug models that fails or prints no JSON gives Codex no models and still answers 200 (#257)', async (t) => {
   for (const codex of [() => { throw new Error('codex: command not found'); }, () => 'Usage: codex debug'] as const) {
     const { base } = await startReviews(t, { exec: withCodex(codex) });
-    const res = await send(base, 'GET', '/launch-options');
+    const res = await send(base, 'GET', '/launch-options?workspace=hive');
     assert.equal(res.status, 200);
     const options = (await res.json()) as LaunchOptions;
     assert.deepEqual(options.codex.versions, []);
@@ -88,10 +88,9 @@ test('launchRun refuses an agent the plugin no longer has, or a plugin it cannot
 const HELPER = '---\nname: helper\ndescription: Helps.\n---\nHelp.\n';
 const EDITED = '---\nname: designer\ndescription: Designs.\n---\nEdited.\n';
 
-// A home whose render delivered a user-created agent (helper) and an edited designer to workspace a only, with the boot's fallback copy
+// A home whose render delivered a user-created agent (helper) and an edited designer to workspace a only
 async function renderedHome(t: TestContext): Promise<{ render: PluginRender; workspaces: { name: string; path: string }[] }> {
   const [home, repo, codex] = await Promise.all(['home-', 'repo-', 'codex-'].map((prefix) => tempDir(t, prefix)));
-  await cp(pluginSource(), join(home, PLUGIN_DIR), { recursive: true });
   await put(join(home, 'custom', 'hive'), {
     'helper/v1/version.json': JSON.stringify({ name: 'v1', from: null, workspaces: ['a'] }),
     'helper/v1/files/helper.md': HELPER,
@@ -104,7 +103,7 @@ async function renderedHome(t: TestContext): Promise<{ render: PluginRender; wor
   return { render, workspaces };
 }
 
-test('GET /launch-options?workspace= lists the agents delivered to that workspace; an unknown workspace, or none, lists the fallback\'s (#316)', async (t) => {
+test('GET /launch-options?workspace= lists the agents delivered to that workspace; none, or one the config does not have, is 400 (#316, #317)', async (t) => {
   const { render, workspaces } = await renderedHome(t);
   const app = express();
   registerLaunchOptionsRoute(app, {
@@ -121,10 +120,12 @@ test('GET /launch-options?workspace= lists the agents delivered to that workspac
   const names = async (query: string): Promise<string[]> =>
     ((await (await fetch(`${base}/launch-options${query}`)).json()) as LaunchOptions).claude.specializedAgents.map((a) => a.name);
   assert.ok((await names('?workspace=a')).includes('hive:helper'));
-  for (const query of ['?workspace=b', '', '?workspace=gone']) {
-    const listed = await names(query);
-    assert.equal(listed.includes('hive:helper'), false, query);
-    assert.ok(listed.includes('hive:designer'), query);
+  const listed = await names('?workspace=b');
+  assert.equal(listed.includes('hive:helper'), false);
+  assert.ok(listed.includes('hive:designer'));
+  for (const query of ['', '?workspace=gone']) {
+    const res = await fetch(`${base}/launch-options${query}`);
+    assert.deepEqual([res.status, await res.json()], [400, { error: MESSAGES.en['launch.refused.workspace'] }], query);
   }
 });
 

@@ -126,7 +126,8 @@ async function startEvent(deps: TaskRouteDeps, current: LiveView, itemId: string
   if ('status' in task) return task;
   const workspace = workspaceOf(current.runtime.config, task, current.state.tasks); // #179: a task with no workspace is refused here, never a silent no-op
   if ('status' in workspace) return workspace;
-  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), deps.plugin.dir(workspace.name)); // #290: the run picks, before any git; #316: its workspace's agents
+  await deps.plugin.ready(); // #316: a render a save queued lands before the picks read the folder
+  const picked = parseRunPick(body, current.state, task, deps.agents, deps.language(), () => deps.plugin.dir(workspace.name)); // #290: the run picks, before any git; #316: its workspace's agents
   if ('status' in picked) return picked;
   const placed = { ...(raw === undefined ? {} : { workspace: task.workspace }), ...picked };
   if (stageOf(current.state.stages, task.stage)?.action === 'deleteActivity') return { type: 'start', itemId, ...placed };

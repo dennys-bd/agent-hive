@@ -4,8 +4,8 @@ import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { marketplaceName, pluginCacheDir, rolesDir } from '../src/agents/codex-home.js';
 import { listFiles } from '../src/item-sources.js';
-import { PLUGIN_DIR, pluginSource } from '../src/hooks-settings.js';
-import { createPluginRender, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
+import { pluginSource } from '../src/hooks-settings.js';
+import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
 import { put, snapshot } from './custom-fixture.js';
 import { tempDir } from './temp-dir.js';
 
@@ -108,14 +108,14 @@ test('with no previous folder, a failing skill is left out and every other item 
   assert.equal(await text(r, 'a', 'agents/designer.md'), DESIGNER);
 });
 
-test('dir() is the fallback until a write lands; a launch awaiting ready() after a queued write sees the new folder (#316)', async (t) => {
+test('dir() throws NoPluginFolderError until a write lands, and for a workspace never written; a launch awaiting ready() after a queued write sees the new folder (#316, #317)', async (t) => {
   const r = await rig(t);
   const render = r.create();
-  assert.equal(render.dir('a'), join(r.home, PLUGIN_DIR));
-  assert.equal(render.dir(undefined), join(r.home, PLUGIN_DIR));
+  assert.throws(() => render.dir('a'), NoPluginFolderError);
   void render.write(config(r.repo, 'a'));
   await render.ready();
   assert.equal(render.dir('a'), pluginRenderPath(r.home, 'a'));
+  assert.throws(() => render.dir('gone'), { name: 'NoPluginFolderError', message: 'workspace gone has no plugin folder' });
   assert.equal(await text(r, 'a', 'skills/y/SKILL.md'), Y_SKILL);
 });
 
@@ -147,7 +147,7 @@ test('a full write sweeps a workspace no longer in the config, with its Codex ca
   assert.equal(await isThere(b), false);
   assert.equal(await isThere(join(r.codex, 'plugins', 'cache', marketplaceName(b))), false);
   assert.equal(await isThere(rolesDir(b)), false);
-  assert.equal(render.dir('b'), join(r.home, PLUGIN_DIR));
+  assert.throws(() => render.dir('b'), NoPluginFolderError);
   assert.deepEqual([await isThere(a), await isThere(pluginCacheDir(r.codex, a)), await isThere(rolesDir(a))], [true, true, true]);
 });
 
