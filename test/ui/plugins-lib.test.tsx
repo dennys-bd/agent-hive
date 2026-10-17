@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { basedOnTitle, countOf, groupsOf, markOf, sectionOfScreen, usageText } from '@/lib/plugins';
-import { CATALOGUE, WORKSPACES } from './plugins-fixtures';
+import { basedOnTitle, catalogueOf, countOf, groupsOf, mainPathOf, markOf, openVersionOf, savedLabel, sectionOfScreen, usageText } from '@/lib/plugins';
+import { CATALOGUE, itemOf, readOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -39,4 +39,28 @@ test("sectionOfScreen: a list's section, an item's kind, and mcp and protocol as
   expect(sectionOfScreen({ kind: 'item', id: 'hive:architect' }, CATALOGUE)).toBe('specialists');
   expect(sectionOfScreen({ kind: 'protocol' }, CATALOGUE)).toBe('protocol');
   expect(sectionOfScreen({ kind: 'item', id: 'hive:gone' }, CATALOGUE)).toBeUndefined();
+});
+
+const version = (name: string) => ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false });
+
+test('openVersionOf: mine when the item has it, else its first version, else the original (#319, decision 4)', () => {
+  expect(openVersionOf(itemOf('hive:a', { versions: [version('tdd'), version('mine')] }))).toBe('mine');
+  expect(openVersionOf(itemOf('hive:a', { versions: [version('tdd'), version('fast')] }))).toBe('tdd');
+  expect(openVersionOf(itemOf('hive:a'))).toBeNull();
+});
+
+test("mainPathOf: a skill's SKILL.md or SKILL.md.liquid, a specialist's <name>.md, else the first file (#319)", () => {
+  expect(mainPathOf(readOf('hive:new-build', 'mine', { 'scripts/x.py': '', 'SKILL.md.liquid': '' }))).toBe('SKILL.md.liquid');
+  expect(mainPathOf(readOf('hive:architect', null, { 'architect.md': '' }))).toBe('architect.md');
+  expect(mainPathOf(readOf('hive:new-build', 'mine', { 'notes.md': '' }))).toBe('notes.md');
+});
+
+test("catalogueOf names the Hive's items with the plugin's namespace and a workspace's bare, skills apart from specialists (#319)", () => {
+  expect(catalogueOf([itemOf('hive:new-pr'), itemOf('hive:architect', { kind: 'specialist' }), itemOf('hive-site:deploy')])).toEqual({ skills: ['hive:new-pr', 'deploy'], agents: ['hive:architect'] });
+});
+
+test('savedLabel: the time today, the short date and the time on another day (#319, decision 10)', () => {
+  const at = new Date(2026, 9, 16, 14, 31).toISOString();
+  expect(savedLabel(at, new Date(2026, 9, 16, 18, 0))).toBe('14:31');
+  expect(savedLabel(at, new Date(2026, 9, 17, 9, 0))).toMatch(/^\S+ 14:31$/);
 });

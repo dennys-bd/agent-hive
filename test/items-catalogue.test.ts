@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isRefusal } from '../src/custom-versions.js';
 import { readCatalogue, readItem, usageOf } from '../src/items-catalogue.js';
@@ -148,4 +149,20 @@ test('readCatalogue answers each item with its usage, from the stages given and 
     [HELPER, []],
   ]);
   assert.deepEqual((await readCatalogue(f)).find((i) => i.id === BUILD)?.usage, []);
+});
+
+test("readItem stamps a version's and a workspace item's files with their mtime; the Hive original's carry none (#319)", async (t) => {
+  const f = await fixture(t);
+  await putVersion(f, 'hive/new-build/mine', { name: 'mine', from: 'original', workspaces: [] }, { 'files/SKILL.md': SKILL, 'base/SKILL.md': SKILL });
+  const at = new Date('2026-10-16T14:31:00.000Z');
+  await utimes(join(f.home, 'custom/hive/new-build/mine/files/SKILL.md'), at, at);
+  const mine = await readItem(f, BUILD, 'mine');
+  assert.ok(!isRefusal(mine));
+  assert.deepEqual(mine.files.map((file) => [file.path, file.savedAt]), [['SKILL.md', at.toISOString()]]);
+  const deploy = await readItem(f, DEPLOY, null);
+  assert.ok(!isRefusal(deploy));
+  assert.ok(deploy.files.length > 0 && deploy.files.every((file) => typeof file.savedAt === 'string'), "a workspace item's own files");
+  const original = await readItem(f, BUILD, null);
+  assert.ok(!isRefusal(original));
+  assert.ok(original.files.every((file) => !('savedAt' in file)));
 });

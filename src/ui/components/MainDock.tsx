@@ -341,7 +341,7 @@ export function MainDock(props: MainDockProps) {
   const automationPanel: DockPanel[] = automation === undefined ? [] : [{
     id: 'automation', title: t('dock.automation'), ownHeader: true, body: <FlowShownContext.Provider value={isFlow}>{automation(open)}</FlowShownContext.Provider>,
   }];
-  const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate }); // #313: the third view, wired beside MainDock
+  const plugins = usePluginsDock({ isShown: selection.center === 'plugins', workspaces, activate, fontFamily }); // #313: the third view, wired beside MainDock
   const panels: DockPanel[] = [
     // First in the list, as in PANELS: the tab a shared side opens on (#457, #746)
     activitiesPanel({ activities, selection, layouts, workspaces, sourceWorkspaces, stages: stages ?? NO_STAGES, workers, nav: activitiesNav, isShown: shown[layout.docks.activities] === 'activities' }),

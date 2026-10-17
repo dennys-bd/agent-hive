@@ -47,7 +47,8 @@ test('the routes list, read and write the items, each write answering what the s
   const [status, items] = await call(base, 'GET', '/api/items');
   assert.deepEqual([status, (items as CatalogueItem[]).map((i) => i.id)], [200, [ARCHITECT, BUILD, DEPLOY, HELPER]]);
   const saved = (await call(base, 'PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: 'mine text' }))[1] as ItemRead;
-  assert.deepEqual([saved.version, saved.item.state, saved.files[0]], ['mine', 'customized', { path: 'SKILL.md', text: 'mine text' }]);
+  const [file] = saved.files;
+  assert.deepEqual([saved.version, saved.item.state, file?.path, file?.text, typeof file?.savedAt], ['mine', 'customized', 'SKILL.md', 'mine text', 'string']);
   assert.equal(((await call(base, 'POST', `${at(BUILD)}/versions`, { name: 'tdd-first', from: 'mine' }))[1] as ItemRead).version, 'tdd-first');
   const renamed = (await call(base, 'PATCH', `${at(BUILD)}/versions/tdd-first`, { name: 'tdd' }))[1] as CatalogueItem;
   assert.deepEqual(renamed.versions.map((v) => v.name), ['mine', 'tdd']);
