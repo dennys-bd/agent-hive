@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path';
-import { PLUGIN_DIR } from '../../src/hooks-settings.js';
+import { PLUGINS_DIR } from '../../src/plugin-render.js';
 import { DAEMON_OUT } from './daemon-runner.js';
 
 export interface RunPaths { state: string; home: string }
@@ -9,8 +9,8 @@ const ALLOW_FLAG = '--allowedTools';
 const DENY_FLAG = '--disallowedTools';
 // A space or comma would split the flag's list; a glob character would turn the literal path into a pattern
 const UNSAFE = /[\s,()*?[\]!#\\]/;
-// What a Hive home holds besides plugin/ (src/home.ts and the stores): read through any home, the other arm's above all, a worker would
-// learn a daemon's secret and port, the other arm's stage commands, or the experiment's name. plugin/ is the same copy in every home
+// What a Hive home holds besides plugins/ (src/home.ts and the stores): read through any home, the other arm's above all, a worker would
+// learn a daemon's secret and port, the other arm's stage commands, or the experiment's name. plugins/ holds each workspace's rendered plugin
 const HOME_FILES = ['hive.*', '*.json', DAEMON_OUT, 'prompts/**', 'protocol/**', 'reviews/**', 'pr-reviews/**'];
 
 const checked = (value: string, what: string): string => {
@@ -31,7 +31,7 @@ export function runRules(runBranch: string, { state, home }: RunPaths): RunRules
   return {
     // Its own branch only, as a worker writes the push: with a trailing redirect or pipe, or naming the merge commit by its sha; the seed's
     // denials still refuse an option, a forced refspec or main, and the sandbox keeps any push on the local origin
-    allow: [`Bash(git push origin HEAD:${checked(runBranch, 'branch')}*)`, `Bash(git push origin *:${runBranch}*)`, `Read(${rooted(home)}/${PLUGIN_DIR}/**)`],
+    allow: [`Bash(git push origin HEAD:${checked(runBranch, 'branch')}*)`, `Bash(git push origin *:${runBranch}*)`, `Read(${rooted(home)}/${PLUGINS_DIR}/**)`],
     deny: [`Read(${rooted(state)}/experiments/**)`, ...HOME_FILES.map((file) => `Read(${homes}/${file})`)],
   };
 }

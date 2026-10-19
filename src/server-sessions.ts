@@ -122,7 +122,8 @@ function registerNewLocalRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireL
     const { kind } = (req.body ?? {}) as { kind?: unknown };
     const agent = knownAgent(kind); // #925: absent = the default agent
     if (kind !== undefined && agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: AGENT_KIND_MESSAGE });
-    const picked = askedLaunch(req.body, agent ?? liveDefaultAgent(current.state), deps.language(), deps.plugin.dir(activity.workspace)); // #257: a Claude model is refused on a default codex too; #316: its workspace's agents
+    await deps.plugin.ready(); // #316: a store change the dialog just made is offered
+    const picked = askedLaunch(req.body, agent ?? liveDefaultAgent(current.state), deps.language(), () => deps.plugin.dir(activity.workspace)); // #257: a Claude model is refused on a default codex too; #316: its workspace's agents
     if ('status' in picked) return refuse(res, picked);
     await answerOpen(deps, await deps.dispatch({ type: 'newLocalSession', activityId: activity.id, ...(agent === undefined ? {} : { agent }), ...picked }, sizeIn(req.body)), res);
   });

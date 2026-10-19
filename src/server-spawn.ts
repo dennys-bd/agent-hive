@@ -105,19 +105,38 @@ const runPrompt = (effect: SpawnEffect): string => withHandoff(ownPrompt(effect)
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
+// #317: a run's plugin folder, its workspace's rendered one once the renders queued so far have landed (#316); why it cannot start when there
+// is none. A raw copy would hold no loadable skill, so there is no fallback
+async function pluginFolder(plugin: Pick<PluginRender, 'dir' | 'ready'>, workspace: string): Promise<{ pluginDir: string } | { refusal: string }> {
+  await plugin.ready();
+  try {
+    return { pluginDir: plugin.dir(workspace) };
+  } catch (err) {
+    return { refusal: errorMessage(err) };
+  }
+}
+
+// Where the user's own session runs and the plugin folder it loads (#317), or why it cannot start
+async function sessionRun(config: Runtime['config'], effect: SessionEffect, plugin: Pick<PluginRender, 'dir' | 'ready'>): Promise<{ cwd: string; slug: string; workspace: Workspace; pluginDir: string } | { refusal: string }> {
+  const place = sessionPlace(config, effect);
+  if ('refusal' in place) return place;
+  const folder = await pluginFolder(plugin, place.workspace.name);
+  return 'refusal' in folder ? folder : { ...place, ...folder };
+}
+
 // #808: the page's grid on a launch, and no `size: undefined` key when it sent none: the host's fallback applies
 const sized = (size?: TerminalSize): Pick<PtyLaunch, 'size'> => (size === undefined ? {} : { size });
 
 // What a stage run launches (#290): the worker's agent, which a manual start may have picked, else the stage's; the picks' specialized agent
 // and args after the config's (launchRun), and the model runModel resolves. Or why it cannot start: an agent boot did not find (#516), a
 // specialized agent the plugin no longer has (#257)
-function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
+function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], agents: readonly AgentAvailability[], pluginDir: string): { agent: AgentId; pluginDir: string; picked: Pick<AgentRun, 'model' | 'extraArgs' | 'specializedAgent'> } | { refusal: string } {
   const agent = worker.agent ?? agentOf(stage, config);
   const refusal = agentRefusal(agent, agents);
   if (refusal !== undefined) return { refusal };
   const picked = launchRun(worker.launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #316: the agents its workspace's folder delivers
   if ('refusal' in picked) return picked;
-  return { agent, picked: { ...picked, model: runModel(picked.model, stage, agent, config.defaultAgent) } };
+  return { agent, pluginDir, picked: { ...picked, model: runModel(picked.model, stage, agent, config.defaultAgent) } };
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
@@ -179,9 +198,9 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!ptyId) return;
     const slug = workSlug(activity, task);
     const { config, hooksPath, promptsDir, port } = runtime;
-    await plugin.ready(); // #316: a render a save or the plugins store queued lands before this run reads its workspace's folder
-    const pluginDir = plugin.dir(taskWorkspace(config, task)?.name);
-    const launch = stageLaunch(effect, config, agents, pluginDir); // #516, #290: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
+    const placed = taskWorkspace(config, task); // #317: a task whose workspace left the config never starts: it has no folder to load
+    const folder = placed ? await pluginFolder(plugin, placed.name) : { refusal: noWorkspaceReason(task) };
+    const launch = 'refusal' in folder ? folder : stageLaunch(effect, config, agents, folder.pluginDir); // #516, #290: before prepare, so a run that cannot start leaves no worktree, setup or prompt behind
     if ('refusal' in launch) {
       await dispatch({ type: 'spawnFailed', ptyId, message: launch.refusal });
       return;
@@ -211,7 +230,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
     await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before launch reads the folder
     const run: AgentRun = {
-      ptyId, cwd, port, withHive: true, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
+      ptyId, cwd, port, withHive: true, hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
       protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
     };
     pool.start({
@@ -230,16 +249,14 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const { worker: { runId: ptyId }, task, sessionId, continues, copy, prompt } = effect;
     if (!ptyId) return;
     const { config, hooksPath, promptsDir, port } = runtime;
-    const place = sessionPlace(config, effect);
+    const place = await sessionRun(config, effect, plugin); // #317: its folder too, before anything is recorded
     if ('refusal' in place) {
       await dispatch({ type: 'spawnFailed', ptyId, message: place.refusal });
       return;
     }
-    await plugin.ready(); // #316: as spawn's
-    const pluginDir = plugin.dir(place.workspace.name);
     // #925: the worker carries its agent: a copy its source's, a resume its session's, a new session the one the route asked for
     const agent = ranAgent(effect.worker);
-    const picked = launchRun(copy ? undefined : effect.worker.launch, config.agentArgs[agent], () => specializedAgents(pluginDir)); // #257: a copy never runs with its source's picks
+    const picked = launchRun(copy ? undefined : effect.worker.launch, config.agentArgs[agent], () => specializedAgents(place.pluginDir)); // #257: a copy never runs with its source's picks
     if ('refusal' in picked) {
       await dispatch({ type: 'spawnFailed', ptyId, message: picked.refusal });
       return;
@@ -264,7 +281,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const [mcpPath, promptPath, protocolText] = files;
     await plugin.ready(); // #316: as spawn's, after the last await
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
+      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
       session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);

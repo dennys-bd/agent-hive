@@ -1,12 +1,12 @@
 // Each workspace's plugin (#316): <home>/plugins/<workspace>/, the shipped plugin overlaid with the version of each Hive item the workspace uses
-// and with the user's own Hive items, every .liquid file rendered with the workspace's values. Every agent run of the workspace loads it instead
-// of <home>/plugin. Shaped like worker-lsp.ts: one queued writer, dir() with no I/O, and ready() for the launches to wait on.
+// and with the user's own Hive items, every .liquid file rendered with the workspace's values. Every agent run of the workspace loads it, and no
+// run loads anything else (#317): a shipped skill is a template, loadable only once rendered. Shaped like worker-lsp.ts: one queued writer,
+// dir() with no I/O, and ready() for the launches to wait on.
 import { readdirSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { prepareCodexWorkspace, removeCodexWorkspace } from './agents/codex-home.js';
 import { mainFiles } from './custom-versions.js';
-import { PLUGIN_DIR } from './hooks-settings.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
@@ -31,9 +31,18 @@ export interface PluginRenderDeps {
   log: Pick<Logger, 'error'>;
   env?: NodeJS.ProcessEnv; // CODEX_HOME; a test passes its own
 }
+/** dir()'s refusal (#317): the workspace has no plugin folder, since the config does not have it or every write of it failed. Its message names
+ * the workspace only, never a path. */
+export class NoPluginFolderError extends Error {
+  constructor(workspace: string) {
+    super(`workspace ${workspace} has no plugin folder`);
+    this.name = 'NoPluginFolderError';
+  }
+}
+
 export interface PluginRender {
   write(config: RenderConfig, only?: readonly string[]): Promise<void>; // queued, never rejects; `only` limits it to those workspaces and skips the sweep
-  dir(workspace: string | undefined): string; // <home>/plugins/<ws> when that folder exists, else <home>/plugin; no I/O
+  dir(workspace: string): string; // <home>/plugins/<ws> once a write or an earlier boot left it, else NoPluginFolderError; no I/O
   ready(): Promise<void>; // settles when every write queued so far has
 }
 
@@ -204,7 +213,10 @@ export function createPluginRender(deps: PluginRenderDeps): PluginRender {
       chain = chain.then(() => writeAll(ctx, config, only)).catch((err: unknown) => log.error(`plugin render: not written (${errorName(err)})`));
       return chain;
     },
-    dir: (workspace) => (workspace !== undefined && ctx.present.has(workspace) ? pluginRenderPath(home, workspace) : join(home, PLUGIN_DIR)),
+    dir: (workspace) => {
+      if (!ctx.present.has(workspace)) throw new NoPluginFolderError(workspace);
+      return pluginRenderPath(home, workspace);
+    },
     ready: () => chain,
   };
 }

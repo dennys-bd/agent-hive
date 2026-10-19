@@ -26,7 +26,6 @@ test('a home\'s marketplace is agent-hive- and the first 8 hex of sha256(home): 
 test('a plugin folder\'s copy goes to its own marketplace\'s cache, its roles to <parent>/.codex/<folder> (#934, #316)', () => {
   assert.equal(pluginCacheDir('/c', '/h/plugins/a'), join('/c', 'plugins', 'cache', marketplaceName('/h/plugins/a'), 'hive', 'current'));
   assert.equal(rolesDir('/h/plugins/a'), '/h/plugins/.codex/a');
-  assert.equal(rolesDir('/h/plugin'), '/h/.codex/plugin', 'the boot fallback');
   assert.equal(roleFile('/h/plugins/a', 'planner'), '/h/plugins/.codex/a/planner.toml');
 });
 
@@ -112,7 +111,7 @@ test('prepareCodexWorkspace copies the folder into its marketplace\'s cache and 
   const cache = pluginCacheDir(codex, dir);
   assert.deepEqual((await readdir(join(cache, 'skills'))).sort(), SKILLS);
   for (const skill of SKILLS) {
-    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md'), 'utf8'), skill);
+    assert.equal(await readFile(join(cache, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), await readFile(join(dir, 'skills', skill, 'SKILL.md.liquid'), 'utf8'), skill);
   }
   assert.deepEqual((await readdir(rolesDir(dir))).sort(), AGENT_NAMES.map((name) => `${name}.toml`));
   for (const role of agentRoles(dir)) assert.equal(await readFile(roleFile(dir, role.name), 'utf8'), renderRole(role), role.name);

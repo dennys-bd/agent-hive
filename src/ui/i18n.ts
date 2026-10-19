@@ -459,6 +459,7 @@ const en = {
   'launch.refused.codexModel': '"model" is a model name of another agent; a codex session needs a Codex model name',
   'launch.refused.specializedAgent': '"specializedAgent" must be one of the Hive plugin\'s agents (hive:<name>)',
   'launch.refused.args': '"args" must be a list of at most 32 arguments, each 1 to 200 characters',
+  'launch.refused.workspace': '"workspace" must name one of the workspaces', // #317: GET /launch-options with no workspace, or one the config does not have
   'runPick.refused.agent': '"agent" must be an agent installed on this machine', // #290: the start route's run picks
   'runPick.refused.session': '"session" must be new, previous or a session of the task that agent recorded',
   'runPick.refused.action': 'a stage that runs no agent takes no "agent", "session", "model", "specializedAgent" or "args"',
@@ -2432,6 +2433,7 @@ const pt: Record<MessageKey, string> = {
   'launch.refused.codexModel': '"model" é um modelo de outro agente; uma sessão do codex precisa de um modelo do Codex',
   'launch.refused.specializedAgent': '"specializedAgent" precisa ser um dos agentes do plugin do Hive (hive:<nome>)',
   'launch.refused.args': '"args" precisa ser uma lista de até 32 argumentos, cada um com 1 a 200 caracteres',
+  'launch.refused.workspace': '"workspace" precisa ser um dos workspaces',
   'runPick.refused.agent': '"agent" precisa ser um agente instalado nesta máquina', // #290: the start route's run picks
   'runPick.refused.session': '"session" precisa ser new, previous ou uma sessão da tarefa registrada por esse agente',
   'runPick.refused.action': 'uma etapa que não executa agente não aceita "agent", "session", "model", "specializedAgent" nem "args"',

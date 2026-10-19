@@ -68,30 +68,35 @@ export async function launchOptions(exec: Exec, log: Pick<Logger, 'info'>, agent
   };
 }
 
-// The dialog's workspace (#316): one the config has, else none, which lists the fallback's agents. Never a refusal, so no new message
+type LaunchRefusal = 'terminal' | 'continue' | 'model' | 'codexModel' | 'specializedAgent' | 'args' | 'workspace';
+const refusal = (key: LaunchRefusal, language: Language): Refusal => ({ status: HTTP_BAD_REQUEST, message: MESSAGES[language][`launch.refused.${key}`] });
+
+// The dialog's workspace (#316): one the config has. #317: none is a 400, since a run outside a workspace has no plugin folder
 function askedWorkspace(req: Request, config: Pick<Config, 'comb'>): string | undefined {
   const asked = req.query.workspace;
   return typeof asked === 'string' && config.comb.workspaces.some((w) => w.name === asked) ? asked : undefined;
 }
 
-/** GET /launch-options (#257), ?workspace=<name> for that workspace's agents (#316). A plugin agent file that cannot be read answers 500 with
- * its reason. */
+/** GET /launch-options?workspace=<name> (#257, #316): that workspace's agents. No workspace, or one the config does not have, is a 400 (#317); a
+ * plugin agent file that cannot be read, or a workspace with no rendered folder, answers 500 with its reason. */
 export function registerLaunchOptionsRoute(app: Express, deps: Pick<TaskRouteDeps, 'requireLive' | 'exec' | 'log' | 'language' | 'plugin'>): void {
   app.get('/launch-options', async (req: Request, res: Response) => {
     const current = deps.requireLive(res);
     if (!current) return;
+    const { config } = current.runtime;
+    const workspace = askedWorkspace(req, config);
+    if (workspace === undefined) {
+      res.status(HTTP_BAD_REQUEST).json({ error: refusal('workspace', deps.language()).message });
+      return;
+    }
     try {
       await deps.plugin.ready(); // a store change the dialog just made is listed
-      const { config } = current.runtime;
-      res.json(await launchOptions(deps.exec, deps.log, config.agentArgs, deps.plugin.dir(askedWorkspace(req, config))));
+      res.json(await launchOptions(deps.exec, deps.log, config.agentArgs, deps.plugin.dir(workspace)));
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: pluginMessage(err, deps.language()) });
     }
   });
 }
-
-type LaunchRefusal = 'terminal' | 'continue' | 'model' | 'codexModel' | 'specializedAgent' | 'args';
-const refusal = (key: LaunchRefusal, language: Language): Refusal => ({ status: HTTP_BAD_REQUEST, message: MESSAGES[language][`launch.refused.${key}`] });
 
 /** A request's picks (#257), as the open routes take them: none is the defaults ({}); any on a terminal (`agent` undefined) or a resume, or
  * one out of shape, is a 400 naming the field. A Claude model on a Codex session is refused as a codex stage's is (#927). `roles` holds the
@@ -114,11 +119,11 @@ export function checkLaunch(body: unknown, agent: AgentId | undefined, roles: re
 }
 
 /** checkLaunch at an open route (#257): `pluginDir`'s agents, the folder of the workspace the session runs in (#316), are read only when the
- * request names one; a plugin it cannot read is a 500 with the reason. */
-export function askedLaunch(body: unknown, agent: AgentId | undefined, language: Language, pluginDir: string): { launch?: LaunchPick } | Refusal {
+ * request names one; a plugin it cannot read, or a workspace with no rendered folder (#317), is a 500 with the reason. */
+export function askedLaunch(body: unknown, agent: AgentId | undefined, language: Language, pluginDir: () => string): { launch?: LaunchPick } | Refusal {
   const isNamed = isRecord(body) && body.specializedAgent !== undefined;
   try {
-    return checkLaunch(body, agent, isNamed ? specializedAgents(pluginDir).map((a) => a.name) : [], language);
+    return checkLaunch(body, agent, isNamed ? specializedAgents(pluginDir()).map((a) => a.name) : [], language);
   } catch (err) {
     return { status: HTTP_SERVER_ERROR, message: pluginMessage(err, language) };
   }

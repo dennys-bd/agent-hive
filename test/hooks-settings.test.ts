@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { runners } from '../src/agents/registry.js';
 import { HOOK_EVENTS, renderHooksSettings, renderMcpConfig } from '../src/agents/claude-home.js';
-import { excludeFromGit, hookCommand, PLUGIN_DIR, PROTOCOL_DIR, prepareHome, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
+import { excludeFromGit, hookCommand, PROTOCOL_DIR, prepareHome, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
 import { SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
@@ -65,7 +64,7 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   const home = join(parent, 'agent-hive'); // does not exist yet: a first boot creates it
   const paths = await prepareHome(home, 4242, [runners.claude]);
   assert.deepEqual(paths, {
-    hooksPath: join(home, 'hooks.json'), promptsDir: join(home, 'prompts'), pluginDir: join(home, 'plugin'),
+    hooksPath: join(home, 'hooks.json'), promptsDir: join(home, 'prompts'),
     protocol: { stage: join(home, 'protocol', 'stage.md'), session: join(home, 'protocol', 'session.md') },
   });
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4242));
@@ -76,33 +75,10 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4343), 'rewritten for the port in use');
 });
 
-test('prepareHome copies the Hive plugin into <home>/plugin on every boot, wiping what a previous version left there', async (t) => {
-  const home = join(await tempDir(t, ''), 'agent-hive');
-  const { pluginDir } = await prepareHome(home, 4242, [runners.claude]);
-  assert.equal(pluginDir, join(home, PLUGIN_DIR));
-  const manifest = JSON.parse(await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string };
-  assert.equal(manifest.name, 'hive', 'the namespace /hive:new-spec and hive:tdd are built from it');
-  assert.ok((await readFile(join(pluginDir, 'CREDITS.md'), 'utf8')).length > 0);
-  // a skill an older Hive shipped and this one no longer does must disappear downstream
-  const stale = join(pluginDir, 'skills', 'gone', 'SKILL.md');
-  await mkdir(join(pluginDir, 'skills', 'gone'), { recursive: true });
-  await writeFile(stale, 'from a previous version');
-  await prepareHome(home, 4242, [runners.claude]);
-  await assert.rejects(stat(stale), 'the copy is a wipe, not a merge');
-  assert.ok(await readFile(join(pluginDir, '.claude-plugin', 'plugin.json'), 'utf8'), 'and the fresh copy is back');
-});
-
-test('prepareHome copies <home>/plugin before any runner\'s hook, which Codex\'s reads (#316)', async (t) => {
-  const home = join(await tempDir(t, ''), 'agent-hive');
-  let isCopied = false;
-  await prepareHome(home, 4242, [{ prepareHome: async (h) => { isCopied = existsSync(join(h, PLUGIN_DIR, '.claude-plugin', 'plugin.json')); } }]);
-  assert.equal(isCopied, true);
-});
-
 test('prepareHome with no runner writes the shared files only: no hooks.json and no shim for an agent boot did not find (#924)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
   await prepareHome(home, 4242, []);
-  assert.deepEqual((await readdir(home)).sort(), ['plugin', 'prompts', 'protocol', 'shell']);
+  assert.deepEqual((await readdir(home)).sort(), ['prompts', 'protocol', 'shell'], 'no plugin/: every run loads its workspace\'s render (#317)');
 });
 
 test('prepareHome writes the stage and the session protocol into <home>/protocol, for this user only, returns their paths, and a later boot rewrites them (#167)', async (t) => {

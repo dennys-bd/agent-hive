@@ -1,6 +1,18 @@
 ---
 name: new-plan
-description: 'Plan stage for one task: resolve the conventions, find the spec from the argument or the branch, have the planner write a sliced, indexed plan into the plans folder, review it, and commit. Asks the user in rounds only when the spec left something open; no approval gate.'
+description: 'Plan stage for one task: read the workspace''s conventions, find the spec from the argument or the branch, have the planner write a sliced, indexed plan into the plans folder, review it, and commit. Asks the user in rounds only when the spec left something open; no approval gate.'
+variables:
+  docsRepo: { default: null }
+  specsDir: { default: docs/hive/specs }
+  plansDir: { default: docs/hive/plans }
+  designsDir: { default: docs/hive/designs }
+  docsLanguage: { default: English }
+  chatLanguage: { default: null }
+  delivery: { values: [single, stacked, integration], default: single }
+  sliceMin: { default: "300" }
+  sliceMax: { default: "550" }
+  featureFlags: { values: [none, partial, always], default: none }
+  testCommand: { default: null }
 ---
 
 # /hive:new-plan
@@ -19,10 +31,22 @@ why that one.
 ## Conventions
 
 First step: read `reference/conventions.md` at this plugin's root
-(`../../reference/conventions.md` from this skill's directory) and
-resolve the conventions as it says, then state its one line. Talk in
+(`../../reference/conventions.md` from this skill's directory); the values
+below are this workspace's: state its one line of them. Talk in
 `chatLanguage`; the plan is written in `docsLanguage`.
 Read CONTRIBUTING.md as `reference/conventions.md` says and plan the commits, tests and docs it asks for.
+
+- `docsRepo`: {% if docsRepo %}`{{ docsRepo }}`{% else %}none: the docs live in this repository{% endif %}
+- `specsDir`: `{{ specsDir }}`
+- `plansDir`: `{{ plansDir }}`
+- `designsDir`: `{{ designsDir }}`
+- `docsLanguage`: `{{ docsLanguage }}`
+- `chatLanguage`: {% if chatLanguage %}`{{ chatLanguage }}`{% else %}the Hive's `hiveLanguage`, else the language the user writes in{% endif %}
+- `delivery`: `{{ delivery }}`
+- `sliceMin`: `{{ sliceMin }}`
+- `sliceMax`: `{{ sliceMax }}`
+- `featureFlags`: `{{ featureFlags }}`
+- `testCommand`: {% if testCommand %}`{{ testCommand }}`{% else %}the test gate the repository's agent instructions file names{% endif %}
 
 ## Bounded path
 
@@ -39,8 +63,8 @@ Must be clean and on the task's branch (not the base branch).
 Dispatch `hive:planner` with the spec's path, the plan's path —
 `<plansDir>/YYYY-MM-DD-<slug>.md` in the docs repository, `<slug>` the
 spec's without `-design` — the repository's agent instructions file, and
-the resolved `docsLanguage`, `delivery`, `sliceSize`, `featureFlags` and
-`testCommand`. It writes the plan in the format its definition gives:
+the values of `docsLanguage`, `delivery`, `sliceMin` and `sliceMax` (its
+`sliceSize`), `featureFlags` and `testCommand`. It writes the plan in the format its definition gives:
 
 - a header block: **Goal** (one sentence), **Architecture** (two to
   three sentences), **Tech Stack** (key technologies and libraries),
@@ -53,7 +77,7 @@ the resolved `docsLanguage`, `delivery`, `sliceSize`, `featureFlags` and
   one is responsible for;
 - `## Index` — a table per slice, each row a task's link (an anchor to
   its heading), its files, its estimated lines of code and its risk; no
-  prose, except one line for a slice still above `sliceSize.max`;
+  prose, except one line for a slice still above `sliceMax`;
 - `## Slice <k> — <name>` sections holding the `### Task N: <name>`
   sections, each task's body inside `<details><summary>`: **Files**,
   **Interfaces**, and `- [ ]` steps with real code in every code step —
@@ -61,9 +85,9 @@ the resolved `docsLanguage`, `delivery`, `sliceSize`, `featureFlags` and
   type or function not defined in some task. The full code stays: the
   index is a map, not a digest.
 
-`sliceSize` only shapes the split: a delivery up to `max` is one slice,
-whatever its size, and is never padded; above it, slices aim inside the
-range. Tasks are ordered so the test suite is green at the end of every
+`sliceMin` and `sliceMax` only shape the split: a delivery up to
+`sliceMax` is one slice, whatever its size, and is never padded; above
+it, slices aim inside the range. Tasks are ordered so the test suite is green at the end of every
 task, and so of every slice.
 
 ## Questions
@@ -79,8 +103,8 @@ plan is written and reviewed, commit it and finish.
 
 ## Review the written plan
 
-Dispatch `hive:plan-reviewer` with the plan's path, the spec's path and
-the resolved `sliceSize`, `featureFlags` and `delivery`. Apply its
+Dispatch `hive:plan-reviewer` with the plan's path, the spec's path,
+`sliceMin` and `sliceMax` (its `sliceSize`), `featureFlags` and `delivery`. Apply its
 Issues; its Recommendations are advisory.
 
 ## Commit
