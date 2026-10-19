@@ -44,7 +44,7 @@ export const REVIEW_SCHEMA = {
 
 // zod drops a key the schema does not name, so a fix the agent adds anyway never reaches the page
 const ANSWER = z.object({
-  annotations: z.array(z.object({ line: z.number().int(), severity: z.enum(SEVERITIES), title: z.string(), body: z.string() })),
+  annotations: z.array(z.object({ line: z.number().int(), severity: z.enum(SEVERITIES), title: z.string().min(1), body: z.string().min(1) })),
 });
 
 const othersBlock = (others: ReviewInput['others']): string => others.map((file) => `### ${file.path}\n${file.text}`).join('\n\n') || '(none)';

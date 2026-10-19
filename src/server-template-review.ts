@@ -1,6 +1,6 @@
 // The template reviewer (#328): POST /api/items/:id/review runs hive:template-reviewer headless on the open file of an item and answers its
 // annotations on that file. Nothing is written. One review per item at a time; a client that goes away cancels its run. The agent's raw
-// output and stderr reach hive.log only. The checks, the run and the guard are ask the agent's (#330), reused from server-assist.ts.
+// output and stderr reach hive.log only. The checks, the run and the guard are those of ask the agent (#330), reused from server-assist.ts.
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { agentRefusal } from './agents.js';
@@ -54,7 +54,10 @@ async function reviewerInstructions(sources: ItemSources, version: string | null
   if (main === undefined) return { reason: `${REVIEWER_ID} has no ${REVIEWER_NAME}.md` };
   const parsed = parseTemplate(main.text);
   const rendered = renderTemplate(parsed, '');
-  if (!rendered.ok) return { reason: `line ${rendered.errors[0]?.line}: ${rendered.errors[0]?.message}` };
+  if (!rendered.ok) {
+    const first = rendered.errors[0];
+    return { reason: first === undefined ? 'does not render' : `line ${first.line}: ${first.message}` };
+  }
   return { text: rendered.text.slice(deliveredHeader(parsed).length).trim() };
 }
 
