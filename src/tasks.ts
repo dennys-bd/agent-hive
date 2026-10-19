@@ -602,13 +602,17 @@ export function defaultSession(task: Task, state: WorkersState, stage: Stage | u
 export const previousSession = (task: Task, state: WorkersState): Session | undefined =>
   worktreeSessions(task, state).filter((s) => s.stages.length > 0).at(-1);
 
+/** A task whose error the user may dismiss (#354): what canMoveToStage asks, an epic included: its refused end action (#31) freezes it and
+ * a dismiss unfreezes it without moving it. */
+export const canDismissError = (task: Task, state: WorkersState): boolean =>
+  !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
+  && !workersOf(state, task).some((s) => !s.freeSession);
+
 /** A task the user may move to another stage (#164, #366, #708), by right-click → move to or by a drag, auto on or off: still on the
  * source, not leaving it, and held by no stage run. A free session or a terminal on it holds nothing: the session is the user's own and
  * has no stage (#283). The reducer, the route, the menu and the drag share it. */
 export const canMoveToStage = (task: Task, state: WorkersState): boolean =>
-  task.item.epic === undefined // #31: its children decide its stage; the rule would move it back at the next reduction
-  && !task.missing && !task.leaving && activityOf(state, taskId(task))?.workerId === undefined && !inAction(activityOf(state, taskId(task))) // #755, #834
-  && !workersOf(state, task).some((s) => !s.freeSession);
+  task.item.epic === undefined && canDismissError(task, state); // #31: its children decide its stage; the rule would move it back at the next reduction
 
 /** What a workspace's shell (#292) is named by in place of a task's slug: its launch's slug, which the kill effect and the log name. */
 export const LOCAL_SLUG = 'workspace';
