@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canSchedule, initialState, reduce } from '../src/orchestrator.js';
 import { releaseWorker, hasRoom, workerCount } from '../src/reducer-kit.js';
-import { activityOf, taskOfWorker, withActivity } from '../src/activities.js';
+import { activityOf, resultOf, taskOfWorker, withActivity } from '../src/activities.js';
+import { freeEndRefused } from '../src/runs.js';
+import { transitionKey } from '../src/transitions.js';
 import { slugFor } from '../src/tasks.js';
 import { withWork, workId } from './fixtures/work.js';
 import type { LegacyStage } from '../src/config-migrate.js';
-import type { SourceItem, Signal, Worker, State, Item } from '../src/types.js';
+import type { SourceItem, Signal, Stage, Transition, Worker, State, Item } from '../src/types.js';
 import { move, chained } from './fakes.js';
 
 // The user's own sessions (#459): only automation counts as a worker; a session runs in a worker of its own, outside the cap.
@@ -18,8 +20,8 @@ const WORKTREE = '/tmp/worktrees/hive-1-task-1';
 const item = (n: number): Item => ({ itemId: `board:item${n}`, id: String(n), title: `Task ${n}`, body: '', url: `https://github.com/o/r/issues/${n}`, source: 'board' });
 const listed = (n: number): SourceItem => ({ item: item(n), column: 'Backlog' });
 // n tasks polled into spec under `signal` (up to max start under green), each given a worktree afterwards so a session may open on any
-const hive = (max: number, n: number, signal: Signal = 'green'): State => {
-  const start: State = { ...initialState(max), signal, workspaces: ['hive'], syncs: { board: {} }, ...chained(STAGES) };
+const hive = (max: number, n: number, signal: Signal = 'green', graph: Pick<State, 'stages' | 'transitions'> = chained(STAGES)): State => {
+  const start: State = { ...initialState(max), signal, workspaces: ['hive'], syncs: { board: {} }, ...graph };
   const polled = reduce(start, { type: 'poll', source: 'board', items: Array.from({ length: n }, (_, i) => listed(i + 1)) }).state;
   // #629: the worktree is each task's activity's: the spawn's own, else a fixture pair
   return polled.tasks.reduce((acc, c) => {
@@ -116,4 +118,58 @@ test('openSession carries the open route\'s prompt onto its spawnSession effect;
   const [without] = session(state).effects;
   assert.ok(withPrompt?.type === 'spawnSession' && without?.type === 'spawnSession');
   assert.deepEqual([withPrompt.prompt, 'prompt' in without], ['merge main', false]);
+});
+
+// #339 (#72): Dev's done enters CI, a wait for CI whose only exit is passed, into Gate, an approval stage with no exit of its own
+const LATE_STAGES: Stage[] = [
+  { name: 'Dev', from: { board: ['Backlog'] }, prompt: '/hive-build {url}' },
+  { name: 'CI', from: {}, action: 'waitForCi' },
+  { name: 'Gate', from: {}, prompt: '/review {url}', approval: true },
+];
+const LATE_FLOW: Transition[] = [{ from: 'Dev', to: 'CI', when: 'done' }, { from: 'CI', to: 'Gate', when: 'verdict', verdict: 'passed' }];
+const DOCS_PR = 'https://github.com/o/d/pull/2';
+// Task 1 in CI under red, so no stage run starts: its free session's done moved it from Dev, and a late one may follow
+const inCi = (): { state: State; own: string } => {
+  const opened = session(hive(1, 1, 'red', { stages: LATE_STAGES, transitions: LATE_FLOW }), 1).state;
+  const own = sessionOf(opened).runId!;
+  return { state: reduce(opened, { type: 'done', ptyId: own }).state, own };
+};
+
+test('a free session\'s late hive_done in a stage with no done exit ends nothing: the task stays in CI, not stopped, its result merged with no verdict (#339)', () => {
+  const { state, own } = inCi();
+  assert.equal(state.tasks[0].stage, 'CI', 'Dev has the exit: the first done still advanced the task');
+  const after = reduce(state, { type: 'done', ptyId: own, result: { docsPr: DOCS_PR } }).state;
+  const live = activityOf(after, 'board:item1');
+  assert.deepEqual([after.tasks[0].stage, live?.stopped, live?.error, live?.ci], ['CI', undefined, undefined, activityOf(state, 'board:item1')?.ci], 'the wait for CI goes on');
+  assert.deepEqual([resultOf(after, 'board:item1')?.docsPr, resultOf(after, 'board:item1')?.verdict], [DOCS_PR, undefined]);
+  assert.deepEqual(reduce(state, { type: 'done', ptyId: own }).state, state, 'with no result nothing changes');
+});
+
+test('a free session\'s verdict with no transition and no done fallback, in an action stage, ends nothing and records no verdict (#339)', () => {
+  const { state, own } = inCi();
+  const after = reduce(state, { type: 'done', ptyId: own, verdict: 'failed', evidence: 'x' }).state;
+  const live = activityOf(after, 'board:item1');
+  assert.deepEqual([after.tasks[0].stage, live?.stopped, live?.error, resultOf(after, 'board:item1')?.verdict], ['CI', undefined, undefined, undefined]);
+});
+
+test('freeEndRefused names the free session\'s exit the stage lacks, and nothing for a stage run, an exit that exists, a pending handoff or an approval stage (#339)', () => {
+  const { state, own } = inCi();
+  const worker = state.workers.find((w) => w.runId === own)!;
+  const task = state.tasks[0];
+  assert.deepEqual([freeEndRefused(state, worker, task), freeEndRefused(state, worker, task, 'failed'), freeEndRefused(state, worker, task, 'passed')], ['done', 'verdict:failed', undefined]);
+  const { freeSession: _free, ...run } = worker;
+  assert.equal(freeEndRefused(state, run, task), undefined, 'a stage run halts as #134 has it');
+  assert.equal(freeEndRefused(state, worker, { ...task, stage: 'Gate' }), undefined, 'an approval stage waits for the user');
+  const pending = withActivity(state, { ...activityOf(state, 'board:item1')!, handoffPending: transitionKey(LATE_FLOW[1]) });
+  assert.equal(freeEndRefused(pending, worker, task), undefined, 'a pending handoff takes its transition');
+});
+
+test('a free session\'s done with a handoff pending still takes the pending transition, and in an approval stage still waits for the user (#339)', () => {
+  const { state, own } = inCi();
+  const pending = withActivity(state, { ...activityOf(state, 'board:item1')!, handoffPending: transitionKey(LATE_FLOW[1]) });
+  const inGate = reduce(pending, { type: 'done', ptyId: own }).state;
+  assert.equal(inGate.tasks[0].stage, 'Gate');
+  const waits = reduce(inGate, { type: 'done', ptyId: own }).state;
+  const live = activityOf(waits, 'board:item1');
+  assert.deepEqual([waits.tasks[0].stage, live?.stopped, live?.error, live?.approval !== undefined], ['Gate', undefined, undefined, true]);
 });

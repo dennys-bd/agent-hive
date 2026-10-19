@@ -491,12 +491,13 @@ function setMax(state: State, max: number): Reduced {
 
 // hive_done from the worker: the next Stop of this run ends the stage, by its verdict when it gave one (#134). A result is shallow-merged into
 // its activity's record (a newer key wins, #629), the verdict as result.verdict, so every later stage reads it as {result.<path>} (#99).
-// Unknown or empty worker: ignored; a free session advances its task at once instead (#283).
+// Unknown or empty worker: ignored; a free session advances its task at once instead (#283), or, when its stage has no exit for the end, only
+// records the plain result (#339).
 function done(state: State, ptyId: string, result?: Record<string, unknown>, verdict?: string, evidence?: string): Reduced {
   const worker = liveWorker(state, ptyId);
   if (!worker) return none(state);
   const ended = withVerdict(result, verdict, evidence);
-  if (worker.freeSession) return freeSessionDone(state, worker, ended, verdict);
+  if (worker.freeSession) return freeSessionDone(state, worker, ended, verdict, result);
   const task = taskOfWorker(state, worker);
   const merged = ended && task ? withResult(state, task, ended) : state;
   return patch(merged, ptyId, { done: true, verdict });
