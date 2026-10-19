@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { initialState, reduce } from '../src/orchestrator.js';
-import { advance, type EndOf, follow, retry, take, unrouted } from '../src/transit.js';
+import { advance, dismissError, type EndOf, follow, retry, take, unrouted } from '../src/transit.js';
 import { transitionKey } from '../src/transitions.js';
 import { FEEDBACK_MAX } from '../src/types.js';
 import type { Activity, Item, Stage, State, Task, Transition, TryRecord } from '../src/types.js';
@@ -144,4 +144,44 @@ test('follow goes through a transition as an epic does: its sources written and 
   const held = pure(placed(), (s) => follow(s, s.tasks[0], ARCHIVE));
   assert.deepEqual([held.state.tasks[0].stage, held.state.tasks[0].leaving], ['checks', true], 'held until the source answers');
   assert.deepEqual(held.effects, [{ type: 'sourceAction', itemId: ID, taskId: ID, action: { type: 'archive' } }]);
+});
+
+// #354: a wait-for-CI stage beside the file's commands and prompt stages, and a task stopped with an error a dismiss clears
+const CI: Stage = { name: 'ci', from: { board: ['CI'] }, action: 'waitForCi', ciChecks: 'all', rerunOnce: false };
+const ERRED: Partial<Activity> = { stopped: true, stoppedAt: AT, error: 'no transition: done' };
+const SPENT: Partial<Activity> = { tries: { [KEY]: 3 }, tryLog: [recordOf(KEY, 1)] };
+
+test('dismissError in a stage with an action drops the error and the stop; in a prompt stage it drops the error and keeps the stop; the stage, tries and tryLog stay, no effect (#354)', () => {
+  const inCi = pure(placed({ ...ERRED, ...SPENT }, { stage: 'ci', stages: [...STAGES, CI] }), (s) => dismissError(s, ID));
+  assert.ok(inCi);
+  const ci = activityOf(inCi.state, ID);
+  assert.deepEqual([inCi.state.tasks[0].stage, ci?.error, ci?.stopped, ci?.stoppedAt, inCi.effects], ['ci', undefined, undefined, undefined, []]);
+  assert.deepEqual([ci?.tries, ci?.tryLog], [SPENT.tries, SPENT.tryLog], 'a dismiss resets no counter: that is retry\'s');
+  const inFix = pure(placed({ ...ERRED, ...SPENT }, { stage: 'fix' }), (s) => dismissError(s, ID));
+  assert.ok(inFix);
+  const fix = activityOf(inFix.state, ID);
+  assert.deepEqual([inFix.state.tasks[0].stage, fix?.error, fix?.stopped, fix?.stoppedAt], ['fix', undefined, true, AT], 'a prompt stage stays stopped: no session until someone starts it');
+  assert.deepEqual([fix?.tries, fix?.tryLog], [SPENT.tries, SPENT.tryLog]);
+});
+
+test('dismissError answers undefined for an unknown task, a missing one, one with no error and one a run holds (#354)', () => {
+  assert.equal(dismissError(placed(ERRED), 'board:nope'), undefined);
+  assert.equal(dismissError(placed({ stopped: true }), ID), undefined);
+  assert.equal(dismissError(placed({ ...ERRED, workerId: 'w1' }), ID), undefined);
+  const erred = placed(ERRED);
+  assert.equal(dismissError(deepFreeze({ ...erred, tasks: [{ ...erred.tasks[0], missing: true }] }), ID), undefined);
+});
+
+// The task stopped with an error in `stage`, one free worker and green: what the due actions and the fill read
+function erredIn(stage: string): State {
+  const task: Task = { item, stage, boardColumn: '', auto: true, workspace: 'hive' };
+  return deepFreeze(withWork({ ...initialState(1), signal: 'green', workspaces: ['hive'], stages: [...STAGES, CI], transitions: [RETRY], tasks: [task] }, ID, ERRED));
+}
+
+test('a dismissError event in a wait-for-CI stage starts the wait on the same dispatch; in a prompt stage with auto on it spawns nothing (#354)', () => {
+  const ci = pure(erredIn('ci'), (s) => reduce(s, { type: 'dismissError', taskId: ID }));
+  assert.deepEqual([activityOf(ci.state, ID)?.ci?.stage, ci.effects.some((e) => e.type === 'ciRead')], ['ci', true]);
+  const fix = pure(erredIn('fix'), (s) => reduce(s, { type: 'dismissError', taskId: ID }));
+  const live = activityOf(fix.state, ID);
+  assert.deepEqual([live?.error, live?.stopped, fix.effects.filter((e) => e.type === 'spawn')], [undefined, true, []]);
 });

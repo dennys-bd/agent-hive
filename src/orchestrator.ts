@@ -15,7 +15,7 @@ import { disableRule, dropExpiredDisables, enableRule, namedDisables } from './u
 import { boot, clearSessions, closeTerminals, createActivity, dismissCrash, exit, checkpointCaptured, capturedFirst, freeSessionDone, openProjectShell, openSession, openTerminal, quit, restart, restarting, restored, restoreFailed, restoring, continueStage, stageStarted, stop } from './runs.js';
 import { answer, answerFeedback, approvalExpired, approve, awaitApproval, extendApproval, typeFeedback } from './approval.js';
 import { askHandoff, needsHandoff, pendingEnd, withoutPending } from './handoff.js';
-import { advance, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
+import { advance, dismissError, type EndOf, keepsRun, retry, take, unrouted, withVerdict } from './transit.js';
 import { exitOf, transitionByKey } from './transitions.js';
 import { beingDeleted, clearedError, deletingOf, sourceWrites, continueInPlace, dropActivity, dropWorker, keptMarks, ensureActivity, emptyWorker, takeWorker, releaseWorker, liveWorker, none, occupiedCount, occupy, workerCount, patch, type Reduced, releaseRun, settleEntries, shouldWrite, slugTaken, unmarked, withError, withTask } from './reducer-kit.js';
 import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, forgetUnopenedLocal, newLocalSession, openLocalSession, settleCopy, withLocalTurn } from './session-copy.js';
@@ -208,6 +208,7 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'approvalExpired': return fill(approvalExpired(state, event.ptyId)); // the held worker frees (#268)
     case 'retryDue': return retryDue(state, event.ptyId, event.until); // no fill: the worker kept its slot through the wait (#805)
     case 'retry': return afterCommands(state, retry(state, event.taskId) ?? none(state)); // #915: as a routed failure: the due actions and the fill follow
+    case 'dismissError': return afterCommands(state, dismissError(state, event.taskId) ?? none(state)); // #354: as retry: a due stage action and the fill follow
   }
 }
 
