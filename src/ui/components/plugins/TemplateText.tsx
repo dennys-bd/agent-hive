@@ -1,6 +1,7 @@
 import type { editor } from 'monaco-editor';
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { AnnotationMargin } from '@/components/plugins/Annotations';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import type { Annotations } from '@/hooks/use-annotations';
 import { t } from '@/i18n';
 import { languageOf, loadMonaco } from '@/lib/editor-models';
@@ -9,12 +10,15 @@ import { type Chip, type Decoration, isMarkdown, type LineRange } from '@/lib/te
 type View = editor.IStandaloneCodeEditor;
 /** A map click (decision 19): the line to put the cursor on; n changes on every click, so the same line twice reveals twice. */
 export interface Reveal { line: number; n: number }
+/** The open chip's popover (#322): the content of the chain's form at the chip of `line`; Esc and a click outside call onClose. */
+export interface ChipPopover { line: number; content: ReactNode; onClose(): void }
 export interface TemplateTextProps {
   modelKey: string; // a new key, a new model: the item, the file and the preview's workspace
   path: string; text: string; isReadOnly: boolean; fontFamily: string;
   hidden: readonly LineRange[]; decorations: readonly Decoration[]; chips: readonly Chip[]; reveal?: Reveal;
   onChange(text: string): void; onSave(): void;
-  onChip?(line: number): void; // inert in #319; 3.8's popover opens here
+  onChip?(line: number): void; // #322: opens the chain's popover
+  popover?: ChipPopover;
   annotations?: Annotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
 }
 
@@ -94,6 +98,35 @@ function useScrollTop(view: View | undefined): number {
   return top;
 }
 
+// The conditions column (#319): each chip at its marker's line as the text scrolls; the open one anchors its popover, upward (#322, decision 13)
+interface ChipsProps { chips: readonly Chip[]; topOf(line: number): number; onChip?(line: number): void; popover?: ChipPopover }
+
+function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
+  if (chips.length === 0) return null;
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
+    <div role="group" aria-label={t('plugins.editor.conditions')}>
+      {chips.map((chip) => {
+        const button = (
+          <button
+            key={chip.line} type="button" onClick={() => onChip?.(chip.line)} style={{ top: topOf(chip.line) }}
+            className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
+          >
+            {chip.label}
+          </button>
+        );
+        if (popover?.line !== chip.line) return button;
+        return (
+          <Popover key={chip.line} open onOpenChange={(isOpen) => { if (!isOpen) popover.onClose(); }}>
+            <PopoverAnchor asChild>{button}</PopoverAnchor>
+            <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3">{popover.content}</PopoverContent>
+          </Popover>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The skill editor's text (#319, handoff 11b): the buffer in Monaco with the look SkillEditor computed, ⌘S through Monaco's own save action
  * as EditorPane binds it, and the margin beside it: each condition chip at its marker's line and, #327, each annotation's card or note at its
  * line, as the text scrolls. */
@@ -102,7 +135,7 @@ export function TemplateText(props: TemplateTextProps) {
   const view = useTemplateEditor(host, props);
   useLook(view, props);
   const scrollTop = useScrollTop(view);
-  const { chips, onChip, annotations, anchorOf = SAME_LINE } = props;
+  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE } = props;
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;
   const marks = annotations?.list ?? [];
   return (
@@ -110,19 +143,7 @@ export function TemplateText(props: TemplateTextProps) {
       <div ref={host} className="min-h-0 min-w-0 flex-1" />
       {(chips.length > 0 || marks.length > 0) && (
         <div className="relative w-[230px] shrink-0 overflow-hidden border-l">
-          {chips.length > 0 && (
-            // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
-            <div role="group" aria-label={t('plugins.editor.conditions')}>
-              {chips.map((chip) => (
-                <button
-                  key={chip.line} type="button" onClick={() => onChip?.(chip.line)} style={{ top: topOf(chip.line) }}
-                  className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          )}
+          <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
             <AnnotationMargin annotations={annotations} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
           )}
