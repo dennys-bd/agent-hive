@@ -138,12 +138,13 @@ function useOpenCard(file: string | undefined, list: readonly LintAnnotation[]) 
   const [opened, setOpened] = useState<FileNote<string>>();
   const [revealed, setRevealed] = useState<FileNote<{ line: number; n: number }>>();
   const open = file !== undefined && opened !== undefined && opened.file === file ? list.find((a) => idOf(a) === opened.value) : undefined;
+  const close = useCallback((): void => setOpened(undefined), []); // the Esc listener depends on it
   const openAt = (annotation: LintAnnotation): void => {
     if (file === undefined) return;
     setOpened({ file, value: idOf(annotation) });
     setRevealed((last) => ({ file, value: { line: annotation.line, n: (last?.value.n ?? 0) + 1 } }));
   };
-  return { open, openAt, close: (): void => setOpened(undefined), revealed: revealed !== undefined && revealed.file === file ? revealed.value : undefined };
+  return { open, openAt, close, revealed: revealed !== undefined && revealed.file === file ? revealed.value : undefined };
 }
 
 /** The open file's annotations (#327): linted on every change of its buffer, its dismissals left out, one card open at a time. */

@@ -34,6 +34,6 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
         </section>
       ),
     },
-    center: isShown ? <PluginsView plugins={plugins} editor={editor} workspaces={workspaces} fontFamily={fontFamily} /> : null,
+    center: isShown ? <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={workspaces} fontFamily={fontFamily} /> : null,
   };
 }
