@@ -65,9 +65,12 @@ function followed(state: State, task: Task): Reduced {
 }
 
 // A leaving epic waits for its source's answer, a missing one for the user, and one whose source action failed keeps its error: taking the
-// exit again would write the same refused action after every event
-const follows = (state: State, task: Task): boolean =>
-  task.item.epic !== undefined && !task.leaving && !task.missing && activityOf(state, taskId(task))?.error === undefined;
+// exit again would write the same refused action after every event. One whose activity is being deleted waits for that delete, as isIdle
+// does (#353): an archive taken now answers before it and its closeTask is refused by the mark; activityDeleted's advance takes the exit then
+const follows = (state: State, task: Task): boolean => {
+  const activity = activityOf(state, taskId(task));
+  return task.item.epic !== undefined && !task.leaving && !task.missing && activity?.error === undefined && !activity?.deleting;
+};
 
 /** Every show epic moved where its children put it (#31), deepest first, so a parent epic reads its sub-epics already moved. reduce runs it
  * after every event. */
