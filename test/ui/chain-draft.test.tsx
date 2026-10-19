@@ -37,8 +37,8 @@ test('an or run of is on a list variable folds into one "is one of…" at its fi
   expect(specOf(one, variables)).toEqual({ else: false, branches: [{ connective: 'and', terms: [{ variable: 'delivery', op: 'is', value: 'pr' }] }] });
 });
 
-test('a condition the form cannot show reads as null: parentheses, a mixed and/or, an undeclared variable, an operator its kind does not offer (#322, decision 14)', () => {
-  for (const marker of ['{% if (quick) %}', '{% if quick and delivery == "pr" or testCommand %}', '{% if ghost %}', '{% if delivery contains "p" %}', '{% if quick == "yes" %}']) {
+test('a condition the form cannot show reads as null: parentheses, a mixed and/or, an undeclared variable, an operator its kind does not offer, a list value it does not declare (#322, decision 14)', () => {
+  for (const marker of ['{% if (quick) %}', '{% if quick and delivery == "pr" or testCommand %}', '{% if ghost %}', '{% if delivery contains "p" %}', '{% if quick == "yes" %}', '{% if delivery == "old" %}', '{% if delivery == "pr" or delivery == "old" %}']) {
     const { chains: [chain], variables } = read([marker, '{% endif %}']);
     expect(chain && draftOf(chain, variables), marker).toBeNull();
   }

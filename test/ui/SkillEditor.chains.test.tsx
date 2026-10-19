@@ -93,6 +93,10 @@ test('the chip opens its chain in the popover; "is one of" with two values and o
   const user = userEvent.setup();
   await open();
   await user.click(chip('else'));
+  await screen.findByRole('dialog', { name: 'bloco condicional' });
+  await user.click(chip('else')); // the open chip closes it again, not a close then a reopen
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await user.click(chip('else'));
   const dialog = await screen.findByRole('dialog', { name: 'bloco condicional' });
   expect(within(dialog).getAllByRole('combobox', { name: 'valor' }).map((c) => c.textContent)).toEqual(['pr', 'stacked']);
   await choose(user, block(dialog, 'if'), 'operador', 'é um de…');

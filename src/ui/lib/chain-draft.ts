@@ -63,12 +63,15 @@ export const updateTerm = (block: DraftBlock, index: number, change: (term: Draf
 
 const kindOf = (variables: Variables, name: string | undefined): VariableKind | undefined => variables.find((v) => v.name === name)?.kind;
 
-// A term the form can show as it is, or null: an undeclared variable, an operator its kind lacks or a non-text value would be rewritten
+// A term the form can show as it is, or null: an undeclared variable, an operator its kind lacks, a non-text value or a list value it does not
+// declare would be rewritten
 function termOf(term: ConditionTerm, variables: Variables): DraftTerm | null {
-  const kind = kindOf(variables, term.variable);
-  if (kind === undefined || !OPS[kind].includes(term.op)) return null;
+  const variable = variables.find((v) => v.name === term.variable);
+  if (variable === undefined || !OPS[variable.kind].includes(term.op)) return null;
   if (!SINGLE.includes(term.op)) return { variable: term.variable, op: term.op, values: [] };
-  return typeof term.value === 'string' ? { variable: term.variable, op: term.op, values: [term.value] } : null;
+  if (typeof term.value !== 'string') return null;
+  // a list's select shows only its declared values: an undeclared one would be rewritten unseen
+  return variable.kind === 'list' && !variable.values.includes(term.value) ? null : { variable: term.variable, op: term.op, values: [term.value] };
 }
 
 // Decision 5: an or run of is on one list variable reads back as one "is one of…" at its first term's place

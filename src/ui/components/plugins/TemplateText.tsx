@@ -115,13 +115,16 @@ function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
           <Popover key={chip.line} open={isOpen} onOpenChange={(next) => { if (!next) close(); }}>
             <PopoverAnchor asChild>
               <button
-                ref={isOpen ? openChip : undefined} type="button" onClick={() => onChip?.(chip.line)} style={{ top: topOf(chip.line) }}
+                ref={isOpen ? openChip : undefined} type="button" onClick={() => (isOpen ? close() : onChip?.(chip.line))} style={{ top: topOf(chip.line) }}
                 className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
               >
                 {chip.label}
               </button>
             </PopoverAnchor>
-            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3">{popover.content}</PopoverContent>}
+            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3"
+                // the open chip toggles it: its pointerdown is no outside click, or the click after it would reopen what Radix just closed
+                onPointerDownOutside={(event) => { if (openChip.current?.contains(event.target as Node)) event.preventDefault(); }}
+              >{popover.content}</PopoverContent>}
           </Popover>
         );
       })}
