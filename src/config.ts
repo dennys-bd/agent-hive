@@ -16,8 +16,9 @@ import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
 import { parseEditorConfig } from './editor-config.js';
+import { parseReviewer } from './reviewer-config.js';
 import { parseSignals } from './signals-config.js';
-import { AGENT_IDS, END, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
+import { AGENT_IDS, END, REVIEWER_DEFAULTS, type ReviewerConfig, MEMORY_CAP_MAX, MEMORY_CAP_MIN, APPROVAL_HOLD_MAX_MIN, RATE_LIMIT_WAIT_MAX, SOURCE_ACTIONS, CLOSE_TAB_ACTIONS, CONSOLE_LINES_MAX, CONSOLE_LINES_MIN, FILE_ICON_SCOPES, FILE_ICON_SETS, FILTER_FIELDS, FILTER_OPS, GITHUB_AUTHS, isLeaving, NOTIFICATION_KINDS, ON_CLOSE, isPlanSource, PLAN_SOURCES, RULE_SIGNALS, RULE_SOURCES, SHUTDOWN_IDLE_MAX, THEMES, type AgentId, type AuthConfig, type SourceAction, type SourceConfig, type SourceFields, type Budget, type Task, type TaskFilter, type DeleteActivityScope, type CloseTabAction, type Stage, type StageAction, type CombConfig, type Config, type FileIcons, type FileIconScope, type FileIconSet, type SidebarsPerView, type SignalSettings, type FilterRule, type GithubAuth, type Language, type NotificationSettings, type OnClose, type Workspace, type EditorConfig, type RuleSignal, type RuleSource, type SessionPolicy, type State, type Theme, type UsageRule } from './types.js';
 
 export const CONFIG_FILE = 'hive.config.json';
 
@@ -28,6 +29,7 @@ export const DEFAULT_CONFIG: Omit<Config, 'comb' | 'auth' | 'onClose' | 'notific
   agentArgs: { claude: [], codex: [] },
   budget: {},
   usageRules: [],
+  reviewer: REVIEWER_DEFAULTS, // #328: the one key with a default a first save writes
 };
 
 const BUDGET_KEYS = ['maxTokensPerHour', 'maxTokensPerDay'] as const;
@@ -506,6 +508,13 @@ function requireSignals(raw: unknown): SignalSettings {
   return signals;
 }
 
+// Optional (#328): absent reads as REVIEWER_DEFAULTS, no migration; the parse is reviewer-config.ts'
+function requireReviewer(raw: unknown): ReviewerConfig {
+  const reviewer = parseReviewer(raw);
+  if (typeof reviewer === 'string') throw new Error(`${CONFIG_FILE}: ${reviewer}`);
+  return reviewer;
+}
+
 // Required, no default (#780): no migration, the one file is fixed by hand; scopes are checked against the Comb's workspaces
 function requireEditor(raw: unknown, workspaces: readonly string[]): EditorConfig {
   const editor = parseEditorConfig(raw, workspaces);
@@ -609,6 +618,7 @@ function parseFields(raw: unknown): Config {
     consoleLines: requireIntFrom(raw.consoleLines, 'consoleLines', CONSOLE_LINES_MIN, CONSOLE_LINES_MAX),
     shortcuts: parseShortcuts(raw.shortcuts, process.platform === 'darwin'), // the rules live in shortcuts.ts, shared with the settings form (#449); this platform's defaults (#585)
     editor: requireEditor(raw.editor, comb.workspaces.map((w) => w.name)), // #780
+    reviewer: requireReviewer(raw.reviewer), // #328
     fileIcons: requireFileIcons(raw.fileIcons), // #754: a file from before the key is migrated to FILE_ICONS_DEFAULTS
     sidebarsPerView: requireSidebarsPerView(raw.sidebarsPerView), // #821: a file from before the key boots the settings form prefilled (hive.ts)
     signals: requireSignals(raw.signals), // #727: a file from before the key boots the settings form prefilled (hive.ts)

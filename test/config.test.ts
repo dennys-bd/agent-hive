@@ -6,7 +6,7 @@ import { taskWorkspace, loadConfig, loadConfigIfPresent, parseConfig, predatesCo
 import { type LegacyStage, transitionsOf } from '../src/config-migrate.js';
 import { SHORTCUTS } from '../src/shortcut-registry.js';
 import type { SourceTaskProps, Config } from '../src/types.js';
-import { EDITOR_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
+import { EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
 import { sourceEntry, FIXED, STAGES, FILTER, LOCAL_STAGES, chained, combConfig, move, EPICS } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -979,6 +979,30 @@ test('editor is required and parsed against the Comb\'s workspaces; workspaces[]
     { message: 'hive.config.json: "comb.workspaces[0].format" moved to "editor" (#780): one config for every workspace' });
   assert.throws(() => at({ editor: { formatOnSave: { enabled: true, workspaces: ['gone'] }, languages: {} } }),
     { message: /^hive\.config\.json: editor\.formatOnSave\.workspaces names workspace gone, which is not in comb\.workspaces$/ });
+});
+
+test('reviewer is optional: absent, or a field left out, takes REVIEWER_DEFAULTS; an unknown field is dropped; each malformed field is refused naming its key (#328)', () => {
+  const at = (reviewer: unknown) => parseConfig(github({ reviewer })).reviewer;
+  assert.deepEqual(parseConfig(GITHUB).reviewer, REVIEWER_DEFAULTS, 'combConfig writes no reviewer: a file from before the key');
+  assert.deepEqual(at({}), REVIEWER_DEFAULTS);
+  assert.deepEqual(at({ when: 'type', agent: 'codex', stray: 1 }), { ...REVIEWER_DEFAULTS, when: 'type', agent: 'codex' });
+  const full = { on: false, when: 'demand', agent: 'claude', model: 'claude-opus-4-1', version: 'strict' };
+  assert.deepEqual(at(full), full);
+  const shape = '"reviewer" must be an object with on, when, agent, model, version';
+  const refused: [unknown, string][] = [
+    [null, shape], [[], shape], [true, shape],
+    [{ on: 'yes' }, '"reviewer.on" must be true or false'],
+    [{ on: null }, '"reviewer.on" must be true or false'],
+    [{ when: 'always' }, '"reviewer.when" must be one of: type, save, demand'],
+    [{ agent: 'gemini' }, '"reviewer.agent" must be one of: claude, codex'],
+    [{ model: '--help' }, '"reviewer.model" must be null or a model name'],
+    [{ model: 7 }, '"reviewer.model" must be null or a model name'],
+    [{ version: 'original' }, '"reviewer.version" must be null or a version name'],
+    [{ version: '../x' }, '"reviewer.version" must be null or a version name'],
+  ];
+  for (const [reviewer, message] of refused) {
+    assert.throws(() => at(reviewer), { message: `hive.config.json: ${message}` }, JSON.stringify(reviewer));
+  }
 });
 
 test('parseConfig reads a wait-for-CI stage: which checks, the list only with list, the re-run switch and an optional wait; refuses each key without the action and every other action\'s key beside it (#834)', () => {

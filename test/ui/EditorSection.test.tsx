@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Settings } from '@/components/settings/Settings';
 import { setLanguage, t } from '@/i18n';
 import type { EditorConfig, EditorInstalls, InstallState, SettingsInfo } from '../../src/types';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SERVER_IDS, SHUTDOWN_IDLE_DEFAULT, SYNTAX_IDS } from '../../src/types';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SERVER_IDS, SHUTDOWN_IDLE_DEFAULT, SYNTAX_IDS } from '../../src/types';
 import { jsonResponse } from '../fakes';
 
 // Settings › editor (#780): the format on save card over the one editor config, and what a save sends
@@ -17,6 +17,7 @@ const editorInfo = (editor: EditorConfig = SAVED): SettingsInfo => ({
     logLevel: 'info', agentArgs: { claude: [], codex: [] }, budget: {}, usageRules: [],
     onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS,
     editor,
+    reviewer: REVIEWER_DEFAULTS,
   },
 });
 const ABSENT: InstallState = { state: 'absent' };
