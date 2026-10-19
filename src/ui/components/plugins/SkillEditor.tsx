@@ -16,7 +16,7 @@ import { t } from '@/i18n';
 import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
 import { appendLine, formVariables } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
-import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
+import { isMarkdown, plainLook, previewLook, templateLook } from '@/lib/template-view';
 
 interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string }
 interface BodyProps extends SkillEditorProps { item: CatalogueItem; read: ItemRead; path: string }
