@@ -9,7 +9,7 @@ import { type Reveal, TemplateText } from '@/components/plugins/TemplateText';
 import type { Annotations } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { t } from '@/i18n';
-import { underlinesOf } from '@/lib/annotation-layout';
+import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
 import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
@@ -50,10 +50,11 @@ function useAnnotationReveal(revealed: Annotations['revealed'], look: TextLook, 
 
 function EditorBody(props: BodyProps) {
   const { editor, annotations, item, read, path, fontFamily } = props;
-  const { isMd, map, workspace, preview, look } = useFileLook(props);
+  const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
   const [reveal, setReveal] = useState<Reveal>();
   useAnnotationReveal(annotations.revealed, look, setReveal);
   const decorations = useMemo(() => [...look.decorations, ...underlinesOf(annotations.list, look.text)], [look, annotations.list]);
+  const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const isPreview = workspace !== undefined;
   const canEdit = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
   const failed = preview?.ok === false ? preview.errors[0] : undefined;
@@ -72,6 +73,7 @@ function EditorBody(props: BodyProps) {
           <BlockMap
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move}
             onReveal={(line) => setReveal((last) => ({ line: look.lineOf(line), n: (last?.n ?? 0) + 1 }))}
+            dots={isPreview ? undefined : dots} onDot={annotations.openAt}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText

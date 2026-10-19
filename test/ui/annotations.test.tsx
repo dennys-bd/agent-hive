@@ -62,3 +62,25 @@ test('in text mode the annotation stays on its own line, with room for a card; "
   await waitFor(() => expect(saves).toHaveLength(1));
   expect(screen.queryByRole('group', { name: 'anotações' })).not.toBeInTheDocument();
 });
+
+test('the text, the map and the variables pane show the same annotation, and all three lose it on dismiss (#327)', async () => {
+  const server = serverOf();
+  stubItems(server);
+  render(<PluginsWindow />);
+  await open();
+  const nav = screen.getByRole('navigation', { name: 'mapa' });
+  const pane = screen.getByRole('list', { name: 'variáveis' });
+  const dot = within(nav).getByRole('button', { name: 'anotações neste bloco' }); // a header line's annotation: on the first block
+  expect(dot).toHaveAttribute('data-severity', 'yellow');
+  expect(within(within(pane).getByRole('listitem', { name: 'reviewDepth' })).getByText('definida e nunca usada')).toBeInTheDocument();
+  fireEvent.click(dot);
+  const card = within(margin()).getByRole('article', { name: HEADLINE });
+  const dismiss = within(card).getByRole('button', { name: 'dispensar' });
+  await waitFor(() => expect(dismiss).toBeEnabled());
+  fireEvent.click(dismiss);
+  expect(within(nav).queryByRole('button', { name: 'anotações neste bloco' })).not.toBeInTheDocument();
+  expect(within(pane).queryByText('definida e nunca usada')).not.toBeInTheDocument();
+  expect(screen.queryByRole('group', { name: 'anotações' })).not.toBeInTheDocument();
+  expect(view().decorations.some((d) => d.options.inlineClassName === 'template-annotation-yellow')).toBe(false);
+  await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': ['SKILL.md.liquid\0unused\0unused variable reviewDepth\0  reviewDepth: { default: full }'] }));
+});
