@@ -26,7 +26,7 @@ export const ASSIST_SCHEMA = {
 } as const;
 
 const PROPOSAL = z.object({ from: z.number().int(), to: z.number().int(), text: z.string() });
-const KIND_WORDS: Record<ItemKind, string> = { skill: 'skill', specialist: 'subagent' }; // Claude Code's words, which the model knows
+export const KIND_WORDS: Record<ItemKind, string> = { skill: 'skill', specialist: 'subagent' }; // Claude Code's words, which the model knows
 
 const ASSIST_INSTRUCTIONS = [
   'You edit one file of a Claude Code skill or subagent at the user\'s request. You cannot run tools; you only answer.',
@@ -55,13 +55,14 @@ export function targetOf(text: string, selection?: { startLine: number; endLine:
   return startLine >= 1 && startLine <= endLine && endLine <= count ? { start: startLine, end: endLine } : undefined;
 }
 
-const numbered = (text: string): string => fileLines(text).map((line, i) => `${i + 1}| ${line}`).join('\n') || '(empty file)';
+// #328: the template reviewer shows a file and its context the same way
+export const numbered = (text: string): string => fileLines(text).map((line, i) => `${i + 1}| ${line}`).join('\n') || '(empty file)';
 
-const variablesBlock = (variables: readonly TemplateVariable[]): string =>
+export const variablesBlock = (variables: readonly TemplateVariable[]): string =>
   variables.length === 0 ? '(none)' : JSON.stringify(variables.map(({ name, kind, values, default: value, required, workspaces }) =>
     ({ name, kind, values, default: value, required, workspaces })), null, 2);
 
-const catalogueBlock = (items: AssistInput['catalogue']): string =>
+export const catalogueBlock = (items: AssistInput['catalogue']): string =>
   items.map((item) => `- ${item.id} (${KIND_WORDS[item.kind]} ${item.name}): ${item.description}`).join('\n') || '(none)';
 
 /** The whole prompt, on the run's stdin. */
@@ -76,19 +77,24 @@ export function assistPrompt(input: AssistInput): string {
   ].join('\n\n');
 }
 
-/** The agent's answer as a proposal inside the target, or why it is refused. */
-export function parseProposal(answer: string, target: AssistTarget): { proposal: Proposal } | { reason: string } {
+/** An agent's answer as JSON `schema` accepts, or why it is not: ask the agent's proposal and the template reviewer's annotations (#328). */
+export function parseAnswer<T>(answer: string, schema: z.ZodType<T>): { data: T } | { reason: string } {
   let json: unknown;
   try {
     json = JSON.parse(answer);
   } catch {
     return { reason: 'not JSON' };
   }
-  const parsed = PROPOSAL.safeParse(json);
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return { reason: `not the expected JSON: ${issue?.path.join('.') || 'answer'}: ${issue?.message ?? 'invalid'}` };
-  }
+  const parsed = schema.safeParse(json);
+  if (parsed.success) return { data: parsed.data };
+  const issue = parsed.error.issues[0];
+  return { reason: `not the expected JSON: ${issue?.path.join('.') || 'answer'}: ${issue?.message ?? 'invalid'}` };
+}
+
+/** The agent's answer as a proposal inside the target, or why it is refused. */
+export function parseProposal(answer: string, target: AssistTarget): { proposal: Proposal } | { reason: string } {
+  const parsed = parseAnswer(answer, PROPOSAL);
+  if ('reason' in parsed) return parsed;
   const { from, to } = parsed.data;
   if (from > to + 1) return { reason: `from ${from} is past to ${to} + 1` };
   if (from < target.start || to > target.end) return { reason: `lines ${from}..${to} are outside ${target.start}..${target.end}` };
