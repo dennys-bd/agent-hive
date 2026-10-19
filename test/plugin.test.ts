@@ -157,6 +157,7 @@ test('reference/conventions.md names every variable with its default, the variab
   }
   for (const part of ['variables panel', '`approval`, `stage`, `fork` and `hiveLanguage`', '<home>/custom/hive/<skill>/<version>/']) assert.ok(text.includes(part), part);
   assert.equal(text.includes('| `sliceSize` |'), false, 'sliceSize is sliceMin and sliceMax');
+  assert.equal(text.includes('`conventions` key'), false, 'hive_conventions answers no conventions key (#318)');
 });
 
 test('the docs folders default under docs/hive, and no plugin file names the old docs/specs, docs/plans or docs/walkthroughs', async () => {

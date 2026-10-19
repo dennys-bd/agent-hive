@@ -10,7 +10,6 @@ import { timeoutMs } from '../../timeout.js';
 import { isTrustedHost } from '../../trusted-hosts.js';
 import { t } from '../i18n.js';
 import { type EditorDraft, editorDraft, editorFrom, editorProblem } from './settings-format.js';
-import { type ConventionRowDraft, conventionRows, conventionsFrom, conventionsProblem } from './settings-conventions.js';
 import { nextWorkspaceColor } from './workspace-color.js';
 import { switchAtId, switchAtName } from './settings-epics.js';
 import type { SettingsSection } from './settings-sections.js';
@@ -28,8 +27,8 @@ export type { TransitionDraft } from './settings-transitions.js';
 // Every row's id is a React key, generated once when the draft row is created and never sent to the server (toSettingsBody never spreads the
 // draft, only picks named fields), so move/remove never leaves a surviving row showing another row's stale text. Stages: settings-stages.ts (#515).
 // A workspace row of Settings › workspaces (#179, #511); id is its React key and what a command's workspaces hold, never sent. Its env
-// (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. Its conventions (#692) are rows, one per key set. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number. color (#78) as the config holds it, sent as is.
-export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; conventions: ConventionRowDraft[]; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string }
+// (#348) is edited in its card; setup and setupTimeout are its worktree setup (#299), teardown and teardownTimeout its worktree teardown (#654), the same way: as typed, an empty field sends no key. fork (#854) is the config's value as it is, edited by the repository section; baseBranch the workspace's own base, '' = the general one. memoryCap (#73) as typed, sent as a number. color (#78) as the config holds it, sent as is.
+export interface WorkspaceDraft { id: string; name: string; path: string; env: EnvRowDraft[]; setup: string; setupTimeout: string; teardown: string; teardownTimeout: string; fork: WorkspaceFork | false | null; baseBranch: string; memoryCap: string; color: string }
 /** A row of Settings › flow's sources list (#180); id is its React key and the key the stage drafts use, never sent. */
 export interface SourceDraft {
   id: string; name: string; qualifyId: boolean; prefix: string; type: SourceConfig['type'];
@@ -68,11 +67,11 @@ export interface SettingsDraft {
 export interface SettingsProblem { section: SettingsSection; message: string; transition?: string } // transition (#918): the draft id Settings selects on the chart
 
 const DEFAULT_OWNER = '@me';
-export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows) });
+export const emptyWorkspace = (rows: readonly { color: string }[] = []): WorkspaceDraft => ({ id: crypto.randomUUID(), name: '', path: '', env: [], setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: String(MEMORY_CAP_DEFAULT), color: nextWorkspaceColor(rows) });
 const workspaceDraft = (p: Workspace): WorkspaceDraft => ({
   ...emptyWorkspace(), name: p.name, path: p.path, env: envRows(p.env),
   setup: p.setup ?? '', setupTimeout: p.setupTimeout ?? '', teardown: p.teardown ?? '', teardownTimeout: p.teardownTimeout ?? '',
-  conventions: conventionRows(p.conventions), fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap), color: p.color,
+  fork: p.fork, baseBranch: p.baseBranch ?? '', memoryCap: String(p.memoryCap), color: p.color,
 });
 // A first setup's one row: the folder the Hive started in, named after it (#202, #179), else empty.
 const proposedRow = (path?: string): WorkspaceDraft => ({ ...emptyWorkspace(), ...(path === undefined ? {} : { name: workspaceNameFor(path), path }) });
@@ -283,11 +282,11 @@ function silentSourceProblem(draft: SettingsDraft): SettingsProblem | undefined 
   return silent === undefined ? undefined : { section: 'flow', message: t('settings.error.sourceSilent', { source: silent.name.trim() }) };
 }
 
-/** The first problem in today's order (prefix, sources, create in, stages, rules, budget, console lines, workspaces, conventions, editor, task properties, branch, shutdown
+/** The first problem in today's order (prefix, sources, create in, stages, rules, budget, console lines, workspaces, editor, task properties, branch, shutdown
  * window, approval window, run commands, shortcuts, silent sources) with the section to reveal (#510); undefined when the server may judge the
  * rest. A bad trusted-domain host is refused inline by its own chip field (#513), so it is not in this chain. */
 export function validateSettings(draft: SettingsDraft): SettingsProblem | undefined {
-  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? conventionsProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
+  return prefixProblem(draft) ?? sourcesProblem(draft.sources) ?? createInDraftProblem(draft) ?? stagesProblem(draft.stages) ?? transitionsDraftProblem(draft) ?? rulesProblem(renamedRuleDrafts(draft.rules, stageRenamesFrom(draft.stages)), draft.stages.map((s) => s.name.trim())) ?? budgetProblem(draft) ?? consoleLinesProblem(draft) ?? workspacesProblem(draft.workspaces) ?? editorProblem(draft) ?? taskPropsProblem(draft) ?? branchDraftProblem(draft) ?? minutesProblem(draft) ?? commandsProblem(draft) ?? shortcutsProblem(draft) ?? silentSourceProblem(draft);
 }
 
 /** A row as a comb.sources entry (#180): its key first, then its type's fields, its task properties (#688) and its epics keys, switchAt by the
@@ -305,7 +304,7 @@ const renamesFrom = (rows: SourceDraft[]): Record<string, string> =>
   Object.fromEntries(rows.flatMap((r) => (r.savedName === '' || r.name.trim() === r.savedName ? [] : [[r.savedName, r.name.trim()]])));
 
 // A row as a comb.workspaces entry: the setup untrimmed, so the line numbers POST /settings names are the textarea's (#299); the timeout trimmed,
-// validateSettings checked its grammar (#511); the conventions only when one is set (#692).
+// validateSettings checked its grammar (#511).
 const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
   name: p.name.trim(), path: p.path.trim(), env: envFrom(p.env), // env always sent (#348)
   fork: p.fork, // #854: always sent, null included: the parser requires it
@@ -316,7 +315,6 @@ const workspaceFrom = (p: WorkspaceDraft): Workspace => ({
   ...(p.setupTimeout.trim() === '' ? {} : { setupTimeout: p.setupTimeout.trim() }),
   ...(p.teardown.trim() === '' ? {} : { teardown: p.teardown }),
   ...(p.teardownTimeout.trim() === '' ? {} : { teardownTimeout: p.teardownTimeout.trim() }),
-  ...conventionsFrom(p.conventions),
 });
 
 export function toSettingsBody(draft: SettingsDraft): SettingsBody {

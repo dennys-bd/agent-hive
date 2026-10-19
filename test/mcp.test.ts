@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -19,7 +19,7 @@ import { activityOf, localActivityId, prsOf, recordOf, resultOf } from '../src/a
 import { systemLanguage } from '../src/language.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
-import type { Activity, Config, Conventions, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
+import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, STAGES, fakeEvents, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
@@ -54,7 +54,7 @@ async function start(t: TestContext, sources: SourceConfig[] = [GITHUB_ENTRY], w
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  const workspaces = workspacesAt(repo).map((w) => ({ ...w, ...workspace })); // what the workspace card saves: conventions (#692), memoryCap (#73)
+  const workspaces = workspacesAt(repo).map((w) => ({ ...w, ...workspace })); // what the workspace card saves: memoryCap (#73)
   const saved = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, sources, workspaces, stages }) });
   assert.equal(saved.status, 200);
   await server.poll();
@@ -303,20 +303,20 @@ test('hive_pr takes a slice: a valid one reaches the record; a k of 0, a fractio
   ]);
 });
 
-test('hive_conventions answers what Settings saved on the task\'s workspace, as hive.config.json holds it, the Hive\'s language and the stage\'s approval (#692)', async (t) => {
-  const conventions: Conventions = { specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } };
-  const { base, ptyId, home } = await start(t, [GITHUB_ENTRY], { conventions });
-  const file = JSON.parse(await readFile(join(home, 'hive.config.json'), 'utf8')) as { comb: { workspaces: { conventions?: unknown }[] } };
-  assert.deepEqual(file.comb.workspaces[0].conventions, conventions);
-  const answer = await call(await connect(t, base, ptyId), 'hive_conventions');
-  assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { conventions, hiveLanguage: systemLanguage(), approval: false, stage: 'fila' }]);
+test('hive_conventions answers the Hive\'s language, the stage\'s approval and its name, and no conventions key; its description names only those (#692, #318)', async (t) => {
+  const { base, ptyId } = await start(t);
+  const client = await connect(t, base, ptyId);
+  const description = (await client.listTools()).tools.find((tool) => tool.name === 'hive_conventions')?.description ?? '';
+  assert.match(description, /approval/);
+  assert.doesNotMatch(description, /conventions set|docs folders|delivery|slice size|feature flags|UI check|test command|decomposition label/);
+  const answer = await call(client, 'hive_conventions');
+  assert.deepEqual([answer.isError, JSON.parse(answer.text)], [false, { hiveLanguage: systemLanguage(), approval: false, stage: 'fila' }]);
 });
 
-test('conventionsAnswer: a stage run reads its task\'s workspace and its stage\'s approval; a free session has no stage; a local session reads its own workspace (#692)', () => {
-  const conventions: Conventions = { specsDir: 'docs/specs', designsDir: 'docs/designs', delivery: 'stacked' };
+test('conventionsAnswer: a stage run reads its stage\'s approval; a free session has no stage; a local session neither (#692, #318)', () => {
   const config = {
     language: 'pt' as const,
-    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', conventions }] },
+    comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }, { name: 'site', path: '/site', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }] },
   };
   const task: Task = { item: { itemId: 'local:1', id: 'HIVE-1', title: 'T', body: '', url: '' }, stage: 'spec', boardColumn: '', auto: true, workspace: 'site' };
   const state = {
@@ -325,10 +325,10 @@ test('conventionsAnswer: a stage run reads its task\'s workspace and its stage\'
     activityRecords: [{ id: 'a1', taskIds: ['local:1'], sessions: [] }],
   };
   const run: Worker = { id: 'w1', runId: 'r1', activityId: 'a1', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, run), { conventions, hiveLanguage: 'pt', approval: true, stage: 'spec' });
-  assert.deepEqual(conventionsAnswer(state, config, { ...run, freeSession: true }), { conventions, hiveLanguage: 'pt', approval: false });
+  assert.deepEqual(conventionsAnswer(state, config, run), { hiveLanguage: 'pt', approval: true, stage: 'spec' });
+  assert.deepEqual(conventionsAnswer(state, config, { ...run, freeSession: true }), { hiveLanguage: 'pt', approval: false });
   const local: Worker = { id: 'w2', runId: 'r2', activityId: 'local:hive', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, { ...config, language: undefined }, local), { conventions: {}, hiveLanguage: systemLanguage(), approval: false });
+  assert.deepEqual(conventionsAnswer(state, { ...config, language: undefined }, local), { hiveLanguage: systemLanguage(), approval: false });
 });
 
 // Each mcp.call without its latency, which only has to be a number
@@ -484,7 +484,7 @@ test('forkConventions answers a fork\'s PR target, both repositories, the base r
   const config = { language: 'pt' as const, comb: { prefix: 'HIVE', sources: [], transitions: [], stages: [], commands: [], hiveSource: true, createIn: 'hive', workspaces: [app] } };
   const state = { ...initialState(0), activities: [{ id: 'local:app', kind: 'local' as const, workspace: 'app' }] };
   const local: Worker = { id: 'w1', runId: 'r1', activityId: 'local:app', status: 'working' };
-  assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { conventions: {}, hiveLanguage: 'pt', approval: false, fork: original });
+  assert.deepEqual(conventionsAnswer(state, config, local, { ...original, pr: 'original' }), { hiveLanguage: 'pt', approval: false, fork: original });
   assert.equal('fork' in conventionsAnswer(state, config, local), false);
 });
 

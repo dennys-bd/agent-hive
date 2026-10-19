@@ -51,7 +51,7 @@ export const THREAD_RESOLVED_MESSAGE = 'the user already resolved this conversat
 /** What the tools read and do: the live state with the config (undefined while the Hive has no config), and the server's dispatch. The
  * review files hive_reply answers in come with ReplyReviews (#591, #344). */
 export interface McpDeps extends ReplyReviews {
-  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create'>> } | undefined; // config: the Comb's prefix and createIn (hive_create_task), the workspaces' conventions (#692)
+  live(): { state: State; config: Config; sources: ReadonlyMap<string, Pick<Source, 'create'>> } | undefined; // config: the Comb's prefix and createIn (hive_create_task), the Hive's language and a fork's base (hive_conventions)
   poll(names: string[], manual?: string[]): Promise<void>; // #846: hive_create_task on a source polls it through the route's own path
   dispatch(event: HiveEvent): Promise<Effect[]>;
   canClose(itemId: string): boolean; // hive_stop's reason (#314): whether the task's source can close its item
@@ -282,10 +282,10 @@ function registerReplyTool(server: McpServer, deps: McpDeps, header: string | un
   }));
 }
 
-// hive_conventions (#692): what the plugin's new-* skills read first. Any skill may call it; it only reads.
+// hive_conventions (#692, #318): the Hive's language, the stage's approval and a fork's PR target, which the plugin's skills read. Any skill may call it; it only reads.
 function registerConventionsTool(server: McpServer, deps: McpDeps, header: string | undefined): void {
   server.registerTool('hive_conventions', {
-    description: 'Read the conventions set for your workspace in the Hive (docs folders (specs, plans, walkthroughs, designs), languages, delivery, slice size, feature flags, UI check, test command, decomposition label; an absent key is the repository\'s to decide), the Hive\'s language, and whether your stage waits for the user\'s approval in the Hive, and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch. Answers a JSON object.',
+    description: 'Read the Hive\'s language (hiveLanguage), whether your stage waits for the user\'s approval in the Hive (approval) and the stage\'s name (stage, absent in a free or local session), and, for a fork workspace, fork: where the PRs go (pr: original, fork or ask), the original and fork repositories, the base remote and the base branch. Answers a JSON object.',
     inputSchema: {},
   }, async () => recorded(deps, header, 'hive_conventions', async () => {
     const ptyId = livePtyId(deps, header);

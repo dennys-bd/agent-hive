@@ -876,13 +876,12 @@ test("a workspace's teardown and teardownTimeout are parsed as setup and setupTi
   );
 });
 
-test('parseConfig keeps a workspace\'s conventions, writes {} back as absent and names the workspace in a refusal (#692)', () => {
-  const at = (conventions: unknown) => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', conventions }] })).comb.workspaces[0];
-  assert.deepEqual(at({ specsDir: ' docs/specs ', delivery: 'single' }).conventions, { specsDir: 'docs/specs', delivery: 'single' });
-  assert.equal('conventions' in at({}), false, '{} is no key: the file stays clean');
-  assert.equal('conventions' in at(undefined), false);
-  assert.throws(() => at({ delivery: 'trunk' }), { message: 'hive.config.json: workspace hive: conventions.delivery must be one of single, stacked, integration' });
-  assert.throws(() => at({ flow: 'x' }), { message: /^hive\.config\.json: workspace hive: conventions\.flow is not a convention \(known: / });
+test('parseConfig refuses a workspace that still carries conventions, {} included, naming the plugins view; one without it loads (#318)', () => {
+  const at = (extra: Record<string, unknown>) => parseConfig(github({ workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', ...extra }] })).comb.workspaces[0];
+  const refusal = { message: 'hive.config.json: "comb.workspaces[0].conventions" moved to the plugins view (#318): set each value in its skill\'s variables' };
+  assert.throws(() => at({ conventions: { specsDir: 'docs/specs' } }), refusal);
+  assert.throws(() => at({ conventions: {} }), refusal);
+  assert.equal('conventions' in at({}), false);
 });
 
 test('parseConfig requires the four sleep notice switches, booleans with no default (#672)', () => {
