@@ -73,6 +73,7 @@ test('a required variable missing in two workspaces is one annotation on its dec
       title: 'missing e2eCommand · hive, hive-site',
       body: '"e2eCommand" is required and has no value for hive, hive-site.',
       workspaces: ['hive', 'hive-site'],
+      variable: 'e2eCommand',
     },
   ]);
   assert.deepEqual(lint(['variables:', '  e2eCommand: { required: true, workspaces: { hive: pnpm e2e } }'], ['{{ e2eCommand }}']), [
@@ -110,6 +111,8 @@ test('calling a Hive skill whose required variable has no value in a workspace i
       title: 'missing baseBranch · /stacked-branch · hive-site',
       body: '/stacked-branch requires "baseBranch", which has no value for hive-site.',
       workspaces: ['hive-site'],
+      variable: 'baseBranch',
+      ref: '/stacked-branch',
     },
     {
       line: 5,
@@ -118,6 +121,8 @@ test('calling a Hive skill whose required variable has no value in a workspace i
       title: 'missing baseBranch · /hive:stacked-branch · hive-site',
       body: '/hive:stacked-branch requires "baseBranch", which has no value for hive-site.',
       workspaces: ['hive-site'],
+      variable: 'baseBranch',
+      ref: '/hive:stacked-branch',
     },
   ]);
 });
@@ -218,4 +223,15 @@ test('variableUses answers the file lines that use a variable, a condition in an
   assert.deepEqual(variableUses(parsed, 'y'), [10]);
   assert.deepEqual(variableUses(parsed, 'z'), []);
   assert.deepEqual(variableUses(template([], ['{% if x %}']), 'x'), [], 'a body Liquid cannot parse has no uses to name');
+});
+
+test('each finding names what a fix or a card needs: the variable, the reference as written, the level the map nests a heading as (#327)', () => {
+  // lines: 3 variables:, 4 a, 5 the fence, 6 {{ b }}, 7 the reference, 8 ## A, 9 #### B
+  const annotations = lintTemplate(template(['variables:', '  a: { default: x }'], ['{{ b }}', 'Run `/nowhere`.', '## A', '#### B']), INPUT);
+  assert.deepEqual(annotations.map(({ line, check, variable, ref, level }) => [line, check, variable, ref, level]), [
+    [4, 'unused', 'a', undefined, undefined],
+    [6, 'undeclared', 'b', undefined, undefined],
+    [7, 'reference', undefined, '/nowhere', undefined],
+    [9, 'heading', undefined, undefined, 3],
+  ]);
 });

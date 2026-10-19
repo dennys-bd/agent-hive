@@ -14,6 +14,9 @@ export interface LintAnnotation {
   title: string;
   body: string;
   workspaces?: string[];
+  variable?: string; // #327: unused, undeclared, required, callRequired: the variable's name, so a fix never parses the title
+  ref?: string; // #327: reference, callRequired: the reference as written (ref.text)
+  level?: number; // #327: heading: the level the map nests it as (previous + 1)
   fix?: string;
 }
 export interface LintItem {
@@ -41,8 +44,11 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 // templates: {} keeps a partial off the disk
 const engine = new Liquid({ strictVariables: true, strictFilters: true, ownPropertyOnly: true, templates: {} });
 
-const finding = (line: number, severity: Severity, check: LintCheck, title: string, body: string, workspaces?: string[]): LintAnnotation =>
-  workspaces === undefined ? { line, severity, check, title, body } : { line, severity, check, title, body, workspaces };
+type Extra = Pick<LintAnnotation, 'workspaces' | 'variable' | 'ref' | 'level'>;
+
+const finding = (line: number, severity: Severity, check: LintCheck, title: string, body: string, extra: Extra = {}): LintAnnotation => ({
+  line, severity, check, title, body, ...extra,
+});
 
 // ponytail: quadratic, fine for one template's findings
 const uniqueBy = <T>(list: T[], key: (item: T) => string): T[] =>
@@ -73,12 +79,12 @@ function variableFindings(parsed: ParsedTemplate): LintAnnotation[] {
     .filter(([name]) => name !== BUILT_IN && !declared.has(name))
     .flatMap(([name, uses]) =>
       uses.map((use) =>
-        finding(parsed.bodyLine + use.location.row - 1, 'red', 'undeclared', `undeclared variable ${name}`, `"${name}" is used here but not declared under variables: in the header.`),
+        finding(parsed.bodyLine + use.location.row - 1, 'red', 'undeclared', `undeclared variable ${name}`, `"${name}" is used here but not declared under variables: in the header.`, { variable: name }),
       ),
     );
   const unused = parsed.variables
     .filter((variable) => !Object.hasOwn(analysis.globals, variable.name))
-    .map((variable) => finding(variable.line, 'yellow', 'unused', `unused variable ${variable.name}`, `"${variable.name}" is declared but the body never uses it.`));
+    .map((variable) => finding(variable.line, 'yellow', 'unused', `unused variable ${variable.name}`, `"${variable.name}" is declared but the body never uses it.`, { variable: variable.name }));
   return [...uniqueBy(undeclared, (annotation) => `${annotation.line} ${annotation.title}`), ...unused];
 }
 
@@ -97,7 +103,7 @@ function requiredFindings(parsed: ParsedTemplate, workspaces: string[]): LintAnn
     const missing = missingIn(variable, workspaces);
     if (missing.length === 0) return [];
     const names = missing.join(', ');
-    return [finding(variable.line, 'red', 'required', `missing ${variable.name} · ${names}`, `"${variable.name}" is required and has no value for ${names}.`, missing)];
+    return [finding(variable.line, 'red', 'required', `missing ${variable.name} · ${names}`, `"${variable.name}" is required and has no value for ${names}.`, { workspaces: missing, variable: variable.name })];
   });
 }
 
@@ -120,7 +126,7 @@ function callFindings(ref: TemplateRef, item: LintItem, workspaces: string[]): {
     const names = missing.join(', ');
     const title = `missing ${variable.name} · ${ref.text} · ${names}`;
     const body = `${ref.text} requires "${variable.name}", which has no value for ${names}.`;
-    return [{ key: `${ref.line} ${ref.name} ${variable.name}`, annotation: finding(ref.line, 'red', 'callRequired', title, body, missing) }];
+    return [{ key: `${ref.line} ${ref.name} ${variable.name}`, annotation: finding(ref.line, 'red', 'callRequired', title, body, { workspaces: missing, variable: variable.name, ref: ref.text }) }];
   });
 }
 
@@ -129,7 +135,7 @@ function referenceFindings(parsed: ParsedTemplate, input: LintInput): LintAnnota
   const unknown = refs
     .filter(({ reached }) => reached === undefined)
     .map(({ ref }) =>
-      finding(ref.line, 'yellow', 'reference', `unknown skill, agent or script ${ref.text}`, `${ref.text} is not a Hive skill or agent, a workspace's skill or one of the plugin's scripts.`),
+      finding(ref.line, 'yellow', 'reference', `unknown skill, agent or script ${ref.text}`, `${ref.text} is not a Hive skill or agent, a workspace's skill or one of the plugin's scripts.`, { ref: ref.text }),
     );
   const calls = refs.flatMap(({ ref, reached }) => (typeof reached === 'object' ? callFindings(ref, reached, input.workspaces) : []));
   return [...uniqueBy(unknown, (annotation) => `${annotation.line} ${annotation.title}`), ...uniqueBy(calls, (call) => call.key).map((call) => call.annotation)];
@@ -164,7 +170,7 @@ function renderFindings(parsed: ParsedTemplate, workspaces: string[], statics: L
   const keyOf = (error: { line: number; message: string }): string => `${error.line}\n${error.message}`;
   return uniqueBy(errors, keyOf).map((first) => {
     const failing = errors.filter((error) => keyOf(error) === keyOf(first)).map((error) => error.workspace);
-    return finding(first.line, 'red', 'render', first.message, `The render for ${failing.join(', ')} fails here.`, failing);
+    return finding(first.line, 'red', 'render', first.message, `The render for ${failing.join(', ')} fails here.`, { workspaces: failing });
   });
 }
 
@@ -195,7 +201,7 @@ function headingStep(walk: HeadingWalk, text: string, line: number): HeadingWalk
   const { previous } = walk;
   if (previous === null || level <= previous + 1) return { ...walk, previous: level };
   const body = `An h${level} right under an h${previous} skips a level; the block map nests it as an h${previous + 1}.`;
-  return { ...walk, previous: level, findings: [...walk.findings, finding(line, 'yellow', 'heading', `skipped level: h${previous} to h${level}`, body)] };
+  return { ...walk, previous: level, findings: [...walk.findings, finding(line, 'yellow', 'heading', `skipped level: h${previous} to h${level}`, body, { level: previous + 1 })] };
 }
 
 function headingFindings(parsed: ParsedTemplate): LintAnnotation[] {
