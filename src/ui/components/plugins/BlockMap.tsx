@@ -1,5 +1,6 @@
 import { ChevronDownIcon, ChevronRightIcon, GripVerticalIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { LintAnnotation } from '../../../template-lint';
 import type { MapBlock, Reference, TemplateMap } from '../../../template-map';
 import type { ChainBlock } from '../../../template-preview';
 import { type MapDrag, useMapDrag } from '@/components/plugins/map-drag';
@@ -9,9 +10,10 @@ import { branchLabel } from '@/lib/template-view';
 export interface BlockMapProps {
   map: TemplateMap; collapsed: readonly number[]; dimmed: ReadonlySet<number>; canDrag: boolean;
   onReveal(line: number): void; onToggle(line: number): void; onMove(line: number, index: number): void;
+  dots?: ReadonlyMap<number, readonly LintAnnotation[]>; onDot?(annotation: LintAnnotation): void; // #327: each row's annotations, by its line
 }
 type Heading = Extract<MapBlock, { kind: 'heading' }>;
-interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onToggle'> { drag: MapDrag }
+interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onToggle' | 'dots' | 'onDot'> { drag: MapDrag }
 interface Handle { parent: string; index: number }
 
 function Chips({ references }: { references: readonly Reference[] }) {
@@ -23,11 +25,25 @@ function Chips({ references }: { references: readonly Reference[] }) {
   );
 }
 
+// #327: one dot per row, red when any of its annotations is (status colours only); a click opens the first
+function Dot({ line, ctx }: { line: number; ctx: Ctx }) {
+  const list = ctx.dots?.get(line);
+  if (list === undefined || list.length === 0) return null;
+  const isRed = list.some((a) => a.severity === 'red');
+  return (
+    <button
+      type="button" aria-label={t('plugins.annotations.dot')} data-severity={isRed ? 'red' : 'yellow'} onClick={() => ctx.onDot?.(list[0])}
+      className={`size-2 shrink-0 rounded-full ${isRed ? 'bg-destructive' : 'bg-waiting'}`}
+    />
+  );
+}
+
 function Row({ title, line, references, ctx, handle, isMono = false, children }: { title: string; line: number; references: readonly Reference[]; ctx: Ctx; handle?: Handle; isMono?: boolean; children?: ReactNode }) {
   return (
     <div className={`flex flex-col gap-0.5 ${ctx.dimmed.has(line) ? 'opacity-35' : ''}`}>
       <div className="flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-accent">
         <button type="button" onClick={() => ctx.onReveal(line)} className={`min-w-0 flex-1 truncate text-left ${isMono ? 'font-mono text-[11px]' : ''}`}>{title}</button>
+        <Dot line={line} ctx={ctx} />
         {children}
         <span className="font-mono text-[11px] text-muted-foreground">{line}</span>
         {handle && ctx.canDrag && (

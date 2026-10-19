@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { CatalogueItem, ItemRead, ItemVersion } from '../../src/types';
+import type { CatalogueItem, ItemRead, ItemVersion, LintInputRead } from '../../src/types';
 import type { BasedOn } from '../../src/template';
 
 const EDITED_AT = '2026-10-19T09:00:00.000Z';
@@ -74,8 +74,10 @@ export function readOf(id: string, version: string | null, files: Record<string,
 
 export interface SaveBody { version: string | null; path: string; text: string; from?: string }
 export interface NewVersionBody { name: string; from: string }
+export interface DismissedBody { version: string | null; keys: string[] }
 export interface AssignBody { workspace: string; version: string | null }
-/** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. */
+/** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. #327: the lint
+ * input (empty when absent) and the dismissals, keyed as `reads`, which a PUT writes unless `putDismissed` answers it. */
 export interface ItemsServer {
   catalogue: CatalogueItem[];
   reads: Record<string, ItemRead>;
@@ -84,6 +86,17 @@ export interface ItemsServer {
   createVersion?(id: string, body: NewVersionBody): Response; // POST …/versions
   rename?(id: string, version: string, body: { name: string }): Response; // PATCH …/versions/:version
   assign?(id: string, body: AssignBody): Response; // POST …/assign
+  lintInput?: LintInputRead;
+  dismissed?: Record<string, string[]>;
+  putDismissed?(id: string, body: DismissedBody): Response;
+}
+
+function answerDismissed(server: ItemsServer, id: string, url: URL, init?: RequestInit): Response {
+  if (init?.method !== 'PUT') return json(server.dismissed?.[`${id}@${url.searchParams.get('version') ?? ''}`] ?? []);
+  const body = JSON.parse(String(init.body)) as DismissedBody;
+  if (server.putDismissed) return server.putDismissed(id, body);
+  server.dismissed = { ...server.dismissed, [`${id}@${body.version ?? ''}`]: body.keys };
+  return json(body.keys);
 }
 
 /** The catalogue once a write made `name` (#320): the item lists it, customized, as GET /api/items answers after the store wrote it. */
@@ -102,13 +115,15 @@ function writeOf(server: ItemsServer, id: string, sub: string | undefined, versi
   return server.createVersion?.(id, body as NewVersionBody) ?? notServed('create');
 }
 
-/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], and the writes of #319 and #320. */
+/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], the writes of #319 and #320, GET /api/lint-input and GET / PUT …/dismissed (#327). */
 export function stubItems(server: ItemsServer) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, 'http://hive');
-    const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign', version
+    if (url.pathname === '/api/lint-input') return json(server.lintInput ?? { catalogue: [], scripts: [] });
+    const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign' | 'dismissed', version
     if (rawId === undefined) return json(server.catalogue);
     const id = decodeURIComponent(rawId);
+    if (sub === 'dismissed') return answerDismissed(server, id, url, init);
     if (init?.method !== undefined && init.method !== 'GET') return writeOf(server, id, sub, decodeURIComponent(version ?? ''), init);
     const read = server.reads[`${id}@${url.searchParams.get('version') ?? ''}`];
     return read === undefined ? json({ error: `no item ${id}` }, 404) : json(read);

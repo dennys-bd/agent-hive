@@ -282,3 +282,18 @@ export function removeVariable(text: string, name: string): EditResult {
     });
   });
 }
+
+// The run of #s that opens an ATX heading, as the lint reads one; the rest of the line, its ending included, is kept as written
+const HEADING_RUN = /^( {0,3})#{1,6}(?=[ \t\r\n]|$)/;
+const MAX_HEADING_LEVEL = 6;
+
+/** The heading on `line` set to `level` (#327, the heading fix): only its run of # changes. A header line or one that is no heading is refused. */
+export function setHeadingLevel(text: string, line: number, level: number): EditResult {
+  return edit(text, (source) => {
+    const current = line >= source.parsed.bodyLine ? source.lines[line - 1] : undefined;
+    const run = current === undefined ? null : HEADING_RUN.exec(current);
+    if (current === undefined || run === null) return { line, message: `line ${line} is not a heading` };
+    if (!Number.isInteger(level) || level < 1 || level > MAX_HEADING_LEVEL) return { line, message: `a heading level is 1 to ${MAX_HEADING_LEVEL}, not ${level}` };
+    return splice(source.lines, line, line, [`${run[1]}${'#'.repeat(level)}${current.slice(run[0].length)}`]);
+  });
+}

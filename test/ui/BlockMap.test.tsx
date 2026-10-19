@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { parseTemplate } from '../../src/template';
 import { buildMap } from '../../src/template-map';
+import type { LintAnnotation } from '../../src/template-lint';
 import { BlockMap, type BlockMapProps } from '@/components/plugins/BlockMap';
 import { setLanguage } from '@/i18n';
 import { BUILD_TEXT } from './plugins-fixtures';
@@ -52,4 +53,17 @@ test('a block dropped on a sibling moves to its index; a drop on a block of anot
   fireEvent.dragStart(handleOf('if delivery == "stacked"'), { dataTransfer: dt }); // the chain lives under Input
   fireEvent.drop(rowOf('Stops'), { dataTransfer: dt });
   expect(props.onMove).toHaveBeenCalledTimes(1);
+});
+
+test('a row with annotations shows one dot, red over yellow, and a click opens its first annotation (#327)', () => {
+  const yellow: LintAnnotation = { line: 21, severity: 'yellow', check: 'reference', title: 'a', body: '' };
+  const red: LintAnnotation = { ...yellow, severity: 'red', title: 'b' };
+  const onDot = vi.fn();
+  renderMap({ dots: new Map([[20, [yellow, red]], [9, [yellow]]]), onDot });
+  const dot = within(rowOf('Stops')).getByRole('button', { name: 'anotações neste bloco' });
+  expect(dot).toHaveAttribute('data-severity', 'red');
+  expect(within(rowOf('introdução')).getByRole('button', { name: 'anotações neste bloco' })).toHaveAttribute('data-severity', 'yellow');
+  expect(within(rowOf('Input')).queryByRole('button', { name: 'anotações neste bloco' })).toBeNull();
+  fireEvent.click(dot);
+  expect(onDot).toHaveBeenCalledWith(yellow);
 });

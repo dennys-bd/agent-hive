@@ -4,6 +4,7 @@ import { PluginsSidebar } from '@/components/plugins/PluginsSidebar';
 import { PluginsView } from '@/components/plugins/PluginsView';
 import { VariablesPane } from '@/components/plugins/VariablesPane';
 import { ViewAsSelect } from '@/components/plugins/ViewAsSelect';
+import { useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
 import { t } from '@/i18n';
@@ -19,6 +20,7 @@ interface PluginsDockArgs { isShown: boolean; workspaces: readonly string[]; act
 export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: PluginsDockArgs): PluginsDock {
   const plugins = usePlugins(isShown);
   const editor = useItemEditor(plugins);
+  const annotations = useAnnotations(editor, plugins.items, workspaces); // #327: one lint for the text, the map, the pane and the head
   const isHiveItem = editor.item?.origin === HIVE_ORIGIN; // a workspace item has no variables, so no "view as" (decision 22)
   return {
     panel: { id: 'plugins', title: t('dock.plugins'), ownHeader: true, body: <PluginsSidebar plugins={plugins} workspaces={workspaces} isShown={isShown} activate={activate} /> },
@@ -28,10 +30,10 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
       body: (
         <section aria-label={t('files.tab.variables')} className="flex min-h-0 flex-1 flex-col">
           {isHiveItem && <ViewAsSelect value={editor.viewAs} workspaces={workspaces} onChange={editor.setViewAs} />}
-          {isHiveItem && <VariablesPane editor={editor} workspaces={workspaces} />}
+          {isHiveItem && <VariablesPane editor={editor} annotations={annotations} workspaces={workspaces} />}
         </section>
       ),
     },
-    center: isShown ? <PluginsView plugins={plugins} editor={editor} workspaces={workspaces} fontFamily={fontFamily} /> : null,
+    center: isShown ? <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={workspaces} fontFamily={fontFamily} /> : null,
   };
 }

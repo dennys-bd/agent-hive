@@ -1,30 +1,33 @@
 import { type KeyboardEvent, useMemo, useState } from 'react';
-import { deliveredName, type ParsedTemplate, parseTemplate, type TemplateVariable, type VariableValue } from '../../../template';
+import { deliveredName, parseTemplate, type TemplateVariable, type VariableValue } from '../../../template';
 import { type EditResult, removeVariable, setVariableValue } from '../../../template-edit';
-import { type LintAnnotation, lintTemplate, variableUses } from '../../../template-lint';
-import type { CatalogueItem } from '../../../types';
+import { type LintAnnotation, variableUses } from '../../../template-lint';
 import { Confirm } from '@/components/Confirm';
 import { ChoiceSelect, rawOf, valueOfRaw } from '@/components/plugins/ChoiceSelect';
 import { VariableForm } from '@/components/plugins/VariableForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
+import type { Annotations } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { type MessageKey, t } from '@/i18n';
 import { isMarkdown } from '@/lib/template-view';
 
 type Origin = 'hive' | 'yours';
-interface PaneProps { editor: ItemEditor; workspaces: readonly string[] }
-interface BodyProps extends PaneProps { item: CatalogueItem; path: string }
+interface PaneProps { editor: ItemEditor; annotations: Annotations; workspaces: readonly string[] }
+interface BodyProps extends PaneProps { path: string }
 interface Removal { name: string; lines: number[] }
 interface ValueProps { variable: TemplateVariable; workspace: string; onWrite(value: VariableValue | undefined): void }
 interface RowProps {
   variable: TemplateVariable; workspaces: readonly string[]; origin?: Origin; findings: readonly LintAnnotation[];
-  onWrite(workspace: string, value: VariableValue | undefined): void; onEdit(): void; onRemove(): void;
+  onWrite(workspace: string, value: VariableValue | undefined): void; onEdit(): void; onRemove(): void; onFinding(finding: LintAnnotation): void;
 }
 
 const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive', yours: 'plugins.variables.yours' };
-const NO_FINDINGS: readonly LintAnnotation[] = [];
+// #327: a row's lines are the editor's annotations on its variable, the pane's two checks only; a parse annotation never lands on a row
+const ROW_CHECKS: readonly LintAnnotation['check'][] = ['required', 'unused'];
+const findingsOf = (list: readonly LintAnnotation[], name: string): LintAnnotation[] =>
+  list.filter((a) => ROW_CHECKS.includes(a.check) && a.variable === name);
 
 const entryOf = (variable: TemplateVariable, workspace: string): VariableValue | undefined =>
   Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : undefined;
@@ -65,15 +68,17 @@ function ValueControl({ variable, workspace, onWrite }: ValueProps) {
   return <Input ref={(input) => input?.focus()} aria-label={label} defaultValue={raw} onKeyDown={onKeyDown} onBlur={() => setEditing(false)} className="h-6 px-1.5 font-mono text-xs" />;
 }
 
-// Decision 6: the lint's line on the declaration, red naming the workspaces with no value, yellow for a variable the body never uses
-function FindingLine({ finding }: { finding: LintAnnotation }) {
-  if (finding.check === 'required') return <p className="text-destructive">{t('plugins.variables.lint.required', { workspaces: (finding.workspaces ?? []).join(', ') })}</p>;
-  return <p className="text-waiting">{t('plugins.variables.lint.unused')}</p>;
+// Decision 6 (#321), #327: the annotation's line on the declaration, red naming the workspaces with no value, yellow for a variable the body
+// never uses; a click opens its card in the text
+function FindingLine({ finding, onOpen }: { finding: LintAnnotation; onOpen(): void }) {
+  const isRequired = finding.check === 'required';
+  const text = isRequired ? t('plugins.variables.lint.required', { workspaces: (finding.workspaces ?? []).join(', ') }) : t('plugins.variables.lint.unused');
+  return <button type="button" onClick={onOpen} className={`text-left hover:underline ${isRequired ? 'text-destructive' : 'text-waiting'}`}>{text}</button>;
 }
 
 // One variable (handoff 11b): its name and origin, a value per configured workspace in config order, the entries of names no workspace has
 // dimmed and read-only (decision 11), the lint's line. Every declaration can be edited; only a "yours" variable can go (decisions 7, 8)
-function VariableRow({ variable, workspaces, origin, findings, onWrite, onEdit, onRemove }: RowProps) {
+function VariableRow({ variable, workspaces, origin, findings, onWrite, onEdit, onRemove, onFinding }: RowProps) {
   const unknown = Object.keys(variable.workspaces).filter((w) => !workspaces.includes(w));
   return (
     <li aria-label={variable.name} className="flex flex-col gap-1 rounded-md border px-2 py-1.5">
@@ -94,18 +99,9 @@ function VariableRow({ variable, workspaces, origin, findings, onWrite, onEdit, 
           <WorkspaceSquare name={w} /><span className="truncate font-mono">{`${w} · ${String(variable.workspaces[w])}`}</span>
         </div>
       ))}
-      {findings.map((finding) => <FindingLine key={finding.check} finding={finding} />)}
+      {findings.map((finding) => <FindingLine key={finding.check} finding={finding} onOpen={() => onFinding(finding)} />)}
     </li>
   );
-}
-
-// Decision 6: only the structural checks that land on a declaration; no catalogue and no scripts, since no reference finding is read here
-function useFindings(parsed: ParsedTemplate, item: CatalogueItem, workspaces: readonly string[]): readonly LintAnnotation[] {
-  return useMemo(() => {
-    if (parsed.errors.length > 0) return NO_FINDINGS;
-    const self = { origin: item.origin, kind: item.kind, name: item.name };
-    return lintTemplate(parsed, { self, catalogue: [], workspaces: [...workspaces], scripts: [] }).filter((f) => f.check === 'required' || f.check === 'unused');
-  }, [parsed, item.origin, item.kind, item.name, workspaces]);
 }
 
 // Decision 10: "from hive" when the Hive's original of this file declares the name; every variable of a user-created item is "yours", every
@@ -145,12 +141,11 @@ function PaneHead({ isDisabled, onAdd }: { isDisabled: boolean; onAdd(): void })
   );
 }
 
-// The buffer's parse and lint are memoised on its text: the pane re-renders on every keystroke of the open file (decision 23). A header that
+// The buffer's parse is memoised on its text: the pane re-renders on every keystroke of the open file (decision 23). A header that
 // does not parse replaces the list with its line and hides the form (decision 22); the form opens at the top of the list (decision 14)
-function PaneBody({ editor, workspaces, item, path }: BodyProps) {
+function PaneBody({ editor, annotations, workspaces, path }: BodyProps) {
   const text = editor.textOf(path);
   const parsed = useMemo(() => parseTemplate(text), [text]);
-  const findings = useFindings(parsed, item, workspaces);
   const originOf = useOriginOf(editor, path);
   const [error, setError] = useState<MessageKey>();
   const [removal, setRemoval] = useState<Removal>();
@@ -177,7 +172,8 @@ function PaneBody({ editor, workspaces, item, path }: BodyProps) {
           {parsed.variables.map((variable) => (
             <VariableRow
               key={variable.name} variable={variable} workspaces={workspaces} origin={originOf(variable.name)}
-              findings={findings.filter((f) => f.line === variable.line)} onEdit={() => setForm({ name: variable.name })} onRemove={() => remove(variable.name)}
+              findings={findingsOf(annotations.list, variable.name)} onFinding={annotations.openAt}
+              onEdit={() => setForm({ name: variable.name })} onRemove={() => remove(variable.name)}
               onWrite={(workspace, value) => write(setVariableValue(text, variable.name, workspace, value))}
             />
           ))}
@@ -190,9 +186,9 @@ function PaneBody({ editor, workspaces, item, path }: BodyProps) {
 
 /** The right pane's variables under "view as" (#321, handoff 11b): the open markdown file's declared variables, a value per workspace each,
  * editable in place. Keyed by item and file, so a switch starts with no open control or dialog. */
-export function VariablesPane({ editor, workspaces }: PaneProps) {
+export function VariablesPane({ editor, annotations, workspaces }: PaneProps) {
   const { item, path } = editor;
   if (item === undefined || editor.read === undefined || path === undefined) return null;
   if (!isMarkdown(path)) return <p className="p-3 text-muted-foreground text-xs">{t('plugins.variables.none')}</p>;
-  return <PaneBody key={`${item.id}\0${path}`} editor={editor} workspaces={workspaces} item={item} path={path} />;
+  return <PaneBody key={`${item.id}\0${path}`} editor={editor} annotations={annotations} workspaces={workspaces} path={path} />;
 }

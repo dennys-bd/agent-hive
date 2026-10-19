@@ -13,6 +13,7 @@ import {
   removeVariable,
   replaceChain,
   setVariableValue,
+  setHeadingLevel,
   updateVariable,
 } from '../src/template-edit.js';
 
@@ -276,4 +277,12 @@ test('removeVariable drops a declaration, then an emptied variables: key, and le
     variable: 'missing',
     message: 'variable "missing" is not declared',
   });
+});
+
+test('setHeadingLevel turns an h4 under an h2 into an h3, keeping the rest of the line; a line that is no heading, or of the header, is refused (#327)', () => {
+  const text = '---\nname: x\n---\n## A\n#### B **bold**\ntext\n';
+  assert.equal(ok(setHeadingLevel(text, 5, 3)).text, '---\nname: x\n---\n## A\n### B **bold**\ntext\n');
+  assert.match(refused(setHeadingLevel(text, 6, 3)).message, /line 6 is not a heading/);
+  assert.match(refused(setHeadingLevel(text, 2, 3)).message, /line 2 is not a heading/);
+  assert.match(refused(setHeadingLevel(text, 5, 7)).message, /1 to 6/);
 });

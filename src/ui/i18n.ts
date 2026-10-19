@@ -1944,6 +1944,9 @@ const en = {
   'plugins.head.test': 'test on workspace {workspace}',
   'plugins.head.soon': 'coming soon',
   'plugins.head.revert': "revert to the hive's original",
+  'plugins.head.reviewer.one': 'reviewer · {count} annotation',
+  'plugins.head.reviewer.other': 'reviewer · {count} annotations',
+  'plugins.head.reviewer.none': 'reviewer · no annotations',
   'plugins.revert.title': "Revert to the Hive's original",
   'plugins.revert.message': 'the version {version} is deleted with its files, and every workspace that used it goes back to the original.',
   'plugins.revert.confirm': 'revert',
@@ -2021,6 +2024,28 @@ const en = {
   'plugins.variables.form.create': 'create',
   'plugins.variables.form.save': 'save',
   'plugins.variables.form.cancel': 'cancel',
+  // #327: the editor's annotations
+  'plugins.annotations.dismissFailed': 'could not save the dismissal',
+  'plugins.annotations.label': 'annotations',
+  'plugins.annotations.apply': 'apply fix',
+  'plugins.annotations.dismiss': 'dismiss',
+  'plugins.annotations.dot': 'annotations on this block',
+  'plugins.annotations.parse.title': 'the template does not parse',
+  'plugins.annotations.parse.body': 'nothing else is checked until this line parses.',
+  'plugins.annotations.render.title': 'the render fails for {workspaces}',
+  'plugins.annotations.render.body': 'only a render shows this; the engine says:',
+  'plugins.annotations.undeclared.title': 'undeclared variable {variable}',
+  'plugins.annotations.undeclared.body': '{variable} is used here but not declared under variables: in the header.',
+  'plugins.annotations.unused.title': 'unused variable {variable}',
+  'plugins.annotations.unused.body': '{variable} is declared but the body never uses it.',
+  'plugins.annotations.required.title': 'missing {variable} · {workspaces}',
+  'plugins.annotations.required.body': '{variable} is required and has no value for {workspaces}.',
+  'plugins.annotations.reference.title': 'unknown {ref}',
+  'plugins.annotations.reference.body': "{ref} is not a hive skill or specialist, a workspace's skill or one of the plugin's scripts.",
+  'plugins.annotations.callRequired.title': 'missing {variable} · {ref} · {workspaces}',
+  'plugins.annotations.callRequired.body': '{ref} requires {variable}, which has no value for {workspaces}.',
+  'plugins.annotations.heading.title': 'skipped heading level',
+  'plugins.annotations.heading.body': 'the map nests this heading as an h{level}; the fix writes it so.',
   // #325: the plugins update screen
   'plugins.update.screen': 'update',
   'plugins.update.review': 'review the update',
@@ -3987,6 +4012,9 @@ const pt: Record<MessageKey, string> = {
   'plugins.head.test': 'testar no workspace {workspace}',
   'plugins.head.soon': 'em breve',
   'plugins.head.revert': 'voltar para a original da hive',
+  'plugins.head.reviewer.one': 'revisor · {count} anotação',
+  'plugins.head.reviewer.other': 'revisor · {count} anotações',
+  'plugins.head.reviewer.none': 'revisor · nenhuma anotação',
   'plugins.revert.title': 'Voltar para a original da hive',
   'plugins.revert.message': 'a versão {version} é apagada com os arquivos dela, e todo workspace que a usava volta para a original.',
   'plugins.revert.confirm': 'voltar',
@@ -4064,6 +4092,28 @@ const pt: Record<MessageKey, string> = {
   'plugins.variables.form.create': 'criar',
   'plugins.variables.form.save': 'salvar',
   'plugins.variables.form.cancel': 'cancelar',
+  // #327: the editor's annotations
+  'plugins.annotations.dismissFailed': 'não foi possível salvar a dispensa',
+  'plugins.annotations.label': 'anotações',
+  'plugins.annotations.apply': 'aplicar correção',
+  'plugins.annotations.dismiss': 'dispensar',
+  'plugins.annotations.dot': 'anotações neste bloco',
+  'plugins.annotations.parse.title': 'o template não é válido',
+  'plugins.annotations.parse.body': 'nada mais é verificado até esta linha ficar válida.',
+  'plugins.annotations.render.title': 'a renderização falha em {workspaces}',
+  'plugins.annotations.render.body': 'só a renderização mostra isto; o motor diz:',
+  'plugins.annotations.undeclared.title': 'variável não declarada {variable}',
+  'plugins.annotations.undeclared.body': '{variable} é usada aqui mas não está declarada em variables: no cabeçalho.',
+  'plugins.annotations.unused.title': 'variável não usada {variable}',
+  'plugins.annotations.unused.body': '{variable} está declarada mas o corpo nunca a usa.',
+  'plugins.annotations.required.title': 'falta {variable} · {workspaces}',
+  'plugins.annotations.required.body': '{variable} é obrigatória e não tem valor em {workspaces}.',
+  'plugins.annotations.reference.title': '{ref} desconhecida',
+  'plugins.annotations.reference.body': '{ref} não é skill nem especialista da hive, skill de um workspace ou script do plugin.',
+  'plugins.annotations.callRequired.title': 'falta {variable} · {ref} · {workspaces}',
+  'plugins.annotations.callRequired.body': '{ref} exige {variable}, que não tem valor em {workspaces}.',
+  'plugins.annotations.heading.title': 'nível de título pulado',
+  'plugins.annotations.heading.body': 'o mapa aninha este título como h{level}; a correção o escreve assim.',
   // #325: the plugins update screen
   'plugins.update.screen': 'atualização',
   'plugins.update.review': 'revisar a atualização',
@@ -4128,7 +4178,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

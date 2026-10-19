@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { CatalogueItem, ItemVersion, UpdateConflict, UpdatePreview } from '../../src/types';
 import { PluginsView } from '@/components/plugins/PluginsView';
+import { useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
 import { setLanguage } from '@/i18n';
@@ -51,9 +52,10 @@ const reads = (mock: FetchMock, path: string): number => mock.mock.calls.filter(
 function View() {
   const plugins = usePlugins(true);
   const editor = useItemEditor(plugins);
+  const annotations = useAnnotations(editor, plugins.items, WORKSPACES);
   return (
     <>
-      <PluginsView plugins={plugins} editor={editor} workspaces={WORKSPACES} fontFamily="monospace" />
+      <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={WORKSPACES} fontFamily="monospace" />
       <button type="button" onClick={() => plugins.open({ kind: 'update', id: PLAN.id, version: 'mine' })}>open-update</button>
     </>
   );
