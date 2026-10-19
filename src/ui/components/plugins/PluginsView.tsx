@@ -10,9 +10,9 @@ import type { Plugins } from '@/hooks/use-plugins';
 const NO_ITEMS: CatalogueItem[] = [];
 interface PluginsViewProps { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[]; fontFamily: string }
 
-/** The plugins view's centre (#313, #319): the open screen, its head portalled into the header's centre. A skill opens its editor and a version's
- * update its screen (#325); a specialist, mcp and protocol are still their own tasks (3.9, 5.2, 6.2), an empty centre under their head. Mounted only while the view is
- * shown, so the slot holds its head and no other view's. */
+/** The plugins view's centre (#313, #319): the open screen, its head portalled into the header's centre. A skill opens its editor and a
+ * version's update its screen (#325); a specialist, mcp and protocol are still their own tasks (3.9, 5.2, 6.2), an empty centre under their
+ * head. Mounted only while the view is shown, so the slot holds its head and no other view's. */
 export function PluginsView({ plugins, editor, workspaces, fontFamily }: PluginsViewProps) {
   const { screen } = plugins;
   return (
