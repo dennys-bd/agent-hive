@@ -47,6 +47,17 @@ test('an annotation underlines its line; on a header line in visual mode it sits
   expect(within(margin()).getByRole('button', { name: HEADLINE })).toBeInTheDocument();
 });
 
+test('Esc already handled by something else (Monaco widget, dialog) does not close the card (#327)', async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open();
+  fireEvent.click(await within(margin()).findByRole('button', { name: HEADLINE }));
+  const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+  handled.preventDefault();
+  act(() => { window.dispatchEvent(handled); });
+  expect(within(margin()).getByRole('article', { name: HEADLINE })).toBeInTheDocument();
+});
+
 test('in text mode the annotation stays on its own line, with room for a card; "apply fix" removes the declaration and the annotation goes (#327)', async () => {
   const saves: SaveBody[] = [];
   stubItems(serverOf({ save: (id, body) => { saves.push(body); return echo(id, body); } }));

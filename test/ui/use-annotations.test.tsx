@@ -80,3 +80,37 @@ test('a dismissal the server holds hides its annotation on open; a failed write 
   act(() => result.current.editor.setViewAs('hive-site'));
   expect(result.current.annotations.list).toEqual([]);
 });
+
+test('two quick dismissals with the first write failing: the second stays hidden and is sent, the first comes back with the error, which a later write without it does not clear (#327)', async () => {
+  const bodies: string[][] = [];
+  let calls = 0;
+  stubItems(serverOf(TWO, {
+    putDismissed: (_id, body) => { bodies.push(body.keys); calls += 1; return calls === 1 ? json({ error: 'disk' }, 500) : json(body.keys); },
+  }));
+  const { result } = await opened();
+  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['unused', 'undeclared']);
+  const [first, second] = result.current.annotations.list;
+  act(() => { result.current.annotations.dismiss(first!); result.current.annotations.dismiss(second!); });
+  expect(result.current.annotations.list).toEqual([]);
+  await waitFor(() => expect(bodies).toHaveLength(2));
+  await waitFor(() => expect(result.current.annotations.error).toBe('plugins.annotations.dismissFailed'));
+  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['unused']);
+  expect(bodies[1]).toHaveLength(1);
+  expect(bodies[1]).not.toContain(DEPTH_KEY);
+  // dismissing the failed one again, now that writes work, clears the error
+  act(() => result.current.annotations.dismiss(result.current.annotations.list[0]!));
+  await waitFor(() => expect(result.current.annotations.error).toBeUndefined());
+  expect(bodies[2]).toContain(DEPTH_KEY);
+});
+
+test('two quick dismissals both succeed: the last write carries both keys and no error shows (#327)', async () => {
+  const bodies: string[][] = [];
+  stubItems(serverOf(TWO, { putDismissed: (_id, body) => { bodies.push(body.keys); return json(body.keys); } }));
+  const { result } = await opened();
+  const [first, second] = result.current.annotations.list;
+  act(() => { result.current.annotations.dismiss(first!); result.current.annotations.dismiss(second!); });
+  await waitFor(() => expect(bodies).toHaveLength(2));
+  expect(bodies.at(-1)).toHaveLength(2);
+  expect(result.current.annotations.list).toEqual([]);
+  expect(result.current.annotations.error).toBeUndefined();
+});

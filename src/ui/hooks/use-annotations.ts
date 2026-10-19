@@ -28,7 +28,8 @@ interface Scope { id: string; version: string | null; path: string }
 interface Dismissed { server: readonly string[]; shown: readonly string[] } // server: the last list the server answered
 type Lists = Readonly<Record<string, Dismissed>>;
 interface FileNote<T> { file: string; value: T }
-interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): void; setFailed(key: string | undefined): void }
+interface Failure { item: string; dismissal: string } // the dismissal a write did not save, under its item
+interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): void; setFailed(update: (last: Failure | undefined) => Failure | undefined): void }
 
 const NONE: readonly LintAnnotation[] = [];
 const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [] };
@@ -82,8 +83,9 @@ function useLint(item: CatalogueItem | undefined, text: string, input: LintInput
   }, [origin, kind, name, text, input, workspaces]);
 }
 
-// One PUT of the item's latest list; a failure goes back to the list the server last answered
-async function sendLatest(target: Pick<Scope, 'id' | 'version'>, ledger: Ledger): Promise<void> {
+// One PUT of the item's latest list. A failure takes back only its own dismissal: the ones queued behind it stay and are still sent, and the
+// error stays until a write carrying the failed one succeeds
+async function sendLatest(target: Pick<Scope, 'id' | 'version'>, dismissal: string, ledger: Ledger): Promise<void> {
   const key = itemKeyOf(target);
   // ponytail: past the server's cap the oldest dismissals go; a prune of keys no line matches any more if that ever bites
   const keys = (ledger.latest.current[key]?.shown ?? []).slice(-MAX_KEYS);
@@ -91,12 +93,12 @@ async function sendLatest(target: Pick<Scope, 'id' | 'version'>, ledger: Ledger)
     const answer = await sendJson<unknown>('PUT', dismissedUrl(target.id), { version: target.version, keys });
     const server = isKeys(answer) ? answer : keys;
     ledger.put(key, { server, shown: ledger.latest.current[key]?.shown ?? server });
-    ledger.setFailed(undefined);
+    ledger.setFailed((last) => (last !== undefined && keys.includes(last.dismissal) ? undefined : last));
   } catch (err) {
     console.error(`annotations: a dismissal of ${target.id} was not saved`, err);
     const now = ledger.latest.current[key];
-    if (now !== undefined) ledger.put(key, { server: now.server, shown: now.server });
-    ledger.setFailed(key);
+    if (now !== undefined) ledger.put(key, { server: now.server, shown: now.shown.filter((shown) => shown !== dismissal) });
+    ledger.setFailed(() => ({ item: key, dismissal }));
   }
 }
 
@@ -104,7 +106,7 @@ async function sendLatest(target: Pick<Scope, 'id' | 'version'>, ledger: Ledger)
 // dismissals never lose one
 function useDismissed(scope: Scope | undefined): { shown?: readonly string[]; hasFailed: boolean; add(dismissal: string): void } {
   const [lists, setLists] = useState<Lists>({});
-  const [failed, setFailed] = useState<string>(); // the item key whose last write failed
+  const [failed, setFailed] = useState<Failure>(); // the last dismissal not saved
   const latest = useRef<Lists>({}); // the lists as the writes build them, ahead of a render
   const queue = useRef<Promise<void>>(Promise.resolve());
   const put = useCallback((key: string, list: Dismissed): void => {
@@ -128,9 +130,9 @@ function useDismissed(scope: Scope | undefined): { shown?: readonly string[]; ha
     if (scope === undefined || key === undefined || list === undefined || list.shown.includes(dismissal)) return;
     put(key, { ...list, shown: [...list.shown, dismissal] });
     const target = { id: scope.id, version: scope.version };
-    queue.current = queue.current.then(() => sendLatest(target, { latest, put, setFailed }));
+    queue.current = queue.current.then(() => sendLatest(target, dismissal, { latest, put, setFailed }));
   };
-  return { shown: key === undefined ? undefined : lists[key]?.shown, hasFailed: key !== undefined && failed === key, add };
+  return { shown: key === undefined ? undefined : lists[key]?.shown, hasFailed: key !== undefined && failed?.item === key, add };
 }
 
 // The open card and the last reveal, both kept per file: another file's never shows here

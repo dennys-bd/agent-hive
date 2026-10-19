@@ -76,7 +76,8 @@ export function AnnotationMargin({ annotations, tops, chipTops }: { annotations:
   const { list, open, close } = annotations;
   useEffect(() => {
     if (open === undefined) return undefined;
-    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') close(); };
+    // Monaco's widgets and dialogs prevent the Esc they handle: it must not close the card too
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape' && !event.defaultPrevented) close(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close]);
