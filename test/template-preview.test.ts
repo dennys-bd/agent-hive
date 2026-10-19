@@ -8,7 +8,8 @@ import { type Preview, previewTemplate } from '../src/template-preview.js';
 
 // The "view as" preview (#319): every body line for one workspace, its markers and the branches that do not hold flagged.
 const REPO = new URL('../../', import.meta.url); // runs from dist/test
-const NEW_BUILD = readFileSync(fileURLToPath(new URL('assets/plugin/skills/new-build/SKILL.md', REPO)), 'utf8');
+// Since #317 the shipped skills are Liquid templates; a shipped specialist is still plain Markdown
+const PLANNER = readFileSync(fileURLToPath(new URL('assets/plugin/agents/planner.md', REPO)), 'utf8');
 const CHAINS = [
   '---',
   'name: chains',
@@ -77,12 +78,12 @@ test("each marker is flagged as the empty line Liquid leaves; the header is the 
   assert.equal(other.lines.find((l) => l.line === 10)?.text, 'Run  in agent-hive.');
 });
 
-test('new-build, with no Liquid, previews as itself: every line holds and none is a marker (#319)', () => {
-  const shipped = parseTemplate(NEW_BUILD);
+test('a shipped specialist, with no Liquid, previews as itself: every line holds and none is a marker (#319)', () => {
+  const shipped = parseTemplate(PLANNER);
   const preview = previewTemplate(shipped, buildMap(shipped), 'agent-hive');
   assert.ok(preview.ok);
   assert.deepEqual([preview.isExact, preview.lines.every((l) => l.holds && !l.isMarker)], [true, true]);
-  assert.equal(kept(preview), NEW_BUILD);
+  assert.equal(kept(preview), PLANNER);
 });
 
 test('a required variable with no value for the workspace answers the render error at its line (#319)', () => {
