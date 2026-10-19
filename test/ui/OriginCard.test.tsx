@@ -52,3 +52,13 @@ test('the head shows based on after the meta only for an item that has it (#320,
   await waitFor(() => expect(within(head).getByText('new-spec')).toBeInTheDocument());
   expect(within(head).queryByRole('link')).not.toBeInTheDocument();
 });
+
+test('a click on based on asks before opening an untrusted host, as a terminal link does, and opens nothing by itself (#320, decision 15)', async () => {
+  const user = userEvent.setup();
+  const open = vi.fn();
+  vi.stubGlobal('open', open);
+  render(<OriginCard basedOn={BASED_ON} description="" />);
+  await user.click(screen.getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' }));
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent(BASED_ON.url);
+  expect(open).not.toHaveBeenCalled();
+});

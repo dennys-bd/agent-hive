@@ -73,7 +73,7 @@ async function mainText(ref: ItemRef, files: FileSet): Promise<string | undefine
 // ponytail: a version with no file answers its folder's mtime (Math.max of nothing throws); the store never leaves files/ empty
 async function versionEditedAt(sources: ItemSources, ref: ItemRef, folder: string): Promise<string> {
   const files = await versionFiles(sources.home, ref, folder);
-  const times = await Promise.all(files.paths.map(async (path) => (await stat(join(files.dir, path))).mtimeMs));
+  const times = await Promise.all(files.paths.map(async (path) => (await stat(join(files.dir, path)).catch(() => ({ mtimeMs: 0 }))).mtimeMs)); // gone since the listing: the catalogue still reads
   const newest = times.length > 0 ? Math.max(...times) : (await stat(versionDir(sources.home, ref, folder))).mtimeMs;
   return new Date(newest).toISOString();
 }

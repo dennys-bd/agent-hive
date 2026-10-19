@@ -35,6 +35,7 @@ interface WriteContext {
   put(read: ItemRead): void; reload(): Promise<void>; setNote(note: Note | undefined): void; setPath(path: string): void;
   settle(version: string | null, path: string, sent: string): void; // the open file's buffer after a save, under the version and path saved
   moveVersion(to: string): void; dropVersion(): void; // the open version's read and buffers, renamed or gone
+  carryBuffers(to: string): void; // the open version's unsaved buffers only, onto another version
   openVersion(version: string | null): void;
 }
 
@@ -189,6 +190,8 @@ async function createNamed(c: WriteContext, name: string): Promise<MessageKey | 
     return NAME_REFUSAL[statusOf(err)] ?? 'plugins.version.createFailed';
   }
   await c.reload();
+  // The original turns read-only once a version exists (decision 8): its unsaved edits follow the copy instead of stranding there
+  if (c.read.version === null) c.carryBuffers(name);
   c.openVersion(name);
   return undefined;
 }
@@ -221,8 +224,12 @@ async function assignOpen(c: WriteContext, workspace: string): Promise<MessageKe
 
 // The writes over the open file and version; with nothing open each answers its failure's copy
 function writesOf(context: WriteContext | undefined, canSave: () => boolean, saving: RefObject<boolean>): Writes {
-  const run = (write: (c: WriteContext) => Promise<MessageKey | undefined>, failed: MessageKey): Promise<MessageKey | undefined> =>
-    (context === undefined ? Promise.resolve(failed) : write(context));
+  // One write at a time: a second one would send the version or path the first is still moving
+  const run = async (write: (c: WriteContext) => Promise<MessageKey | undefined>, failed: MessageKey): Promise<MessageKey | undefined> => {
+    if (context === undefined || saving.current) return failed;
+    saving.current = true;
+    try { return await write(context); } finally { saving.current = false; }
+  };
   return {
     save: async () => {
       // A second ⌘S during a rename's flight would send `from` for a file the first one already moved; the read-only original saves nothing
@@ -231,7 +238,7 @@ function writesOf(context: WriteContext | undefined, canSave: () => boolean, sav
       try { await saveFile(context); } finally { saving.current = false; }
     },
     newFile: (p) => run((c) => createFile(c, p.trim()), 'plugins.file.failed'),
-    revert: () => (context === undefined ? Promise.resolve() : revertVersion(context)),
+    revert: async () => { await run(async (c) => { await revertVersion(c); return undefined; }, 'plugins.editor.revertFailed'); },
     createVersion: (name) => run((c) => createNamed(c, name), 'plugins.version.createFailed'),
     renameVersion: (name) => run((c) => renameOpen(c, name), 'plugins.version.renameFailed'),
     assignTo: (workspace) => run((c) => assignOpen(c, workspace), 'plugins.version.useFailed'),
@@ -263,12 +270,13 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     settle: (v, p, sent) => settle(bufferKey(id, read.version, path), bufferKey(id, v, p), sent),
     moveVersion: (to) => { moveRead(id, read.version, to); rekeyBuffers(versionKey(id, read.version), versionKey(id, to)); },
     dropVersion: () => { moveRead(id, read.version); rekeyBuffers(versionKey(id, read.version)); },
+    carryBuffers: (to) => rekeyBuffers(versionKey(id, read.version), versionKey(id, to)),
   } : undefined;
   return {
     item, read, hasFailed, version, isReadOnly, path, textOf, isDirty,
     openVersion: (v) => { open(id, v); setNote(undefined); },
     openFile: (p) => { setPath(p); setNote(undefined); },
-    edit: (text) => { if (path !== undefined) set(bufferKey(id, version, path), text); },
+    edit: (text) => { if (path !== undefined && !isReadOnly) set(bufferKey(id, version, path), text); },
     ...writesOf(context, () => !isReadOnly && path !== undefined && isDirty(path), saving),
     move: (line, index) => {
       if (path === undefined || isReadOnly) return;

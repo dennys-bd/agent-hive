@@ -246,3 +246,22 @@ test('assignTo moves a workspace onto the open version, null for the original, t
   await act(async () => { refused = await result.current.editor.assignTo('gone'); });
   expect(refused).toBe('plugins.version.useFailed');
 });
+
+test("a version made from an editable original takes the original's unsaved edit, and the original, read-only now, keeps none (#320, decisions 8, 11)", async () => {
+  const server: ItemsServer = serverOf({ createVersion: (id, body) => {
+    server.catalogue = withVersion(server.catalogue, id, body.name);
+    return json(readOf(id, body.name, { 'SKILL.md': SPEC_TEXT }));
+  } });
+  stubItems(server);
+  const { result } = await opened('hive:new-spec');
+  act(() => result.current.editor.edit('typed\n'));
+  await act(async () => { await result.current.editor.createVersion('fresh'); });
+  const made = result.current.editor;
+  expect([made.version, made.textOf('SKILL.md'), made.isDirty('SKILL.md')]).toEqual(['fresh', 'typed\n', true]);
+  act(() => result.current.editor.openVersion(null));
+  await waitFor(() => expect(result.current.editor.read?.version).toBeNull());
+  const original = result.current.editor;
+  expect([original.isReadOnly, original.textOf('SKILL.md'), original.isDirty('SKILL.md')]).toEqual([true, SPEC_TEXT, false]);
+  act(() => result.current.editor.edit('ignored\n'));
+  expect(result.current.editor.isDirty('SKILL.md')).toBe(false);
+});

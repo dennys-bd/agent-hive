@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, type MouseEvent, useEffect, useRef, useState } from 'react';
 import type { BasedOn } from '../../../template';
+import { LinkConfirm } from '@/components/LinkConfirm';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { type MessageKey, t } from '@/i18n';
-import { webHost } from '@/lib/trusted-links';
+import { openLink, webHost } from '@/lib/trusted-links';
 
 export interface OriginCardProps { basedOn: BasedOn; description: string; className?: string }
 
@@ -45,28 +46,34 @@ export function OriginCard({ basedOn, description, className = '' }: OriginCardP
   const href = linkOf(basedOn.url);
   const label = t('plugins.origin.link', { name: basedOn.name });
   const look = `underline-offset-2 hover:underline ${className}`;
+  const [pending, setPending] = useState<string>();
+  // The header's url is any author's text: an untrusted host asks first, as a terminal's link does (#404)
+  const open = (e: MouseEvent): void => { e.preventDefault(); if (href !== undefined) openLink(href, setPending); };
   const handlers = { onPointerEnter: hover.show, onPointerLeave: hover.hide, onFocus: hover.show, onBlur: hover.hide };
   return (
-    <Popover open={hover.isOpen} onOpenChange={hover.setOpen}>
-      <PopoverAnchor asChild>
-        {href === undefined
-          ? <button type="button" {...handlers} className={look}>{label}</button>
-          : <a href={href} target="_blank" rel="noreferrer" {...handlers} className={look}>{label}</a>}
-      </PopoverAnchor>
-      <PopoverContent
-        align="start" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
-        onPointerEnter={hover.show} onPointerLeave={hover.hide} className="flex w-[340px] flex-col gap-2 p-3 text-xs"
-      >
-        <div className="flex items-center justify-between text-muted-foreground">
-          <span>{t('plugins.origin.title')}</span>
-          {href !== undefined && <a href={href} target="_blank" rel="noreferrer" className="hover:underline">{t('plugins.origin.open')}</a>}
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="font-mono font-semibold">{basedOn.name}</span>
-          {description !== '' && <span className="text-muted-foreground">{description}</span>}
-        </div>
-        <Rows basedOn={basedOn} />
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={hover.isOpen} onOpenChange={hover.setOpen}>
+        <PopoverAnchor asChild>
+          {href === undefined
+            ? <button type="button" {...handlers} className={look}>{label}</button>
+            : <a href={href} target="_blank" rel="noreferrer" onClick={open} {...handlers} className={look}>{label}</a>}
+        </PopoverAnchor>
+        <PopoverContent
+          align="start" onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
+          onPointerEnter={hover.show} onPointerLeave={hover.hide} className="flex w-[340px] flex-col gap-2 p-3 text-xs"
+        >
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span>{t('plugins.origin.title')}</span>
+            {href !== undefined && <a href={href} target="_blank" rel="noreferrer" onClick={open} className="hover:underline">{t('plugins.origin.open')}</a>}
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="font-mono font-semibold">{basedOn.name}</span>
+            {description !== '' && <span className="text-muted-foreground">{description}</span>}
+          </div>
+          <Rows basedOn={basedOn} />
+        </PopoverContent>
+      </Popover>
+      <LinkConfirm url={pending} onClose={() => setPending(undefined)} />
+    </>
   );
 }
