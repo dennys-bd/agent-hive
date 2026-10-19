@@ -178,3 +178,17 @@ test("readItem stamps a version's and a workspace item's files with their mtime;
   assert.ok(!isRefusal(original));
   assert.ok(original.files.every((file) => !('savedAt' in file)));
 });
+
+test("a version answers editedAt, its newest file's mtime; touching base/ or version.json does not move it (#320, decision 6)", async (t) => {
+  const f = await fixture(t);
+  const dir = join(f.home, 'custom/hive/new-build/mine');
+  await putVersion(f, 'hive/new-build/mine', { name: 'mine', from: 'original', workspaces: [] }, { 'files/SKILL.md': SKILL, 'files/scripts/run.sh': 'echo hi\n', 'base/SKILL.md': SKILL });
+  const older = new Date('2026-10-18T08:00:00.000Z');
+  const newest = new Date('2026-10-19T14:31:00.000Z');
+  const later = new Date('2026-10-20T10:00:00.000Z');
+  await utimes(join(dir, 'files/scripts/run.sh'), older, older);
+  await utimes(join(dir, 'files/SKILL.md'), newest, newest);
+  await utimes(join(dir, 'base/SKILL.md'), later, later);
+  await utimes(join(dir, 'version.json'), later, later);
+  assert.deepEqual((await find(f, BUILD))?.versions.map((v) => [v.name, v.editedAt]), [['mine', newest.toISOString()]]);
+});

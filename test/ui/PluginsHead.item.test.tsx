@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
-import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, SPEC_TEXT, stubItems } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, SPEC_TEXT, stubItems, versionOf } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -60,7 +60,7 @@ test('revert asks, naming the version, deletes it and shows the original under i
   const dialog = await screen.findByRole('alertdialog');
   expect(dialog).toHaveTextContent('mine');
   await user.click(within(dialog).getByRole('button', { name: 'voltar' }));
-  await waitFor(() => expect(within(head()).getByText('original da hive')).toBeInTheDocument());
+  await waitFor(() => expect(within(head()).getByText('original da hive', { selector: 'span' })).toBeInTheDocument());
   expect(mock.mock.calls.some(([path, init]) => path === '/api/items/hive%3Anew-build/versions/mine' && init?.method === 'DELETE')).toBe(true);
   expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
   expect(revertButton()).not.toBeInTheDocument();
@@ -73,14 +73,14 @@ test("saving an original makes it customized: the chip and the saved time follow
   const server: ItemsServer = {
     catalogue: CATALOGUE, reads: READS,
     save: (_id, body) => {
-      server.catalogue = CATALOGUE.map((i) => (i.id === 'hive:new-spec' ? itemOf('hive:new-spec', { state: 'customized' }) : i));
+      server.catalogue = CATALOGUE.map((i) => (i.id === 'hive:new-spec' ? itemOf('hive:new-spec', { state: 'customized', versions: [versionOf('mine')] }) : i));
       return json(readOf('hive:new-spec', 'mine', { 'SKILL.md': body.text }, TODAY_1431));
     },
   };
   stubItems(server);
   render(<PluginsWindow />);
   await open('new-spec');
-  expect(within(head()).getByText('original da hive')).toBeInTheDocument();
+  expect(within(head()).getByText('original da hive', { selector: 'span' })).toBeInTheDocument();
   expect(head()).not.toHaveTextContent('salvo');
   act(() => view().model.type(`${SPEC_TEXT}More.\n`));
   act(() => view().onSave());

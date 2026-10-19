@@ -9,7 +9,7 @@ import { setLanguage } from '@/i18n';
 import { itemOf, json, WORKSPACES } from './plugins-fixtures';
 
 type User = ReturnType<typeof userEvent.setup>;
-const updated = (name: string): ItemVersion => ({ name, from: 'original', workspaces: ['agent-hive'], unknownWorkspaces: [], updateAvailable: true, hiveVersion: '0.14' });
+const updated = (name: string): ItemVersion => ({ name, from: 'original', workspaces: ['agent-hive'], unknownWorkspaces: [], updateAvailable: true, hiveVersion: '0.14', editedAt: '2026-10-19T09:00:00.000Z' });
 const PLAN = itemOf('hive:new-plan', { state: 'update available', versions: [updated('mine')], files: ['SKILL.md', 'reference/index.md'] });
 const APPLIED: CatalogueItem = { ...PLAN, state: 'customized', versions: [{ ...updated('mine'), updateAvailable: false }] };
 const PATH = '/api/items/hive%3Anew-plan/versions/mine/update';

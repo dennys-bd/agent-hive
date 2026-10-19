@@ -38,12 +38,13 @@ function EditorBody(props: BodyProps) {
   const { isMd, map, workspace, preview, look } = useFileLook(props);
   const [reveal, setReveal] = useState<Reveal>();
   const isPreview = workspace !== undefined;
+  const canEdit = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
   const failed = preview?.ok === false ? preview.errors[0] : undefined;
   return (
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileTabs
         files={read.files.map((file) => file.path)} open={path} isDirty={editor.isDirty} onOpen={editor.openFile} previewOf={workspace}
-        onAdd={item.kind === 'skill' && !isPreview ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode}
+        onAdd={item.kind === 'skill' && canEdit ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode}
       />
       {editor.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(editor.error, editor.errorVars)}</p>}
       {editor.renamedTo && <p role="status" className={`${NOTE} text-muted-foreground`}>{t('plugins.editor.renamed', { name: editor.renamedTo })}</p>}
@@ -51,12 +52,12 @@ function EditorBody(props: BodyProps) {
       <div className="flex min-h-0 flex-1">
         {isMd ? (
           <BlockMap
-            map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={!isPreview} onToggle={editor.toggle} onMove={editor.move}
+            map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move}
             onReveal={(line) => setReveal((last) => ({ line: look.lineOf(line), n: (last?.n ?? 0) + 1 }))}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
-          modelKey={[item.id, path, preview?.ok ? workspace : ''].join('\0')} path={path} text={look.text} isReadOnly={isPreview} fontFamily={fontFamily}
+          modelKey={[item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0')} path={path} text={look.text} isReadOnly={!canEdit} fontFamily={fontFamily}
           hidden={look.hidden} decorations={look.decorations} chips={look.chips} reveal={reveal} onChange={editor.edit} onSave={() => void editor.save()}
         />
       </div>
@@ -71,5 +72,5 @@ export function SkillEditor(props: SkillEditorProps) {
   const { item, read, path, hasFailed } = props.editor;
   if (hasFailed) return <p role="alert" className="p-4 text-destructive text-xs">{t('plugins.editor.loadFailed')}</p>;
   if (item === undefined || read === undefined || path === undefined) return <p className="p-4 text-muted-foreground text-xs">{t('files.loading')}</p>;
-  return <EditorBody key={`${item.id}\0${path}`} {...props} item={item} read={read} path={path} />;
+  return <EditorBody key={`${item.id}\0${props.editor.version ?? ''}\0${path}`} {...props} item={item} read={read} path={path} />;
 }

@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
 import { type EditResult, moveBlock } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
 import { getJson, sendJson } from '@/lib/api';
-import { HIVE_ORIGIN, mainPathOf, openVersionOf } from '@/lib/plugins';
+import { HIVE_ORIGIN, mainPathOf, versionToOpen } from '@/lib/plugins';
 import type { EditorMode } from '@/lib/template-view';
 
-/** The skill editor's state (#319): held by usePluginsDock, in the always-mounted dock, so it outlives the view. */
+/** The skill editor's state (#319, #320): held by usePluginsDock, in the always-mounted dock, so it outlives the view. */
 export interface ItemEditor {
   item?: CatalogueItem; // the open screen's item, from the catalogue
   read?: ItemRead; // its open version's files; undefined while the read flies
   hasFailed: boolean;
+  version: string | null; openVersion(version: string | null): void; // #320, decision 9: the open version, null the original
+  isReadOnly: boolean; // #320, decision 8: the original, once the item has a version
   path?: string; openFile(path: string): void;
   textOf(path: string): string; isDirty(path: string): boolean; edit(text: string): void; // edit: the open file's buffer
   save(): Promise<void>; newFile(path: string): Promise<MessageKey | undefined>; revert(): Promise<void>; move(line: number, index: number): void;
+  // #320, decisions 11–13: a version from the open one, the open one renamed, a workspace moved onto it; undefined: done. Not `useIn`: the
+  // hooks lint reads editor.useIn() in a menu's onSelect as a hook call
+  createVersion(name: string): Promise<MessageKey | undefined>; renameVersion(name: string): Promise<MessageKey | undefined>;
+  assignTo(workspace: string): Promise<MessageKey | undefined>;
   mode: EditorMode; setMode(mode: EditorMode): void;
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
@@ -23,51 +29,81 @@ export interface ItemEditor {
   applyEdit(result: EditResult): MessageKey | undefined; // the variables pane's writes (#321): the buffer, saved at once when it was clean
   original?: ItemRead; // the Hive's original of the open item while a version is open (#321, decision 10)
 }
+type Writes = Pick<ItemEditor, 'save' | 'newFile' | 'revert' | 'createVersion' | 'renameVersion' | 'assignTo'>;
 
 interface Note { id: string; error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string }
 interface WriteContext {
   item: CatalogueItem; read: ItemRead; path: string; text: string;
-  put(read: ItemRead): void; settle(from: string, to: string, sent: string): void; dropItem(): void;
-  setPath(path: string): void; setNote(note: Note | undefined): void; reload(): Promise<void>;
+  put(read: ItemRead): void; reload(): Promise<void>; setNote(note: Note | undefined): void; setPath(path: string): void;
+  settle(version: string | null, path: string, sent: string): void; // the open file's buffer after a save, under the version and path saved
+  moveVersion(to: string): void; dropVersion(): void; // the open version's read and buffers, renamed or gone
+  carryBuffers(to: string): void; // the open version's unsaved buffers only, onto another version
+  openVersion(version: string | null): void;
 }
 
 const LIQUID = '.liquid';
 const REQUIRED_KEYS = ['name', 'description'] as const; // what Claude Code needs to load a skill or an agent
+const ORIGINAL = 'original'; // custom-versions.ts's ORIGINAL: POST …/versions copies the original from it
 const BAD_REQUEST = 400;
+const CONFLICT = 409;
+const NAME_REFUSAL: Readonly<Record<number, MessageKey>> = { [BAD_REQUEST]: 'plugins.version.badName', [CONFLICT]: 'plugins.version.taken' };
 const NONE: readonly number[] = [];
-const keyOf = (id: string, path: string): string => `${id}\0${path}`; // NUL is in no id and no path
+// NUL is in no id, version name or path, and the original's slot is '', a name no version has: a version's key prefixes each of its buffers'
+const versionKey = (id: string, version: string | null): string => `${id}\0${version ?? ''}\0`;
+const bufferKey = (id: string, version: string | null, path: string): string => `${versionKey(id, version)}${path}`;
 const itemUrl = (id: string): string => `/api/items/${encodeURIComponent(id)}`;
 const readUrl = (id: string, version: string | null): string => (version === null ? itemUrl(id) : `${itemUrl(id)}?${new URLSearchParams({ version })}`);
+const versionUrl = (id: string, version: string): string => `${itemUrl(id)}/versions/${encodeURIComponent(version)}`;
 const isItemRead = (value: unknown): value is ItemRead => typeof value === 'object' && value !== null && Array.isArray((value as Partial<ItemRead>).files);
 
-// The open item's read at decision 4's version, once per item: a later visit keeps it, as it keeps the buffers over it
-function useReads(item: CatalogueItem | undefined) {
+// Every key under `from` moved under `to`, or dropped without one: a renamed version's buffers follow it, a reverted one's go
+const rekey = <T>(record: Readonly<Record<string, T>>, from: string, to?: string): Record<string, T> =>
+  Object.fromEntries(Object.entries(record).flatMap(([key, value]): [string, T][] => {
+    if (!key.startsWith(from)) return [[key, value]];
+    return to === undefined ? [] : [[`${to}${key.slice(from.length)}`, value]];
+  }));
+
+// The open version's read, once per item and version: a later visit keeps it, as it keeps the buffers over it (#320, decision 10)
+function useReads(item: CatalogueItem | undefined, version: string | null) {
   const [reads, setReads] = useState<Readonly<Record<string, ItemRead>>>({});
   const [failed, setFailed] = useState<readonly string[]>([]);
   const id = item?.id;
-  const version = item === undefined ? null : openVersionOf(item);
-  const isSettled = id !== undefined && (reads[id] !== undefined || failed.includes(id));
-  const put = useCallback((read: ItemRead): void => setReads((prev) => ({ ...prev, [read.item.id]: read })), []);
+  const key = id === undefined ? undefined : versionKey(id, version);
+  const isSettled = key !== undefined && (reads[key] !== undefined || failed.includes(key));
+  const put = useCallback((read: ItemRead): void => setReads((prev) => ({ ...prev, [versionKey(read.item.id, read.version)]: read })), []);
+  // A rename moves the read under its new name; a revert (no `to`) drops it, so a later version of that name is read afresh
+  const moveRead = useCallback((itemId: string, from: string | null, to?: string): void => setReads((prev) => {
+    const { [versionKey(itemId, from)]: moved, ...rest } = prev;
+    return moved === undefined || to === undefined ? rest : { ...rest, [versionKey(itemId, to)]: { ...moved, version: to } };
+  }), []);
   useEffect(() => {
-    if (id === undefined || isSettled) return undefined;
+    if (id === undefined || key === undefined || isSettled) return undefined;
     let live = true;
-    const fail = (): void => { if (live) setFailed((prev) => [...prev, id]); };
+    const fail = (): void => { if (live) setFailed((prev) => [...prev, key]); };
     getJson<unknown>(readUrl(id, version)).then((read) => { if (!live) return; if (isItemRead(read)) put(read); else fail(); }, fail);
     return () => { live = false; };
-  }, [id, version, isSettled, put]);
-  return { read: id === undefined ? undefined : reads[id], hasFailed: id !== undefined && failed.includes(id), put };
+  }, [id, key, version, isSettled, put]);
+  return { read: key === undefined ? undefined : reads[key], hasFailed: key !== undefined && failed.includes(key), put, moveRead };
 }
 
 function useBuffers() {
   const [buffers, setBuffers] = useState<Readonly<Record<string, string>>>({});
-  const set = useCallback((id: string, path: string, text: string): void => setBuffers((prev) => ({ ...prev, [keyOf(id, path)]: text })), []);
-  // A save's settling: the buffer sent goes back to the read; one typed in while the save flew stays dirty, under the file's new name
-  const settle = useCallback((id: string, from: string, to: string, sent: string): void => setBuffers((prev) => {
-    const { [keyOf(id, from)]: typed, ...rest } = prev;
-    return typed === undefined || typed === sent ? rest : { ...rest, [keyOf(id, to)]: typed };
+  const set = useCallback((key: string, text: string): void => setBuffers((prev) => ({ ...prev, [key]: text })), []);
+  // A save's settling: the buffer sent goes back to the read; one typed in while the save flew stays dirty, under the file's new key
+  const settle = useCallback((from: string, to: string, sent: string): void => setBuffers((prev) => {
+    const { [from]: typed, ...rest } = prev;
+    return typed === undefined || typed === sent ? rest : { ...rest, [to]: typed };
   }), []);
-  const dropItem = useCallback((id: string): void => setBuffers((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}\0`)))), []);
-  return { buffers, set, settle, dropItem };
+  const rekeyBuffers = useCallback((from: string, to?: string): void => setBuffers((prev) => rekey(prev, from, to)), []);
+  return { buffers, set, settle, rekeyBuffers };
+}
+
+// Decision 9: the version the menu chose, per item; one the catalogue no longer lists falls back to #319's openVersionOf
+function useOpenVersion(item: CatalogueItem | undefined) {
+  const [chosen, setChosen] = useState<Readonly<Record<string, string | null>>>({});
+  const version = item === undefined ? null : versionToOpen(item, chosen[item.id]);
+  const open = useCallback((id: string, next: string | null): void => setChosen((prev) => ({ ...prev, [id]: next })), []);
+  return { version, open };
 }
 
 // The editor's view (decisions 15, 18, 22): one mode and one "view as" for every item, the collapsed `##` per item
@@ -92,52 +128,123 @@ function headerRefusal(c: WriteContext): Omit<Note, 'id'> | undefined {
   return missing === undefined ? undefined : { error: 'plugins.editor.headerNeeds', errorVars: { key: missing } };
 }
 
-// ⌘S (decisions 5, 7, 9): the open file only. A Hive .md whose text now uses Liquid is saved as .md.liquid from the .md; a workspace item is
-// never renamed (decision 27). Saving the original answers `mine`, which the read becomes
+// ⌘S (decisions 5, 7, 9 of #319): the open file only. A Hive .md whose text now uses Liquid is saved as .md.liquid from the .md; a workspace
+// item is never renamed. Saving the original answers `mine` (#320, decision 8 keeps the rule): the catalogue lists it before the editor
+// opens it, so the view never falls back to the original between the two
 async function saveFile(c: WriteContext): Promise<void> {
   const isRename = c.item.origin === HIVE_ORIGIN && c.path.endsWith('.md') && needsLiquid(c.text);
   const to = isRename ? `${c.path}${LIQUID}` : c.path;
   const refusal = headerRefusal(c);
   c.setNote(refusal && { id: c.item.id, ...refusal });
   if (refusal) return;
+  let saved: ItemRead;
   try {
-    c.put(await sendJson<ItemRead>('PUT', `${itemUrl(c.item.id)}/files`, { version: c.read.version, path: to, text: c.text, ...(isRename ? { from: c.path } : {}) }));
+    saved = await sendJson<ItemRead>('PUT', `${itemUrl(c.item.id)}/files`, { version: c.read.version, path: to, text: c.text, ...(isRename ? { from: c.path } : {}) });
   } catch {
     c.setNote({ id: c.item.id, error: 'plugins.editor.saveFailed' }); // a 500's detail is in hive.log already (server-plugins.ts)
     return;
   }
-  c.settle(c.path, to, c.text);
-  c.setPath(to);
-  if (isRename) c.setNote({ id: c.item.id, renamedTo: to });
+  c.put(saved);
   await c.reload();
+  c.settle(saved.version, to, c.text);
+  c.setPath(to);
+  c.openVersion(saved.version);
+  if (isRename) c.setNote({ id: c.item.id, renamedTo: to });
 }
 
-// "+" (decision 13): an empty file at the path, in the open version (the original's first save makes `mine`)
+// "+" (decision 13 of #319): an empty file at the path, in the open version (on the original it makes `mine`, opened as a save opens it)
 async function createFile(c: WriteContext, path: string): Promise<MessageKey | undefined> {
   if (c.read.files.some((file) => file.path === path)) return 'plugins.file.taken';
+  let made: ItemRead;
   try {
-    c.put(await sendJson<ItemRead>('PUT', `${itemUrl(c.item.id)}/files`, { version: c.read.version, path, text: '' }));
+    made = await sendJson<ItemRead>('PUT', `${itemUrl(c.item.id)}/files`, { version: c.read.version, path, text: '' });
   } catch (err) {
     return statusOf(err) === BAD_REQUEST ? 'plugins.file.badPath' : 'plugins.file.failed';
   }
-  c.setPath(path);
+  c.put(made);
   await c.reload();
+  c.setPath(path);
+  c.openVersion(made.version);
   return undefined;
 }
 
-// Decision 12: the open version goes, the original opens; the version's unsaved edits go with it
+// Decision 12 of #319: the open version goes and the original opens; the version's read and unsaved edits go with it
 async function revertVersion(c: WriteContext): Promise<void> {
   const { version } = c.read;
   if (version === null) return;
   try {
-    await sendJson<unknown>('DELETE', `${itemUrl(c.item.id)}/versions/${encodeURIComponent(version)}`);
+    await sendJson<unknown>('DELETE', versionUrl(c.item.id, version));
     c.put(await getJson<ItemRead>(itemUrl(c.item.id)));
   } catch {
     c.setNote({ id: c.item.id, error: 'plugins.editor.revertFailed' });
     return;
   }
-  c.dropItem();
   await c.reload();
+  c.dropVersion();
+  c.openVersion(null);
+}
+
+// #320, decision 11: a copy of the open version (the original for null), opened once the catalogue lists it
+async function createNamed(c: WriteContext, name: string): Promise<MessageKey | undefined> {
+  try {
+    c.put(await sendJson<ItemRead>('POST', `${itemUrl(c.item.id)}/versions`, { name, from: c.read.version ?? ORIGINAL }));
+  } catch (err) {
+    return NAME_REFUSAL[statusOf(err)] ?? 'plugins.version.createFailed';
+  }
+  await c.reload();
+  // The original turns read-only once a version exists (decision 8): its unsaved edits follow the copy instead of stranding there
+  if (c.read.version === null) c.carryBuffers(name);
+  c.openVersion(name);
+  return undefined;
+}
+
+// #320, decision 13: the open version under a new name; its read and unsaved buffers move with it, never read again
+async function renameOpen(c: WriteContext, name: string): Promise<MessageKey | undefined> {
+  const { version } = c.read;
+  if (version === null) return 'plugins.version.renameFailed'; // the menu offers no rename on the original
+  try {
+    await sendJson<unknown>('PATCH', versionUrl(c.item.id, version), { name });
+  } catch (err) {
+    return NAME_REFUSAL[statusOf(err)] ?? 'plugins.version.renameFailed';
+  }
+  await c.reload();
+  c.moveVersion(name);
+  c.openVersion(name);
+  return undefined;
+}
+
+// #320, decision 12: the workspace runs the open version (the original for null); the menu's rows and the sidebar follow the catalogue
+async function assignOpen(c: WriteContext, workspace: string): Promise<MessageKey | undefined> {
+  try {
+    await sendJson<unknown>('POST', `${itemUrl(c.item.id)}/assign`, { workspace, version: c.read.version });
+  } catch {
+    return 'plugins.version.useFailed';
+  }
+  await c.reload();
+  return undefined;
+}
+
+// The writes over the open file and version; with nothing open each answers its failure's copy
+function writesOf(context: WriteContext | undefined, canSave: () => boolean, saving: RefObject<boolean>): Writes {
+  // One write at a time: a second one would send the version or path the first is still moving
+  const run = async (write: (c: WriteContext) => Promise<MessageKey | undefined>, failed: MessageKey): Promise<MessageKey | undefined> => {
+    if (context === undefined || saving.current) return failed;
+    saving.current = true;
+    try { return await write(context); } finally { saving.current = false; }
+  };
+  return {
+    save: async () => {
+      // A second ⌘S during a rename's flight would send `from` for a file the first one already moved; the read-only original saves nothing
+      if (context === undefined || !canSave() || saving.current) return;
+      saving.current = true;
+      try { await saveFile(context); } finally { saving.current = false; }
+    },
+    newFile: (p) => run((c) => createFile(c, p.trim()), 'plugins.file.failed'),
+    revert: async () => { await run(async (c) => { await revertVersion(c); return undefined; }, 'plugins.editor.revertFailed'); },
+    createVersion: (name) => run((c) => createNamed(c, name), 'plugins.version.createFailed'),
+    renameVersion: (name) => run((c) => renameOpen(c, name), 'plugins.version.renameFailed'),
+    assignTo: (workspace) => run((c) => assignOpen(c, workspace), 'plugins.version.useFailed'),
+  };
 }
 
 // Decision 10 (#321): the Hive's original of a Hive item with a version open, read once per item, tells a variable "from hive" from "yours".
@@ -155,16 +262,6 @@ function useOriginal(item: CatalogueItem | undefined, read: ItemRead | undefined
   return id === undefined ? undefined : originals[id];
 }
 
-// One save at a time: a second ⌘S during a rename's flight would send `from` for a file the first one already moved
-function useSaveRunner(): (c: WriteContext) => Promise<void> {
-  const saving = useRef(false);
-  return async (c) => {
-    if (saving.current) return;
-    saving.current = true;
-    try { await saveFile(c); } finally { saving.current = false; }
-  };
-}
-
 // A refused edit's copy (decision 15): template-edit answers the parser's English, which never reaches the UI
 const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
   [/ is not declared$/, 'plugins.variables.error.undeclared'],
@@ -173,47 +270,56 @@ const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
 ];
 const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
 
-/** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22). */
+/** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22; #320, decisions 8–13; #321). */
 export function useItemEditor(plugins: Plugins): ItemEditor {
   const { screen, items, reload } = plugins;
   const item = screen.kind === 'item' ? items?.find((i) => i.id === screen.id) : undefined;
   const id = item?.id ?? '';
-  const { read, hasFailed, put } = useReads(item);
-  const { buffers, set, settle, dropItem } = useBuffers();
+  const { version, open } = useOpenVersion(item);
+  const { read, hasFailed, put, moveRead } = useReads(item, version);
+  const { buffers, set, settle, rekeyBuffers } = useBuffers();
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
-  const runSave = useSaveRunner();
+  const saving = useRef(false);
   const original = useOriginal(item, read);
   const view = useViewState(id);
+  const isReadOnly = version === null && (item?.versions.length ?? 0) > 0; // decision 8
   const chosen = paths[id];
   const path = read && (read.files.some((file) => file.path === chosen) ? chosen : mainPathOf(read));
   const savedText = (p: string): string | undefined => read?.files.find((file) => file.path === p)?.text;
-  const textOf = (p: string): string => buffers[keyOf(id, p)] ?? savedText(p) ?? '';
-  const isDirty = (p: string): boolean => buffers[keyOf(id, p)] !== undefined && buffers[keyOf(id, p)] !== savedText(p);
+  const buffer = (p: string): string | undefined => buffers[bufferKey(id, version, p)];
+  const textOf = (p: string): string => buffer(p) ?? savedText(p) ?? '';
+  const isDirty = (p: string): boolean => buffer(p) !== undefined && buffer(p) !== savedText(p);
   const setPath = (p: string): void => setPaths((prev) => ({ ...prev, [id]: p }));
-  const context: WriteContext | undefined = item && read && path
-    ? { item, read, path, text: textOf(path), put, settle: (from, to, sent) => settle(id, from, to, sent), dropItem: () => dropItem(id), setPath, setNote, reload }
-    : undefined;
+  const context: WriteContext | undefined = item && read && path ? {
+    item, read, path, text: textOf(path), put, reload, setNote, setPath, openVersion: (v) => open(id, v),
+    settle: (v, p, sent) => settle(bufferKey(id, read.version, path), bufferKey(id, v, p), sent),
+    moveVersion: (to) => { moveRead(id, read.version, to); rekeyBuffers(versionKey(id, read.version), versionKey(id, to)); },
+    dropVersion: () => { moveRead(id, read.version); rekeyBuffers(versionKey(id, read.version)); },
+    carryBuffers: (to) => rekeyBuffers(versionKey(id, read.version), versionKey(id, to)),
+  } : undefined;
   return {
-    item, read, original, hasFailed, path, textOf, isDirty,
+    item, read, original, hasFailed, version, isReadOnly, path, textOf, isDirty,
+    openVersion: (v) => { open(id, v); setNote(undefined); },
     openFile: (p) => { setPath(p); setNote(undefined); },
-    edit: (text) => { if (path !== undefined) set(id, path, text); },
-    save: async () => { if (context !== undefined && isDirty(context.path)) await runSave(context); },
+    edit: (text) => { if (path !== undefined && !isReadOnly) set(bufferKey(id, version, path), text); },
+    ...writesOf(context, () => !isReadOnly && path !== undefined && isDirty(path), saving),
     // Decision 5 (#321): the pane's edit lands in the buffer; a buffer that was clean is saved with it, a dirty one waits for ⌘S
     applyEdit: (result) => {
       if (!result.ok) return editErrorKey(result.error.message);
-      if (context === undefined || result.text === context.text) return undefined;
+      if (context === undefined || isReadOnly || result.text === context.text) return undefined;
       const wasClean = !isDirty(context.path);
-      set(id, context.path, result.text);
-      if (wasClean) void runSave({ ...context, text: result.text });
+      set(bufferKey(id, version, context.path), result.text);
+      if (wasClean && !saving.current) {
+        saving.current = true;
+        void saveFile({ ...context, text: result.text }).finally(() => { saving.current = false; });
+      }
       return undefined;
     },
-    newFile: (p) => (context === undefined ? Promise.resolve<MessageKey>('plugins.file.failed') : createFile(context, p.trim())),
-    revert: () => (context === undefined ? Promise.resolve() : revertVersion(context)),
     move: (line, index) => {
-      if (path === undefined) return;
-      const moved = moveBlock(textOf(path), line, index); // a refused move leaves the text (decision 20)
-      if (moved.ok) set(id, path, moved.text);
+      if (path === undefined || isReadOnly) return;
+      const moved = moveBlock(textOf(path), line, index); // a refused move leaves the text (decision 20 of #319)
+      if (moved.ok) set(bufferKey(id, version, path), moved.text);
     },
     ...view,
     error: note?.id === id ? note.error : undefined,

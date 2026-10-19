@@ -5,7 +5,7 @@ import { parseTemplate, renderTemplate } from '../../src/template';
 import { moveBlock } from '../../src/template-edit';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
-import { BUILD_TEXT, CATALOGUE, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems, withVersion } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -127,7 +127,12 @@ test('⌘S saves the open file to its version and the tab reads clean; a failed 
 
 test('a first {{ x }} in SKILL.md saves as SKILL.md.liquid from SKILL.md: the tab takes the name and the note shows (#319, decision 9)', async () => {
   const saves: SaveBody[] = [];
-  stubItems(serverOf({ save: (_id, body) => { saves.push(body); return json(readOf('hive:new-spec', 'mine', { 'SKILL.md.liquid': body.text })); } }));
+  const server: ItemsServer = serverOf({ save: (id, body) => {
+    saves.push(body);
+    server.catalogue = withVersion(server.catalogue, id, 'mine'); // the store made mine: GET /api/items lists it
+    return json(readOf('hive:new-spec', 'mine', { 'SKILL.md.liquid': body.text }));
+  } });
+  stubItems(server);
   render(<PluginsWindow />);
   await open('new-spec');
   const text = `${SPEC_TEXT}Run in {{ workspace }}.\n`;

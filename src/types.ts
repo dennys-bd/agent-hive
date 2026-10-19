@@ -1843,6 +1843,7 @@ export interface ItemVersion {
   unknownWorkspaces: string[]; // listed in version.json, absent from the config: kept, never deleted silently
   updateAvailable: boolean;
   hiveVersion?: string;
+  editedAt: string; // ISO: the newest mtime among the version's files/ (#320, decision 6); a fresh copy's is its creation
 }
 
 /** Where an item is used (#313): a configured stage runs the skill, or another item's main text names it (by its id). */

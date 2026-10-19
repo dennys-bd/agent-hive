@@ -13,7 +13,7 @@ export function getJson<T>(path: string): Promise<T> {
 }
 
 /** `keepalive` lets the request outlive the page: the view state's flush on pagehide (#484). */
-export function sendJson<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, { keepalive }: { keepalive?: boolean } = {}): Promise<T> {
+export function sendJson<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, { keepalive }: { keepalive?: boolean } = {}): Promise<T> {
   return fetch(path, {
     // x-hive-ui is the CSRF gate of every dashboard write (see server.ts): a form on another site cannot set it
     method, headers: { 'content-type': 'application/json', 'x-hive-ui': '1' },

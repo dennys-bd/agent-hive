@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, savedLabel, sectionOfScreen, usageText } from '@/lib/plugins';
-import { CATALOGUE, itemOf, readOf, WORKSPACES } from './plugins-fixtures';
+import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
+import { CATALOGUE, itemOf, readOf, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -41,7 +41,7 @@ test("sectionOfScreen: a list's section, an item's kind, and mcp and protocol as
   expect(sectionOfScreen({ kind: 'item', id: 'hive:gone' }, CATALOGUE)).toBeUndefined();
 });
 
-const version = (name: string) => ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false });
+const version = (name: string) => versionOf(name);
 
 test('openVersionOf: mine when the item has it, else its first version, else the original (#319, decision 4)', () => {
   expect(openVersionOf(itemOf('hive:a', { versions: [version('tdd'), version('mine')] }))).toBe('mine');
@@ -68,4 +68,40 @@ test('savedLabel: the time today, the short date and the time on another day (#3
 test("an update screen belongs to its item: its section is the item kind's, and itemIdOf names the item for it as for the item screen (#325)", () => {
   expect(sectionOfScreen({ kind: 'update', id: 'hive:architect', version: 'mine' }, CATALOGUE)).toBe('specialists');
   expect([itemIdOf({ kind: 'update', id: 'hive:new-plan', version: 'mine' }), itemIdOf({ kind: 'item', id: 'hive:new-plan' }), itemIdOf({ kind: 'mcp' })]).toEqual(['hive:new-plan', 'hive:new-plan', undefined]);
+});
+
+test('versionToOpen: the chosen version while the item lists it, the original unless the item is user-created, else openVersionOf (#320, decision 9)', () => {
+  const item = itemOf('hive:a', { versions: [versionOf('tdd'), versionOf('mine')] });
+  expect([versionToOpen(item, 'tdd'), versionToOpen(item, null), versionToOpen(item, 'gone'), versionToOpen(item, undefined)]).toEqual(['tdd', null, 'mine', 'mine']);
+  expect(versionToOpen(itemOf('hive:b', { userCreated: true, versions: [versionOf('mine')] }), null)).toBe('mine');
+});
+
+test("the menu's rows: each version with its state, workspaces and sub-line, then the original with the plugin's version; a user-created item has none (#320, decisions 4–7)", () => {
+  const now = new Date(2026, 9, 19, 18, 0);
+  const editedAt = new Date(2026, 9, 19, 14, 31).toISOString();
+  const item = itemOf('hive:a', {
+    onOriginal: ['hive-site'],
+    versions: [
+      versionOf('mine', { workspaces: ['agent-hive'], hiveVersion: '0.15', editedAt }),
+      versionOf('tdd', { from: 'mine', updateAvailable: true, editedAt }),
+      versionOf('bare', { editedAt }),
+    ],
+  });
+  expect(versionRows(item, now)).toEqual([
+    { version: 'mine', label: 'mine', state: 'customized', workspaces: ['agent-hive'], sub: 'edited 14:31 · from original 0.15' },
+    { version: 'tdd', label: 'tdd', state: 'update available', workspaces: [], sub: 'edited 14:31 · from mine' },
+    { version: 'bare', label: 'bare', state: 'customized', workspaces: [], sub: 'edited 14:31 · from original' },
+    { version: null, label: "hive's original 0.15", workspaces: ['hive-site'], sub: 'always available · not editable' },
+  ]);
+  const created = itemOf('hive:b', { userCreated: true, versions: [versionOf('mine', { from: null, editedAt })] });
+  expect(versionRows(created, now).map((row) => [row.version, row.sub])).toEqual([['mine', 'edited 14:31']]);
+  expect(versionRows(itemOf('hive-site:deploy', { onOriginal: ['hive-site'] }), now)).toEqual([{ version: null, label: 'repository file', workspaces: ['hive-site'] }]);
+});
+
+test("use in…: a Hive item's every workspace, a workspace item's own; the version each runs, null for the original (#320, decision 12)", () => {
+  const item = itemOf('hive:a', { onOriginal: ['hive-site'], versions: [versionOf('mine', { workspaces: ['agent-hive'] })] });
+  expect(assignableWorkspaces(item, WORKSPACES)).toEqual(WORKSPACES);
+  expect(assignableWorkspaces(itemOf('hive-site:deploy'), WORKSPACES)).toEqual(['hive-site']);
+  expect([versionInUse(item, 'agent-hive'), versionInUse(item, 'hive-site'), versionInUse(item, 'gone')]).toEqual(['mine', null, undefined]);
+  expect([originalName(item), originalName(itemOf('hive-site:deploy'))]).toEqual(["hive's original", 'repository file']);
 });
