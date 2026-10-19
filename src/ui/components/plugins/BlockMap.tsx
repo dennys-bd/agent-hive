@@ -1,4 +1,4 @@
-import { ChevronDownIcon, ChevronRightIcon, GripVerticalIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, GripVerticalIcon, PlusIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { LintAnnotation } from '../../../template-lint';
 import type { MapBlock, Reference, TemplateMap } from '../../../template-map';
@@ -7,13 +7,15 @@ import { type MapDrag, useMapDrag } from '@/components/plugins/map-drag';
 import { t } from '@/i18n';
 import { branchLabel } from '@/lib/template-view';
 
+export interface MapGap { line: number; card: ReactNode } // the open "+"'s card, in the map's flow where its "+" was (#322)
 export interface BlockMapProps {
   map: TemplateMap; collapsed: readonly number[]; dimmed: ReadonlySet<number>; canDrag: boolean;
   onReveal(line: number): void; onToggle(line: number): void; onMove(line: number, index: number): void;
   dots?: ReadonlyMap<number, readonly LintAnnotation[]>; onDot?(annotation: LintAnnotation): void; // #327: each row's annotations, by its line
+  appendLine: number; onPlus?(line: number): void; gap?: MapGap; // #322: the trailing "+"'s line; no onPlus, no "+" (the preview)
 }
 type Heading = Extract<MapBlock, { kind: 'heading' }>;
-interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onToggle' | 'dots' | 'onDot'> { drag: MapDrag }
+interface Ctx extends Pick<BlockMapProps, 'collapsed' | 'dimmed' | 'canDrag' | 'onReveal' | 'onToggle' | 'dots' | 'onDot' | 'onPlus' | 'gap'> { drag: MapDrag }
 interface Handle { parent: string; index: number }
 
 function Chips({ references }: { references: readonly Reference[] }) {
@@ -55,6 +57,21 @@ function Row({ title, line, references, ctx, handle, isMono = false, children }:
   );
 }
 
+// Decision 10: a chain inserted at the line of the block after the "+"; decision 11: its card takes the "+"'s place while open. #5b6472 has no
+// token, so the "+" is the muted foreground at 60%, lit on hover
+function Plus({ line, ctx }: { line: number; ctx: Ctx }) {
+  if (ctx.gap?.line === line) return <>{ctx.gap.card}</>;
+  const { onPlus } = ctx;
+  if (onPlus === undefined) return null;
+  return (
+    <button type="button" aria-label={t('plugins.chain.add')} title={t('plugins.chain.add')} onClick={() => onPlus(line)} className="flex h-5 w-full items-center gap-1 text-muted-foreground/60 hover:text-foreground">
+      <span className="h-px flex-1 bg-current opacity-50" />
+      <span className="flex size-5 items-center justify-center rounded-full border border-current"><PlusIcon className="size-2.5" /></span>
+      <span className="h-px flex-1 bg-current opacity-50" />
+    </button>
+  );
+}
+
 function HeadingBlock({ heading, handle, ctx }: { heading: Heading; handle: Handle; ctx: Ctx }) {
   const isCollapsed = ctx.collapsed.includes(heading.line);
   const Chevron = isCollapsed ? ChevronRightIcon : ChevronDownIcon;
@@ -78,6 +95,7 @@ function ChainBlockRows({ chain, handle, ctx }: { chain: ChainBlock; handle: Han
     <div className="ml-[14px] flex flex-col border-l border-dashed pl-2">
       {chain.branches.map((branch, index) => (
         <div key={branch.line}>
+          {index > 0 && <Plus line={branch.line} ctx={ctx} />}
           <Row title={branchLabel(branch)} line={branch.line} references={branch.references} ctx={ctx} handle={index === 0 ? handle : undefined} isMono />
           {branch.children.length > 0 && <Blocks blocks={branch.children} parent={`b${branch.line}`} ctx={ctx} />}
         </div>
@@ -101,6 +119,7 @@ function Blocks({ blocks, parent, ctx }: { blocks: readonly MapBlock[]; parent: 
         const index = movable.indexOf(block);
         return (
           <li key={`${block.kind}:${block.line}`} {...(index < 0 ? {} : ctx.drag.dropProps(block.line, parent, index))}>
+            <Plus line={block.line} ctx={ctx} />
             <Block block={block} handle={{ parent, index }} ctx={ctx} />
           </li>
         );
@@ -111,11 +130,13 @@ function Blocks({ blocks, parent, ctx }: { blocks: readonly MapBlock[]; parent: 
 
 /** The map column (#319, handoff 11b): the template's blocks from buildMap, a click to the line, drag among siblings, a `##` that collapses,
  * and the preview's dimming. */
-export function BlockMap({ map, onMove, ...ctx }: BlockMapProps) {
+export function BlockMap({ map, onMove, appendLine, ...rest }: BlockMapProps) {
   const drag = useMapDrag(onMove);
+  const ctx: Ctx = { ...rest, drag };
   return (
     <nav aria-label={t('plugins.map.label')} className="w-[236px] shrink-0 overflow-y-auto border-r p-2 text-xs">
-      <Blocks blocks={map.blocks} parent="root" ctx={{ ...ctx, drag }} />
+      <Blocks blocks={map.blocks} parent="root" ctx={ctx} />
+      <Plus line={appendLine} ctx={ctx} />
     </nav>
   );
 }

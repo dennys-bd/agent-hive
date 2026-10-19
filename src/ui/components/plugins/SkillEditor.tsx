@@ -10,6 +10,7 @@ import type { Annotations } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { t } from '@/i18n';
 import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
+import { appendLine } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
 import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
@@ -71,7 +72,7 @@ function EditorBody(props: BodyProps) {
       <div className="flex min-h-0 flex-1">
         {isMd ? (
           <BlockMap
-            map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move}
+            map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
             onReveal={(line) => setReveal((last) => ({ line: look.lineOf(line), n: (last?.n ?? 0) + 1 }))}
             dots={isPreview ? undefined : dots} onDot={annotations.openAt}
           />

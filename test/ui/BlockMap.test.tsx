@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { parseTemplate } from '../../src/template';
 import { buildMap } from '../../src/template-map';
@@ -9,7 +9,7 @@ import { BUILD_TEXT } from './plugins-fixtures';
 
 const map = buildMap(parseTemplate(BUILD_TEXT), { skills: ['hive:new-pr'], agents: [] });
 function renderMap(extra: Partial<BlockMapProps> = {}): BlockMapProps {
-  const props: BlockMapProps = { map, collapsed: [], dimmed: new Set(), canDrag: true, onReveal: vi.fn(), onToggle: vi.fn(), onMove: vi.fn(), ...extra };
+  const props: BlockMapProps = { map, collapsed: [], dimmed: new Set(), canDrag: true, onReveal: vi.fn(), onToggle: vi.fn(), onMove: vi.fn(), appendLine: 23, ...extra };
   render(<BlockMap {...props} />);
   return props;
 }
@@ -66,4 +66,19 @@ test('a row with annotations shows one dot, red over yellow, and a click opens i
   expect(within(rowOf('Input')).queryByRole('button', { name: 'anotações neste bloco' })).toBeNull();
   fireEvent.click(dot);
   expect(onDot).toHaveBeenCalledWith(yellow);
+});
+
+const PLUS = 'inserir bloco condicional aqui';
+
+test('a "+" before each block at every level and one after the last asks for its line; the open card takes its place; no onPlus, no "+" (#322, decisions 10, 11)', () => {
+  const onPlus = vi.fn();
+  renderMap({ onPlus });
+  for (const plus of within(nav()).getAllByRole('button', { name: PLUS })) fireEvent.click(plus);
+  // introduction, ## Input, its chain, the chain's else, ## Stops, after the last
+  expect(onPlus.mock.calls.map(([line]) => line)).toEqual([9, 11, 14, 16, 20, 23]);
+  cleanup();
+  renderMap({ onPlus, gap: { line: 20, card: <p>the card</p> } });
+  expect(rowOf('Stops')).toHaveTextContent('the card');
+  expect(within(rowOf('Stops')).queryByRole('button', { name: PLUS })).not.toBeInTheDocument();
+  expect(within(nav()).getAllByRole('button', { name: PLUS })).toHaveLength(5);
 });
