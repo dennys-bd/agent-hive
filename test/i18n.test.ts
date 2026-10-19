@@ -536,3 +536,19 @@ test("the plugins update screen's copy reads as the handoff writes it, in both l
   assert.equal(tPlural('plugins.update.passages', 2, { n: 2 }), '2 passages were edited by you and by the hive');
   assert.equal(tPlural('plugins.update.left', 2, { n: 2 }), '2 conflicts left · until then the worker uses your current version');
 });
+
+test("the version menu's copy reads as the handoff writes it, in both languages; its dialog titles in sentence case (#320)", () => {
+  setLanguage('pt');
+  assert.deepEqual(
+    [t('plugins.version.new', { name: 'mine' }), t('plugins.version.useIn'), t('plugins.version.rename'), t('plugins.version.alwaysAvailable'), t('plugins.version.hiveOriginal', { version: '0.15' })],
+    ['nova versão a partir de mine…', 'usar em…', 'renomear', 'sempre disponível · não editável', 'original da hive 0.15'],
+  );
+  setLanguage('en');
+  assert.deepEqual(
+    [t('plugins.version.badName'), t('plugins.version.taken'), t('plugins.version.createFailed'), t('plugins.version.renameFailed')],
+    ['a name is lowercase letters, digits and dashes', 'that name is taken', 'could not create the version', 'could not rename the version'],
+  );
+  for (const language of ['en', 'pt'] as const) {
+    for (const key of ['plugins.version.newTitle', 'plugins.version.renameTitle'] as const) assert.match(MESSAGES[language][key], /^\p{Lu}[^?]*$/u, `${language}.${key}`);
+  }
+});
