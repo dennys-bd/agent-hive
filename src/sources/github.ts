@@ -310,6 +310,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   // it cannot be closed, and deleting it deletes the item. A close from hive_stop carries a reason and maybe the original of a duplicate (#314).
   async function apply(itemId: string, action: ItemAction): Promise<void> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
+    if (contents.size === 0) await listItems(); // #353: at boot another source's poll can run this before ours listed; a truly empty project re-lists
     if (!contents.has(itemId)) throw new Error(`item ${itemId} is not on the source`);
     const content = contents.get(itemId);
     const issueId = content?.__typename === 'Issue' ? content.id : undefined;

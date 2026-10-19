@@ -105,13 +105,12 @@ test('setColumn before resolveFields throws', async () => {
   await assert.rejects(createSource(config, { gql: fakeGql({}).gql }).setColumn('x', 'Ready'), /not resolved/);
 });
 
-test('apply (#286): archive and remove send the item mutation with the project id, close and delete the issue mutation with its content id; a draft cannot be closed and is deleted as an item; an item not listed, or any before resolveFields, rejects', async () => {
+test('apply (#286): archive and remove send the item mutation with the project id, close and delete the issue mutation with its content id; a draft cannot be closed and is deleted as an item; any before resolveFields rejects (an item not listed: the #353 test below)', async () => {
   const draft = { id: 'I3', fieldValueByName: { name: 'Ready' }, content: { __typename: 'DraftIssue', title: 'Draft' } };
   const { gql, calls } = fakeGql({ fields, items: page([linked(1), draft]), relations: {}, archiveItem: {}, deleteItem: {}, closeIssue: {}, deleteIssue: {} });
   const source = createSource(config, { gql });
   await assert.rejects(source.apply('I1', { type: 'archive' }), /not resolved/);
   await source.resolveFields();
-  await assert.rejects(source.apply('I1', { type: 'archive' }), { message: 'item I1 is not on the source' }, 'nothing listed yet');
   await source.listItems();
   for (const type of ['archive', 'remove', 'close', 'delete'] as const) await source.apply('I1', { type });
   await source.apply('I3', { type: 'delete' });
@@ -138,6 +137,22 @@ test('apply close with hive_stop\'s reason (#314): wontDo sends NOT_PLANNED; dup
     ['issueId', { owner: 'acme', name: 'r', number: 7 }], ['closeIssue', { issueId: 'N1', stateReason: 'DUPLICATE', duplicateIssueId: 'N7' }],
     ['issueId', { owner: 'acme', name: 'r', number: 8 }],
   ], 'the bare close keeps sending { issueId } alone: the #286 test above');
+});
+
+test('apply before the adapter ever listed (#353): it runs the listing query first, then the action; an item still absent from that listing rejects as before', async () => {
+  const { gql, calls } = fakeGql({ fields, items: page([linked(1)]), relations: {}, archiveItem: {} });
+  const source = createSource(config, { gql });
+  await source.resolveFields();
+  await source.apply('I1', { type: 'archive' });
+  assert.deepEqual(calls.map((c) => c.name).filter((name) => name === 'items' || name === 'archiveItem'), ['items', 'archiveItem']);
+  await source.apply('I1', { type: 'archive' });
+  assert.equal(calls.filter((c) => c.name === 'items').length, 1, 'listed once: the listing filled what apply acts on');
+
+  const fresh = fakeGql({ fields, items: page([linked(1)]), relations: {} });
+  const other = createSource(config, { gql: fresh.gql });
+  await other.resolveFields();
+  await assert.rejects(other.apply('I9', { type: 'archive' }), { message: 'item I9 is not on the source' });
+  assert.equal(fresh.calls.filter((c) => c.name === 'items').length, 1, 'it listed before refusing');
 });
 
 test('listItems returns the issues in any cited column with the column name, in source order', async () => {

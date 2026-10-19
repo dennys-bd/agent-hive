@@ -2750,6 +2750,36 @@ test('a leaving sourceAction (#286): the source applies it and the task leaves t
   assert.equal(other.server.getState()?.error, 'source.apply(archive): must have admin rights');
 });
 
+test('a poll whose read began before a leaving action answered does not bring the closed task back; a later poll that lists it again lets it enter (#353)', async (t) => {
+  const leaving: LegacyStage = { ...STAGES[0], onFinish: { board: [{ type: 'archive' }] } };
+  const accepting = fakeSourceFactory();
+  let gate: Promise<void> | undefined; // while set, a listing started now answers only once the test opens it
+  const factory = (config: SourceSpec): Source => {
+    const source = accepting.factory(config);
+    return { ...source, async listItems() { const held = gate; if (held) await held; return source.listItems(); } };
+  };
+  const { log, lines } = fakeLog();
+  const { base, server } = await start(t, { ...BODY, stages: [leaving] }, log, {}, { sourceFactory: factory });
+  let open!: () => void;
+  gate = new Promise<void>((resolve) => { open = resolve; });
+  const stale = server.poll(); // reads the board before the archive below answers
+  gate = undefined;
+  const ptyId = worker0(server).runId!;
+  await markDone(server, ptyId);
+  await hookEvent(base, ptyId, { hook_event_name: 'Stop' });
+  assert.deepEqual(accepting.applied, ['I1 archive']);
+  assert.deepEqual(server.getState()?.tasks, [], 'closeTask took it out');
+
+  open();
+  await stale;
+  assert.deepEqual(server.getState()?.tasks, [], 'the listing read before the archive did not bring it back');
+  assert.ok(lines.includes('DEBUG poll source=board dropped board:I1: closed after the read began'), lines.join('\n'));
+
+  await sleep(5); // past the close's millisecond: a read starting in it counts the item as closed after it began
+  await server.poll(); // began after the close and lists the item: restored on the source, so it enters
+  assert.deepEqual(server.getState()?.tasks.map((task) => task.item.itemId), ['board:I1']);
+});
+
 test('POST /rules/disable and /rules/enable (#297): a bad source, percent or until is a 400 that changes nothing; a good one dispatches, and the disable holds until the enable', async (t) => {
   const { base, server } = await start(t, { ...BODY, usageRules: [{ source: 'session', percent: 80, signal: 'yellow' }] });
   await server.dispatch({ type: 'rateLimits', agent: 'claude', rateLimits: { at: new Date().toISOString(), windows: { five_hour: { usedPercent: 85, resetsAt: new Date(Date.now() + HOUR_MS).toISOString() } } } });

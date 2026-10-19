@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf } from '../src/activities.js';
 import { followEpics } from '../src/epic-follow.js';
-import { initialState } from '../src/orchestrator.js';
+import { initialState, reduce } from '../src/orchestrator.js';
 import { transitionKey } from '../src/transitions.js';
 import { END, type EpicFollows, type Item, type Stage, type State, type Task, type Transition } from '../src/types.js';
 import { HOUR_MS } from '../src/usage.js';
 import { move } from './fakes.js';
-import { withWork } from './fixtures/work.js';
+import { activityIdOf, withWork } from './fixtures/work.js';
 
 // The show epic's rule (#31): a pass over the state after the step, pure, its moves written to the source like a move by hand.
 
@@ -151,4 +151,27 @@ test('a last stage with no after: the epic moves into it and leaves through done
   const { state, effects } = followEpics(at([epic('review', ['c1']), child('c1', 'done')], ISSUE, [...FLOW.slice(0, 3), atOnce]));
   assert.deepEqual(effects, [column('Done'), ARCHIVED]);
   assert.deepEqual([epicIn(state)?.stage, epicIn(state)?.leaving], ['done', true]);
+});
+
+// #353 (#100's log): the delete-activity stage marked the epic's activity deleting before its item carried `epic`; the next poll's pass
+// archived it mid-delete, closeTask was refused by the mark, and the delete's advance found it leaving: it stayed leaving for good
+const WORKTREE = '/repo/.hive/worktrees/hive-e';
+
+test('an epic whose activity is being deleted is neither moved nor archived; activityDeleted then takes done → end, and closeTask removes it (#353)', () => {
+  const deleting = deepFreeze(withWork(at([aged(epic('done', ['c1']), 13 * HOUR_MS), child('c1', 'done')], ISSUE, FLOW), 'board:E', { worktree: WORKTREE, deleting: true }));
+  const held = followEpics(deleting);
+  assert.equal(held.state, deleting);
+  assert.deepEqual(held.effects, []);
+  const deleted = reduce(deleting, { type: 'activityDeleted', activityId: activityIdOf('board:E') });
+  assert.deepEqual(deleted.effects.filter((e) => e.type === 'sourceAction' && e.itemId === 'board:E'), [ARCHIVED]);
+  assert.equal(epicIn(deleted.state)?.leaving, true, 'held until the source answers');
+  const closed = reduce(deleted.state, { type: 'closeTask', taskId: 'board:E' });
+  assert.equal(epicIn(closed.state), undefined, 'the archive\'s ok closes it: no task stays leaving');
+});
+
+test('an epic whose activity is being deleted stays where it is even when its children moved (#353)', () => {
+  const deleting = deepFreeze(withWork(at([epic('spec', ['c1']), child('c1', 'build')]), 'board:E', { worktree: WORKTREE, deleting: true }));
+  const { state, effects } = followEpics(deleting);
+  assert.equal(state, deleting);
+  assert.deepEqual(effects, []);
 });

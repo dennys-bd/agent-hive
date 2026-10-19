@@ -11,6 +11,7 @@ import { cliGql, cliGqlJson, type Exec as GhExec, ghExec, githubLoginName, gqlFo
 import { listFilterOptions, listProjects } from './sources/github.js';
 import { branchFor, sessionsOf, taskId, taskLabel, itemSource } from './tasks.js';
 import { activityOfWorker, taskOfActivity, taskOfWorker } from './activities.js';
+import { createLeftItems } from './left-items.js';
 import { CONFIG_FILE, taskWorkspace, parseSource, workspaceByName, workspaceScope, requireWorkspace } from './config.js';
 import { createConsoleStore } from './console.js';
 import { createInstaller } from './editor-install.js';
@@ -552,17 +553,25 @@ export function createServer(deps: ServerDeps): HiveServer {
     }
   }
 
+  // #353: the items a leaving action closed, so a poll whose read began before the close cannot bring them back
+  const leftItems = createLeftItems();
+
   // #286, #515: the source takes an action of a stage's onStart / onFinish. Awaited like the delete activity, so the answer lands inside this batch:
   // a leaving action closes the task once the source confirms (task and session go, the worktree stays), a refusal is logged and handed back
   // as sourceActionFailed with the adapter's words and whether the refused action was the leaving one. No source (removed in Settings, #180): nothing to write, and a leaving task is closed instead of left stuck.
   async function runSourceAction(runtime: Runtime, effect: Extract<Effect, { type: 'sourceAction' }>): Promise<void> {
-    const leave = async (): Promise<void> => {
-      if (isLeaving(effect.action)) await dispatch({ type: 'closeTask', taskId: effect.taskId });
+    const name = itemSource(effect.itemId) ?? '';
+    // #353: the close time is the source's ok, not the action's start: a read begun while the write was in flight can still see the item.
+    // Without a source nothing changed on one, so there is nothing to record
+    const leave = async (applied: boolean): Promise<void> => {
+      if (!isLeaving(effect.action)) return;
+      if (applied) leftItems.record(name, effect.itemId, Date.now());
+      await dispatch({ type: 'closeTask', taskId: effect.taskId });
     };
-    const source = runtime.sources.get(itemSource(effect.itemId) ?? '');
+    const source = runtime.sources.get(name);
     if (!source) {
       log.info(`${describeEffect(effect)} dropped: no source`);
-      await leave();
+      await leave(false);
       return;
     }
     try {
@@ -573,7 +582,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     log.info(`${describeEffect(effect)} ok`);
-    await leave();
+    await leave(true);
   }
 
   // A save can replace the runtime while a poll is in flight (the poll after a save is not awaited, #59): what that
@@ -617,8 +626,12 @@ export function createServer(deps: ServerDeps): HiveServer {
   // One source's poll: its tasks, or its failure kept on its own status (the others go on), then its quota, read after every real poll.
   async function pollSource(runtime: Runtime, name: string, source: Source): Promise<void> {
     try {
-      const items = await wiring.polled(name, source.listItems()); // source.polled or source.poll_failed (#742)
+      const startedAt = Date.now(); // #353: before the read, so an item a leaving action closes while it runs is told apart
+      const listed = await wiring.polled(name, source.listItems()); // source.polled or source.poll_failed (#742)
       if (isStale(runtime)) return;
+      const items = leftItems.filter(name, startedAt, listed);
+      const kept = new Set(items);
+      for (const { item } of listed.filter((entry) => !kept.has(entry))) log.debug(`poll source=${name} dropped ${item.itemId}: closed after the read began`);
       log.info(`poll source=${name} items=${items.length}`);
       await dispatch({ type: 'poll', source: name, items: items.map(unattended) });
     } catch (err) {
