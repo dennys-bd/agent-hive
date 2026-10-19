@@ -77,6 +77,7 @@ import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
 import { createCustomStore } from './custom-store.js';
 import { createPluginRender } from './plugin-render.js';
 import { registerAssistRoutes } from './server-assist.js';
+import { registerTemplateReviewRoutes } from './server-template-review.js';
 import { registerPluginRoutes } from './server-plugins.js';
 import { registerViewStateRoutes } from './server-view-state.js';
 import { registerWorktreeRoutes } from './server-worktrees.js';
@@ -1127,6 +1128,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerPluginRoutes(app, { requireLive, store: customStore, home, pluginSource: pluginSource(), log });
   // Ask the agent (#330): a headless run over an item's open file, answering a proposal; nothing is written. `agents` is boot's detection
   registerAssistRoutes(app, { requireLive, home, pluginSource: pluginSource(), log, agents });
+  // The template reviewer (#328): a headless run of hive:template-reviewer over an item's open file, answering its annotations; nothing is written
+  registerTemplateReviewRoutes(app, { requireLive, home, pluginSource: pluginSource(), log, agents });
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });

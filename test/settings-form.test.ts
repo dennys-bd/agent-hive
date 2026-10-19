@@ -7,7 +7,7 @@ import { withMemoryCap } from '../src/ui/lib/memory-cap.js';
 import { withEntry } from '../src/ui/lib/settings-stages.js';
 import { emptyRule, type RuleDraft } from '../src/ui/lib/settings-rules.js';
 import type { Stage, Transition, SourceConfig, SourceTaskProps, Config, FilterRule, Command, SettingsInfo } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, RATE_LIMIT_WAIT_MAX, DELETE_ACTIVITY_DEFAULTS, CONSOLE_LINES_DEFAULT, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { FIXED } from './fakes.js';
 
 // #30: not a new source's keys, so draftFrom visibly reads them; switchAt on STAGES' second stage
@@ -60,6 +60,7 @@ const CONFIG: Config = {
   consoleLines: 20000, // not the form default, so draftFrom visibly reads it (#353)
   fileIcons: { set: 'vscode', scope: 'folders', muted: true }, sidebarsPerView: { left: false, right: true, rightTab: false }, signals: { ...SIGNALS_DEFAULTS, onOpen: 'last' }, // not the form default, so draftFrom visibly reads it (#754, #727)
   editor: EDITOR_DEFAULTS,
+  reviewer: REVIEWER_DEFAULTS,
 };
 const withSources = (sources: SourceConfig[]): Config => ({ ...CONFIG, comb: { ...CONFIG.comb, sources } });
 const GH_ROW = { name: 'work', savedName: 'work', qualifyId: false, prefix: '', type: 'github', owner: 'acme', number: '6', repository: '', filter: [], taskProps: { defaults: { workspace: 'hive', auto: true }, rules: [] }, epics: 'hide', epicFollows: 'ahead', switchAt: '' };

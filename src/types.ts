@@ -1063,6 +1063,14 @@ export interface LanguageConfig {
 export interface EditorConfig { formatOnSave: { enabled: boolean; workspaces: WorkspaceScope }; languages: Partial<Record<LanguageId, LanguageConfig>> }
 /** What a new Hive formats (#780): on save in every workspace, every formatter on its default. */
 export const EDITOR_DEFAULTS: EditorConfig = { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} };
+/** When the template reviewer runs (#328, the menu's choice, 4.3): as the user types, on save, or only when asked. */
+export const REVIEW_WHEN = ['type', 'save', 'demand'] as const;
+export type ReviewWhen = (typeof REVIEW_WHEN)[number];
+/** The template reviewer (#328). agent null: the config's defaultAgent; model null: the CLI's default; version null: the shipped
+ * template-reviewer, else the user's version of it by name (checked when a review runs, not on boot). */
+export interface ReviewerConfig { on: boolean; when: ReviewWhen; agent: AgentId | null; model: string | null; version: string | null }
+/** What a file without `reviewer`, or a field it leaves out, reads as (#328). */
+export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent: null, model: null, version: null };
 /** GET /settings/formatters (#749, #780): the workspaces whose checkout has a supported formatter's binary. */
 export interface FormatterState { id: FormatterId; found: string[] }
 /** How long a language server process outlives its last client (#780). */
@@ -1225,6 +1233,8 @@ export interface Config {
   signals: SignalSettings;
   /** The editor pane's languages, servers and formatters (#780). Required, no default: a file without it is fixed by hand. */
   editor: EditorConfig;
+  /** The template reviewer (#328). Optional in the file: absent, or a field left out, reads as REVIEWER_DEFAULTS; no migration. */
+  reviewer: ReviewerConfig;
 }
 
 /** The viewer's settings (#513, #199), was #198's two) and its effective language (#242): the config's, else the system's, never absent. The
@@ -1593,6 +1603,8 @@ export interface SettingsBody {
   signals?: SignalSettings;
   /** Same rules as onClose (#780). */
   editor?: EditorConfig;
+  /** The template reviewer (#328): the Settings form never sends it, so a save keeps the saved one; the reviewer menu (4.3) may. */
+  reviewer?: ReviewerConfig;
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */
   renames?: Record<string, string>;

@@ -9,7 +9,7 @@ import { readCredentials } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS } from '../src/types.js';
 import { isDeepStrictEqual } from 'node:util';
 import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained } from './fakes.js';
 import { tempDir } from './temp-dir.js';
@@ -930,6 +930,22 @@ test('POST /settings writes editor, an omitted key keeps the saved one, a first 
   assert.equal(bad.status, 400);
   assert.match(String((await json(bad) as { error: string }).error), /editor\.formatOnSave\.workspaces names workspace ghost/);
   assert.deepEqual(await onDisk(), editor, 'rejected before the write');
+});
+
+test('POST /settings writes the reviewer defaults on a first save, keeps the saved reviewer when the body has none, and refuses a malformed one naming the key (#328)', async (t) => {
+  const { base, home } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).reviewer;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), REVIEWER_DEFAULTS, 'a body without it, as the Settings form sends, writes the defaults');
+  const mine = { on: false, when: 'demand', agent: 'codex', model: 'opus', version: 'strict' } as const;
+  assert.equal((await postSettings(base, { ...BODY, reviewer: mine })).status, 200);
+  assert.deepEqual(await onDisk(), mine);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), mine, 'a Settings save without reviewer keeps the saved one');
+  const bad = await postSettings(base, { ...BODY, reviewer: { ...mine, when: 'always' } });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await json(bad), { error: 'hive.config.json: "reviewer.when" must be one of: type, save, demand' });
+  assert.deepEqual(await onDisk(), mine, 'refused before the write');
 });
 
 test('POST /settings writes terminalFont trimmed, "" included; an omitted key keeps the saved one, and a first setup without it or a name with a quote is a 400 (#376)', async (t) => {
