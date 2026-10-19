@@ -5,6 +5,7 @@ import { type LintAnnotation, lintTemplate, variableUses } from '../../../templa
 import type { CatalogueItem } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { ChoiceSelect, rawOf, valueOfRaw } from '@/components/plugins/ChoiceSelect';
+import { VariableForm } from '@/components/plugins/VariableForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
@@ -19,7 +20,7 @@ interface Removal { name: string; lines: number[] }
 interface ValueProps { variable: TemplateVariable; workspace: string; onWrite(value: VariableValue | undefined): void }
 interface RowProps {
   variable: TemplateVariable; workspaces: readonly string[]; origin?: Origin; findings: readonly LintAnnotation[];
-  onWrite(workspace: string, value: VariableValue | undefined): void; onRemove(): void;
+  onWrite(workspace: string, value: VariableValue | undefined): void; onEdit(): void; onRemove(): void;
 }
 
 const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive', yours: 'plugins.variables.yours' };
@@ -71,14 +72,15 @@ function FindingLine({ finding }: { finding: LintAnnotation }) {
 }
 
 // One variable (handoff 11b): its name and origin, a value per configured workspace in config order, the entries of names no workspace has
-// dimmed and read-only (decision 11), the lint's line. Only a "yours" variable can go (decision 8)
-function VariableRow({ variable, workspaces, origin, findings, onWrite, onRemove }: RowProps) {
+// dimmed and read-only (decision 11), the lint's line. Every declaration can be edited; only a "yours" variable can go (decisions 7, 8)
+function VariableRow({ variable, workspaces, origin, findings, onWrite, onEdit, onRemove }: RowProps) {
   const unknown = Object.keys(variable.workspaces).filter((w) => !workspaces.includes(w));
   return (
     <li aria-label={variable.name} className="flex flex-col gap-1 rounded-md border px-2 py-1.5">
       <div className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate font-mono font-semibold">{variable.name}</span>
         {origin && <span className="text-[10px] text-muted-foreground">{t(ORIGIN[origin])}</span>}
+        <Button type="button" size="xs" variant="ghost" onClick={onEdit}>{t('plugins.variables.edit')}</Button>
         {origin === 'yours' && <Button type="button" size="xs" variant="ghost" onClick={onRemove}>{t('plugins.variables.remove')}</Button>}
       </div>
       {workspaces.map((w) => (
@@ -133,8 +135,18 @@ function RemoveDialog({ removal, onConfirm, onClose }: { removal: Removal; onCon
   );
 }
 
+// "+ variable" heads the list; a header that does not parse disables it (decision 22)
+function PaneHead({ isDisabled, onAdd }: { isDisabled: boolean; onAdd(): void }) {
+  return (
+    <div className="flex items-center justify-between text-muted-foreground">
+      <span>{t('files.tab.variables')}</span>
+      <Button type="button" size="xs" variant="ghost" disabled={isDisabled} onClick={onAdd}>{t('plugins.variables.add')}</Button>
+    </div>
+  );
+}
+
 // The buffer's parse and lint are memoised on its text: the pane re-renders on every keystroke of the open file (decision 23). A header that
-// does not parse replaces the list with its line (decision 22)
+// does not parse replaces the list with its line and hides the form (decision 22); the form opens at the top of the list (decision 14)
 function PaneBody({ editor, workspaces, item, path }: BodyProps) {
   const text = editor.textOf(path);
   const parsed = useMemo(() => parseTemplate(text), [text]);
@@ -142,7 +154,10 @@ function PaneBody({ editor, workspaces, item, path }: BodyProps) {
   const originOf = useOriginOf(editor, path);
   const [error, setError] = useState<MessageKey>();
   const [removal, setRemoval] = useState<Removal>();
+  const [form, setForm] = useState<{ name?: string }>(); // {} declares a variable, { name } edits that one
   const [headerError] = parsed.errors;
+  const editing = parsed.variables.find((v) => v.name === form?.name);
+  const isFormShown = form !== undefined && headerError === undefined && (form.name === undefined || editing !== undefined);
   const write = (result: EditResult): void => setError(editor.applyEdit(result));
   const remove = (name: string): void => {
     const lines = variableUses(parsed, name);
@@ -151,14 +166,18 @@ function PaneBody({ editor, workspaces, item, path }: BodyProps) {
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 text-xs">
+      <PaneHead isDisabled={headerError !== undefined} onAdd={() => setForm({})} />
       {headerError && <p className="text-destructive">{t('plugins.variables.headerError', { line: headerError.line })}</p>}
       {error && <p role="alert" className="text-destructive">{t(error)}</p>}
+      {isFormShown && form && (
+        <VariableForm key={form.name ?? ''} text={text} workspaces={workspaces} variable={editing} onApply={editor.applyEdit} onClose={() => setForm(undefined)} />
+      )}
       {!headerError && (
         <ul aria-label={t('files.tab.variables')} className="flex flex-col gap-1">
           {parsed.variables.map((variable) => (
             <VariableRow
               key={variable.name} variable={variable} workspaces={workspaces} origin={originOf(variable.name)}
-              findings={findings.filter((f) => f.line === variable.line)} onRemove={() => remove(variable.name)}
+              findings={findings.filter((f) => f.line === variable.line)} onEdit={() => setForm({ name: variable.name })} onRemove={() => remove(variable.name)}
               onWrite={(workspace, value) => write(setVariableValue(text, variable.name, workspace, value))}
             />
           ))}
