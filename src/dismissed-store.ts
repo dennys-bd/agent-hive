@@ -1,7 +1,7 @@
 // The editor's dismissed annotations (#327): <home>/custom/<origin>/<name>/dismissed.json, { "<version or \u0000original>": keys }. Beside the
 // item's version folders, never inside one: a version's files are delivered, a dismissal is the editor's own. The catalogue lists folders
 // only, so the file is never read as a version.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { isInside } from './ide.js';
 import { customRoot, itemDir, type ItemKey } from './item-sources.js';
@@ -54,6 +54,9 @@ export async function writeDismissed(home: string, key: ItemKey, version: string
   const file = fileOf(home, key);
   const all = await readAll(file, log);
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify({ ...all, [keyOf(version)]: keys }, null, 2)}\n`);
+  // A temp file renamed over the old one: a crash mid-write leaves the old file, not a truncated one that reads as empty
+  const temp = `${file}.tmp`;
+  await writeFile(temp, `${JSON.stringify({ ...all, [keyOf(version)]: keys }, null, 2)}\n`);
+  await rename(temp, file);
   return keys;
 }

@@ -191,6 +191,7 @@ test('the dismissed routes round-trip the keys per version, null the original; a
   assert.deepEqual(await codeOf('GET', `${dismissed}?version=mine`), [404, 'unknown_version']);
   assert.equal((await call(base, 'PUT', dismissed, { version: null, keys: 'a' }))[0], 400);
   assert.equal((await call(base, 'PUT', dismissed, { version: null, keys: Array.from({ length: 1001 }, (_, i) => `k${i}`) }))[0], 400);
+  assert.equal((await call(base, 'PUT', dismissed, { version: null, keys: ['x'.repeat(4097)] }))[0], 400);
   assert.deepEqual(await codeOf('PUT', `${at('hive:ghost')}/dismissed`, { version: null, keys: ['a'] }), [404, 'unknown_item']);
   await assert.rejects(stat(join(f.home, 'custom/hive/ghost')), 'no folder is made for an unknown id');
   assert.deepEqual(await codeOf('PUT', dismissed, { version: 'ghost', keys: [] }), [404, 'unknown_version']);

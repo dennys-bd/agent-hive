@@ -93,7 +93,7 @@ async function sendLatest(target: Pick<Scope, 'id' | 'version'>, dismissal: stri
     const answer = await sendJson<unknown>('PUT', dismissedUrl(target.id), { version: target.version, keys });
     const server = isKeys(answer) ? answer : keys;
     ledger.put(key, { server, shown: ledger.latest.current[key]?.shown ?? server });
-    ledger.setFailed((last) => (last !== undefined && keys.includes(last.dismissal) ? undefined : last));
+    ledger.setFailed((last) => (last !== undefined && last.item === key && keys.includes(last.dismissal) ? undefined : last));
   } catch (err) {
     console.error(`annotations: a dismissal of ${target.id} was not saved`, err);
     const now = ledger.latest.current[key];

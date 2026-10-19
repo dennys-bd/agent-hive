@@ -43,7 +43,8 @@ const ASSIGN = z.object({ workspace: z.string(), version: z.string().nullable() 
 const APPLY_UPDATE = z.object({ token: z.string(), choices: z.record(z.string(), z.enum(UPDATE_CHOICES)) });
 /** The most keys one version keeps dismissed (#327): the editor sends its whole list with every dismissal. */
 export const MAX_DISMISSED = 1000;
-const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string()).max(MAX_DISMISSED) });
+const MAX_KEY_LENGTH = 4096; // a key ends with its line's text, so it is as long as that line; past this a PUT is junk, not a template
+const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string().max(MAX_KEY_LENGTH)).max(MAX_DISMISSED) });
 
 export interface PluginRouteDeps {
   requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces']; stages: readonly StageRef[] } } } } | undefined;
