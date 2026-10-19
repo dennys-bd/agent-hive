@@ -10,7 +10,6 @@ import { parseSourceTaskProps } from './task-props.js';
 import { migrateConfig } from './config-migrate.js';
 import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
 import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
-import { parseConventions } from './conventions.js';
 import { parseFork } from './fork.js';
 import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseTimeout } from './run-commands.js';
 import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
@@ -336,10 +335,10 @@ function parseWorkspace(raw: unknown, field: string): Workspace {
   const name = requireName(raw.name, `${field}.name`);
   if (typeof raw.path !== 'string' || !isAbsolute(raw.path)) throw new Error(`${CONFIG_FILE}: "${field}.path" must be an absolute path`);
   if (raw.format !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.format" moved to "editor" (#780): one config for every workspace`);
+  if (raw.conventions !== undefined) throw new Error(`${CONFIG_FILE}: "${field}.conventions" moved to the plugins view (#318): set each value in its skill's variables`);
   const baseBranch = raw.baseBranch === undefined || raw.baseBranch === '' ? {} : { baseBranch: requireBranch(raw.baseBranch, `${field}.baseBranch`) }; // #854: '' from the form drops it
   return {
     name, path: raw.path, env: parseEnv(raw.env, `${field}.env`), fork: parseFork(raw.fork, `${field}.fork`), ...baseBranch, ...parseWorkspaceSetup(raw, field), // env required (#348), fork required (#854); commands live in comb.commands (#511)
-    ...workspaceConventions(raw.conventions, name),
     memoryCap: requireIntFrom(raw.memoryCap, `${field}.memoryCap`, MEMORY_CAP_MIN, MEMORY_CAP_MAX), // #73: required, no migration; read last, so an older key's problem keeps its own message
     color: requireColor(raw.color, `${field}.color`), // #78: required, read last
   };
@@ -361,13 +360,6 @@ function parseWorkspaceSetup(raw: Record<string, unknown>, field: string): Pick<
     ...(setup === undefined ? {} : { setup }), ...(setupTimeout === undefined ? {} : { setupTimeout }),
     ...(teardown === undefined ? {} : { teardown }), ...(teardownTimeout === undefined ? {} : { teardownTimeout }),
   };
-}
-
-// #692: absent and {} both mean none set in the Hive, so the file never keeps an empty object; a problem names the workspace and the key.
-function workspaceConventions(raw: unknown, workspace: string): Pick<Workspace, 'conventions'> {
-  const conventions = parseConventions(raw);
-  if (typeof conventions === 'string') throw new Error(`${CONFIG_FILE}: workspace ${workspace}: ${conventions}`);
-  return Object.keys(conventions).length === 0 ? {} : { conventions };
 }
 
 // One or more (#179), names and paths unique: a task, the source's default and a worktree route name a workspace, and two entries on one repo
