@@ -227,7 +227,7 @@ export function liquidError(err: unknown, bodyLine: number): TemplateError {
   return { line: bodyLine + line - 1, message: message.replace(LIQUID_POSITION, '') };
 }
 
-function deliveredHeader(parsed: ParsedTemplate): string {
+export function deliveredHeader(parsed: ParsedTemplate): string {
   const { text, doc } = parsed[SOURCE];
   if (!hasDeclarations(parsed.header)) return text.slice(0, text.length - parsed.body.length);
   // the clone, never the parse: the same parse renders every workspace
@@ -253,6 +253,18 @@ export function renderTemplate(parsed: ParsedTemplate, workspace: string): Rende
     return { ok: true, text: `${deliveredHeader(parsed)}${body}` };
   } catch (err) {
     return { ok: false, errors: [liquidError(err, parsed.bodyLine)] };
+  }
+}
+
+/** A piece of a body rendered as renderTemplate renders the whole, in the workspace's context (#319): the preview renders line by line and
+ * asks Liquid whether a condition holds through it. The piece itself when it holds no Liquid; undefined when Liquid refuses it alone (an
+ * unclosed tag, an unknown variable). */
+export function renderFragment(parsed: ParsedTemplate, workspace: string, text: string): string | undefined {
+  if (!hasLiquid(text)) return text;
+  try {
+    return engine.parseAndRenderSync(text, contextFor(parsed.variables, workspace)) as string;
+  } catch {
+    return undefined;
   }
 }
 

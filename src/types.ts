@@ -1888,7 +1888,7 @@ export interface CatalogueItem {
   error?: { message: string; line?: number }; // the header did not parse, a version.json did not, or a skill took the name
 }
 
-export interface ItemFile { path: string; text: string }
+export interface ItemFile { path: string; text: string; savedAt?: string } // savedAt: the file's mtime (ISO), #319; absent for the original's files
 export interface ItemRead { item: CatalogueItem; version: string | null; files: ItemFile[] } // version null: the original
 
 /** A conflict's two answers in a version's update (#324): keep the version's text, or take the shipped one. */

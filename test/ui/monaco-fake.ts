@@ -10,7 +10,7 @@ const LINE_BREAK = /\r\n|\r|\n/;
 let zoneCount = 0;
 const GUTTER_LINE_DECORATIONS = 4; // monaco.editor.MouseTargetType's
 /** A decoration as the marks set it (#668). */
-export interface FakeDecoration { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; options: { linesDecorationsClassName?: string } }
+export interface FakeDecoration { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; options: { linesDecorationsClassName?: string; className?: string; inlineClassName?: string; isWholeLine?: boolean } }
 type MouseListener = (event: { target: { type: number; position: Position | null } }) => void;
 
 export const registered: { kind: string; language: string; provider: unknown }[] = [];
@@ -81,6 +81,8 @@ export class FakeEditor {
   private ends: Listener[] = [];
   decorations: FakeDecoration[] = [];
   private mouse: MouseListener[] = [];
+  hiddenAreas: { startLineNumber: number; endLineNumber: number }[] = [];
+  readOnly = false;
 
   constructor(host: HTMLElement, model: FakeModel, onSave: () => void, fontFamily: string, onSaveUnformatted: () => void = () => undefined) {
     this.host = host;
@@ -96,7 +98,12 @@ export class FakeEditor {
   setPosition(position: Position): void { this.position = position; }
   revealPositionInCenter(_position: Position): void {}
   focus(): void {}
-  updateOptions({ fontFamily }: { fontFamily?: string }): void { if (fontFamily !== undefined) this.fontFamily = fontFamily; }
+  updateOptions({ fontFamily, readOnly }: { fontFamily?: string; readOnly?: boolean }): void { if (fontFamily !== undefined) this.fontFamily = fontFamily; if (readOnly !== undefined) this.readOnly = readOnly; }
+  setHiddenAreas(ranges: { startLineNumber: number; endLineNumber: number }[]): void { this.hiddenAreas = ranges.map(({ startLineNumber, endLineNumber }) => ({ startLineNumber, endLineNumber })); }
+  revealLineInCenter(_line: number): void {}
+  getTopForLineNumber(line: number): number { return (line - 1) * FAKE_LINE_HEIGHT; }
+  getScrollTop(): number { return 0; }
+  onDidScrollChange(_listener: unknown): { dispose(): void } { return { dispose: () => undefined }; }
   getModel(): FakeModel { return this.model; }
   getRawOptions(): { fontFamily: string } { return { fontFamily: this.fontFamily }; }
   getOption(id: number): number | undefined { return id === LINE_HEIGHT_OPTION ? FAKE_LINE_HEIGHT : undefined; }

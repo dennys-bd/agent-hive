@@ -1,6 +1,6 @@
 // The catalogue (#315): every item the plugins view and the render read, from disk on every call, never cached across writes (#314).
 // Shipped items, each workspace's main checkout's .claude/ items, and every folder under <home>/custom/.
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BASE_DIR, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE } from './custom-versions.js';
 import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
@@ -190,6 +190,12 @@ export async function readItem(sources: ItemSources, id: string, version: string
   if (item === undefined) return refusal('unknown_item', `no item ${id}`);
   const files = version === null ? await originFiles(sources, item) : item.versions.some((v) => v.name === version) ? await versionFiles(sources.home, item, version) : undefined;
   if (files === undefined) return refusal('unknown_version', version === null ? `${id} has no original` : `${id} has no version ${version}`);
-  const read = await Promise.all(files.paths.map(async (path) => ({ path, text: await readFile(join(files.dir, path), 'utf8') })));
+  // #319: the editor's "saved 14:31" reads a file's mtime; the shipped original was never saved by the user, so it answers none
+  const isStamped = version !== null || item.origin !== HIVE_ORIGIN;
+  const read = await Promise.all(files.paths.map(async (path) => {
+    const file = join(files.dir, path);
+    const text = await readFile(file, 'utf8');
+    return isStamped ? { path, text, savedAt: (await stat(file)).mtime.toISOString() } : { path, text };
+  }));
   return { item, version, files: read };
 }
