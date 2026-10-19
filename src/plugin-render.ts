@@ -10,7 +10,7 @@ import { mainFiles } from './custom-versions.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { deliveredName, parseTemplate, renderTemplate } from './template.js';
+import { deliveredName, hasDeclarations, parseTemplate, renderTemplate } from './template.js';
 import type { CatalogueItem, Workspace } from './types.js';
 
 export const PLUGINS_DIR = 'plugins'; // <home>/plugins/<workspace>
@@ -18,6 +18,7 @@ const DIR_MODE = 0o700; // under the home, this user's only
 const TMP_PREFIX = '.tmp-';
 const OLD_PREFIX = '.old-';
 const LIQUID_SUFFIX = '.liquid';
+const MD_SUFFIX = '.md';
 const GONE = { recursive: true, force: true } as const;
 
 /** What a write reads of the config: each workspace's name, and its checkout for the catalogue. Config satisfies it. */
@@ -106,20 +107,24 @@ function itemPath(path: string): string {
   return parts[0] === 'skills' && parts.length > 2 ? `skills/${parts[1]}` : path;
 }
 
-// Every .liquid file under `tmp` rendered for `workspace` under its delivered name; answers the items whose template failed, each error logged
-// once. The template module's messages hold no path, and the path logged is relative to the folder
+// Every .liquid file, and every .md whose header has declarations (#338, decision 10: its basedOn must not reach Claude Code), rendered for
+// `workspace` under its delivered name; any other .md is copied untouched. Answers the items whose template failed, each error logged once. The
+// template module's messages hold no path, and the path logged is relative to the folder
 async function renderTemplates(tmp: string, workspace: string, log: Pick<Logger, 'error'>): Promise<Set<string>> {
   const failed = new Set<string>();
-  for (const path of (await listFiles(tmp)).filter((p) => p.endsWith(LIQUID_SUFFIX))) {
-    const result = renderTemplate(parseTemplate(await readFile(join(tmp, path), 'utf8')), workspace);
+  for (const path of (await listFiles(tmp)).filter((p) => p.endsWith(LIQUID_SUFFIX) || p.endsWith(MD_SUFFIX))) {
+    const parsed = parseTemplate(await readFile(join(tmp, path), 'utf8'));
+    if (!path.endsWith(LIQUID_SUFFIX) && !hasDeclarations(parsed.header)) continue;
+    const result = renderTemplate(parsed, workspace);
     if (!result.ok) {
       for (const error of result.errors) log.error(`plugin render ${workspace}: ${path}:${error.line} ${error.message}`);
       failed.add(itemPath(path));
       continue;
     }
-    await rm(join(tmp, deliveredName(path)), GONE); // a symlink left there by hand is replaced, never written through
-    await writeFile(join(tmp, deliveredName(path)), result.text);
-    await rm(join(tmp, path));
+    const target = deliveredName(path);
+    await rm(join(tmp, target), GONE); // a symlink left there by hand is replaced, never written through
+    await writeFile(join(tmp, target), result.text);
+    if (target !== path) await rm(join(tmp, path)); // a .md is delivered under its own name: removing the source would remove the delivery
   }
   return failed;
 }
