@@ -53,6 +53,32 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
+// #338, decisions 3–8: each shipped item's origins in header order; [] is an original, whose header opens with ORIGINAL
+const ORIGINAL = '# original: written for the Hive, no external source';
+const SOURCES: Record<string, { ref: string; license: string }> = {
+  'affaan-m/ECC': { ref: 'v2.2.1', license: 'MIT' },
+  'obra/superpowers': { ref: 'v6.4.1', license: 'MIT' },
+  'pbakaus/impeccable': { ref: 'c63b8dd7dd5a5f3c32eaabe1af76d0694f863ed2', license: 'Apache-2.0' },
+};
+const CREDITED: Record<string, string[]> = {
+  'agents/architect.md': ['ecc:architect'],
+  'agents/build-fixer.md': ['ecc:build-error-resolver'],
+  'agents/code-reviewer.md': ['ecc:code-reviewer'],
+  'agents/design-reviewer.md': ['impeccable', 'ecc:frontend-design-direction'],
+  'agents/designer.md': ['impeccable', 'ecc:frontend-design-direction'],
+  'agents/plan-reviewer.md': ['superpowers:writing-plans'],
+  'agents/planner.md': ['ecc:planner', 'superpowers:writing-plans'],
+  'agents/security-reviewer.md': ['ecc:security-reviewer'],
+  'agents/spec-reviewer.md': ['superpowers:brainstorming'],
+  'agents/tdd.md': ['ecc:tdd-guide'],
+  'agents/template-reviewer.md': [],
+  'skills/decomposition/SKILL.md.liquid': [],
+  'skills/new-build/SKILL.md.liquid': [],
+  'skills/new-plan/SKILL.md.liquid': ['superpowers:writing-plans'],
+  'skills/new-pr/SKILL.md.liquid': ['ecc:pr'],
+  'skills/new-spec/SKILL.md.liquid': ['superpowers:brainstorming'],
+};
+
 test('the plugin ships the manifest, the five skills, the eleven agents and the two references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
@@ -83,23 +109,36 @@ test('every skill and agent declares the frontmatter Claude Code reads, with the
   assert.deepEqual(opus, ['architect', 'designer', 'planner'], 'the model table: sonnet everywhere, opus for the architect, the designer and the planner');
 });
 
-test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere in it', async () => {
-  const files = [
-    join(PLUGIN, 'CREDITS.md'),
-    join(PLUGIN, 'reference', 'conventions.md'),
-    join(PLUGIN, 'reference', 'design.md'),
-    join(PLUGIN, 'reference', 'skeleton.hv.html'),
-    join(PLUGIN, 'scripts', 'check-hv.mjs'),
-    join(PLUGIN, 'scripts', 'import-dc.mjs'),
-    ...SKILLS.map((s) => join(PLUGIN, 'skills', s, 'SKILL.md.liquid')),
-    ...AGENTS.map((a) => join(PLUGIN, 'agents', `${a}.md`)),
-  ];
-  for (const file of files) {
-    const text = await readFile(file, 'utf8');
+test('every shipped skill and agent credits its origins in basedOn, each a file at its source\'s ref, or opens its header with the original comment (#338)', async () => {
+  const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map((a) => `agents/${a}.md`)].sort();
+  assert.deepEqual(Object.keys(CREDITED).sort(), items, 'every shipped item has a row');
+  for (const path of items) {
+    const text = await readFile(join(PLUGIN, path), 'utf8');
+    const parsed = parseTemplate(text);
+    const names = CREDITED[path] ?? [];
+    assert.deepEqual(parsed.errors, [], path);
+    assert.deepEqual(parsed.basedOn?.map((origin) => origin.name), names.length === 0 ? undefined : names, path);
+    assert.equal(text.split('\n')[1] === ORIGINAL, names.length === 0, `${path}: the original comment is line 2 exactly when it has no origin`);
+    for (const origin of parsed.basedOn ?? []) {
+      const source = SOURCES[origin.repo];
+      assert.ok(source, `${path}: unknown repository ${origin.repo}`);
+      assert.deepEqual([origin.ref, origin.license], [source.ref, source.license], path);
+      assert.ok(origin.url.startsWith(`https://github.com/${origin.repo}/blob/${origin.ref}/`), `${path}: ${origin.url}`);
+    }
+  }
+});
+
+test('the plugin depends on no other plugin: no ecc: or superpowers: reference anywhere it delivers', async () => {
+  const others = ['CREDITS.md', 'reference/conventions.md', 'reference/design.md', 'reference/skeleton.hv.html', 'scripts/check-hv.mjs', 'scripts/import-dc.mjs'];
+  const items = [...SKILLS.map((s) => `skills/${s}/SKILL.md.liquid`), ...AGENTS.map((a) => `agents/${a}.md`)];
+  for (const [file, isItem] of [...others.map((f): [string, boolean] => [f, false]), ...items.map((f): [string, boolean] => [f, true])]) {
+    const raw = await readFile(join(PLUGIN, file), 'utf8');
+    // #338: an item's basedOn names its upstream (ecc:planner) on purpose and is never delivered, so an item is checked as delivered
+    const text = isItem ? renderedFor(raw) : raw;
     assert.doesNotMatch(text, /ecc:/, `${file} dispatches or cites the ecc plugin`);
     assert.doesNotMatch(text, /superpowers:/, `${file} dispatches or cites the superpowers plugin`);
-    assert.doesNotMatch(text, /\$ARGUMENTS/, `${file} still uses the command-only $ARGUMENTS placeholder`);
-    assert.doesNotMatch(text, /\/Users\/|\$HOME|~\/\.claude/, `${file} carries a machine-specific path`);
+    assert.doesNotMatch(raw, /\$ARGUMENTS/, `${file} still uses the command-only $ARGUMENTS placeholder`);
+    assert.doesNotMatch(raw, /\/Users\/|\$HOME|~\/\.claude/, `${file} carries a machine-specific path`);
   }
   // every agent the skills name is one this plugin ships
   for (const skill of SKILLS) {
@@ -215,9 +254,12 @@ test('no agent description holds ": ", which strict YAML reads as a nested mappi
   }
 });
 
-test('CREDITS.md credits Impeccable and ecc\'s frontend-design-direction for reference/design.md', async () => {
+test('CREDITS.md credits every source with its repository, ref and licence, and Impeccable and ecc\'s frontend-design-direction for reference/design.md (#338)', async () => {
   const text = await readFile(join(PLUGIN, 'CREDITS.md'), 'utf8');
   for (const source of ['Impeccable', 'frontend-design-direction', 'reference/design.md']) assert.ok(text.includes(source), `CREDITS.md does not name ${source}`);
+  for (const heading of ['## ecc — MIT', '## superpowers — MIT', '## Impeccable — Apache 2.0']) assert.ok(text.includes(heading), heading);
+  for (const [repo, { ref }] of Object.entries(SOURCES)) assert.ok(text.includes(`\`${repo}\``) && text.includes(`\`${ref}\``), `${repo} at ${ref}`);
+  assert.doesNotMatch(text, /superpowers — Apache/, 'superpowers is MIT');
 });
 
 // Claude Code expands this in an agent's text; the Hive's PLUGIN path is where it points at run time

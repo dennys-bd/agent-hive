@@ -218,26 +218,26 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   assert.deepEqual(map.errors, []);
   const [introduction, ...sections] = map.blocks;
   // #312 dropped the intro's `/hive:flow` (no such skill), so it names nothing
-  assert.deepEqual(introduction, { kind: 'introduction', line: 19, endLine: 23, references: [] });
+  assert.deepEqual(introduction, { kind: 'introduction', line: 20, endLine: 24, references: [] });
   const headings = sections.filter((block): block is HeadingBlock => block.kind === 'heading');
   assert.equal(headings.length, sections.length, 'no chain in this file');
   assert.deepEqual(
     headings.map((block) => [block.level, block.title, block.line, block.count]),
     [
-      [2, 'Input', 24, 0],
-      [2, 'Conventions', 38, 0],
-      [2, 'No questions', 62, 0],
-      [2, 'Working tree', 69, 0],
-      [2, 'Model routing', 73, 0],
-      [2, 'Stage 1 — Slices', 87, 0],
-      [2, 'Stage 2 — Security review', 124, 0],
-      [2, "Stage 3 — Check against the spec's Done", 134, 0],
-      [2, 'Stage 4 — UI check', 142, 0],
-      [2, 'Stage 5 — Walkthrough', 151, 0],
-      [2, 'Stage 6 — PR', 174, 0],
-      [2, 'End', 181, 0],
-      [2, 'Subagent substitution', 189, 0],
-      [2, 'Stops', 196, 0],
+      [2, 'Input', 25, 0],
+      [2, 'Conventions', 39, 0],
+      [2, 'No questions', 63, 0],
+      [2, 'Working tree', 70, 0],
+      [2, 'Model routing', 74, 0],
+      [2, 'Stage 1 — Slices', 88, 0],
+      [2, 'Stage 2 — Security review', 125, 0],
+      [2, "Stage 3 — Check against the spec's Done", 135, 0],
+      [2, 'Stage 4 — UI check', 143, 0],
+      [2, 'Stage 5 — Walkthrough', 152, 0],
+      [2, 'Stage 6 — PR', 175, 0],
+      [2, 'End', 182, 0],
+      [2, 'Subagent substitution', 190, 0],
+      [2, 'Stops', 197, 0],
     ],
   );
   const agentsOf = (block: HeadingBlock) => block.references.filter((reference) => reference.kind === 'agent');
@@ -260,11 +260,11 @@ test('the map of the shipped new-build skill: its ## blocks in order with their 
   });
   const section = (title: string): HeadingBlock => headings.filter((block) => block.title === title)[0];
   assert.deepEqual(agentsOf(section('Stage 1 — Slices')), [
-    { kind: 'agent', name: 'hive:tdd', line: 104 },
-    { kind: 'agent', name: 'hive:build-fixer', line: 111 },
-    { kind: 'agent', name: 'hive:code-reviewer', line: 114 },
+    { kind: 'agent', name: 'hive:tdd', line: 105 },
+    { kind: 'agent', name: 'hive:build-fixer', line: 112 },
+    { kind: 'agent', name: 'hive:code-reviewer', line: 115 },
   ]);
-  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 132 }]);
+  assert.deepEqual(agentsOf(section('Stage 2 — Security review')), [{ kind: 'agent', name: 'hive:security-reviewer', line: 133 }]);
 });
 
 test('a marker line with thousands of spaces maps in linear time (#311)', () => {

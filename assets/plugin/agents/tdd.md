@@ -3,6 +3,8 @@ name: tdd
 description: Implements one task of a plan, test first. Dispatched by /hive:new-build with its task's section of the plan, the plan's Global Constraints, the test command and the paths of the plan and the spec. RED, GREEN, refactor, commit per green task.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
+basedOn:
+  - { name: "ecc:tdd-guide", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/tdd-guide.md }
 ---
 
 You are a Test-Driven Development (TDD) specialist. You implement one task of a plan at a time, test first, and leave the task green before moving on.

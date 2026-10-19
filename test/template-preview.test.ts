@@ -79,12 +79,13 @@ test("each marker is flagged as the empty line Liquid leaves; the header is the 
   assert.equal(other.lines.find((l) => l.line === 10)?.text, 'Run  in agent-hive.');
 });
 
-test('a shipped specialist, with no Liquid, previews as itself: every line holds and none is a marker (#319)', () => {
+test('a shipped specialist, with no Liquid, previews as its render: every line holds, none is a marker, and the header is the delivered one (#319, #338)', () => {
   const shipped = parseTemplate(PLANNER);
   const preview = previewTemplate(shipped, buildMap(shipped), 'agent-hive');
-  assert.ok(preview.ok);
+  const render = renderTemplate(shipped, 'agent-hive');
+  assert.ok(preview.ok && render.ok);
   assert.deepEqual([preview.isExact, preview.lines.every((l) => l.holds && !l.isMarker)], [true, true]);
-  assert.equal(kept(preview), PLANNER);
+  assert.equal(kept(preview), render.text, 'its basedOn is not delivered');
 });
 
 test('a required variable with no value for the workspace answers the render error at its line (#319)', () => {

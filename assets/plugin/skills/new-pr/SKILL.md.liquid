@@ -11,6 +11,8 @@ variables:
   chatLanguage: { default: null }
   delivery: { values: [single, stacked, integration], default: single }
   testCommand: { default: null }
+basedOn:
+  - { name: "ecc:pr", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/commands/pr.md }
 ---
 
 # /hive:new-pr
