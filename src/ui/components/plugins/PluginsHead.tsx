@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
@@ -91,8 +91,11 @@ function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadP
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
   const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
-  // decision 15: after the saved time, only for an item based on an external one
-  const metaLine = item.basedOn === undefined ? meta : <>{meta} · <OriginCard basedOn={item.basedOn} description={item.description} className={NO_DRAG} /></>;
+  // #320 decision 15, #338 decision 11: one link and card per origin, in header order, after the saved time
+  const origins = (item.basedOn ?? []).map((origin) => (
+    <Fragment key={`${origin.name} ${origin.url}`}> · <OriginCard basedOn={origin} description={item.description} className={NO_DRAG} /></Fragment>
+  ));
+  const metaLine = origins.length === 0 ? meta : <>{meta}{origins}</>;
   return (
     <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
       <ItemActions item={item} editor={editor} annotations={annotations} workspaces={workspaces} />

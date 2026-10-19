@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { OriginCard } from '@/components/plugins/OriginCard';
 import { setLanguage } from '@/i18n';
 import { resetMonacoFakes } from './monaco-fake';
-import { BASED_ON, BUILD_TEXT, CATALOGUE, readOf, SPEC_TEXT, stubItems } from './plugins-fixtures';
+import { BASED_ON, BUILD_TEXT, CATALOGUE, readOf, SECOND_ORIGIN, SPEC_TEXT, stubItems } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -61,4 +61,19 @@ test('a click on based on asks before opening an untrusted host, as a terminal l
   await user.click(screen.getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' }));
   expect(await screen.findByRole('alertdialog')).toHaveTextContent(BASED_ON.url);
   expect(open).not.toHaveBeenCalled();
+});
+
+test('two origins give two based on links after the meta, joined by ·, each opening its own card (#338, decision 11)', async () => {
+  const user = userEvent.setup();
+  const catalogue = CATALOGUE.map((item) => (item.id === 'hive:new-build' ? { ...item, basedOn: [BASED_ON, SECOND_ORIGIN] } : item));
+  stubItems({ catalogue, reads: { 'hive:new-build@mine': readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': BUILD_TEXT }) } });
+  render(<PluginsWindow />);
+  fireEvent.click(await within(await screen.findByRole('region', { name: 'skills' })).findByRole('button', { name: /^new-build/ }));
+  const head = screen.getByTestId('head');
+  const second = await within(head).findByRole('link', { name: 'baseada em ecc:planner ↗' });
+  expect(within(head).getByRole('link', { name: 'baseada em superpowers:executing-plans ↗' })).toBeInTheDocument();
+  expect(head).toHaveTextContent('skills · baseada em superpowers:executing-plans ↗ · baseada em ecc:planner ↗');
+  await user.hover(second);
+  const card = await screen.findByRole('dialog');
+  expect(within(card).getAllByRole('term').map((term) => term.nextElementSibling?.textContent).slice(0, 3)).toEqual(['affaan-m/ECC', 'v2.2.1', 'MIT']);
 });

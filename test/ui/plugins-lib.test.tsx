@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { assignableWorkspaces, basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, originalName, savedLabel, sectionOfScreen, usageText, versionInUse, versionRows, versionToOpen } from '@/lib/plugins';
-import { CATALOGUE, itemOf, readOf, versionOf, WORKSPACES } from './plugins-fixtures';
+import { BASED_ON, CATALOGUE, itemOf, readOf, SECOND_ORIGIN, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -104,4 +104,10 @@ test("use in…: a Hive item's every workspace, a workspace item's own; the vers
   expect(assignableWorkspaces(itemOf('hive-site:deploy'), WORKSPACES)).toEqual(['hive-site']);
   expect([versionInUse(item, 'agent-hive'), versionInUse(item, 'hive-site'), versionInUse(item, 'gone')]).toEqual(['mine', null, undefined]);
   expect([originalName(item), originalName(itemOf('hive-site:deploy'))]).toEqual(["hive's original", 'repository file']);
+});
+
+test('two origins: basedOnTitle gives one line each in header order, and markOf still one ↗ (#338, decision 12)', () => {
+  const both = itemOf('hive:planner', { kind: 'specialist', basedOn: [BASED_ON, SECOND_ORIGIN] });
+  expect(basedOnTitle(both)).toBe('based on superpowers:executing-plans · obra/superpowers · MIT\nbased on ecc:planner · affaan-m/ECC · MIT');
+  expect(markOf(both)).toBe('↗');
 });

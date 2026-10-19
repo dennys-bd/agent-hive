@@ -14,10 +14,11 @@ export function itemOf(id: string, extra: Partial<CatalogueItem> = {}): Catalogu
 }
 
 export const BASED_ON: BasedOn = { name: 'superpowers:executing-plans', repo: 'obra/superpowers', ref: 'v4.3.0', license: 'MIT', url: 'https://example.com/superpowers' };
+export const SECOND_ORIGIN: BasedOn = { name: 'ecc:planner', repo: 'affaan-m/ECC', ref: 'v2.2.1', license: 'MIT', url: 'https://example.com/ecc' };
 export const WORKSPACES = ['agent-hive', 'hive-site'];
 export const CATALOGUE: CatalogueItem[] = [
   itemOf('hive:new-spec', { description: 'writes the task spec', usage: [{ kind: 'stage', stage: 'spec' }] }),
-  itemOf('hive:new-build', { description: 'builds the plan', state: 'customized', versions: [versionOf('mine'), versionOf('tdd')], basedOn: BASED_ON, usage: [{ kind: 'stage', stage: 'build' }, { kind: 'caller', id: 'hive:new-spec' }] }),
+  itemOf('hive:new-build', { description: 'builds the plan', state: 'customized', versions: [versionOf('mine'), versionOf('tdd')], basedOn: [BASED_ON], usage: [{ kind: 'stage', stage: 'build' }, { kind: 'caller', id: 'hive:new-spec' }] }),
   itemOf('hive:new-plan', { description: 'slices the spec', state: 'update available', versions: [versionOf('mine')] }),
   itemOf('hive:architect', { kind: 'specialist', description: 'designs' }),
   itemOf('hive-site:deploy', { description: 'publishes the preview' }),
