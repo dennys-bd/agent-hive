@@ -1,7 +1,6 @@
 import { XIcon } from 'lucide-react';
 import { type ReactNode, useId } from 'react';
 import { toast } from 'sonner';
-import { ConventionsEditor } from '@/components/settings/ConventionsEditor';
 import { EnvEditor } from '@/components/settings/EnvEditor';
 import { MemorySection } from '@/components/settings/MemorySection';
 import { WorkspaceColorPicker } from '@/components/settings/WorkspaceColorPicker';
@@ -119,10 +118,6 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
       <CardGroup title={t('settings.env.group')} hint={t('settings.env.hint')} anchor={settingAnchor('settings.env.group', row.id)}>
         <EnvEditor label={t('settings.workspaceEnv', { workspace: row.name.trim() })} rows={row.env} onChange={(env) => onChange({ env })} />
       </CardGroup>
-      {/* #692: how the plugin's new-* skills work here, read through hive_conventions */}
-      <CardGroup title={t('settings.conventions.group')} hint={t('settings.conventions.hint')} anchor={settingAnchor('settings.conventions.group', row.id)}>
-        <ConventionsEditor label={t('settings.workspaceConventions', { workspace: row.name.trim() })} rows={row.conventions} onChange={(conventions) => onChange({ conventions })} />
-      </CardGroup>
       {/* #797: the memory's usage and its dialog, saved at once through its own routes, never the draft: workers write the same file. #115: the
           dialog also saves the total limit, and hands it back for the draft */}
       <CardGroup title={t('settings.memory.group')} hint={t('settings.memory.hint')} anchor={settingAnchor('settings.memory.group', row.id)}>
@@ -133,7 +128,7 @@ function WorkspaceCard({ row, n, canRemove, saved, state, onChange, onPick, onRe
 }
 
 /** Settings › workspaces (#179, #510, #511): one card per workspace, at least one, each with a colour (#78), a name, a folder, its worktree setup (#299), teardown (#654),
- * its env (#348), its conventions (#692) and its memory (#797), whose total limit the memory dialog saves (#115); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
+ * its env (#348) and its memory (#797), whose total limit the memory dialog saves (#115); `+ workspace` under them. The server checks each folder is a repo's top level and parses each setup. */
 export function WorkspacesEditor({ workspaces, savedNames, state, onChange, onCapSaved }: WorkspacesEditorProps) {
   const update = (id: string, patch: Partial<WorkspaceDraft>): void => onChange(workspaces.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   // a picked folder also names a row whose name is still empty, after the folder

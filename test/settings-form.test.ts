@@ -69,7 +69,7 @@ const withoutId = <T extends { id: string }>(draft: T): Omit<T, 'id'> => {
   const { id: _id, ...rest } = draft;
   return rest;
 };
-const NO_SETUP = { setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)' }; // a workspace row's worktree setup and teardown fields (#299, #654) and conventions (#692), empty
+const NO_SETUP = { setup: '', setupTimeout: '', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)' }; // a workspace row's worktree setup and teardown fields (#299, #654), empty
 
 test('draftFrom fills every field as strings from a github config, and defaults an empty setup', () => {
   const github = draftFrom(info(CONFIG));
@@ -500,7 +500,7 @@ test('a renamed source row (#278): savedName holds the loaded name, the body sen
 test('a workspace row carries its worktree setup as typed and its timeout per step as a timeout text; a blank field sends no key (#299, #511)', () => {
   const setup = 'COPY .env\nRUN pnpm install\n';
   const saved = draftFrom(info({ ...CONFIG, comb: { ...CONFIG.comb, workspaces: [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup, setupTimeout: '5m' }] } }));
-  assert.deepEqual(saved.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], setup, setupTimeout: '5m', teardown: '', teardownTimeout: '', conventions: [], fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)' }]);
+  assert.deepEqual(saved.workspaces.map(withoutId), [{ name: 'hive', path: '/repo', env: [], setup, setupTimeout: '5m', teardown: '', teardownTimeout: '', fork: null, baseBranch: '', memoryCap: '4000', color: 'oklch(0.72 0.12 25)' }]);
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setupTimeout: ' 10m ' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)', setup, setupTimeout: '10m' }], 'as typed: the line numbers the server names are the textarea\'s');
   assert.deepEqual(toSettingsBody({ ...saved, workspaces: [{ ...saved.workspaces[0], setup: ' \n ', setupTimeout: '' }] }).workspaces, [{ name: 'hive', path: '/repo', env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }]);
 });

@@ -8,7 +8,7 @@ import {
 import { t } from '../i18n.js';
 import type { SettingsDraft, SettingsProblem } from './settings-form.js';
 
-// The editor config as Settings › editor edits it (#780), out of settings-form.ts as settings-conventions.ts is: the draft key `editor`.
+// The editor config as Settings › editor edits it (#780), kept out of settings-form.ts so that file stays small: the draft key `editor`.
 
 /** A supported formatter's setting in one language as edited (#780): args one per line, as typed. */
 export interface FormatterDraft { enabled: boolean; args: string; workspaces: WorkspaceScope }

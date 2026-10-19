@@ -240,26 +240,16 @@ test('a workspace card has the teardown and its timeout below the setup; both ar
   expect(webRow).not.toHaveProperty('teardownTimeout');
 });
 
-test('a workspace\'s conventions card shows its saved conventions; a bad slice size stops the save with the parser\'s message, a good one is posted, a blank row dropped (#692)', async () => {
+test('a workspace card has no conventions group, and a save posts no conventions key (#318)', async () => {
   const user = userEvent.setup();
   const onSaved = vi.fn();
-  const [hive, web] = info.config!.comb.workspaces;
-  const config = { ...info.config!, comb: { ...info.config!.comb, workspaces: [{ ...hive, conventions: { specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } } }, web] } };
-  render(<Settings info={{ ...info, config }} onSaved={onSaved} />);
+  render(<Settings info={info} onSaved={onSaved} />);
   await open(user, 'workspaces');
-  const card = within(screen.getByRole('group', { name: t('settings.workspaceConventions', { workspace: 'hive' }) }));
-  expect(card.getByLabelText(t('settings.conventions.value', { n: 1 }))).toHaveValue('docs/specs');
-  const min = card.getByLabelText(t('settings.conventions.min', { n: 2 }));
-  await user.clear(min);
-  await user.type(min, '600');
-  await user.click(screen.getByRole('button', { name: t('settings.save') }));
-  expect(await screen.findByText(t('settings.error.conventions.sliceSize', { workspace: 'hive' }))).toBeInTheDocument();
-  expect(fetchMock).not.toHaveBeenCalledWith('/settings', expect.anything());
-  await user.clear(min);
-  await user.type(min, '300');
-  await user.click(card.getByRole('button', { name: t('settings.conventions.add') })); // a docsRepo row left blank
+  const hive = within(screen.getByRole('region', { name: 'hive' }));
+  expect(hive.queryByRole('heading', { name: 'convenções' })).not.toBeInTheDocument();
+  await user.type(hive.getByLabelText(`${t('settings.workspaces.teardown')} 1`), 'RUN docker compose down'); // a change, so the save is enabled
   await save(user, onSaved);
-  expect(posted().workspaces.map((w) => w.conventions)).toEqual([{ specsDir: 'docs/specs', sliceSize: { min: 300, max: 550 } }, undefined]);
+  expect(posted().workspaces.some((w) => 'conventions' in w)).toBe(false);
 });
 
 test('the card has no total limit field: a cap the memory dialog saves reaches the draft and its baseline, so the footer shows no change and a later save posts it (#115)', async () => {
