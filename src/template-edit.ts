@@ -152,6 +152,7 @@ function heldBranches(lines: string[], chain: ChainBlock): HeldBranch[] {
   });
 }
 
+const HELD_TEXT = 'holds text: empty it before removing it';
 const MARKER_STYLE = /^(\s*)\{%(-?).*?(-?)%\}/;
 
 // A marker that stays where it was keeps its indentation and trim flags; the line is only reworded.
@@ -168,7 +169,7 @@ function rewriteChain(source: Source, chain: ChainBlock, spec: ChainSpec): strin
   // dropping text the user wrote is data loss: they empty the branch first
   const holding = dropped.find((branch) => branch.body.some((text) => text.trim() !== ''));
   if (holding !== undefined) {
-    return { line: holding.line, message: `the {% ${holding.marker} %} branch holds text: empty it before removing it` };
+    return { line: holding.line, message: `the {% ${holding.marker} %} branch ${HELD_TEXT}` };
   }
   const written = chainMarkers(spec);
   const at = (index: number, original: number | undefined): string =>
@@ -189,6 +190,9 @@ export function replaceChain(text: string, line: number, chain: ChainSpec): Edit
     return Array.isArray(rewritten) ? splice(source.lines, found.line, found.endLine, rewritten) : rewritten;
   });
 }
+
+/** Whether an edit refused to drop a branch that holds text (#322): the popover says so in its own words, at the error's line. */
+export const isHeldText = (error: TemplateError): boolean => error.message.endsWith(HELD_TEXT);
 
 // Siblings trade slots; the lines between two siblings (a parent's own text after a chain) stay where they are, so a move down then up
 // answers the input. joinLines moves the final line ending: a block leaving the end takes one, the new last one gives its own.

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import { addVariable, moveBlock, setVariableValue } from '../../src/template-edit';
+import type { ChainSpec } from '../../src/template-condition';
+import { addVariable, type EditResult, insertChain, moveBlock, removeChain, setVariableValue } from '../../src/template-edit';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
@@ -310,4 +311,20 @@ test("a Hive item with a version open reads its original once; the original open
   expect(result.current.editor.original).toEqual(original);
   expect(mock.mock.calls.filter(([path]) => path === '/api/items/hive%3Anew-build')).toHaveLength(1);
   expect(mock.mock.calls.filter(([path]) => path === '/api/items/hive%3Anew-spec')).toHaveLength(1); // its own read, no second one
+});
+
+test('the chain edits run on the open buffer as template-edit does and answer its result; a refusal leaves the text (#322, decision 20)', async () => {
+  stubItems(serverOf());
+  const { result } = await opened('hive:new-build');
+  const spec: ChainSpec = { branches: [{ connective: 'and', terms: [{ variable: 'delivery', op: 'is', value: 'single' }] }], else: false };
+  let answer: EditResult | undefined;
+  act(() => { answer = result.current.editor.insertChain(20, spec); });
+  const inserted = insertChain(BUILD_TEXT, 20, spec);
+  if (!inserted.ok) throw new Error(inserted.error.message);
+  expect([answer?.ok, result.current.editor.textOf('SKILL.md.liquid'), result.current.editor.isDirty('SKILL.md.liquid')]).toEqual([true, inserted.text, true]);
+  act(() => { answer = result.current.editor.replaceChain(14, spec); }); // its else at 16 holds "A single PR."
+  expect([answer?.ok, result.current.editor.textOf('SKILL.md.liquid')]).toEqual([false, inserted.text]);
+  act(() => { answer = result.current.editor.removeChain(14); });
+  const removed = removeChain(inserted.text, 14);
+  expect([answer?.ok, result.current.editor.textOf('SKILL.md.liquid')]).toEqual([true, removed.ok && removed.text]);
 });

@@ -1,8 +1,9 @@
 // The "view as" preview of a template (#319, node 3.5 of #309): every body line rendered for one workspace, each marker and each line of a
 // branch that does not hold flagged, checked against the render. Node-free, beside template.ts and template-map.ts: the editor runs it
 // whenever the buffer or the "view as" workspace changes.
+import { type ChainSpec, chainMarkers } from './template-condition.js';
 import type { MapBlock, MapBranch, TemplateMap } from './template-map.js';
-import { deliveredHeader, type ParsedTemplate, renderFragment, renderTemplate, type TemplateError } from './template.js';
+import { deliveredHeader, type ParsedTemplate, renderFragment, renderTemplate, type TemplateError, valueFor } from './template.js';
 
 export interface PreviewLine { text: string; holds: boolean; isMarker: boolean; line: number } // line: the source line, 1-based
 export type Preview = { ok: true; header: string; lines: PreviewLine[]; isExact: boolean } | { ok: false; errors: TemplateError[] };
@@ -64,3 +65,19 @@ export function previewTemplate(parsed: ParsedTemplate, map: TemplateMap, worksp
   const body = render.text.slice(header.length).split('\n');
   return { ok: true, header, lines: body.map((text, index) => ({ text, holds: true, isMarker: false, line: parsed.bodyLine + index })), isExact: false };
 }
+
+// renderTemplate refuses a workspace's whole render when a required variable has no value for it, so that workspace reaches no block
+const isRenderable = (parsed: ParsedTemplate, workspace: string): boolean =>
+  !parsed.variables.some((variable) => variable.required && valueFor(variable, workspace) === null);
+
+/** The workspaces each block of a chain's markers reaches, first match wins (#322, decision 15): one list per marker but the end one. The
+ * markers render with each block's index as its only text, so the render's own engine says which block holds, on the very markers. */
+export function markerReach(parsed: ParsedTemplate, markers: readonly string[], workspaces: readonly string[]): string[][] {
+  const probe = markers.map((marker, index) => (index < markers.length - 1 ? `${marker}${index}` : marker)).join('');
+  const taken = workspaces.map((workspace) => (isRenderable(parsed, workspace) ? renderFragment(parsed, workspace, probe) : undefined));
+  return markers.slice(0, -1).map((_, index) => workspaces.filter((_, at) => taken[at] === String(index)));
+}
+
+/** markerReach over the markers ok and insert write (decision 16): unless and == false as the buffer will hold them. */
+export const chainReach = (parsed: ParsedTemplate, chain: ChainSpec, workspaces: readonly string[]): string[][] =>
+  markerReach(parsed, chainMarkers(chain), workspaces);

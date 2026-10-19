@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
-import { type EditResult, moveBlock } from '../../template-edit';
+import type { ChainSpec } from '../../template-condition';
+import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
@@ -22,6 +23,7 @@ export interface ItemEditor {
   // hooks lint reads editor.useIn() in a menu's onSelect as a hook call
   createVersion(name: string): Promise<MessageKey | undefined>; renameVersion(name: string): Promise<MessageKey | undefined>;
   assignTo(workspace: string): Promise<MessageKey | undefined>;
+  insertChain(line: number, spec: ChainSpec): EditResult; replaceChain(line: number, spec: ChainSpec): EditResult; removeChain(line: number): EditResult; // #322: on the open buffer
   mode: EditorMode; setMode(mode: EditorMode): void;
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
@@ -270,6 +272,26 @@ const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
 ];
 const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
 
+const NO_FILE: EditResult = { ok: false, error: { line: 1, message: 'no file is open' } };
+type TextEdits = Pick<ItemEditor, 'move' | 'insertChain' | 'replaceChain' | 'removeChain'>;
+
+// The map's and the condition form's edits (#319 decision 20, #322 decision 20): each runs on the open buffer, which becomes its answer's text
+// when it holds, so visual and text modes read one truth; a refusal leaves the text and is answered to the caller, which shows it
+function textEdits(text: string | undefined, write: (text: string) => void): TextEdits {
+  const apply = (change: (from: string) => EditResult): EditResult => {
+    if (text === undefined) return NO_FILE;
+    const result = change(text);
+    if (result.ok) write(result.text);
+    return result;
+  };
+  return {
+    move: (line, index) => { apply((from) => moveBlock(from, line, index)); },
+    insertChain: (line, spec) => apply((from) => insertChain(from, line, spec)),
+    replaceChain: (line, spec) => apply((from) => replaceChain(from, line, spec)),
+    removeChain: (line) => apply((from) => removeChain(from, line)),
+  };
+}
+
 /** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22; #320, decisions 8–13; #321). */
 export function useItemEditor(plugins: Plugins): ItemEditor {
   const { screen, items, reload } = plugins;
@@ -316,11 +338,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
       }
       return undefined;
     },
-    move: (line, index) => {
-      if (path === undefined || isReadOnly) return;
-      const moved = moveBlock(textOf(path), line, index); // a refused move leaves the text (decision 20 of #319)
-      if (moved.ok) set(bufferKey(id, version, path), moved.text);
-    },
+    ...textEdits(path === undefined || isReadOnly ? undefined : textOf(path), (text) => { if (path !== undefined) set(bufferKey(id, version, path), text); }),
     ...view,
     error: note?.id === id ? note.error : undefined,
     errorVars: note?.id === id ? note.errorVars : undefined,
