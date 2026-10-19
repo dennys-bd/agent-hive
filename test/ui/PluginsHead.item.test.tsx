@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
-import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, SPEC_TEXT, stubItems } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, SPEC_TEXT, stubItems, versionOf } from './plugins-fixtures';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -73,7 +73,7 @@ test("saving an original makes it customized: the chip and the saved time follow
   const server: ItemsServer = {
     catalogue: CATALOGUE, reads: READS,
     save: (_id, body) => {
-      server.catalogue = CATALOGUE.map((i) => (i.id === 'hive:new-spec' ? itemOf('hive:new-spec', { state: 'customized' }) : i));
+      server.catalogue = CATALOGUE.map((i) => (i.id === 'hive:new-spec' ? itemOf('hive:new-spec', { state: 'customized', versions: [versionOf('mine')] }) : i));
       return json(readOf('hive:new-spec', 'mine', { 'SKILL.md': body.text }, TODAY_1431));
     },
   };

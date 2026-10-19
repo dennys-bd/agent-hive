@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { moveBlock } from '../../src/template-edit';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
-import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems } from './plugins-fixtures';
+import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems, withVersion } from './plugins-fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -83,7 +83,12 @@ test('save writes the open file to its version and settles it clean, then reads 
 
 test("a Hive .md that now uses Liquid saves as .liquid from the .md; the tab takes the name and the note stays until a file opens; a workspace item is never renamed (#319, decision 9)", async () => {
   const saves: SaveBody[] = [];
-  stubItems(serverOf({ save: (id, body) => { saves.push(body); return json(readOf(id, 'mine', { [body.path]: body.text })); } }));
+  const server: ItemsServer = serverOf({ save: (id, body) => {
+    saves.push(body);
+    server.catalogue = withVersion(server.catalogue, id, 'mine'); // the store made mine: GET /api/items lists it
+    return json(readOf(id, 'mine', { [body.path]: body.text }));
+  } });
+  stubItems(server);
   const { result } = await opened('hive:new-spec');
   const text = `${SPEC_TEXT}Run in {{ workspace }}.\n`;
   act(() => result.current.editor.edit(text));
@@ -134,4 +139,110 @@ test("only the item's main file needs a header: a skill's other file saves with 
   act(() => result.current.editor.edit('print(2)\n'));
   await act(() => result.current.editor.save());
   expect([saves, result.current.editor.error]).toEqual([[{ version: 'mine', path: 'scripts/slice.py', text: 'print(2)\n' }], undefined]);
+});
+
+const TDD = readOf('hive:new-build', 'tdd', { 'SKILL.md.liquid': 'tdd text\n' });
+const ORIGINAL = readOf('hive:new-build', null, { 'SKILL.md': 'the original\n' });
+const VERSION_READS = { 'hive:new-build@mine': BUILD, 'hive:new-build@tdd': TDD, 'hive:new-build@': ORIGINAL, 'hive:new-spec@': SPEC, 'hive-site:deploy@': DEPLOY };
+const isPut = ([, init]: [string, RequestInit?]): boolean => init?.method === 'PUT';
+
+test('openVersion opens a version or the original over its own read and buffers; the original of an item with versions is read-only and ⌘S writes nothing; a version the catalogue drops falls back (#320, decisions 8–10)', async () => {
+  const server = serverOf({ reads: VERSION_READS });
+  const mock = stubItems(server);
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.edit('mine edited\n'));
+  act(() => result.current.editor.openVersion('tdd'));
+  await waitFor(() => expect(result.current.editor.read?.version).toBe('tdd'));
+  const { editor } = result.current;
+  expect([editor.version, editor.textOf('SKILL.md.liquid'), editor.isDirty('SKILL.md.liquid'), editor.isReadOnly]).toEqual(['tdd', 'tdd text\n', false, false]);
+  act(() => result.current.editor.openVersion(null));
+  await waitFor(() => expect(result.current.editor.read?.version).toBeNull());
+  expect([result.current.editor.path, result.current.editor.isReadOnly]).toEqual(['SKILL.md', true]);
+  act(() => result.current.editor.edit('typed\n'));
+  await act(() => result.current.editor.save());
+  expect(mock.mock.calls.some(isPut)).toBe(false);
+  act(() => result.current.editor.openVersion('tdd'));
+  await waitFor(() => expect(result.current.editor.read?.version).toBe('tdd'));
+  server.catalogue = CATALOGUE.map((i) => (i.id === 'hive:new-build' ? { ...i, versions: i.versions.filter((v) => v.name !== 'tdd') } : i));
+  await act(() => result.current.plugins.reload());
+  const after = result.current.editor;
+  expect([after.version, after.textOf('SKILL.md.liquid'), after.isDirty('SKILL.md.liquid')]).toEqual(['mine', 'mine edited\n', true]);
+});
+
+test("createVersion copies the open version, or the original, and opens it once the catalogue lists it; the source's unsaved edit stays on it; refusals answer their copy (#320, decision 11)", async () => {
+  const bodies: unknown[] = [];
+  const server: ItemsServer = serverOf({ reads: VERSION_READS, createVersion: (id, body) => {
+    bodies.push(body);
+    if (body.name === 'Bad') return json({ error: 'bad name', code: 'bad_name' }, 400);
+    if (body.name === 'tdd') return json({ error: 'exists', code: 'exists' }, 409);
+    if (body.name === 'boom') return json({ error: 'disk' }, 500);
+    server.catalogue = withVersion(server.catalogue, id, body.name);
+    return json(readOf(id, body.name, { 'SKILL.md.liquid': BUILD_TEXT }));
+  } });
+  stubItems(server);
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.edit('mine edited\n'));
+  let refused: unknown = 'unset';
+  await act(async () => { refused = await result.current.editor.createVersion('fast'); });
+  expect([refused, bodies[0], result.current.editor.version, result.current.editor.textOf('SKILL.md.liquid')]).toEqual([undefined, { name: 'fast', from: 'mine' }, 'fast', BUILD_TEXT]);
+  for (const [name, key] of [['Bad', 'plugins.version.badName'], ['tdd', 'plugins.version.taken'], ['boom', 'plugins.version.createFailed']] as const) {
+    await act(async () => { refused = await result.current.editor.createVersion(name); });
+    expect(refused).toBe(key);
+  }
+  expect(result.current.editor.version).toBe('fast');
+  act(() => result.current.editor.openVersion(null));
+  await waitFor(() => expect(result.current.editor.read?.version).toBeNull());
+  await act(async () => { await result.current.editor.createVersion('fresh'); });
+  expect(bodies.at(-1)).toEqual({ name: 'fresh', from: 'original' });
+  act(() => result.current.editor.openVersion('mine'));
+  await waitFor(() => expect(result.current.editor.read?.version).toBe('mine'));
+  expect(result.current.editor.textOf('SKILL.md.liquid')).toBe('mine edited\n');
+});
+
+test('renameVersion renames the open version: its read and unsaved buffer move with it, never read again; a taken name answers its copy; the original has nothing to rename (#320, decision 13)', async () => {
+  const renames: [string, string][] = [];
+  const server: ItemsServer = serverOf({ reads: VERSION_READS, rename: (id, version, body) => {
+    renames.push([version, body.name]);
+    if (body.name === 'tdd') return json({ error: 'exists', code: 'exists' }, 409);
+    server.catalogue = server.catalogue.map((i) => (i.id === id ? { ...i, versions: i.versions.map((v) => (v.name === version ? { ...v, name: body.name } : v)) } : i));
+    return json(server.catalogue.find((i) => i.id === id));
+  } });
+  const mock = stubItems(server);
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.edit('mine edited\n'));
+  let refused: unknown = 'unset';
+  await act(async () => { refused = await result.current.editor.renameVersion('tdd'); });
+  expect(refused).toBe('plugins.version.taken');
+  await act(async () => { refused = await result.current.editor.renameVersion('daily'); });
+  const { editor } = result.current;
+  expect([refused, editor.version, editor.read?.version, editor.textOf('SKILL.md.liquid'), editor.isDirty('SKILL.md.liquid')]).toEqual([undefined, 'daily', 'daily', 'mine edited\n', true]);
+  expect(renames).toEqual([['mine', 'tdd'], ['mine', 'daily']]);
+  expect(mock.mock.calls.some(([path, init]) => path === '/api/items/hive%3Anew-build/versions/mine' && init?.method === 'PATCH')).toBe(true);
+  expect(mock.mock.calls.some(([path]) => path === '/api/items/hive%3Anew-build?version=daily')).toBe(false);
+  act(() => result.current.editor.openVersion(null));
+  await waitFor(() => expect(result.current.editor.read?.version).toBeNull());
+  await act(async () => { refused = await result.current.editor.renameVersion('other'); });
+  expect([refused, renames]).toEqual(['plugins.version.renameFailed', [['mine', 'tdd'], ['mine', 'daily']]]);
+});
+
+test('assignTo moves a workspace onto the open version, null for the original, then reads the catalogue again; a refusal answers its copy (#320, decision 12)', async () => {
+  const assigns: unknown[] = [];
+  const server: ItemsServer = serverOf({ reads: VERSION_READS, assign: (id, body) => {
+    assigns.push(body);
+    if (body.workspace === 'gone') return json({ error: 'unknown workspace', code: 'unknown_workspace' }, 404);
+    server.catalogue = server.catalogue.map((i) => (i.id === id ? { ...i, versions: i.versions.map((v) => (v.name === body.version ? { ...v, workspaces: [...v.workspaces, body.workspace] } : v)) } : i));
+    return json(server.catalogue.find((i) => i.id === id));
+  } });
+  stubItems(server);
+  const { result } = await opened('hive:new-build');
+  let refused: unknown = 'unset';
+  await act(async () => { refused = await result.current.editor.assignTo('hive-site'); });
+  expect([refused, assigns]).toEqual([undefined, [{ workspace: 'hive-site', version: 'mine' }]]);
+  expect(result.current.plugins.items?.find((i) => i.id === 'hive:new-build')?.versions[0]?.workspaces).toEqual(['hive-site']);
+  act(() => result.current.editor.openVersion(null));
+  await waitFor(() => expect(result.current.editor.read?.version).toBeNull());
+  await act(async () => { refused = await result.current.editor.assignTo('agent-hive'); });
+  expect(assigns.at(-1)).toEqual({ workspace: 'agent-hive', version: null });
+  await act(async () => { refused = await result.current.editor.assignTo('gone'); });
+  expect(refused).toBe('plugins.version.useFailed');
 });

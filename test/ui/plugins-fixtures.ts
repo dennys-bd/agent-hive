@@ -73,23 +73,43 @@ export function readOf(id: string, version: string | null, files: Record<string,
 }
 
 export interface SaveBody { version: string | null; path: string; text: string; from?: string }
-/** The editor's server (#319): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. */
+export interface NewVersionBody { name: string; from: string }
+export interface AssignBody { workspace: string; version: string | null }
+/** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. */
 export interface ItemsServer {
   catalogue: CatalogueItem[];
   reads: Record<string, ItemRead>;
   save?(id: string, body: SaveBody): Response;
   revert?(id: string, version: string): Response;
+  createVersion?(id: string, body: NewVersionBody): Response; // POST …/versions
+  rename?(id: string, version: string, body: { name: string }): Response; // PATCH …/versions/:version
+  assign?(id: string, body: AssignBody): Response; // POST …/assign
 }
 
-/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], PUT …/files and DELETE …/versions/:version. */
+/** The catalogue once a write made `name` (#320): the item lists it, customized, as GET /api/items answers after the store wrote it. */
+export const withVersion = (catalogue: CatalogueItem[], id: string, name: string): CatalogueItem[] =>
+  catalogue.map((i) => (i.id !== id || i.versions.some((v) => v.name === name) ? i : { ...i, state: 'customized', versions: [...i.versions, versionOf(name)] }));
+
+const notServed = (what: string): Response => json({ error: `no ${what}` }, 500);
+
+// One write of the editor: the body parsed, the test's answer, a 500 when the test gave none
+function writeOf(server: ItemsServer, id: string, sub: string | undefined, version: string, init: RequestInit): Response {
+  const body: unknown = JSON.parse(String(init.body ?? 'null'));
+  if (init.method === 'PUT') return server.save?.(id, body as SaveBody) ?? notServed('save');
+  if (init.method === 'DELETE') return server.revert?.(id, version) ?? notServed('revert');
+  if (init.method === 'PATCH') return server.rename?.(id, version, body as { name: string }) ?? notServed('rename');
+  if (sub === 'assign') return server.assign?.(id, body as AssignBody) ?? notServed('assign');
+  return server.createVersion?.(id, body as NewVersionBody) ?? notServed('create');
+}
+
+/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], and the writes of #319 and #320. */
 export function stubItems(server: ItemsServer) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, 'http://hive');
-    const [, , , rawId, , version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions', version
+    const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign', version
     if (rawId === undefined) return json(server.catalogue);
     const id = decodeURIComponent(rawId);
-    if (init?.method === 'PUT') return server.save?.(id, JSON.parse(String(init.body)) as SaveBody) ?? json({ error: 'no save' }, 500);
-    if (init?.method === 'DELETE') return server.revert?.(id, decodeURIComponent(version ?? '')) ?? json({ error: 'no revert' }, 500);
+    if (init?.method !== undefined && init.method !== 'GET') return writeOf(server, id, sub, decodeURIComponent(version ?? ''), init);
     const read = server.reads[`${id}@${url.searchParams.get('version') ?? ''}`];
     return read === undefined ? json({ error: `no item ${id}` }, 404) : json(read);
   });
