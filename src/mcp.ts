@@ -10,6 +10,7 @@ import { correlationOf } from './event-derive.js';
 import type { Correlation, EventLog, RecordInput, RefusalCode } from './events.js';
 import { isMemoryRefusal, lessonRefusal, looksLikeSecret, MEMORY_SECRET_MESSAGE, memoryCounts, type MemoryStore, whyProblem, withEntry, withUse } from './memory.js';
 import { liveRecord } from './record-kit.js';
+import { freeEndRefused } from './runs.js';
 import { isBlocked, stageOf, taskId } from './tasks.js';
 import { refsOf, type RelateOutcome } from './server-blockers.js';
 import { verdictProblem, withVerdict } from './transit.js';
@@ -19,7 +20,7 @@ import { appendMessage, markAgentResolved } from './review-store.js';
 import { type ReplyReviews, workerReview } from './mcp-review.js';
 import { createTask } from './create-task.js';
 import { conventionsAnswer, forkConventions, workerWorkspace } from './mcp-conventions.js';
-import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type BlockerChange, type Config, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, REVIEW_TEXT_MAX, type ReviewMessage, type State } from './types.js';
+import { MEMORY_KINDS, type MemoryKind, SOURCE_ACTIONS, type Stage, type BlockerChange, type Config, type Source, type SourceConfig, type CloseReason, type Effect, type Exec, type HiveEvent, REVIEW_TEXT_MAX, type ReviewMessage, type State, type Task, type Worker } from './types.js';
 
 const SERVER_INFO = { name: 'hive', version: '1.0.0' }; // Claude Code names the tools mcp__hive__<tool>
 const RESULT_MAX_BYTES = 64 * 1024; // serialized, UTF-8
@@ -87,27 +88,32 @@ export function canCloseTask(state: State, sources: SourceConfig[], itemId: stri
   return type !== undefined && SOURCE_ACTIONS[type].includes('close');
 }
 
-// The task the worker holds (a stage run's or a free session's): its activity's first task (#629); none in a local session
-function workerTaskId(deps: McpDeps, ptyId: string): string | undefined {
+// The worker and the task it holds (a stage run's or a free session's: its activity's first task, #629), from one live snapshot; none in a
+// local session. #339: hive_done's check and its message read the same stage
+function workerTask(deps: McpDeps, ptyId: string): { state: State; worker: Worker; task: Task } | undefined {
   const state = deps.live()?.state;
   const worker = state?.workers.find((s) => s.runId === ptyId);
-  return state && worker ? taskOfWorker(state, worker)?.item.itemId : undefined;
+  const task = state && worker ? taskOfWorker(state, worker) : undefined;
+  return state && worker && task ? { state, worker, task } : undefined;
 }
+
+const workerTaskId = (deps: McpDeps, ptyId: string): string | undefined => workerTask(deps, ptyId)?.task.item.itemId;
 
 // The result already in the live record of the task the worker runs (#629), for the merged size check.
 function taskResult(deps: McpDeps, ptyId: string): Record<string, unknown> | undefined {
-  const id = workerTaskId(deps, ptyId);
-  const state = deps.live()?.state;
-  const task = state?.tasks.find((c) => taskId(c) === id);
-  return state && task && liveRecord(state, task)?.result;
+  const held = workerTask(deps, ptyId);
+  return held && liveRecord(held.state, held.task)?.result;
 }
 
 // The stage of the task the worker runs (#134): what its verdict is checked against
 function workerStage(deps: McpDeps, ptyId: string): Stage | undefined {
-  const state = deps.live()?.state;
-  const task = state?.tasks.find((c) => taskId(c) === workerTaskId(deps, ptyId));
-  return state && task && stageOf(state.stages, task.stage);
+  const held = workerTask(deps, ptyId);
+  return held && stageOf(held.state.stages, held.task.stage);
 }
+
+// #339: a free session's end its stage has no transition for: nothing ended, and the user decides what comes next
+const noTransitionMessage = (stage: string, exit: string, hasResult: boolean): string =>
+  `The task is in stage \`${stage}\`, which has no transition for \`${exit}\`: no stage ended.${hasResult ? ' Your result was recorded.' : ''} Ask the user what to do next with hive_ask.`;
 
 // The header's worker, only while it holds a worker: a stale session or a forged call gets the tool error and touches nothing.
 function livePtyId(deps: McpDeps, ptyId: string | undefined): string | undefined {
@@ -163,8 +169,10 @@ function registerStageTools(server: McpServer, deps: McpDeps, header: string | u
     if (problem) return refuse('bad_result', problem);
     const wrong = verdictProblem(verdict, evidence, workerStage(deps, ptyId));
     if (wrong) return refuse('bad_verdict', wrong);
+    const held = workerTask(deps, ptyId);
+    const exit = held && freeEndRefused(held.state, held.worker, held.task, verdict); // #339: the reducer re-checks, so a change in between never halts the task
     await deps.dispatch({ type: 'done', ptyId, ...(result ? { result } : {}), ...(verdict === undefined ? {} : { verdict }), ...(evidence === undefined ? {} : { evidence }) });
-    return reply(OK);
+    return held && exit ? refuse('no_transition', noTransitionMessage(held.task.stage, exit, result !== undefined)) : reply(OK);
   }, { keys: result && Object.keys(result) }));
   server.registerTool('hive_pr', {
     description: 'Tell the Hive a pull request you opened for this task (its https://github.com/<owner>/<repo>/pull/<n> URL); call it once per PR. '

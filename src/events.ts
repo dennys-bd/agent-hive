@@ -20,7 +20,7 @@ export type FinishVia = 'move' | 'archive' | 'remove' | 'delete' | 'none';
 // stop: the user's; agent_stop: a stop with no cause, hive_stop's or a command's timeout
 export type StageOutcome = 'done' | 'approval' | 'stop' | 'agent_stop' | 'killed' | 'failed' | 'exit';
 export type RefusalCode = 'unknown_worker' | 'bad_result' | 'bad_verdict' | 'bad_url' | 'bad_question' | 'duplicate_of' | 'cannot_close' | 'no_session'
-  | 'bad_reply' | 'unknown_thread' | 'not_participant' | 'thread_resolved' | 'event' | 'block_with_reason' | 'cannot_block' | 'not_blocked' | 'block_refused'
+  | 'bad_reply' | 'unknown_thread' | 'not_participant' | 'thread_resolved' | 'event' | 'block_with_reason' | 'cannot_block' | 'not_blocked' | 'block_refused' | 'no_transition'
   | MemoryRefusalCode; // #797: hive_remember's and hive_applied's
 export type StepKind = 'COPY' | 'RUN' | 'LOAD' | 'DEL';
 

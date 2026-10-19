@@ -11,9 +11,9 @@ import { capturable, liveRuns, stageSession, startMode } from './task-runs.js';
 import { clearedError, dropWorker, ensureActivity, releaseWorker, liveWorker, none, occupy, type Reduced, releaseRun, slugTaken, stoppedWork, takeWorker, withError } from './reducer-kit.js';
 import { haltCommands } from './stage-commands.js';
 import { advance, type EndOf, take } from './transit.js';
-import { exitOf, transitionByKey } from './transitions.js';
+import { exitName, exitOf, transitionByKey } from './transitions.js';
 import { haltCi, uncollected } from './stage-ci.js';
-import type { Activity, Task, CloseAction, Effect, HiveEvent, SleepCause, Terminal, Worker, State } from './types.js';
+import type { Activity, Task, CloseAction, Effect, HiveEvent, SleepCause, Terminal, Trigger, Worker, State } from './types.js';
 import { openingSignal } from './signals.js';
 
 // The rules of one flow to start and stop a task (#283), kept out of orchestrator.ts, which was over 800 lines. Pure: every function returns
@@ -314,13 +314,28 @@ export function openSession(state: State, { activityId, continueId, prompt, agen
   }, id);
 }
 
+/** The end a free session's hive_done names when its task's stage has no transition for it (#339): `done` or `verdict:<name>`, as NO_TRANSITION
+ * writes it. Undefined for a stage run (#134 halts it on purpose) and wherever the end goes on as before: a pending handoff, a stage gone or
+ * unknown and a leaving task (advance's own), an approval stage (#268). */
+export function freeEndRefused(state: State, worker: Worker, task: Task, verdict?: string): string | undefined {
+  const live = activityOf(state, taskId(task));
+  const stage = stageOf(state.stages, task.stage);
+  if (!worker.freeSession || live?.handoffPending !== undefined || live?.stageGone !== undefined || task.leaving || !stage || stage.approval) return undefined;
+  const trigger: Trigger = verdict === undefined ? 'done' : 'verdict';
+  return exitOf(state, task.stage, trigger, verdict) === undefined ? exitName(trigger, verdict) : undefined;
+}
+
 /** hive_done in a free session (#283): the stage ends at once, as a stage run's end does (the transition's sources written, its destination entered,
  * the result merged), with no kill. The session stays open until the user stops it, and the fill cannot take a task a worker holds. A stage run
  * that also holds the task is left running: its own later stage end applies from whatever stage the task is in then (finish reads
- * task.stage), as today. In an approval stage the task awaits the user instead (#268), with the session still open. */
-export function freeSessionDone(state: State, worker: Worker, result?: Record<string, unknown>, verdict?: string): Reduced {
+ * task.stage), as today. In an approval stage the task awaits the user instead (#268), with the session still open. An end its stage has no
+ * transition for ends nothing (#339): only the call's plain result is merged, with no verdict, no checkpoint (no stage ended) and no halt.
+ * `result` carries the verdict, `plain` is the call's own. */
+export function freeSessionDone(state: State, worker: Worker, result?: Record<string, unknown>, verdict?: string, plain?: Record<string, unknown>): Reduced {
   const task = taskOfWorker(state, worker);
-  return task ? capturedFirst(state, task, freeSessionEnd(state, worker, task, result, verdict)) : none(state); // #619
+  if (!task) return none(state);
+  if (freeEndRefused(state, worker, task, verdict) !== undefined) return none(plain ? withResult(state, task, plain) : state);
+  return capturedFirst(state, task, freeSessionEnd(state, worker, task, result, verdict)); // #619
 }
 
 // The body freeSessionDone had from `const merged` on (#283, #268, #134, #692, #812), unchanged
