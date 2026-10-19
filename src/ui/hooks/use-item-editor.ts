@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { needsLiquid } from '../../template';
+import { needsLiquid, parseTemplate } from '../../template';
 import { moveBlock } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
@@ -19,10 +19,10 @@ export interface ItemEditor {
   mode: EditorMode; setMode(mode: EditorMode): void;
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
-  error?: MessageKey; renamedTo?: string; // under the tabs, for the item they came from
+  error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string; // under the tabs, for the item they came from
 }
 
-interface Note { id: string; error?: MessageKey; renamedTo?: string }
+interface Note { id: string; error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string }
 interface WriteContext {
   item: CatalogueItem; read: ItemRead; path: string; text: string;
   put(read: ItemRead): void; settle(from: string, to: string, sent: string): void; dropItem(): void;
@@ -30,6 +30,7 @@ interface WriteContext {
 }
 
 const LIQUID = '.liquid';
+const REQUIRED_KEYS = ['name', 'description'] as const; // what Claude Code needs to load a skill or an agent
 const BAD_REQUEST = 400;
 const NONE: readonly number[] = [];
 const keyOf = (id: string, path: string): string => `${id}\0${path}`; // NUL is in no id and no path
@@ -79,12 +80,24 @@ function useViewState(id: string): Pick<ItemEditor, 'mode' | 'setMode' | 'viewAs
   return { mode, setMode, viewAs, setViewAs, collapsed: collapsedOf[id] ?? NONE, toggle };
 }
 
+// #323: an item's main file is saved only with a header that parses and names it; any other file of a skill has no header to check
+function headerRefusal(c: WriteContext): Omit<Note, 'id'> | undefined {
+  if (c.path !== mainPathOf(c.read)) return undefined;
+  const parsed = parseTemplate(c.text);
+  const [error] = parsed.errors;
+  if (error !== undefined) return { error: 'plugins.editor.badHeader', errorVars: { line: error.line } };
+  const missing = REQUIRED_KEYS.find((key) => typeof parsed.header[key] !== 'string' || parsed.header[key] === '');
+  return missing === undefined ? undefined : { error: 'plugins.editor.headerNeeds', errorVars: { key: missing } };
+}
+
 // ⌘S (decisions 5, 7, 9): the open file only. A Hive .md whose text now uses Liquid is saved as .md.liquid from the .md; a workspace item is
 // never renamed (decision 27). Saving the original answers `mine`, which the read becomes
 async function saveFile(c: WriteContext): Promise<void> {
   const isRename = c.item.origin === HIVE_ORIGIN && c.path.endsWith('.md') && needsLiquid(c.text);
   const to = isRename ? `${c.path}${LIQUID}` : c.path;
-  c.setNote(undefined);
+  const refusal = headerRefusal(c);
+  c.setNote(refusal && { id: c.item.id, ...refusal });
+  if (refusal) return;
   try {
     c.put(await sendJson<ItemRead>('PUT', `${itemUrl(c.item.id)}/files`, { version: c.read.version, path: to, text: c.text, ...(isRename ? { from: c.path } : {}) }));
   } catch {
@@ -164,6 +177,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     },
     ...view,
     error: note?.id === id ? note.error : undefined,
+    errorVars: note?.id === id ? note.errorVars : undefined,
     renamedTo: note?.id === id ? note.renamedTo : undefined,
   };
 }

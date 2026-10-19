@@ -12,7 +12,7 @@ export interface Decoration { line: number; from?: number; to?: number; classNam
 export interface Chip { line: number; label: string }
 /** dimmed: the source lines of the branches that do not hold (the map dims them); lineOf: a source line's line in the editor. */
 export interface TextLook { text: string; hidden: LineRange[]; decorations: Decoration[]; chips: Chip[]; dimmed: ReadonlySet<number>; lineOf(source: number): number }
-interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; catalogue: Catalogue; mode: EditorMode }
+interface LookArgs { text: string; parsed: ParsedTemplate; map: TemplateMap; catalogue: Catalogue; mode: EditorMode; isHeaderShown?: boolean }
 
 const NONE: ReadonlySet<number> = new Set();
 const MARKDOWN = /\.md(\.liquid)?$/;
@@ -70,9 +70,10 @@ function decorationsOf({ text, parsed, map, catalogue, mode }: LookArgs): Decora
   return [...branches, ...greys, ...body];
 }
 
-/** The template being edited (decisions 15–17): visual hides the header and the markers, text shows every line with the markers grey. */
+/** The template being edited (decisions 15–17): visual hides the header and the markers, text shows every line with the markers grey. A
+ * specialist's header has no field form, so visual keeps it in the text (#323). */
 export function templateLook(args: LookArgs): TextLook {
-  const header = span(1, args.parsed.bodyLine - 1);
+  const header = args.isHeaderShown ? [] : span(1, args.parsed.bodyLine - 1);
   const hidden = args.mode === 'text' ? [] : rangesOf([...header, ...markerLines(args.map)]);
   const chips = chainsOf(args.map.blocks).flatMap((c) => c.branches.map((b) => ({ line: b.line, label: branchLabel(b) })));
   return { text: args.text, hidden, decorations: decorationsOf(args), chips, dimmed: NONE, lineOf: (line) => visibleLine(line, hidden) };

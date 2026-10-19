@@ -119,7 +119,7 @@ test('⌘S saves the open file to its version and the tab reads clean; a failed 
   expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: `${BUILD_TEXT}More.\n` }]);
   expect(mock.mock.calls.filter(([path]) => path === '/api/items')).toHaveLength(2);
   refuse = true;
-  act(() => view().model.type('again\n'));
+  act(() => view().model.type(`${BUILD_TEXT}again\n`));
   act(() => view().onSave());
   expect(await screen.findByRole('alert')).toHaveTextContent('não foi possível salvar o arquivo');
   expect(fileTab('SKILL.md.liquid')).toHaveAttribute('data-dirty', 'true');
