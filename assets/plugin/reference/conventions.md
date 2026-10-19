@@ -57,10 +57,10 @@ only for a fork workspace; see "Forks". Outside the Hive the tool does
 not exist: `approval` is false.
 
 `hive:designer` is not a template yet. It resolves each variable it
-names from the first place that sets it: the `conventions` key of
-`hive_conventions`' answer, then a `## Hive conventions` section of the
-repository's `CLAUDE.md` (else `AGENTS.md`, one `` - `key`: value `` per
-line), then the default above. It states the same one line.
+names from the first place that sets it: a `## Hive conventions`
+section of the repository's `CLAUDE.md` (else `AGENTS.md`, one
+`` - `key`: value `` per line), then the default above. It states the
+same one line.
 
 The docs repository is `docsRepo` when set, else this repository; the
 four folders are relative to it. The base, wherever these skills say

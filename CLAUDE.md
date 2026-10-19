@@ -26,7 +26,7 @@ For the length of the #212 experiment, every checkout has a Graphify graph of th
 
 ## Hive conventions
 
-What `hive:designer` resolves here when the Hive's Settings set nothing (`assets/plugin/reference/conventions.md`, "Resolve"). The skills read none of this: their values are the variables of their own versions (#317).
+What `hive:designer` resolves here (`assets/plugin/reference/conventions.md`, "Resolve"). The skills read none of this: their values are the variables of their own versions (#317).
 
 - `docsRepo`: `docs`
 - `designsDir`: `agent/hive/designs`
