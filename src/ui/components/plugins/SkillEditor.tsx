@@ -1,20 +1,24 @@
-import { type Dispatch, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
-import { parseTemplate } from '../../../template';
-import { buildMap } from '../../../template-map';
-import { previewTemplate } from '../../../template-preview';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ParsedTemplate, parseTemplate } from '../../../template';
+import type { ChainSpec } from '../../../template-condition';
+import type { EditResult } from '../../../template-edit';
+import { buildMap, type TemplateMap } from '../../../template-map';
+import { chainsOf, previewTemplate } from '../../../template-preview';
 import type { CatalogueItem, ItemRead } from '../../../types';
-import { BlockMap } from '@/components/plugins/BlockMap';
+import { BlockMap, type MapGap } from '@/components/plugins/BlockMap';
+import { ChainCard } from '@/components/plugins/ChainCard';
+import { ConditionPopover } from '@/components/plugins/ConditionPopover';
 import { FileTabs } from '@/components/plugins/FileTabs';
-import { type Reveal, TemplateText } from '@/components/plugins/TemplateText';
+import { type ChipPopover, type Reveal, TemplateText } from '@/components/plugins/TemplateText';
 import type { Annotations } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { t } from '@/i18n';
 import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
-import { appendLine } from '@/lib/chain-draft';
+import { appendLine, formVariables } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
 import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
-interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; fontFamily: string }
+interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string }
 interface BodyProps extends SkillEditorProps { item: CatalogueItem; read: ItemRead; path: string }
 const NOTE = 'border-b px-3 py-1 text-xs';
 
@@ -36,28 +40,62 @@ function useFileLook({ editor, items, item, path }: BodyProps) {
   return { isMd, parsed, map, workspace, preview, look };
 }
 
-// #327: an annotation's reveal (the counter, a note, a pane's line) lands as a map click does, through the look of the moment; a reveal from
-// before this file opened is not replayed
-function useAnnotationReveal(revealed: Annotations['revealed'], look: TextLook, setReveal: Dispatch<SetStateAction<Reveal | undefined>>): void {
-  const latest = useRef(look);
-  useEffect(() => { latest.current = look; });
+// #327: an annotation's reveal (the counter, a note, a pane's line) lands as a map click does; a reveal from before this file opened is not
+// replayed
+function useAnnotationReveal(revealed: Annotations['revealed'], reveal: (line: number) => void): void {
+  const latest = useRef(reveal);
+  useEffect(() => { latest.current = reveal; });
   const seen = useRef(revealed?.n);
   useEffect(() => {
     if (revealed === undefined || revealed.n === seen.current) return;
     seen.current = revealed.n;
-    setReveal((last) => ({ line: latest.current.lineOf(revealed.line), n: (last?.n ?? 0) + 1 }));
-  }, [revealed, setReveal]);
+    latest.current(revealed.line);
+  }, [revealed]);
+}
+
+type OpenForm = { kind: 'card'; line: number } | { kind: 'popover'; chip: number }; // the one card or popover open (decision 11)
+interface FormsArgs { editor: ItemEditor; parsed: ParsedTemplate; map: TemplateMap; workspaces: readonly string[]; isReadOnly: boolean; reveal(line: number): void }
+interface ChainForms { onPlus?(line: number): void; gap?: MapGap; onChip(line: number): void; popover?: ChipPopover }
+
+// The "+"'s card and the chip's popover (#322, decisions 10-13): one open at a time, its draft gone when it closes; neither in the preview nor on a read-only original (#320)
+function useChainForms({ editor, parsed, map, workspaces, isReadOnly, reveal }: FormsArgs): ChainForms {
+  const [open, setOpen] = useState<OpenForm>();
+  const variables = useMemo(() => formVariables(parsed.variables, workspaces), [parsed, workspaces]);
+  const close = (): void => setOpen(undefined);
+  const forms: ChainForms = { onPlus: isReadOnly ? undefined : (line) => setOpen({ kind: 'card', line }), onChip: (chip) => setOpen({ kind: 'popover', chip }) };
+  if (isReadOnly || open === undefined) return forms;
+  if (open.kind === 'card') {
+    const insert = (spec: ChainSpec): EditResult => {
+      const result = editor.insertChain(open.line, spec);
+      if (result.ok) reveal(open.line); // decision 12: the editor goes to the inserted chain
+      return result;
+    };
+    return { ...forms, gap: { line: open.line, card: <ChainCard key={open.line} variables={variables} onInsert={insert} onClose={close} /> } };
+  }
+  // the chip of any conditional block, the else's too, opens its whole chain; a chain gone from the text closes the popover
+  const chain = chainsOf(map.blocks).find((c) => c.branches.some((b) => b.line === open.chip));
+  if (chain === undefined) return forms;
+  const content = (
+    <ConditionPopover
+      key={chain.line} chain={chain} parsed={parsed} variables={variables} workspaces={workspaces}
+      onOk={(spec) => editor.replaceChain(chain.line, spec)} onRemove={() => editor.removeChain(chain.line)} onClose={close}
+    />
+  );
+  return { ...forms, popover: { line: open.chip, content, onClose: close } };
 }
 
 function EditorBody(props: BodyProps) {
-  const { editor, annotations, item, read, path, fontFamily } = props;
+  const { editor, annotations, item, read, path, fontFamily, workspaces } = props;
   const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
+  // The source line of the last reveal: the look maps it at render, so a chain just inserted lands under the look that holds it
   const [reveal, setReveal] = useState<Reveal>();
-  useAnnotationReveal(annotations.revealed, look, setReveal);
+  const revealLine = (line: number): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1 }));
+  useAnnotationReveal(annotations.revealed, revealLine);
   const decorations = useMemo(() => [...look.decorations, ...underlinesOf(annotations.list, look.text)], [look, annotations.list]);
   const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const isPreview = workspace !== undefined;
   const canEdit = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
+  const forms = useChainForms({ editor, parsed, map, workspaces, isReadOnly: !canEdit, reveal: revealLine });
   const failed = preview?.ok === false ? preview.errors[0] : undefined;
   return (
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -73,13 +111,13 @@ function EditorBody(props: BodyProps) {
         {isMd ? (
           <BlockMap
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
-            onReveal={(line) => setReveal((last) => ({ line: look.lineOf(line), n: (last?.n ?? 0) + 1 }))}
+            onReveal={revealLine} onPlus={forms.onPlus} gap={forms.gap}
             dots={isPreview ? undefined : dots} onDot={annotations.openAt}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
           modelKey={[item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0')} path={path} text={look.text} isReadOnly={!canEdit} fontFamily={fontFamily}
-          hidden={look.hidden} decorations={decorations} chips={look.chips} reveal={reveal} onChange={editor.edit} onSave={() => void editor.save()}
+          hidden={look.hidden} decorations={decorations} chips={look.chips} reveal={reveal && { line: look.lineOf(reveal.line), n: reveal.n }} onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()}
           annotations={isPreview ? undefined : annotations} anchorOf={look.lineOf}
         />
       </div>

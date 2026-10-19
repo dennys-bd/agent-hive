@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { ChainSpec } from '../../../template-condition';
 import type { EditResult } from '../../../template-edit';
 import { ChainForm } from '@/components/plugins/ChainForm';
@@ -14,6 +14,8 @@ export function ChainCard({ variables, onInsert, onClose }: ChainCardProps) {
   const [isRefused, setRefused] = useState(false);
   const host = useRef<HTMLElement>(null);
   const spec = specOf(draft, variables);
+  // The "+" that held the focus is replaced by this card: the focus goes to its first field, so the keyboard stays in the card (and Esc reaches it)
+  useEffect(() => { host.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus(); }, []);
   // decision 20: from a "+" only an incomplete form could be refused, and insert is disabled for that; anything else is the generic copy
   const insert = (): void => {
     if (spec === null) return;

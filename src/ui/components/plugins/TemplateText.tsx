@@ -102,24 +102,26 @@ function useScrollTop(view: View | undefined): number {
 interface ChipsProps { chips: readonly Chip[]; topOf(line: number): number; onChip?(line: number): void; popover?: ChipPopover }
 
 function Chips({ chips, topOf, onChip, popover }: ChipsProps) {
+  const openChip = useRef<HTMLButtonElement>(null);
   if (chips.length === 0) return null;
+  const close = (): void => { openChip.current?.focus(); popover?.onClose(); }; // the content unmounts with the focus in it: it goes back to the chip
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would bring a border and a legend; the group only names the chips column
     <div role="group" aria-label={t('plugins.editor.conditions')}>
       {chips.map((chip) => {
-        const button = (
-          <button
-            key={chip.line} type="button" onClick={() => onChip?.(chip.line)} style={{ top: topOf(chip.line) }}
-            className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
-          >
-            {chip.label}
-          </button>
-        );
-        if (popover?.line !== chip.line) return button;
+        const isOpen = popover?.line === chip.line;
+        // Every chip sits under a Popover, open or not, so opening one keeps its button (and its focus) instead of remounting it
         return (
-          <Popover key={chip.line} open onOpenChange={(isOpen) => { if (!isOpen) popover.onClose(); }}>
-            <PopoverAnchor asChild>{button}</PopoverAnchor>
-            <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3">{popover.content}</PopoverContent>
+          <Popover key={chip.line} open={isOpen} onOpenChange={(next) => { if (!next) close(); }}>
+            <PopoverAnchor asChild>
+              <button
+                ref={isOpen ? openChip : undefined} type="button" onClick={() => onChip?.(chip.line)} style={{ top: topOf(chip.line) }}
+                className="absolute left-2 max-w-[214px] truncate rounded-full border px-2 font-mono text-[11px] text-muted-foreground hover:bg-accent"
+              >
+                {chip.label}
+              </button>
+            </PopoverAnchor>
+            {isOpen && <PopoverContent side="top" align="end" aria-label={t('plugins.chain.popover')} className="w-[420px] p-3">{popover.content}</PopoverContent>}
           </Popover>
         );
       })}
