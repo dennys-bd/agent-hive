@@ -6,9 +6,10 @@ import { OriginCard } from '@/components/plugins/OriginCard';
 import { VersionMenu } from '@/components/plugins/VersionMenu';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { Annotations } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import type { Plugins } from '@/hooks/use-plugins';
-import { type MessageKey, t } from '@/i18n';
+import { type MessageKey, t, tPlural } from '@/i18n';
 import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plugins';
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
@@ -46,18 +47,26 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
   );
 }
 
-interface ItemProps { item: CatalogueItem; editor: ItemEditor; workspaces: readonly string[] }
+interface ItemProps { item: CatalogueItem; editor: ItemEditor; annotations: Annotations; workspaces: readonly string[] }
 interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
 
-// The head's actions (decisions 11, 12): the test is HIVE-25's, drawn disabled; revert only for a Hive item with a version open, never in the
-// preview. The reviewer slot draws nothing until 4.1 and 4.3
-function ItemActions({ item, editor, workspaces }: ItemProps) {
+// #327: the reviewer slot counts the open file's annotations and jumps to the next; with none it stays, disabled, for 4.3's menu
+function ReviewerButton({ annotations }: { annotations: Annotations }) {
+  const count = annotations.list.length;
+  const label = count === 0 ? t('plugins.head.reviewer.none') : tPlural('plugins.head.reviewer', count, { count });
+  return <Button type="button" size="sm" variant="outline" className={NO_DRAG} disabled={count === 0} onClick={() => annotations.next()}>{label}</Button>;
+}
+
+// The head's actions (decisions 11, 12): the reviewer counter (#327), the test is HIVE-25's, drawn disabled; revert only for a Hive item with a
+// version open. The preview draws neither the counter nor revert
+function ItemActions({ item, editor, annotations, workspaces }: ItemProps) {
   const viewAs = item.origin === HIVE_ORIGIN ? editor.viewAs : undefined;
   const target = viewAs ?? workspaces[0];
   const version = editor.item?.id === item.id ? editor.version : null;
   const canRevert = item.origin === HIVE_ORIGIN && !item.userCreated && version !== null && viewAs === undefined;
   return (
     <>
+      {viewAs === undefined && <ReviewerButton annotations={annotations} />}
       {target !== undefined && (
         // a disabled button gets no pointer events: its wrapper carries the tooltip
         <span title={t('plugins.head.soon')} className={NO_DRAG}><Button type="button" size="sm" variant="outline" disabled>{t('plugins.head.test', { workspace: target })}</Button></span>
@@ -73,7 +82,7 @@ function ItemActions({ item, editor, workspaces }: ItemProps) {
 }
 
 // #320, decision 14: the menu opens versions; the chip stays the way into a version's update, the first with one, in catalogue order
-function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
+function ItemHead({ item, editor, annotations, workspaces, onUpdate }: ItemHeadProps) {
   const look = STATE_LOOK[item.state];
   const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
   const chip = updated === undefined
@@ -86,7 +95,7 @@ function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
   const metaLine = item.basedOn === undefined ? meta : <>{meta} · <OriginCard basedOn={item.basedOn} description={item.description} className={NO_DRAG} /></>;
   return (
     <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
-      <ItemActions item={item} editor={editor} workspaces={workspaces} />
+      <ItemActions item={item} editor={editor} annotations={annotations} workspaces={workspaces} />
     </Head>
   );
 }
@@ -113,15 +122,15 @@ export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProp
   );
 }
 
-/** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. Its version
- * selector (#320); the reviewer (4.1) is not drawn yet. An item the catalogue no longer has heads nothing. */
-export function PluginsHead({ plugins, editor, workspaces }: { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[] }) {
+/** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the reviewer counter (#327), the test and revert. Its version
+ * selector (#320); the reviewer's menu (4.3) is not drawn yet. An item the catalogue no longer has heads nothing. */
+export function PluginsHead({ plugins, editor, annotations, workspaces }: { plugins: Plugins; editor: ItemEditor; annotations: Annotations; workspaces: readonly string[] }) {
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
   if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
   const onUpdate = (version: string): void => plugins.open({ kind: 'update', id: screen.id, version });
-  return item === undefined ? null : <ItemHead item={item} editor={editor} workspaces={workspaces} onUpdate={onUpdate} />;
+  return item === undefined ? null : <ItemHead item={item} editor={editor} annotations={annotations} workspaces={workspaces} onUpdate={onUpdate} />;
 }
 

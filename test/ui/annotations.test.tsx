@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { removeVariable } from '../../src/template-edit';
 import { setLanguage } from '@/i18n';
@@ -83,4 +83,18 @@ test('the text, the map and the variables pane show the same annotation, and all
   expect(screen.queryByRole('group', { name: 'anotações' })).not.toBeInTheDocument();
   expect(view().decorations.some((d) => d.options.inlineClassName === 'template-annotation-yellow')).toBe(false);
   await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': ['SKILL.md.liquid\0unused\0unused variable reviewDepth\0  reviewDepth: { default: full }'] }));
+});
+
+test('the head counts the annotations: a click moves the text to the next one and opens its card, Esc closes it; at zero it reads "no annotations", disabled (#327)', async () => {
+  stubItems(serverOf());
+  render(<PluginsWindow />);
+  await open();
+  const head = screen.getByTestId('head');
+  fireEvent.click(await within(head).findByRole('button', { name: 'revisor · 1 anotação' }));
+  expect(view().position).toEqual({ lineNumber: 10, column: 1 });
+  expect(within(margin()).getByRole('article', { name: HEADLINE })).toHaveAttribute('data-open', 'true');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(within(margin()).queryByRole('article')).not.toBeInTheDocument();
+  act(() => view().model.type(ONE_VARS.replace('  reviewDepth: { default: full }\n', '')));
+  expect(within(head).getByRole('button', { name: 'revisor · nenhuma anotação' })).toBeDisabled();
 });

@@ -1944,6 +1944,9 @@ const en = {
   'plugins.head.test': 'test on workspace {workspace}',
   'plugins.head.soon': 'coming soon',
   'plugins.head.revert': "revert to the hive's original",
+  'plugins.head.reviewer.one': 'reviewer · {count} annotation',
+  'plugins.head.reviewer.other': 'reviewer · {count} annotations',
+  'plugins.head.reviewer.none': 'reviewer · no annotations',
   'plugins.revert.title': "Revert to the Hive's original",
   'plugins.revert.message': 'the version {version} is deleted with its files, and every workspace that used it goes back to the original.',
   'plugins.revert.confirm': 'revert',
@@ -4009,6 +4012,9 @@ const pt: Record<MessageKey, string> = {
   'plugins.head.test': 'testar no workspace {workspace}',
   'plugins.head.soon': 'em breve',
   'plugins.head.revert': 'voltar para a original da hive',
+  'plugins.head.reviewer.one': 'revisor · {count} anotação',
+  'plugins.head.reviewer.other': 'revisor · {count} anotações',
+  'plugins.head.reviewer.none': 'revisor · nenhuma anotação',
   'plugins.revert.title': 'Voltar para a original da hive',
   'plugins.revert.message': 'a versão {version} é apagada com os arquivos dela, e todo workspace que a usava volta para a original.',
   'plugins.revert.confirm': 'voltar',
@@ -4172,7 +4178,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {

@@ -38,9 +38,11 @@ test("the meta names the section and the open file's saved time; test on workspa
   const testButton = within(head()).getByRole('button', { name: 'testar no workspace agent-hive' });
   expect(testButton).toBeDisabled();
   expect(testButton.parentElement).toHaveAttribute('title', 'em breve');
+  expect(within(head()).getByRole('button', { name: /^revisor · / })).toBeInTheDocument();
   await user.click(screen.getByRole('combobox', { name: 'ver como' }));
   await user.click(await screen.findByRole('option', { name: 'hive-site' }));
   expect(within(head()).getByRole('button', { name: 'testar no workspace hive-site' })).toBeDisabled();
+  expect(within(head()).queryByRole('button', { name: /^revisor · / })).not.toBeInTheDocument(); // not drawn under "view as" (#327)
   expect(revertButton()).not.toBeInTheDocument(); // the preview hides it (decision 26)
 });
 
