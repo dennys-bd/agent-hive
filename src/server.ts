@@ -630,7 +630,8 @@ export function createServer(deps: ServerDeps): HiveServer {
       const listed = await wiring.polled(name, source.listItems()); // source.polled or source.poll_failed (#742)
       if (isStale(runtime)) return;
       const items = leftItems.filter(name, startedAt, listed);
-      for (const { item } of listed.filter((entry) => !items.includes(entry))) log.debug(`poll source=${name} dropped ${item.itemId}: closed after the read began`);
+      const kept = new Set(items);
+      for (const { item } of listed.filter((entry) => !kept.has(entry))) log.debug(`poll source=${name} dropped ${item.itemId}: closed after the read began`);
       log.info(`poll source=${name} items=${items.length}`);
       await dispatch({ type: 'poll', source: name, items: items.map(unattended) });
     } catch (err) {
