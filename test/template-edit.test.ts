@@ -8,6 +8,7 @@ import {
   addVariable,
   type EditResult,
   insertChain,
+  isHeldText,
   moveBlock,
   removeChain,
   removeVariable,
@@ -100,6 +101,8 @@ test('replaceChain rewrites the markers, adds empty branches, and refuses to dro
   const dropped = refused(replaceChain(DOC, 15, { branches: [deliveryIs('stacked')], else: false }));
   assert.equal(dropped.line, 17);
   assert.match(dropped.message, /holds text/);
+  assert.equal(isHeldText(dropped), true, '#322: the popover tells it apart');
+  assert.equal(isHeldText(refused(removeChain(DOC, 16))), false);
 
   const unless = ok(replaceChain(DOC, 15, { branches: [{ connective: 'and', terms: [{ variable: 'dryRun', op: 'isNo' }] }], else: true }));
   assert.deepEqual(unless.text.split('\n').slice(14, 19), ['{% unless dryRun %}', 'stacked text', '{% else %}', 'other text', '{% endunless %}']);
