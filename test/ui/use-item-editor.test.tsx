@@ -1,8 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import { moveBlock } from '../../src/template-edit';
+import { addVariable, moveBlock, setVariableValue } from '../../src/template-edit';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
+import type { MessageKey } from '@/i18n';
 import { BUILD_TEXT, CATALOGUE, itemOf, type ItemsServer, json, readOf, type SaveBody, SPEC_TEXT, stubItems } from './plugins-fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -134,4 +135,49 @@ test("only the item's main file needs a header: a skill's other file saves with 
   act(() => result.current.editor.edit('print(2)\n'));
   await act(() => result.current.editor.save());
   expect([saves, result.current.editor.error]).toEqual([[{ version: 'mine', path: 'scripts/slice.py', text: 'print(2)\n' }], undefined]);
+});
+
+test('applyEdit writes the buffer and saves it when it was clean, only writes it when it was dirty, and answers a refused edit as copy (#321, decisions 5, 15)', async () => {
+  const saves: SaveBody[] = [];
+  stubItems(serverOf({ save: (_id, body) => {
+    saves.push(body);
+    return json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
+  } }));
+  const { result } = await opened('hive:new-build');
+  const set = setVariableValue(BUILD_TEXT, 'delivery', 'agent-hive', 'stacked');
+  if (!set.ok) throw new Error(set.error.message);
+  let answer: MessageKey | undefined = 'plugins.variables.error.invalid';
+  act(() => { answer = result.current.editor.applyEdit(set); });
+  expect(answer).toBeUndefined();
+  await waitFor(() => expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: set.text }]));
+  await waitFor(() => expect(result.current.editor.isDirty('SKILL.md.liquid')).toBe(false));
+
+  act(() => result.current.editor.edit(`${set.text}typed\n`));
+  const again = setVariableValue(`${set.text}typed\n`, 'delivery', 'agent-hive', undefined);
+  if (!again.ok) throw new Error(again.error.message);
+  act(() => { result.current.editor.applyEdit(again); });
+  expect([saves.length, result.current.editor.textOf('SKILL.md.liquid'), result.current.editor.isDirty('SKILL.md.liquid')]).toEqual([1, again.text, true]);
+
+  expect([
+    result.current.editor.applyEdit(setVariableValue(BUILD_TEXT, 'nobody', 'agent-hive', 'x')),
+    result.current.editor.applyEdit(addVariable(BUILD_TEXT, { name: 'delivery' })),
+    result.current.editor.applyEdit(addVariable(BUILD_TEXT, { name: 'workspace' })),
+    result.current.editor.applyEdit(addVariable(BUILD_TEXT, { name: '2fast' })),
+    result.current.editor.applyEdit(setVariableValue(BUILD_TEXT, 'delivery', 'agent-hive', 'trunk')),
+  ]).toEqual(['plugins.variables.error.undeclared', 'plugins.variables.error.taken', 'plugins.variables.error.badName', 'plugins.variables.error.badName', 'plugins.variables.error.invalid']);
+});
+
+test("a Hive item with a version open reads its original once; the original open and a workspace item read none (#321, decision 10)", async () => {
+  const original = readOf('hive:new-build', null, { 'SKILL.md': '---\nvariables:\n  delivery: { default: x }\n---\n{{ delivery }}\n' });
+  const mock = stubItems(serverOf({ reads: { 'hive:new-build@mine': BUILD, 'hive:new-build@': original, 'hive:new-spec@': SPEC, 'hive-site:deploy@': DEPLOY } }));
+  const { result } = await opened('hive:new-build');
+  await waitFor(() => expect(result.current.editor.original).toEqual(original));
+  await reopen(result, 'hive:new-spec');
+  expect(result.current.editor.original).toBeUndefined();
+  await reopen(result, 'hive-site:deploy');
+  expect(result.current.editor.original).toBeUndefined();
+  await reopen(result, 'hive:new-build');
+  expect(result.current.editor.original).toEqual(original);
+  expect(mock.mock.calls.filter(([path]) => path === '/api/items/hive%3Anew-build')).toHaveLength(1);
+  expect(mock.mock.calls.filter(([path]) => path === '/api/items/hive%3Anew-spec')).toHaveLength(1); // its own read, no second one
 });

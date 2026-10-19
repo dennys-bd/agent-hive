@@ -1954,6 +1954,11 @@ const en = {
   'plugins.mode.label': 'mode',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'text',
+  // #321: the variables pane
+  'plugins.variables.error.undeclared': 'that variable is no longer declared',
+  'plugins.variables.error.taken': 'that name is already declared',
+  'plugins.variables.error.badName': 'a name is a letter or _ followed by letters, digits or _, and not workspace',
+  'plugins.variables.error.invalid': 'the header does not accept that declaration',
   // #325: the plugins update screen
   'plugins.update.screen': 'update',
   'plugins.update.review': 'review the update',
@@ -3930,6 +3935,11 @@ const pt: Record<MessageKey, string> = {
   'plugins.mode.label': 'modo',
   'plugins.mode.visual': 'visual',
   'plugins.mode.text': 'texto',
+  // #321: the variables pane
+  'plugins.variables.error.undeclared': 'essa variável não está mais declarada',
+  'plugins.variables.error.taken': 'esse nome já está declarado',
+  'plugins.variables.error.badName': 'um nome é uma letra ou _ seguida de letras, dígitos ou _, e não workspace',
+  'plugins.variables.error.invalid': 'o cabeçalho não aceita essa declaração',
   // #325: the plugins update screen
   'plugins.update.screen': 'atualização',
   'plugins.update.review': 'revisar a atualização',
