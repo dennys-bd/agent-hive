@@ -136,3 +136,12 @@ test('a file that is not markdown has no variables (#321, decision 3)', async ()
   expect(await screen.findByText('nenhuma variável neste arquivo')).toBeInTheDocument();
   expect(screen.queryByRole('list', { name: 'variáveis' })).not.toBeInTheDocument();
 });
+
+test("a variable's annotation line reads from the editor's annotations: a dismissed one is gone from its row (#327)", async () => {
+  const key = 'SKILL.md.liquid\0unused\0unused variable reviewDepth\0  reviewDepth: { default: full }';
+  stubItems(serverOf({ dismissed: { 'hive:new-build@mine': [key] } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  await waitFor(() => expect(within(row('reviewDepth')).queryByText('definida e nunca usada')).not.toBeInTheDocument());
+  expect(within(row('e2eCommand')).getByText('falta · sem valor em agent-hive')).toBeInTheDocument();
+});
