@@ -15,7 +15,7 @@ function of(check: LintAnnotation['check']): LintAnnotation {
 
 // The parse inside an EditResult holds a yaml Document, which toEqual cannot compare across two parses: the text and the map decide.
 function same(a: EditResult | undefined, b: EditResult): boolean {
-  return a !== undefined && a.ok && b.ok && a.text === b.text && JSON.stringify(a.map) === JSON.stringify(b.map);
+  return a?.ok === true && b.ok && a.text === b.text && JSON.stringify(a.map) === JSON.stringify(b.map);
 }
 
 test('fixOf answers a removal for unused, a default: null declaration for undeclared, a level change for heading, and nothing for the rest (#327)', () => {
