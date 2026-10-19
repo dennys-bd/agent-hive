@@ -74,11 +74,11 @@ function DraftValue({ kind, values, raw, label, emptyLabel, isDisabled = false, 
 
 function KindPicker({ kind, onKind }: { kind: VariableKind; onKind(kind: VariableKind): void }) {
   return (
-    <div role="group" aria-label={t('plugins.variables.form.type')} className="flex gap-0.5 rounded-md border p-0.5">
+    <fieldset aria-label={t('plugins.variables.form.type')} className="m-0 flex min-w-0 gap-0.5 rounded-md border p-0.5">
       {KINDS.map(([k, key]) => (
         <Button key={k} type="button" size="xs" variant={k === kind ? 'secondary' : 'ghost'} aria-pressed={k === kind} className="flex-1" onClick={() => onKind(k)}>{t(key)}</Button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 
