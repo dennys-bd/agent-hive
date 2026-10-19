@@ -28,8 +28,8 @@ function useFileLook({ editor, items, item, path }: BodyProps) {
   const preview = useMemo(() => (workspace === undefined || !isMd ? undefined : previewTemplate(parsed, map, workspace)), [parsed, map, workspace, isMd]);
   const look = useMemo(() => {
     if (preview?.ok) return previewLook(preview);
-    return isMd ? templateLook({ text, parsed, map, catalogue, mode: editor.mode }) : plainLook(text);
-  }, [preview, isMd, text, parsed, map, catalogue, editor.mode]);
+    return isMd ? templateLook({ text, parsed, map, catalogue, mode: editor.mode, isHeaderShown: item.kind === 'specialist' }) : plainLook(text);
+  }, [preview, isMd, text, parsed, map, catalogue, editor.mode, item.kind]);
   return { isMd, map, workspace, preview, look };
 }
 
@@ -45,7 +45,7 @@ function EditorBody(props: BodyProps) {
         files={read.files.map((file) => file.path)} open={path} isDirty={editor.isDirty} onOpen={editor.openFile} previewOf={workspace}
         onAdd={item.kind === 'skill' && !isPreview ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode}
       />
-      {editor.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(editor.error)}</p>}
+      {editor.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(editor.error, editor.errorVars)}</p>}
       {editor.renamedTo && <p role="status" className={`${NOTE} text-muted-foreground`}>{t('plugins.editor.renamed', { name: editor.renamedTo })}</p>}
       {failed && workspace && <p role="alert" className={`${NOTE} text-destructive`}>{t('plugins.viewAs.failed', { workspace, line: failed.line })}</p>}
       <div className="flex min-h-0 flex-1">
@@ -64,8 +64,9 @@ function EditorBody(props: BodyProps) {
   );
 }
 
-/** A skill's item screen (#319, handoff 11b, 11c, 11m): its files, the map and the text, or the preview of one workspace. The body is keyed by
- * item and file, so a switch starts with no pending reveal. */
+/** A skill's or a specialist's item screen (#319, #323, handoff 11b, 11c, 11e, 11m): its files, the map and the text, or the preview of one
+ * workspace. A specialist is one file: no "+", and its header stays in the text. The body is keyed by item and file, so a switch starts with
+ * no pending reveal. */
 export function SkillEditor(props: SkillEditorProps) {
   const { item, read, path, hasFailed } = props.editor;
   if (hasFailed) return <p role="alert" className="p-4 text-destructive text-xs">{t('plugins.editor.loadFailed')}</p>;

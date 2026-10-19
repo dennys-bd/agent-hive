@@ -69,13 +69,14 @@ test('save writes the open file to its version and settles it clean, then reads 
   } }));
   const { result } = await opened('hive:new-build');
   await act(() => result.current.editor.save()); // clean: nothing is written
-  act(() => result.current.editor.edit('changed\n'));
+  const changed = `${BUILD_TEXT}changed\n`;
+  act(() => result.current.editor.edit(changed));
   await act(() => result.current.editor.save());
-  expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: 'changed\n' }]);
-  expect([result.current.editor.isDirty('SKILL.md.liquid'), result.current.editor.textOf('SKILL.md.liquid')]).toEqual([false, 'changed\n']);
+  expect(saves).toEqual([{ version: 'mine', path: 'SKILL.md.liquid', text: changed }]);
+  expect([result.current.editor.isDirty('SKILL.md.liquid'), result.current.editor.textOf('SKILL.md.liquid')]).toEqual([false, changed]);
   expect(mock.mock.calls.filter(([path]) => path === '/api/items')).toHaveLength(2);
   refuse = true;
-  act(() => result.current.editor.edit('again\n'));
+  act(() => result.current.editor.edit(`${BUILD_TEXT}again\n`));
   await act(() => result.current.editor.save());
   expect([result.current.editor.error, result.current.editor.isDirty('SKILL.md.liquid')]).toEqual(['plugins.editor.saveFailed', true]);
 });
@@ -92,9 +93,10 @@ test("a Hive .md that now uses Liquid saves as .liquid from the .md; the tab tak
   act(() => result.current.editor.openFile('SKILL.md.liquid'));
   expect(result.current.editor.renamedTo).toBeUndefined();
   await reopen(result, 'hive-site:deploy');
-  act(() => result.current.editor.edit('Ship {{ workspace }}.\n'));
+  const shipped = '---\nname: deploy\ndescription: ships\n---\nShip {{ workspace }}.\n';
+  act(() => result.current.editor.edit(shipped));
   await act(() => result.current.editor.save());
-  expect(saves.at(-1)).toEqual({ version: null, path: 'SKILL.md', text: 'Ship {{ workspace }}.\n' });
+  expect(saves.at(-1)).toEqual({ version: null, path: 'SKILL.md', text: shipped });
 });
 
 test('a new file saves an empty file at its path and opens it; a taken path and a refused one answer their copy (#319, decision 13)', async () => {
@@ -122,4 +124,14 @@ test("revert deletes the open version, opens the original on its main file and d
   expect(mock.mock.calls.some(([path, init]) => path === '/api/items/hive%3Anew-build/versions/mine' && init?.method === 'DELETE')).toBe(true);
   expect([result.current.editor.read?.version, result.current.editor.path, result.current.editor.textOf('SKILL.md')]).toEqual([null, 'SKILL.md', 'the original\n']);
   expect(result.current.editor.isDirty('SKILL.md.liquid')).toBe(false);
+});
+
+test("only the item's main file needs a header: a skill's other file saves with none (#323)", async () => {
+  const saves: SaveBody[] = [];
+  stubItems(serverOf({ save: (_id, body) => { saves.push(body); return json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': BUILD_TEXT, [body.path]: body.text })); } }));
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.openFile('scripts/slice.py'));
+  act(() => result.current.editor.edit('print(2)\n'));
+  await act(() => result.current.editor.save());
+  expect([saves, result.current.editor.error]).toEqual([[{ version: 'mine', path: 'scripts/slice.py', text: 'print(2)\n' }], undefined]);
 });
