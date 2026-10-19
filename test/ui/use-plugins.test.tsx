@@ -79,3 +79,14 @@ test('a read that answers after a newer one is dropped: the newer catalogue stay
   await act(async () => answers[0]?.(json(CATALOGUE)));
   expect(result.current.items?.map((i) => i.id)).toEqual(['hive:fresh']);
 });
+
+test('reload reads the catalogue again and lands its answer (#325)', async () => {
+  let catalogue = CATALOGUE;
+  const fetchMock = stubFetch(undefined, () => catalogue);
+  const { result } = renderHook(() => usePlugins(true));
+  await waitFor(() => expect(result.current.items).toEqual(CATALOGUE));
+  catalogue = [itemOf('hive:fresh')];
+  await act(async () => { await result.current.reload(); });
+  expect(result.current.items).toEqual([itemOf('hive:fresh')]);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});

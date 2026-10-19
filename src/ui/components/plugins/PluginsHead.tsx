@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { CatalogueItem } from '../../../types';
+import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { STATE_LOOK } from '@/components/plugins/marks';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plug
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
+const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
 const ALL = '*'; // the filter's "all workspaces": no workspace may be named `*` (WORKSPACE_NAME)
 const META: Record<ListSection, MessageKey> = { skills: 'plugins.list.meta.skills', specialists: 'plugins.list.meta.specialists' };
 const NEW: Record<ListSection, MessageKey> = { skills: 'plugins.list.newSkill', specialists: 'plugins.list.newSpecialist' };
@@ -45,6 +46,7 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
 }
 
 interface ItemProps { item: CatalogueItem; editor: ItemEditor; workspaces: readonly string[] }
+interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
 
 // The head's actions (decisions 11, 12): the test is HIVE-25's, drawn disabled; revert only for a Hive item with a version open, never in the
 // preview. The reviewer slot draws nothing until 4.1 and 4.3
@@ -69,13 +71,39 @@ function ItemActions({ item, editor, workspaces }: ItemProps) {
   );
 }
 
-function ItemHead({ item, editor, workspaces }: ItemProps) {
+// decision 2 (#325): until the version menu (#320) exists, the chip is the way into a version's update: the first with one, in catalogue order
+function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
   const look = STATE_LOOK[item.state];
-  const chip = <span className={`rounded-full border px-1.5 font-normal text-[11px] ${look.chip}`}>{t(look.label)}</span>;
+  const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
+  const chip = updated === undefined
+    ? <span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>
+    : <button type="button" title={t('plugins.update.review')} onClick={() => onUpdate(updated.name)} className={`${CHIP} ${look.chip} ${NO_DRAG} hover:bg-accent`}>{t(look.label)}</button>;
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
   const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
   return <Head title={item.name} isMono chip={chip} meta={meta}><ItemActions item={item} editor={editor} workspaces={workspaces} /></Head>;
+}
+
+const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
+
+export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void }
+
+/** The update screen's head (#325, decisions 3 and 5): the item's mono name, the yellow chip, `hive <from> → <to>` once the preview answers;
+ * a select of the versions with an update when there are two or more, since nothing else reaches the second one until #320. The update
+ * screen portals it, since only it holds the preview. */
+export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProps) {
+  const look = STATE_LOOK['update available'];
+  const updated = item.versions.filter((v) => v.updateAvailable);
+  return (
+    <Head title={item.name} isMono chip={<span className={`${CHIP} ${look.chip}`}>{t(look.label)}</span>} meta={preview && metaOf(preview)}>
+      {updated.length >= 2 && (
+        <Select value={version} onValueChange={onVersion}>
+          <SelectTrigger size="sm" aria-label={t('plugins.update.version')} className={NO_DRAG}><SelectValue /></SelectTrigger>
+          <SelectContent>{updated.map((v) => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}</SelectContent>
+        </Select>
+      )}
+    </Head>
+  );
 }
 
 /** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. The version
@@ -83,8 +111,10 @@ function ItemHead({ item, editor, workspaces }: ItemProps) {
 export function PluginsHead({ plugins, editor, workspaces }: { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[] }) {
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
+  if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
-  return item === undefined ? null : <ItemHead item={item} editor={editor} workspaces={workspaces} />;
+  const onUpdate = (version: string): void => plugins.open({ kind: 'update', id: screen.id, version });
+  return item === undefined ? null : <ItemHead item={item} editor={editor} workspaces={workspaces} onUpdate={onUpdate} />;
 }
 

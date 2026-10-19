@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
-import { basedOnTitle, catalogueOf, countOf, groupsOf, mainPathOf, markOf, openVersionOf, savedLabel, sectionOfScreen, usageText } from '@/lib/plugins';
+import { basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, savedLabel, sectionOfScreen, usageText } from '@/lib/plugins';
 import { CATALOGUE, itemOf, readOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
@@ -63,4 +63,9 @@ test('savedLabel: the time today, the short date and the time on another day (#3
   const at = new Date(2026, 9, 16, 14, 31).toISOString();
   expect(savedLabel(at, new Date(2026, 9, 16, 18, 0))).toBe('14:31');
   expect(savedLabel(at, new Date(2026, 9, 17, 9, 0))).toMatch(/^\S+ 14:31$/);
+});
+
+test("an update screen belongs to its item: its section is the item kind's, and itemIdOf names the item for it as for the item screen (#325)", () => {
+  expect(sectionOfScreen({ kind: 'update', id: 'hive:architect', version: 'mine' }, CATALOGUE)).toBe('specialists');
+  expect([itemIdOf({ kind: 'update', id: 'hive:new-plan', version: 'mine' }), itemIdOf({ kind: 'item', id: 'hive:new-plan' }), itemIdOf({ kind: 'mcp' })]).toEqual(['hive:new-plan', 'hive:new-plan', undefined]);
 });

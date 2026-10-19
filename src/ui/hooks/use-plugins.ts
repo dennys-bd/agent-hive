@@ -13,7 +13,7 @@ export interface Plugins {
   filter?: string; setFilter(workspace: string | undefined): void; // the list's; never kept (decision 12)
   isCreating: boolean; setCreating(isCreating: boolean): void;
   create(item: NewItem): Promise<MessageKey | undefined>; // undefined: created, opened, read again
-  reload(): Promise<void>; // the catalogue again, after a write of the editor (#319)
+  reload(): Promise<void>; // the catalogue again, after a write of the editor (#319) or an update applied or gone (#325)
 }
 
 const LIST: PluginScreen = { kind: 'list', section: 'skills' };
