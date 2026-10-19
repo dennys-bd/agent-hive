@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
 import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
+import { OriginCard } from '@/components/plugins/OriginCard';
 import { VersionMenu } from '@/components/plugins/VersionMenu';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -81,8 +82,10 @@ function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
   const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
+  // decision 15: after the saved time, only for an item based on an external one
+  const metaLine = item.basedOn === undefined ? meta : <>{meta} · <OriginCard basedOn={item.basedOn} description={item.description} className={NO_DRAG} /></>;
   return (
-    <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={meta}>
+    <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={metaLine}>
       <ItemActions item={item} editor={editor} workspaces={workspaces} />
     </Head>
   );

@@ -552,3 +552,16 @@ test("the version menu's copy reads as the handoff writes it, in both languages;
     for (const key of ['plugins.version.newTitle', 'plugins.version.renameTitle'] as const) assert.match(MESSAGES[language][key], /^\p{Lu}[^?]*$/u, `${language}.${key}`);
   }
 });
+
+test("the based-on card's copy reads as the handoff writes it, in both languages (#320)", () => {
+  setLanguage('pt');
+  assert.deepEqual(
+    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
+    ['baseada em x ↗', 'abrir no github ↗', 'vínculo', 'só crédito · a hive não acompanha mudanças'],
+  );
+  setLanguage('en');
+  assert.deepEqual(
+    [t('plugins.origin.link', { name: 'x' }), t('plugins.origin.open'), t('plugins.origin.bond'), t('plugins.origin.creditOnly')],
+    ['based on x ↗', 'open on github ↗', 'link', 'credit only · the hive does not track changes'],
+  );
+});

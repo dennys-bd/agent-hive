@@ -1976,6 +1976,15 @@ const en = {
   'plugins.version.createFailed': 'could not create the version',
   'plugins.version.renameFailed': 'could not rename the version',
   'plugins.version.useFailed': 'could not change the version in use',
+  // #320: the based-on link and its card
+  'plugins.origin.link': 'based on {name} ↗',
+  'plugins.origin.title': 'based on',
+  'plugins.origin.open': 'open on github ↗',
+  'plugins.origin.repository': 'repository',
+  'plugins.origin.version': 'version',
+  'plugins.origin.license': 'license',
+  'plugins.origin.bond': 'link',
+  'plugins.origin.creditOnly': 'credit only · the hive does not track changes',
   // #325: the plugins update screen
   'plugins.update.screen': 'update',
   'plugins.update.review': 'review the update',
@@ -3974,6 +3983,15 @@ const pt: Record<MessageKey, string> = {
   'plugins.version.createFailed': 'não foi possível criar a versão',
   'plugins.version.renameFailed': 'não foi possível renomear a versão',
   'plugins.version.useFailed': 'não foi possível trocar a versão em uso',
+  // #320: the based-on link and its card
+  'plugins.origin.link': 'baseada em {name} ↗',
+  'plugins.origin.title': 'baseada em',
+  'plugins.origin.open': 'abrir no github ↗',
+  'plugins.origin.repository': 'repositório',
+  'plugins.origin.version': 'versão',
+  'plugins.origin.license': 'licença',
+  'plugins.origin.bond': 'vínculo',
+  'plugins.origin.creditOnly': 'só crédito · a hive não acompanha mudanças',
   // #325: the plugins update screen
   'plugins.update.screen': 'atualização',
   'plugins.update.review': 'revisar a atualização',
