@@ -60,7 +60,7 @@ test('revert asks, naming the version, deletes it and shows the original under i
   const dialog = await screen.findByRole('alertdialog');
   expect(dialog).toHaveTextContent('mine');
   await user.click(within(dialog).getByRole('button', { name: 'voltar' }));
-  await waitFor(() => expect(within(head()).getByText('original da hive')).toBeInTheDocument());
+  await waitFor(() => expect(within(head()).getByText('original da hive', { selector: 'span' })).toBeInTheDocument());
   expect(mock.mock.calls.some(([path, init]) => path === '/api/items/hive%3Anew-build/versions/mine' && init?.method === 'DELETE')).toBe(true);
   expect(screen.getByRole('tab', { selected: true })).toHaveTextContent(/^SKILL\.md$/);
   expect(revertButton()).not.toBeInTheDocument();
@@ -80,7 +80,7 @@ test("saving an original makes it customized: the chip and the saved time follow
   stubItems(server);
   render(<PluginsWindow />);
   await open('new-spec');
-  expect(within(head()).getByText('original da hive')).toBeInTheDocument();
+  expect(within(head()).getByText('original da hive', { selector: 'span' })).toBeInTheDocument();
   expect(head()).not.toHaveTextContent('salvo');
   act(() => view().model.type(`${SPEC_TEXT}More.\n`));
   act(() => view().onSave());

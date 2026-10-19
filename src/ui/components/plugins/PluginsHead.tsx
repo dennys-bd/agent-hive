@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import type { CatalogueItem, UpdatePreview } from '../../../types';
 import { Confirm } from '@/components/Confirm';
-import { STATE_LOOK } from '@/components/plugins/marks';
+import { CHIP, STATE_LOOK } from '@/components/plugins/marks';
+import { VersionMenu } from '@/components/plugins/VersionMenu';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { ItemEditor } from '@/hooks/use-item-editor';
@@ -11,18 +12,17 @@ import { HIVE_ORIGIN, type ListSection, savedLabel, sectionOf } from '@/lib/plug
 
 // The header drags the window: its controls opt out to keep their clicks, as Header's own do
 const NO_DRAG = '[-webkit-app-region:no-drag]';
-const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
 const ALL = '*'; // the filter's "all workspaces": no workspace may be named `*` (WORKSPACE_NAME)
 const META: Record<ListSection, MessageKey> = { skills: 'plugins.list.meta.skills', specialists: 'plugins.list.meta.specialists' };
 const NEW: Record<ListSection, MessageKey> = { skills: 'plugins.list.newSkill', specialists: 'plugins.list.newSpecialist' };
 
-interface HeadProps { title: string; isMono?: boolean; chip?: ReactNode; meta?: string; children?: ReactNode }
+interface HeadProps { title: string; isMono?: boolean; version?: ReactNode; chip?: ReactNode; meta?: ReactNode; children?: ReactNode }
 
-function Head({ title, isMono = false, chip, meta, children }: HeadProps) {
+function Head({ title, isMono = false, version, chip, meta, children }: HeadProps) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-xs">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="flex min-w-0 items-center gap-2 font-semibold text-[13px]"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{chip}</span>
+        <span className="flex min-w-0 items-center gap-2 font-semibold text-[13px]"><span className={isMono ? 'truncate font-mono' : 'truncate'}>{title}</span>{version}{chip}</span>
         {meta && <span className="truncate text-muted-foreground">{meta}</span>}
       </div>
       {children}
@@ -53,7 +53,7 @@ interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
 function ItemActions({ item, editor, workspaces }: ItemProps) {
   const viewAs = item.origin === HIVE_ORIGIN ? editor.viewAs : undefined;
   const target = viewAs ?? workspaces[0];
-  const version = editor.read?.item.id === item.id ? editor.read.version : null;
+  const version = editor.item?.id === item.id ? editor.version : null;
   const canRevert = item.origin === HIVE_ORIGIN && !item.userCreated && version !== null && viewAs === undefined;
   return (
     <>
@@ -71,7 +71,7 @@ function ItemActions({ item, editor, workspaces }: ItemProps) {
   );
 }
 
-// decision 2 (#325): until the version menu (#320) exists, the chip is the way into a version's update: the first with one, in catalogue order
+// #320, decision 14: the menu opens versions; the chip stays the way into a version's update, the first with one, in catalogue order
 function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
   const look = STATE_LOOK[item.state];
   const updated = item.state === 'update available' ? item.versions.find((v) => v.updateAvailable) : undefined;
@@ -81,7 +81,11 @@ function ItemHead({ item, editor, workspaces, onUpdate }: ItemHeadProps) {
   // decision 10: the open file's mtime; the original answers none, so the part goes
   const savedAt = editor.read?.item.id === item.id ? editor.read.files.find((file) => file.path === editor.path)?.savedAt : undefined;
   const meta = [t(`plugins.section.${sectionOf(item.kind)}`), ...(savedAt === undefined ? [] : [t('plugins.head.saved', { time: savedLabel(savedAt) })])].join(' · ');
-  return <Head title={item.name} isMono chip={chip} meta={meta}><ItemActions item={item} editor={editor} workspaces={workspaces} /></Head>;
+  return (
+    <Head title={item.name} isMono version={<VersionMenu item={item} editor={editor} workspaces={workspaces} className={NO_DRAG} />} chip={chip} meta={meta}>
+      <ItemActions item={item} editor={editor} workspaces={workspaces} />
+    </Head>
+  );
 }
 
 const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && to !== undefined ? t('plugins.update.meta', { from, to }) : t('plugins.update.metaBare'));
@@ -89,7 +93,7 @@ const metaOf = ({ from, to }: UpdatePreview): string => (from !== undefined && t
 export interface UpdateHeadProps { item: CatalogueItem; version: string; preview?: UpdatePreview; onVersion(version: string): void }
 
 /** The update screen's head (#325, decisions 3 and 5): the item's mono name, the yellow chip, `hive <from> → <to>` once the preview answers;
- * a select of the versions with an update when there are two or more, since nothing else reaches the second one until #320. The update
+ * a select of the versions with an update when there are two or more, since the version menu opens versions, not their updates (#320, decision 14). The update
  * screen portals it, since only it holds the preview. */
 export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProps) {
   const look = STATE_LOOK['update available'];
@@ -106,8 +110,8 @@ export function UpdateHead({ item, version, preview, onVersion }: UpdateHeadProp
   );
 }
 
-/** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. The version
- * selector (3.6) and the reviewer (4.1) are not drawn yet. An item the catalogue no longer has heads nothing. */
+/** The header's centre in the plugins view (#313, decision 17; #319): an item's head carries its saved time, the test and revert. Its version
+ * selector (#320); the reviewer (4.1) is not drawn yet. An item the catalogue no longer has heads nothing. */
 export function PluginsHead({ plugins, editor, workspaces }: { plugins: Plugins; editor: ItemEditor; workspaces: readonly string[] }) {
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;

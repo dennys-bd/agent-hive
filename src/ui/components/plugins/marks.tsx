@@ -29,3 +29,6 @@ export function OriginMark({ origin }: { origin: string }) {
   if (origin !== HIVE_ORIGIN) return <WorkspaceSquare name={origin} />;
   return <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-foreground" />;
 }
+
+/** A state chip's shape (#313): the head's chip and the version menu's rows draw it alike. */
+export const CHIP = 'rounded-full border px-1.5 font-normal text-[11px]';
