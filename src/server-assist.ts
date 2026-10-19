@@ -57,8 +57,9 @@ const clip = (text: string): string => text.slice(0, DETAIL_MAX);
 const fail = (res: Response, status: number, error: string, code?: AssistCode): void =>
   void res.status(status).json(code === undefined ? { error } : { error, code });
 
-// The item's files as the body names them: one of its versions, or the original for null; 404 for an unknown item, version or path
-async function openFile(res: Response, sources: ItemSources, id: string, body: AssistBody): Promise<ItemRead | undefined> {
+// The item's files as the body names them: one of its versions, or the original for null; 404 for an unknown item, version or path; the
+// template reviewer's route too (#328)
+export async function openFile(res: Response, sources: ItemSources, id: string, body: Pick<AssistBody, 'version' | 'path'>): Promise<ItemRead | undefined> {
   const read = await readItem(sources, id, body.version);
   if (isRefusal(read)) return void fail(res, HTTP_NOT_FOUND, read.message);
   if (!read.files.some((file) => file.path === body.path)) return void fail(res, HTTP_NOT_FOUND, `${id} has no file ${body.path}`);
@@ -66,8 +67,8 @@ async function openFile(res: Response, sources: ItemSources, id: string, body: A
 }
 
 // An item declares its variables in its main file's header: the body's text when that is the open file (unsaved edits count), else the
-// version's own
-function variablesOf(read: ItemRead, body: AssistBody): TemplateVariable[] {
+// version's own; the template reviewer's route too (#328)
+export function variablesOf(read: ItemRead, body: Pick<AssistBody, 'path' | 'text'>): TemplateVariable[] {
   const main = mainFiles(read.item.kind, read.item.name);
   const text = main.includes(body.path) ? body.text : read.files.find((file) => main.includes(file.path))?.text;
   return text === undefined ? [] : parseTemplate(text).variables;
@@ -88,8 +89,9 @@ async function prepare(res: Response, deps: AssistRouteDeps, sources: ItemSource
 }
 
 // res, not req: req's close fires as soon as express.json has read the body; res's before the answer means the client went away. Listened
-// to before any await, since close fires once: a client gone while the item is read must not leave a run going for nobody
-function cancelOnClose(res: Response): AbortSignal {
+// to before any await, since close fires once: a client gone while the item is read must not leave a run going for nobody; the template
+// reviewer's route too (#328)
+export function cancelOnClose(res: Response): AbortSignal {
   const controller = new AbortController();
   res.on('close', () => {
     if (!res.writableFinished) controller.abort();
