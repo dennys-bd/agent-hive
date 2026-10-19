@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type ParsedTemplate, parseTemplate } from '../src/template.js';
-import { type LintAnnotation, type LintInput, type LintItem, lintTemplate } from '../src/template-lint.js';
+import { type LintAnnotation, type LintInput, type LintItem, lintTemplate, variableUses } from '../src/template-lint.js';
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
 // Escaped, so the linter does not read a plain string's ${...} as a template mistake.
@@ -206,4 +206,16 @@ test('a runaway render stops the other workspaces once the budget is spent, so o
   assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
   assert.equal(annotations.length, 1);
   assert.equal(annotations[0].check, 'render');
+});
+
+test('variableUses answers the file lines that use a variable, a condition in an else branch included, and [] for an unused one (#321)', () => {
+  // lines: 3 variables:, 4 x, 5 y, 6 z, 7 the fence, 8 # T, 9 Run, 10 if y, 11 yes, 12 else, 13 the nested condition on x, 14 endif, 15 two uses
+  const parsed = template(
+    ['variables:', '  x: { default: a }', '  y: { default: b }', '  z: { default: c }'],
+    ['# T', 'Run {{ x }}.', '{% if y %}', 'yes', '{% else %}', '{% if x == "a" %}a{% endif %}', '{% endif %}', '{{ x }} and {{ x | upcase }}'],
+  );
+  assert.deepEqual(variableUses(parsed, 'x'), [9, 13, 15]);
+  assert.deepEqual(variableUses(parsed, 'y'), [10]);
+  assert.deepEqual(variableUses(parsed, 'z'), []);
+  assert.deepEqual(variableUses(template([], ['{% if x %}']), 'x'), [], 'a body Liquid cannot parse has no uses to name');
 });

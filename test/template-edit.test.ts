@@ -10,8 +10,10 @@ import {
   insertChain,
   moveBlock,
   removeChain,
+  removeVariable,
   replaceChain,
   setVariableValue,
+  updateVariable,
 } from '../src/template-edit.js';
 
 // Text edits of a template (#311): each answers the new text with its parse and map, or an error; never throws.
@@ -231,4 +233,47 @@ test('addVariable refuses names that would reach Object.prototype (#311)', () =>
     const error = refused(addVariable(DOC, { name, type: 'boolean' }));
     assert.ok(error.message.includes(name), error.message);
   }
+});
+
+const DOC_LINES = DOC.split('\n');
+// yaml pads a flow sequence it re-serialises (`[ a, b ]`), so a line the edit did not target may differ in that padding alone
+const unpadded = (lines: string[]) => lines.map((line) => line.replace(/\[ (.*) \]/, '[$1]'));
+
+test('updateVariable rewrites a declaration in place: a text becomes a list, an entry the fields do not name is kept, every other line stays (#321)', () => {
+  const listed = ok(updateVariable(DOC, 'testCommand', { values: ['pnpm test', 'npm test'], default: 'npm test', workspaces: { 'hive-site': 'pnpm test' } }));
+  assert.deepEqual(listed.parsed.variables[0], {
+    name: 'testCommand',
+    kind: 'list',
+    values: ['pnpm test', 'npm test'],
+    default: 'npm test',
+    required: false,
+    workspaces: { 'hive-site': 'pnpm test', hive: 'pnpm test' },
+    line: 5,
+  });
+  const lines = listed.text.split('\n');
+  assert.deepEqual(unpadded([...lines.slice(0, 4), ...lines.slice(5)]), [...DOC_LINES.slice(0, 4), ...DOC_LINES.slice(5)], "only the declaration's line changes");
+  assert.match(lines[4] ?? '', /^ {2}testCommand: \{ values: /);
+  assert.ok(listed.text.endsWith(BODY));
+
+  assert.deepEqual(refused(updateVariable(DOC, 'missing', { default: null })), {
+    line: 1,
+    variable: 'missing',
+    message: 'variable "missing" is not declared',
+  });
+  assert.match(refused(updateVariable(DOC, 'delivery', { values: ['stacked', 'single'], workspaces: { hive: 'trunk' } })).message, /workspaces\.hive must be one of stacked, single/);
+});
+
+test('removeVariable drops a declaration, then an emptied variables: key, and leaves the body as it was; an undeclared name is refused (#321)', () => {
+  const one = ok(removeVariable(DOC, 'dryRun'));
+  assert.deepEqual(unpadded(one.text.split('\n').slice(0, 7)), [...DOC_LINES.slice(0, 6), '---']);
+  assert.ok(one.text.endsWith(BODY));
+  // delivery is still used in the body: the edit removes it all the same, the dialog having warned (decision 9)
+  const none = ok(removeVariable(ok(removeVariable(one.text, 'testCommand')).text, 'delivery'));
+  assert.deepEqual(none.parsed.variables, []);
+  assert.equal(none.text, `---\nname: x\n---\n${BODY}`);
+  assert.deepEqual(refused(removeVariable(DOC, 'missing')), {
+    line: 1,
+    variable: 'missing',
+    message: 'variable "missing" is not declared',
+  });
 });

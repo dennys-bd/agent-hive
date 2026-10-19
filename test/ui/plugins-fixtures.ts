@@ -116,3 +116,26 @@ export function stubItems(server: ItemsServer) {
   vi.stubGlobal('fetch', mock);
   return mock;
 }
+
+/** The variables pane's template (#321). Lines: delivery 4 (from hive), e2eCommand 5 (required, no value for agent-hive, an entry of a
+ * workspace no longer configured), reviewDepth 6 (unused), testCommand 7 (from hive, default null), the description 8 (a main file is saved only with name and description), the fence 9; the body uses e2eCommand
+ * and testCommand on line 11, delivery on 12. */
+export const VARS_TEXT = [
+  '---',
+  'name: new-build',
+  'variables:',
+  '  delivery: { values: [stacked, single], default: single, workspaces: { hive-site: stacked } }',
+  '  e2eCommand: { required: true, workspaces: { hive-site: pnpm e2e, old-site: x } }',
+  '  reviewDepth: { default: full }',
+  '  testCommand: { default: null }',
+  'description: builds a slice',
+  '---',
+  '',
+  'Run {{ e2eCommand }}, then {{ testCommand }}.',
+  '{% if delivery == "stacked" %}',
+  'One PR per slice.',
+  '{% endif %}',
+  '',
+].join('\n');
+/** new-build's original for the pane: it declares delivery and testCommand, so the others are "yours". */
+export const VARS_ORIGINAL = '---\nname: new-build\nvariables:\n  delivery: { values: [stacked, single], default: single }\n  testCommand: { default: null }\n---\n{{ testCommand }} {{ delivery }}\n';

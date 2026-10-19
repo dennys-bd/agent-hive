@@ -82,6 +82,15 @@ function variableFindings(parsed: ParsedTemplate): LintAnnotation[] {
   return [...uniqueBy(undeclared, (annotation) => `${annotation.line} ${annotation.title}`), ...unused];
 }
 
+/** The file lines where the body uses a variable (#321, decision 17): the same analysis the unused check walks, so a use in an {% else %}
+ * counts. 1-based, ascending, each line once; none when the body is not valid Liquid. */
+export function variableUses(parsed: ParsedTemplate, name: string): number[] {
+  const analysis = analyse(parsed);
+  if (!('globals' in analysis) || !Object.hasOwn(analysis.globals, name)) return [];
+  const lines = analysis.globals[name].map((use) => parsed.bodyLine + use.location.row - 1);
+  return [...new Set(lines)].sort((a, b) => a - b);
+}
+
 // One annotation per variable, naming every workspace that misses it: the editor keys annotations by line
 function requiredFindings(parsed: ParsedTemplate, workspaces: string[]): LintAnnotation[] {
   return parsed.variables.flatMap((variable) => {

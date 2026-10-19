@@ -1,7 +1,7 @@
 // Text edits of a template (#311, node 1.2 of #309): insert, replace and remove a chain, move a block, add a variable, set a variable's
 // value. Each edits whole lines (or the header's yaml Document) and answers the new text with its parse and map, so the editor reloads
 // from one place. Node-free, like src/template.ts.
-import { type Document, parseDocument } from 'yaml';
+import { type Document, isMap, parseDocument } from 'yaml';
 import { type ChainSpec, chainMarkers, conditionProblem } from './template-condition.js';
 import { buildMap, type MapBlock, type TemplateMap } from './template-map.js';
 import { type ParsedTemplate, parseTemplate, splitHeader, type TemplateError, type VariableValue } from './template.js';
@@ -16,6 +16,9 @@ export interface VariableDeclaration {
   required?: boolean;
   workspaces?: Record<string, VariableValue>;
 }
+
+/** A declaration without its name: what updateVariable rewrites, the name staying (#321, decision 7). */
+export type VariableFields = Omit<VariableDeclaration, 'name'>;
 
 type ChainBlock = Extract<MapBlock, { kind: 'chain' }>;
 
@@ -35,6 +38,7 @@ const NO_LINE = 1; // an error with no line of its own points at the file's star
 const FENCE = '---';
 // Names that reach Object.prototype when the header is read back into a plain object.
 const PROTOTYPE_NAMES = ['__proto__', 'constructor', 'prototype'];
+const notDeclared = (name: string): TemplateError => ({ line: NO_LINE, variable: name, message: `variable "${name}" is not declared` });
 
 // Edits read structure only, so the map is built without a catalogue.
 function answer(text: string): EditResult {
@@ -240,15 +244,41 @@ export function addVariable(text: string, declaration: VariableDeclaration): Edi
 /** workspaces.<workspace> of a declared variable; undefined removes it, so the workspace falls back to the default. */
 export function setVariableValue(text: string, name: string, workspace: string, value: VariableValue | undefined): EditResult {
   return edit(text, (source) => {
-    if (!source.parsed.variables.some((variable) => variable.name === name)) {
-      return { line: NO_LINE, variable: name, message: `variable "${name}" is not declared` };
-    }
+    if (!source.parsed.variables.some((variable) => variable.name === name)) return notDeclared(name);
     const path = ['variables', name, 'workspaces', workspace];
     // nothing to remove is a success that leaves the text byte for byte as it was (deleteIn would throw on the missing parent)
     if (value === undefined && !parseDocument(splitHeader(source.text).header).hasIn(path)) return source.text;
     return writeHeader(source, (doc) => {
       if (value === undefined) doc.deleteIn(path);
       else doc.setIn(path, value);
+    });
+  });
+}
+
+/** A declared variable's fields rewritten in place, flow style (#321, decision 16); the name stays. An entry of workspaces: the fields do not
+ * name is kept after the given ones, so a workspace that is no longer configured never loses its value (decision 11). */
+export function updateVariable(text: string, name: string, fields: VariableFields): EditResult {
+  return edit(text, (source) => {
+    const existing = source.parsed.variables.find((variable) => variable.name === name);
+    if (existing === undefined) return notDeclared(name);
+    const { workspaces: given = {}, ...rest } = fields;
+    const kept = Object.entries(existing.workspaces).filter(([workspace]) => !Object.hasOwn(given, workspace));
+    const workspaces = { ...given, ...Object.fromEntries(kept) };
+    const declaration = Object.keys(workspaces).length === 0 ? rest : { ...rest, workspaces };
+    // setIn on an existing key replaces its value where it stands: the declaration keeps its line and the comment above it
+    return writeHeader(source, (doc) => doc.setIn(['variables', name], doc.createNode(declaration, { flow: true })));
+  });
+}
+
+/** A declared variable's declaration goes (#321), and a variables: left empty goes with it. The body's uses stay: the pane's dialog named
+ * them first (decision 9). */
+export function removeVariable(text: string, name: string): EditResult {
+  return edit(text, (source) => {
+    if (!source.parsed.variables.some((variable) => variable.name === name)) return notDeclared(name);
+    return writeHeader(source, (doc) => {
+      doc.deleteIn(['variables', name]);
+      const variables = doc.get('variables');
+      if (isMap(variables) && variables.items.length === 0) doc.delete('variables');
     });
   });
 }

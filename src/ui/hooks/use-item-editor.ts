@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
-import { moveBlock } from '../../template-edit';
+import { type EditResult, moveBlock } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
@@ -26,6 +26,8 @@ export interface ItemEditor {
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
   error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string; // under the tabs, for the item they came from
+  applyEdit(result: EditResult): MessageKey | undefined; // the variables pane's writes (#321): the buffer, saved at once when it was clean
+  original?: ItemRead; // the Hive's original of the open item while a version is open (#321, decision 10)
 }
 type Writes = Pick<ItemEditor, 'save' | 'newFile' | 'revert' | 'createVersion' | 'renameVersion' | 'assignTo'>;
 
@@ -245,7 +247,30 @@ function writesOf(context: WriteContext | undefined, canSave: () => boolean, sav
   };
 }
 
-/** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22; #320, decisions 8–13). */
+// Decision 10 (#321): the Hive's original of a Hive item with a version open, read once per item, tells a variable "from hive" from "yours".
+// A failed read leaves it unknown, and the pane then offers no remove: a variable the original declares must never be removable
+function useOriginal(item: CatalogueItem | undefined, read: ItemRead | undefined): ItemRead | undefined {
+  const [originals, setOriginals] = useState<Readonly<Record<string, ItemRead>>>({});
+  const id = item?.id;
+  const isWanted = id !== undefined && item?.origin === HIVE_ORIGIN && !item.userCreated && read !== undefined && read.version !== null && originals[id] === undefined;
+  useEffect(() => {
+    if (!isWanted || id === undefined) return undefined;
+    let live = true;
+    getJson<unknown>(itemUrl(id)).then((answer) => { if (live && isItemRead(answer)) setOriginals((prev) => ({ ...prev, [id]: answer })); }, () => undefined);
+    return () => { live = false; };
+  }, [id, isWanted]);
+  return id === undefined ? undefined : originals[id];
+}
+
+// A refused edit's copy (decision 15): template-edit answers the parser's English, which never reaches the UI
+const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
+  [/ is not declared$/, 'plugins.variables.error.undeclared'],
+  [/ is already declared$/, 'plugins.variables.error.taken'],
+  [/a name is a letter|is built in|is not a name a variable can take/, 'plugins.variables.error.badName'],
+];
+const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
+
+/** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22; #320, decisions 8–13; #321). */
 export function useItemEditor(plugins: Plugins): ItemEditor {
   const { screen, items, reload } = plugins;
   const item = screen.kind === 'item' ? items?.find((i) => i.id === screen.id) : undefined;
@@ -256,6 +281,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
   const saving = useRef(false);
+  const original = useOriginal(item, read);
   const view = useViewState(id);
   const isReadOnly = version === null && (item?.versions.length ?? 0) > 0; // decision 8
   const chosen = paths[id];
@@ -273,11 +299,23 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     carryBuffers: (to) => rekeyBuffers(versionKey(id, read.version), versionKey(id, to)),
   } : undefined;
   return {
-    item, read, hasFailed, version, isReadOnly, path, textOf, isDirty,
+    item, read, original, hasFailed, version, isReadOnly, path, textOf, isDirty,
     openVersion: (v) => { open(id, v); setNote(undefined); },
     openFile: (p) => { setPath(p); setNote(undefined); },
     edit: (text) => { if (path !== undefined && !isReadOnly) set(bufferKey(id, version, path), text); },
     ...writesOf(context, () => !isReadOnly && path !== undefined && isDirty(path), saving),
+    // Decision 5 (#321): the pane's edit lands in the buffer; a buffer that was clean is saved with it, a dirty one waits for ⌘S
+    applyEdit: (result) => {
+      if (!result.ok) return editErrorKey(result.error.message);
+      if (context === undefined || isReadOnly || result.text === context.text) return undefined;
+      const wasClean = !isDirty(context.path);
+      set(bufferKey(id, version, context.path), result.text);
+      if (wasClean && !saving.current) {
+        saving.current = true;
+        void saveFile({ ...context, text: result.text }).finally(() => { saving.current = false; });
+      }
+      return undefined;
+    },
     move: (line, index) => {
       if (path === undefined || isReadOnly) return;
       const moved = moveBlock(textOf(path), line, index); // a refused move leaves the text (decision 20 of #319)
