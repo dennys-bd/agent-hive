@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAnnotations, reviewPrompt } from '../src/reviewer.js';
+import { parseAnnotations, REVIEWER_ID, REVIEWER_NAME, reviewPrompt } from '../src/reviewer.js';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pluginSource } from '../src/hooks-settings.js';
+import { readCatalogue } from '../src/items-catalogue.js';
+import { deliveredHeader, parseTemplate, renderTemplate } from '../src/template.js';
+import { tempDir } from './temp-dir.js';
+
 import type { TemplateVariable } from '../src/template.js';
 
 const NOTE = { line: 2, severity: 'red', title: 'Two branches contradict', body: 'Both branches hold for ts.' } as const;
@@ -43,4 +50,15 @@ test("the prompt is the agent's instructions first, then the open file numbered,
   assert.ok(prompt.indexOf('2| Run it.') < prompt.indexOf('### scripts/run.sh'), 'the open file comes before the context');
   const alone = reviewPrompt({ instructions: 'i', path: 'tdd.md', kind: 'specialist', text: '', others: [], variables: [], catalogue: [] });
   for (const part of ['tdd.md, a subagent', '(empty file)', '## Other files of the item (context only)\n(none)']) assert.ok(alone.includes(part), part);
+});
+
+test('the catalogue lists hive:template-reviewer as a specialist of the plugin, and its text renders with the defaults to instructions that ask for the JSON (#328)', async (t) => {
+  const catalogue = await readCatalogue({ home: await tempDir(t, 'reviewer-home-'), pluginSource: pluginSource(), workspaces: [] });
+  const item = catalogue.find((i) => i.id === REVIEWER_ID);
+  assert.deepEqual([item?.origin, item?.kind, item?.name], ['hive', 'specialist', REVIEWER_NAME]);
+  const parsed = parseTemplate(await readFile(join(pluginSource(), 'agents', `${REVIEWER_NAME}.md`), 'utf8'));
+  const rendered = renderTemplate(parsed, '');
+  assert.ok(rendered.ok, JSON.stringify(parsed.errors));
+  const body = rendered.text.slice(deliveredHeader(parsed).length);
+  for (const part of ['"annotations"', '`red`', '`yellow`', 'only the JSON']) assert.ok(body.includes(part), part);
 });

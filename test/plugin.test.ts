@@ -7,7 +7,7 @@ import { parseTemplate, renderTemplate } from '../src/template.js';
 
 const PLUGIN = pluginSource(); // the very directory the Hive copies into the home: one resolution, no drift
 const SKILLS = ['decomposition', 'new-build', 'new-plan', 'new-pr', 'new-spec'];
-const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd'];
+const AGENTS = ['architect', 'build-fixer', 'code-reviewer', 'design-reviewer', 'designer', 'plan-reviewer', 'planner', 'security-reviewer', 'spec-reviewer', 'tdd', 'template-reviewer'];
 
 const skillText = (skill: string): Promise<string> => readFile(join(PLUGIN, 'skills', skill, 'SKILL.md.liquid'), 'utf8');
 
@@ -53,7 +53,7 @@ const frontmatter = (text: string): Record<string, string> => {
   }));
 };
 
-test('the plugin ships the manifest, the five skills, the ten agents and the two references, the skeleton and the scripts, and nothing else', async () => {
+test('the plugin ships the manifest, the five skills, the eleven agents and the two references, the skeleton and the scripts, and nothing else', async () => {
   const manifest = JSON.parse(await readFile(join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8')) as { name: string; description: string };
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
