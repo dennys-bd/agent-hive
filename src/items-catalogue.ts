@@ -3,10 +3,11 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BASE_DIR, mainFiles, parseVersionJson, refusal, type StoreRefusal, VERSION_FILE } from './custom-versions.js';
-import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
+import { childFolders, type FileSet, HIVE_ORIGIN, itemDir, itemId, type ItemRef, type ItemSources, listFiles, originDir, originFiles, originNames, parseItemId, resolveRef, sameFiles, versionDir, versionFiles } from './item-sources.js';
 import { parseTemplate } from './template.js';
+import type { LintItem } from './template-lint.js';
 import { templateRefs } from './template-refs.js';
-import type { CatalogueItem, ItemRead, ItemState, ItemUsage, ItemVersion, Stage } from './types.js';
+import type { CatalogueItem, ItemRead, ItemState, ItemUsage, ItemVersion, LintInputRead, Stage } from './types.js';
 
 type Header = Pick<CatalogueItem, 'description' | 'basedOn' | 'error'>;
 const NAME_TAKEN_MESSAGE = 'name taken by a skill';
@@ -176,11 +177,13 @@ async function originItems(sources: ItemSources, origin: string): Promise<Entry[
   return items.flat();
 }
 
+// hive first, then the workspaces in config order: what every whole-catalogue read walks.
+// ponytail: a workspace named `hive` would share the Hive origin's ids and folders; its repository items are not listed
+const originsOf = (sources: ItemSources): string[] => [HIVE_ORIGIN, ...sources.workspaces.map((w) => w.name).filter((name) => name !== HIVE_ORIGIN)];
+
 /** Every item: `hive` first, then the workspaces in config order, each with its usage (#313) from `stages` and the items' texts. */
 export async function readCatalogue(sources: ItemSources, stages: readonly StageRef[] = []): Promise<CatalogueItem[]> {
-  // ponytail: a workspace named `hive` would share the Hive origin's ids and folders; its repository items are not listed
-  const origins = [HIVE_ORIGIN, ...sources.workspaces.map((w) => w.name).filter((name) => name !== HIVE_ORIGIN)];
-  const entries = (await Promise.all(origins.map((origin) => originItems(sources, origin)))).flat();
+  const entries = (await Promise.all(originsOf(sources).map((origin) => originItems(sources, origin)))).flat();
   const usage = usageOf(entries.map((e) => e.item), entries.map((e) => e.text), stages);
   return entries.map((e, i) => ({ ...e.item, usage: usage[i] ?? [] }));
 }
@@ -208,4 +211,16 @@ export async function readItem(sources: ItemSources, id: string, version: string
     return isStamped ? { path, text, savedAt: (await stat(file)).mtime.toISOString() } : { path, text };
   }));
   return { item, version, files: read };
+}
+
+/** The editor lint's input beside the open file (#327): every Hive item with the variables its main file declares (the original's, or a
+ * user-created item's first version's: the files `CatalogueItem.files` lists), every workspace skill with none, so a reference to it resolves,
+ * and the plugin's scripts as a reference names them (`scripts/<file>`). */
+export async function readLintInput(sources: ItemSources): Promise<LintInputRead> {
+  const entries = (await Promise.all(originsOf(sources).map((origin) => originItems(sources, origin)))).flat();
+  const catalogue = entries
+    .filter(({ item }) => item.origin === HIVE_ORIGIN || item.kind === 'skill')
+    .map(({ item, text }): LintItem => ({ origin: item.origin, kind: item.kind, name: item.name, variables: item.origin === HIVE_ORIGIN ? parseTemplate(text).variables : [] }));
+  const scripts = await listFiles(join(sources.pluginSource, 'scripts'));
+  return { catalogue, scripts: scripts.map((file) => `scripts/${file}`) };
 }

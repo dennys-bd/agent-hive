@@ -1,13 +1,13 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import express from 'express';
 import { createCustomStore } from '../src/custom-store.js';
 import { createServer } from '../src/server.js';
 import { ITEMS_ERROR_MESSAGE, registerPluginRoutes } from '../src/server-plugins.js';
-import type { CatalogueItem, ItemRead, Stage, UpdatePreview } from '../src/types.js';
+import type { CatalogueItem, ItemRead, LintInputRead, Stage, UpdatePreview } from '../src/types.js';
 import { ARCHITECT, assertUntouched, BUILD, DEPLOY, type Fixture, fixture, HELPER, put, skillDoc, snapshot } from './custom-fixture.js';
 import { fakeLog } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -154,4 +154,48 @@ test('the update routes: GET previews, POST applies and answers the version read
   assert.equal((read as ItemRead).files.find((file) => file.path === 'SKILL.md')?.text, skillDoc('Take the issue URL.', 'A PR.'));
   const [gone, goneBody] = await call(base, 'GET', update);
   assert.deepEqual([gone, (goneBody as { code?: string }).code], [409, 'no_update'], 'no update once applied');
+});
+
+test("GET /api/lint-input answers each Hive item's variables (a user-created one's from its first version), each workspace skill with none, and the plugin's scripts (#327)", async (t) => {
+  const f = await fixture(t);
+  await put(f.pluginSource, {
+    'skills/new-build/SKILL.md': '---\nname: new-build\ndescription: Build it\nvariables:\n  base: { default: main }\n---\n{{ base }}\n',
+    'scripts/check.mjs': 'process.exit(0);\n',
+  });
+  const { base } = await serve(t, f);
+  assert.equal((await call(base, 'POST', '/api/items', { kind: 'skill', name: 'own' }))[0], 201);
+  const own = '---\nname: own\ndescription: mine\nvariables:\n  mode: { default: a }\n---\n{{ mode }}\n';
+  assert.equal((await call(base, 'PUT', `${at('hive:own')}/files`, { version: 'mine', path: 'SKILL.md', text: own }))[0], 200);
+  const [status, body] = await call(base, 'GET', '/api/lint-input');
+  const read = body as LintInputRead;
+  assert.equal(status, 200);
+  assert.deepEqual(read.catalogue.map((i) => [i.origin, i.kind, i.name, i.variables.map((v) => v.name)]), [
+    ['hive', 'specialist', 'architect', []],
+    ['hive', 'skill', 'new-build', ['base']],
+    ['hive', 'skill', 'own', ['mode']],
+    ['hive-site', 'skill', 'deploy', []],
+  ]);
+  assert.deepEqual(read.scripts, ['scripts/check.mjs']);
+});
+
+test('the dismissed routes round-trip the keys per version, null the original; a malformed body is 400, an unknown id 404 with no folder made, an unknown version 404 (#327)', async (t) => {
+  const f = await fixture(t);
+  const { base } = await serve(t, f);
+  const dismissed = `${at(BUILD)}/dismissed`;
+  const codeOf = async (method: string, path: string, body?: unknown): Promise<[number, string | undefined]> => {
+    const [status, answer] = await call(base, method, path, body);
+    return [status, (answer as { code?: string }).code];
+  };
+  assert.deepEqual(await call(base, 'PUT', dismissed, { version: null, keys: ['a\u0000b'] }), [200, ['a\u0000b']]);
+  assert.deepEqual(await call(base, 'GET', dismissed), [200, ['a\u0000b']]);
+  assert.deepEqual(await codeOf('GET', `${dismissed}?version=mine`), [404, 'unknown_version']);
+  assert.equal((await call(base, 'PUT', dismissed, { version: null, keys: 'a' }))[0], 400);
+  assert.equal((await call(base, 'PUT', dismissed, { version: null, keys: Array.from({ length: 1001 }, (_, i) => `k${i}`) }))[0], 400);
+  assert.deepEqual(await codeOf('PUT', `${at('hive:ghost')}/dismissed`, { version: null, keys: ['a'] }), [404, 'unknown_item']);
+  await assert.rejects(stat(join(f.home, 'custom/hive/ghost')), 'no folder is made for an unknown id');
+  assert.deepEqual(await codeOf('PUT', dismissed, { version: 'ghost', keys: [] }), [404, 'unknown_version']);
+  assert.equal((await call(base, 'PUT', `${at(BUILD)}/files`, { version: null, path: 'SKILL.md', text: 'mine text' }))[0], 200); // makes mine
+  assert.deepEqual(await call(base, 'PUT', dismissed, { version: 'mine', keys: ['m'] }), [200, ['m']]);
+  assert.deepEqual([(await call(base, 'GET', dismissed))[1], (await call(base, 'GET', `${dismissed}?version=mine`))[1]], [['a\u0000b'], ['m']]);
+  await assertUntouched(f);
 });

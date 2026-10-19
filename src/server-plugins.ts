@@ -5,11 +5,12 @@ import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import { previewUpdate } from './custom-merge.js';
 import { type CustomStore, MINE } from './custom-store.js';
-import { isRefusal, type RefusalCode, type StoreRefusal } from './custom-versions.js';
+import { isRefusal, type RefusalCode, refusal, type StoreRefusal } from './custom-versions.js';
+import { readDismissed, writeDismissed } from './dismissed-store.js';
 import { HIVE_ORIGIN, type ItemSources, itemId } from './item-sources.js';
-import { findItem, readCatalogue, readItem, type StageRef } from './items-catalogue.js';
+import { findItem, readCatalogue, readItem, readLintInput, type StageRef } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { ITEM_KINDS, UPDATE_CHOICES } from './types.js';
+import { type CatalogueItem, ITEM_KINDS, UPDATE_CHOICES } from './types.js';
 
 const HTTP_CREATED = 201;
 const HTTP_NO_CONTENT = 204;
@@ -40,6 +41,9 @@ const NEW_VERSION = z.object({ name: z.string(), from: z.string() });
 const RENAME = z.object({ name: z.string() });
 const ASSIGN = z.object({ workspace: z.string(), version: z.string().nullable() });
 const APPLY_UPDATE = z.object({ token: z.string(), choices: z.record(z.string(), z.enum(UPDATE_CHOICES)) });
+/** The most keys one version keeps dismissed (#327): the editor sends its whole list with every dismissal. */
+export const MAX_DISMISSED = 1000;
+const DISMISSED = z.object({ version: z.string().nullable(), keys: z.array(z.string()).max(MAX_DISMISSED) });
 
 export interface PluginRouteDeps {
   requireLive(res: Response): { runtime: { config: { comb: { workspaces: ItemSources['workspaces']; stages: readonly StageRef[] } } } } | undefined;
@@ -53,6 +57,10 @@ type Handle = (req: Request, res: Response, sources: ItemSources, stages: readon
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const refuse = (res: Response, refused: StoreRefusal): void => void res.status(STATUS[refused.code]).json({ error: refused.message, code: refused.code });
 const idOf = (req: Request): string => String(req.params.id);
+const queryVersion = (req: Request): string | null => {
+  const { version } = req.query;
+  return typeof version === 'string' && version !== '' ? version : null;
+};
 
 // A body the schema refuses is a 400 naming its first field; names and paths are the store's to check
 export function bodyOf<T>(schema: z.ZodType<T>, req: Request, res: Response): T | undefined {
@@ -95,8 +103,7 @@ function registerItemRoutes(app: Express, deps: PluginRouteDeps): void {
     res.json(await readCatalogue(s, stages));
   }));
   app.get('/api/items/:id', route(deps, async (req, res, s) => {
-    const { version } = req.query;
-    await answerRead(res, s, idOf(req), typeof version === 'string' && version !== '' ? version : null);
+    await answerRead(res, s, idOf(req), queryVersion(req));
   }));
   app.post('/api/items', route(deps, async (req, res, s) => {
     const body = bodyOf(NEW_ITEM, req, res);
@@ -170,10 +177,41 @@ function registerUpdateRoutes(app: Express, deps: PluginRouteDeps): void {
   }));
 }
 
+// A dismissal's item and version (#327): the id is resolved first, so an unknown one is refused before anything is written and no folder is
+// made for it; null is the original, which a user-created item does not have
+async function dismissTarget(s: ItemSources, id: string, version: string | null): Promise<CatalogueItem | StoreRefusal> {
+  const item = await findItem(s, id);
+  if (item === undefined) return refusal('unknown_item', `no item ${id}`);
+  const hasVersion = version === null ? !item.userCreated : item.versions.some((v) => v.name === version);
+  return hasVersion ? item : refusal('unknown_version', version === null ? `${id} has no original` : `${id} has no version ${version}`);
+}
+
+// The editor's lint input and its dismissals (#327). A dismissal is not a file edit: the store's original_locked does not apply, and nothing
+// renders from it, so it is not queued with the store's writes
+function registerLintRoutes(app: Express, deps: PluginRouteDeps): void {
+  app.get('/api/lint-input', route(deps, async (_req, res, s) => {
+    res.json(await readLintInput(s));
+  }));
+  app.get('/api/items/:id/dismissed', route(deps, async (req, res, s) => {
+    const version = queryVersion(req);
+    const item = await dismissTarget(s, idOf(req), version);
+    if (isRefusal(item)) return refuse(res, item);
+    res.json(await readDismissed(s.home, item, version, deps.log));
+  }));
+  app.put('/api/items/:id/dismissed', route(deps, async (req, res, s) => {
+    const body = bodyOf(DISMISSED, req, res);
+    if (!body) return;
+    const item = await dismissTarget(s, idOf(req), body.version);
+    if (isRefusal(item)) return refuse(res, item);
+    res.json(await writeDismissed(s.home, item, body.version, body.keys, deps.log));
+  }));
+}
+
 /** GET/POST /api/items and the custom store's writes (#315), behind the server's host, secret and x-hive-ui gates. */
 export function registerPluginRoutes(app: Express, deps: PluginRouteDeps): void {
   registerItemRoutes(app, deps);
   registerFileRoutes(app, deps);
   registerVersionRoutes(app, deps);
   registerUpdateRoutes(app, deps);
+  registerLintRoutes(app, deps);
 }
