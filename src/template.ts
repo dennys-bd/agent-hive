@@ -209,7 +209,7 @@ const hasDeclarations = (header: Record<string, unknown>): boolean =>
   Object.hasOwn(header, 'variables') || Object.hasOwn(header, 'basedOn');
 
 // An explicit null in workspaces: counts as the workspace's value.
-const valueFor = (variable: TemplateVariable, workspace: string): VariableValue =>
+export const valueFor = (variable: TemplateVariable, workspace: string): VariableValue =>
   Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : variable.default;
 
 const contextFor = (variables: TemplateVariable[], workspace: string): Record<string, VariableValue> => ({
