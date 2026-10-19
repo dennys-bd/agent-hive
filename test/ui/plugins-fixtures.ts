@@ -2,7 +2,10 @@ import { vi } from 'vitest';
 import type { CatalogueItem, ItemRead, ItemVersion } from '../../src/types';
 import type { BasedOn } from '../../src/template';
 
-const version = (name: string): ItemVersion => ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false });
+const EDITED_AT = '2026-10-19T09:00:00.000Z';
+/** A catalogue version as GET /api/items answers it (#320: with its editedAt). */
+export const versionOf = (name: string, extra: Partial<ItemVersion> = {}): ItemVersion =>
+  ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false, editedAt: EDITED_AT, ...extra });
 
 /** A catalogue item as GET /api/items answers it, `origin:name` as its id: a skill, the hive original or a workspace's own unless `extra` says. */
 export function itemOf(id: string, extra: Partial<CatalogueItem> = {}): CatalogueItem {
@@ -14,8 +17,8 @@ export const BASED_ON: BasedOn = { name: 'superpowers:executing-plans', repo: 'o
 export const WORKSPACES = ['agent-hive', 'hive-site'];
 export const CATALOGUE: CatalogueItem[] = [
   itemOf('hive:new-spec', { description: 'writes the task spec', usage: [{ kind: 'stage', stage: 'spec' }] }),
-  itemOf('hive:new-build', { description: 'builds the plan', state: 'customized', versions: [version('mine'), version('tdd')], basedOn: BASED_ON, usage: [{ kind: 'stage', stage: 'build' }, { kind: 'caller', id: 'hive:new-spec' }] }),
-  itemOf('hive:new-plan', { description: 'slices the spec', state: 'update available', versions: [version('mine')] }),
+  itemOf('hive:new-build', { description: 'builds the plan', state: 'customized', versions: [versionOf('mine'), versionOf('tdd')], basedOn: BASED_ON, usage: [{ kind: 'stage', stage: 'build' }, { kind: 'caller', id: 'hive:new-spec' }] }),
+  itemOf('hive:new-plan', { description: 'slices the spec', state: 'update available', versions: [versionOf('mine')] }),
   itemOf('hive:architect', { kind: 'specialist', description: 'designs' }),
   itemOf('hive-site:deploy', { description: 'publishes the preview' }),
   itemOf('agent-hive:release', { description: 'release notes' }),

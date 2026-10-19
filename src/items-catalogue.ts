@@ -69,6 +69,15 @@ async function mainText(ref: ItemRef, files: FileSet): Promise<string | undefine
   return main === undefined ? undefined : readFile(join(files.dir, main), 'utf8');
 }
 
+// #320, decision 6: the newest mtime among the version's own files; base/ and version.json are the store's bookkeeping, not the user's edits.
+// ponytail: a version with no file answers its folder's mtime (Math.max of nothing throws); the store never leaves files/ empty
+async function versionEditedAt(sources: ItemSources, ref: ItemRef, folder: string): Promise<string> {
+  const files = await versionFiles(sources.home, ref, folder);
+  const times = await Promise.all(files.paths.map(async (path) => (await stat(join(files.dir, path))).mtimeMs));
+  const newest = times.length > 0 ? Math.max(...times) : (await stat(versionDir(sources.home, ref, folder))).mtimeMs;
+  return new Date(newest).toISOString();
+}
+
 async function readVersion(sources: ItemSources, ref: ItemRef, folder: string, origin: FileSet | undefined): Promise<ItemVersion> {
   const dir = versionDir(sources.home, ref, folder);
   const text = await readFile(join(dir, VERSION_FILE), 'utf8').catch(() => {
@@ -82,6 +91,7 @@ async function readVersion(sources: ItemSources, ref: ItemRef, folder: string, o
     workspaces: json.workspaces.filter((w) => known.has(w)),
     unknownWorkspaces: json.workspaces.filter((w) => !known.has(w)),
     updateAvailable: origin !== undefined && !(await sameFiles(origin, join(dir, BASE_DIR))),
+    editedAt: await versionEditedAt(sources, ref, folder),
     ...(json.hiveVersion === undefined ? {} : { hiveVersion: json.hiveVersion }),
   };
 }

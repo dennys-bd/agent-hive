@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { basedOnTitle, catalogueOf, countOf, groupsOf, itemIdOf, mainPathOf, markOf, openVersionOf, savedLabel, sectionOfScreen, usageText } from '@/lib/plugins';
-import { CATALOGUE, itemOf, readOf, WORKSPACES } from './plugins-fixtures';
+import { CATALOGUE, itemOf, readOf, versionOf, WORKSPACES } from './plugins-fixtures';
 
 beforeEach(() => setLanguage('en'));
 const ids = (groups: ReturnType<typeof groupsOf>) => groups.map((g) => [g.origin, g.items.map((i) => i.name)]);
@@ -41,7 +41,7 @@ test("sectionOfScreen: a list's section, an item's kind, and mcp and protocol as
   expect(sectionOfScreen({ kind: 'item', id: 'hive:gone' }, CATALOGUE)).toBeUndefined();
 });
 
-const version = (name: string) => ({ name, from: 'original', workspaces: [], unknownWorkspaces: [], updateAvailable: false });
+const version = (name: string) => versionOf(name);
 
 test('openVersionOf: mine when the item has it, else its first version, else the original (#319, decision 4)', () => {
   expect(openVersionOf(itemOf('hive:a', { versions: [version('tdd'), version('mine')] }))).toBe('mine');
