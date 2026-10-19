@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
-import { moveBlock } from '../../template-edit';
+import { type EditResult, moveBlock } from '../../template-edit';
 import type { CatalogueItem, ItemRead } from '../../types';
 import { type Plugins, statusOf } from '@/hooks/use-plugins';
 import type { MessageKey } from '@/i18n';
@@ -20,6 +20,8 @@ export interface ItemEditor {
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
   error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string; // under the tabs, for the item they came from
+  applyEdit(result: EditResult): MessageKey | undefined; // the variables pane's writes (#321): the buffer, saved at once when it was clean
+  original?: ItemRead; // the Hive's original of the open item while a version is open (#321, decision 10)
 }
 
 interface Note { id: string; error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string }
@@ -138,6 +140,39 @@ async function revertVersion(c: WriteContext): Promise<void> {
   await c.reload();
 }
 
+// Decision 10 (#321): the Hive's original of a Hive item with a version open, read once per item, tells a variable "from hive" from "yours".
+// A failed read leaves it unknown, and the pane then offers no remove: a variable the original declares must never be removable
+function useOriginal(item: CatalogueItem | undefined, read: ItemRead | undefined): ItemRead | undefined {
+  const [originals, setOriginals] = useState<Readonly<Record<string, ItemRead>>>({});
+  const id = item?.id;
+  const isWanted = id !== undefined && item?.origin === HIVE_ORIGIN && !item.userCreated && read !== undefined && read.version !== null && originals[id] === undefined;
+  useEffect(() => {
+    if (!isWanted || id === undefined) return undefined;
+    let live = true;
+    getJson<unknown>(itemUrl(id)).then((answer) => { if (live && isItemRead(answer)) setOriginals((prev) => ({ ...prev, [id]: answer })); }, () => undefined);
+    return () => { live = false; };
+  }, [id, isWanted]);
+  return id === undefined ? undefined : originals[id];
+}
+
+// One save at a time: a second ⌘S during a rename's flight would send `from` for a file the first one already moved
+function useSaveRunner(): (c: WriteContext) => Promise<void> {
+  const saving = useRef(false);
+  return async (c) => {
+    if (saving.current) return;
+    saving.current = true;
+    try { await saveFile(c); } finally { saving.current = false; }
+  };
+}
+
+// A refused edit's copy (decision 15): template-edit answers the parser's English, which never reaches the UI
+const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
+  [/ is not declared$/, 'plugins.variables.error.undeclared'],
+  [/ is already declared$/, 'plugins.variables.error.taken'],
+  [/a name is a letter|is built in|is not a name a variable can take/, 'plugins.variables.error.badName'],
+];
+const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
+
 /** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22). */
 export function useItemEditor(plugins: Plugins): ItemEditor {
   const { screen, items, reload } = plugins;
@@ -147,7 +182,8 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const { buffers, set, settle, dropItem } = useBuffers();
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
-  const saving = useRef(false);
+  const runSave = useSaveRunner();
+  const original = useOriginal(item, read);
   const view = useViewState(id);
   const chosen = paths[id];
   const path = read && (read.files.some((file) => file.path === chosen) ? chosen : mainPathOf(read));
@@ -159,14 +195,18 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     ? { item, read, path, text: textOf(path), put, settle: (from, to, sent) => settle(id, from, to, sent), dropItem: () => dropItem(id), setPath, setNote, reload }
     : undefined;
   return {
-    item, read, hasFailed, path, textOf, isDirty,
+    item, read, original, hasFailed, path, textOf, isDirty,
     openFile: (p) => { setPath(p); setNote(undefined); },
     edit: (text) => { if (path !== undefined) set(id, path, text); },
-    save: async () => {
-      // A second ⌘S during a rename's flight would send `from` for a file the first one already moved
-      if (context === undefined || !isDirty(context.path) || saving.current) return;
-      saving.current = true;
-      try { await saveFile(context); } finally { saving.current = false; }
+    save: async () => { if (context !== undefined && isDirty(context.path)) await runSave(context); },
+    // Decision 5 (#321): the pane's edit lands in the buffer; a buffer that was clean is saved with it, a dirty one waits for ⌘S
+    applyEdit: (result) => {
+      if (!result.ok) return editErrorKey(result.error.message);
+      if (context === undefined || result.text === context.text) return undefined;
+      const wasClean = !isDirty(context.path);
+      set(id, context.path, result.text);
+      if (wasClean) void runSave({ ...context, text: result.text });
+      return undefined;
     },
     newFile: (p) => (context === undefined ? Promise.resolve<MessageKey>('plugins.file.failed') : createFile(context, p.trim())),
     revert: () => (context === undefined ? Promise.resolve() : revertVersion(context)),
