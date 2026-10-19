@@ -2021,6 +2021,8 @@ const en = {
   'plugins.variables.form.create': 'create',
   'plugins.variables.form.save': 'save',
   'plugins.variables.form.cancel': 'cancel',
+  // #327: the editor's annotations
+  'plugins.annotations.dismissFailed': 'could not save the dismissal',
   // #325: the plugins update screen
   'plugins.update.screen': 'update',
   'plugins.update.review': 'review the update',
@@ -4064,6 +4066,8 @@ const pt: Record<MessageKey, string> = {
   'plugins.variables.form.create': 'criar',
   'plugins.variables.form.save': 'salvar',
   'plugins.variables.form.cancel': 'cancelar',
+  // #327: the editor's annotations
+  'plugins.annotations.dismissFailed': 'não foi possível salvar a dispensa',
   // #325: the plugins update screen
   'plugins.update.screen': 'atualização',
   'plugins.update.review': 'revisar a atualização',
