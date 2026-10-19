@@ -992,35 +992,12 @@ export interface Command {
   timeout?: string; // #511: a TIMEOUT text; absent = no limit. The server stops the run when it runs out
 }
 
-/** How a task's work becomes branches and PRs (#692): one branch, a branch per slice stacked on the previous one, or slices merged into an
- * integration branch. The parser and the form's select read DELIVERIES. */
-export const DELIVERIES = ['single', 'stacked', 'integration'] as const;
-export type Delivery = (typeof DELIVERIES)[number];
-/** The delivery modes that cut a task into slice PRs (#698). */
-export type SliceDelivery = Exclude<Delivery, 'single'>;
+/** The delivery modes that cut a task into slice PRs (#698): a branch per slice stacked on the previous one, or slices merged into an
+ * integration branch. */
+export type SliceDelivery = 'stacked' | 'integration';
 export const SLICE_DELIVERIES: readonly SliceDelivery[] = ['stacked', 'integration'];
 /** A PR's slice (#698): k, 1-based, its merge position inside its repository; the integration PR is k = the number of slices + 1. */
 export interface PrSlice { k: number; type: SliceDelivery }
-/** Which new behaviour ships behind a flag (#692); how a flag is written is the repository's. */
-export const FEATURE_FLAGS = ['none', 'partial', 'always'] as const;
-export type FeatureFlags = (typeof FEATURE_FLAGS)[number];
-
-/** #692: how the plugin's skills work in this workspace; every key absent = the repository decides, then the skill's default. */
-export interface Conventions {
-  docsRepo?: string;
-  specsDir?: string;
-  plansDir?: string;
-  walkthroughsDir?: string;
-  designsDir?: string; // #105: the designs' folder, one subfolder per task, inside the docs repository like the other three
-  docsLanguage?: string;
-  chatLanguage?: string;
-  delivery?: Delivery;
-  sliceSize?: { min: number; max: number }; // a soft target, not a limit
-  featureFlags?: FeatureFlags;
-  uiCheck?: string;
-  testCommand?: string;
-  decompositionLabel?: string; // #936: the label every issue a decomposition creates gets; 'none' is the skill's, which then writes no Label: line
-}
 
 /** The formatters the Hive supports (#749), in the order a save tries them; src/formatters.ts holds each one's table row. */
 export const FORMATTER_IDS = [
@@ -1157,7 +1134,6 @@ export interface Workspace {
   setupTimeout?: string; // #511: per RUN step, a TIMEOUT text ("5m"); absent = no limit
   teardown?: string; // the worktree teardown (#654): COPY / RUN / LOAD / DEL lines, run in the worktree before the Hive removes it; absent = none
   teardownTimeout?: string; // #654: per RUN step of the teardown, a TIMEOUT text ("2m"); absent = no limit
-  conventions?: Conventions; // #692: absent = none set in the Hive; the parser never keeps {}
 }
 
 /** The Comb (#132): its stages (the cells), the workspaces the code lives in and its external sources (#180). */

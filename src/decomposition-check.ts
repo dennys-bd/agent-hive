@@ -1,6 +1,5 @@
 // The problems a decomposition's nodes can have (#865), past the file's own syntax: the ids and their tree, what a leaf and an inner node
 // may hold, the contracts' shape and the Blocked by edges. GitHub's limits are checked here, so a write never fails halfway on one. Pure.
-import { DECOMPOSITION_LABEL_MAX } from './conventions.js';
 import type { DecompositionNode, DecompositionProblem } from './types.js';
 
 export const CONTRACT_ID = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$/;
@@ -9,6 +8,7 @@ const DEPTH_MAX = 8; // GitHub nests sub-issues 8 levels below the root
 const CHILDREN_MAX = 100; // GitHub's sub-issues per parent
 export const NODES_MAX = 300; // one write stays far below GitHub's secondary rate limits
 export const BODY_MAX = 65_536; // GitHub's limit on an issue body or a comment
+const DECOMPOSITION_LABEL_MAX = 50; // GitHub's limit on a label's name (#936): a decomposition file's `Label:` line
 
 /** Where a node's parts sit in the file: the problems' lines. */
 export type NodeLines = Partial<Record<'delivers' | 'consumes' | 'blockedBy' | 'touches' | 'design' | 'openPoints' | 'criteria', number>>;
