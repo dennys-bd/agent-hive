@@ -109,6 +109,6 @@ test('rawText turns control, separator and bidi characters into one space; the w
   const dir = await eventsDir(t);
   const events = createEventLog(dir, 'info', { log: fakeLog().log, stderr: quiet });
   const models = Array.from({ length: 60 }, (_, i) => `m${i}`);
-  events.write({ event: 'stage.ended', level: 'info', outcome: 'done', duration_ms: 1, waited_ms: 0, tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, subagent_tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, models, tool_counts: {} });
+  events.write({ event: 'stage.ended', level: 'info', outcome: 'done', duration_ms: 1, waited_ms: 0, tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, subagent_tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, models, tokens_by_model: {}, tool_counts: {} });
   assert.deepEqual(records(dir)[0]?.models, models.slice(0, 50));
 });

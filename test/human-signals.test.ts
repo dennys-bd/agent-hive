@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Correlation } from '../src/events.js';
+import { ZERO_TOKENS, type Correlation } from '../src/events.js';
 import { createHumanSignals } from '../src/human-signals.js';
 import type { HookPayload, Worker } from '../src/types.js';
 
@@ -48,15 +48,15 @@ test('a permission prompt then a tool use is granted; then a Stop denies the nex
     [{ event: 'permission.answered', level: 'info', ...IDS, outcome: 'denied', tool: 'Bash', duration_ms: 1000 }]);
 });
 
-test('a stage run counts its tool uses and ends once with the last turn\'s usage, its time and its share of the waits (#742)', () => {
+test('a stage run counts its tool uses and ends once with its agent, the last turn\'s usage split per model, its time and its share of the waits (#742, #271)', () => {
   const signals = createHumanSignals();
-  signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, run_kind: 'spawn' }, waitedMs: 1000 }, T0);
+  signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, run_kind: 'spawn' }, waitedMs: 1000, agent: 'codex' }, T0);
   assert.equal(signals.usageSince(PTY), T0);
   for (const tool of ['Bash', 'Bash', 'Edit']) signals.onHook(PTY, hook('PreToolUse', { tool_name: tool }), working, IDS, T0 + 1);
   signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 10, USAGE);
   assert.deepEqual(signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 4000 }, T0 + 60_000), {
-    event: 'stage.ended', level: 'info', ...IDS, run_kind: 'spawn', outcome: 'done', duration_ms: 60_000, waited_ms: 3000,
-    tokens: USAGE.tokens, models: USAGE.models, subagent_tokens: USAGE.subagentTokens, tool_counts: { Bash: 2, Edit: 1 },
+    event: 'stage.ended', level: 'info', ...IDS, run_kind: 'spawn', agent: 'codex', outcome: 'done', duration_ms: 60_000, waited_ms: 3000,
+    tokens: USAGE.tokens, models: USAGE.models, subagent_tokens: USAGE.subagentTokens, tokens_by_model: USAGE.tokensByModel, tool_counts: { Bash: 2, Edit: 1 },
   });
   assert.equal(signals.endStageRun({ ptyId: PTY, outcome: 'exit', waitedMs: 0 }, T0 + 61_000), undefined, 'ended once');
 });
@@ -68,7 +68,7 @@ test('a stage run opened in place starts with no usage of its own; prune forgets
   signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 20);
   signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, stage: 'review' }, waitedMs: 0 }, T0 + 20);
   const next = signals.endStageRun({ ptyId: PTY, outcome: 'exit', waitedMs: 0 }, T0 + 30) as Record<string, unknown> | undefined;
-  assert.deepEqual([next?.tokens, next?.models], [{ input: 0, output: 0, cache_write: 0, cache_read: 0 }, []]);
+  assert.deepEqual([next?.tokens, next?.models, next?.tokens_by_model, next !== undefined && 'agent' in next], [ZERO_TOKENS, [], {}, false], 'no usage yet, and no agent for a run opened without one');
   signals.expectPrompt(PTY);
   signals.prune(new Set());
   signals.onHook(PTY, hook('UserPromptSubmit'), working, IDS, T0 + 40);
@@ -120,4 +120,14 @@ test('an ask with no waitingSince flushed unresolved does not swallow a later as
   const asking: Worker = { ...working, status: 'waiting', lastEvent: { kind: 'ask' } };
   assert.equal(signals.flush(PTY, asking, IDS, T0).length, 1);
   assert.deepEqual(signals.onHook(PTY, hook('UserPromptSubmit'), asking, IDS, T0 + 1000), [{ event: 'question.answered', level: 'info', ...IDS, kind: 'ask', outcome: 'answered', duration_ms: 0 }]);
+});
+
+test('tokens_by_model keeps each model name on one line and at most 50 of them, as the writer does a list (#271)', () => {
+  const signals = createHumanSignals();
+  signals.openStageRun({ ptyId: PTY, correlation: IDS, waitedMs: 0 }, T0);
+  const tokensByModel = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`m${i}\nERROR forged`, USAGE.tokens]));
+  signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 1, { ...USAGE, tokensByModel });
+  const ended = signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 2) as { tokens_by_model: Record<string, unknown> } | undefined;
+  const names = Object.keys(ended?.tokens_by_model ?? {});
+  assert.deepEqual([names.length, names[0]], [50, 'm0 ERROR forged']);
 });

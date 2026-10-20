@@ -316,5 +316,8 @@ test('a Codex Stop naming its own rollout adds the turn\'s tokens to the usage a
   await postHook(base, ptyId, { hook_event_name: 'Stop', session_id: SESSION, transcript_path: rollout });
   assert.equal(used(), 1234);
   const ended = records.filter((r) => r.event === 'stage.ended');
-  assert.deepEqual(pick(ended.at(-1), ['tokens', 'models']), { tokens: { input: 1000, output: 34, cache_write: 0, cache_read: 200 }, models: ['gpt-5.6-terra'] });
+  assert.deepEqual(pick(ended.at(-1), ['tokens', 'models', 'agent', 'tokens_by_model']), {
+    tokens: { input: 1000, output: 34, cache_write: 0, cache_read: 200 }, models: ['gpt-5.6-terra'], agent: 'codex',
+    tokens_by_model: { 'gpt-5.6-terra': { input: 1000, output: 34, cache_write: 0, cache_read: 200 } },
+  });
 });

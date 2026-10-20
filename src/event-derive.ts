@@ -8,14 +8,14 @@ import { spawnFailureCode } from './spawn-failure.js';
 import { workerCount } from './reducer-kit.js';
 import { onSource, runTime, stageOf, taskId } from './tasks.js';
 import { outgoing } from './transitions.js';
-import { END, isLeaving, type EffectiveLimits, type SourceAction, type HiveEvent, type Signal, type State, type Task, type TaskPr, type Worker } from './types.js';
+import { END, isLeaving, type AgentId, type EffectiveLimits, type SourceAction, type HiveEvent, type Signal, type State, type Task, type TaskPr, type Worker } from './types.js';
 import { rulePercents } from './usage-rules.js';
 
 // The facts of one reduction for events.jsonl (#742), derived from the two states and the event as describeChanges derives hive.log's lines:
 // one place covers every reducer rule, current or future, and the reducer stays pure. Pure: `now` is the caller's clock.
 
 /** A stage run this reduction started, with the pty it runs in: what the server's tracker opens (#742). */
-export interface StartedRun { ptyId: string; correlation: Correlation; waitedMs: number }
+export interface StartedRun { ptyId: string; correlation: Correlation; waitedMs: number; agent?: AgentId }
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 
@@ -31,6 +31,8 @@ function compact<T extends object>(value: T): T {
 }
 
 const occupied = (worker: Worker): boolean => worker.runId !== undefined && worker.status !== 'empty';
+// What a run runs (#271): absent on a commands stage's worker, which runs no agent
+const agentOf = (worker: Worker): { agent?: AgentId } => (worker.agent === undefined ? {} : { agent: worker.agent });
 
 /** A task's visible id as a record's `task` (#742). A visible id can name a client (a Jira key like ACME-123): fine in this local file, but it
  * must be reconsidered before any report or telemetry built on events.jsonl leaves the machine. */
@@ -205,7 +207,7 @@ export function startedRuns(prev: State, next: State, event: HiveEvent, now: num
     const ptyId = worker?.runId;
     if (worker === undefined || ptyId === undefined) return [];
     return Object.entries(record.stageRuns ?? {}).filter(([stage, count]) => count > (before[stage] ?? 0)).map(([stage, attempt]) => ({
-      ptyId, waitedMs: runTime(worker, now).waitingMs,
+      ptyId, waitedMs: runTime(worker, now).waitingMs, ...agentOf(worker),
       correlation: compact({ ...correlationOf(next, worker), stage, attempt, run_kind: runKind(prev, worker, event, record.id) }),
     }));
   });

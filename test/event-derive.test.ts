@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { correlationOf, deriveEvents, endedStageRuns, signalRecords } from '../src/event-derive.js';
+import { correlationOf, deriveEvents, endedStageRuns, signalRecords, startedRuns } from '../src/event-derive.js';
 import { textRef, type RecordInput, type RunKind } from '../src/events.js';
 import { renameStages } from '../src/stage-rename.js';
 import { initialState } from '../src/orchestrator.js';
@@ -89,6 +89,13 @@ test('stage.started carries the attempt the reduce just counted and how it start
   assert.deepEqual(started(queued, running(2), POLL), expected(2, 'feedback'));
   assert.deepEqual(started(running(2), running(3), { type: 'feedback', activityId: ACTIVITY, text: 'x', start: true }), expected(3, 'feedback'));
   assert.deepEqual(started(running(2), running(3), STOP), expected(3, 'continue'));
+});
+
+test('a stage run started names the agent its worker runs, and none for a worker that runs no agent (#271)', () => {
+  const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
+  const running = (worker: Worker): State => withWork({ ...base(), workers: [worker] }, 'board:I1', { workerId: 'w1' }, { stageRuns: { dev: 1 } });
+  assert.deepEqual(startedRuns(idle, running(runner({ agent: 'codex' })), POLL, NOW).map((run) => run.agent), ['codex']);
+  assert.deepEqual(startedRuns(idle, running(runner()), POLL, NOW).map((run) => 'agent' in run), [false], 'a commands stage\'s worker runs no agent');
 });
 
 test('run.spawned names the worker and the stage\'s model, run.started the spawn latency, run.exited and run.stopped the run\'s time, run.restarted the time since the stop; a failed spawn writes its first line with paths masked (#742)', () => {
