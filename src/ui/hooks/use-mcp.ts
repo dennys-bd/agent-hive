@@ -18,6 +18,7 @@ export interface Mcp {
   setServer(name: string, server: ExternalMcpServer): Promise<void>; // the row's switch and scope: optimistic PUT
   saveServer(previous: string | undefined, draft: ServerDraft): Promise<MessageKey | undefined>; // the form: POST or PUT, then the value
   removeServer(name: string): Promise<MessageKey | undefined>;
+  reload(): Promise<void>; // a failed read's retry
 }
 
 export const VALUE_NOT_SAVED: MessageKey = 'plugins.mcp.valueNotSaved';
@@ -76,7 +77,11 @@ function useMcpRead() {
   useEffect(() => {
     void load();
   }, [load]);
-  return { read, hasFailed, shown, show, load };
+  // A read already in flight answers what the route held before an optimistic change: it must not land over it
+  const discardReads = useCallback((): void => {
+    reads.current += 1;
+  }, []);
+  return { read, hasFailed, shown, show, load, discardReads };
 }
 
 // The form's writes: not optimistic, since parseMcp may refuse them; the route answers first, then the list is read again
@@ -111,12 +116,13 @@ function useServerWrites(load: () => Promise<void>, setError: (error: MessageKey
 /** The mcp screen's state (#334): #333's GET /api/mcp and its writes. A switch or a scope is optimistic (the change on screen at once, the
  * snapshot back and the refusal's copy on a refusal); the form's writes wait for the route. */
 export function useMcp(): Mcp {
-  const { read, hasFailed, shown, show, load } = useMcpRead();
+  const { read, hasFailed, shown, show, load, discardReads } = useMcpRead();
   const [error, setError] = useState<MessageKey>();
   const optimistic = useCallback(async (change: (r: McpRead) => McpRead, send: () => Promise<unknown>): Promise<void> => {
     const snapshot = shown.current;
     if (snapshot === undefined) return;
     setError(undefined);
+    discardReads();
     show(change(snapshot));
     try {
       await send();
@@ -125,7 +131,7 @@ export function useMcp(): Mcp {
       setError(refusalOf(err));
     }
     await load(); // either way the screen ends on what the route saved
-  }, [shown, show, load]);
+  }, [shown, show, load, discardReads]);
   const setTool = useCallback((name: string, on: boolean): Promise<void> => optimistic(
     (r) => ({ ...r, tools: r.tools.map((tool) => (tool.name === name ? { ...tool, on } : tool)) }),
     () => sendJson('PUT', `/api/mcp/tools/${encodeURIComponent(name)}`, { on }),
@@ -135,5 +141,5 @@ export function useMcp(): Mcp {
     () => sendJson('PUT', serverPath(name), bareOf(server)),
   ), [optimistic]);
   const { saveServer, removeServer } = useServerWrites(load, setError);
-  return { read, hasFailed, error, setTool, setServer, saveServer, removeServer };
+  return { read, hasFailed, error, setTool, setServer, saveServer, removeServer, reload: load };
 }

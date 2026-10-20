@@ -117,3 +117,18 @@ test('a row opens its server in the form: a scope edit sends PUT and no value ca
   await waitFor(() => expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/api/mcp/servers/figma' }));
   await waitFor(() => expect(screen.queryByRole('form')).not.toBeInTheDocument());
 });
+
+test('a failed read offers to try again, and the retry reads the route again (#334)', async () => {
+  const user = userEvent.setup();
+  let fails = true;
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path !== '/api/mcp') return json(CATALOGUE);
+    return fails ? json({ error: 'boom' }, 500) : json(MCP_READ);
+  }));
+  render(<Screen />);
+  const retry = await screen.findByRole('button', { name: 'tentar de novo' });
+  fails = false;
+  await user.click(retry);
+  expect(await screen.findByRole('region', { name: 'ferramentas da hive' })).toBeInTheDocument();
+  expect(screen.queryByText('não foi possível ler as ferramentas e os servidores')).not.toBeInTheDocument();
+});

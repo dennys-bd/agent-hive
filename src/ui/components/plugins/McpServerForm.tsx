@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Confirm } from '@/components/Confirm';
 import { ScopeSelect, targetOf } from '@/components/plugins/McpServerRow';
 import { Button } from '@/components/ui/button';
@@ -27,11 +27,13 @@ function headerValueOf({ value, isCleared }: Fields): string | null | undefined 
   return isCleared ? null : undefined;
 }
 
-// The definition the fields describe. ponytail: the command line splits on whitespace into the argv (never through a shell), so an
-// argument holding a space cannot be written; add quoting when a server needs one
-function draftOf(fields: Fields, on: boolean): ServerDraft {
-  const base = { name: fields.name.trim(), workspace: fields.scope, on };
+// The definition the fields describe. ponytail: the command line splits on whitespace into the argv (never through a shell), so a new
+// argument holding a space cannot be written; add quoting when a server needs one. An edit that leaves the line as it opened keeps the
+// saved argv, so a rename or a scope change never splits an argument that holds a space
+function draftOf(fields: Fields, server: Row | undefined): ServerDraft {
+  const base = { name: fields.name.trim(), workspace: fields.scope, on: server?.on ?? true };
   if (fields.kind === 'command') {
+    if (server !== undefined && !('url' in server) && fields.commandLine === targetOf(server)) return { server: { ...base, command: server.command, args: server.args } };
     const [command = '', ...args] = fields.commandLine.trim().split(/\s+/);
     return { server: { ...base, command, args } };
   }
@@ -65,7 +67,7 @@ function UrlFields({ fields, hasValue, set }: { fields: Fields; hasValue: boolea
       <Input aria-label={t('plugins.mcp.form.url')} placeholder={t('plugins.mcp.form.url')} value={fields.url} onChange={(e) => set({ url: e.target.value })} className={`${FIELD} min-w-64 flex-1 font-mono`} />
       <Input aria-label={t('plugins.mcp.form.header')} placeholder={t('plugins.mcp.form.header')} value={fields.header} onChange={(e) => set({ header: e.target.value })} className={`${FIELD} max-w-44 font-mono`} />
       <Input
-        type="password" autoComplete="off" aria-label={t('plugins.mcp.form.value')} placeholder={t(placeholderOf(hasValue, fields.isCleared))}
+        type="password" autoComplete="new-password" aria-label={t('plugins.mcp.form.value')} placeholder={t(placeholderOf(hasValue, fields.isCleared))}
         disabled={fields.header.trim() === ''} value={fields.value} onChange={(e) => set({ value: e.target.value, isCleared: false })} className={`${FIELD} max-w-56 font-mono`}
       />
       {hasValue && !fields.isCleared && (
@@ -101,6 +103,7 @@ interface McpServerFormProps {
  * fields and keeps the panel open, clearing as the user types; remove asks first, as revert does. */
 export function McpServerForm({ server, workspaces, onSave, onRemove, onCancel }: McpServerFormProps) {
   const nameField = useRef<HTMLInputElement>(null);
+  const errorId = useId();
   const [fields, setFields] = useState(() => fieldsOf(server));
   const [error, setError] = useState<MessageKey>();
   const [isSending, setSending] = useState(false);
@@ -115,17 +118,19 @@ export function McpServerForm({ server, workspaces, onSave, onRemove, onCancel }
     event.preventDefault();
     if (isSending) return; // a second Enter would POST the same server twice
     setSending(true);
-    void onSave(draftOf(fields, server?.on ?? true)).then((refused) => {
+    void onSave(draftOf(fields, server)).then((refused) => {
       setSending(false);
       setError(refused);
     });
   };
   const remove = async (): Promise<void> => setError(await onRemove());
   return (
-    <form aria-label={server ? t('plugins.mcp.form.edit', { name: server.name }) : t('plugins.mcp.form.new')} onSubmit={submit} className="flex flex-col gap-2 rounded-lg border p-3.5">
+    // the refusal may concern any field: it describes the whole form
+    <form
+      aria-label={server ? t('plugins.mcp.form.edit', { name: server.name }) : t('plugins.mcp.form.new')} aria-describedby={error ? errorId : undefined} onSubmit={submit} className="flex flex-col gap-2 rounded-lg border p-3.5">
       <div className="flex flex-wrap items-center gap-2">
         <Input
-          ref={nameField} aria-label={t('plugins.mcp.form.name')} placeholder={t('plugins.mcp.form.name')} aria-invalid={error !== undefined}
+          ref={nameField} aria-label={t('plugins.mcp.form.name')} placeholder={t('plugins.mcp.form.name')}
           value={fields.name} onChange={(e) => set({ name: e.target.value })} className={`${FIELD} max-w-48`}
         />
         <KindSelect kind={fields.kind} onChange={(kind) => set({ kind })} />
@@ -134,7 +139,7 @@ export function McpServerForm({ server, workspaces, onSave, onRemove, onCancel }
       {fields.kind === 'command'
         ? <Input aria-label={t('plugins.mcp.form.commandLine')} placeholder={t('plugins.mcp.form.commandLine')} value={fields.commandLine} onChange={(e) => set({ commandLine: e.target.value })} className={`${FIELD} font-mono`} />
         : <UrlFields fields={fields} hasValue={server?.hasValue === true} set={set} />}
-      {error && <p role="alert" className="text-destructive text-xs">{t(error)}</p>}
+      {error && <p id={errorId} role="alert" className="text-destructive text-xs">{t(error)}</p>}
       <FormActions server={server} isSending={isSending} onCancel={onCancel} onRemove={remove} />
     </form>
   );

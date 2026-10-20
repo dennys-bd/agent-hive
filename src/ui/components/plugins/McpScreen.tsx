@@ -72,7 +72,14 @@ export function McpScreen({ plugins, workspaces }: { plugins: Plugins; workspace
   const { read } = mcp;
   return (
     <section aria-label={t('plugins.section.mcp')} className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5">
-      {read === undefined && <p className="text-muted-foreground text-xs">{t(mcp.hasFailed ? 'plugins.mcp.readFailed' : 'plugins.mcp.loading')}</p>}
+      {read === undefined && !mcp.hasFailed && <p className="text-muted-foreground text-xs">{t('plugins.mcp.loading')}</p>}
+      {/* a failed re-read keeps the last answer on screen, so the line says it is stale */}
+      {mcp.hasFailed && (
+        <p role="alert" className="flex items-center gap-2 text-destructive text-xs">
+          {t('plugins.mcp.readFailed')}
+          <Button type="button" size="sm" variant="outline" onClick={() => void mcp.reload()}>{t('task.retry')}</Button>
+        </p>
+      )}
       {mcp.error && <p role="alert" className="text-destructive text-xs">{t(mcp.error)}</p>}
       {read && <ToolsSection tools={read.tools} onSwitch={(name, on) => void mcp.setTool(name, on)} />}
       {read && <ServersSection mcp={mcp} servers={read.servers} plugins={plugins} workspaces={workspaces} />}
