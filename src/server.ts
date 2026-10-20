@@ -20,7 +20,9 @@ import { createLspHost } from './lsp-host.js';
 import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
+import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
+import { registerProtocolRoutes } from './server-protocol.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
@@ -235,7 +237,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const { home } = deps;
   const log = deps.log ?? createLogger(home);
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
-  const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log);
+  const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
+  const protocolFor = protocolRenderer(passages, log);
+  const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log, protocolFor);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
   const pluginRender = createPluginRender({ home, pluginSource: pluginSource(), log }); // #316: one plugin folder per workspace, which every agent run of it loads
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read
@@ -772,7 +776,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function activate(config: Config, sources: Map<string, Source>): Promise<Runtime> {
     if (boundPort === undefined) throw new Error('listen() precisa executar antes de configure()');
     const port = boundPort;
-    const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners)); // #924: every agent's own files, found or not, as hooks.json always was
+    const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners), config.mcp.off); // #924: every agent's own files, found or not, as hooks.json always was; #336: the global files drop a turned-off tool's block
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's
@@ -1166,6 +1170,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });
+  // The protocol routes (#336): blocks, passages and a workspace's render; a passage write rewrites the protocol files on the settings chain
+  registerProtocolRoutes(app, { requireLive, queueSave, passages, memory, protocolFor, log });
 
   // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.

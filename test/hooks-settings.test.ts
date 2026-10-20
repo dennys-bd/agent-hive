@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { runners } from '../src/agents/registry.js';
 import { HOOK_EVENTS, renderHooksSettings, renderMcpConfig } from '../src/agents/claude-home.js';
 import { excludeFromGit, hookCommand, PROTOCOL_DIR, prepareHome, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
-import { SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
+import { protocolTexts, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -62,7 +62,7 @@ test('statusCommand posts the status line JSON to /hooks/status, prints the repl
 test('prepareHome writes hooks.json and prompts/ into the home, creating it for this user only, and nothing anywhere else', async (t) => {
   const parent = await tempDir(t, '');
   const home = join(parent, 'agent-hive'); // does not exist yet: a first boot creates it
-  const paths = await prepareHome(home, 4242, [runners.claude]);
+  const paths = await prepareHome(home, 4242, [runners.claude], []);
   assert.deepEqual(paths, {
     hooksPath: join(home, 'hooks.json'), promptsDir: join(home, 'prompts'),
     protocol: { stage: join(home, 'protocol', 'stage.md'), session: join(home, 'protocol', 'session.md') },
@@ -71,25 +71,25 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   assert.deepEqual(await readdir(paths.promptsDir), []);
   assert.equal((await stat(home)).mode & 0o777, 0o700, 'the home holds the log and the prompts');
   assert.deepEqual(await readdir(parent), ['agent-hive']);
-  await prepareHome(home, 4343, [runners.claude]);
+  await prepareHome(home, 4343, [runners.claude], []);
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4343), 'rewritten for the port in use');
 });
 
 test('prepareHome with no runner writes the shared files only: no hooks.json and no shim for an agent boot did not find (#924)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
-  await prepareHome(home, 4242, []);
+  await prepareHome(home, 4242, [], []);
   assert.deepEqual((await readdir(home)).sort(), ['prompts', 'protocol', 'shell'], 'no plugin/: every run loads its workspace\'s render (#317)');
 });
 
 test('prepareHome writes the stage and the session protocol into <home>/protocol, for this user only, returns their paths, and a later boot rewrites them (#167)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
-  const { protocol } = await prepareHome(home, 4242, [runners.claude]);
+  const { protocol } = await prepareHome(home, 4242, [runners.claude], []);
   assert.deepEqual(protocol, { stage: join(home, PROTOCOL_DIR, 'stage.md'), session: join(home, PROTOCOL_DIR, 'session.md') });
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL);
   assert.equal(await readFile(protocol.session, 'utf8'), SESSION_PROTOCOL);
   assert.equal((await stat(join(home, PROTOCOL_DIR))).mode & 0o777, 0o700, 'created with the home\'s mode');
   await writeFile(protocol.stage, 'from a previous version');
-  await prepareHome(home, 4242, [runners.claude]);
+  await prepareHome(home, 4242, [runners.claude], []);
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL, 'upgrading the Hive refreshes what every worker is told');
 });
 
@@ -142,12 +142,12 @@ test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/,
   const home = await tempDir(t, 'home-');
   const paths = workspaceProtocolPaths(home, 'stage.md'); // a workspace named after a global file: its own folder, no collision
   assert.deepEqual(paths, { stage: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'stage.md'), session: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'session.md') });
-  await prepareHome(home, 4242, [runners.claude]);
-  assert.deepEqual(await writeWorkspaceProtocol(home, 'stage.md', ''), paths);
+  await prepareHome(home, 4242, [runners.claude], []);
+  assert.deepEqual(await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), ''), paths);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [STAGE_PROTOCOL, SESSION_PROTOCOL]);
   assert.equal((await stat(join(home, PROTOCOL_DIR, 'workspaces', 'stage.md'))).mode & 0o777, 0o700, 'the home\'s mode');
   const section = '## Workspace memory\n\n### Avoid\n- [m-1] never edit dist/\n';
-  await writeWorkspaceProtocol(home, 'stage.md', section);
+  await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), section);
   assert.equal((await stat(paths.stage)).mode & 0o777, 0o600, 'a file only its owner reads');
   assert.deepEqual((await readdir(dirname(paths.stage))).sort(), ['session.md', 'stage.md'], 'no temp file left');
   assert.equal(workspaceProtocolPaths(home, 'a b').stage, join(home, PROTOCOL_DIR, 'workspaces', 'a%20b', 'stage.md'));
@@ -158,4 +158,19 @@ test('writeMcpConfig writes no file and answers undefined for an empty config: a
   const dir = await tempDir(t, 'prompts-');
   assert.equal(await writeMcpConfig(dir, 'W1', ''), undefined);
   assert.deepEqual(await readdir(dir), []);
+});
+
+test('prepareHome writes the global protocol files without the block of a tool turned off and with no passage: there is no workspace to render one for (#336)', async (t) => {
+  const home = join(await tempDir(t, ''), 'agent-hive');
+  await mkdir(join(home, PROTOCOL_DIR, 'passages'), { recursive: true });
+  await writeFile(join(home, PROTOCOL_DIR, 'passages', 'p1.md.liquid'), '---\nafter: ask\n---\nA passage.\n');
+  const { protocol } = await prepareHome(home, 4242, [], ['hive_remember']);
+  assert.deepEqual([await readFile(protocol.stage, 'utf8'), await readFile(protocol.session, 'utf8')], [renderProtocol('stage', ['hive_remember'], []), renderProtocol('session', ['hive_remember'], [])]);
+  assert.equal((await readFile(protocol.stage, 'utf8')).includes('hive_remember'), false);
+});
+
+test('writeWorkspaceProtocol writes the texts it is given, the memory section under each (#336)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const paths = await writeWorkspaceProtocol(home, 'site', { stage: 'S\n', session: 'C\n' }, '## Workspace memory\n');
+  assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], ['S\n\n## Workspace memory\n', 'C\n\n## Workspace memory\n']);
 });
