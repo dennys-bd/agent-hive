@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createAppender, type Logger, type LoggerOptions, type LogLevel, passes, type RecordLevel, shortId, UNSAFE_CHARS } from './log.js';
-import type { MemoryKind, MemoryRefusalCode, Signal } from './types.js';
+import type { AgentId, MemoryKind, MemoryRefusalCode, Signal } from './types.js';
 
 // events.jsonl (#742): one JSON object per line beside hive.log, for statistics over the Hive's facts. Never a prompt, an output, a title, a
 // path, a link, an account or a token: a user's or an agent's text only as its length and the head of its sha256.
@@ -9,7 +9,7 @@ export const EVENTS_FILE = 'events.jsonl';
 export const SCHEMA_VERSION = 1;
 export const RAW_TEXT_MAX = 100; // characters of a raw outside text a record carries: a check's name, a hook's tool, a source's name
 const HASH_CHARS = 16;
-const LIST_MAX = 50; // items of a list a record carries: a run's models, a result's keys
+export const LIST_MAX = 50; // items of a list a record carries: a run's models, a result's keys; a run's models by name (#271)
 
 export type RunKind = 'spawn' | 'restart' | 'continue' | 'feedback';
 // source: the poll moved it because its column changed in the source; auto: the flow itself (hive_done and its Stop)
@@ -31,6 +31,10 @@ export interface Correlation {
 }
 export interface Tokens { input: number; output: number; cache_write: number; cache_read: number }
 export interface TextRef { chars: number; sha256: string }
+
+/** A run's usage as stage.ended and free_session.ended carry it (#271): its tokens, its subagents' share, its models, and its tokens per model
+ * (`unknown` for a response that named none), so any row can be priced later with any price table. */
+export interface RunUsage { tokens: Tokens; subagent_tokens: Tokens; models: string[]; tokens_by_model: Record<string, Tokens> }
 interface Timed { duration_ms: number }
 interface Gone { reason: GoneReason; via?: FinishVia } // via: on finished only
 
@@ -46,7 +50,9 @@ export interface EventFields {
   'approval.expired': Timed;
   'run.stopped': Timed;
   'run.restarted': Timed;
-  'free_session.ended': Timed;
+  // #271: worker, the slot it ran in as run.spawned's, joins it to its tracker; agent: what it ran; the usage: its last turn end's, from its own
+  // start, which the server adds (absent only for a run no tracker opened)
+  'free_session.ended': Timed & { worker: number; agent?: AgentId } & Partial<RunUsage>;
   'terminal.ended': Timed & { command?: string }; // command: the Command's name when it ran one, never its line
   'task.discovered': { source: string; source_created_at?: string };
   'task.moved': { from: string; to: string; by: MoveBy };
@@ -61,8 +67,8 @@ export interface EventFields {
   // #805: failure is the failure's number when it counts one (never the stage run's attempt, a correlation field); wait_ms on a backoff
   'run.api_error': { error: string; action: 'backoff' | 'stopped'; failure?: number; wait_ms?: number };
   'stage.started': Record<never, never>;
-  // tokens: the stage run's own, its subagents' included; subagent_tokens: their share
-  'stage.ended': Timed & { outcome: StageOutcome; waited_ms: number; tokens: Tokens; subagent_tokens: Tokens; models: string[]; tool_counts: Record<string, number> };
+  // tokens: the stage run's own, its subagents' included; subagent_tokens: their share. agent (#271): what the run ran, absent on a commands stage's
+  'stage.ended': Timed & RunUsage & { agent?: AgentId; outcome: StageOutcome; waited_ms: number; tool_counts: Record<string, number> };
   // error: the handler threw. result_keys: an accepted hive_done's safe-shaped keys, at most 20; result_keys_dropped: how many were left out; kind: hive_remember's lesson kind (#797), never its text
   'mcp.call': { tool: string; outcome: 'ok' | 'refused' | 'error'; reason?: RefusalCode; latency_ms: number; result_keys?: string[]; result_keys_dropped?: number; kind?: MemoryKind };
   // #797: a lesson saved, edited or removed, and a run citing one. Never a lesson's text or a why. used: the sum of the texts, as the cap counts
@@ -101,6 +107,7 @@ export interface EventLog {
 
 export interface EventLogOptions extends LoggerOptions {
   log: Pick<Logger, 'record'>; // where each record's text line goes: hive.log stays the file humans read
+  keep?: (record: EventRecord) => void; // #271: the usage store's write; it gets every record, whatever the level, and keeps its own events
 }
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cache_write: 0, cache_read: 0 };
@@ -138,17 +145,22 @@ export function describeRecord(record: Record<string, unknown>): string {
 }
 
 /** events.jsonl in `dir` (#742), the same shape as createLogger: sync appends, one rotation at maxBytes, a broken disk disables the file with
- * one stderr line and never throws. A record under the level reaches neither file; error always passes. */
+ * one stderr line and never throws. A record under the level reaches neither file; error always passes. `keep` (#271) gets every record,
+ * stamped and bounded as its line is, under any level and with the file disabled. */
 export function createEventLog(dir: string, level: LogLevel, options: EventLogOptions): EventLog {
-  const { log, ...fileOptions } = options;
+  const { log, keep, ...fileOptions } = options;
   const append = createAppender(dir, EVENTS_FILE, fileOptions);
   let current = level;
   return {
     write: (record) => {
-      if (!passes(record.level, current)) return;
+      // #271: stamped and bounded above the level check, so the usage store keeps exactly the record the line holds, under any level
       const fields = bounded(record);
-      append(`${JSON.stringify({ schema_version: SCHEMA_VERSION, ts: new Date().toISOString(), ...fields })}\n`);
-      if (!OWN_LINE.includes(record.event)) log.record(record.level, describeRecord(fields)); // never error's stderr echo: its failure had its own
+      const line = { schema_version: SCHEMA_VERSION, ts: new Date().toISOString(), ...fields };
+      if (passes(record.level, current)) {
+        append(`${JSON.stringify(line)}\n`);
+        if (!OWN_LINE.includes(record.event)) log.record(record.level, describeRecord(fields)); // never error's stderr echo: its failure had its own
+      }
+      keep?.(line as EventRecord); // bounded keeps each field's type: a string stays a string, a list a list
     },
     setLevel: (next) => {
       current = next;

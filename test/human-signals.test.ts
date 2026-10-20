@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Correlation } from '../src/events.js';
+import { ZERO_TOKENS, type Correlation } from '../src/events.js';
 import { createHumanSignals } from '../src/human-signals.js';
 import type { HookPayload, Worker } from '../src/types.js';
 
@@ -9,7 +9,10 @@ const T0 = Date.parse('2026-10-03T12:00:00.000Z');
 const IDS: Correlation = { task_id: 'board:I1', activity_id: 'a-board:I1', stage: 'dev', attempt: 1 };
 const working: Worker = { id: 'w1', runId: PTY, status: 'working', activityId: 'a-board:I1' };
 const hook = (hook_event_name: string, extra: Partial<HookPayload> = {}): HookPayload => ({ hook_event_name, ...extra });
-const USAGE = { tokens: { input: 10, output: 20, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1'], subagentTokens: { input: 5, output: 0, cache_write: 0, cache_read: 1 } };
+const USAGE = {
+  tokens: { input: 10, output: 20, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1'], subagentTokens: { input: 5, output: 0, cache_write: 0, cache_read: 1 },
+  tokensByModel: { 'claude-opus-4-1': { input: 10, output: 20, cache_write: 30, cache_read: 40 } },
+};
 
 test('the spawn\'s prompt is the Hive\'s; each later prompt is a run.takeover timed to the next Stop, written once (#742)', () => {
   const signals = createHumanSignals();
@@ -45,15 +48,15 @@ test('a permission prompt then a tool use is granted; then a Stop denies the nex
     [{ event: 'permission.answered', level: 'info', ...IDS, outcome: 'denied', tool: 'Bash', duration_ms: 1000 }]);
 });
 
-test('a stage run counts its tool uses and ends once with the last turn\'s usage, its time and its share of the waits (#742)', () => {
+test('a stage run counts its tool uses and ends once with its agent, the last turn\'s usage split per model, its time and its share of the waits (#742, #271)', () => {
   const signals = createHumanSignals();
-  signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, run_kind: 'spawn' }, waitedMs: 1000 }, T0);
+  signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, run_kind: 'spawn' }, waitedMs: 1000, agent: 'codex' }, T0);
   assert.equal(signals.usageSince(PTY), T0);
   for (const tool of ['Bash', 'Bash', 'Edit']) signals.onHook(PTY, hook('PreToolUse', { tool_name: tool }), working, IDS, T0 + 1);
   signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 10, USAGE);
   assert.deepEqual(signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 4000 }, T0 + 60_000), {
-    event: 'stage.ended', level: 'info', ...IDS, run_kind: 'spawn', outcome: 'done', duration_ms: 60_000, waited_ms: 3000,
-    tokens: USAGE.tokens, models: USAGE.models, subagent_tokens: USAGE.subagentTokens, tool_counts: { Bash: 2, Edit: 1 },
+    event: 'stage.ended', level: 'info', ...IDS, run_kind: 'spawn', agent: 'codex', outcome: 'done', duration_ms: 60_000, waited_ms: 3000,
+    tokens: USAGE.tokens, models: USAGE.models, subagent_tokens: USAGE.subagentTokens, tokens_by_model: USAGE.tokensByModel, tool_counts: { Bash: 2, Edit: 1 },
   });
   assert.equal(signals.endStageRun({ ptyId: PTY, outcome: 'exit', waitedMs: 0 }, T0 + 61_000), undefined, 'ended once');
 });
@@ -65,7 +68,7 @@ test('a stage run opened in place starts with no usage of its own; prune forgets
   signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 20);
   signals.openStageRun({ ptyId: PTY, correlation: { ...IDS, stage: 'review' }, waitedMs: 0 }, T0 + 20);
   const next = signals.endStageRun({ ptyId: PTY, outcome: 'exit', waitedMs: 0 }, T0 + 30) as Record<string, unknown> | undefined;
-  assert.deepEqual([next?.tokens, next?.models], [{ input: 0, output: 0, cache_write: 0, cache_read: 0 }, []]);
+  assert.deepEqual([next?.tokens, next?.models, next?.tokens_by_model, next !== undefined && 'agent' in next], [ZERO_TOKENS, [], {}, false], 'no usage yet, and no agent for a run opened without one');
   signals.expectPrompt(PTY);
   signals.prune(new Set());
   signals.onHook(PTY, hook('UserPromptSubmit'), working, IDS, T0 + 40);
@@ -117,4 +120,36 @@ test('an ask with no waitingSince flushed unresolved does not swallow a later as
   const asking: Worker = { ...working, status: 'waiting', lastEvent: { kind: 'ask' } };
   assert.equal(signals.flush(PTY, asking, IDS, T0).length, 1);
   assert.deepEqual(signals.onHook(PTY, hook('UserPromptSubmit'), asking, IDS, T0 + 1000), [{ event: 'question.answered', level: 'info', ...IDS, kind: 'ask', outcome: 'answered', duration_ms: 0 }]);
+});
+
+test('tokens_by_model keeps each model name on one line and at most 50 keys, the rest adding up under other, so it still sums to tokens (#271)', () => {
+  const signals = createHumanSignals();
+  signals.openStageRun({ ptyId: PTY, correlation: IDS, waitedMs: 0 }, T0);
+  const tokensByModel = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`m${i}\nERROR forged`, USAGE.tokens]));
+  signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 1, { ...USAGE, tokensByModel });
+  const ended = signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 2) as { tokens_by_model: Record<string, unknown> } | undefined;
+  const names = Object.keys(ended?.tokens_by_model ?? {});
+  const other = USAGE.tokens.input * 11;
+  assert.deepEqual([names.length, names[0], ended?.tokens_by_model.other], [50, 'm0 ERROR forged', { input: other, output: USAGE.tokens.output * 11, cache_write: USAGE.tokens.cache_write * 11, cache_read: USAGE.tokens.cache_read * 11 }]);
+});
+
+test('two model names that clean to the same text add up instead of one replacing the other (#271)', () => {
+  const signals = createHumanSignals();
+  signals.openStageRun({ ptyId: PTY, correlation: IDS, waitedMs: 0 }, T0);
+  signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 1, { ...USAGE, tokensByModel: { 'm\n1': USAGE.tokens, 'm\r1': USAGE.tokens } });
+  const ended = signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 2) as { tokens_by_model: Record<string, unknown> } | undefined;
+  const t = USAGE.tokens;
+  assert.deepEqual(ended?.tokens_by_model, { 'm 1': { input: t.input * 2, output: t.output * 2, cache_write: t.cache_write * 2, cache_read: t.cache_read * 2 } });
+});
+
+test('a free session\'s run carries its last turn end\'s usage for free_session.ended; its prompts are no takeover, and a pty with no run gives none (#271)', () => {
+  const signals = createHumanSignals();
+  const free: Worker = { ...working, freeSession: true };
+  signals.openStageRun({ ptyId: PTY, correlation: { task_id: 'board:I1' }, waitedMs: 0, agent: 'codex' }, T0);
+  assert.equal(signals.usageSince(PTY), T0, 'the turn-end read counts from the session\'s start');
+  assert.deepEqual(signals.freeSessionUsage(PTY), { tokens: ZERO_TOKENS, subagent_tokens: ZERO_TOKENS, models: [], tokens_by_model: {} }, 'no turn ended yet');
+  signals.onHook(PTY, hook('UserPromptSubmit'), free, IDS, T0 + 1);
+  assert.deepEqual(signals.onHook(PTY, hook('Stop'), free, IDS, T0 + 10, USAGE), [], 'the user\'s own session: no takeover');
+  assert.deepEqual(signals.freeSessionUsage(PTY), { tokens: USAGE.tokens, subagent_tokens: USAGE.subagentTokens, models: USAGE.models, tokens_by_model: USAGE.tokensByModel });
+  assert.deepEqual(signals.freeSessionUsage('other'), {});
 });

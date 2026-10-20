@@ -11,6 +11,7 @@ import { READ_MODEL_FILE } from '../src/read-model/db.js';
 import type { ItemStore } from '../src/read-model/items.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
+import { USAGE_FILE } from '../src/usage-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceItem, SourceSpec, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS, MCP_DEFAULTS } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive, claudePlan } from './fakes.js';
@@ -461,9 +462,9 @@ test('bootHive keeps its own files in the home: the repo gets only the exclude l
   t.after(() => server.close());
   assert.equal((await settingsInfo(home, port)).config?.comb.prefix, 'HIVE', 'the home\'s config, not the repo\'s');
   assert.equal(server.getState()?.signal, 'yellow', 'the repo\'s state.json (red) was not read');
-  // WAL keeps a -wal and a -shm beside the read model while it is open (#180): its side files, not files of their own
-  const own = (await readdir(home)).filter((name) => !/^read-model\.sqlite-(wal|shm)$/.test(name)).sort();
-  assert.deepEqual(own, ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json']);
+  // WAL keeps a -wal and a -shm beside each database while it is open (#180, #271): its side files, not files of their own
+  const own = (await readdir(home)).filter((name) => !/^(read-model|usage)\.sqlite-(wal|shm)$/.test(name)).sort();
+  assert.deepEqual(own, ['bin', 'events.jsonl', 'hive.config.json', 'hive.lock', 'hive.log', 'hive.port', 'hive.secret', 'hooks.json', 'lsp', 'plugins', 'prompts', 'protocol', 'read-model.sqlite', 'shell', 'state.json', 'usage.sqlite']);
   assert.deepEqual((await readdir(repo)).sort(), ['.git', '.hive', 'hive.config.json']);
   assert.deepEqual(await readdir(join(repo, '.hive')), ['state.json'], 'nothing new under the repo\'s .hive/: no log, no hooks, no prompts');
   assert.equal(await readFile(join(repo, 'hive.config.json'), 'utf8'), leftover, 'never rewritten, never deleted');
@@ -552,6 +553,16 @@ test('hive mode opens the read model in the home, and setup mode opens none (#18
   const setup = await bootHive(empty);
   t.after(() => setup.server.close());
   assert.equal(existsSync(join(empty, READ_MODEL_FILE)), false);
+});
+
+test('bootHive opens usage.sqlite in the home in hive mode and in setup mode, since a setup saved in place runs workers too (#271)', async (t) => {
+  const { home } = await hiveWithConfig(t, {});
+  const hive = await bootHive(home);
+  t.after(() => hive.server.close());
+  const empty = await tempDir(t, 'home-');
+  const setup = await bootHive(empty);
+  t.after(() => setup.server.close());
+  assert.deepEqual([existsSync(join(home, USAGE_FILE)), existsSync(join(empty, USAGE_FILE))], [true, true]);
 });
 
 test('a read model that cannot be opened is logged, and the daemon boots without its sync (#180)', async (t) => {

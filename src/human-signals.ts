@@ -1,6 +1,7 @@
+import { addTokens } from './agents/jsonl.js';
 import { since, type StartedRun } from './event-derive.js';
-import { rawText, ZERO_TOKENS, type Correlation, type RecordInput, type StageOutcome } from './events.js';
-import type { HookPayload, Worker } from './types.js';
+import { LIST_MAX, rawText, ZERO_TOKENS, type Correlation, type RecordInput, type RunUsage, type StageOutcome, type Tokens } from './events.js';
+import type { AgentId, HookPayload, Worker } from './types.js';
 import type { TurnUsage } from './usage.js';
 
 // The human side of a run (#742): what only the hooks tell, kept per pty in memory by the server. A prompt the Hive typed itself is counted in
@@ -11,20 +12,22 @@ const ELICITATIONS: readonly string[] = ['elicitation_dialog', 'elicitation_url_
 const PERMISSION = 'permission_prompt';
 const TOOLS_MAX = 50; // distinct tool names a stage run counts; any past it lands in OTHER_TOOL
 const OTHER_TOOL = 'other';
+const OTHER_MODEL = 'other'; // #271: where the models past LIST_MAX add up
 
 /** A stage run that ended (#742): the derivation's outcome and the worker's waits so far; the tracker adds what the hooks told. */
 export interface StageRunEnd { ptyId: string; outcome: StageOutcome; waitedMs: number }
 
 // tools: a Map, so a hook's tool name (any local process's text) is only ever a key, `__proto__` and `constructor` included
-interface OpenRun { correlation: Correlation; startedAt: number; waitedMs: number; usage?: TurnUsage; tools: ReadonlyMap<string, number> }
+interface OpenRun { correlation: Correlation; startedAt: number; waitedMs: number; agent?: AgentId; usage?: TurnUsage; tools: ReadonlyMap<string, number> }
 // askFlushed: the waitingSince of an ask already written unresolved, so a late prompt neither answers it again nor reads as a takeover
 interface PtyTrack { expected: number; takeovers: number[]; lastTool?: string; permission?: { tool: string; since: number }; askFlushed?: string; run?: OpenRun }
 interface Applied { track: PtyTrack; records: RecordInput[] }
 
 export interface HumanSignals {
   expectPrompt(ptyId: string): void; // a prompt the Hive is about to type: the next UserPromptSubmit is its own
-  openStageRun(run: StartedRun, now: number): void;
-  usageSince(ptyId: string): number | undefined; // when the open stage run began: the transcript read counts from there
+  openStageRun(run: StartedRun, now: number): void; // a stage run, or a free session's (#271): endStageRun never ends the latter
+  usageSince(ptyId: string): number | undefined; // when the open run began: the transcript read counts from there
+  freeSessionUsage(ptyId: string): Partial<RunUsage>; // #271: a free session's last turn end's usage for its free_session.ended; {} with no run here
   onHook(ptyId: string, payload: HookPayload, worker: Worker, ids: Correlation, now: number, usage?: TurnUsage): RecordInput[]; // worker: before this hook
   endStageRun(end: StageRunEnd, now: number): RecordInput | undefined; // its stage.ended once; undefined for a run never opened here
   // Every wait still open on the pty, written unresolved once: what a stage end, a run's exit or the quit calls first, so no wait vanishes.
@@ -109,10 +112,30 @@ function flushed(track: PtyTrack, worker: Worker | undefined, ids: Correlation, 
   return { track: { ...permission.track, takeovers: [], ...askFlushed }, records: [...permission.records, ...takeovers, ...asks] };
 }
 
+// A run's usage as its end record carries it (#271): the last turn end's, zero before any. tokens_by_model's keys are a transcript's model
+// names, cut and capped as the writer does a list's strings
+// #271: the split must still sum to `tokens`, so names that clean to the same text add up, and models past LIST_MAX land in OTHER_MODEL
+function byModel(tokensByModel: Readonly<Record<string, Tokens>>): Record<string, Tokens> {
+  const merged = new Map<string, Tokens>();
+  for (const [model, tokens] of Object.entries(tokensByModel)) {
+    const clean = rawText(model);
+    const key = merged.has(clean) || merged.size < LIST_MAX - 1 ? clean : OTHER_MODEL;
+    merged.set(key, addTokens(merged.get(key) ?? ZERO_TOKENS, tokens));
+  }
+  return Object.fromEntries(merged);
+}
+
+function usageFields(usage: TurnUsage | undefined): RunUsage {
+  return {
+    tokens: usage?.tokens ?? ZERO_TOKENS, subagent_tokens: usage?.subagentTokens ?? ZERO_TOKENS, models: usage?.models ?? [], tokens_by_model: byModel(usage?.tokensByModel ?? {}),
+  };
+}
+
 function stageEnded(run: OpenRun, end: StageRunEnd, now: number): RecordInput {
   return {
-    event: 'stage.ended', level: 'info', ...run.correlation, outcome: end.outcome, duration_ms: now - run.startedAt, waited_ms: Math.max(0, end.waitedMs - run.waitedMs),
-    tokens: run.usage?.tokens ?? ZERO_TOKENS, models: run.usage?.models ?? [], subagent_tokens: run.usage?.subagentTokens ?? ZERO_TOKENS, tool_counts: Object.fromEntries(run.tools), // own data keys, whatever the name
+    event: 'stage.ended', level: 'info', ...run.correlation, ...(run.agent === undefined ? {} : { agent: run.agent }), outcome: end.outcome,
+    duration_ms: now - run.startedAt, waited_ms: Math.max(0, end.waitedMs - run.waitedMs), ...usageFields(run.usage),
+    tool_counts: Object.fromEntries(run.tools), // own data keys, whatever the name
   };
 }
 
@@ -123,10 +146,14 @@ export function createHumanSignals(): HumanSignals {
     expectPrompt: (ptyId) => {
       tracks.set(ptyId, { ...get(ptyId), expected: get(ptyId).expected + 1 });
     },
-    openStageRun: ({ ptyId, correlation, waitedMs }, now) => {
-      tracks.set(ptyId, { ...get(ptyId), run: { correlation, startedAt: now, waitedMs, tools: new Map() } });
+    openStageRun: ({ ptyId, correlation, waitedMs, agent }, now) => {
+      tracks.set(ptyId, { ...get(ptyId), run: { correlation, startedAt: now, waitedMs, tools: new Map(), ...(agent === undefined ? {} : { agent }) } });
     },
     usageSince: (ptyId) => tracks.get(ptyId)?.run?.startedAt,
+    freeSessionUsage: (ptyId) => {
+      const run = tracks.get(ptyId)?.run;
+      return run ? usageFields(run.usage) : {};
+    },
     onHook: (ptyId, payload, worker, ids, now, usage) => {
       const track = get(ptyId);
       const applied = applyHook(track, payload, worker, { ...ids, ...track.run?.correlation }, now, usage);

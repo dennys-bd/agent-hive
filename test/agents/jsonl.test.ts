@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { finiteTokens, firstLine, newTally, tally, turnUsage, writtenSince } from '../../src/agents/jsonl.js';
+import { addTokens, finiteTokens, firstLine, newTally, tally, turnUsage, writtenSince } from '../../src/agents/jsonl.js';
 import { ZERO_TOKENS } from '../../src/events.js';
 import { tempDir } from '../temp-dir.js';
 
@@ -25,9 +25,22 @@ test('tally counts each id once, only at or after since, a subagent\'s share apa
   tally(t, { id: 'b', byType, at: 10 }, 50, false); // before the stage run
   tally(t, { id: 'c', byType, model: 'm3', at: Number.NaN }, 50, false); // no time: not the stage run's
   tally(t, { id: 'd', byType, model: 'm2', at: 60 }, 50, true);
-  assert.deepEqual(turnUsage(t), { tokens: { input: 2, output: 4, cache_write: 6, cache_read: 8 }, models: ['m1', 'm2'], subagentTokens: byType });
+  assert.deepEqual(turnUsage(t), { tokens: { input: 2, output: 4, cache_write: 6, cache_read: 8 }, models: ['m1', 'm2'], subagentTokens: byType, tokensByModel: { m1: byType, m2: byType } });
   assert.equal(finiteTokens(turnUsage(t).tokens), true);
   assert.equal(finiteTokens({ ...ZERO_TOKENS, output: Number.POSITIVE_INFINITY }), false);
+});
+
+test('tally splits the tokens by model, a response with none under unknown, a subagent\'s included, so the split sums to the tokens (#271)', () => {
+  const t = newTally();
+  const byType = { input: 1, output: 2, cache_write: 3, cache_read: 4 };
+  tally(t, { id: 'a', byType, model: 'm1', at: 100 }, 50, false);
+  tally(t, { id: 'b', byType, at: 100 }, 50, false); // no model
+  tally(t, { id: 'c', byType, model: 'm1', at: 100 }, 50, true); // a subagent's, on the same model
+  tally(t, { id: 'd', byType, model: 'm2', at: 10 }, 50, false); // before the stage run: in no model
+  const usage = turnUsage(t);
+  assert.deepEqual(usage.tokensByModel, { m1: { input: 2, output: 4, cache_write: 6, cache_read: 8 }, unknown: byType });
+  assert.deepEqual(usage.models, ['m1'], 'models lists only the named ones');
+  assert.deepEqual(Object.values(usage.tokensByModel).reduce(addTokens, ZERO_TOKENS), usage.tokens);
 });
 
 test('writtenSince compares the file\'s mtime; a missing file is never fresh (#929)', async (t) => {
