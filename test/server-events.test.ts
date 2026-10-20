@@ -11,7 +11,7 @@ import { memoryPath, renderMemory } from '../src/memory.js';
 import { editorDir } from '../src/editor-install.js';
 import { createServerEvents } from '../src/server-events.js';
 import type { MemoryFile } from '../src/types.js';
-import type { HookPayload, SettingsBody, State } from '../src/types.js';
+import type { HookPayload, SettingsBody, State, Worker } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, STAGES, fakeEvents, fakeLog, fakeSourceFactory, fakeSpawn, tempHive, WORKSPACE, workspacesAt } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -46,6 +46,10 @@ async function start(t: TestContext, seed?: (home: string) => Promise<void>, bod
   return { server, records, base: `http://127.0.0.1:${port}`, ptyId, home, repo };
 }
 
+const USAGE = {
+  tokens: { input: 10, output: 20, cache_write: 30, cache_read: 40 }, models: ['m1'], subagentTokens: { input: 5, output: 0, cache_write: 0, cache_read: 1 },
+  tokensByModel: { m1: { input: 10, output: 20, cache_write: 30, cache_read: 40 } },
+};
 const pick = (record: RecordInput | undefined, keys: string[]): Record<string, unknown> =>
   Object.fromEntries(keys.map((key) => [key, (record as Record<string, unknown> | undefined)?.[key]]));
 
@@ -320,4 +324,27 @@ test('a Codex Stop naming its own rollout adds the turn\'s tokens to the usage a
     tokens: { input: 1000, output: 34, cache_write: 0, cache_read: 200 }, models: ['gpt-5.6-terra'], agent: 'codex',
     tokens_by_model: { 'gpt-5.6-terra': { input: 1000, output: 34, cache_write: 0, cache_read: 200 } },
   });
+});
+
+test('a free session\'s end carries its worker, its agent and the last turn end\'s usage counted from its start, for a Claude and a Codex run; no takeover, no stage.ended (#271)', () => {
+  for (const agent of ['claude', 'codex'] as const) {
+    const { events, records } = fakeEvents();
+    let clock = 1000;
+    const wiring = createServerEvents(events, fakeLog().log, () => clock);
+    const task = { item: { itemId: 'board:I1', id: '1', title: 'SECRET-TITLE', body: '', url: '' }, stage: 'dev', boardColumn: 'Ready', auto: true };
+    const idle = withWork({ ...initialState(1), tasks: [task] }, 'board:I1');
+    const free: Worker = { id: 'w1', runId: 'pty-1', status: 'working', activityId: 'a-board:I1', freeSession: true, agent, startedAt: new Date(1000).toISOString() };
+    const running: State = { ...idle, workers: [free] };
+    wiring.afterDispatch(idle, running, { type: 'openSession', activityId: 'a-board:I1' });
+    assert.equal(wiring.usageSince('pty-1'), 1000, `${agent}: the turn-end read counts from the session's start`);
+    clock = 4000;
+    wiring.beforeHook(running, 'pty-1', { hook_event_name: 'UserPromptSubmit' });
+    wiring.beforeHook(running, 'pty-1', { hook_event_name: 'Stop' }, USAGE);
+    wiring.afterDispatch(running, idle, { type: 'exit', ptyId: 'pty-1' });
+    assert.deepEqual(records.filter((r) => r.event === 'free_session.ended'), [{
+      event: 'free_session.ended', level: 'info', task_id: 'board:I1', task: '1', activity_id: 'a-board:I1', duration_ms: 3000, worker: 1, agent,
+      tokens: USAGE.tokens, subagent_tokens: USAGE.subagentTokens, models: USAGE.models, tokens_by_model: USAGE.tokensByModel,
+    }], agent);
+    assert.deepEqual(records.filter((r) => r.event === 'run.takeover' || r.event === 'stage.ended'), [], agent);
+  }
 });

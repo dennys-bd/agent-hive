@@ -23,8 +23,9 @@ interface Applied { track: PtyTrack; records: RecordInput[] }
 
 export interface HumanSignals {
   expectPrompt(ptyId: string): void; // a prompt the Hive is about to type: the next UserPromptSubmit is its own
-  openStageRun(run: StartedRun, now: number): void;
-  usageSince(ptyId: string): number | undefined; // when the open stage run began: the transcript read counts from there
+  openStageRun(run: StartedRun, now: number): void; // a stage run, or a free session's (#271): endStageRun never ends the latter
+  usageSince(ptyId: string): number | undefined; // when the open run began: the transcript read counts from there
+  freeSessionUsage(ptyId: string): Partial<RunUsage>; // #271: a free session's last turn end's usage for its free_session.ended; {} with no run here
   onHook(ptyId: string, payload: HookPayload, worker: Worker, ids: Correlation, now: number, usage?: TurnUsage): RecordInput[]; // worker: before this hook
   endStageRun(end: StageRunEnd, now: number): RecordInput | undefined; // its stage.ended once; undefined for a run never opened here
   // Every wait still open on the pty, written unresolved once: what a stage end, a run's exit or the quit calls first, so no wait vanishes.
@@ -137,6 +138,10 @@ export function createHumanSignals(): HumanSignals {
       tracks.set(ptyId, { ...get(ptyId), run: { correlation, startedAt: now, waitedMs, tools: new Map(), ...(agent === undefined ? {} : { agent }) } });
     },
     usageSince: (ptyId) => tracks.get(ptyId)?.run?.startedAt,
+    freeSessionUsage: (ptyId) => {
+      const run = tracks.get(ptyId)?.run;
+      return run ? usageFields(run.usage) : {};
+    },
     onHook: (ptyId, payload, worker, ids, now, usage) => {
       const track = get(ptyId);
       const applied = applyHook(track, payload, worker, { ...ids, ...track.run?.correlation }, now, usage);

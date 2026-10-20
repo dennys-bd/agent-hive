@@ -50,7 +50,9 @@ export interface EventFields {
   'approval.expired': Timed;
   'run.stopped': Timed;
   'run.restarted': Timed;
-  'free_session.ended': Timed;
+  // #271: worker, the slot it ran in as run.spawned's, joins it to its tracker; agent: what it ran; the usage: its last turn end's, from its own
+  // start, which the server adds (absent only for a run no tracker opened)
+  'free_session.ended': Timed & { worker: number; agent?: AgentId } & Partial<RunUsage>;
   'terminal.ended': Timed & { command?: string }; // command: the Command's name when it ran one, never its line
   'task.discovered': { source: string; source_created_at?: string };
   'task.moved': { from: string; to: string; by: MoveBy };

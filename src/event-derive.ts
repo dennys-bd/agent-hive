@@ -146,13 +146,14 @@ function runStarts(prev: State, next: State, now: number): RecordInput[] {
   });
 }
 
-// A run that left its worker. The boot closes runs that died with the Hive: hive.crash_recovered counts those instead
+// A run that left its worker. The boot closes runs that died with the Hive: hive.crash_recovered counts those instead. #271: a free session's
+// end names its worker, so the server finds its tracker, and its agent
 function runEnds(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
   if (event.type === 'boot') return [];
-  return prev.workers.flatMap((worker): RecordInput[] => {
+  return prev.workers.flatMap((worker, i): RecordInput[] => {
     if (!occupied(worker) || next.workers.some((w) => occupied(w) && w.runId === worker.runId)) return [];
     const fields = { level: 'info' as const, ...correlationOf(prev, worker), duration_ms: since(worker.startedAt, now) };
-    return [worker.freeSession ? { event: 'free_session.ended', ...fields } : { event: 'run.exited', ...fields }];
+    return [worker.freeSession ? { event: 'free_session.ended', ...fields, worker: i + 1, ...agentOf(worker) } : { event: 'run.exited', ...fields }];
   });
 }
 
@@ -210,6 +211,17 @@ export function startedRuns(prev: State, next: State, event: HiveEvent, now: num
       ptyId, waitedMs: runTime(worker, now).waitingMs, ...agentOf(worker),
       correlation: compact({ ...correlationOf(next, worker), stage, attempt, run_kind: runKind(prev, worker, event, record.id) }),
     }));
+  });
+}
+
+/** The free sessions this reduction started (#271): each a run new to the workers. The tracker opens a run for each, so a turn end reads its
+ * usage from its start; endedStageRuns never ends one, so it closes as free_session.ended, never stage.ended. A free session writes no
+ * waited_ms: waitedMs is 0. */
+export function startedFreeRuns(prev: State, next: State): StartedRun[] {
+  return next.workers.flatMap((worker): StartedRun[] => {
+    const ptyId = worker.runId;
+    if (ptyId === undefined || !occupied(worker) || !worker.freeSession || prev.workers.some((w) => w.runId === ptyId)) return [];
+    return [{ ptyId, correlation: correlationOf(next, worker), waitedMs: 0, ...agentOf(worker) }];
   });
 }
 

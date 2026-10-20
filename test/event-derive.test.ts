@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { correlationOf, deriveEvents, endedStageRuns, signalRecords, startedRuns } from '../src/event-derive.js';
+import { correlationOf, deriveEvents, endedStageRuns, signalRecords, startedFreeRuns, startedRuns } from '../src/event-derive.js';
 import { textRef, type RecordInput, type RunKind } from '../src/events.js';
 import { renameStages } from '../src/stage-rename.js';
 import { initialState } from '../src/orchestrator.js';
@@ -232,4 +232,15 @@ test('renameStages derives no task.moved and no stage.started: a rename moves no
   const prev = withWork({ ...base(), workers: [runner()] }, 'board:I1', { workerId: 'w1' }, { stageRuns: { dev: 1 } });
   const event: HiveEvent = { type: 'renameStages', renames: { dev: 'build' } };
   assert.deepEqual(deriveEvents(prev, renameStages(prev, event.renames), event, NOW), []);
+});
+
+test('a free session that leaves is free_session.ended with its worker and its agent; startedFreeRuns reports it once for the tracker, and it is never a stage run (#271)', () => {
+  const idle = withWork({ ...base(), workers: [{ id: 'w1', status: 'empty' }] }, 'board:I1');
+  const open = withWork({ ...base(), workers: [runner({ freeSession: true, agent: 'codex' })] }, 'board:I1');
+  const ids = { task_id: 'board:I1', task: '1', activity_id: ACTIVITY };
+  assert.deepEqual(only(deriveEvents(open, idle, { type: 'exit', ptyId: PTY }, NOW), 'free_session.ended'),
+    [{ event: 'free_session.ended', level: 'info', ...ids, duration_ms: 10_000, worker: 1, agent: 'codex' }]);
+  assert.deepEqual(startedFreeRuns(idle, open), [{ ptyId: PTY, correlation: ids, waitedMs: 0, agent: 'codex' }]);
+  assert.deepEqual(startedFreeRuns(open, open), [], 'a run already there');
+  assert.deepEqual(startedRuns(idle, withWork(open, 'board:I1', {}, { stageRuns: { dev: 1 } }), POLL, NOW), [], 'a free session is no stage run');
 });

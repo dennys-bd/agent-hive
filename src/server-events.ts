@@ -1,4 +1,4 @@
-import { correlationOf, deriveEvents, endedStageRuns, prCorrelation, signalRecords, startedRuns, visibleId } from './event-derive.js';
+import { correlationOf, deriveEvents, endedStageRuns, prCorrelation, signalRecords, startedFreeRuns, startedRuns, visibleId } from './event-derive.js';
 import type { NextFunction, Request, Response } from 'express';
 import type { Correlation, EventLog, RecordInput } from './events.js';
 import { createHumanSignals, type HumanSignals } from './human-signals.js';
@@ -167,11 +167,16 @@ function flushWaits(signals: HumanSignals, write: Write, state: State, ptyIds: I
 /** run.spawned's memory fields for a run (#797): the server's, since the derivation is pure and knows no store. */
 export type RunFields = (state: State, worker: Worker) => { memory_ids?: string[]; memory_chars?: number; workspace?: string; lsp_servers?: string[] };
 
-// #797: a run.spawned names the workspace memory its launch reads; every other record passes as it is
-function withRunFields(record: RecordInput, state: State, fieldsOf: RunFields): RecordInput {
+// #797: a run.spawned names the workspace memory its launch reads. #271: a free_session.ended carries its run's last turn-end usage, from the
+// tracker of the pty its worker held before this reduction (prune drops it only after). Every other record passes as it is
+function withRunFields(record: RecordInput, prev: State, next: State, fieldsOf: RunFields, signals: HumanSignals): RecordInput {
+  if (record.event === 'free_session.ended') {
+    const ptyId = prev.workers[record.worker - 1]?.runId;
+    return ptyId === undefined ? record : { ...record, ...signals.freeSessionUsage(ptyId) };
+  }
   if (record.event !== 'run.spawned') return record;
-  const worker = state.workers[record.worker - 1];
-  return worker ? { ...record, ...fieldsOf(state, worker) } : record;
+  const worker = next.workers[record.worker - 1];
+  return worker ? { ...record, ...fieldsOf(next, worker) } : record;
 }
 
 // What every dispatch writes. A stage run ends before the next one opens in the same pty: a continue in place reads as ended, then started
@@ -191,14 +196,15 @@ function dispatchRecorder(signals: HumanSignals, write: Write, log: ErrorLog, no
         if (record) write([record]);
       }
     }, undefined)();
-    guard(log, 'transitions', () => write(deriveEvents(prev, next, event, at).map((record) => withRunFields(record, next, fieldsOf))), undefined)();
+    guard(log, 'transitions', () => write(deriveEvents(prev, next, event, at).map((record) => withRunFields(record, prev, next, fieldsOf, signals))), undefined)();
     guard(log, 'signalRecords', () => {
       const signalled = signalRecords(signal, prev, next, at);
       signal = signalled.signal;
       write(signalled.records);
     }, undefined)();
     guard(log, 'openStageRuns', () => {
-      for (const run of startedRuns(prev, next, event, at)) signals.openStageRun(run, at);
+      // #271: a free session opens a run too, so its turn ends carry usage; it never ends as a stage run
+      for (const run of [...startedRuns(prev, next, event, at), ...startedFreeRuns(prev, next)]) signals.openStageRun(run, at);
     }, undefined)();
     guard(log, 'prune', () => signals.prune(livePtys(next)), undefined)();
   };

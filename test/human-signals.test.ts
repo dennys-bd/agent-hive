@@ -131,3 +131,15 @@ test('tokens_by_model keeps each model name on one line and at most 50 of them, 
   const names = Object.keys(ended?.tokens_by_model ?? {});
   assert.deepEqual([names.length, names[0]], [50, 'm0 ERROR forged']);
 });
+
+test('a free session\'s run carries its last turn end\'s usage for free_session.ended; its prompts are no takeover, and a pty with no run gives none (#271)', () => {
+  const signals = createHumanSignals();
+  const free: Worker = { ...working, freeSession: true };
+  signals.openStageRun({ ptyId: PTY, correlation: { task_id: 'board:I1' }, waitedMs: 0, agent: 'codex' }, T0);
+  assert.equal(signals.usageSince(PTY), T0, 'the turn-end read counts from the session\'s start');
+  assert.deepEqual(signals.freeSessionUsage(PTY), { tokens: ZERO_TOKENS, subagent_tokens: ZERO_TOKENS, models: [], tokens_by_model: {} }, 'no turn ended yet');
+  signals.onHook(PTY, hook('UserPromptSubmit'), free, IDS, T0 + 1);
+  assert.deepEqual(signals.onHook(PTY, hook('Stop'), free, IDS, T0 + 10, USAGE), [], 'the user\'s own session: no takeover');
+  assert.deepEqual(signals.freeSessionUsage(PTY), { tokens: USAGE.tokens, subagent_tokens: USAGE.subagentTokens, models: USAGE.models, tokens_by_model: USAGE.tokensByModel });
+  assert.deepEqual(signals.freeSessionUsage('other'), {});
+});
