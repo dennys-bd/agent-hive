@@ -195,3 +195,49 @@ test('an issue page\'s abrir PR › opens the PR\'s page under the PRs tab (#758
   expect(await main().findByRole('heading', { name: 'Fix the pager' })).toBeInTheDocument();
   expect(bar().getByRole('tab', { name: 'PRs 2' })).toHaveAttribute('aria-selected', 'true');
 });
+
+test('GitHub in the repository header opens what the center shows: the PR list, a PR, its files, the issue list, an issue (#352)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  const opensOnGithub = async (url: string): Promise<void> => {
+    await user.click(bar().getByRole('button', { name: 'GitHub' }));
+    expect(open).toHaveBeenLastCalledWith(url, '_blank', 'noreferrer');
+  };
+  render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showFlow();
+  await user.click(await automation().findByRole('button', { name: /^site/ }));
+  await user.click(await main().findByText('Fix the pager'));
+  await main().findByRole('heading', { name: 'Fix the pager' });
+  await opensOnGithub('https://github.com/acme/site/pull/7');
+  await user.click(main().getByRole('tab', { name: 'arquivos 0' }));
+  await opensOnGithub('https://github.com/acme/site/pull/7/files');
+  await user.click(bar().getByRole('tab', { name: 'PRs 2' }));
+  await main().findByText('Fix the pager');
+  await opensOnGithub('https://github.com/acme/site/pulls');
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
+  await user.click(await main().findByText('Issue 12'));
+  await main().findByRole('heading', { name: 'Pager breaks' });
+  await opensOnGithub('https://github.com/acme/site/issues/12');
+  await user.click(bar().getByRole('tab', { name: 'issues 3' }));
+  await main().findByText('Issue 12');
+  await opensOnGithub('https://github.com/acme/site/issues');
+  open.mockRestore();
+});
+
+test('a native view\'s issue page shows GitHub in its source header; the flow and the native table show none (#352)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  render(<Dashboard state={state} locale="pt-BR" tick={0} sources={NAV} onSelect={() => {}} />);
+  showFlow();
+  await automation().findByRole('button', { name: /^site/ }); // the repositories are read
+  expect(bar().queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
+  await user.click(automation().getByRole('button', { name: /^roadmap/ }));
+  await user.click(bar().getByRole('tab', { name: 'GitHub Project' }));
+  await main().findByText('Pager breaks');
+  expect(bar().queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
+  await user.click(main().getByText('Pager breaks'));
+  await main().findByRole('heading', { name: 'Pager breaks' });
+  await user.click(bar().getByRole('button', { name: 'GitHub' }));
+  expect(open).toHaveBeenLastCalledWith('https://github.com/acme/site/issues/12', '_blank', 'noreferrer');
+  open.mockRestore();
+});
