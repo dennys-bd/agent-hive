@@ -357,10 +357,10 @@ test('baseOptions: the default, the other tasks that have a worktree (git\'s bra
 test('baseOptions with the task\'s branch (it has no activity, #861): what git holds for the slug is an orphan, and the lists are read so a discard can pick a base', async (t) => {
   const present = await repoWith(t, { worktree: true });
   const both = baseGit({ 'worktree list': listing(present.repo, present.worktree, `branch refs/heads/${BRANCH}`), 'refs/remotes/origin': 'refs/heads/main\nrefs/heads/feature-x\n' });
-  assert.deepEqual(await baseOptions(present.repo, SLUG_7, [], ORIGIN, both.exec, BRANCH), { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: ['feature-x'], remote: [], orphan: { worktree: true, branch: true } });
+  assert.deepEqual(await baseOptions(present.repo, SLUG_7, [], ORIGIN, both.exec, BRANCH), { hasWorktree: false, defaultRef: 'origin/main', tasks: [], local: ['feature-x'], remote: [], orphan: { worktree: true, branch: true, relation: 'stale', branchName: BRANCH } });
   const gone = await repoWith(t);
   const branchOnly = baseGit({ 'refs/remotes/origin': 'refs/heads/main\n' });
-  assert.deepEqual((await baseOptions(gone.repo, SLUG_7, [], ORIGIN, branchOnly.exec, BRANCH)).orphan, { worktree: false, branch: true });
+  assert.deepEqual((await baseOptions(gone.repo, SLUG_7, [], ORIGIN, branchOnly.exec, BRANCH)).orphan, { worktree: false, branch: true, relation: 'stale', branchName: BRANCH });
   const none = baseGit({ 'refs/remotes/origin': 'refs/heads/main\n' }, NO_BRANCH);
   assert.equal('orphan' in (await baseOptions(gone.repo, SLUG_7, [], ORIGIN, none.exec, BRANCH)), false, 'nothing on disk: no orphan');
 });

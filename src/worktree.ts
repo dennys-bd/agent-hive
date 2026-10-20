@@ -7,7 +7,7 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { chosenBase, defaultBase, existingBranch, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { branchRelation, chosenBase, defaultBase, existingBranch, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
 export { gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
@@ -277,10 +277,13 @@ async function refsOf(git: Git, remote: string): Promise<{ local: string[]; remo
   return { local, remote: remotes };
 }
 
-// #861: the worktree and the branch git holds for a task with no activity; undefined with neither
-async function orphanOf(repo: string, branch: string, worktree: boolean, exec: Exec): Promise<BaseOptions['orphan']> {
+// #861: the worktree and the branch git holds for a task with no activity; undefined with neither. #267: the branch's class against the
+// default start and its name, for the dialog's notice and its preselected choice, when both resolve; a class git cannot tell is left out
+async function orphanOf(repo: string, branch: string, worktree: boolean, start: string, exec: Exec): Promise<BaseOptions['orphan']> {
   const branched = await hasBranch(repo, branch, exec);
-  return worktree || branched ? { worktree, branch: branched } : undefined;
+  if (!worktree && !branched) return undefined;
+  const relation = branched ? await branchRelation(repo, branch, start, exec).catch(() => undefined) : undefined;
+  return { worktree, branch: branched, ...(relation === undefined ? {} : { relation, branchName: branch }) };
 }
 
 /**
@@ -309,7 +312,7 @@ export async function baseOptions(
   const defaultRef = `${base.remote}/${branch}`;
   const own = worktreePath(repo, slug);
   const adoptable = branchAt(porcelain, own) !== undefined && (await exists(own));
-  const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, exec);
+  const orphan = orphanBranch === undefined ? undefined : await orphanOf(repo, orphanBranch, adoptable, defaultRef, exec);
   if (adoptable && orphan === undefined) return { hasWorktree: true, defaultRef, tasks: [], local: [], remote: [] };
   const refs = await refsRead;
   const tasks = others.flatMap(({ slug: other, id, title }) => {

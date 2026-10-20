@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { branchRelation, setAside } from '../src/worktree-base.js';
-import { ensureWorktree, worktreePath } from '../src/worktree.js';
+import { baseOptions, ensureWorktree, worktreePath } from '../src/worktree.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #267 with the real git: a branch's class against the start, and what each class makes of the task's worktree and branch.
@@ -127,4 +127,13 @@ test('ensureWorktree with no start resolved reuses an existing branch as it is, 
   const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
   assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [old, BRANCH]);
   assert.match(prepared.line ?? '', /starting from the local base$/);
+});
+
+test('baseOptions reports how the orphan branch relates to the default start, with its name; neither when the start does not resolve (#267)', async (t) => {
+  const { repo } = await repoWithOrigin(t);
+  await unrelatedBranch(repo);
+  assert.deepEqual((await baseOptions(repo, SLUG, [], ORIGIN, exec, BRANCH)).orphan, { worktree: false, branch: true, relation: 'unrelated', branchName: BRANCH });
+  const bare = await plainRepo(t); // no origin/main to classify against
+  await unrelatedBranch(bare);
+  assert.deepEqual((await baseOptions(bare, SLUG, [], ORIGIN, exec, BRANCH)).orphan, { worktree: false, branch: true });
 });
