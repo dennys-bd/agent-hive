@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
-import { taskOfWorker } from './activities.js';
+import { heldSession, taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
-import { capturedCwd, capturedReply, shimPath } from './shim.js';
+import { capturedReply, resumeOf, type ShimResume, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
+import { activityDir, sourceSide } from './copy-sides.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { PluginRender } from './plugin-render.js';
@@ -15,9 +16,9 @@ import { errorMessage } from './server-review.js';
 import { taskProtocol } from './server-spawn.js';
 import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
-import { liveShell } from './terminal-runs.js';
+import { capturedCwd, liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type Config, type Effect, type Exec, type HiveEvent, type State, type Task, type Worker } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Config, type Effect, type Exec, type HiveEvent, type SessionRef, type State, type Task, type Worker } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -31,6 +32,8 @@ const NO_CAPTURE_MESSAGE = 'nenhum terminal vivo com esse id';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_UNPROCESSABLE = 422; // not 409: the page reads a 409 on a wake as a harmless race and shows nothing, and this one has a reason to show
 const SPLIT_ARG_MESSAGE = 'um argumento do claude tem quebra de linha';
+const RESUME_HELD_MESSAGE = 'essa sessão já roda em outra execução';
+const OTHER_CHECKOUT_MESSAGE = 'essa conversa é de outro checkout';
 const HTTP_BAD_REQUEST = 400;
 const UNKNOWN_AGENT_MESSAGE = `agent precisa ser um destes agentes: ${AGENT_IDS.join(', ')}`; // #932: the shim names its own
 const NO_WAKE_MESSAGE = 'o terminal não pode acordar: a atividade, a worktree ou o workspace não existe mais';
@@ -122,18 +125,52 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   };
 }
 
+type CaptureResume = NonNullable<Extract<HiveEvent, { type: 'captureSession' }>['resume']>;
+
+// #347: the user's args, one `arg` field each: a single one arrives as a string, several as an array; anything else is none
+const formArgs = (value: unknown): string[] =>
+  (typeof value === 'string' ? [value] : Array.isArray(value) && value.every((arg): arg is string => typeof arg === 'string') ? value : []);
+
+// Whether a held session's folder is the terminal's activity's (#347): Codex would run a rollout of another checkout from here
+function sameFolder(state: State, config: Config, terminalId: string, ref: SessionRef): boolean {
+  const terminal = state.terminals.find((t) => t.terminalId === terminalId);
+  const source = sourceSide(state, config, ref);
+  return terminal !== undefined && !('status' in source) && source.side.cwd === activityDir(state, config, terminal.activityId);
+}
+
+// #347: what a resume registers as. A live run already on its id refuses it: two workers on one session id would break every hook's routing. A
+// held id runs in the activity holding it, unless the agent resumes from any folder (Codex) and that activity's folder is not this terminal's.
+// An id no activity holds, or none yet (-c, the picker, Codex's --last), is named by the run's first SessionStart. Undefined: a new conversation
+function resumeTarget(live: { state: State; runtime: Runtime }, terminalId: string, agent: AgentId, read: ShimResume): CaptureResume | Refusal | undefined {
+  if (read.kind === 'new') return undefined;
+  const { sessionId } = read;
+  if (sessionId === undefined) return {};
+  if (live.state.workers.some((w) => w.status !== 'empty' && w.sessionId === sessionId)) return { status: HTTP_CONFLICT, message: RESUME_HELD_MESSAGE };
+  const held = heldSession(live.state, sessionId);
+  if (!held) return {};
+  const ref = { activityId: held.record.id, sessionId };
+  if (AGENTS[agent].resumesAnyFolder && !sameFolder(live.state, live.runtime.config, terminalId, ref)) return { status: HTTP_CONFLICT, message: OTHER_CHECKOUT_MESSAGE };
+  return ref;
+}
+
 // The shim's register (#696): a free session of the terminal's activity, answered as the run id then the argv the agent gets before the user's
 // own, one arg per line, which the shim reads as data (capturedReply); an arg holding a line break refuses the register. Under /hooks/:
-// secret-authenticated as a hook is, with no UI header (server.ts' gate). Its body is a form (#932): the agent the shim wraps and its $PWD.
+// secret-authenticated as a hook is, with no UI header (server.ts' gate). Its body is a form (#932): the agent the shim wraps, its $PWD and
+// each of the user's args (#347).
 function registerCapture(app: Express, deps: TerminalRouteDeps): void {
   app.post('/hooks/terminals/:id/session', uuidParam, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
-    if (!deps.requireLive(res)) return;
+    const current = deps.requireLive(res);
+    if (!current) return;
     const form = (req.body ?? {}) as Record<string, unknown>; // no body: Express 5 leaves it undefined
     const agent = knownAgent(form.agent);
     if (agent === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: UNKNOWN_AGENT_MESSAGE });
+    const terminalId = terminalParam(req);
+    const resume = resumeTarget(current, terminalId, agent, resumeOf(agent, formArgs(form.arg))); // #347
+    if (resume !== undefined && 'status' in resume) return refuse(res, resume);
     const runId = randomUUID();
-    const sessionId = AGENTS[agent].canChooseSessionId ? randomUUID() : undefined; // #932: Codex picks its own, recorded at its SessionStart
-    await deps.dispatch({ type: 'captureSession', terminalId: terminalParam(req), runId, agent, ...(sessionId === undefined ? {} : { sessionId }) });
+    // #932: Codex picks its own, recorded at its SessionStart. #347: a resume runs the user's own conversation, under no id of the Hive's
+    const sessionId = resume === undefined && AGENTS[agent].canChooseSessionId ? randomUUID() : undefined;
+    await deps.dispatch({ type: 'captureSession', terminalId, runId, agent, ...(sessionId === undefined ? {} : { sessionId }), ...(resume === undefined ? {} : { resume }) });
     const after = deps.live(); // never requireLive again: on a Hive gone meanwhile it would answer, and the refusal below a second time
     const worker = after?.state.workers.find((w) => w.runId === runId);
     if (!after || !worker) return refuse(res, { status: HTTP_CONFLICT, message: NO_CAPTURE_MESSAGE });
@@ -143,7 +180,7 @@ function registerCapture(app: Express, deps: TerminalRouteDeps): void {
       refuse(res, { status: HTTP_SERVER_ERROR, message });
     };
     // #927, #932: Codex trusts the run's folder up front: the posted one after a cd inside the terminal's folder, never one outside it
-    const terminal = after.state.terminals.find((x) => x.terminalId === terminalParam(req));
+    const terminal = after.state.terminals.find((x) => x.terminalId === terminalId);
     const cwd = capturedCwd(form.cwd, terminal?.cwd) ?? terminal?.cwd ?? '';
     let run: AgentRun;
     try {

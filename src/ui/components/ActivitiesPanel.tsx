@@ -6,14 +6,14 @@ import { displayBinding } from '../../shortcuts';
 import type { Task, Session, Worker, Stage, Status } from '../../types';
 import { ActivityGroupList } from '@/components/ActivityGroups';
 import { useBranches } from '@/components/QuickDialogs';
-import { LocalSessionLines, TaskSessionLine } from '@/components/SessionLines';
+import { LocalRunLine, LocalSessionLines, TaskSessionLine } from '@/components/SessionLines';
 import { StatusWord } from '@/components/StatusWord';
 import { TerminalLines } from '@/components/TerminalLines';
 import { WorkspaceMenu } from '@/components/WorkspaceMenu';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { t } from '@/i18n';
-import { type Activity, isTask, type LocalActivity, localKey, type TaskActivity } from '@/lib/activities';
+import { type Activity, isTask, type LocalActivity, localKey, mergedRuns, type TaskActivity, type TaskActivitySession } from '@/lib/activities';
 import { useWorkspaceView, type WorkspaceView } from '@/lib/activities-view';
 import { groupActivities, workspaceSummary } from '@/lib/activity-groups';
 import { binding, isMac } from '@/lib/shortcut-bindings';
@@ -101,6 +101,26 @@ function StatusLine({ status, isSleeping }: { status?: Status; isSleeping: boole
 type RowsProps = Pick<ActivitiesPanelProps, 'workers' | 'selected' | 'shown' | 'onSelect' | 'onOpenRun' | 'nav'> & { worktrees: Record<string, WorktreeState> };
 type EntryProps = Omit<RowsProps, 'selected' | 'worktrees'> & { activity: TaskActivity; isSelected: boolean; worktree?: WorktreeState; showWorktree: boolean };
 
+// The guide line under a task's row (#614, #696): its sessions, then its kept terminals. A terminal running one of its live sessions is drawn
+// as that session's line in its place, and the session is not listed again (#347)
+function TaskLines({ activity, shown, onOpenRun }: { activity: TaskActivity; shown?: string; onOpenRun(ptyId: string): void }) {
+  const terminals = activity.terminals ?? [];
+  const merged = mergedRuns(terminals);
+  const line = (entry: TaskActivitySession): ReactNode => (
+    <TaskSessionLine key={entry.session?.id ?? entry.run?.ptyId} activity={activity} entry={entry} shown={shown} onOpenRun={onOpenRun} />
+  );
+  const inTerminal = (runId: string): ReactNode => {
+    const entry = activity.sessions.find((e) => e.run?.ptyId === runId);
+    return entry === undefined ? undefined : line(entry);
+  };
+  return (
+    <>
+      {activity.sessions.filter((entry) => entry.run === undefined || !merged.has(entry.run.ptyId)).map(line)}
+      <TerminalLines terminals={terminals} shown={shown} onOpen={onOpenRun} sessionLine={inTerminal} />
+    </>
+  );
+}
+
 // An activity as one block (#586): the row (its title, then the worktree line) picks the activity (#457), and its sessions sit inside the
 // block on a guide line, each opening its run (#492). Siblings, never nested: a button holds no button. The selected block takes the muted
 // fill whole. Only the selected activity's sessions can be the shown one, since the center shows the selected activity
@@ -131,13 +151,7 @@ function ActivityEntry({ activity, isSelected, worktree, showWorktree, workers, 
       {nav.menu ? nav.menu(task, row) : row}
       {(activity.sessions.length > 0 || terminals.length > 0) && (
         <div className={`mt-1 ml-[2px] ${GUIDE}`}>
-          {activity.sessions.map((entry) => (
-            <TaskSessionLine
-              key={entry.session?.id ?? entry.run?.ptyId} activity={activity} entry={entry}
-              shown={isSelected ? shown : undefined} onOpenRun={(ptyId) => onOpenRun(id, ptyId)}
-            />
-          ))}
-          <TerminalLines terminals={terminals} shown={isSelected ? shown : undefined} onOpen={(ptyId) => onOpenRun(id, ptyId)} />
+          <TaskLines activity={activity} shown={isSelected ? shown : undefined} onOpenRun={(ptyId) => onOpenRun(id, ptyId)} />
         </div>
       )}
     </div>
@@ -179,6 +193,7 @@ type LocalProps = Omit<RowsProps, 'worktrees'> & { name: string; branch?: string
 function LocalEntry({ name, branch, local, sessions, workers, selected, shown, onSelect, onOpenRun, nav }: LocalProps) {
   const key = localKey(name);
   const isSelected = key === selected;
+  const lineProps = { workspace: name, sessions, workers, runs: local?.sessions ?? [], shown: isSelected ? shown : undefined, onOpenRun: (ptyId: string) => onOpenRun(key, ptyId) };
   const row = (
     <button
       type="button" aria-current={isSelected ? 'true' : undefined} onClick={() => onSelect(key)}
@@ -192,8 +207,8 @@ function LocalEntry({ name, branch, local, sessions, workers, selected, shown, o
     <>
       {local && nav.localMenu ? nav.localMenu(local, row) : row}
       <div className={`mr-2 ml-[22px] empty:hidden ${GUIDE}`}>
-        <LocalSessionLines workspace={name} sessions={sessions} workers={workers} runs={local?.sessions ?? []} shown={isSelected ? shown : undefined} onOpenRun={(ptyId) => onOpenRun(key, ptyId)} />
-        <TerminalLines terminals={local?.terminals ?? []} shown={isSelected ? shown : undefined} onOpen={(ptyId) => onOpenRun(key, ptyId)} />
+        <LocalSessionLines {...lineProps} except={mergedRuns(local?.terminals)} />
+        <TerminalLines terminals={local?.terminals ?? []} shown={lineProps.shown} onOpen={lineProps.onOpenRun} sessionLine={(runId) => <LocalRunLine {...lineProps} runId={runId} />} />
       </div>
     </>
   );

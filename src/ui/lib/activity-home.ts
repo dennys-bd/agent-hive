@@ -68,6 +68,7 @@ const byUrgency = (a: Ranked, b: Ranked): number =>
 export const homeSessions = (activity: Activity, now: number): HomeSession[] =>
   (activity.kind === 'task' ? taskRows(activity, now) : localRows(activity, now)).sort(byUrgency).map((ranked) => ranked.row);
 
-/** The activity's kept terminals as its home lists them (#759): live ones first, then by their number. They have no status or time to sort by. */
+/** The activity's kept terminals as its home lists them (#759): live ones first, then by their number. They have no status or time to sort by.
+ * One running a live session of the activity is left out (#347): the home lists by kind, and that session already has its row. */
 export const homeTerminals = (activity: Activity): KeptTerminal[] =>
-  [...(activity.terminals ?? [])].sort((a, b) => Number(a.asleep) - Number(b.asleep) || (a.n ?? 0) - (b.n ?? 0));
+  (activity.terminals ?? []).filter((t) => t.runId === undefined).sort((a, b) => Number(a.asleep) - Number(b.asleep) || (a.n ?? 0) - (b.n ?? 0));

@@ -324,3 +324,20 @@ test('namedRun labels a run with its own agent and carries it, before and after 
   assert.deepEqual(namedRun('W1', 'aaaaaaaa-0000-4000-8000-000000000001', [], 'session', 'claude'), { ptyId: 'W1', label: 'Claude · aaaaaaaa', kind: 'session', agent: 'claude', session: 'aaaaaaaa' });
   assert.deepEqual(namedRun('W2', undefined, [], 'stage', 'claude'), { ptyId: 'W2', label: 'Claude', kind: 'stage', agent: 'claude' });
 });
+
+test('a plain terminal running a live captured session takes that run\'s label, whatever activity holds the session; Terminal N again once it ends (#347)', () => {
+  const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const terminals: Terminal[] = [
+    { terminalId: 'T1', activityId: 'a-1', startedAt: AT, cwd: '/repo' },
+    { terminalId: 'T2', activityId: 'a-1', startedAt: AT, cwd: '/repo' },
+    { terminalId: 'P1', activityId: localActivityId('hive'), startedAt: AT, cwd: '/repo' },
+  ];
+  const captured = (runId: string, terminalId: string, activityId: string, sessionId?: string): Worker =>
+    ({ id: runId, status: 'working', activityId, freeSession: true, runId, terminalId, agent: 'claude', ...(sessionId === undefined ? {} : { sessionId }) });
+  const workers = [captured('W1', 'T1', 'a-1', id), captured('W2', 'P1', 'a-2')]; // P1 runs another task's session, its id not known yet
+  const c = task('dev', { sessions: [{ ...session(id, []), name: 'fix login' }] });
+  const terminalLabels = (list: Worker[]): string[] => liveRuns(c, { workers: list, terminals }).filter((r) => r.kind === 'terminal').map((r) => r.label);
+  assert.deepEqual(terminalLabels(workers), ['Claude · fix login', 'Terminal 2']);
+  assert.deepEqual(localRuns('hive', { workers, terminals, activityRecords: [] }).map((r) => r.label), ['Claude']);
+  assert.deepEqual(terminalLabels([]), ['Terminal 1', 'Terminal 2'], 'its exit released the worker');
+});

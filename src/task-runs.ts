@@ -182,6 +182,17 @@ export function terminalLabel(terminal: Terminal, plain: Terminal[]): string {
   return plain.length > 1 ? `${TERMINAL} ${plain.findIndex((t) => t.terminalId === terminal.terminalId) + 1}` : TERMINAL;
 }
 
+// #347: a plain terminal running a live captured session reads as that session's run, whatever activity holds the session (a session id is
+// in one record only, so every record is looked in); Terminal N again once the run ends
+function terminalRun(state: Pick<State, 'workers' | 'activityRecords'>, terminal: Terminal, plain: Terminal[]): LiveRun {
+  const worker = state.workers.find((w) => w.terminalId === terminal.terminalId && w.status !== 'empty');
+  const runId = worker?.runId;
+  const label = worker === undefined || runId === undefined
+    ? terminalLabel(terminal, plain)
+    : namedRun(runId, worker.sessionId, state.activityRecords.flatMap((r) => r.sessions), 'session', ranAgent(worker)).label;
+  return { ptyId: terminal.terminalId, label, kind: 'terminal' };
+}
+
 /** Every live run on the task (#283): its workers (the stage run and each session), then its terminals. `commands: false` leaves out the
  * command terminals (#353): the generic Stop and the Terminal picker never list them, their own item stops them. Restart and the delete activity's
  * blocker still count them. */
@@ -191,7 +202,7 @@ export function liveRuns(task: Task, state: Pick<State, 'workers' | 'terminals' 
   const plain = activity === undefined ? [] : keptTerminalsIn(state.terminals, activity.id); // #696: numbered among the kept ones
   const terminals = own
     .filter((t) => commands || t.command === undefined)
-    .map((t): LiveRun => ({ ptyId: t.terminalId, label: terminalLabel(t, plain), kind: 'terminal' }));
+    .map((t) => terminalRun(state, t, plain));
   const sessions = sessionsOf(state, taskId(task));
   return [...workersOf(state, task).flatMap((w) => workerRun(activity, w, sessions)), ...terminals];
 }
@@ -203,7 +214,7 @@ export function localRuns(workspace: string, state: Pick<State, 'workers' | 'ter
   const sessions = state.workers.flatMap((w) => (w.status !== 'empty' && w.activityId === localActivityId(workspace) && w.runId !== undefined ? [fromWorker(namedRun(w.runId, w.sessionId, kept, 'session', ranAgent(w)), w)] : []));
   const shells = keptTerminalsIn(state.terminals, localActivityId(workspace)); // #696: numbered among the kept ones
   const live = shells.filter((t) => t.asleep === undefined);
-  return [...sessions, ...live.map((t): LiveRun => ({ ptyId: t.terminalId, label: terminalLabel(t, shells), kind: 'terminal' }))];
+  return [...sessions, ...live.map((t) => terminalRun(state, t, shells))];
 }
 
 /** The pty id of `name`'s live run on the task (#353), undefined while it has none: its item then reads Parar <name> and stops that run. */

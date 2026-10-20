@@ -72,9 +72,10 @@ test('codex runs as `codex`, reports plan limits (#929) and cannot choose its se
   assert.deepEqual([AGENTS.codex.label, AGENTS.codex.command, AGENTS.codex.planLimits, AGENTS.codex.canChooseSessionId], ['Codex', 'codex', true, false]);
   assert.equal(AGENTS.claude.canChooseSessionId, true);
   assert.ok(AGENTS.codex.subcommands.includes('exec'));
-  assert.ok(['resume', 'fork'].every((c) => AGENTS.codex.subcommands.includes(c)), 'both open a session the user chose: the shim runs them as typed (#932)');
+  assert.ok(AGENTS.codex.subcommands.includes('fork') && !AGENTS.codex.subcommands.includes('resume'), 'fork runs as typed; resume registers (#932, #347)');
   assert.deepEqual(AGENTS.codex.shimFlags, ['-h', '--help', '-V', '--version'], 'no -c: Codex\'s is a config override, not continue (#932)');
-  assert.ok(AGENTS.claude.shimFlags.includes('-c') && AGENTS.claude.shimFlags.includes('--resume=*'));
+  assert.deepEqual(AGENTS.claude.shimFlags, ['-p', '--print', '-h', '--help', '-v', '--version'], 'no resume flag: a resume registers (#347)');
+  assert.deepEqual([AGENTS.claude.resumesAnyFolder, AGENTS.codex.resumesAnyFolder], [false, true], 'Codex resumes a rollout of any folder (#347)');
 });
 
 test('isAvailable is true only for an agent boot found; one it never checked is not (#931)', () => {

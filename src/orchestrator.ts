@@ -22,7 +22,7 @@ import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, fo
 import { clearSession, renameSession } from './session-clear.js';
 import { canContinue, continueIntoCommands, fill, gateOf } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
-import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, sleepTerminal, wakeTerminal } from './terminal-runs.js';
+import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, resumedStart, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
@@ -30,6 +30,7 @@ import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
+import { isUuid } from './uuid.js';
 
 export { isFree } from './reducer-kit.js';
 export { canSchedule, canStart, effectiveLimits } from './fill.js';
@@ -42,10 +43,7 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 export const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/; // Claude Code uses uuids; anything else came from another local process
-// The uuid shape of the Hive's own ids (randomUUID): a run's, a terminal's, and a session id the Hive generated (#647). Boot hands a run id
-// to `pkill -f`, which matches a pattern anywhere in a command line: stricter than SESSION_ID on purpose, since a plain id that passes that
-// one can still be a substring shared by processes this worker does not own.
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export { isUuid, UUID } from './uuid.js'; // #347: their own module, so shim.ts reads a uuid without importing the reducer
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 export const STATUSES: readonly Status[] = ['empty', 'working', 'waiting', 'review', 'approval', 'backoff'];
 
@@ -69,12 +67,6 @@ export const isPrUrl = (url: string): boolean => new RegExp(`^${PR_URL.source}$`
 /** Any local process can hit /hooks/event and the id reaches the panel and the log: only a plain id of a sane length is kept. */
 export function isSessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value);
-}
-
-/** Whether `value` has the uuid shape: a restored run can be managed by it, so boot's kill pattern is only ever that, and a session id the
- * Hive keeps is checked the same way (#647). */
-export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID.test(value);
 }
 
 /** A hook is from a subagent or teammate, not the worker's own top-level turn, when the worker already recorded a
@@ -814,8 +806,11 @@ function firstSession(state: State, worker: Worker, id: string): State {
 }
 
 // #932: a free run that started with no id (a captured Codex) records its first SessionStart's where captureSession records Claude's, with its
-// agent. The activity's own sessionId stays the stage run's: a free session never takes its place
-function firstFreeSession(state: State, worker: Worker, id: string): State {
+// agent. The activity's own sessionId stays the stage run's: a free session never takes its place. #347: a resumed capture goes through
+// resumedStart first, which releases it or places it with the activity holding the session
+function firstFreeSession(state: State, worker: Worker, id: string, cwd?: unknown): State {
+  const resumed = worker.resumed ? resumedStart(state, worker, id, cwd) : undefined;
+  if (resumed !== undefined) return resumed;
   const activity = activityOfWorker(state, worker);
   return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch)) ?? state; // #257: its picks too
 }
@@ -836,7 +831,7 @@ function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayloa
   if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;
-    return worker.freeSession === true ? firstFreeSession(named, worker, id) : firstSession(named, worker, id);
+    return worker.freeSession === true ? firstFreeSession(named, worker, id, p.cwd) : firstSession(named, worker, id);
   }
   return patch(state, ptyId, { sessionId: worker.sessionId ?? (isSessionId(id) ? id : undefined) }).state;
 }
@@ -844,7 +839,8 @@ function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayloa
 // The worktree write below goes after the session's: inMainRepo reads the session the run now runs
 function sessionStart(state: State, ptyId: string, worker: Worker, p: HookPayload, branch?: string): Reduced {
   const started = namedSession(state, ptyId, worker, p);
-  const current = started.workers.find((s) => s.runId === ptyId) ?? worker; // inMainRepo reads the session it now runs
+  const current = started.workers.find((s) => s.runId === ptyId); // inMainRepo reads the session it now runs
+  if (!current) return none(started); // #347: a resumed capture of another folder was released: its cwd is no activity's to write
   const task = taskOfWorker(started, current);
   const activity = activityOfWorker(started, current);
   if (!task || !activity || inMainRepo(started, task, current)) return none(started); // the activity keeps no path: a repo session's cwd is the main repo (#208)

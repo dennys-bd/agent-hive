@@ -9,27 +9,28 @@ export interface AgentSpec {
   shimFlags: readonly string[]; // #932: sh case patterns that pass the shim through in any position: a session the user chose, or no conversation
   planLimits: boolean; // #925: the Hive reads this agent's plan limits (its runner's planLimits), so the footer's usage group offers their refresh
   canChooseSessionId: boolean; // #927: a run opens under an id the Hive chose; one that cannot (Codex) learns it from its first SessionStart, its free and local sessions too (#931)
+  resumesAnyFolder: boolean; // #347: its resume finds a conversation of any folder (Codex's rollouts), so the register refuses a held one of another checkout; Claude reads only its cwd's transcripts
 }
 
 // A Record, so a new id in AGENT_IDS fails tsc until its entry exists; its runner joins agents/registry.ts the same way (#924).
 export const AGENTS: Record<AgentId, AgentSpec> = {
   claude: {
-    label: 'Claude', command: 'claude', planLimits: true, canChooseSessionId: true,
+    label: 'Claude', command: 'claude', planLimits: true, canChooseSessionId: true, resumesAnyFolder: false,
     // as `claude --help` lists them, aliases included
     subcommands: [
       'agents', 'attach', 'auth', 'auto-mode', 'doctor', 'gateway', 'import', 'install', 'kill', 'logs', 'mcp', 'plugin', 'plugins', 'purge',
       'respawn', 'rm', 'setup-token', 'stop', 'ultrareview', 'update', 'upgrade',
     ],
-    shimFlags: ['--resume', '--resume=*', '-r', '--continue', '-c', '--session-id', '--session-id=*', '-p', '--print', '-h', '--help', '-v', '--version'],
+    shimFlags: ['-p', '--print', '-h', '--help', '-v', '--version'], // #347: a resume (-r, -c, --session-id) registers; these run no conversation
   },
   codex: {
-    label: 'Codex', command: 'codex', planLimits: true, canChooseSessionId: false, // planLimits: #929, read from its rollouts
-    // as `codex --help` lists them (finding §12), aliases included; resume and fork open a session the user chose, which the shim runs as typed,
-    // as Claude's --resume (#932)
+    label: 'Codex', command: 'codex', planLimits: true, canChooseSessionId: false, resumesAnyFolder: true, // planLimits: #929, read from its rollouts
+    // as `codex --help` lists them (finding §12), aliases included; fork opens a session the user chose, which the shim runs as typed (#932);
+    // resume registers (#347)
     subcommands: [
       'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server', 'remote-control', 'app', 'completion', 'update', 'doctor',
       'sandbox', 'debug', 'apply', 'a', 'queue', 'archive', 'delete', 'migrate-rollouts', 'unarchive', 'cloud', 'exec-server', 'features', 'help',
-      'resume', 'fork',
+      'fork',
     ],
     shimFlags: ['-h', '--help', '-V', '--version'], // #932: no -c, which is a config override in Codex
   },

@@ -1,7 +1,7 @@
 #!/bin/sh
-# The Hive's agent shim (#696, #932), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A new conversation
-# typed here registers as a free session of the terminal's activity, with the Hive's hooks, MCP and protocol; anything else runs the real
-# CLI as typed. A register the Hive refuses, or that gets no answer, never blocks the user's command.
+# The Hive's agent shim (#696, #932, #347), rendered for each agent into <home>/bin/<command>, first on every terminal's PATH. A conversation
+# typed here, new or resumed, registers as a free session with the Hive's hooks, MCP and protocol; anything else runs the real CLI as typed. A
+# register the Hive refuses, or that gets no answer, never blocks the user's command.
 cli=__HIVE_COMMAND__
 self_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
@@ -20,8 +20,8 @@ real_cli() (
 
 real=$(real_cli) || { echo "$cli: not found on PATH" >&2; exit 127; }
 
-# Not in a Hive terminal, a subcommand (the CLI's own, or one that opens a session the user chose), or a flag anywhere that picks a session
-# or runs no conversation (each agent's own list, from AGENTS): as typed
+# Not in a Hive terminal, a subcommand (the CLI's own, or one that opens a session the user chose), or a flag anywhere that runs no
+# conversation (each agent's own list, from AGENTS): as typed
 passthrough() {
   [ -n "${HIVE_PTY_ID:-}" ] && [ -n "${HIVE_PORT:-}" ] && [ -n "${HIVE_SECRET_FILE:-}" ] || return 0
   case "${1:-}" in __HIVE_SUBCOMMANDS__) return 0 ;; esac
@@ -34,10 +34,15 @@ passthrough() {
 if passthrough "$@"; then exec "$real" "$@"; fi
 
 # The secret goes as curl's header file, never in an argv (#467), and never through a proxy the env names: the Hive is on loopback. 5 s, since a
-# register the server took but the shim gave up on leaves a run that never reports its exit. The agent and this folder go as a form (#932): sh
-# cannot JSON-escape a path, and curl url-encodes each value whole.
-reply=$(curl -sf --noproxy '*' -m 5 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/terminals/$HIVE_PTY_ID/session" -H @"$HIVE_SECRET_FILE" \
-  --data-urlencode "agent=$cli" --data-urlencode "cwd=$PWD") || exec "$real" "$@"
+# register the server took but the shim gave up on leaves a run that never reports its exit. The agent, this folder and each of the user's args
+# (#347) go as a form (#932): sh can neither JSON-escape a path nor parse an argv, and curl url-encodes each value whole. The function's own
+# positional args become curl's, so the user's stay as typed for the exec below.
+register() {
+  for arg in "$@"; do set -- "$@" --data-urlencode "arg=$arg"; shift; done
+  curl -sf --noproxy '*' -m 5 -X POST "http://127.0.0.1:$HIVE_PORT/hooks/terminals/$HIVE_PTY_ID/session" -H @"$HIVE_SECRET_FILE" \
+    --data-urlencode "agent=$cli" --data-urlencode "cwd=$PWD" "$@"
+}
+reply=$(register "$@") || exec "$real" "$@"
 run_id=$(printf '%s\n' "$reply" | sed -n 1p)
 hive_args=$(printf '%s\n' "$reply" | sed -n '2,$p')
 case "$run_id" in ''|*[!0-9a-f-]*) exec "$real" "$@" ;; esac

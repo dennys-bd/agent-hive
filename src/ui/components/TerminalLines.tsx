@@ -1,4 +1,5 @@
 import { SquareTerminalIcon } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 import { act } from '@/components/actions';
 import { wakeTerminal } from '@/components/sleeping-run';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
@@ -42,8 +43,15 @@ function TerminalLine({ terminal, isShown, onOpen }: LineProps) {
   );
 }
 
+interface LinesProps { terminals: KeptTerminal[]; shown?: string; onOpen(terminalId: string): void; sessionLine?(runId: string): ReactNode }
+
 /** An activity's kept terminals after its session lines (#696), on the same guide line, a task's and a local activity's alike. `shown` is the
- * run the center shows while this activity is the selected one. */
-export function TerminalLines({ terminals, shown, onOpen }: { terminals: KeptTerminal[]; shown?: string; onOpen(terminalId: string): void }) {
-  return terminals.map((terminal) => <TerminalLine key={terminal.terminalId} terminal={terminal} isShown={terminal.terminalId === shown} onOpen={onOpen} />);
+ * run the center shows while this activity is the selected one. A live terminal running a live session of its activity is that session
+ * (#347): `sessionLine`, the caller's own line for it, takes the terminal's place; none drawn keeps the terminal's. */
+export function TerminalLines({ terminals, shown, onOpen, sessionLine }: LinesProps) {
+  return terminals.map((terminal) => {
+    const session = terminal.runId === undefined ? undefined : sessionLine?.(terminal.runId);
+    if (session !== undefined && session !== null) return <Fragment key={terminal.terminalId}>{session}</Fragment>;
+    return <TerminalLine key={terminal.terminalId} terminal={terminal} isShown={terminal.terminalId === shown} onOpen={onOpen} />;
+  });
 }

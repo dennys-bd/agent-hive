@@ -1,6 +1,8 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isUuid } from './uuid.js';
+import type { AgentId } from './types.js';
 
 // The agents' shim (#696, #924, #932): one template, assets/bin/shim, rendered per agent with its command, its first-arg passthrough words and
 // its any-position passthrough flags, written into <home>/bin/<command> on every boot, as the plugin is: upgrading the Hive changes what every
@@ -44,13 +46,38 @@ const LINE_BREAK = /[\r\n]/;
 export const capturedReply = (runId: string, args: string[]): string | undefined =>
   (args.some((arg) => LINE_BREAK.test(arg)) ? undefined : [runId, ...args].join('\n'));
 
-/** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line inside `root` (the terminal's own folder), else
- * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
- * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. */
-export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
-  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
+/** What the args the shim posted run (#347): a new conversation, or a resume, with the session id they name when they name one. */
+export type ShimResume = { kind: 'new' } | { kind: 'resume'; sessionId?: string };
 
-const isWithin = (path: string, root: string): boolean => {
-  const rel = relative(root, path);
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-};
+const NEW: ShimResume = { kind: 'new' };
+const resumed = (sessionId: string | undefined): ShimResume => (sessionId === undefined ? { kind: 'resume' } : { kind: 'resume', sessionId });
+const CLAUDE_RESUMES = ['-r', '--resume', '-c', '--continue', '--session-id'];
+const CLAUDE_ID_FLAGS = ['-r', '--resume', '--session-id'];
+const flagOf = (arg: string): string => (arg.startsWith('--') ? arg.split('=')[0] : arg);
+
+// The uuid a value flag of Claude's names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins
+function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_FLAGS): string | undefined {
+  return args.flatMap((arg, i) => {
+    const flag = flagOf(arg);
+    const value = flag === arg ? args[i + 1] : arg.slice(flag.length + 1);
+    return flags.includes(flag) && isUuid(value) ? [value] : [];
+  }).at(-1);
+}
+
+// Claude: --fork-session starts a new conversation the Hive names, unless the user names it with --session-id: a second one in the reply
+// would leave the worker on an id the run never uses. A named fork runs its --session-id, never the session it forks from
+function claudeResume(args: readonly string[]): ShimResume {
+  const flags = args.map(flagOf);
+  if (!flags.some((flag) => CLAUDE_RESUMES.includes(flag))) return NEW;
+  if (!flags.includes('--fork-session')) return resumed(claudeId(args));
+  return flags.includes('--session-id') ? resumed(claudeId(args, ['--session-id'])) : NEW;
+}
+
+// Codex: the resume subcommand, first as the shim reads a subcommand; fork stays a passthrough (#932)
+const codexResume = (args: readonly string[]): ShimResume => (args[0] === 'resume' ? resumed(args.slice(1).find((arg) => isUuid(arg))) : NEW);
+
+// One reader per agent: a new agent fails to compile until it has one
+const RESUME_READERS: Record<AgentId, (args: readonly string[]) => ShimResume> = { claude: claudeResume, codex: codexResume };
+
+/** The resume the args the shim posted ask for (#347). The shim parses nothing (sh cannot parse an argv safely): it posts every arg whole. */
+export const resumeOf = (agent: AgentId, args: readonly string[]): ShimResume => RESUME_READERS[agent](args);

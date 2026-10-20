@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { isLocalActivityId, taskOfActivity } from './activities.js';
+import { isAbsolute, relative, sep } from 'node:path';
+import { heldSession, isLocalActivityId, taskOfActivity } from './activities.js';
 import { ranAgent } from './agents.js';
 import { localSessionsOf } from './local-sessions.js';
 import { withLaunch } from './launch-pick.js';
 import { touchFreeSession } from './record-kit.js';
-import { none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
+import { ensureActivity, none, type Reduced, releaseRun, releaseWorker } from './reducer-kit.js';
 import { withLocal } from './session-copy.js';
 import { canOpenSession, LOCAL_SLUG } from './tasks.js';
 import type { Activity, AgentId, Effect, HiveEvent, LaunchPick, Session, State, Terminal, Worker } from './types.js';
@@ -20,6 +21,20 @@ export const terminalSlug = (state: State, terminal: Terminal): string =>
 /** The live plain terminal with that id: the only kind that sleeps. */
 export const liveShell = (state: Pick<State, 'terminals'>, terminalId: string): Terminal | undefined =>
   state.terminals.find((t) => t.terminalId === terminalId && t.command === undefined && t.asleep === undefined);
+
+// What the shim's read loop cannot take (#696): a folder holding a line break would split it
+const LINE_BREAK = /[\r\n]/;
+
+const isWithin = (path: string, root: string): boolean => {
+  const rel = relative(root, path);
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+};
+
+/** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line inside `root` (the terminal's own folder), else
+ * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
+ * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. Here, not in shim.ts, since the reducer reads it too (#347). */
+export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
+  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
 
 /** The free sessions the shim captured in a terminal (#696) end with it: their claude dies with its shell, so their runs close as their exit
  * would. */
@@ -98,8 +113,11 @@ export function forgetTerminal(state: State, { terminalId }: Extract<HiveEvent, 
 export function recordCapturedSession(state: State, activity: Activity, sessionId: string, at: string, agent: AgentId, launch?: LaunchPick): State | undefined {
   if (activity.kind === 'local') {
     if (!state.workspaces.includes(activity.workspace)) return undefined;
+    const held = localSessionsOf(state, activity.workspace);
     const created: Session = { id: sessionId, startedAt: at, stages: [], lastUsedAt: at, agent, ...withLaunch(launch) };
-    return withLocal(state, activity.workspace, [...localSessionsOf(state, activity.workspace), created]);
+    // #347: a resume is the same conversation: a session already listed is only used again, as touchFreeSession does a task's
+    const sessions = held.some((s) => s.id === sessionId) ? held.map((s) => (s.id === sessionId ? { ...s, lastUsedAt: at } : s)) : [...held, created];
+    return withLocal(state, activity.workspace, sessions);
   }
   const task = taskOfActivity(state, activity.id);
   return task && touchFreeSession(state, task, sessionId, at, agent, launch);
@@ -114,17 +132,59 @@ function withCapturedSession(state: State, activity: Activity, worker: Worker, a
   return hasPlace ? held : undefined;
 }
 
+// #347: the live activity a held session's run belongs to: a local record's own; a task record's task's live activity, born when it has none,
+// as openSession's for a kept session (#629). Undefined when that place is gone
+function ownerOf(state: State, recordId: string): { state: State; activity: Activity } | undefined {
+  if (isLocalActivityId(recordId)) {
+    const activity = state.activities.find((a) => a.id === recordId);
+    return activity && { state, activity };
+  }
+  const task = taskOfActivity(state, recordId);
+  return task && ensureActivity(state, task);
+}
+
+// #248: a resumed transcript already holds its old turns: the run measures its first delta from the session's last total
+const baselineOf = (state: State, sessionId: string): Pick<Worker, 'tokens'> => {
+  const tokens = heldSession(state, sessionId)?.session.tokens;
+  return tokens === undefined ? {} : { tokens };
+};
+
 /** The shim's register (#696): a free session of the terminal's activity, appended outside the cap like any free session (#459), with the
- * run id the route drew, the agent the shim named and the session id the route drew for it, if any (#932). Its run lives in the terminal's
- * pty, so nothing spawns. A sleeping or unknown terminal, a command's run or an activity gone: the same state. */
-export function captureSession(state: State, { terminalId, runId, agent, sessionId }: Extract<HiveEvent, { type: 'captureSession' }>): Reduced {
+ * run id the route drew, the agent the shim named and the session id the route drew for it, if any (#932). A resume (#347) of a held session
+ * runs in the activity holding it, under its id; one whose id is not known yet starts in the terminal's activity with none. Its run lives in
+ * the terminal's pty, so nothing spawns. A sleeping or unknown terminal, a command's run or an activity gone: the same state. */
+export function captureSession(state: State, { terminalId, runId, agent, sessionId, resume }: Extract<HiveEvent, { type: 'captureSession' }>): Reduced {
   const terminal = liveShell(state, terminalId);
-  const activity = terminal && state.activities.find((a) => a.id === terminal.activityId);
-  if (!activity) return none(state);
+  const own = terminal && state.activities.find((a) => a.id === terminal.activityId);
+  if (!own) return none(state);
+  const placed = resume?.activityId === undefined ? { state, activity: own } : ownerOf(state, resume.activityId);
+  if (!placed) return none(state);
+  const id = resume === undefined ? sessionId : resume.sessionId;
   const startedAt = new Date().toISOString();
   const worker: Worker = {
-    id: randomUUID(), runId, activityId: activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' },
-    ...(sessionId === undefined ? {} : { sessionId }), freeSession: true, terminalId, agent,
+    id: randomUUID(), runId, activityId: placed.activity.id, status: 'working', startedAt, lastEvent: { kind: 'manualStart' },
+    ...(id === undefined ? {} : { sessionId: id, ...baselineOf(state, id) }), freeSession: true, terminalId, agent,
+    ...(resume === undefined ? {} : { resumed: true as const }),
   };
-  return none(withCapturedSession(state, activity, worker, startedAt) ?? state);
+  return none(withCapturedSession(placed.state, placed.activity, worker, startedAt) ?? state);
+}
+
+/** A resumed capture's first SessionStart (#347), which names the conversation the user picked (-c, the picker, Codex's --last) or one the
+ * register could not place. A cwd outside the terminal's folder (a Codex rollout of another checkout) releases the worker with nothing
+ * recorded: the run goes on unregistered, as does one naming a session another live run holds. A session an activity holds takes the worker there, its session used again and its tokens the
+ * baseline (#248); the run keeps the args it started with. Undefined: firstFreeSession records it where it runs. `state` carries the id. */
+export function resumedStart(state: State, worker: Worker, id: string, cwd: unknown): State | undefined {
+  const terminal = state.terminals.find((t) => t.terminalId === worker.terminalId);
+  // claude -c on a conversation a stage run still runs: two workers on one id would split its hooks, as the register's refusal says
+  const isTaken = state.workers.some((w) => w.runId !== worker.runId && w.status !== 'empty' && w.sessionId === id);
+  if (capturedCwd(cwd, terminal?.cwd) === undefined || isTaken) return { ...state, workers: releaseWorker(state.workers, worker) };
+  const held = heldSession(state, id);
+  const placed = held && ownerOf(state, held.record.id);
+  if (!held || !placed) return undefined;
+  const { tokens } = held.session;
+  const moved: State = {
+    ...placed.state,
+    workers: placed.state.workers.map((w) => (w.runId === worker.runId ? { ...w, activityId: placed.activity.id, ...(tokens === undefined ? {} : { tokens }) } : w)),
+  };
+  return recordCapturedSession(moved, placed.activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch) ?? moved;
 }

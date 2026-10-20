@@ -6,10 +6,10 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedCwd, capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
+import { capturedReply, installShim, renderShim, resumeOf, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { AGENT_IDS } from '../src/types.js';
+import { AGENT_IDS, type AgentId } from '../src/types.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -21,12 +21,13 @@ const FAKE_CLI = `#!/bin/sh
 `;
 
 interface Seen { url: string; secret?: string; pty?: string }
-interface Hive { seen: Seen[]; forms: Record<string, string>[]; port: number }
+interface Hive { seen: Seen[]; forms: Record<string, string>[]; args: string[][]; port: number }
 
 // A Hive that answers the register with `answer` and anything else with 200, recording every request and each register's posted form (#932)
 async function fakeHive(t: TestContext, answer: { status: number; body: string }): Promise<Hive> {
   const seen: Seen[] = [];
   const forms: Record<string, string>[] = [];
+  const args: string[][] = [];
   const server = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
@@ -34,7 +35,11 @@ async function fakeHive(t: TestContext, answer: { status: number; body: string }
       const header = (name: string): string | undefined => (typeof req.headers[name] === 'string' ? req.headers[name] : undefined);
       seen.push({ url: req.url ?? '', secret: header('x-hive-secret'), pty: header('x-hive-pty') });
       const isRegister = req.url?.startsWith('/hooks/terminals/') === true;
-      if (isRegister) forms.push(Object.fromEntries(new URLSearchParams(body)));
+      if (isRegister) {
+        const params = new URLSearchParams(body);
+        forms.push(Object.fromEntries([...params].filter(([key]) => key !== 'arg')));
+        args.push(params.getAll('arg')); // #347: one field per user arg, in order
+      }
       res.writeHead(isRegister ? answer.status : 200, { 'content-type': 'text/plain' });
       res.end(isRegister ? answer.body : '');
     });
@@ -42,7 +47,7 @@ async function fakeHive(t: TestContext, answer: { status: number; body: string }
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
   const address = server.address();
-  return { seen, forms, port: typeof address === 'object' && address !== null ? address.port : 0 };
+  return { seen, forms, args, port: typeof address === 'object' && address !== null ? address.port : 0 };
 }
 
 // The agent's shim installed in a home of its own, the fake CLI in a dir after it on PATH, a secret file and a terminal's env
@@ -93,14 +98,6 @@ test('a proxy in the env never sees the register nor the exit report: both go st
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit']);
 });
 
-test('capturedCwd keeps an absolute folder on one line inside the terminal\'s own, and nothing else (#932)', () => {
-  assert.deepEqual(
-    ['/r', '/r/src', '/r/..x', '/elsewhere', '/r/../x', 'src', '/r/a\nb', 42].map((value) => capturedCwd(value, '/r')),
-    ['/r', '/r/src', '/r/..x', undefined, undefined, undefined, undefined, undefined],
-  );
-  assert.deepEqual([capturedCwd('/r', undefined), capturedCwd('/r', '')], [undefined, undefined]);
-});
-
 test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {
   assert.equal(capturedReply(RUN_ID, ['--settings', '/h/a b.json']), `${RUN_ID}\n--settings\n/h/a b.json`);
   assert.equal(capturedReply(RUN_ID, ['--x', 'two\nlines']), undefined);
@@ -116,10 +113,10 @@ test('a captured session\'s argv puts the workspace\'s language-server plugin ri
   assert.deepEqual(runners.claude.launch(base).flat(), ['--mcp-config', '/h/prompts/R1.mcp.json', '--settings', '/h/hooks.json', '--plugin-dir', '/h/plugin', '--model', 'opus', '--session-id', 'S1']);
 });
 
-test('--resume, -p, --version and a subcommand pass straight through, unregistered (#696)', async (t) => {
+test('-p, --version and a subcommand pass straight through, unregistered (#696, #347)', async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
   const claude = await shimmed(t, hive.port);
-  for (const args of [['--resume', 'abc'], ['-p', 'hi'], ['--version'], ['mcp', 'list']]) {
+  for (const args of [['-p', 'hi'], ['--version'], ['mcp', 'list']]) {
     assert.deepEqual(await claude(...args), ['pty=T1', ...args], args.join(' '));
   }
   assert.deepEqual(hive.seen, []);
@@ -145,10 +142,10 @@ test('renderShim fills the command, the subcommands and the flags; installShim w
   assert.equal(shimPath('/h', { command: 'other' }), join('/h', 'bin', 'other'), 'one file per agent, named after its command');
 });
 
-test('every codex subcommand, resume and fork included, and every codex passthrough flag in any position reach the real codex as typed, unregistered (#932)', async (t) => {
+test('every codex subcommand but resume, fork included, and every codex passthrough flag in any position reach the real codex as typed, unregistered (#932, #347)', async (t) => {
   const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n-c\nx=1` });
   const codex = await shimmed(t, hive.port, {}, AGENTS.codex);
-  assert.ok(['resume', 'fork'].every((word) => AGENTS.codex.subcommands.includes(word)));
+  assert.ok(AGENTS.codex.subcommands.includes('fork') && !AGENTS.codex.subcommands.includes('resume'));
   const typed = [...AGENTS.codex.subcommands.map((word) => [word, 'x']), ...AGENTS.codex.shimFlags.map((flag) => ['a prompt', flag])];
   for (const args of typed) assert.deepEqual(await codex(...args), ['pty=T1', ...args], args.join(' '));
   assert.deepEqual(hive.seen, []);
@@ -172,12 +169,53 @@ test('a plain codex and codex "a prompt" register with agent=codex and the shim\
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit', '/hooks/terminals/T1/session', '/hooks/exit']);
 });
 
-test('the claude shim, from the same template, still passes -c and --resume through, and a plain claude registers with agent=claude and gets no MCP secret (#932)', async (t) => {
-  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--session-id\nS1` });
+test('the claude shim registers -c, -r and --resume in any position and a plain claude, each with its args posted, and gives none of them an MCP secret (#932, #347)', async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
   const work = await tempDir(t, 'work-');
   const claude = await shimmed(t, hive.port, { PWD: work });
-  for (const args of [['-c'], ['--resume', 'abc'], ['go', '-c']]) assert.deepEqual(await claude(...args), ['pty=T1', ...args], args.join(' '));
-  assert.deepEqual(hive.forms, [], 'Claude\'s -c is continue: a session the user chose');
-  assert.deepEqual(await claude(), [`pty=${RUN_ID}`, '--session-id', 'S1']);
-  assert.deepEqual(hive.forms, [{ agent: 'claude', cwd: work }]);
+  const typed = [['-c'], ['--resume', 'abc'], ['go', '-r'], []];
+  for (const args of typed) assert.deepEqual(await claude(...args), [`pty=${RUN_ID}`, '--settings', '/h/hooks.json', ...args], args.join(' '));
+  assert.deepEqual(hive.args, typed);
+  assert.deepEqual(hive.forms, typed.map(() => ({ agent: 'claude', cwd: work })));
+});
+
+test('each of the user\'s args reaches the register whole, with an =, an @, spaces, quotes and a line break, and the real CLI as typed (#347)', async (t) => {
+  const hive = await fakeHive(t, { status: 200, body: `${RUN_ID}\n--settings\n/h/hooks.json` });
+  const claude = await shimmed(t, hive.port);
+  const typed = ['a b', 'k=v', '@notes.txt', "it's", 'two\nlines']; // curl reads no file for @: content after the first =
+  const out = await claude(...typed);
+  assert.deepEqual(hive.args, [typed]);
+  assert.deepEqual(out, [`pty=${RUN_ID}`, '--settings', '/h/hooks.json', ...typed.flatMap((arg) => arg.split('\n'))]); // the fake prints one arg per line
+});
+
+test('resumeOf reads a new conversation or a resume, with the id only when the args name a uuid (#347)', () => {
+  const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const NEW: ShimResume = { kind: 'new' };
+  const cases: [AgentId, string[], ShimResume][] = [
+    ['claude', [], NEW],
+    ['claude', ['fix the bug'], NEW],
+    ['claude', ['-r'], { kind: 'resume' }], // the picker
+    ['claude', ['--resume'], { kind: 'resume' }],
+    ['claude', ['-r', id], { kind: 'resume', sessionId: id }],
+    ['claude', ['--resume', id, 'go on'], { kind: 'resume', sessionId: id }],
+    ['claude', [`--resume=${id}`], { kind: 'resume', sessionId: id }],
+    ['claude', ['-c'], { kind: 'resume' }],
+    ['claude', ['go', '--continue'], { kind: 'resume' }],
+    ['claude', ['--session-id', id], { kind: 'resume', sessionId: id }],
+    ['claude', [`--session-id=${id}`], { kind: 'resume', sessionId: id }],
+    ['claude', ['--resume', 'login bug'], { kind: 'resume' }], // a search term opens the picker: no id
+    ['claude', ['-r', 'abc'], { kind: 'resume' }], // not a uuid: no id
+    ['claude', ['-r', id, '--fork-session'], NEW], // a fork is a new conversation, under the Hive's id
+    ['claude', ['-c', '--fork-session', '--session-id', id], { kind: 'resume', sessionId: id }], // the fork's id is the user's own
+    ['claude', ['--session-id', id, '-r', '3f2504e0-4f89-11d3-9a0c-0305e82c3309', '--fork-session'], { kind: 'resume', sessionId: id }], // the fork runs its --session-id, whatever the order
+    ['codex', [], NEW],
+    ['codex', ['a prompt'], NEW],
+    ['codex', ['resume'], { kind: 'resume' }],
+    ['codex', ['resume', id], { kind: 'resume', sessionId: id }],
+    ['codex', ['resume', '--last'], { kind: 'resume' }],
+    ['codex', ['resume', 'abc'], { kind: 'resume' }],
+    ['codex', ['fork', id], NEW],
+    ['codex', ['a prompt', 'resume'], NEW], // a subcommand is the first word only, as the shim reads one
+  ];
+  for (const [agent, args, expected] of cases) assert.deepEqual(resumeOf(agent, args), expected, `${agent} ${args.join(' ')}`);
 });

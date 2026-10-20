@@ -129,17 +129,31 @@ function StartingLine({ entry, shown, onOpenRun }: { entry: ActivitySession; sho
   return <SessionLine agent={ranAgent(entry.run)} label={entry.run.session ?? t('event.starting')} status={entry.status} isShown={target === shown} onOpen={() => onOpenRun(target)} />;
 }
 
-interface LocalSessionLinesProps { workspace: string; sessions: Session[]; workers: Worker[]; runs: ActivitySession[]; shown?: string; onOpenRun(ptyId: string): void }
+interface LocalSessionLinesProps {
+  workspace: string; sessions: Session[]; workers: Worker[]; runs: ActivitySession[]; shown?: string; onOpenRun(ptyId: string): void;
+  except?: ReadonlySet<string>; // #347: the runs drawn in their terminal's place
+}
 
 /** A workspace's local sessions under its local activity (#587, #590), oldest first: the name or the short id, and the status while the run
  * lives; then its live runs not kept yet, marked iniciando (#308). `shown`, the run the center shows while the local activity is the selected
- * one, is marked. */
-export function LocalSessionLines({ workspace, sessions, workers, runs, shown, onOpenRun }: LocalSessionLinesProps) {
-  const unkept = runs.filter((r) => !sessions.some((s) => s.id === r.sessionId));
+ * one, is marked. A run in `except` is left out: its terminal's line draws it (#347). */
+export function LocalSessionLines({ workspace, sessions, workers, runs, shown, onOpenRun, except }: LocalSessionLinesProps) {
+  const isHere = (runId: string | undefined): boolean => runId === undefined || except?.has(runId) !== true;
+  const listed = sessions.map((session) => ({ session, worker: localWorker(workers, workspace, session.id) })).filter(({ worker }) => isHere(worker?.runId));
+  const unkept = runs.filter((r) => !sessions.some((s) => s.id === r.sessionId) && isHere(r.run.ptyId));
   return (
     <>
-      {sessions.map((session) => <LocalLine key={session.id} workspace={workspace} session={session} worker={localWorker(workers, workspace, session.id)} shown={shown} />)}
+      {listed.map(({ session, worker }) => <LocalLine key={session.id} workspace={workspace} session={session} worker={worker} shown={shown} />)}
       {unkept.map((entry) => <StartingLine key={entry.run.ptyId} entry={entry} shown={shown} onOpenRun={onOpenRun} />)}
     </>
   );
+}
+
+/** One live local run's line (#347), drawn in the place of the terminal it runs in: its kept session's, else iniciando's. */
+export function LocalRunLine({ workspace, sessions, workers, runs, runId, shown, onOpenRun }: Omit<LocalSessionLinesProps, 'except'> & { runId: string }) {
+  const worker = workers.find((w) => w.runId === runId);
+  const session = worker && sessions.find((s) => s.id === worker.sessionId);
+  if (session !== undefined) return <LocalLine workspace={workspace} session={session} worker={worker} shown={shown} />;
+  const entry = runs.find((r) => r.run.ptyId === runId);
+  return entry === undefined ? null : <StartingLine entry={entry} shown={shown} onOpenRun={onOpenRun} />;
 }

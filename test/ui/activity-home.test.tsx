@@ -98,3 +98,10 @@ test('terminals list the live ones first, then by their number; none listed read
   expect(homeTerminals(taskOf([], terminals)).map((terminal) => terminal.terminalId)).toEqual(['T2', 'T3', 'T1']);
   expect(homeTerminals({ ...taskOf([]), terminals: undefined })).toEqual([]);
 });
+
+test('a terminal running a live session of its activity is left out of the terminals block; the session keeps its row (#347)', () => {
+  const terminals: KeptTerminal[] = [{ terminalId: 'T1', label: 'Terminal 1', n: 1, asleep: false, runId: 'W3' }, { terminalId: 'T2', label: 'Terminal 2', n: 2, asleep: false }];
+  const activity = taskOf([{ run: { ...run('W3', 'fix login'), terminalId: 'T1' }, status: 'working' }], terminals);
+  expect(homeTerminals(activity).map((terminal) => terminal.terminalId)).toEqual(['T2']);
+  expect(homeSessions(activity, NOW).map((row) => row.target)).toEqual([{ kind: 'run', ptyId: 'T1' }]);
+});
