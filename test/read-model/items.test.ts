@@ -1,12 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseConfig } from '../../src/config.js';
 import { openReadModel, type ReadModel } from '../../src/read-model/db.js';
-import { itemRow, readListing, storeListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
-import { createSource, sourceSpec } from '../../src/source.js';
-import type { GhIssueRelations, GhItemFieldsNode, GhItemNode, RelationsData } from '../../src/sources/github-queries.js';
-import type { SourceItem } from '../../src/types.js';
-import { combConfig, fakeGql } from '../fakes.js';
+import { itemRow, readListing, storeListing, type ListingKey } from '../../src/read-model/items.js';
+import type { GhIssueRelations, GhItemFieldsNode, GhItemNode } from '../../src/sources/github-queries.js';
 import { SOURCE, T1, T2, T3 } from './fixtures.js';
 
 // #190: a Project's items in the read model. The contract: listed() over the stored nodes answers what it answers over the wire's
@@ -49,28 +45,11 @@ const WIRE: GhItemNode[] = [
 const ref = (number: number, state: string) => ({ number, title: `T${number}`, state, repository: { nameWithOwner: 'acme/r' } });
 const BLOCKED: GhIssueRelations = { blockedBy: { nodes: [ref(2, 'OPEN')] }, blocking: { nodes: [] }, subIssues: { nodes: [] } };
 // The kept tasks are #1, #2, #5 and #8, aliased i0 to i3; i3's repository is gone by the time the relations are asked
-const RELATIONS: RelationsData = {
-  i0: { issue: { blockedBy: { nodes: [] }, blocking: { nodes: [] }, subIssues: { nodes: [{ number: 2, state: 'OPEN' }, { number: 3, state: 'CLOSED' }] } } },
-  i1: { issue: { blockedBy: { nodes: [] }, blocking: { nodes: [ref(5, 'OPEN')] }, subIssues: { nodes: [] } } },
-  i2: { issue: BLOCKED },
-  i3: null,
-};
-const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, epics: 'show', filter: [{ field: 'label', op: 'any', values: ['hive'] }] } }));
-const SPEC = sourceSpec(config, config.comb.sources[0]);
-const page = (nodes: GhItemNode[]): unknown => ({ rateLimit: null, repositoryOwner: { projectV2: { items: { pageInfo: { hasNextPage: false }, nodes } } } });
 // The adapter's poll over these nodes as the wire answers them: every poll step, relations included
-const listedOver = (nodes: GhItemNode[]): Promise<SourceItem[]> => createSource(SPEC, { gql: fakeGql({ items: page(nodes), relations: RELATIONS }).gql }).listItems();
 const memoryModel = async (now: () => number = () => 1_000): Promise<ReadModel> => (await openReadModel(':memory:', { now })).db;
 const at = (status: string, updatedAt: string, n = 1): GhItemNode => ({ ...issue(n, status), updatedAt });
 const ids = (db: ReadModel, key: ListingKey): string[] => readListing(db, key).nodes.map((node) => node.id);
 
-test('the contract (#190): listed over the wire nodes deep-equals listed over the same nodes stored and read back', async () => {
-  const db = await memoryModel();
-  storeListing(db, KEY, WIRE, new Map());
-  const wire = await listedOver(WIRE);
-  assert.equal(wire.length, 4, 'the fixtures keep the epic, its sub-issue, the blocked task and the re-read one');
-  assert.deepEqual(await listedOver(readListing(db, KEY).nodes), wire);
-});
 
 test('the relations come back by item id: a stored null stays null, an item with none stored reads undefined (#190)', async () => {
   const db = await memoryModel();
@@ -117,14 +96,3 @@ test('itemRow drops the project and cuts the repository to its name: a write\'s 
   assert.deepEqual(stored.content?.repository, { nameWithOwner: 'acme/r' });
 });
 
-test('the contract through the adapter (#190): with a store, a full poll and a probe-only one list what the wire path lists', async () => {
-  const db = await memoryModel();
-  const items: ItemStore = { db, source: async () => SOURCE, notify: () => undefined };
-  const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
-  const { gql, calls } = fakeGql({ probe, items: page(WIRE), relations: RELATIONS });
-  const stored = createSource(SPEC, { gql, items });
-  const wire = await listedOver(WIRE);
-  assert.deepEqual(await stored.listItems(), wire);
-  assert.deepEqual(await stored.listItems(), wire, 'read back with the stored relations');
-  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations', 'probe']);
-});

@@ -278,6 +278,9 @@ export interface GhRateLimit { limit?: unknown; remaining?: unknown; resetAt?: u
 /** One set field value of an item and its field's name (#245, #756): a single-select answers name, a text field text, a number number, a
  * date date (ISO day), an iteration title; ITEMS asks only the first two, so any other kind answers {} there. */
 export interface GhFieldValue { name?: string; text?: string; number?: number; date?: string; title?: string; field?: { name?: string } | null }
+/** A sub-issue as the items read asks it (#211, #28, #282): its node id and state, what groupUnderEpics and treeLinks read; its number, title and
+ * repository, what the start gate and the read model's issue_relations keep. The read model stores what it is given, so all three are optional. */
+export interface GhSubIssue { id: string; state: 'OPEN' | 'CLOSED'; number?: number; title?: string; repository?: { nameWithOwner: string } }
 export interface GhItemNode {
   id: string;
   updatedAt?: string; // the item's own (#190): the read model's replace rule compares it; a field write and a content edit move it (#189 §3)
@@ -285,8 +288,9 @@ export interface GhItemNode {
   fieldValues?: { nodes: GhFieldValue[] } | null;
   content?: {
     __typename?: string; id?: string; number?: number; title?: string; body?: string | null; url?: string; createdAt?: string;
+    state?: string; author?: { login: string } | null; comments?: { totalCount: number } | null; // #282: what issueFromGql makes the issues row of
     subIssuesSummary?: { total: number; completed?: number } | null;
-    subIssues?: { nodes: { id: string; state: 'OPEN' | 'CLOSED' }[] } | null; // node ids and states, the issue's own order: what groupUnderEpics groups by (#211) and treeLinks links (#28)
+    subIssues?: { nodes: GhSubIssue[] } | null; // node ids and states, the issue's own order: what groupUnderEpics groups by (#211) and treeLinks links (#28)
     assignees?: { nodes: { id?: string; login: string }[] } | null; labels?: { nodes: { id?: string; name: string }[] } | null; milestone?: { id?: string; title: string } | null;
     repository?: ({ nameWithOwner: string } & GhIssueChoices) | null; // owner/name: what a repository rule matches (#245); the choices: ITEM_FIELDS only (#686)
     closedByPullRequestsReferences?: { nodes: GhPullRequest[] } | null; // PROJECT_ITEMS only (#756)
