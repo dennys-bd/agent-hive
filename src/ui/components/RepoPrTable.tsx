@@ -103,7 +103,7 @@ export function RepoPrTable({ state, summary, onTab, onOpen, onRepository }: Rep
   const isElsewhere = summary.role === 'fork' && summary.pr === 'original'; // #854: this workspace's PRs go to the original
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={[]} isShown={isShown} repository={{ summary, tab: 'prs', onTab, onRepository }} onRefresh={refresh} />
+      <FlowHeader state={state} tasks={[]} isShown={isShown} repository={{ summary, tab: 'prs', onTab, onRepository }} onRefresh={refresh} github={`${summary.url}/pulls`} />
       {isElsewhere ? <ForkEmpty text={t('repos.fork.noPrs', { fork: summary.repository })} original={summary.fork?.parent} onRepository={onRepository} /> : (
         <>
           <Subbar value={prState} open={data?.counts.open ?? summary.openPrs} isSyncing={data?.syncedAt === null} isLoading={isLoading && data === undefined} onChange={setPrState} />
