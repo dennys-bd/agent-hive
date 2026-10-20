@@ -13,7 +13,7 @@ import { SESSION_A, send, startReviews } from './review-server.js';
 
 // task 1 of startReviews has its worktree on disk: an open starts its session at once
 const OPEN = '/tasks/local%3A1/open';
-const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new agent session';
+const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name';
 
 test('prompt mergeBase opens a claude session whose first prompt is the merge-from-base text, rendered by the server (#758)', async (t) => {
   const { spawn, workers } = fakeSpawn();
@@ -32,14 +32,13 @@ test('a claude session without a prompt starts with none, as before (#758)', asy
   assert.equal(workers[0].launch.promptPath, undefined);
 });
 
-test('another prompt, a bad or missing promptBase, a prompt with a continueId or on a terminal is 400 and opens nothing (#758)', async (t) => {
+test('another prompt, a bad or missing promptBase, or a prompt on a terminal is 400 and opens nothing (#758)', async (t) => {
   const { spawn, workers } = fakeSpawn();
   const { base } = await startReviews(t, { launchPty: spawn });
   const bodies = [
     { kind: 'claude', prompt: 'anything', promptBase: 'main' },
     { kind: 'claude', prompt: 'mergeBase', promptBase: '-x' },
     { kind: 'claude', prompt: 'mergeBase' },
-    { kind: 'claude', prompt: 'mergeBase', promptBase: 'main', continueId: 'aaaaaaaa-1111-4111-8111-111111111111' },
     { kind: 'terminal', prompt: 'mergeBase', promptBase: 'main' },
   ];
   for (const body of bodies) {
@@ -47,6 +46,15 @@ test('another prompt, a bad or missing promptBase, a prompt with a continueId or
     assert.deepEqual([res.status, await res.json()], [400, { error: PROMPT_MESSAGE }], JSON.stringify(body));
   }
   assert.equal(workers.length, 0);
+});
+
+test('prompt mergeBase with a continueId resumes that session with the merge-from-base text as its prompt (#379)', async (t) => {
+  const { spawn, workers } = fakeSpawn();
+  const { base } = await startReviews(t, { launchPty: spawn });
+  const res = await send(base, 'POST', OPEN, { kind: 'claude', continueId: SESSION_A, prompt: 'mergeBase', promptBase: 'main' });
+  assert.equal(res.status, 200);
+  assert.deepEqual(plainArgs(workers[0].launch).slice(-2), ['--resume', SESSION_A]);
+  assert.equal(await readFile(workers[0].launch.promptPath!, 'utf8'), mergeBasePrompt('main'));
 });
 
 test('a free session opened in a stage with no recorded start records one at its HEAD; a later open in that stage keeps it (#812)', async (t) => {

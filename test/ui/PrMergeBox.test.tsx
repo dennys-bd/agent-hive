@@ -14,6 +14,9 @@ afterEach(() => vi.unstubAllGlobals());
 const box = () => within(screen.getByRole('region', { name: 'mergear' }));
 const AWAITING: State = { ...WITH_TASK, activities: [{ ...WITH_TASK.activities[0], approval: { since: '2026-09-30T09:00:00.000Z' } }] };
 const CONFLICT = prData({ mergeState: 'conflicts' });
+const SID = 'aaaaaaaa-1111-4111-8111-111111111111';
+const LIVE_WORKER = { id: 's1', status: 'working' as const, runId: 'W1', activityId: 'a-I1', freeSession: true as const, sessionId: SID };
+const FEEDBACK: State = { ...AWAITING, transitions: [{ from: 'dev', to: 'dev', when: 'feedback' }] }; // dev takes feedback
 // The box over `pr`, task I1's when `state` holds it; the run opener and onSettled spies; onMerged only when given (#69)
 function renderBox(pr: PrData, state: State = WITH_TASK, onMerged?: () => void) {
   const onSettled = vi.fn();
@@ -72,47 +75,58 @@ test('conflict: conflicts in N files, the base moved N commits, the merge off wi
   expect(box().getByText('src/')).toHaveClass('text-muted-foreground');
   expect(box().getByText('src/').parentElement).toHaveTextContent('src/a.ts');
   expect(box().getByText('README.md')).toBeInTheDocument();
-  expect(box().getByText(/abre uma sessão na worktree do PR com o prompt de merge de main/)).toBeInTheDocument();
+  expect(box().getByText('envia o prompt de merge de main: como feedback se a tarefa aguarda aprovação numa etapa que o aceita, senão para a sessão que você escolher.')).toBeInTheDocument();
   unmount();
   renderBox(CONFLICT);
   expect(box().getByText('conflitos')).toBeInTheDocument();
 });
 
-test('resolve in the activity goes to the task\'s live agent run and sends nothing; with none, it opens a claude session with the merge prompt (#758)', async () => {
+test('resolve in the activity on a task awaiting approval whose stage takes feedback posts the merge prompt as started feedback, opens no dialog and focuses nothing, also while a session of the task is live (#379)', async () => {
   const user = userEvent.setup();
-  const live: State = { ...WITH_TASK, workers: [{ id: 's1', status: 'working', runId: 'W1', activityId: 'a-I1', freeSession: true }] };
-  const first = renderBox(CONFLICT, live);
+  const { openRun } = renderBox(CONFLICT, { ...FEEDBACK, workers: [LIVE_WORKER] });
   await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
-  expect(first.openRun).toHaveBeenCalledWith(expect.objectContaining({ ptyId: 'W1', kind: 'session', task: 'I1' }));
-  expect(hive.calls.some((c) => c.url.endsWith('/open'))).toBe(false);
-  first.unmount();
-  renderBox(CONFLICT);
-  await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
-  await waitFor(() => expect(prCalls(hive, 'POST', '/tasks/I1/open')[0]?.body).toEqual(expect.objectContaining({ kind: 'claude', prompt: 'mergeBase', promptBase: 'main' })));
+  await waitFor(() => expect(prCalls(hive, 'POST', '/activities/a-I1/feedback')[0]?.body).toEqual({ prompt: 'mergeBase', promptBase: 'main', start: true }));
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+  expect(openRun).not.toHaveBeenCalled();
+  expect(hive.calls.some((c) => c.url.endsWith('/open') || c.url.endsWith('/resolve'))).toBe(false);
 });
 
-test('resolve in the activity opens once while its request runs: a second click waits (#758)', async () => {
+test('resolve in the activity on any other task opens the resolve dialog, also with no session and on a task awaiting approval with no feedback transition (#379)', async () => {
+  const user = userEvent.setup();
+  const first = renderBox(CONFLICT);
+  await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
+  const dialog = await screen.findByRole('alertdialog', { name: 'Resolver o conflito com main' });
+  expect(within(dialog).getByRole('radio', { name: 'nova sessão' })).toBeChecked();
+  expect(hive.calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+  first.unmount();
+  renderBox(CONFLICT, AWAITING);
+  await user.click(box().getByRole('button', { name: 'resolver na atividade' }));
+  expect(await screen.findByRole('alertdialog', { name: 'Resolver o conflito com main' })).toBeInTheDocument();
+  expect(prCalls(hive, 'POST', '/activities/a-I1/feedback')).toHaveLength(0);
+});
+
+test('resolve in the activity sends its feedback once while the request runs: a second click waits (#758, #379)', async () => {
   const user = userEvent.setup();
   const fake = fetch;
   let release: () => void = () => undefined;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).endsWith('/open')) await gate;
+    if (String(input).endsWith('/feedback')) await gate;
     return fake(input, init);
   }));
-  renderBox(CONFLICT);
+  renderBox(CONFLICT, FEEDBACK);
   const button = box().getByRole('button', { name: 'resolver na atividade' });
   await user.dblClick(button);
   expect(button).toBeDisabled();
   release();
   await waitFor(() => expect(button).toBeEnabled());
-  expect(prCalls(hive, 'POST', '/tasks/I1/open')).toHaveLength(1);
+  expect(prCalls(hive, 'POST', '/activities/a-I1/feedback')).toHaveLength(1);
 });
 
 test('a PR without a task has no resolve and no note; a later slice of the stack waits for the earlier one; a merged PR has no box (#698, #758)', () => {
   const { unmount } = renderBox(CONFLICT, STATE);
   expect(box().queryByRole('button', { name: 'resolver na atividade' })).toBeNull();
-  expect(box().queryByText(/abre uma sessão/)).toBeNull();
+  expect(box().queryByText(/envia o prompt de merge/)).toBeNull();
   unmount();
   const stacked: State = { ...WITH_TASK, activityRecords: [{ ...WITH_TASK.activityRecords[0], prs: [
     { url: 'https://github.com/acme/app/pull/6', state: 'open', slice: { k: 1, type: 'stacked' } }, { url: PR, state: 'open', slice: { k: 2, type: 'stacked' } },

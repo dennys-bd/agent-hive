@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isBranchName, MERGE_BASE_PROMPT, mergeBasePrompt } from '../src/merge-prompt.js';
+import { isBranchName, MERGE_BASE_PROMPT, mergeBasePrompt, PROMPT_MESSAGE, promptText } from '../src/merge-prompt.js';
 
 test('isBranchName takes a branch name and refuses what git refuses, an option and a control character (#758)', () => {
   for (const name of ['main', 'release/1.2', 'feature/x-y_z']) assert.equal(isBranchName(name), true, name);
@@ -13,4 +13,12 @@ test('the merge prompt names origin/{base}, the conflicts, the tests, the commit
   assert.equal(MERGE_BASE_PROMPT, 'mergeBase');
   for (const part of ['origin/release/1.2', 'conflict', 'tests', 'commit', 'push']) assert.ok(prompt.includes(part), part);
   assert.equal(/claude/i.test(prompt), false);
+});
+
+test('promptText: nothing without a prompt, the text on the remote for mergeBase on a branch name, else the refusal (#379)', () => {
+  assert.deepEqual(promptText(undefined, undefined, 'origin'), {});
+  assert.deepEqual(promptText('mergeBase', 'main', 'upstream'), { text: mergeBasePrompt('main', 'upstream') });
+  const refused: [unknown, unknown][] = [['rebase', 'main'], ['mergeBase', '-x'], ['mergeBase', undefined], [7, 'main']];
+  for (const [prompt, base] of refused) assert.deepEqual(promptText(prompt, base, 'origin'), { refused: PROMPT_MESSAGE }, String(prompt));
+  assert.equal(PROMPT_MESSAGE, 'prompt must be mergeBase, with promptBase a branch name');
 });

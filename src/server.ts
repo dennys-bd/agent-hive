@@ -76,7 +76,7 @@ import { registerConsoleRoutes } from './server-console.js';
 import { createDesignFrameTokens, registerDesignFrameMint, registerDesignFrameRoute } from './server-design-frame.js';
 import { registerEditorInstallRoutes } from './server-editor-install.js';
 import { registerLaunchOptionsRoute } from './launch-options.js';
-import { registerOpenRoute } from './server-open.js';
+import { registerOpenRoute, registerResolveRoute } from './server-open.js';
 import { EDITOR_FILE_ROUTE, editorBodyTooLarge } from './server-editor.js';
 import { registerRuleRoutes } from './server-rules.js';
 import { registerTrustedDomainRoutes } from './server-trusted-domains.js';
@@ -1186,6 +1186,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // A workspace's local review (#344): the same routes under /workspaces/:name, delivered to its local sessions in the main checkout
   registerLocalReviewRoutes(app, { requireLive, log, localReviews, notifyLocalReview, deliverLocal: deps.deliverLocalReview ?? createDeliverLocal(deliverDeps) });
   registerOpenRoute(app, taskDeps); // POST /tasks/:id/open and /activities/:id/open, whose first worktree setup runs in the console (#351)
+  registerResolveRoute(app, { requireLive, log, deliver: deliverReview }); // POST /tasks/:id/resolve (#379): the merge-from-base prompt into a live session, through #591's deliver
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);

@@ -1787,7 +1787,9 @@ const en = {
   'pr.merge.facts.checks': 'checks ok', 'pr.merge.facts.clean': 'no conflicts', 'pr.merge.nextStage': 'moves the task to its next stage',
   'pr.merge.conflicts': 'conflicts', 'pr.merge.conflictsN.one': 'conflicts in {n} file', 'pr.merge.conflictsN.other': 'conflicts in {n} files',
   'pr.merge.behind': '{base} moved {n} commits', 'pr.merge.resolve': 'resolve in the activity',
-  'pr.merge.resolveNote': "opens a session in the PR's worktree with the merge-from-{base} prompt. if a session is live, goes to it.",
+  'pr.merge.resolveNote': 'sends the merge-from-{base} prompt: as feedback when the task awaits approval in a stage that takes it, else to the session you pick.',
+  'pr.resolve.title': 'Resolve the conflict with {base}', 'pr.resolve.live': 'live', 'pr.resolve.send': 'send', // #379: the resolve dialog
+  'pr.resolve.busy': 'the session is showing a prompt or has ended: pick another', 'pr.resolve.failed': 'Unexpected error',
   'pr.merge.button': '{method} and merge',
   'settings.fork.group': 'repository', // #854: Settings › workspaces › repository
   'settings.fork.hint': "where the workers' worktrees start from and where their PRs go",
@@ -3906,7 +3908,9 @@ const pt: Record<MessageKey, string> = {
   'pr.merge.facts.checks': 'checks ok', 'pr.merge.facts.clean': 'sem conflitos', 'pr.merge.nextStage': 'passa a tarefa para a próxima etapa',
   'pr.merge.conflicts': 'conflitos', 'pr.merge.conflictsN.one': 'conflitos em {n} arquivo', 'pr.merge.conflictsN.other': 'conflitos em {n} arquivos',
   'pr.merge.behind': '{base} avançou {n} commits', 'pr.merge.resolve': 'resolver na atividade',
-  'pr.merge.resolveNote': 'abre uma sessão na worktree do PR com o prompt de merge de {base}. se já houver sessão, vai para ela.',
+  'pr.merge.resolveNote': 'envia o prompt de merge de {base}: como feedback se a tarefa aguarda aprovação numa etapa que o aceita, senão para a sessão que você escolher.',
+  'pr.resolve.title': 'Resolver o conflito com {base}', 'pr.resolve.live': 'ativa', 'pr.resolve.send': 'enviar',
+  'pr.resolve.busy': 'a sessão está mostrando um prompt ou já terminou: escolha outra', 'pr.resolve.failed': 'Erro inesperado',
   'pr.merge.button': '{method} e merge',
   'settings.fork.group': 'repositório',
   'settings.fork.hint': 'de onde partem as worktrees que os workers criam e para onde vão os PRs deles',

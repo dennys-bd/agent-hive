@@ -35,6 +35,11 @@ export function exitOf(graph: Graph, stage: string, trigger: Trigger, verdict?: 
   return origin !== undefined && origin.action === undefined && origin.approval !== true ? matching(graph.transitions, stage, 'done') : undefined;
 }
 
+/** Whether the user's answer has somewhere to go (#134): a transition for it, or a stage gone from the flow, which lets the task leave. Here,
+ * free of node modules, so the page reads the rule the approval routes check (#379). */
+export const answerable = (graph: Graph, task: Pick<Task, 'stage'>, trigger: Trigger): boolean =>
+  exitOf(graph, task.stage, trigger) !== undefined || !graph.stages.some((s) => s.name === task.stage);
+
 /** A stage end as NO_TRANSITION and TRIES_OUT write it (#134): the trigger, or verdict:<name>. */
 export const exitName = (trigger: Trigger, verdict?: string): string => (trigger === 'verdict' ? `verdict:${verdict ?? ''}` : trigger);
 

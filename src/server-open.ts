@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { Express, Request, Response } from 'express';
-import { activityOf } from './activities.js';
+import { activityOf, workersIn } from './activities.js';
 import { knownAgent } from './agents.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
@@ -13,11 +13,12 @@ import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, wo
 import { askedLaunch } from './launch-options.js';
 import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type Workspace } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type State, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
-import { isBranchName, MERGE_BASE_PROMPT, mergeBasePrompt } from './merge-prompt.js';
+import { MERGE_BASE_PROMPT, PROMPT_MESSAGE, promptText } from './merge-prompt.js';
+import type { Deliver } from './review-deliver.js';
 
 // Abrir sessão (#164, #237, #283), out of server-tasks.ts, which was over its size, when a first open's worktree setup became a state of
 // the task with a console run (#351).
@@ -27,14 +28,13 @@ const HTTP_CONFLICT = 409;
 const HTTP_SERVER_ERROR = 500;
 const KIND_MESSAGE = `kind precisa ser terminal ou ${AGENT_IDS.join(', ')}`; // #925: every agent AGENT_IDS has
 const NOT_CONTINUABLE_MESSAGE = 'sessão já aberta ou desconhecida';
-const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name, on a new agent session';
 
 /** The open route's deps (#351): the task routes' own, and what a worktree setup's console run needs. */
 export type OpenRouteDeps = TaskRouteDeps; // ptys and consoleStore came with the delete's teardown (#654)
 
 type OpenEvent = Extract<HiveEvent, { type: 'openSession' | 'openTerminal' }>;
 /** What an open asks for, before its activity is known (#629): a first open makes it. #570: a terminal is not a session, so it has its own event.
- * prompt: the rendered first message of a new agent session (#758). agent: the session's, the kind asked for (#925). */
+ * prompt: the rendered first message of an agent session, new or resumed (#758, #379). agent: the session's, the kind asked for (#925). */
 interface OpenAsk { taskId: string; terminal: boolean; agent?: AgentId; continueId?: string; prompt?: string; size?: TerminalSize; launch?: LaunchPick } // launch: the new session dialog's picks (#257)
 
 const openEvent = ({ terminal, agent, continueId, prompt, launch }: OpenAsk, activityId: string): OpenEvent =>
@@ -44,12 +44,12 @@ const openEvent = ({ terminal, agent, continueId, prompt, launch }: OpenAsk, act
   });
 
 // The first prompt an open asks for (#758): a key, never text, rendered here; none without one; a 400 for anything but mergeBase with a
-// branch name on a new agent session
+// branch name on an agent session, new or resumed (#379: a resume appends the prompt as a new one does)
 function promptOf(body: unknown, remote: string): { prompt?: string } | Refusal {
-  const { kind, continueId, prompt, promptBase } = (body ?? {}) as Record<string, unknown>;
-  if (prompt === undefined) return {};
-  if (prompt !== MERGE_BASE_PROMPT || knownAgent(kind) === undefined || continueId !== undefined || !isBranchName(promptBase)) return { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE };
-  return { prompt: mergeBasePrompt(promptBase, remote) }; // #854: the task's workspace's base remote
+  const { kind, prompt, promptBase } = (body ?? {}) as Record<string, unknown>;
+  const asked = promptText(prompt, promptBase, remote); // #854: the task's workspace's base remote
+  if ('refused' in asked || (asked.text !== undefined && knownAgent(kind) === undefined)) return { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE };
+  return asked.text === undefined ? {} : { prompt: asked.text };
 }
 
 /** Where a first open makes the task's worktree, as its checks settled it: the task as placed (#179), its workspace, its slug, its branch and
@@ -242,5 +242,39 @@ export function registerOpenRoute(app: Express, deps: OpenRouteDeps): void {
     const target = taskTarget(current.state, activityParam(req));
     if ('status' in target) return refuse(res, target);
     await openOn(deps, current, target.task.item.itemId, req.body, res);
+  });
+}
+
+const NOT_LIVE_MESSAGE = 'to must be a session a live run of the task holds';
+
+/** The resolve route's deps (#379): the task routes' live view and log, and the server's #591 deliver. */
+export type ResolveRouteDeps = Pick<TaskRouteDeps, 'requireLive' | 'log'> & { deliver: Deliver };
+
+// Whether a live run of the task's activity holds session `to` (#379): worktreeSessions leaves the held ones out, and deliver would open a
+// stopped one, which is the open route's job
+const holdsLive = (state: State, activity: Activity | undefined, to: unknown): to is string =>
+  typeof to === 'string' && workersIn(state.workers, activity?.id).some((w) => w.runId !== undefined && w.sessionId === to);
+
+/** resolve in the activity on a live session (#379): the merge-from-base prompt, rendered on the task's base remote, pasted through #591's
+ * deliver into the session a live run of the task holds. A refused delivery (a prompt showing, the terminal gone) is a 409 with deliver's
+ * reason, logged; the page says it in its own words. */
+export function registerResolveRoute(app: Express, { requireLive, log, deliver }: ResolveRouteDeps): void {
+  app.post('/tasks/:id/resolve', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const taskId = req.params.id as string;
+    const opened = openTask(current.state, taskId);
+    if ('status' in opened) return refuse(res, opened);
+    const { to, promptBase } = (req.body ?? {}) as { to?: unknown; promptBase?: unknown };
+    const { config } = current.runtime;
+    const asked = promptText(MERGE_BASE_PROMPT, promptBase, workspaceBase(config, taskWorkspace(config, opened.task)).remote);
+    if ('refused' in asked || asked.text === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE });
+    if (!holdsLive(current.state, opened.activity, to)) return refuse(res, { status: HTTP_BAD_REQUEST, message: NOT_LIVE_MESSAGE });
+    const delivery = await deliver(taskId, to, asked.text);
+    if (!delivery.ok) {
+      log.info(`resolve ${taskId}: the merge prompt did not reach ${to} (${delivery.reason})`);
+      return refuse(res, { status: HTTP_CONFLICT, message: delivery.reason });
+    }
+    res.json({ ok: true });
   });
 }
