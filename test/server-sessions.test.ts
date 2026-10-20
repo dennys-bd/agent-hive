@@ -2,9 +2,11 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { activityOf, localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
-import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { workspaceProtocolPaths } from '../src/hooks-settings.js';
+import { LOCAL_PROTOCOL } from '../src/protocol.js';
 import { createServer, type HiveServer, killStrays } from '../src/server.js';
 import type { AgentId, Exec, OpenResult, SettingsBody } from '../src/types.js';
 import { AGENT_IDS, APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
@@ -31,7 +33,7 @@ async function waitFor(check: () => boolean): Promise<void> {
   assert.ok(check(), 'condition not met in time');
 }
 
-interface Started { base: string; server: HiveServer; workers: FakeWorker[]; repo: string; git: string[][] }
+interface Started { base: string; server: HiveServer; workers: FakeWorker[]; repo: string; git: string[][]; home: string }
 
 // A Hive whose one workspace is WORKSPACE at `repo`; every git call is recorded, none runs.
 async function start(t: TestContext, stdout: (args: string[]) => string = () => ''): Promise<Started> {
@@ -47,7 +49,7 @@ async function start(t: TestContext, stdout: (args: string[]) => string = () => 
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
   assert.equal((await postJson(`${base}/settings`, { ...BODY, workspaces: workspacesAt(repo) })).status, 200);
-  return { base, server, workers, repo, git };
+  return { base, server, workers, repo, git, home };
 }
 
 const refused = async (res: Promise<Response>, status: number, error: string, why: string): Promise<void> => {
@@ -116,12 +118,15 @@ const localWorker = (server: HiveServer) => {
 };
 
 test('a new local claude session runs claude in the workspace\'s checkout with its own session id, and no git; a continued one resumes it (#590)', async (t) => {
-  const { server, workers, repo, git } = await start(t);
+  const { server, workers, repo, git, home } = await start(t);
   const before = git.length;
   await server.dispatch({ type: 'newLocalSession', activityId: localActivityId(WORKSPACE) });
   const { ptyId, sessionId } = localWorker(server);
   const { launch } = workers[0];
-  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launchFlag(launch, '--append-system-prompt-file')], ['workspace', repo, undefined, undefined, undefined], 'no Hive tools, no protocol (#167)');
+  const protocol = workspaceProtocolPaths(home, WORKSPACE).local;
+  assert.deepEqual([launch.slug, launch.cwd, launch.terminal, launch.promptPath, launchFlag(launch, '--append-system-prompt-file')], ['workspace', repo, undefined, undefined, protocol], 'its workspace\'s local protocol (#256)');
+  assert.equal(await readFile(protocol, 'utf8'), LOCAL_PROTOCOL, 'no lesson yet: the bare local protocol');
+  assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'and the Hive\'s tools (#256)');
   assert.ok(launchFlag(launch, '--mcp-config')?.endsWith(`${ptyId}.mcp.json`), 'the worker id in claude\'s argv');
   assert.deepEqual(plainArgs(launch).slice(-2), ['--session-id', sessionId]);
   assert.deepEqual(git.slice(before), [], 'no worktree, no checkout, no setup');

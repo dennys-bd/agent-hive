@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROTOCOL_DIR } from '../src/hooks-settings.js';
 import { createServer, type HiveServer } from '../src/server.js';
@@ -112,7 +113,7 @@ test('a terminal spawns with its own history and ring files, and a woken one in 
 });
 
 test('the shim\'s register refuses without the secret, captures a free session of the terminal\'s activity with the args claude gets, and Stop kills that claude by its run\'s MCP config path, never by its session id (#696)', async (t) => {
-  const { base, server, calls } = await start(t);
+  const { base, server, calls, home } = await start(t);
   const id = await openShell(base);
   const url = `${base}/hooks/terminals/${id}/session`;
   assert.equal((await fetch(url, { method: 'POST' })).status, 403, 'no secret');
@@ -123,7 +124,8 @@ test('the shim\'s register refuses without the secret, captures a free session o
   assert.deepEqual([argv[0], argv[2], argv[4]], ['--mcp-config', '--settings', '--plugin-dir'], 'one arg per line, unquoted');
   assert.match(argv[1], /\.mcp\.json$/);
   assert.deepEqual(argv.slice(-2), ['--session-id', worker.sessionId]);
-  assert.equal(argv.includes('--append-system-prompt-file'), false, 'no protocol on a local activity');
+  assert.equal(argv[argv.indexOf('--append-system-prompt-file') + 1], join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'local.md'), 'its workspace\'s local protocol (#256)');
+  assert.ok('hive' in (JSON.parse(await readFile(argv[1], 'utf8')) as { mcpServers: object }).mcpServers, 'and the Hive\'s tools (#256)');
   await refused(register(base, crypto.randomUUID()), 409, 'nenhum terminal vivo com esse id', 'unknown terminal');
   assert.equal((await postJson(`${base}/ptys/${runId}/stop`)).status, 200);
   assert.deepEqual(calls.at(-1), ['pkill', '-f', '--', `${runId}\\.mcp\\.json`], 'the --mcp-config path in its argv, which a /clear keeps and no other process carries');
@@ -178,7 +180,7 @@ test('a codex register answers codex\'s launch argv with the posted folder trust
   assert.deepEqual([worker?.agent, worker?.sessionId, worker?.freeSession, worker?.terminalId], ['codex', undefined, true, id]);
   assert.equal(argv[0], '-c', 'a new conversation: no resume');
   assert.ok(argv.includes(`projects={${JSON.stringify(cwd)}={trust_level="trusted"}}`), argv.join(' '));
-  assert.equal(argv.some((arg) => arg.startsWith('mcp_servers.hive')), false, 'a local activity: no Hive MCP');
+  assert.equal(argv.some((arg) => arg.startsWith('mcp_servers.hive')), true, 'a local activity has the Hive MCP too (#256)');
   assert.equal(reply.includes(SECRET), false);
 });
 

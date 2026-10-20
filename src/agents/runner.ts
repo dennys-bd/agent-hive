@@ -17,7 +17,7 @@ export interface AgentRun {
   ptyId: string;
   cwd: string; // #927: the folder the run starts in: Codex trusts it up front, or its TUI opens on the folder-trust screen
   port: number; // #927: the Hive's port, which Codex's inline hooks and MCP url name (Claude's read hooks.json and its MCP file)
-  withHive: boolean; // #927: a task's run has the Hive's MCP server; a local session (#587) none
+  withHive: boolean; // #927: the run has the Hive's MCP server; every run the Hive launches does (#256), only the runners' own tests pass false
   external: readonly RunMcpServer[]; // #333: the external MCP servers of the run's workspace (Codex renders its -c overrides from the run)
   hooksPath: string;
   pluginDir: string;

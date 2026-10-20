@@ -246,7 +246,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
   }
 
   // The user's own agent session (#164, #283), a task's or a workspace's local one (#587). Its cwd exists (the reducer checked it), so no
-  // worktree step. A task's run has the MCP on; a local one an MCP config with no server (hive_done has no task there). A copy's first run
+  // worktree step. Every run has the Hive's MCP; a local one is offered no task tool and is told the local protocol (#256). A copy's first run
   // (#587) forks the source, and its notice is the first prompt; the open route's prompt (#758) is one too. Either goes in a file of its own:
   // the task's <slug>.md is its stage prompt.
   async function spawnSession(runtime: Runtime, effect: SessionEffect, size?: TerminalSize): Promise<void> {
@@ -270,24 +270,24 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
-    const external = await externalMcp(config, place.workspace.name); // #333: a local session gets them too, still no Hive tools
+    const external = await externalMcp(config, place.workspace.name); // #333
     const first = copy?.notice ?? prompt;
     const runner = runners[agent];
-    const server = { port, ptyId, secret, withHive: task !== undefined, external };
-    // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
-    const protocolPath = task === undefined ? undefined : taskProtocol(home, runtime, task).session; // #797: the task's workspace's
+    const server = { port, ptyId, secret, withHive: true, external }; // #256: a local session has the Hive's tools too
+    // #797: a task's session reads its workspace's session protocol; #256: a local one its workspace's local protocol
+    const protocolPath = task === undefined ? workspaceProtocolPaths(home, place.workspace.name).local : taskProtocol(home, runtime, task).session;
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
     const files = await Promise.all([
       writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)),
       first === undefined ? undefined : writePrompt(promptsDir, ptyId, first),
-      protocolPath === undefined ? undefined : readFile(protocolPath, 'utf8'), // #927: its text, for an agent that takes it so
+      readFile(protocolPath, 'utf8'), // #927: its text, for an agent that takes it so
     ]).catch(async (err: unknown) => { await dispatch({ type: 'spawnFailed', ptyId, message: errorMessage(err) }); });
     if (files === undefined) return;
     const [mcpPath, promptPath, protocolText] = files;
     await plugin.ready(); // #316: as spawn's, after the last await
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: server.withHive, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
-      session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
+      ptyId, cwd: place.cwd, port, withHive: true, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
+      session: runSession(sessionId, continues ? 'continue' : 'new'), protocolPath, protocolText,
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);
     if (argv === undefined) {
