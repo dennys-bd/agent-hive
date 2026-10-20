@@ -2173,6 +2173,11 @@ const en = {
   'plugins.mcp.remove.title': 'Remove the server',
   'plugins.mcp.remove.message': '{name} leaves the worker sessions; a header value saved for it is deleted too.',
   'plugins.mcp.remove.confirm': 'remove',
+  'plugins.mcp.loading': 'reading the tools and servers…',
+  'plugins.mcp.readFailed': 'could not read the tools and servers',
+  'plugins.mcp.hiveTools': 'hive tools',
+  'plugins.mcp.servers': 'external servers',
+  'plugins.mcp.addServer': '+ server',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4341,6 +4346,11 @@ const pt: Record<MessageKey, string> = {
   'plugins.mcp.remove.title': 'Remover o servidor',
   'plugins.mcp.remove.message': '{name} sai das sessões dos workers; um valor de cabeçalho salvo para ele também é apagado.',
   'plugins.mcp.remove.confirm': 'remover',
+  'plugins.mcp.loading': 'lendo as ferramentas e os servidores…',
+  'plugins.mcp.readFailed': 'não foi possível ler as ferramentas e os servidores',
+  'plugins.mcp.hiveTools': 'ferramentas da hive',
+  'plugins.mcp.servers': 'servidores externos',
+  'plugins.mcp.addServer': '+ servidor',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
