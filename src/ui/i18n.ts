@@ -261,6 +261,7 @@ const en = {
   'detail.openActivity': 'open activity',
   'detail.issueLink': 'issue ›', // #64: on a PR page, the details' title row opens the task's issue
   'detail.showFlow': 'see in flow',
+  'detail.dismissError': 'dismiss', // #354: under the task's error and in the exhausted block
   'detail.more': 'more actions',
   'detail.menu.openIssue': 'open issue in {source}',
   'detail.menu.copyLink': 'copy task link',
@@ -1261,6 +1262,7 @@ const en = {
   'task.blockedBy': 'blocked by {ids}',
   'task.start': 'start',
   'task.retry': 'try again',
+  'task.dismissError': 'dismiss error', // #354: the card's ✕ beside the error, its label and title
   'task.continue': 'continue',
   'restart.branch': 'The branch {branch} was already published and stays as it is; the stage starts over on the new branch {newBranch}.',
   'restart.title': 'Restart stage {stage}',
@@ -2390,6 +2392,7 @@ const pt: Record<MessageKey, string> = {
   'detail.openActivity': 'abrir atividade',
   'detail.issueLink': 'issue ›',
   'detail.showFlow': 'ver no fluxo',
+  'detail.dismissError': 'dispensar', // #354
   'detail.more': 'mais ações',
   'detail.menu.openIssue': 'abrir issue no {source}',
   'detail.menu.copyLink': 'copiar link da tarefa',
@@ -3385,6 +3388,7 @@ const pt: Record<MessageKey, string> = {
   'task.blockedBy': 'bloqueada por {ids}',
   'task.start': 'iniciar',
   'task.retry': 'tentar de novo',
+  'task.dismissError': 'dispensar erro', // #354
   'task.continue': 'continuar',
   'restart.branch': 'O branch {branch} já foi publicado e fica como está; a etapa recomeça no novo branch {newBranch}.',
   'restart.title': 'Reiniciar etapa {stage}',

@@ -382,6 +382,32 @@ test('a failed start reads destructive with its short message in the viewer\'s l
   expect(within(tile()).getByText('the terminal could not start')).toHaveClass('text-destructive');
 });
 
+test('a task with an error shows ✕ dispensar erro after its status, which posts dismiss-error and does not open the task; none without an error, for a missing task or an epic; disabled while a run holds it (#354)', async () => {
+  const user = userEvent.setup();
+  const onOpen = vi.fn();
+  const erred = task({ stopped: true, error: 'no transition: verdict:failed' });
+  const { rerender } = render(<Flow state={state(erred)} onOpen={onOpen} />);
+  const dismiss = within(tile()).getByRole('button', { name: 'dispensar erro' });
+  expect(dismiss).toHaveTextContent('✕');
+  expect(dismiss).toHaveAttribute('title', 'dispensar erro');
+  expect(dismiss).toHaveAttribute('data-variant', 'ghost');
+  await user.click(dismiss);
+  await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/dismiss-error', expect.objectContaining({ method: 'POST' })));
+  expect(onOpen).not.toHaveBeenCalled();
+  rerender(<Flow state={state(task())} onOpen={onOpen} />);
+  expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
+  rerender(<Flow state={state(task({ missing: true, error: 'no transition: done' }))} onOpen={onOpen} />);
+  expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
+  const epic = task({ error: 'archive refused', item: { ...task().item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
+  rerender(<Flow state={state(epic)} onOpen={onOpen} />);
+  expect(within(tile()).queryByRole('button', { name: 'dispensar erro' })).not.toBeInTheDocument();
+  rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.', workerId: 's1' }), [working()])} onOpen={onOpen} />);
+  expect(within(tile()).getByRole('button', { name: 'dispensar erro' })).toBeDisabled();
+  setLanguage('en');
+  rerender(<Flow state={state(erred)} onOpen={onOpen} />);
+  expect(within(tile()).getByRole('button', { name: 'dismiss error' })).toBeInTheDocument();
+});
+
 test('a show epic reads aguarda filhas · done/total in muted, before any other state, with no button and no auto badge, in both languages (#31)', () => {
   const epic = task({ item: { ...task().item, children: ['C1', 'C2', 'C3'], closedChildren: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } });
   const { rerender } = render(<Flow state={state(epic)} />);

@@ -579,3 +579,23 @@ test('the parent row follows the issue row, reads the parent\'s #id title and op
   expect(screen.queryByText('pai', { selector: 'dt' })).not.toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'árvore' })).toBeInTheDocument();
 });
+
+test('dispensar sits under the task\'s error and under a failed start, outside the alert, and posts dismiss-error; disabled while a run holds the task; an idle epic\'s error has it enabled (#354)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<Panel state={movedWork({ ...IDLE, tasks: [{ ...STOPPED, error: 'no transition: done' }] })} initial={TASK} />);
+  const dismiss = screen.getByRole('button', { name: 'dispensar' });
+  expect(within(screen.getByRole('alert')).queryByRole('button', { name: 'dispensar' })).not.toBeInTheDocument();
+  expect(before(screen.getByRole('alert'), dismiss)).toBe(true);
+  await user.click(dismiss);
+  await waitFor(() => expect(fetchMock).toHaveBeenLastCalledWith('/tasks/I1/dismiss-error', posted()));
+  unmount();
+  const failed = render(<Panel state={movedWork({ ...IDLE, tasks: [{ ...STOPPED, error: `${SPAWN_FAILED}pty: posix_spawnp failed.` }] })} initial={TASK} />);
+  expect(before(screen.getByRole('alert'), screen.getByRole('button', { name: 'dispensar' }))).toBe(true);
+  failed.unmount();
+  const epic: WithWork = { ...STOPPED, error: 'archive refused', item: { ...STOPPED.item, children: ['C1'], epic: { follows: 'behind', switchAt: 'dev' } } };
+  const shownEpic = render(<Panel state={movedWork({ ...IDLE, tasks: [epic] })} initial={TASK} />);
+  expect(screen.getByRole('button', { name: 'dispensar' })).toBeEnabled();
+  shownEpic.unmount();
+  render(<Panel state={movedWork({ ...state, tasks: [{ ...task, error: 'no transition: done' }] })} initial={TASK} />);
+  expect(screen.getByRole('button', { name: 'dispensar' })).toBeDisabled();
+});

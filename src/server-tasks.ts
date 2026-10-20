@@ -21,7 +21,7 @@ import { registerCheckRoutes } from './server-check.js';
 import { registerFileBaseRoutes } from './server-file-base.js';
 import { registerCopyRoutes } from './server-copy.js';
 import { registerSessionRoutes } from './server-sessions.js';
-import { registerRetryRoute } from './server-retry.js';
+import { registerDismissErrorRoute, registerRetryRoute } from './server-retry.js';
 import { parseRunPick } from './run-pick.js';
 import type { Activity, AgentAvailability, BaseOptions, Source, Task, Session, DeleteActivityScope, Config, Effect, Exec, HiveEvent, Language, Workspace, State } from './types.js';
 import { dropCheckpoints } from './checkpoints.js';
@@ -314,6 +314,7 @@ export function registerTaskRoutes(app: Express, deps: TaskRouteDeps): void {
   registerDeleteActivityRoute(app, deps);
   registerAutoRoutes(app, deps);
   registerRetryRoute(app, deps); // POST /tasks/:id/retry (#915)
+  registerDismissErrorRoute(app, deps); // POST /tasks/:id/dismiss-error (#354)
   registerSessionRoutes(app, deps);
   registerCopyRoutes(app, deps); // GET, POST …/sessions/:session/copy (#587)
   registerWorkspaceRoute(app, deps);

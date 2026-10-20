@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchProblem, candidates, canRunIn, taskId, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
+import { branchProblem, candidates, canRunIn, taskId, canDismissError, canMoveToStage, canCloseMissing, citedColumns, closeWait, entryStage, canRemoveCreated, canSetWorkspace, DEFAULT_BRANCH_TEMPLATE, defaultSession, differsFromSource, DURATION, dueActions, durationMs, enter, hasWorktree, isDue, isGate, isLive, isPastFirstStage, isStarted, createdRemovalBlocker, markRemoved, mergeTasks, moveTask, LOCAL_SLUG, type WorkspaceNames, renameSource, renamedId, renderBranch, replaceSegment, resetOrder, resolveWorkspace, continuable, runTime, runningFirst, type Runs, sessionIdentity, sessionsOf, slugFor, slugOwner, slugTakenMessage, spawnedRun, titleSlug, worktreeRows, worktreeSessions, HIVE_SOURCE, isReservedSource, sourceOf, taskLabel } from '../src/tasks.js';
 import { COLUMN_WRITE_TIMEOUT_MS } from '../src/column-write.js';
 import { taskTotals, touchSession } from '../src/record-kit.js';
 import { initialState } from '../src/orchestrator.js';
@@ -419,6 +419,17 @@ test('canMoveToStage and canRemoveCreated read every worker of the task (#164, #
   assert.equal(canMoveToStage(marked, runsOf([sessionWorker(2)])), true, 'another task\'s session');
   assert.equal(canRemoveCreated(local, NO_RUNS), true);
   assert.equal(canRemoveCreated(local, runsOf([sessionWorker(1)])), false, 'a manual session holds it');
+});
+
+test('canDismissError is canMoveToStage without its epic clause: an idle epic passes, a held, missing or leaving task does not (#354)', () => {
+  const plain = task(1, DEV);
+  const epic: WithWork = { ...plain, item: { ...plain.item, epic: { follows: 'behind', switchAt: 'done' } } };
+  assert.deepEqual([canMoveToStage(epic, runsOf([])), canDismissError(epic, runsOf([]))], [false, true], 'an epic: its refused end action is dismissable (#31)');
+  assert.deepEqual([canMoveToStage(plain, runsOf([])), canDismissError(plain, runsOf([]))], [true, true]);
+  const held = runsFor([{ ...plain, workerId: 's1' }]);
+  for (const [refused, runs] of [[plain, held], [{ ...plain, missing: true }, runsOf([])], [{ ...plain, leaving: true }, runsOf([])]] as const) {
+    assert.deepEqual([canMoveToStage(refused, runs), canDismissError(refused, runs)], [false, false]);
+  }
 });
 
 test('createdRemovalBlocker: running while the task holds a worker or any worker runs on it, deleting while a delete activity runs, nothing on a stopped local task; canRemoveCreated also needs a local task (#355)', () => {

@@ -3,7 +3,7 @@ import { withoutControls } from './pty-paste.js';
 import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
-import { canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
+import { canDismissError, canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
   END, FEEDBACK_MAX, NO_TRANSITION, STAGE_GONE, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
@@ -200,4 +200,20 @@ export function retry(state: State, id: string): Reduced | undefined {
   const { [transitionKey(transition)]: _spent, ...tries } = live.tries ?? {};
   const { state: next, effects } = pass(withActivity(state, unstopped), task, transition, { trigger: transition.when, verdict: transition.verdict }, tries);
   return { state: next, effects };
+}
+
+/** Dismiss (#354): the task's error goes, whatever set it, and so does its stop in a stage with an action (commands, wait for CI, delete
+ * activity), which holds no session: the action acts again on the same dispatch. A prompt stage keeps the stop, or the fill would start a
+ * session at once; someone starts it. Moves nothing, writes nothing to the source, keeps tries and tryLog (resetting them is retry's).
+ * Undefined when the task is unknown, has no error, or canDismissError refuses it: a live worker owns the activity and would race this. */
+export function dismissError(state: State, id: string): Reduced | undefined {
+  const task = state.tasks.find((t) => taskId(t) === id);
+  const live = activityOf(state, id);
+  if (task === undefined || live?.error === undefined || !canDismissError(task, state)) return undefined;
+  const { error: _error, ...cleared } = live;
+  const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = cleared;
+  const hasAction = stageOf(state.stages, task.stage)?.action !== undefined;
+  // A prompt stage stops even when the error came without a stop, or the fill would start a session on this dispatch
+  const held: Activity = cleared.stopped === true ? cleared : { ...cleared, stopped: true, stoppedAt: new Date().toISOString() };
+  return { state: withActivity(state, hasAction ? unstopped : held), effects: [] };
 }

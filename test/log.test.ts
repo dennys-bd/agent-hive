@@ -456,6 +456,10 @@ test('describeEvent names a retry by its task only (#915)', () => {
   assert.equal(describeEvent({ type: 'retry', taskId: 'board:I7' }), 'retry #board:I7');
 });
 
+test('describeEvent names a dismissError by its task only (#354)', () => {
+  assert.equal(describeEvent({ type: 'dismissError', taskId: 'board:I7' }), 'dismissError #board:I7');
+});
+
 test('describeEvent and describeEffect name a checkpoint by number, stage and end, never its shas (#619)', () => {
   const checkpoint: Checkpoint = { n: 2, stage: 'dev', start: 'a1b2c3d', head: 'b2c3d4e', commit: 'c3d4e5f', branch: 'hive/1-x', at: '2026-10-10T10:00:00.000Z', ended: 'restart' };
   assert.equal(describeEvent({ type: 'checkpointCaptured', activityId: 'fedcba98-0000-4000-8000-000000000002', checkpoint }), 'checkpointCaptured activity=fedcba98 n=2 stage=dev ended=restart');

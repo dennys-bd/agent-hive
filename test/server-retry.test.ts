@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState } from '../src/orchestrator.js';
-import { registerRetryRoute } from '../src/server-retry.js';
+import { registerDismissErrorRoute, registerRetryRoute } from '../src/server-retry.js';
 import type { TaskRouteDeps } from '../src/server-tasks.js';
 import { transitionKey } from '../src/transitions.js';
 import type { Activity, HiveEvent, Item, Stage, State, Task, Transition } from '../src/types.js';
 import { withWork } from './fixtures/work.js';
 
-// POST /tasks/:id/retry (#915) alone over a state: every dispatched event is recorded rather than reduced.
+// POST /tasks/:id/retry (#915) and /dismiss-error (#354) alone over a state: every dispatched event is recorded rather than reduced.
 
 const ID = 'board:1';
 const item: Item = { itemId: ID, id: '1', title: 'Task 1', body: '', url: 'https://github.com/o/r/issues/1', source: 'board' };
@@ -28,11 +28,13 @@ async function route(t: TestContext, { work = HALTED, transitions = [RETRY], tas
   const events: HiveEvent[] = [];
   const app = express();
   const dispatch = async (event: HiveEvent): Promise<never[]> => { events.push(event); return []; };
-  registerRetryRoute(app, { requireLive: (() => ({ state })) as unknown as TaskRouteDeps['requireLive'], dispatch });
+  const deps = { requireLive: (() => ({ state })) as unknown as TaskRouteDeps['requireLive'], dispatch };
+  registerRetryRoute(app, deps);
+  registerDismissErrorRoute(app, deps);
   const server = app.listen(0);
   t.after(() => server.close());
-  const post = async (id: string): Promise<{ status: number; body: unknown }> => {
-    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/tasks/${encodeURIComponent(id)}/retry`, { method: 'POST' });
+  const post = async (id: string, action = 'retry'): Promise<{ status: number; body: unknown }> => {
+    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/tasks/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
     return { status: res.status, body: await res.json() };
   };
   return { post, events };
@@ -58,6 +60,36 @@ test('POST /tasks/:id/retry answers 404 for an unknown task and 409 when it is m
   for (const [error, setup] of cases) {
     const refused = await route(t, setup);
     assert.deepEqual(await refused.post(ID), { status: 409, body: { error } });
+    assert.deepEqual(refused.events, []);
+  }
+});
+
+test('POST /tasks/:id/dismiss-error dispatches one dismissError for a task with an error, out of tries included, and answers ok (#354)', async (t) => {
+  const { post, events } = await route(t);
+  assert.deepEqual(await post(ID, 'dismiss-error'), { status: 200, body: { ok: true } });
+  assert.deepEqual(events, [{ type: 'dismissError', taskId: ID }]);
+});
+
+test('POST /tasks/:id/dismiss-error lets an idle epic through, which retry still refuses (#354, #31)', async (t) => {
+  const epic: Task = { ...TASK, item: { ...item, epic: { follows: 'behind', switchAt: 'fix' } } };
+  const { post, events } = await route(t, { task: epic });
+  assert.deepEqual(await post(ID, 'dismiss-error'), { status: 200, body: { ok: true } });
+  assert.deepEqual(await post(ID), { status: 409, body: { error: 'tarefa já está executando' } });
+  assert.deepEqual(events, [{ type: 'dismissError', taskId: ID }]);
+});
+
+test('POST /tasks/:id/dismiss-error answers 404 for an unknown task and 409 when it is missing, a run holds it or it has no error, dispatching nothing (#354)', async (t) => {
+  const unknown = await route(t);
+  assert.equal((await unknown.post('board:nope', 'dismiss-error')).status, 404);
+  assert.deepEqual(unknown.events, []);
+  const cases: [string, Setup][] = [
+    ['tarefa sumiu do source: feche ou mantenha', { task: { ...TASK, missing: true } }],
+    ['tarefa já está executando', { work: { ...HALTED, workerId: 'w1' } }],
+    ['tarefa não tem erro', { work: { stopped: true } }],
+  ];
+  for (const [error, setup] of cases) {
+    const refused = await route(t, setup);
+    assert.deepEqual(await refused.post(ID, 'dismiss-error'), { status: 409, body: { error } });
     assert.deepEqual(refused.events, []);
   }
 });

@@ -1438,6 +1438,7 @@ export type HiveEvent =
   | { type: 'worktreeReady'; activityId: string; path: string; branch: string; base: TaskBase | null; local: boolean } // POST /tasks/:id/worktree created it (#164); local = it runs in its workspace's own checkout (#444)
   | { type: 'moveToStage'; taskId: string; stage: string; drop?: { before?: string } } // right-click → move to, or a drag across stages (#164, #366); `drop` pins the task before `before`, or at the end without it
   | { type: 'retry'; taskId: string } // #915: POST /tasks/:id/retry on a task stopped with TRIES_OUT: the spent transition again, its counter back at 0
+  | { type: 'dismissError'; taskId: string } // #354: POST /tasks/:id/dismiss-error: the activity's error goes, and its stop too in a stage with an action
   | { type: 'approve'; activityId: string } // Aprovar on a task awaiting approval (#268): the approved transition's sources and the move; a held worker goes on in place
   | { type: 'feedback'; activityId: string; text: string; start: boolean } // start: begin now or queue; ignored on a held worker, which always answers now (#268)
   | { type: 'extendApproval'; activityId: string } // Estender on a held worker (#268)

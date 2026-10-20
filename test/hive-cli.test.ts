@@ -49,7 +49,7 @@ const HOME_JS = fileURLToPath(new URL('../src/home.js', import.meta.url)); // th
 // Gating on a file the test writes, not on a sleep, keeps the ordering assertions independent of host load (#552).
 const FAKE_MAIN_JS = `
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const home = join(process.env.XDG_CONFIG_HOME, 'agent-hive');
@@ -57,7 +57,8 @@ console.log('fake main up, args: ' + JSON.stringify(process.argv.slice(2)));
 const poll = setInterval(() => {
   if (!existsSync(join(home, 'go'))) return;
   clearInterval(poll);
-  writeFile(join(home, 'marker'), process.env.PATH ?? '');
+  // Written beside and renamed in: a test that polls for the marker must never read it half written
+  writeFile(join(home, 'marker.tmp'), process.env.PATH ?? '').then(() => rename(join(home, 'marker.tmp'), join(home, 'marker')));
 }, 50);
 setTimeout(() => process.exit(0), 60_000).unref(); // a test that failed before writing go must not leave this viewer polling forever
 `;
