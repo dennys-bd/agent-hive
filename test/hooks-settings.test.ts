@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { runners } from '../src/agents/registry.js';
 import { HOOK_EVENTS, renderHooksSettings, renderMcpConfig } from '../src/agents/claude-home.js';
 import { excludeFromGit, hookCommand, PROTOCOL_DIR, prepareHome, statusCommand, workspaceProtocolPaths, writeMcpConfig, writeWorkspaceProtocol } from '../src/hooks-settings.js';
-import { protocolTexts, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
+import { LOCAL_PROTOCOL, protocolTexts, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -65,7 +65,7 @@ test('prepareHome writes hooks.json and prompts/ into the home, creating it for 
   const paths = await prepareHome(home, 4242, [runners.claude], []);
   assert.deepEqual(paths, {
     hooksPath: join(home, 'hooks.json'), promptsDir: join(home, 'prompts'),
-    protocol: { stage: join(home, 'protocol', 'stage.md'), session: join(home, 'protocol', 'session.md') },
+    protocol: { stage: join(home, 'protocol', 'stage.md'), session: join(home, 'protocol', 'session.md'), local: join(home, 'protocol', 'local.md') },
   });
   assert.deepEqual(JSON.parse(await readFile(paths.hooksPath, 'utf8')), renderHooksSettings(4242));
   assert.deepEqual(await readdir(paths.promptsDir), []);
@@ -84,9 +84,10 @@ test('prepareHome with no runner writes the shared files only: no hooks.json and
 test('prepareHome writes the stage and the session protocol into <home>/protocol, for this user only, returns their paths, and a later boot rewrites them (#167)', async (t) => {
   const home = join(await tempDir(t, ''), 'agent-hive');
   const { protocol } = await prepareHome(home, 4242, [runners.claude], []);
-  assert.deepEqual(protocol, { stage: join(home, PROTOCOL_DIR, 'stage.md'), session: join(home, PROTOCOL_DIR, 'session.md') });
+  assert.deepEqual(protocol, { stage: join(home, PROTOCOL_DIR, 'stage.md'), session: join(home, PROTOCOL_DIR, 'session.md'), local: join(home, PROTOCOL_DIR, 'local.md') });
   assert.equal(await readFile(protocol.stage, 'utf8'), STAGE_PROTOCOL);
   assert.equal(await readFile(protocol.session, 'utf8'), SESSION_PROTOCOL);
+  assert.equal(await readFile(protocol.local, 'utf8'), LOCAL_PROTOCOL);
   assert.equal((await stat(join(home, PROTOCOL_DIR))).mode & 0o777, 0o700, 'created with the home\'s mode');
   await writeFile(protocol.stage, 'from a previous version');
   await prepareHome(home, 4242, [runners.claude], []);
@@ -141,7 +142,7 @@ test('writeMcpConfig with withHive false writes a config that lists no server, s
 test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/, each protocol alone for an empty memory, then a blank line and the section otherwise (#797)', async (t) => {
   const home = await tempDir(t, 'home-');
   const paths = workspaceProtocolPaths(home, 'stage.md'); // a workspace named after a global file: its own folder, no collision
-  assert.deepEqual(paths, { stage: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'stage.md'), session: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'session.md') });
+  assert.deepEqual(paths, { stage: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'stage.md'), session: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'session.md'), local: join(home, PROTOCOL_DIR, 'workspaces', 'stage.md', 'local.md') });
   await prepareHome(home, 4242, [runners.claude], []);
   assert.deepEqual(await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), ''), paths);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [STAGE_PROTOCOL, SESSION_PROTOCOL]);
@@ -149,7 +150,7 @@ test('writeWorkspaceProtocol writes, in <home>/protocol/workspaces/<workspace>/,
   const section = '## Workspace memory\n\n### Avoid\n- [m-1] never edit dist/\n';
   await writeWorkspaceProtocol(home, 'stage.md', protocolTexts([], []), section);
   assert.equal((await stat(paths.stage)).mode & 0o777, 0o600, 'a file only its owner reads');
-  assert.deepEqual((await readdir(dirname(paths.stage))).sort(), ['session.md', 'stage.md'], 'no temp file left');
+  assert.deepEqual((await readdir(dirname(paths.stage))).sort(), ['local.md', 'session.md', 'stage.md'], 'no temp file left');
   assert.equal(workspaceProtocolPaths(home, 'a b').stage, join(home, PROTOCOL_DIR, 'workspaces', 'a%20b', 'stage.md'));
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
 });
@@ -171,6 +172,17 @@ test('prepareHome writes the global protocol files without the block of a tool t
 
 test('writeWorkspaceProtocol writes the texts it is given, the memory section under each (#336)', async (t) => {
   const home = await tempDir(t, 'home-');
-  const paths = await writeWorkspaceProtocol(home, 'site', { stage: 'S\n', session: 'C\n' }, '## Workspace memory\n');
+  const paths = await writeWorkspaceProtocol(home, 'site', { stage: 'S\n', session: 'C\n', local: 'L\n' }, '## Workspace memory\n');
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], ['S\n\n## Workspace memory\n', 'C\n\n## Workspace memory\n']);
+});
+
+test('the global and every workspace\'s writer write local.md beside the other two, a turned-off tool\'s block left out, the workspace\'s memory section under it (#256)', async (t) => {
+  const home = join(await tempDir(t, ''), 'agent-hive');
+  const { protocol } = await prepareHome(home, 4242, [], ['hive_remember']);
+  assert.deepEqual([protocol.local, await readFile(protocol.local, 'utf8')], [join(home, PROTOCOL_DIR, 'local.md'), renderProtocol('local', ['hive_remember'], [])]);
+  const paths = await writeWorkspaceProtocol(home, 'site', protocolTexts([], []), '## Workspace memory\n');
+  assert.deepEqual(paths, workspaceProtocolPaths(home, 'site'));
+  assert.equal(paths.local, join(home, PROTOCOL_DIR, 'workspaces', 'site', 'local.md'));
+  assert.equal(await readFile(paths.local, 'utf8'), `${LOCAL_PROTOCOL}\n## Workspace memory\n`);
+  assert.equal((await stat(paths.local)).mode & 0o777, 0o600, 'it holds the lessons, as the other two do');
 });

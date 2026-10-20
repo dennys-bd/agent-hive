@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BLOCKS, PROTOCOL_BLOCKS, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
+import { BLOCKS, LOCAL_PROTOCOL, PROTOCOL_BLOCKS, protocolTexts, renderProtocol, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import type { RenderedPassage } from '../src/protocol-inserts.js';
 
 const FROM_THE_HIVE = 'This text comes from the Hive, the app that runs this session.';
@@ -128,4 +128,24 @@ test('a passage lands right after its anchor in both kinds, several on one ancho
   }
   const lines = renderProtocol('stage', ['hive_remember'], [passage('p1', 'remember', 'mine')]).split('\n');
   assert.equal(lines[lines.indexOf('mine') + 1], WHY, 'the block goes, the user\'s passage stays where it was');
+});
+
+// #256: a session with no task is told only the rules that hold without one
+const LOCAL_INTRO = 'This text comes from the Hive, the app that runs this session. This session runs in a workspace, with no task.';
+const LOCAL_ASK = 'Every question for the user goes through `hive_ask`: call it with the question, ask it in chat and end your turn.';
+const LOCAL_TEXT = [LOCAL_INTRO, '', LOCAL_ASK, ASK_LAST, REMEMBER, WHY, UNDO, ''].join('\n');
+
+test('the local protocol holds the task-independent blocks only: its own intro, the session\'s ask, remember, why and undo; nothing of hive_done, its result or hive_stop; a task\'s protocols are unchanged (#256)', () => {
+  assert.equal(LOCAL_PROTOCOL, LOCAL_TEXT);
+  assert.equal(renderProtocol('local', [], []), LOCAL_TEXT);
+  for (const word of ['hive_done', 'hive_stop', '`result`']) assert.equal(LOCAL_PROTOCOL.includes(word), false, word);
+  assert.deepEqual(BLOCKS.filter((b) => b.local === undefined).map((b) => b.id), ['done', 'result', 'stop']);
+  assert.deepEqual(protocolTexts([], []), { stage: TODAY_STAGE, session: TODAY_SESSION, local: LOCAL_TEXT });
+});
+
+test('in the local protocol a passage on a block it leaves out keeps its place, and hive_remember off drops remember (#256)', () => {
+  const lines = renderProtocol('local', [], [passage('p1', 'done', 'mine'), passage('p2', 'stop', 'also mine')]).split('\n');
+  assert.deepEqual(lines.slice(0, 5), [LOCAL_INTRO, '', 'mine', LOCAL_ASK, ASK_LAST]);
+  assert.deepEqual(lines.slice(5, 7), ['also mine', REMEMBER], 'the block goes, the user\'s passage stays where it was');
+  assert.equal(renderProtocol('local', ['hive_remember'], []), LOCAL_TEXT.replace(`${REMEMBER}\n`, ''));
 });

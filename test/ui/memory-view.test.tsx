@@ -63,3 +63,15 @@ test('the five calls reach the workspace\'s memory routes with the UI header on 
   expect(refusalText(err)).toBe('a memória está cheia: remova ou encurte uma lição');
   expect(refusalText(new Error('disk full'))).toBe('disk full');
 });
+
+test('a lesson saved from a local session reads local session / sessão local where a task\'s reads its id, and counts among those not the user\'s (#256)', () => {
+  const local = lesson({ origin: 'local' });
+  for (const [language, meta, count] of [
+    ['en', 'local session · 2026-10-01 · 21 characters', '2 lessons · 1 from tasks'],
+    ['pt', 'sessão local · 2026-10-01 · 21 caracteres', '2 lições · 1 vindas de tarefas'],
+  ] as const) {
+    setLanguage(language);
+    expect(metaText(local)).toBe(meta);
+    expect(lessonsText([local, lesson({ id: 'm-2' })])).toBe(count);
+  }
+});

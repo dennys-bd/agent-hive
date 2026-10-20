@@ -1,5 +1,5 @@
 import { formatCount, t, tPlural } from '../i18n.js';
-import { MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
+import { MEMORY_REFUSALS, type MemoryEntry, type MemoryKind, type MemoryOrigin, type MemoryRefusalCode, type MemoryStats } from '../../types.js';
 
 // How the memory section and dialog word a lesson and its numbers (#797). Pure, so the components stay layout.
 
@@ -23,11 +23,16 @@ export function kindCounts(entries: readonly MemoryEntry[]): Record<KindFilter, 
   return { all: entries.length, pref: count('pref'), fact: count('fact'), avoid: count('avoid') };
 }
 
-/** A lesson's meta line before its citations (#797): where it came from (the stage only from a task), its date and its size. */
+// Where a lesson came from (#797): the user, a local session (#256), or a task with its stage when a stage run saved it
+function originText(origin: MemoryOrigin): string[] {
+  if (origin === 'user') return [t('settings.memory.you')];
+  if (origin === 'local') return [t('settings.memory.local')];
+  return [t('settings.memory.task', { id: origin.task }), ...(origin.stage === undefined ? [] : [origin.stage])];
+}
+
+/** A lesson's meta line before its citations (#797): where it came from, its date and its size. */
 export function metaText(entry: MemoryEntry): string {
-  const { origin } = entry;
-  const from = origin === 'user' ? [t('settings.memory.you')] : [t('settings.memory.task', { id: origin.task }), ...(origin.stage === undefined ? [] : [origin.stage])];
-  return [...from, entry.at.slice(0, 10), t('settings.memory.characters', { n: formatCount(entry.text.length) })].join(' · ');
+  return [...originText(entry.origin), entry.at.slice(0, 10), t('settings.memory.characters', { n: formatCount(entry.text.length) })].join(' · ');
 }
 
 /** `citada {n} vezes` (#797): a floor, an agent may forget to cite. */

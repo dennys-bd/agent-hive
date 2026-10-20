@@ -79,7 +79,7 @@ function registerReads(app: Express, deps: ProtocolRouteDeps): void {
     // an unreadable memory file is the bare protocol, as the writer writes it (#797)
     const [protocol, file] = await Promise.all([deps.protocolFor(workspace.name, off), deps.memory.read(workspace.name).catch(() => EMPTY_MEMORY)]);
     const memory = renderMemory(file.entries, off);
-    res.json({ stage: withMemory(protocol.stage, memory), session: withMemory(protocol.session, memory) });
+    res.json({ stage: withMemory(protocol.stage, memory), session: withMemory(protocol.session, memory), local: withMemory(protocol.local, memory) }); // #256: the protocol screen (#337) previews every kind
   }));
 }
 

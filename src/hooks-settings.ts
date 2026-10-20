@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/pr
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentRunner } from './agents/runner.js';
-import { type ProtocolTexts, protocolTexts } from './protocol.js';
+import { PROTOCOL_KINDS, type ProtocolTexts, protocolTexts } from './protocol.js';
 import { installShellInit } from './shell-init.js';
 import { APPROVAL_HOLD_MAX_MIN, type OptionalTool } from './types.js';
 
@@ -13,11 +13,15 @@ const HOOKS_FILE = 'hooks.json'; // what every run's hooks settings flag points 
 
 const WORKSPACES_DIR = 'workspaces'; // <home>/protocol/workspaces/<workspace> (#797): apart from the global stage.md / session.md, which a workspace could be named after
 
-/** The protocol files (#167): a stage run is told stage, a free session on a task session. */
+/** The protocol files (#167): a stage run is told stage, a free session on a task session, a session with no task local (#256). */
 export interface ProtocolPaths {
   stage: string;
   session: string;
+  local: string;
 }
+
+// One file per protocol kind, in the global folder and in each workspace's (#167, #797, #256)
+const protocolFiles = (dir: string): ProtocolPaths => ({ stage: join(dir, 'stage.md'), session: join(dir, 'session.md'), local: join(dir, 'local.md') });
 const HOME_MODE = 0o700; // the home holds the log, the prompts and the credentials: this user only
 const MCP_MODE = 0o600; // the MCP config holds the secret (#467)
 const PROTOCOL_FILE_MODE = 0o600; // a workspace's protocol files hold its lessons (#797)
@@ -93,16 +97,16 @@ export function pluginSource(): string {
 async function writeProtocol(home: string, off: readonly OptionalTool[]): Promise<ProtocolPaths> {
   const dir = join(home, PROTOCOL_DIR);
   await mkdir(dir, { recursive: true, mode: HOME_MODE });
-  const paths = { stage: join(dir, 'stage.md'), session: join(dir, 'session.md') };
+  const paths = protocolFiles(dir);
   const texts = protocolTexts(off, []);
-  await Promise.all([writeFile(paths.stage, texts.stage), writeFile(paths.session, texts.session)]);
+  // local.md for symmetry: a local run reads its workspace's (#256)
+  await Promise.all(PROTOCOL_KINDS.map((kind) => writeFile(paths[kind], texts[kind])));
   return paths;
 }
 
 /** A workspace's protocol files (#797): the protocol with the workspace's memory under it, in <home>/protocol/workspaces/<workspace>/. No I/O. */
 export function workspaceProtocolPaths(home: string, workspace: string): ProtocolPaths {
-  const dir = join(home, PROTOCOL_DIR, WORKSPACES_DIR, encodeURIComponent(workspace));
-  return { stage: join(dir, 'stage.md'), session: join(dir, 'session.md') };
+  return protocolFiles(join(home, PROTOCOL_DIR, WORKSPACES_DIR, encodeURIComponent(workspace)));
 }
 
 /** A protocol with a workspace's memory section under it (#797): what its runs read. */
@@ -118,7 +122,7 @@ export async function writeWorkspaceProtocol(home: string, workspace: string, pr
     await writeFile(`${path}.tmp`, text, { mode: PROTOCOL_FILE_MODE });
     await rename(`${path}.tmp`, path);
   };
-  await Promise.all([put(paths.stage, withMemory(protocol.stage, memory)), put(paths.session, withMemory(protocol.session, memory))]);
+  await Promise.all(PROTOCOL_KINDS.map((kind) => put(paths[kind], withMemory(protocol[kind], memory))));
   return paths;
 }
 

@@ -106,14 +106,14 @@ test('POST …/copy into another activity copies the transcript there, spawns th
   assert.equal(sessionsOf(server.getState()!, 'local:1').length, 1, 'the original stays as it was');
 });
 
-test('POST …/copy into the workspace\'s local runs in the checkout with an MCP config that lists no server and no prompt without the notice, keeps a local session, and /ptys lists it by workspace (#587)', async (t) => {
-  const { base, server, workers, repo, source } = await twoActivities(t);
+test('POST …/copy into the workspace\'s local runs in the checkout with the Hive\'s MCP and the local protocol and no prompt without the notice, keeps a local session, and /ptys lists it by workspace (#587)', async (t) => {
+  const { base, server, workers, repo, home, source } = await twoActivities(t);
   assert.equal((await postJson(`${base}${workPath(server, 'local:1')}/sessions/${source}/copy`, { to: { activityId: localActivityId(WORKSPACE) }, notice: false })).status, 200);
   const { launch } = workers[1];
   const [local] = localSessionsOf(server.getState()!, WORKSPACE);
   assert.deepEqual([launch.cwd, launch.promptPath, plainArgs(launch).slice(-2)], [repo, undefined, ['--session-id', local.id]]);
-  assert.deepEqual(JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')), { mcpServers: {} });
-  assert.equal(launchFlag(launch, '--append-system-prompt-file'), undefined, 'a local session has no Hive tools, so no protocol (#167)');
+  assert.ok('hive' in (JSON.parse(await readFile(launchFlag(launch, '--mcp-config')!, 'utf8')) as { mcpServers: object }).mcpServers, 'a local copy has the Hive\'s tools too (#256)');
+  assert.equal(launchFlag(launch, '--append-system-prompt-file'), join(home, PROTOCOL_DIR, 'workspaces', WORKSPACE, 'local.md'), 'and its workspace\'s local protocol (#256)');
   const listed = (await (await hiveFetch(`${base}/ptys`)).json()) as { ptys: { label: string }[] };
   assert.deepEqual(listed.ptys.map((w) => w.label), [WORKSPACE]);
 });

@@ -8,7 +8,7 @@ import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { activityDir, sourceSide } from './copy-sides.js';
-import { writeMcpConfig } from './hooks-settings.js';
+import { workspaceProtocolPaths, writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { PluginRender } from './plugin-render.js';
 import type { Runtime } from './server.js';
@@ -99,12 +99,13 @@ function registerForget(app: Express, deps: TerminalRouteDeps): void {
 }
 
 // #924, #932: the capture through its worker's runner: the Hive's flags, the agent's own args, the session id the route drew (none for an agent
-// that picks its own), the folder the shim ran in, and on a task the Hive's tools and session protocol, as a path and as text (Codex's)
+// that picks its own), the folder the shim ran in, the Hive's tools and its protocol as a path and as text (Codex's): a task's session protocol,
+// or on a local activity its workspace's local one (#256)
 async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime: Runtime }, worker: Worker, o: { runId: string; cwd: string; sessionId?: string }): Promise<AgentRun> {
   const { state, runtime } = live;
   const agent = ranAgent(worker);
   const activity = state.activities.find((a) => a.id === worker.activityId);
-  const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
+  const onTask = activity?.kind === 'task'; // a task's session protocol on a task's activity; the workspace's local one elsewhere (#256)
   const task = onTask ? taskOfWorker(state, worker) : undefined; // #797: its workspace's protocol, the memory under it
   // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
   if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
@@ -113,13 +114,13 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   const workspace = task === undefined ? activity?.workspace : requireWorkspace(runtime.config, task).name;
   if (workspace === undefined) throw new Error(NO_CAPTURE_MESSAGE);
   const external = await deps.externalMcp(runtime.config, workspace); // #333
-  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask, external }));
+  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: true, external })); // #256: a local terminal's agent too
   await deps.plugin.ready(); // #316: a render queued by a save or the plugins store lands before this run reads its folder
-  const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : undefined;
+  const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : workspaceProtocolPaths(deps.home, workspace).local;
   return {
-    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, external, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
+    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: true, external, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
     lspPluginDir: deps.lspDir(workspace),
-    ...(protocolPath === undefined ? {} : { protocolPath, protocolText: await readFile(protocolPath, 'utf8') }),
+    protocolPath, protocolText: await readFile(protocolPath, 'utf8'),
     extraArgs: runtime.config.agentArgs[agent],
     ...(o.sessionId === undefined ? {} : { session: { id: o.sessionId, resume: false } }),
   };
