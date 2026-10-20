@@ -27,6 +27,7 @@ import { createPtyHost, NO_PTY } from '../src/pty-host.js';
 import { CONTINUE_PROMPT } from '../src/server-spawn.js';
 import { STAGE_PROTOCOL } from '../src/protocol.js';
 import { renderPrompt } from '../src/spawn.js';
+import { mergeBasePrompt } from '../src/merge-prompt.js';
 import { worktreePath } from '../src/worktree.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, Source, SourceQuota, SourceSpec, Task, TaskPr, Session, Effect, Exec, OpenResult, RateLimits, SettingsBody, SettingsResult, Worker, State, TaskComment, WorktreeRow } from '../src/types.js';
@@ -2715,6 +2716,35 @@ test('feedback with start on a task whose run ended resumes the stage\'s session
   assert.equal(workers.length, 2);
   assert.deepEqual(plainArgs(workers[1].launch).slice(-2), ['--resume', session]);
   assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), 'The user reviewed this stage and asks:\n\nfix the flaky test');
+});
+
+test('feedback with prompt mergeBase sends the merge-from-base text, rendered on the workspace\'s base remote, as started feedback (#379)', async (t) => {
+  const { base, server, workers } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { runId: ptyId } = worker0(server);
+  const session = work0(server)!.sessionId!;
+  await markDone(server, ptyId!);
+  await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
+  await server.dispatch({ type: 'setSignal', signal: 'red' }); // past red, like a start
+  assert.deepEqual(await json(postJson(`${base}${workPath(server, 'board:I1')}/feedback`, { prompt: 'mergeBase', promptBase: 'main', start: true })), { ok: true });
+  assert.deepEqual(plainArgs(workers[1].launch).slice(-2), ['--resume', session]);
+  assert.equal(await readFile(workers[1].launch.promptPath!, 'utf8'), `The user reviewed this stage and asks:\n\n${mergeBasePrompt('main')}`);
+});
+
+test('feedback with a prompt and a text, another prompt or a bad promptBase answers 400 and the task keeps awaiting (#379)', async (t) => {
+  const { base, server } = await start(t, { ...BODY, stages: LAST_APPROVAL });
+  const { runId: ptyId } = worker0(server);
+  await markDone(server, ptyId!);
+  await hookEvent(base, ptyId!, { hook_event_name: 'Stop' });
+  const bodies = [
+    { text: 'fix it', prompt: 'mergeBase', promptBase: 'main', start: true },
+    { prompt: 'rebase', promptBase: 'main', start: true },
+    { prompt: 'mergeBase', promptBase: '-x', start: true },
+  ];
+  for (const body of bodies) {
+    const res = await postJson(`${base}${workPath(server, 'board:I1')}/feedback`, body);
+    assert.deepEqual([res.status, await res.json()], [400, { error: 'prompt must be mergeBase, with promptBase a branch name' }], JSON.stringify(body));
+  }
+  assert.equal(typeof work0(server)?.approval?.since, 'string');
 });
 
 const MANUAL_GATE: LegacyStage[] = [{ name: 'fila', from: { board: ['Ready'] }, onFinish: { board: [move('In review')] }, approval: true }]; // approval, no prompt (#315)

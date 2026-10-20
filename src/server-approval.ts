@@ -2,6 +2,9 @@ import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { answerable } from './approval.js';
+import { taskWorkspace } from './config.js';
+import { workspaceBase } from './fork.js';
+import { PROMPT_MESSAGE, promptText } from './merge-prompt.js';
 import { decompositionPending } from './decomposition.js';
 import { withoutControls } from './pty-paste.js';
 import type { TaskRouteDeps, Refusal } from './server-tasks.js';
@@ -34,11 +37,15 @@ function awaiting(state: State, activityId: string, held: boolean): Task | Refus
   return held && approval.until === undefined ? { status: HTTP_CONFLICT, message: NOT_HELD_MESSAGE } : target.task;
 }
 
-// The feedback the body asks for, or why not: the text without control characters, trimmed, 1 to FEEDBACK_MAX characters; start a boolean.
-// Every task awaiting approval takes it, manual gates included (#685).
-function feedbackEvent(activityId: string, body: unknown): HiveEvent | Refusal {
-  const { text, start } = (body ?? {}) as { text?: unknown; start?: unknown };
-  const trimmed = typeof text === 'string' ? withoutControls(text).trim() : '';
+// The feedback the body asks for, or why not: its text, or the prompt a key names (#379: mergeBase, rendered on the task's base remote as
+// the open route renders it), never both; without control characters, trimmed, 1 to FEEDBACK_MAX characters; start a boolean. Every task
+// awaiting approval takes it, manual gates included (#685).
+function feedbackEvent(activityId: string, body: unknown, task: Task, _state: State, config: Pick<Config, 'comb' | 'baseBranch'>): HiveEvent | Refusal {
+  const { text, prompt, promptBase, start } = (body ?? {}) as Record<string, unknown>;
+  const asked = promptText(prompt, promptBase, workspaceBase(config, taskWorkspace(config, task)).remote);
+  if ('refused' in asked || (asked.text !== undefined && text !== undefined)) return { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE };
+  const given = asked.text ?? text;
+  const trimmed = typeof given === 'string' ? withoutControls(given).trim() : '';
   if (trimmed === '' || trimmed.length > FEEDBACK_MAX) return { status: HTTP_BAD_REQUEST, message: FEEDBACK_MESSAGE };
   if (typeof start !== 'boolean') return { status: HTTP_BAD_REQUEST, message: START_MESSAGE };
   return { type: 'feedback', activityId, text: trimmed, start };
@@ -54,7 +61,7 @@ function approveEvent(activityId: string, task: Task, state: State, config: Pick
 
 /** Aprovar, feedback and Estender on a task awaiting approval (#268): checked here, decided by the reducer (a held worker answers its Stop). */
 export function registerApprovalRoutes(app: Express, { requireLive, dispatch }: Pick<TaskRouteDeps, 'requireLive' | 'dispatch'>): void {
-  type Answer = (activityId: string, body: unknown, task: Task, state: State, config: Pick<Config, 'comb'>) => HiveEvent | Refusal;
+  type Answer = (activityId: string, body: unknown, task: Task, state: State, config: Pick<Config, 'comb' | 'baseBranch'>) => HiveEvent | Refusal;
   const route = (path: string, held: boolean, event: Answer, trigger?: UserTrigger): void => {
     app.post(`/activities/:id/${path}`, async (req: Request, res: Response) => {
       const current = requireLive(res);
