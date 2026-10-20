@@ -7,6 +7,7 @@ import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { shownBase } from './setup-rows.js';
 import { runTaskSetup } from './task-setup.js';
+import { withReused } from './worktree-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
 import { commandChannel, type ConsoleStore } from './console.js';
@@ -175,10 +176,12 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const workspace = requireWorkspace(config, task); // the task's workspace, frozen by the reducer (#179); gone = spawnFailed with the reason
     const branch = taskBranch(activity, branchFor(config, task.item)); // a Restart's -r<n> (#283)
     const base = workspaceBase(config, workspace); // #854: the base remote, the workspace's base branch over the general one, its fork
+    let reused: string | undefined; // #267: the branch ensure reused, which a failed setup names
     const ensure = async (git: Exec): Promise<string> => {
       const prepared = activity.local
         ? await ensureCheckout(workspace.path, branch, base, activity.base?.ref, git)
         : await ensureWorktree(workspace.path, workSlug(activity, task), branch, base, activity.base?.ref, git);
+      reused = prepared.reused;
       if (prepared.line) log.info(prepared.line);
       if (prepared.sync) await dispatch({ type: 'forkSynced', activityId: activity.id, sync: prepared.sync }); // #854
       return prepared.path;
@@ -188,6 +191,8 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     setups.set(ptyId, controller);
     try {
       return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, events }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
+    } catch (err) {
+      throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {
       setups.delete(ptyId);
     }

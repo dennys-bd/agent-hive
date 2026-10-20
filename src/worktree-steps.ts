@@ -138,10 +138,27 @@ export function runShell(file: string, args: string[], { cwd, timeoutMs, onOutpu
   });
 }
 
-// The task's reason for a failed step: a RUN's exit or timeout with its output tail on the lines below, else the error's own message.
+const STEP_MAX_LINES = 2;
+const STEP_MAX_CHARS = 160;
+const SILENT = 'and printed nothing; if the line sends its errors to /dev/null, remove that to see why';
+
+/** A step's text in a failure (#267): a setup line can run to hundreds of characters, so at most STEP_MAX_LINES lines and STEP_MAX_CHARS
+ * characters, then `…`. */
+export function clipStep(text: string): string {
+  const cut = text.split('\n').slice(0, STEP_MAX_LINES).join('\n').slice(0, STEP_MAX_CHARS);
+  return cut === text ? text : `${cut}…`;
+}
+
+/** Where a failed step sits in its run (#267): index counts from 0 with the skipped steps (#390), total is the whole expanded list. */
+interface StepPlace { index: number; total: number }
+
+// The task's reason for a failed step (#267): a RUN's exit code in words, its timeout or its stop, with its output tail on the lines below,
+// or, when it printed nothing, a hint, since a line that hides its errors (#105's `2>/dev/null`) leaves only the code; else the error's message.
 function reasonOf(err: unknown, timeout?: string): string {
   if (!(err instanceof RunFailure)) return errorMessage(err);
-  const reason = err.code === TIMEOUT ? `timed out after ${timeout}` : err.message;
+  const exited = typeof err.code === 'number' ? `the command exited with code ${err.code}` : undefined;
+  if (exited !== undefined && err.tail === '') return `${exited} ${SILENT}`;
+  const reason = exited ?? (err.code === TIMEOUT ? `timed out after ${timeout}` : err.message);
   return err.tail === '' ? reason : `${reason}\n${err.tail}`;
 }
 
@@ -252,8 +269,12 @@ async function doStep(phase: Phase, worktree: string, step: SetupStep, deps: Ste
   return undefined;
 }
 
-const failure = (phase: Phase, step: SetupStep, reason: string): string =>
-  `${phase.name} failed at line ${step.line} (${describeStep(step)}): ${reason}`;
+// A LOAD fails before the list is expanded (#299), so it has no place and keeps the line alone
+const failure = (phase: Phase, step: SetupStep, reason: string, place?: StepPlace): string => {
+  const described = clipStep(describeStep(step));
+  const where = place === undefined ? `line ${step.line} (${described})` : `step ${place.index + 1} of ${place.total} (line ${step.line}, ${described})`;
+  return `${phase.name} failed at ${where}: ${reason}`;
+};
 
 // LOAD <file> (#299): read from the main checkout at every run, in both scripts, so editing it needs no Settings save and a branch cannot
 // change what runs; one level only. Its steps take the LOAD's line number, so a failure names a line of the Settings text.
@@ -279,8 +300,8 @@ function report(deps: StepDeps, phase: Phase, step: SetupStep, stepReport: StepR
 
 // One step (a LOAD never gets here: runSteps expanded it). One log line per step, the code and never the output, and its report (#742); the
 // console run gets a header line and a RUN's output (#351).
-async function runStep(phase: Phase, worktree: string, step: SetupStep, index: number, deps: StepDeps & { timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<void> {
-  if (deps.signal?.aborted) throw new Error(failure(phase, step, STOPPED)); // a stop between steps: the next one never starts (#351)
+async function runStep(phase: Phase, worktree: string, step: SetupStep, place: StepPlace, deps: StepDeps & { timeoutMs?: number; env?: NodeJS.ProcessEnv }): Promise<void> {
+  if (deps.signal?.aborted) throw new Error(failure(phase, step, STOPPED, place)); // a stop between steps: the next one never starts (#351)
   const described = describeStep(step);
   const began = Date.now();
   deps.onStep?.(described);
@@ -290,8 +311,8 @@ async function runStep(phase: Phase, worktree: string, step: SetupStep, index: n
   const outcome = done.ok ? 'ok (0)' : `failed (${done.err instanceof RunFailure ? done.err.code : 'error'})`;
   deps.log.info(`${phase.name} ${basename(worktree)} line ${step.line}: ${described} ${outcome} ${ms}ms`);
   const code = !done.ok && done.err instanceof RunFailure ? { code: done.err.code } : {}; // #390: the dialog's failed row
-  report(deps, phase, step, { kind: STEP_KINDS[step.kind], index, durationMs: ms, ok: done.ok, ...code });
-  if (!done.ok) throw new Error(failure(phase, step, reasonOf(done.err, phase.timeout)));
+  report(deps, phase, step, { kind: STEP_KINDS[step.kind], index: place.index, durationMs: ms, ok: done.ok, ...code });
+  if (!done.ok) throw new Error(failure(phase, step, reasonOf(done.err, phase.timeout), place));
   // The result line, then ok and its time (#654); a failure writes nothing here: the run's red end line sits right under the step
   if (done.result !== undefined) deps.output?.(`${done.result}\n`);
   deps.output?.(`${okLine(`ok ${ms}ms`)}\n`);
@@ -304,7 +325,7 @@ export async function expandSteps(phase: Phase, workspace: Workspace, steps: Set
 
 /** A script's steps in `worktree` (#299, #654): the LOAD lines are expanded first, then each step runs in order with the phase's timeout. A
  * resume (#390) skips the steps a failed run passed and records each step that passes; onPlan hears the whole list first. A failure throws
- * `<phase> failed at line <n> (<step>): <reason>`. Answers how many steps ran, for the run's summary. */
+ * `<phase> failed at step <i> of <n> (line <l>, <step>): <reason>` (#267). Answers how many steps ran, for the run's summary. */
 export async function runSteps(phase: Phase, workspace: Workspace, worktree: string, steps: SetupStep[], deps: StepDeps): Promise<number> {
   const expanded = await expandSteps(phase, workspace, steps); // a list runSetup already expanded holds no LOAD: the same list back
   const timeoutMs = phase.timeout === undefined ? undefined : timeoutMsOf(phase.timeout);
@@ -313,7 +334,7 @@ export async function runSteps(phase: Phase, workspace: Workspace, worktree: str
   const skip = deps.resume?.skip ?? 0;
   deps.onPlan?.(expanded.map(describeStep), skip);
   for (const [at, step] of expanded.slice(skip).entries()) {
-    await runStep(phase, worktree, step, skip + at, { ...deps, timeoutMs, env });
+    await runStep(phase, worktree, step, { index: skip + at, total: expanded.length }, { ...deps, timeoutMs, env });
     // the progress file only saves a resume: one that cannot be written costs the next run its skip, never this setup
     await deps.resume?.passed(skip + at + 1).catch(() => undefined);
   }

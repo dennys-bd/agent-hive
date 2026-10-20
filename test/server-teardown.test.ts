@@ -19,7 +19,7 @@ const SLUG = 'hive-1-from-ready';
 const LOCAL_SLUG = 'hive-hive-1-local';
 const ORPHAN_SLUG = 'hive-9-gone';
 const BRANCHES: [string, string][] = [[SLUG, 'hive/1-from-ready'], [LOCAL_SLUG, 'hive/HIVE-1-local'], [ORPHAN_SLUG, 'hive/9-gone']];
-const FAILED = 'teardown failed at line 1 (RUN exit 3): exit 3';
+const FAILED = 'teardown failed at step 1 of 1 (line 1, RUN exit 3): the command exited with code 3 and printed nothing; if the line sends its errors to /dev/null, remove that to see why';
 const BODY: Omit<SettingsBody, 'workspaces'> = {
   prefix: 'HIVE', auth: AUTH, sources: [GITHUB_ENTRY], stages: STAGES,
   onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT,

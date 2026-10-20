@@ -97,14 +97,27 @@ export function SwitchRow({ id, label, checked, onChange }: { id: string; label:
   );
 }
 
+// #267: the classes worth a word; `own` is today's reuse
+const RELATION = { unrelated: 'start.orphan.unrelated', stale: 'start.orphan.stale' } as const;
+const ACTION = { unrelated: 'start.orphan.setAside', stale: 'start.orphan.recreate' } as const;
+const flagged = (orphan: NonNullable<BaseOptions['orphan']>): keyof typeof RELATION | undefined =>
+  (orphan.relation === 'unrelated' || orphan.relation === 'stale' ? orphan.relation : undefined);
+
 // #861: git holds a worktree or a branch for this task and no activity owns it: Reuse adopts it (the default), Discard removes it and the task
-// starts from the base below. Only executar etapas can discard: a free session's open adopts what it finds
+// starts from the base below. Only executar etapas can discard: a free session's open adopts what it finds, and on a branch alone
+// ensureWorktree acts on its class (#267), which the line says.
 function OrphanChoice({ mode, choice, onChange }: { mode: StartMode; choice: BaseChoice; onChange(choice: BaseChoice): void }) {
   const orphan = choice.lists?.orphan;
   if (orphan === undefined) return null;
+  const relation = flagged(orphan);
+  // a reuse on the branch alone (any free open, or Reuse in executar etapas) goes through ensureWorktree, which acts on the class; a worktree
+  // on disk is adopted as it is
+  const acts = !orphan.worktree && (mode === 'free' || !choice.discard);
   return (
     <div className="flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">{t(orphan.worktree ? 'start.orphan.worktree' : 'start.orphan.branch')}</p>
+      {relation && <p className="text-muted-foreground text-xs">{t(RELATION[relation])}</p>}
+      {relation && acts && <p className="text-muted-foreground text-xs">{t(ACTION[relation], { name: `${orphan.branchName ?? ''}-old-…` })}</p>}
       {mode === 'stages' && (
         <ToggleGroup type="single" variant="outline" value={choice.discard ? 'discard' : 'reuse'} onValueChange={(v) => { if (v) onChange({ ...choice, discard: v === 'discard' }); }} className="w-full">
           <ToggleGroupItem value="reuse" className="flex-1 text-[13px]">{t('start.orphan.reuse')}</ToggleGroupItem>
@@ -124,8 +137,9 @@ export function BaseField({ id, mode, choice, workspaces, onChange, onWorkspace 
   const { lists } = choice;
   if (lists === undefined || lists.hasWorktree) return null;
   if (lists.needsWorkspace) return <WorkspaceSelect id={`${id}-project`} label={t('task.workspace')} workspaces={workspaces} value={choice.workspace} onChange={onWorkspace} />;
+  const discarding = mode === 'stages' && choice.discard; // #267: a preselected discard is executar etapas' alone; sessão livre reuses
   const orphan = <OrphanChoice mode={mode} choice={choice} onChange={onChange} />;
-  if (lists.orphan !== undefined && !choice.discard) return orphan; // reuse adopts what git holds: no base to choose
+  if (lists.orphan !== undefined && !discarding) return orphan; // reuse adopts what git holds: no base to choose
   const stacked = mode === 'stages' ? stackedOn(choice) : undefined;
   return (
     <div className="flex flex-col gap-2">

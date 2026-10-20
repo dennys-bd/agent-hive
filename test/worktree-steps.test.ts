@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
 import { parseSetup, type SetupStep } from '../src/setup-script.js';
 import type { Exec, Workspace } from '../src/types.js';
-import { type Phase, RunFailure, type RunShell, runShell, runSteps, type StepDeps, type StepReport, WORKTREE_NAME } from '../src/worktree-steps.js';
+import { clipStep, type Phase, RunFailure, type RunShell, runShell, runSteps, type StepDeps, type StepReport, WORKTREE_NAME } from '../src/worktree-steps.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 interface Harness { workspace: Workspace; main: string; worktree: string; home: string; deps: StepDeps; output: string[] }
@@ -38,7 +38,7 @@ test('COPY dir/ copies the folder\'s contents into the destination folder, COPY 
   assert.equal(await readFile(join(h.worktree, '.env.local'), 'utf8'), 'A=1\n');
   assert.equal(await readFile(join(h.worktree, 'docs', 'superpowers', 'b.md'), 'utf8'), 'b', 'no destination: the same path');
   assert.equal(await readFile(join(h.worktree, 'docs', 'keep.md'), 'utf8'), 'k', 'nothing at the destination is deleted');
-  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env/'), h.deps), { message: 'setup failed at line 1 (COPY .env/): not a folder in hive' });
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env/'), h.deps), { message: 'setup failed at step 1 of 1 (line 1, COPY .env/): not a folder in hive' });
 });
 
 test('the teardown copies from the worktree into the main checkout; ~/ expands with the injected home and an absolute destination is written as it is (#654)', async (t) => {
@@ -57,11 +57,11 @@ test('a relative destination through a symlinked folder is refused, and so is a 
   const outside = await tempDir(t, 'outside-');
   await writeFile(join(h.worktree, 'notes.md'), 'n');
   await symlink(outside, join(h.main, 'docs'));
-  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY notes.md docs/notes.md'), h.deps), { message: 'teardown failed at line 1 (COPY notes.md docs/notes.md): outside hive' });
+  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY notes.md docs/notes.md'), h.deps), { message: 'teardown failed at step 1 of 1 (line 1, COPY notes.md docs/notes.md): outside hive' });
   await assert.rejects(access(join(outside, 'notes.md')), { code: 'ENOENT' });
   await writeFile(join(outside, 'secret'), 's');
   await symlink(join(outside, 'secret'), join(h.worktree, 'leak'));
-  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY leak'), h.deps), { message: 'teardown failed at line 1 (COPY leak): outside the worktree' });
+  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY leak'), h.deps), { message: 'teardown failed at step 1 of 1 (line 1, COPY leak): outside the worktree' });
   await assert.rejects(access(join(h.main, 'leak')), { code: 'ENOENT' });
 });
 
@@ -76,9 +76,9 @@ test('a folder destination is checked through its last segment too: a committed 
   await symlink(outside, join(h.main, 'out', 'link'));
   await mkdir(join(h.worktree, 'out'));
   await symlink(outside, join(h.worktree, 'out', 'link'));
-  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY src/ out/link/'), h.deps), { message: 'teardown failed at line 1 (COPY src/ out/link/): outside hive' });
-  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY src/ out/link'), h.deps), { message: 'setup failed at line 1 (COPY src/ out/link): outside the worktree' });
-  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY src/a.md out/link/'), h.deps), { message: 'setup failed at line 1 (COPY src/a.md out/link/): outside the worktree' });
+  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('COPY src/ out/link/'), h.deps), { message: 'teardown failed at step 1 of 1 (line 1, COPY src/ out/link/): outside hive' });
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY src/ out/link'), h.deps), { message: 'setup failed at step 1 of 1 (line 1, COPY src/ out/link): outside the worktree' });
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY src/a.md out/link/'), h.deps), { message: 'setup failed at step 1 of 1 (line 1, COPY src/a.md out/link/): outside the worktree' });
   await assert.rejects(access(join(outside, 'a.md')), { code: 'ENOENT' });
 });
 
@@ -103,7 +103,7 @@ test('DEL removes a file and a folder with its files, counts a missing path as d
   for (const gone of ['tmp', 'junk.log', 'link']) await assert.rejects(lstat(join(h.worktree, gone)), { code: 'ENOENT' }, gone);
   assert.equal(await readFile(join(kept, 'keep.md'), 'utf8'), 'k', 'the link went, its target stayed');
   await symlink(kept, join(h.worktree, 'via'));
-  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('DEL via/keep.md'), h.deps), { message: 'setup failed at line 1 (DEL via/keep.md): outside the worktree' });
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('DEL via/keep.md'), h.deps), { message: 'setup failed at step 1 of 1 (line 1, DEL via/keep.md): outside the worktree' });
   assert.equal(await readFile(join(kept, 'keep.md'), 'utf8'), 'k');
 });
 
@@ -140,13 +140,13 @@ test('a COPY merging a folder into an existing destination symlink is refused, i
   await writeFile(join(setup.main, 'reports', 'link', 'x.md'), 'x');
   await mkdir(join(setup.worktree, 'reports'));
   await symlink(outside, join(setup.worktree, 'reports', 'link'));
-  await assert.rejects(runSteps(setupPhase(setup), setup.workspace, setup.worktree, steps('COPY reports/'), setup.deps), { message: 'setup failed at line 1 (COPY reports/): outside the worktree' });
+  await assert.rejects(runSteps(setupPhase(setup), setup.workspace, setup.worktree, steps('COPY reports/'), setup.deps), { message: 'setup failed at step 1 of 1 (line 1, COPY reports/): outside the worktree' });
   const teardown = await harness(t);
   await mkdir(join(teardown.worktree, 'reports', 'link'), { recursive: true });
   await writeFile(join(teardown.worktree, 'reports', 'link', 'x.md'), 'x');
   await mkdir(join(teardown.main, 'reports'));
   await symlink(outside, join(teardown.main, 'reports', 'link'));
-  await assert.rejects(runSteps(teardownPhase(teardown), teardown.workspace, teardown.worktree, steps('COPY reports/ reports/'), teardown.deps), { message: 'teardown failed at line 1 (COPY reports/ reports/): outside hive' });
+  await assert.rejects(runSteps(teardownPhase(teardown), teardown.workspace, teardown.worktree, steps('COPY reports/ reports/'), teardown.deps), { message: 'teardown failed at step 1 of 1 (line 1, COPY reports/ reports/): outside hive' });
   await assert.rejects(lstat(join(outside, 'x.md')), { code: 'ENOENT' });
 });
 
@@ -168,7 +168,7 @@ test('a report callback that throws never replaces the step\'s own outcome: a fa
   const onStepEnd = (): void => { throw new Error('report'); };
   assert.equal(await runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env'), { ...h.deps, onStepEnd }), 1);
   const failing: RunShell = async () => { throw new RunFailure(2, 'out'); };
-  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN false'), { ...h.deps, run: failing, onStepEnd }), { message: /^setup failed at line 1 \(RUN false\)/ });
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN false'), { ...h.deps, run: failing, onStepEnd }), { message: /^setup failed at step 1 of 1 \(line 1, RUN false\)/ });
 });
 
 test('a progress file that cannot be written never fails the setup: the step passed, the run goes on and only a resume is lost (#390)', async (t) => {
@@ -199,4 +199,29 @@ test('runShell hands options.env to the child, never in its line, and the child 
   };
   assert.equal(await printed('printf %s "$HIVE_738_NAME"', { ...process.env, HIVE_738_NAME: 'from the workspace' }), 'from the workspace');
   assert.equal(await printed('printf %s "$PATH"'), process.env.PATH ?? '');
+});
+
+test('a RUN that exits with no output names its place, its line and its code in words, and hints at a line that hides its errors; a teardown says teardown (#267)', async (t) => {
+  const h = await harness(t);
+  const silent: RunShell = async () => { throw new RunFailure(128, ''); };
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN git worktree add . x 2>/dev/null\nRUN true'), { ...h.deps, run: silent }), {
+    message: 'setup failed at step 1 of 2 (line 1, RUN git worktree add . x 2>/dev/null): the command exited with code 128 and printed nothing; if the line sends its errors to /dev/null, remove that to see why',
+  });
+  let ran = 0;
+  const secondFails: RunShell = async () => { ran += 1; if (ran === 2) throw new RunFailure(3, 'Error: no such service'); };
+  await assert.rejects(runSteps(teardownPhase(h), h.workspace, h.worktree, steps('RUN true\nRUN docker compose down'), { ...h.deps, run: secondFails }), {
+    message: 'teardown failed at step 2 of 2 (line 2, RUN docker compose down): the command exited with code 3\nError: no such service',
+  });
+});
+
+test('a step longer than 160 characters or 2 lines is cut with … in the failure, so a long setup line cannot bury the reason (#267)', async (t) => {
+  assert.equal(clipStep('a\nb\nc'), 'a\nb…');
+  assert.equal(clipStep('x'.repeat(160)), 'x'.repeat(160));
+  assert.equal(clipStep('x'.repeat(161)), `${'x'.repeat(160)}…`);
+  const h = await harness(t);
+  const line = `RUN ${'x'.repeat(200)}`;
+  const failing: RunShell = async () => { throw new RunFailure(1, 'boom'); };
+  await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps(line), { ...h.deps, run: failing }), {
+    message: `setup failed at step 1 of 1 (line 1, ${line.slice(0, 160)}…): the command exited with code 1\nboom`,
+  });
 });

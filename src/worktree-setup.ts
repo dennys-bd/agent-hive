@@ -63,11 +63,18 @@ export async function isSetUp(workspace: Workspace, worktree: string, exec: Exec
   return !(await needsSetup(workspace, worktree, exec).catch(() => true));
 }
 
+/** A setup that failed on a worktree that reused an existing branch (#267) says which: that branch is the likeliest cause, as on #105, where a
+ * branch from before the docs split broke the docs step. The server's English, as every setup error is; no reused branch, the error as is. */
+export function withReused(err: unknown, reused: string | undefined): unknown {
+  if (reused === undefined) return err;
+  return new Error(`${err instanceof Error ? err.message : String(err)}\nThe worktree reused the existing branch ${reused}.`, { cause: err });
+}
+
 /**
  * The workspace's worktree setup (#299), after ensureWorktree and before the worker or the session: nothing without steps, nothing once the
  * marker is in the worktree's git dir. It reads the main checkout and writes the worktree (runSteps). The LOAD lines are expanded here and
- * the list hashed (#390): a run after a failure skips the steps that passed while the list is the same. A failure throws `setup failed at line
- * <n> (<step>): <reason>` and writes no marker, so the next spawn or open runs it again from that step; success writes it and removes the
+ * the list hashed (#390): a run after a failure skips the steps that passed while the list is the same. A failure throws `setup failed at step <i> of
+ * <n> (line <l>, <step>): <reason>` (#267) and writes no marker, so the next spawn or open runs it again from that step; success writes it and removes the
  * progress record. Answers the number of steps it ran (0 when it skipped).
  */
 export async function runSetup(workspace: Workspace, worktree: string, deps: SetupDeps): Promise<number> {

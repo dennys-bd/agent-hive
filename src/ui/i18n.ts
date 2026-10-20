@@ -353,6 +353,10 @@ const en = {
   'start.orphan.reuse': 'Reuse',
   'start.orphan.discard': 'Discard and start from the base',
   'start.orphan.failed': 'Could not discard the existing work',
+  'start.orphan.unrelated': 'It shares no history with the base', // #267
+  'start.orphan.stale': 'It is behind the base with nothing of its own',
+  'start.orphan.setAside': 'Opening keeps it as {name} and starts from the base',
+  'start.orphan.recreate': 'Opening recreates it from the base',
   'start.preparing': 'preparing the worktree', // the Start and open dialogs' submit while the worktree setup runs (#351)
   'setupProgress.title': 'Preparing the worktree for #{id}', // #390: the Start dialog's preparing view
   'setupProgress.row.worktree': 'worktree created',
@@ -2598,6 +2602,10 @@ const pt: Record<MessageKey, string> = {
   'start.orphan.reuse': 'Reaproveitar',
   'start.orphan.discard': 'Descartar e começar da base',
   'start.orphan.failed': 'Não foi possível descartar o trabalho existente',
+  'start.orphan.unrelated': 'Ele não tem histórico em comum com a base',
+  'start.orphan.stale': 'Ele está atrás da base, sem nada próprio',
+  'start.orphan.setAside': 'Abrir guarda ele como {name} e começa da base',
+  'start.orphan.recreate': 'Abrir recria ele a partir da base',
   'start.preparing': 'preparando a worktree',
   'setupProgress.title': 'Preparando a worktree de #{id}', // #390
   'setupProgress.row.worktree': 'worktree criada',

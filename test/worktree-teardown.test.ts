@@ -62,7 +62,7 @@ test('a failing teardown step throws teardown failed at line … with the output
     throw new RunFailure(1, 'Error: no such service');
   };
   const h = await harness(t, 'RUN docker compose down', {}, failing);
-  await assert.rejects(runTeardown(h.workspace, h.worktree, h.deps), { message: 'teardown failed at line 1 (RUN docker compose down): exit 1\nError: no such service' });
+  await assert.rejects(runTeardown(h.workspace, h.worktree, h.deps), { message: 'teardown failed at step 1 of 1 (line 1, RUN docker compose down): the command exited with code 1\nError: no such service' });
   assert.equal(await marked(h), false);
   const bad = await harness(t, 'RUN true\nCOPY a b c');
   await assert.rejects(runTeardown(bad.workspace, bad.worktree, bad.deps), { message: 'teardown line 2: COPY takes a source and at most one destination' });

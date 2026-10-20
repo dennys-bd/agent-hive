@@ -153,14 +153,14 @@ test('a failed or stopped setup ends its run with the failure\'s first line, sti
     throw new RunFailure(1, 'npm ERR! TOKEN=secret');
   };
   const h = await harness(t, 'RUN pnpm install', failing);
-  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'setup failed at line 1 (RUN pnpm install): exit 1\nnpm ERR! TOKEN=secret' });
+  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): the command exited with code 1\nnpm ERR! TOKEN=secret' });
   assert.deepEqual(h.events.at(-1), { type: 'setupEnded', activityId: ACTIVITY });
   assert.equal(h.store.channels()[0]?.status, 'failed', 'the console chip reads the failed setup (#537)');
   const history = h.store.history(CHANNEL)?.history ?? '';
-  assert.match(shown(history), new RegExp(`\\r\\n${cmd('RUN pnpm install')}${fail('setup failed at line 1 \\(RUN pnpm install\\): exit 1')}$`));
+  assert.match(shown(history), new RegExp(`\\r\\n${cmd('RUN pnpm install')}${fail('setup failed at step 1 of 1 \\(line 1, RUN pnpm install\\): the command exited with code 1')}$`));
   assert.ok(!history.includes('TOKEN=secret'), 'the tail stays on the task\'s error');
   const stopped = await harness(t, 'RUN pnpm install', quiet);
-  await assert.rejects(runTaskSetup(stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), { ...BRANCH, signal: AbortSignal.abort() }), { message: 'setup failed at line 1 (RUN pnpm install): stopped' });
+  await assert.rejects(runTaskSetup(stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), { ...BRANCH, signal: AbortSignal.abort() }), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm install): stopped' });
 });
 
 test('the setups of two tasks are runs of the one Setup worktree channel: each keeps its own run id, and its header names its task (#351)', async (t) => {
@@ -215,13 +215,13 @@ test('a failing teardown step rejects removeInRun with its message before the re
   const workspace: Workspace = { ...h.workspace, teardown: 'RUN docker compose down' };
   let removed = false;
   const target = { id: 'teardown:hive:hive-9-gone', label: 'hive-9-gone', workspace, force: false };
-  await assert.rejects(removeInRun(h.deps, target, async (before) => { await before?.(h.worktree, true); removed = true; }), { message: 'teardown failed at line 1 (RUN docker compose down): exit 1\nError: no such service' });
+  await assert.rejects(removeInRun(h.deps, target, async (before) => { await before?.(h.worktree, true); removed = true; }), { message: 'teardown failed at step 1 of 1 (line 1, RUN docker compose down): the command exited with code 1\nError: no such service' });
   assert.equal(removed, false);
   assert.equal(await access(join(h.gitDir, TEARDOWN_MARKER)).then(() => true, () => false), false);
   assert.equal(h.store.channels()[0]?.status, 'failed');
   const history = shown(h.store.history(CHANNEL)?.history);
   assert.match(history, /^── hive-9-gone · teardown · /);
-  assert.match(history, new RegExp(`${fail('teardown failed at line 1 \\(RUN docker compose down\\): exit 1')}$`));
+  assert.match(history, new RegExp(`${fail('teardown failed at step 1 of 1 \\(line 1, RUN docker compose down\\): the command exited with code 1')}$`));
 });
 
 test('a git refusal before the teardown is reached propagates unchanged and ends the run clean, with no red teardown failure line (#654)', async (t) => {

@@ -1492,6 +1492,9 @@ export interface ProjectSummary {
   url: string;
 }
 
+/** How an existing branch relates to the start a new worktree would branch from (#267). */
+export type BranchRelation = 'unrelated' | 'stale' | 'own';
+
 /** What GET /tasks/:id/bases answers: the popup's lists for a task with no worktree yet (#131). */
 export interface BaseOptions {
   hasWorktree: boolean; // true → the Start dialog asks no base; the lists below are then empty
@@ -1499,7 +1502,7 @@ export interface BaseOptions {
   tasks: { ref: string; id: string; title: string }[]; // other tasks' branches, only those with a worktree
   local: string[]; // other local branches, minus the default's and the tasks' branches
   remote: string[]; // `origin/*`, minus `origin/HEAD` and the default
-  orphan?: { worktree: boolean; branch: boolean }; // #861: only for a task with no activity whose slug git holds a worktree or a branch for: the dialog offers reuse or discard, and the lists are filled for a discard's base
+  orphan?: { worktree: boolean; branch: boolean; relation?: BranchRelation; branchName?: string }; // #861; #267: relation and branchName only when the branch exists and its class against defaultRef resolved. #861: only for a task with no activity whose slug git holds a worktree or a branch for: the dialog offers reuse or discard, and the lists are filled for a discard's base
   needsWorkspace?: true; // the task resolves to no workspace: the popup asks for one first, the lists are empty (#179)
 }
 

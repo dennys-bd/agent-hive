@@ -4,8 +4,11 @@ import { getJson } from '@/lib/api';
 
 /** Where a start puts the task's worktree (#131, #179, #444): the lists GET /tasks/:id/bases answered, the base chosen, the workspace a task no
  * rule places was given, the local-checkout switch, whether a task base's worker is told of the stacked PR (#217), and, for an orphan worktree or
- * branch (#861), whether it is discarded (false: reused, the default). No lists yet: nothing to ask, as for a task that already has its worktree. */
+ * branch (#861), whether it is discarded (false: reused, the default; true by default for an unrelated or stale branch, #267). No lists yet: nothing to ask, as for a task that already has its worktree. */
 export interface BaseChoice { lists?: BaseOptions; chosen: string; workspace?: string; local: boolean; tellWorker: boolean; discard: boolean }
+
+// #267: a branch with no history in common with the base, or behind it with nothing of its own, holds nothing a start should reuse
+const startsFromBase = (orphan: BaseOptions['orphan']): boolean => orphan?.relation === 'unrelated' || orphan?.relation === 'stale';
 
 const EMPTY: BaseChoice = { chosen: '', local: false, tellWorker: true, discard: false };
 const basesUrl = (itemId: string, workspace?: string): string =>
@@ -38,7 +41,7 @@ export function useStartBase(itemId: string | undefined, onError: (message: stri
   current.current = itemId;
   const read = useCallback((id: string, workspace?: string): void => {
     getJson<BaseOptions>(basesUrl(id, workspace)).then(
-      (lists) => { if (current.current === id) setChoice({ ...EMPTY, lists, chosen: lists.defaultRef, ...(workspace === undefined ? {} : { workspace }) }); },
+      (lists) => { if (current.current === id) setChoice({ ...EMPTY, lists, chosen: lists.defaultRef, discard: startsFromBase(lists.orphan), ...(workspace === undefined ? {} : { workspace }) }); },
       (err: Error) => { if (current.current === id) onError(err.message); },
     );
   }, [onError]);

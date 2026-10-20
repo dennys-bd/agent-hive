@@ -662,6 +662,41 @@ test('a discard git refuses shows its words under the dialog\'s own heading, and
   expect(onClose).not.toHaveBeenCalled();
 });
 
+test('an orphan branch with no history in common with the base, or behind it with nothing of its own, says so and preselects Discard: the start sends the base and discardOrphan (#267)', async () => {
+  const user = userEvent.setup();
+  for (const relation of ['unrelated', 'stale'] as const) {
+    bases = { ...BASES, orphan: { worktree: false, branch: true, relation, branchName: 'hive/9-landing' } };
+    fetchMock.mockClear();
+    const onClose = vi.fn();
+    const { unmount } = render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+    expect(await screen.findByText(t(`start.orphan.${relation}`))).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: t('start.orphan.discard') })).toHaveAttribute('aria-checked', 'true');
+    await screen.findByRole('combobox', { name: 'origin/main' });
+    await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(posts()).toEqual([['/tasks/I9/start', { base: null, local: false, discardOrphan: true }]]);
+    unmount();
+  }
+});
+
+test('sessão livre on an unrelated orphan branch says the open keeps it aside and posts no base; an own branch keeps Reuse preselected with no class notice (#267)', async () => {
+  const user = userEvent.setup();
+  bases = { ...BASES, orphan: { worktree: false, branch: true, relation: 'unrelated', branchName: 'hive/9-landing' } };
+  const { unmount } = render(<StartDialog state={state()} taskId="I9" initialMode="free" onClose={vi.fn()} />);
+  expect(await screen.findByText(t('start.orphan.setAside', { name: 'hive/9-landing-old-…' }))).toBeInTheDocument();
+  expect(screen.queryByRole('radio', { name: t('start.orphan.discard') })).not.toBeInTheDocument();
+  expect(screen.queryByRole('combobox', { name: 'origin/main' })).not.toBeInTheDocument();
+  const open = screen.getByRole('button', { name: /sessão livre/ });
+  await waitFor(() => expect(open).toBeEnabled());
+  await user.click(open);
+  await waitFor(() => expect(posts()).toEqual([['/tasks/I9/open', { kind: 'claude' }]]));
+  unmount();
+  bases = { ...BASES, orphan: { worktree: false, branch: true, relation: 'own', branchName: 'hive/9-landing' } };
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} />);
+  expect(await screen.findByRole('radio', { name: t('start.orphan.reuse') })).toHaveAttribute('aria-checked', 'true');
+  expect(screen.queryByText(t('start.orphan.unrelated'))).not.toBeInTheDocument();
+});
+
 test('sessão livre always shows the five run fields; a resume shows its session\'s own picks, disabled, and a new session opens with the explicit picks (#290)', async () => {
   const user = userEvent.setup();
   bases = { ...BASES, hasWorktree: true };

@@ -13,7 +13,7 @@ const HTTP_CONFLICT = 409;
 export interface DiscardRefusal { status: number; error: string; code: typeof DISCARD_FAILED }
 
 /** With `discardOrphan: true` on a task with no activity: the slug's worktree and the task's branch go as delete activity's git removes them
- * (cleanWorktree, never forced); with no worktree, the branch alone. Undefined when not asked, with no workspace (startEvent answered that) or
+ * (cleanWorktree, never forced; an unmerged branch set aside, #267); with no worktree, the branch alone. Undefined when not asked, with no workspace (startEvent answered that) or
  * once git removed them. */
 export async function discardOrphan(deps: Pick<TaskRouteDeps, 'exec'>, current: LiveView, itemId: string, body: unknown): Promise<DiscardRefusal | undefined> {
   const { discardOrphan: asked, workspace: raw, local } = (body ?? {}) as { discardOrphan?: unknown; workspace?: unknown; local?: unknown };
@@ -25,7 +25,8 @@ export async function discardOrphan(deps: Pick<TaskRouteDeps, 'exec'>, current: 
   if ('status' in workspace) return undefined;
   const branch = branchFor(current.runtime.config, found.item);
   try {
-    await cleanWorktree(workspace.path, { slug: slugFor(found.item), branch }, branch, deps.exec);
+    // #267: an unmerged branch is set aside (<branch>-old-<sha7>) instead of refusing, so a branch like #105's can be discarded too
+    await cleanWorktree(workspace.path, { slug: slugFor(found.item), branch }, branch, deps.exec, undefined, 'setAside');
     return undefined;
   } catch (err) {
     return { status: HTTP_CONFLICT, error: err instanceof Error ? err.message : String(err), code: DISCARD_FAILED };

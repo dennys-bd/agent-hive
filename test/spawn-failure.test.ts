@@ -6,7 +6,7 @@ test('run.spawn_failed\'s code is one of a closed set read from the known failur
   const cases: [string, string][] = [
     ['agent codex is not on PATH: install it, then restart the Hive', 'agent_missing'], ['choose a workspace', 'no_workspace'],
     ['workspace api is gone', 'workspace_gone'], ['workspace "api" não existe mais', 'workspace_gone'],
-    ['comando "dev" não está habilitado no workspace api', 'command_disabled'], ['setup failed at line 3 (RUN pnpm i): exit 1', 'setup_failed'],
+    ['comando "dev" não está habilitado no workspace api', 'command_disabled'], ['setup failed at line 3 (RUN pnpm i): exit 1', 'setup_failed'], ['setup failed at step 1 of 2 (line 3, RUN pnpm i): the command exited with code 1', 'setup_failed'],
     ["fatal: '/repo' already exists", 'git_failed'], ['base: main unknown (bad)', 'git_failed'], ['posix_spawnp failed.', 'pty_failed'],
     ['see https://github.com/acme/r/pull/9 and ~/saved', 'error'], ['', 'error'],
   ];

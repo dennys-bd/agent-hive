@@ -39,7 +39,7 @@ In the main checkout, clone the docs repository at `docs/`. Each task's worktree
 
 - worktree setup:
   ```
-  RUN main="$(git rev-parse --path-format=absolute --git-common-dir)/.." && branch="$(git branch --show-current)" && git -C "$main/docs" fetch -q origin && { git -C "$main/docs" worktree add "$PWD/docs" "$branch" 2>/dev/null || git -C "$main/docs" worktree add --no-track -b "$branch" "$PWD/docs" origin/main; }
+  RUN main="$(git rev-parse --path-format=absolute --git-common-dir)/.." && branch="$(git branch --show-current)" && git -C "$main/docs" fetch -q origin && if git -C "$main/docs" show-ref --verify -q "refs/heads/$branch"; then git -C "$main/docs" worktree add "$PWD/docs" "$branch"; else git -C "$main/docs" worktree add --no-track -b "$branch" "$PWD/docs" origin/main; fi
   ```
 - worktree teardown, before anything else:
   ```

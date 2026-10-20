@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
 import type { Exec, Workspace } from '../src/types.js';
-import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps } from '../src/worktree-setup.js';
+import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps, withReused } from '../src/worktree-setup.js';
 import { RunFailure, type RunOptions, runShell } from '../src/worktree-steps.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
@@ -74,13 +74,13 @@ test('runSetup runs the steps in order in the worktree: COPY copies a file and a
 
 test('a COPY whose source is missing, or a symlink that leads out of the workspace, fails the setup at its line and writes no marker (#299)', async (t) => {
   const missing = await harness(t, 'COPY .env');
-  await assert.rejects(runSetup(missing.workspace, missing.worktree, missing.deps), { message: 'setup failed at line 1 (COPY .env): not found in hive' });
+  await assert.rejects(runSetup(missing.workspace, missing.worktree, missing.deps), { message: 'setup failed at step 1 of 1 (line 1, COPY .env): not found in hive' });
   assert.equal(await marked(missing), false);
   const outside = await harness(t, 'RUN true\nCOPY .env');
   const elsewhere = await tempDir(t, 'outside-');
   await writeFile(join(elsewhere, 'secrets'), 'x');
   await symlink(join(elsewhere, 'secrets'), join(outside.workspace.path, '.env'));
-  await assert.rejects(runSetup(outside.workspace, outside.worktree, outside.deps), { message: 'setup failed at line 2 (COPY .env): outside hive' });
+  await assert.rejects(runSetup(outside.workspace, outside.worktree, outside.deps), { message: 'setup failed at step 2 of 2 (line 2, COPY .env): outside hive' });
   await assert.rejects(readFile(join(outside.worktree, '.env')), 'nothing was copied');
   assert.equal(await marked(outside), false);
 });
@@ -92,12 +92,12 @@ test('a RUN that fails or times out stops the setup at its line: the reason and 
     throw new RunFailure(args[1] === 'pnpm test' ? 'timeout' : 1, 'npm ERR! TOKEN=secret\nnpm ERR! boom');
   };
   const h = await harness(t, 'RUN pnpm install\nCOPY .env', failing);
-  await assert.rejects(runSetup(h.workspace, h.worktree, h.deps), { message: 'setup failed at line 1 (RUN pnpm install): exit 1\nnpm ERR! TOKEN=secret\nnpm ERR! boom' });
+  await assert.rejects(runSetup(h.workspace, h.worktree, h.deps), { message: 'setup failed at step 1 of 2 (line 1, RUN pnpm install): the command exited with code 1\nnpm ERR! TOKEN=secret\nnpm ERR! boom' });
   assert.deepEqual([seen, h.steps, await marked(h)], [['pnpm install undefined'], ['RUN pnpm install'], false], 'no setupTimeout, no limit (#511); the COPY never ran');
   assert.match(h.lines[0], /line 1: RUN pnpm install failed \(1\) \d+ms$/);
   assert.ok(!h.lines.join('\n').includes('secret'), 'a command\'s output never reaches the log');
   const slow = await harness(t, 'RUN pnpm test', failing, { setupTimeout: '90s' });
-  await assert.rejects(runSetup(slow.workspace, slow.worktree, slow.deps), { message: 'setup failed at line 1 (RUN pnpm test): timed out after 90s\nnpm ERR! TOKEN=secret\nnpm ERR! boom' });
+  await assert.rejects(runSetup(slow.workspace, slow.worktree, slow.deps), { message: 'setup failed at step 1 of 1 (line 1, RUN pnpm test): timed out after 90s\nnpm ERR! TOKEN=secret\nnpm ERR! boom' });
   assert.deepEqual(seen.at(-1), 'pnpm test 90000', 'setupTimeout reaches the shell as ms (#511)');
   assert.match(slow.lines[0], /failed \(timeout\) \d+ms$/);
 });
@@ -155,7 +155,7 @@ test('a COPY whose destination folder in the worktree is a symlink out of it fai
   await mkdir(join(h.workspace.path, 'config'));
   await writeFile(join(h.workspace.path, 'config', 'app.env'), 'TOKEN=secret\n');
   await symlink(outside, join(h.worktree, 'config')); // a branch that committed config -> somewhere else
-  await assert.rejects(runSetup(h.workspace, h.worktree, h.deps), /^Error: setup failed at line 1 \(COPY config\/app.env\): outside the worktree$/);
+  await assert.rejects(runSetup(h.workspace, h.worktree, h.deps), /^Error: setup failed at step 1 of 1 \(line 1, COPY config\/app.env\): outside the worktree$/);
   await assert.rejects(access(join(outside, 'app.env')), { code: 'ENOENT' });
   assert.equal(await marked(h), false);
 });
@@ -199,11 +199,11 @@ test('an abort fails the running RUN with stopped, and a step not yet started fa
     throw new RunFailure('stopped', '');
   };
   const h = await harness(t, 'RUN pnpm install\nCOPY .env', stoppedMidway);
-  await assert.rejects(runSetup(h.workspace, h.worktree, { ...h.deps, signal: controller.signal }), { message: 'setup failed at line 1 (RUN pnpm install): stopped' });
+  await assert.rejects(runSetup(h.workspace, h.worktree, { ...h.deps, signal: controller.signal }), { message: 'setup failed at step 1 of 2 (line 1, RUN pnpm install): stopped' });
   assert.deepEqual([h.steps, await marked(h)], [['RUN pnpm install'], false]);
   assert.match(h.lines[0], /line 1: RUN pnpm install failed \(stopped\) \d+ms$/);
   const before = await harness(t, 'COPY .env');
-  await assert.rejects(runSetup(before.workspace, before.worktree, { ...before.deps, signal: AbortSignal.abort() }), { message: 'setup failed at line 1 (COPY .env): stopped' });
+  await assert.rejects(runSetup(before.workspace, before.worktree, { ...before.deps, signal: AbortSignal.abort() }), { message: 'setup failed at step 1 of 1 (line 1, COPY .env): stopped' });
   assert.deepEqual([before.steps, before.output], [[], []], 'a step not yet started never runs');
 });
 
@@ -259,7 +259,7 @@ test('a setup that fails at its third step records two done; the next run skips 
   const plans: [string[], number][] = [];
   const reports: number[] = [];
   const deps: SetupDeps = { ...h.deps, onPlan: (steps, skipped) => plans.push([steps, skipped]), onStepEnd: (report) => reports.push(report.index) };
-  await assert.rejects(runSetup(h.workspace, h.worktree, deps), { message: /^setup failed at line 3 \(RUN three\)/ });
+  await assert.rejects(runSetup(h.workspace, h.worktree, deps), { message: /^setup failed at step 3 of 4 \(line 3, RUN three\)/ });
   const record = JSON.parse(await readFile(join(h.gitDir, SETUP_PROGRESS), 'utf8')) as { steps: string; done: number };
   assert.equal(record.done, 2);
   assert.match(record.steps, /^[0-9a-f]{64}$/);
@@ -284,4 +284,10 @@ test('a setup edited since the failure, or a record that does not read, starts a
   await writeFile(join(h.gitDir, SETUP_PROGRESS), 'not json');
   await assert.rejects(runSetup(edited, h.worktree, h.deps));
   assert.deepEqual(h.steps.slice(6), ['RUN one', 'RUN 2', 'RUN three']);
+});
+
+test('withReused adds the reused branch to a failed setup\'s reason, and leaves the error as it is when the branch was made (#267)', () => {
+  const err = new Error('setup failed at step 1 of 1 (line 1, RUN x): the command exited with code 1');
+  assert.equal((withReused(err, 'hive/7-fix') as Error).message, `${err.message}\nThe worktree reused the existing branch hive/7-fix.`);
+  assert.equal(withReused(err, undefined), err);
 });

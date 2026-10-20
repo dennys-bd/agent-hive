@@ -1,11 +1,68 @@
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
-import type { Exec, ForkSyncAnswer, ForkSyncResult } from './types.js';
+import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
-// it (#854). Every git call goes through the caller's `git`, worktree.ts's gitOrWords bound to a folder, so a refusal carries git's own words.
+// it (#854). Every git call goes through `gitOrWords` bound to a folder (the caller's `git`), so a refusal carries git's own words.
 
 /** git in one folder; a failure rejects with git's words. */
 export type Git = (...args: string[]) => Promise<string>;
+
+// git's own words for a failure: its stderr, else the error's message (execFile's would bury them under the command line). Here since #267, so
+// the branch's class can read them without an import cycle; worktree.ts re-exports both. Exported for the task diff (#270), which must tell
+// execFile's overflow apart before it rewords anything.
+export const wordsOf = (err: unknown): string => {
+  const e = err as { stderr?: string; message: string };
+  return (e.stderr ?? '').trim() || e.message;
+};
+
+// A failure carries git's own words (stderr) so the task says why; restart.ts runs its git the same way (#283).
+export async function gitOrWords(repo: string, args: string[], exec: Exec): Promise<string> {
+  try {
+    return (await exec('git', ['-C', repo, ...args])).stdout;
+  } catch (err) {
+    throw new Error(wordsOf(err));
+  }
+}
+
+/** A git question whose exit 1 is an answer (#267): exit 0 is true, exit 1 false (no merge base, not an ancestor, not merged), any other
+ * failure rejects with git's words. */
+export function gitAnswers(repo: string, args: string[], exec: Exec): Promise<boolean> {
+  return exec('git', ['-C', repo, ...args]).then(() => true, (err: { code?: unknown }) => {
+    if (err.code === 1) return false;
+    throw new Error(wordsOf(err));
+  });
+}
+
+/** How an existing branch relates to `start` (#267): `unrelated` with no merge base (#105's branch from before the docs split), `stale` when it
+ * is an ancestor of the start with nothing of its own, `own` otherwise. Read-only. The ref is built here and the start is the resolved default or
+ * a base checkBase passed: neither can start with `-`. */
+export async function branchRelation(repo: string, branch: string, start: string, exec: Exec): Promise<BranchRelation> {
+  const ref = `refs/heads/${branch}`;
+  if (!(await gitAnswers(repo, ['merge-base', '--', ref, start], exec))) return 'unrelated';
+  return (await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, start], exec)) ? 'stale' : 'own';
+}
+
+const OLD = '-old-';
+const SHORT_SHA = 7;
+
+/** Moves a branch out of the way without losing a commit (#267): renamed to `<branch>-old-<sha7>`, or deleted when that name already holds the
+ * very same commit; a short name another commit took gets the full sha. Answers the name the work now lives under. `branch` is always the
+ * name the Hive rendered, never a client's, so it cannot start with `-`. */
+export async function setAside(repo: string, branch: string, exec: Exec): Promise<string> {
+  const git: Git = (...args) => gitOrWords(repo, args, exec);
+  const tip = (await git('rev-parse', '--verify', `refs/heads/${branch}`)).trim();
+  const short = `${branch}${OLD}${tip.slice(0, SHORT_SHA)}`;
+  // only exit 1 means the name is free: any other failure is git's words, never a rename into a name git could not read
+  const taken = await exec('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${short}`]).then(({ stdout }) => stdout.trim(), (err: { code?: unknown }) => {
+    if (err.code === 1) return undefined;
+    throw new Error(wordsOf(err));
+  });
+  const name = taken === undefined || taken === tip ? short : `${branch}${OLD}${tip}`;
+  if (!isBranchName(name)) throw new Error(`${name}: not a branch name`);
+  if (taken === tip) await git('branch', '-D', '--', branch);
+  else await git('branch', '-m', '--', branch, name);
+  return name;
+}
 
 /** What the base step decided (#854): the start point and its short sha, the `base: …` line, a GitHub sync already run, and a local merge to
  * run in the new tree once it exists. */
@@ -113,3 +170,17 @@ export async function settleSync(decided: DecidedBase, inTree: Git | undefined):
 /** The `base: …` line with the sync's result after it (#854). The reason stays out: the line is logged, and the reason is gh's or git's words. */
 export const withSync = (line: string, sync: ForkSyncResult | undefined): string =>
   (sync === undefined ? line : `${line} · sync ${sync.mode} ${sync.result}${sync.commits === undefined ? '' : ` ${sync.commits}`}`);
+
+/** What ensureWorktree does with a branch that already exists (#267): reuse it, recreate it at the start (`reset`, `worktree add -B`), or set
+ * it aside and start it fresh (`fresh`), with the note its `base:` line gets. Without a start (the base could not be refreshed) there is
+ * nothing to classify against: reused, as before #267. */
+export interface ExistingBranch { action: 'reuse' | 'reset' | 'fresh'; note?: string }
+
+export async function existingBranch(repo: string, branch: string, start: string | undefined, exec: Exec): Promise<ExistingBranch> {
+  if (start === undefined) return { action: 'reuse' };
+  const relation = await branchRelation(repo, branch, start, exec);
+  if (relation === 'own') return { action: 'reuse' };
+  if (relation === 'stale') return { action: 'reset', note: `branch ${branch} was behind ${start} with nothing of its own: recreated from ${start}` };
+  const kept = await setAside(repo, branch, exec);
+  return { action: 'fresh', note: `branch ${branch} shares no history with ${start}: kept as ${kept}, started from ${start}` };
+}

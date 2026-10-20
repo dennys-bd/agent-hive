@@ -174,7 +174,8 @@ function refsGit(answers: { listing?: string; heads?: string[]; remotes?: string
     }
     if (command[0] === 'symbolic-ref' && command[1] === '--short') return { stdout: 'origin/main\n' };
     if (command[0] === 'rev-parse' && command[1] === '--verify' && !(answers.refs ?? []).includes(command.at(-1) as string)) {
-      throw Object.assign(new Error('Command failed: git rev-parse'), { stderr: 'fatal: Needed a single revision\n' });
+      // git's own statuses: --quiet makes a missing ref exit 1 with no words (#267's set-aside reads only that as free)
+      throw Object.assign(new Error('Command failed: git rev-parse'), command.includes('--quiet') ? { code: 1, stderr: '' } : { code: 128, stderr: 'fatal: Needed a single revision\n' });
     }
     return { stdout: command[0] === 'rev-parse' ? 'b2c3d4e\n' : '' };
   };
@@ -2892,7 +2893,7 @@ test('a task that leaves with its worktree keeps its activity: GET /worktrees li
   assert.equal(server.getState()!.activities.some((a) => a.kind === 'task'), false, 'worktreeGone let it go');
 });
 
-test('POST /tasks/:id/start with discardOrphan removes what git holds for a task with no activity before it starts from the base; a refusal is a 409 with git\'s words and starts nothing (#861)', async (t) => {
+test('POST /tasks/:id/start with discardOrphan removes what git holds for a task with no activity before it starts from the base; a merged branch is deleted, an unmerged one set aside; a refusal is a 409 with git\'s words and starts nothing (#861, #267)', async (t) => {
   const refs = ['refs/heads/feature-x', `refs/heads/${TASK_BRANCH}`]; // the task's branch is there, no worktree
   const git = refsGit({ refs });
   const { base, workers } = await start(t, idle(), undefined, {}, { exec: git.exec });
@@ -2901,11 +2902,23 @@ test('POST /tasks/:id/start with discardOrphan removes what git holds for a task
   const added = git.calls.findIndex((c) => c[0] === 'worktree' && c[1] === 'add');
   assert.ok(deleted >= 0 && deleted < added, 'the branch goes before the worktree is made');
   assert.equal(workers.length, 1);
-  const refusing = refsGit({ refs });
-  const unmerged: Exec = async (file, args) => (args.includes('merge-base') ? Promise.reject(Object.assign(new Error('Command failed: git merge-base'), { code: 1 })) : refusing.exec(file, args));
-  const again = await start(t, idle(), undefined, {}, { exec: unmerged });
+  const notMerged = (): Promise<never> => Promise.reject(Object.assign(new Error('Command failed: git merge-base'), { code: 1 }));
+  const asideGit = refsGit({ refs });
+  const unmerged: Exec = async (file, args) => (args.includes('merge-base') ? notMerged() : asideGit.exec(file, args));
+  const aside = await start(t, idle(), undefined, {}, { exec: unmerged });
+  assert.deepEqual(await json(postJson(`${aside.base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true })), { ok: true });
+  assert.ok(asideGit.calls.some((c) => c.join(' ') === `branch -m -- ${TASK_BRANCH} ${TASK_BRANCH}-old-b2c3d4e`), 'set aside under its tip, never deleted');
+  assert.equal(aside.workers.length, 1);
+  const refusingGit = refsGit({ refs });
+  const words = `fatal: a branch named '${TASK_BRANCH}-old-b2c3d4e' already exists`;
+  const refusing: Exec = async (file, args) => {
+    if (args.includes('merge-base')) return notMerged();
+    if (args.includes('-m')) throw Object.assign(new Error('Command failed: git branch -m'), { stderr: `${words}\n` });
+    return refusingGit.exec(file, args);
+  };
+  const again = await start(t, idle(), undefined, {}, { exec: refusing });
   const res = await postJson(`${again.base}/tasks/board:I1/start`, { base: 'feature-x', discardOrphan: true });
   assert.equal(res.status, 409);
-  assert.deepEqual(await res.json(), { error: `the branch '${TASK_BRANCH}' is not fully merged into HEAD`, code: DISCARD_FAILED });
+  assert.deepEqual(await res.json(), { error: words, code: DISCARD_FAILED });
   assert.equal(again.workers.length, 0, 'nothing started');
 });
