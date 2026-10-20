@@ -249,11 +249,12 @@ function countsOf(db: DatabaseSync): Pick<ReadModel, 'counts'> {
   };
 }
 
-// Each missing migration in its own transaction, with the version it reaches, so a crash between two leaves a file that resumes
-function migrate(db: DatabaseSync, migrations: readonly string[]): void {
+// Each missing migration in its own transaction, with the version it reaches, so a crash between two leaves a file that resumes. #271: the usage
+// store runs its own list through it; name is whose file it is, in the error
+export function migrate(db: DatabaseSync, migrations: readonly string[], name = 'read model'): void {
   const version = Number(db.prepare('PRAGMA user_version').get()?.user_version);
-  // a file of a newer Hive has tables this code cannot read: treated as corrupt, so it is rebuilt
-  if (!Number.isInteger(version) || version > migrations.length) throw new Error(`read model: schema version ${version} is newer than ${migrations.length}`);
+  // a file of a newer Hive has tables this code cannot read: the read model rebuilds it, the usage store turns off (#271)
+  if (!Number.isInteger(version) || version > migrations.length) throw new Error(`${name}: schema version ${version} is newer than ${migrations.length}`);
   for (const [index, sql] of migrations.entries()) {
     if (index < version) continue;
     inTransaction(db, () => {
@@ -264,7 +265,7 @@ function migrate(db: DatabaseSync, migrations: readonly string[]): void {
 }
 
 // WAL keeps a -wal and a -shm beside the database: all three get the owner-only mode
-function restrict(path: string): void {
+export function restrict(path: string): void {
   for (const suffix of SIDE_FILES) if (existsSync(`${path}${suffix}`)) chmodSync(`${path}${suffix}`, FILE_MODE);
 }
 
