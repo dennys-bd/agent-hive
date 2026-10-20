@@ -21,7 +21,6 @@ import { usePluginsDock } from '@/components/plugins/plugins-dock';
 import { dockedTab, type OpenDiff, type OpenFileHow, type OpenPr, type OpenRun } from '@/components/terminal-tabs';
 import { type ConsoleChannels, ConsoleChannelsContext, type OpenStageOutput, shownChannel, useConsoleOpener } from '@/hooks/use-console';
 import { type ActivitySelection, useActivity } from '@/hooks/use-activity';
-import type { BackEntry } from '@/hooks/use-back-stack';
 import { type CenterLayouts, useCenterLayouts } from '@/hooks/use-center-layouts';
 import { useFileOpener } from '@/hooks/use-file-opener';
 import { useDock } from '@/hooks/use-dock';
@@ -76,9 +75,9 @@ export interface MainDockProps {
   search?: SearchSource;
   // Every way into a PR (#758), from the Dashboard: its page under its repository; absent (the terminal's harness): a PR link opens GitHub.
   // from (#911): a page opened from the Atividades view, the entry that shows that view again
-  openPr?(url: string, from?: BackEntry): void;
+  openPr?(url: string): void;
   // The task details' issue (#895), from the Dashboard: its page under its repository; absent (the terminal's harness): the issue's URL
-  openIssue?(url: string, from?: BackEntry): void;
+  openIssue?(url: string): void;
 }
 
 /** What the search reads beyond the dock (#584). */
@@ -201,18 +200,6 @@ function useSearchClose(current: Activity | undefined, layouts: CenterLayouts, o
   return { close, dialog: loss.dialog };
 }
 
-// What a page opened from the Atividades view goes back to (#911): that view, on the activity it showed, which stays picked in useActivity.
-// Named by the task's number, a local activity by its workspace, Home by the view's own name. Under Automação none: the Dashboard pushes the
-// pick it leaves
-function activityEntry(selection: ActivitySelection): BackEntry | undefined {
-  if (selection.center !== 'activities') return undefined;
-  const { current } = selection;
-  const label = current === undefined
-    ? t('header.activities')
-    : isTask(current) ? t('back.activity', { n: current.task.item.id }) : t('back.activityTitled', { title: current.workspace });
-  return { label, restore: () => selection.activateTab('activities') };
-}
-
 // The activity sidebar's tab (redesign 07). A task picked outside the activities (the flow, a chip) opens the side holding Detalhes, and asks for
 // its details unless the tab is kept (#821). keepTab is read at the pick, not a dependency: a save that flips it must not replay the last pick and
 // reopen that side. The toggleSideTab key (#585) opens the side, then switches files and details. Bound only while the center shows a task's
@@ -268,11 +255,11 @@ export function MainDock(props: MainDockProps) {
   useSleptNotices(activities, openUserRun); // the auto flow's and the idle shutdown's sleeps show their notice here (#672)
   // A task's diff (#270): a tab of its activity's center (#458); the task's menu offers none while it is no activity
   const openTaskDiff: OpenDiff = (task, scope, checkpoint) => openDiff(task.item.itemId, scope, checkpoint);
-  // Every way into a PR (#758) and the task details' issue (#895): the flow under Automação, showing the page under its repository
-  const toAutomation = (open?: (url: string, from?: BackEntry) => void): OpenPr | undefined => open && ((url) => {
-    const from = activityEntry(selection); // read before the switch: the view the page is opened from
+  // Every way into a PR (#758) and the task details' issue (#895): the flow under Automação, showing the page under its repository. From
+  // Atividades or the search too: its back goes to the flow, as every page's does (#380)
+  const toAutomation = (open?: (url: string) => void): OpenPr | undefined => open && ((url) => {
     activateTab('automation');
-    open(url, from);
+    open(url);
   });
   const openPr = toAutomation(openPrPage);
   const openIssue = toAutomation(openIssuePage);

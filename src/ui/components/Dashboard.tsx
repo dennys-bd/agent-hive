@@ -1,9 +1,9 @@
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import type { ProjectItem, RepoSummary, SidebarsPerView, SourceConfig, SourceSync, EffectiveLimits, State, Task } from '../../types';
 import { taskOfPr } from '../../activities';
 import { issueOfLink, issueUrl, taskOfIssue } from '../../repos/issue-task';
-import { prLink, prNumber, prRepo, repoName } from '../../pull-requests';
+import { prLink, prNumber, prRepo } from '../../pull-requests';
 import { behaviourOf } from '../../signals';
 import { HIVE_SOURCE, sourceOf } from '../../tasks';
 import { CreateTargetsContext, createTargetsOf } from '@/lib/create-targets';
@@ -35,7 +35,6 @@ import { ProjectTable } from '@/components/ProjectTable';
 import { RepoIssueTable } from '@/components/RepoIssueTable';
 import { RepoPrTable } from '@/components/RepoPrTable';
 import { t } from '@/i18n';
-import { type BackEntry, navScrollTop, NavScrollContext, useBackStack } from '@/hooks/use-back-stack';
 import { useConsoleChannels } from '@/hooks/use-console';
 import { useRepositories } from '@/hooks/use-repositories';
 import { FONT_FAMILY } from '@/lib/xterm-setup';
@@ -62,14 +61,14 @@ function SyncErrors({ syncs }: { syncs: Record<string, SourceSync> }) {
   );
 }
 
-/** What the center shows under Automação (#911: a back entry's snapshot): the pick, its tabs and the page. */
+/** What the center shows under Automação: the pick, its tabs and the page. */
 interface PickScreen { source?: string; repository?: string; tab: SourceTab; repoTab: RepoTab; issue?: IssueRef; pr?: PrRef }
 const FIRST: PickScreen = { tab: 'flow', repoTab: 'prs' };
 
 // The flow sidebar's pick (redesign 09): a source or a repository (#757), one at a time; for an external source its header's tab (#756);
 // and the issue or the PR whose page shows (#757, #758). A new pick starts on its default tab with no page, a tab's click closes the page, and nothing of it
 // is saved. A pick whose source a Settings save renamed or removed reads as todas, not as an empty flow; hive is a row while it is on (#665, #846). A
-// repository the last read no longer lists reads as no pick. One value (#911), so a back entry snapshots and restores it whole
+// repository the last read no longer lists reads as no pick.
 function useSourcePick(sources: SourcesNav | undefined, repositories: RepoSummary[]) {
   const [screen, setScreen] = useState<PickScreen>(FIRST);
   const { source, repository, tab, repoTab, issue, pr } = screen;
@@ -87,7 +86,6 @@ function useSourcePick(sources: SourcesNav | undefined, repositories: RepoSummar
     showFlow: () => choose({ source }), // the flow, keeping the source pick
     openPrPage: (ref: PrRef) => choose({ repository: ref.repository }, { pr: ref }), // #758: a PR's page under its repository's PRs tab
     openIssueIn: (ref: IssueRef) => choose({ repository: ref.repository }, { repoTab: 'issues', issue: ref }), // #758: the PR page's task #N
-    snapshot: (): PickScreen => screen, restore: (next: PickScreen) => setScreen(next), label: () => screenLabel({ screen, picked, external, repo }), // #911
   };
 }
 type SourcePick = ReturnType<typeof useSourcePick>;
@@ -157,69 +155,44 @@ function shownPage(state: State, picks: SourcePick): DetailPage | undefined {
   return { kind: 'issue', url, task: taskOfIssue(state.tasks, url, issue.itemId) };
 }
 
-// A screen's name on the back button (#911), as the handoff lists them: a page by its number, a repository's list by its tab and name, the
-// native tab by its own label, else the flow with the pick as the sidebar names it. Read as Center reads the screen
-function screenLabel({ screen, picked, external, repo }: { screen: PickScreen; picked?: string; external?: SourceConfig; repo?: RepoSummary }): string {
-  const { tab, repoTab, issue, pr } = screen;
-  const isNative = external !== undefined && tab === 'native';
-  if (repo && pr) return t('back.pr', { n: pr.number });
-  if ((repo || isNative) && issue) return t('back.issue', { n: issue.number });
-  if (repo) return t(repoTab === 'prs' ? 'back.repoPrs' : 'back.repoIssues', { repo: repoName(repo.repository) });
-  if (external && isNative) return t(`flow.tab.native.${external.type}`);
-  return t('back.flow', { pick: picked ?? t('flow.sources.all') });
-}
+/** The flow last shown under Automação (#380): its pick and the task selected on it, what back on a page returns to. */
+interface LastFlow { source?: string; selected?: Selection }
 
-// `go` with `before` run first (#911): a push of the screen being left, or a reset
-const preceded = <A extends unknown[]>(before: () => void, go: (...args: A) => void) => (...args: A): void => {
-  before();
-  go(...args);
-};
-
-// The pick whose navigations inside the pages run `before` first (#911): opening a page, the repository's tab and its name in a header
-function withBefore(picks: SourcePick, before: () => void): SourcePick {
+// Back on a PR or issue page (#380): the last flow, whatever led to the page. A page whose task the recorded pick would hide goes back to
+// todas instead, and says so; a page with no task keeps the pick. Only a changed selection is picked again: every onSelect opens the panel
+// holding Detalhes, which the user may have closed since (#911)
+function backToFlow(last: LastFlow, page: DetailPage, picks: SourcePick, selected: Selection | undefined, onSelect: (selection?: Selection) => void): BackLink {
+  const isHidden = last.source !== undefined && page.task !== undefined && sourceOf(page.task) !== last.source;
+  const source = isHidden ? undefined : last.source;
   return {
-    ...picks, openIssue: preceded(before, picks.openIssue), openPrPage: preceded(before, picks.openPrPage), openIssueIn: preceded(before, picks.openIssueIn),
-    onRepoTab: preceded(before, picks.onRepoTab), pickRepository: preceded(before, picks.pickRepository),
+    label: t('back.flow', { pick: source ?? t('flow.sources.all') }),
+    onBack: () => {
+      picks.pick(source);
+      if (last.selected?.taskId !== selected?.taskId) onSelect(last.selected);
+    },
   };
 }
 
-/** The center's navigation with its back stack (#911). `nav` is the pick whose page navigations push and whose source tabs reset. `sidebar`
- * holds the picks that reset. The openers handed to MainDock reset the stack to `from` when it is given (a page opened from Atividades). */
+/** The center's navigation (#380): the pick itself, and a page's way back to the last flow. */
 interface CenterNav {
-  picks: SourcePick; nav: SourcePick; goTo(taskId: string): void; showTask(taskId: string): void; back?: BackLink; pending: RefObject<number | undefined>;
-  sidebar: { pick(name?: string): void; pickRepository(name: string): void };
-  openPr(url: string, from?: BackEntry): void; openIssue(url: string, from?: BackEntry): void;
+  picks: SourcePick; goTo(taskId: string): void; back?: BackLink; openPr(url: string): void; openIssue(url: string): void;
   page?: DetailPage; // #64: what the details panel hosts while the center is under Automação
 }
 
 function useCenterNav(state: State | undefined, sources: SourcesNav | undefined, repositories: RepoSummary[], selected: Selection | undefined, onSelect: (selection?: Selection) => void): CenterNav {
   const picks = useSourcePick(sources, repositories);
-  const stack = useBackStack();
-  const goTo = useGoTo(state, picks.picked, picks.pick, onSelect, picks.showFlow); // follow is the raw pick: goTo has pushed already
-  const latest = useRef(selected); // the selection when an entry is restored, not when it was pushed
+  const goTo = useGoTo(state, picks.picked, picks.pick, onSelect, picks.showFlow);
+  // Before any flow was left it is the first screen, todas; Center shows the flow under no repository and off the native tab
+  const lastFlow = useRef<LastFlow>({});
+  const isFlow = picks.repo === undefined && picks.tabs?.active !== 'native';
   useEffect(() => {
-    latest.current = selected;
+    if (isFlow) lastFlow.current = { source: picks.picked, selected };
   });
-  const push = (): void => {
-    const [screen, was] = [picks.snapshot(), selected];
-    // only a changed selection is picked again: every onSelect opens the panel holding Detalhes, which the user may have closed since
-    const restore = (): void => {
-      picks.restore(screen);
-      if (was?.taskId !== latest.current?.taskId) onSelect(was);
-    };
-    stack.push({ label: picks.label(), restore, scroll: navScrollTop() });
-  };
-  const reset = (): void => stack.reset();
-  const nav: SourcePick = { ...withBefore(picks, push), tabs: picks.tabs && { ...picks.tabs, onPick: preceded(reset, picks.tabs.onPick) } };
-  const dockNav = (from?: BackEntry): SourcePick => (from === undefined ? nav : withBefore(picks, () => stack.reset(from)));
-  // #229: ver no fluxo starts a new path, as a sidebar pick does: the user chose no back button to the activity it came from
+  const page = state && shownPage(state, picks);
   return {
-    picks, nav, pending: stack.pending, goTo: preceded(push, goTo), showTask: preceded(reset, goTo),
-    page: state && shownPage(state, picks),
-    back: stack.top && { label: stack.top.label, onBack: stack.back },
-    sidebar: { pick: preceded(reset, picks.pick), pickRepository: preceded(reset, picks.pickRepository) },
-    openPr: (url, from) => prOpener(dockNav(from), repositories)(url),
-    openIssue: (url, from) => issueOpener(dockNav(from), repositories)(url),
+    picks, goTo, page,
+    back: page && backToFlow(lastFlow.current, page, picks, selected, onSelect), // a page is never the flow: the ref holds the last one
+    openPr: prOpener(picks, repositories), openIssue: issueOpener(picks, repositories),
   };
 }
 
@@ -234,7 +207,7 @@ function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: R
   // #911: a page's header carries the way back, never a list's; #352: the page names its own GitHub URL
   const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} github={github} />;
   const { issue, pr } = picks;
-  // #69: the merge goes back as the header's button does; an empty stack has no back, so the page stays and shows the PR merged
+  // #69: the merge goes back as the header's button does, to the last flow (#380)
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
   if (issue) {
     return <IssuePage key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={repo.repository} workspace={repo.workspace} header={header} onGoTo={goTo} onOpenPr={onOpenPr} />;
@@ -287,7 +260,7 @@ export function Dashboard(props: DashboardProps) {
 
 function DashboardView({ state, effective, selected, locale, hasSource, fileLinks, fontFamily, sources, onSelect, onEditRules, onAddWorkspace, onOpenSettings, openShortcuts, sidebarsPerView }: DashboardProps) {
   const repositories = useRepositories();
-  const { picks, nav, goTo, showTask, back, pending, sidebar, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #911
+  const { picks, goTo, back, openPr, openIssue, page } = useCenterNav(state, sources, repositories, selected, onSelect); // #380
   // #353: the live command runs, and #351: the running worktree setups, as one key, so a run or a setup starting or ending anywhere reads
   // the console's channels again. Before the early return: a hook runs on every render.
   const consoleChannels = useConsoleChannels([
@@ -306,7 +279,7 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
       {/* #304: the cards hide a CI stage's button while the wait starts on its own, by the reducer's own rule (gateOf's workerless row) */}
       <WorkerlessContext.Provider value={behaviourOf(limits.signal, state.signals).workerless}>
         <MainDock
-          showTask={showTask}
+          showTask={goTo}
           sidebarsPerView={sidebarsPerView}
           fileLinks={fileLinks ?? false} fontFamily={fontFamily ?? FONT_FAMILY} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} liveActivities={state.activities} activityRecords={state.activityRecords} slept={state.slept} stages={state.stages} onAddWorkspace={onAddWorkspace} openPr={openPr} openIssue={openIssue}
           tasks={state.tasks} workers={state.workers} terminals={state.terminals} selected={selected} onSelect={onSelect} consoleChannels={consoleChannels} pageKey={page?.url}
@@ -321,8 +294,8 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           header={(shell) => <Header shell={shell} state={state} effective={limits} />}
           automation={() => (
             <AutomationPanel
-              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={sidebar.pick}
-              repository={picks.repo?.repository} onRepository={sidebar.pickRepository}
+              state={state} effective={effective} sources={sources ?? NO_SOURCES} source={picks.picked} onSource={picks.pick}
+              repository={picks.repo?.repository} onRepository={picks.pickRepository}
             />
           )}
           search={{ state, effective: limits, openSettings: onOpenSettings, openShortcuts }}
@@ -331,11 +304,11 @@ function DashboardView({ state, effective, selected, locale, hasSource, fileLink
           activityBar={(activity, focusedRun, showFlow) => <ActivityBar activity={activity} state={state} focusedRun={focusedRun} onShowFlow={showFlow} />}
           paneContext={(activity) => activityPane(activity, state)}
           copySession={(shown, children) => <CopySessionHost state={state} shown={shown}>{children}</CopySessionHost>}
-          detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(nav, repositories)} />}
+          detail={(view) => <DetailPanel state={state} selected={selected} locale={locale} isShown={view.isShown} onClose={view.onClose} nav={view.nav} onOpenTask={(taskId) => onSelect({ taskId })} page={view.nav.center === 'automation' ? page : undefined} onOpenIssue={issueOpener(picks, repositories)} />}
         >
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             {hasSource && <SyncErrors syncs={state.syncs} />}
-            <NavScrollContext.Provider value={pending}><Center state={state} selected={selected} picks={nav} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} /></NavScrollContext.Provider>
+            <Center state={state} selected={selected} picks={picks} repositories={repositories} onSelect={onSelect} goTo={goTo} stageCaps={limits.stageCaps} back={back} />
           </main>
         </MainDock>
       </WorkerlessContext.Provider>

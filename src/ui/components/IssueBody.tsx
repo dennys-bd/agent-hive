@@ -6,7 +6,6 @@ import { IssueCommentBox } from '@/components/IssueCommentBox';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
 import { AssigneeCell, PrCell, taskPrs } from '@/components/ProjectRow';
 import { useOpenPr } from '@/components/terminal-tabs';
-import { useNavScroll } from '@/hooks/use-back-stack';
 import { type IssuePatch, issuePath, type Optimistic } from '@/hooks/use-issue';
 import { t } from '@/i18n';
 import { relativeTime } from '@/lib/home';
@@ -79,9 +78,8 @@ function Comments({ issue }: { issue: IssuePage }) {
  * and the description edit in place; the box under the comments posts one. */
 export function IssueBody({ issue, task, state, meta, onChanged, optimistic }: IssueBodyProps) {
   const save = fieldSaver(issuePath(issue.repository, issue.number), t('issue.changed'), onChanged);
-  const scroller = useNavScroll(); // #911: mounts once the issue is read, when its pending scroll applies
   return (
-    <div ref={scroller} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="flex flex-col gap-3 px-6 pt-4">
         <Editable label={t('issue.title')} value={issue.title} updatedAt={issue.updatedAt} isMultiline={false} changed={t('issue.changed')} onSave={save('title')}>
           <h1 className="font-semibold text-[20px] leading-[26px] [text-wrap:pretty]">{issue.title}</h1>
