@@ -1,5 +1,5 @@
 import { activityOf, recordWithSession } from '../../activities';
-import { canMoveToStage, SESSION_ID_CHARS } from '../../tasks';
+import { canDismissError, canMoveToStage, SESSION_ID_CHARS } from '../../tasks';
 import { transitionKey } from '../../transitions';
 import type { State, Task, TryRecord } from '../../types';
 import { act, continueTaskSession, stageMoves } from '@/components/actions';
@@ -56,8 +56,18 @@ function TryBoxes({ shown, records, locale, open }: { shown: Exhausted; records:
   );
 }
 
-// tentar de novo (only while the transition is still there), mover para… and abrir sessão; the first two refused while canMoveToStage
-// refuses, as the routes do
+/** dispensar (#354): the task's error cleared, the task left in its stage; refused while canDismissError refuses, as the route is. Under the
+ * details' error (DetailPanel) and in the exhausted block, which hides the raw error. */
+export function DismissButton({ task, state }: { task: Task; state: State }) {
+  return (
+    <Button type="button" size="xs" variant="outline" disabled={!canDismissError(task, state)} onClick={() => void act(`/tasks/${encodeURIComponent(task.item.itemId)}/dismiss-error`)}>
+      {t('detail.dismissError')}
+    </Button>
+  );
+}
+
+// tentar de novo (only while the transition is still there), mover para…, abrir sessão and dispensar (#354); the first two refused while
+// canMoveToStage refuses, as the routes do
 function ExhaustedActions({ task, state, canRetry, sessionId, open }: { task: Task; state: State; canRetry: boolean; sessionId?: string; open: OpenSession }) {
   const isMovable = canMoveToStage(task, state);
   return (
@@ -74,6 +84,7 @@ function ExhaustedActions({ task, state, canRetry, sessionId, open }: { task: Ta
         </DropdownMenuContent>
       </DropdownMenu>
       {sessionId !== undefined && <Button type="button" size="xs" variant="outline" onClick={() => open(sessionId)}>{t('tries.exhausted.openSession')}</Button>}
+      <DismissButton task={task} state={state} />
     </div>
   );
 }

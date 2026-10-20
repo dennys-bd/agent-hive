@@ -13,7 +13,7 @@ import { SlotTitle, useDetailSlotRef } from '@/components/DetailSlot';
 import { isStartFailure } from '@/components/CommandsProgress';
 import { RunningBlock } from '@/components/RunningBlock';
 import { SyncBlock } from '@/components/ForkSyncNotice';
-import { ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
+import { DismissButton, ExhaustedBlock, TriesSection } from '@/components/TriesBlocks';
 import { MetaGrid, ResultsList, SessionsList, StatusBox } from '@/components/DetailSections';
 import { TreeSection } from '@/components/TreeSection';
 import { IssueMarkdown } from '@/components/IssueMarkdown';
@@ -101,7 +101,7 @@ function PageMeta({ task, state }: { task: Task; state: State }) {
 }
 
 // The scrolling body (redesign 06), with no visible bar and 14px under its last line (#57): the title, the task's error in full (a failed
-// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), the status block (the status box, the
+// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with dispensar under it (#354), the status block (the status box, the
 // running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
 // section under it, the tree (#36), the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the
 // issue and its comments. On a page (#64, handoff "Estrutura comum"): the workspace · source line under the title, the page's slot right
@@ -115,9 +115,14 @@ function TaskBody({ task, state, comments, files, locale, isActivity, onOpenTask
     <div className="scrollbar-none flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-3.5 py-3.5">
       {page ? <PageTitle task={task} isPr={page.kind === 'pr'} onOpenIssue={page.onOpenIssue} /> : <SlotTitle>{taskLabel(task)}</SlotTitle>}
       {page && <PageMeta task={task} state={state} />}
-      {error && !isExhausted(task, state) && (isStartFailure(error)
-        ? <StartFailure error={error} /> // #945: the short message, the raw text behind details
-        : <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>)}
+      {error && !isExhausted(task, state) && (
+        <div className="flex flex-col items-start gap-1.5"> {/* #354: dispensar under the error, outside its alert */}
+          {isStartFailure(error)
+            ? <StartFailure error={error} /> // #945: the short message, the raw text behind details
+            : <p role="alert" className="whitespace-pre-wrap break-words text-destructive text-xs">{error}</p>}
+          <DismissButton task={task} state={state} />
+        </div>
+      )}
       <StatusBlock task={task} state={state} locale={locale} isActivity={isActivity} />
       <TriesSection task={task} state={state} />
       <SyncBlock task={task} state={state} />

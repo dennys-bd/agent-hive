@@ -64,7 +64,7 @@ test('a task out of tries shows the destructive block: its title, the text namin
   expect(block).toHaveClass('border-destructive', 'bg-destructive/12');
   expect(within(block).getByText('etapa checks')).toBeInTheDocument();
   expect(within(block).getByText('checks falhou 3 de 3 vezes e voltou para build a cada vez. a tarefa parou aqui e espera você.')).toBeInTheDocument();
-  expect(within(block).getAllByRole('button').map((b) => b.textContent)).toEqual(['tentar de novo', 'mover para…', 'abrir sessão']);
+  expect(within(block).getAllByRole('button').map((b) => b.textContent)).toEqual(['tentar de novo', 'mover para…', 'abrir sessão', 'dispensar']);
   expect(within(block).getByText('tentar de novo zera o contador e executa build.')).toBeInTheDocument();
   const tries = screen.getByRole('region', { name: 'tentativas · falhou 3/3' });
   expect(within(tries).getAllByText(/✕ lint$/).map((line) => line.textContent)).toEqual(['3/3 ✕ lint', '2/3 ✕ lint', '1/3 ✕ lint']);
@@ -113,4 +113,14 @@ test('a try box with no session has no ver saída and names the stage alone; one
   expect(within(first).getByText('build')).toBeInTheDocument();
   await user.click(within(second).getByRole('button', { name: 'ver saída' }));
   await waitFor(() => lastPost(`/activities/a-I1/sessions/${S[1]}/open`, {}));
+});
+
+test('dispensar, the exhausted block\'s fourth action, posts dismiss-error; it is refused while a run holds the task (#354)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(exhausted(at(HALTED)));
+  await user.click(screen.getByRole('button', { name: 'dispensar' }));
+  lastPost('/tasks/I1/dismiss-error');
+  unmount();
+  render(exhausted(at({ ...HALTED, workerId: 'w1' })));
+  expect(screen.getByRole('button', { name: 'dispensar' })).toBeDisabled();
 });
