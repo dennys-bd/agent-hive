@@ -9,7 +9,7 @@ import { ButtonKeyHint, KeyHint } from '@/components/KeyHint';
 import { HeaderSlot } from '@/components/HeaderSlot';
 import { useIsFlowShown } from '@/components/MainDock';
 import { Button } from '@/components/ui/button';
-import { useBackKeys } from '@/hooks/use-back-stack';
+import { useBackKeys } from '@/hooks/use-back-keys';
 import { t } from '@/i18n';
 import { isSettingsClosed, onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
@@ -33,7 +33,7 @@ export function lastPolled(syncs: Record<string, SourceSync>, source?: string): 
   return `${pad(time.getHours())}:${pad(time.getMinutes())}`;
 }
 
-/** A page's way back (#911): the previous screen's label and what goes there. */
+/** A page's way back (#911, #380): the last flow's label and what shows it again. */
 export interface BackLink { label: string; onBack(): void }
 
 // voltar · ⌘[ (#911): the key as bound now, so a rebound one shows; the words alone while it is off
@@ -42,7 +42,7 @@ function backTitle(): string {
   return keys === null ? t('shortcuts.goBack') : t('back.title', { key: displayBinding(keys, isMac()) });
 }
 
-// The back button (#911, handoff §7): ‹ and the previous screen's label, then a divider before the name. ⌘[ and the mouse's back button do the
+// The back button (#911, handoff §7): ‹ and the last flow's label (#380), then a divider before the name. ⌘[ and the mouse's back button do the
 // same, but only while the flow shows: the header stays mounted under Atividades (#596), where the button is out of sight
 function BackButton({ back }: { back: BackLink }) {
   const isShown = useIsFlowShown();
@@ -190,7 +190,7 @@ interface FlowHeaderProps {
   tabs?: SourceTabs; // #756: an external source is picked: the source header
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   repository?: RepoHeader; // #757: a repository is picked: the repository header
-  back?: BackLink; // #911: the previous screen; only the issue and PR pages pass it, while the back stack is not empty
+  back?: BackLink; // #911, #380: the way back to the last flow; only the issue and PR pages pass it
   github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
   loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
   tree?: boolean; onTree?(): void; // #34: the ⑂ tree toggle, the value Flow resolved; only Flow passes them, as with ↺ loops

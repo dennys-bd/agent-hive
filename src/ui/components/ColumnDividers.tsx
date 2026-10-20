@@ -1,5 +1,4 @@
 import { type ReactNode, useRef, useState } from 'react';
-import { useNavScroll } from '@/hooks/use-back-stack';
 import { t } from '@/i18n';
 import { clampWidth, dividerOffsets, tableMinWidth, type WidthColumn } from '@/lib/column-widths';
 
@@ -81,9 +80,8 @@ function BodyDividers({ columns, trailing }: { columns: WidthColumn[]; trailing?
  * and at least as tall as the area holds the table and the dividers, which move with the columns when it scrolls sideways. No row, no
  * body divider (the handoff's `body: empty ? [] : lines`). */
 export function ColumnScroll({ columns, trailing, hasRows, children }: { columns: WidthColumn[]; trailing?: number; hasRows: boolean; children: ReactNode }) {
-  const scroller = useNavScroll(); // #911: a back restores this table's scroll
   return (
-    <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto [scrollbar-width:none]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto [scrollbar-width:none]">
       <div className="relative flex-1" style={{ minWidth: tableMinWidth(columns, trailing) }}>
         {children}
         {hasRows && <BodyDividers columns={columns} trailing={trailing} />}
