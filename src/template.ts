@@ -39,7 +39,7 @@ export interface ParsedTemplate {
   body: string;
   bodyLine: number;
   variables: TemplateVariable[];
-  basedOn?: BasedOn;
+  basedOn?: BasedOn[]; // #338: one origin or a list in the header, always a list here
   errors: TemplateError[];
   /** The text as given and its header's Document: a render answers the text untouched, or drops keys without parsing again. */
   readonly [SOURCE]: { text: string; doc: Document.Parsed };
@@ -182,11 +182,16 @@ function readVariables(doc: Document.Parsed, raw: unknown, lineCounter: LineCoun
   };
 }
 
-function readBasedOn(raw: unknown, line: number): BasedOn | TemplateError {
-  const isShape =
-    isRecord(raw) && Object.keys(raw).length === BASED_ON_KEYS.length && BASED_ON_KEYS.every((key) => typeof raw[key] === 'string');
-  if (!isShape || !isRecord(raw)) return { line, message: `basedOn must be { ${BASED_ON_KEYS.join(', ')} }, each a string` };
-  return { name: String(raw.name), repo: String(raw.repo), ref: String(raw.ref), license: String(raw.license), url: String(raw.url) };
+const isOrigin = (raw: unknown): raw is BasedOn =>
+  isRecord(raw) && Object.keys(raw).length === BASED_ON_KEYS.length && BASED_ON_KEYS.every((key) => typeof raw[key] === 'string');
+
+// #338, decision 1: a port of two sources names both, so a list is accepted; one origin stays valid and becomes a one-entry list
+function readBasedOn(raw: unknown, line: number): BasedOn[] | TemplateError {
+  const list: unknown[] = Array.isArray(raw) ? raw : [raw];
+  if (list.length === 0 || !list.every(isOrigin)) {
+    return { line, message: `basedOn must be { ${BASED_ON_KEYS.join(', ')} } or a list of them, each a string` };
+  }
+  return list.map((origin) => ({ ...origin }));
 }
 
 export function parseTemplate(text: string): ParsedTemplate {
@@ -201,11 +206,12 @@ export function parseTemplate(text: string): ParsedTemplate {
   const parsed: ParsedTemplate = { ...blank, header: data, variables, errors };
   if (!Object.hasOwn(data, 'basedOn')) return parsed;
   const basedOn = readBasedOn(data.basedOn, headerLine(lineCounter, topPair(doc, 'basedOn')?.key));
-  return 'message' in basedOn ? { ...parsed, errors: [...errors, basedOn] } : { ...parsed, basedOn };
+  return Array.isArray(basedOn) ? { ...parsed, basedOn } : { ...parsed, errors: [...errors, basedOn] };
 }
 
 const hasLiquid = (body: string): boolean => LIQUID_MARK.test(body);
-const hasDeclarations = (header: Record<string, unknown>): boolean =>
+/** Whether the header holds what the delivery drops: variables or basedOn. Exported for the plugin render (#338, decision 10). */
+export const hasDeclarations = (header: Record<string, unknown>): boolean =>
   Object.hasOwn(header, 'variables') || Object.hasOwn(header, 'basedOn');
 
 // An explicit null in workspaces: counts as the workspace's value.

@@ -36,7 +36,7 @@ test('a header declaring text, list, boolean and required variables parses with 
     { name: 'dryRun', kind: 'boolean', default: false, required: false, workspaces: {}, line: 9 },
     { name: 'e2eCommand', kind: 'text', default: null, required: true, workspaces: { hive: 'pnpm e2e', 'hive-site': 'playwright test' }, line: 10 },
   ]);
-  assert.deepEqual(parsed.basedOn, { name: 'skills', repo: 'acme/skills', ref: 'v1.0.0', license: 'MIT', url: 'example.com/skills' });
+  assert.deepEqual(parsed.basedOn, [{ name: 'skills', repo: 'acme/skills', ref: 'v1.0.0', license: 'MIT', url: 'example.com/skills' }], 'one origin parses to a one-entry list (#338)');
   assert.equal(parsed.header.name, 'new-build');
   assert.equal(parsed.bodyLine, 13);
   assert.ok(parsed.body.startsWith('# Build for {{ workspace }}\n'));
@@ -71,7 +71,7 @@ test('each malformed declaration answers one error naming the variable, at its l
 });
 
 test('a malformed basedOn or variables block answers one error at its line, and every declaration is checked (#310)', () => {
-  const basedOn = 'basedOn must be { name, repo, ref, license, url }, each a string';
+  const basedOn = 'basedOn must be { name, repo, ref, license, url } or a list of them, each a string';
   assert.deepEqual(headerErrors('name: x', 'basedOn: { name: skills, repo: acme/skills }'), [{ line: 3, message: basedOn }]);
   assert.deepEqual(headerErrors('basedOn: { name: a, repo: b, ref: c, license: d, url: e, extra: f }'), [{ line: 2, message: basedOn }]);
   assert.deepEqual(headerErrors('basedOn: { name: a, repo: b, ref: c, license: d, url: 7 }'), [{ line: 2, message: basedOn }]);
@@ -80,6 +80,20 @@ test('a malformed basedOn or variables block answers one error at its line, and 
     headerErrors('variables:', '  a: { default: 3 }', '  b: { scope: x }').map((error) => [error.line, error.variable]),
     [[3, 'a'], [4, 'b']],
   );
+});
+
+test('basedOn is one origin or a non-empty list of them, read in header order; an empty list, a bad entry or a scalar is the one error at the key (#338)', () => {
+  const origin = (name: string): string => `{ name: ${name}, repo: acme/${name}, ref: v1, license: MIT, url: example.com/${name} }`;
+  const entry = (name: string) => ({ name, repo: `acme/${name}`, ref: 'v1', license: 'MIT', url: `example.com/${name}` });
+  const parse = (...lines: string[]) => parseTemplate(['---', ...lines, '---', 'body', ''].join('\n'));
+  const message = 'basedOn must be { name, repo, ref, license, url } or a list of them, each a string';
+  assert.deepEqual(parse(`basedOn: ${origin('a')}`).basedOn, [entry('a')]);
+  const listed = parse('name: x', 'basedOn:', `  - ${origin('a')}`, `  - ${origin('b')}`);
+  assert.deepEqual([listed.basedOn, listed.errors], [[entry('a'), entry('b')], []]);
+  assert.deepEqual(headerErrors('name: x', 'basedOn: []'), [{ line: 3, message }]);
+  assert.deepEqual(headerErrors('basedOn:', `  - ${origin('a')}`, '  - { name: b }'), [{ line: 2, message }]);
+  assert.deepEqual(headerErrors('basedOn: acme'), [{ line: 2, message }]);
+  assert.equal(parse('basedOn: []').basedOn, undefined, 'a malformed basedOn answers no origin');
 });
 
 test('a YAML error, or a header that is not a mapping, answers an error at its file line and never throws (#310)', () => {
@@ -137,6 +151,13 @@ test('the delivered header drops variables and basedOn; a plain file renders to 
   assert.ok(delivered.ok);
   const header = parseTemplate(delivered.text).header;
   assert.deepEqual(Object.keys(header), ['name', 'description', 'model', 'tools']);
+});
+
+test('the delivered header drops a basedOn list too, and keeps every other key in order (#338)', () => {
+  const listed = [
+    '---', 'name: planner', 'basedOn:', '  - { name: a, repo: b, ref: c, license: d, url: e }', '  - { name: f, repo: g, ref: h, license: i, url: j }', 'model: opus', '---', 'Plan.', '',
+  ].join('\n');
+  assert.deepEqual(renderTemplate(parseTemplate(listed), 'hive'), { ok: true, text: '---\nname: planner\nmodel: opus\n---\nPlan.\n' });
 });
 
 test('needsLiquid looks at the body only; deliveredName strips one .liquid (#310)', () => {

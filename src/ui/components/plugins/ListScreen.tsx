@@ -19,7 +19,7 @@ function Row({ item, items, onOpen }: { item: CatalogueItem; items: readonly Cat
         <span className="truncate text-muted-foreground">{item.description}</span>
         <span className={`flex items-center gap-1.5 text-xs ${look.text}`}><StateDot state={item.state} isDecorative />{t(look.label)}</span>
         <span className="text-muted-foreground text-xs">{usageText(item, items)}</span>
-        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn ? `↗ ${item.basedOn.name}` : ''}</span>
+        <span title={basedOnTitle(item)} className="truncate text-muted-foreground text-xs">{item.basedOn ? `↗ ${item.basedOn.map((origin) => origin.name).join(', ')}` : ''}</span>
       </button>
     </li>
   );

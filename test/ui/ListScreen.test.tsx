@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { ListScreen } from '@/components/plugins/ListScreen';
 import { usePlugins } from '@/hooks/use-plugins';
 import { setLanguage } from '@/i18n';
-import { itemOf, json, stubFetch, WORKSPACES } from './plugins-fixtures';
+import { BASED_ON, itemOf, json, SECOND_ORIGIN, stubFetch, WORKSPACES } from './plugins-fixtures';
 
 function List() {
   const plugins = usePlugins(true);
@@ -71,4 +71,12 @@ test('new: Enter creates under the chosen group and opens the item, a refusal sh
   await user.type(nameField(), 'gone{Escape}');
   expect(screen.queryByRole('textbox', { name: 'nome da nova skill' })).not.toBeInTheDocument();
   expect(posts).toHaveLength(3);
+});
+
+test('a row with two origins names both after one ↗, and its tooltip has a line per origin (#338, decision 12)', async () => {
+  stubFetch(undefined, () => [itemOf('hive:planner', { description: 'plans', basedOn: [BASED_ON, SECOND_ORIGIN] })]);
+  render(<List />);
+  const cells = Array.from((await screen.findByRole('button', { name: /^planner/ })).children);
+  expect(cells[4]).toHaveTextContent('↗ superpowers:executing-plans, ecc:planner');
+  expect(cells[4]).toHaveAttribute('title', 'baseada em superpowers:executing-plans · obra/superpowers · MIT\nbaseada em ecc:planner · affaan-m/ECC · MIT');
 });

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { marketplaceName, pluginCacheDir, rolesDir } from '../src/agents/codex-home.js';
 import { listFiles } from '../src/item-sources.js';
 import { pluginSource } from '../src/hooks-settings.js';
-import { deliveredName, parseTemplate, renderTemplate } from '../src/template.js';
+import { deliveredName, hasDeclarations, parseTemplate, renderTemplate } from '../src/template.js';
 import { createPluginRender, NoPluginFolderError, PLUGINS_DIR, pluginRenderPath, type PluginRender, type RenderConfig } from '../src/plugin-render.js';
 import { put, snapshot } from './custom-fixture.js';
 import { tempDir } from './temp-dir.js';
@@ -47,13 +47,23 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   await r.create(pluginSource()).write(config(r.repo, 'a'));
   const shipped = await snapshot(pluginSource());
   assert.ok(Object.keys(shipped).some((path) => path.endsWith('.liquid')), 'the shipped plugin has templates');
+  const decode = (bytes: string | undefined): string => Buffer.from(bytes ?? '', 'base64').toString('utf8');
+  // #338: a .md whose header has declarations is rendered too, under its own name
+  const isTemplate = (path: string, raw: string): boolean => path.endsWith('.liquid') || (path.endsWith('.md') && hasDeclarations(parseTemplate(raw).header));
   const expected = Object.fromEntries(Object.entries(shipped).map(([path, bytes]) => {
-    if (!path.endsWith('.liquid')) return [path, bytes];
-    const result = renderTemplate(parseTemplate(Buffer.from(bytes, 'base64').toString('utf8')), 'a');
+    if (!isTemplate(path, decode(bytes))) return [path, bytes];
+    const result = renderTemplate(parseTemplate(decode(bytes)), 'a');
     if (!result.ok) return assert.fail(`${path}: ${result.errors[0]?.message}`);
     return [deliveredName(path), Buffer.from(result.text).toString('base64')];
   }));
-  assert.deepEqual(await snapshot(pluginRenderPath(r.home, 'a')), expected);
+  const delivered = await snapshot(pluginRenderPath(r.home, 'a'));
+  assert.deepEqual(delivered, expected);
+  for (const [path, bytes] of Object.entries(delivered)) assert.doesNotMatch(decode(bytes), /^basedOn:/m, `${path} is delivered with its basedOn`);
+  // Codex's role reader parses an agent's header line by line: the delivery only takes the basedOn lines out
+  const BASED_ON_LINES = /^basedOn:\n(?: {2}- .*\n)+/m;
+  for (const path of Object.keys(shipped).filter((p) => p.startsWith('agents/'))) {
+    assert.equal(decode(delivered[path]), decode(shipped[path]).replace(BASED_ON_LINES, ''), path);
+  }
 });
 
 test('a SKILL.md.liquid with a conditional reaches each workspace as SKILL.md with its own branch, and no .liquid file is left (#316)', async (t) => {
@@ -73,6 +83,17 @@ test('an agent\'s version replaces agents/<name>.md in its workspace only; a ver
   assert.equal(await text(r, 'b', 'agents/designer.md'), '---\nname: designer\ndescription: Designs.\n---\nFor b.\n');
   assert.equal(await isThere(join(pluginRenderPath(r.home, 'b'), 'agents', 'designer.md.liquid')), false);
   assert.equal(await text(r, 'c', 'agents/designer.md'), DESIGNER, 'a workspace no version lists keeps the original');
+});
+
+test('a plain .md agent with basedOn is delivered under its own name without it and its body untouched; a plain .md without declarations stays byte for byte; a malformed one is left out (#338, decision 10)', async (t) => {
+  const credited = '---\nname: planner\ndescription: Plans.\nmodel: opus\nbasedOn:\n  - { name: a, repo: b, ref: c, license: d, url: e }\n---\nPlan {{ x }}.\n';
+  const r = await rig(t, { ...SHIPPED, 'agents/planner.md': credited, 'agents/broken.md': '---\nname: broken\ndescription: B\nbasedOn: x\n---\nB.\n' });
+  await r.create().write(config(r.repo, 'a'));
+  assert.equal(await text(r, 'a', 'agents/planner.md'), '---\nname: planner\ndescription: Plans.\nmodel: opus\n---\nPlan {{ x }}.\n', 'a .md is not Liquid: its body is delivered as is');
+  assert.equal(await text(r, 'a', 'agents/designer.md'), DESIGNER);
+  assert.equal(await text(r, 'a', 'skills/y/SKILL.md'), Y_SKILL);
+  assert.equal(await isThere(join(pluginRenderPath(r.home, 'a'), 'agents', 'broken.md')), false, 'a .md that does not render is a failed item, as a .liquid one');
+  assert.ok(r.logs.some((line) => line.startsWith('plugin render a: agents/broken.md:4 ')), r.logs.join('\n'));
 });
 
 test('a user-created skill is delivered to the workspace its version lists, and to no other (#316)', async (t) => {

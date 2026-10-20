@@ -1868,7 +1868,7 @@ export interface CatalogueItem {
   kind: ItemKind;
   name: string;
   description: string;
-  basedOn?: BasedOn;
+  basedOn?: BasedOn[]; // #338: every origin, in header order
   userCreated: boolean;
   state: ItemState; // update available > customized > original; 'workspace' for a repository item with no version
   versions: ItemVersion[];

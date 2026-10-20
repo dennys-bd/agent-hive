@@ -1,10 +1,10 @@
 # Credits
 
-The skills, subagents and references in this plugin are ports — adapted, not copied verbatim — of work from two other Claude Code plugins and from Impeccable. Their licences allow it; this file is the attribution.
+The skills, subagents and references in this plugin are ports — adapted, not copied verbatim — of work from two other Claude Code plugins and from Impeccable. Their licences allow it; this file is the attribution. Each skill and agent also names its sources in its header's `basedOn`, which the Hive's plugins view shows and the delivered file leaves out; an item written for the Hive says so in its header instead.
 
 ## ecc — MIT
 
-Source: the `ecc` plugin's `agents/`, `commands/` and `skills/`.
+Source: the `affaan-m/ECC` repository at tag `v2.2.1`, its `agents/`, `commands/` and `skills/`.
 
 | File here | Ported from |
 |---|---|
@@ -17,9 +17,9 @@ Source: the `ecc` plugin's `agents/`, `commands/` and `skills/`.
 | `skills/new-pr/SKILL.md` | `commands/pr.md` |
 | `reference/design.md` ("Direction", "Bans", "Critique") | `skills/frontend-design-direction/SKILL.md`: the direction, the anti-patterns and the review checklist; read by `agents/designer.md` and `agents/design-reviewer.md` |
 
-## superpowers — Apache 2.0
+## superpowers — MIT
 
-Source: the `superpowers` plugin's `skills/brainstorming/` and `skills/writing-plans/`.
+Source: the `obra/superpowers` repository at tag `v6.4.1`, its `skills/brainstorming/` and `skills/writing-plans/`.
 
 | File here | Ported from |
 |---|---|

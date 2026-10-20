@@ -57,8 +57,9 @@ export function markOf(item: CatalogueItem): string {
   return [count, item.basedOn === undefined ? '' : '↗'].filter((part) => part !== '').join(' ');
 }
 
+// #338, decision 12: one line per origin; the sidebar's mark stays one ↗
 export const basedOnTitle = ({ basedOn }: CatalogueItem): string | undefined =>
-  basedOn && t('plugins.basedOn', { name: basedOn.name, repo: basedOn.repo, license: basedOn.license });
+  basedOn?.map(({ name, repo, license }) => t('plugins.basedOn', { name, repo, license })).join('\n');
 
 const NO_USAGE = '—';
 

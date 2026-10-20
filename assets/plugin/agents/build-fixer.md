@@ -3,6 +3,8 @@ name: build-fixer
 description: Gets a broken build green again with the smallest possible diff. Dispatched by /hive:new-build, at most 3 times per failure, when the build or the type check fails and the fix is not obvious from the plan. No architectural edits, no new features.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
+basedOn:
+  - { name: "ecc:build-error-resolver", repo: affaan-m/ECC, ref: v2.2.1, license: MIT, url: https://github.com/affaan-m/ECC/blob/v2.2.1/agents/build-error-resolver.md }
 ---
 
 # Build Fixer
