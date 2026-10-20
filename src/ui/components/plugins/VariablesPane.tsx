@@ -8,7 +8,7 @@ import { VariableForm } from '@/components/plugins/VariableForm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WorkspaceSquare } from '@/components/WorkspaceSquare';
-import type { Annotations } from '@/hooks/use-annotations';
+import { type Annotations, type EditorAnnotation, isAgent } from '@/hooks/use-annotations';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { type MessageKey, t } from '@/i18n';
 import { isMarkdown } from '@/lib/template-view';
@@ -24,10 +24,11 @@ interface RowProps {
 }
 
 const ORIGIN: Record<Origin, MessageKey> = { hive: 'plugins.variables.fromHive', yours: 'plugins.variables.yours' };
-// #327: a row's lines are the editor's annotations on its variable, the pane's two checks only; a parse annotation never lands on a row
+// #327: a row's lines are the editor's annotations on its variable, the pane's two checks only; a parse annotation never lands on a row,
+// nor an agent's (#329), which names no variable
 const ROW_CHECKS: readonly LintAnnotation['check'][] = ['required', 'unused'];
-const findingsOf = (list: readonly LintAnnotation[], name: string): LintAnnotation[] =>
-  list.filter((a) => ROW_CHECKS.includes(a.check) && a.variable === name);
+const findingsOf = (list: readonly EditorAnnotation[], name: string): LintAnnotation[] =>
+  list.filter((a): a is LintAnnotation => !isAgent(a) && ROW_CHECKS.includes(a.check) && a.variable === name);
 
 const entryOf = (variable: TemplateVariable, workspace: string): VariableValue | undefined =>
   Object.hasOwn(variable.workspaces, workspace) ? variable.workspaces[workspace] : undefined;

@@ -75,6 +75,7 @@ export function readOf(id: string, version: string | null, files: Record<string,
 export interface SaveBody { version: string | null; path: string; text: string; from?: string }
 export interface NewVersionBody { name: string; from: string }
 export interface DismissedBody { version: string | null; keys: string[] }
+export interface ReviewBody { version: string | null; path: string; text: string }
 export interface AssignBody { workspace: string; version: string | null }
 /** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. #327: the lint
  * input (empty when absent) and the dismissals, keyed as `reads`, which a PUT writes unless `putDismissed` answers it. */
@@ -89,6 +90,7 @@ export interface ItemsServer {
   lintInput?: LintInputRead;
   dismissed?: Record<string, string[]>;
   putDismissed?(id: string, body: DismissedBody): Response;
+  review?(id: string, body: ReviewBody, init: RequestInit): Response | Promise<Response>; // #329: POST …/review
 }
 
 function answerDismissed(server: ItemsServer, id: string, url: URL, init?: RequestInit): Response {
@@ -115,7 +117,7 @@ function writeOf(server: ItemsServer, id: string, sub: string | undefined, versi
   return server.createVersion?.(id, body as NewVersionBody) ?? notServed('create');
 }
 
-/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], the writes of #319 and #320, GET /api/lint-input and GET / PUT …/dismissed (#327). */
+/** fetch for the editor: GET /api/items, GET /api/items/:id[?version=], the writes of #319 and #320, GET /api/lint-input and GET / PUT …/dismissed (#327) and POST …/review (#329). */
 export function stubItems(server: ItemsServer) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, 'http://hive');
@@ -124,6 +126,7 @@ export function stubItems(server: ItemsServer) {
     if (rawId === undefined) return json(server.catalogue);
     const id = decodeURIComponent(rawId);
     if (sub === 'dismissed') return answerDismissed(server, id, url, init);
+    if (sub === 'review') return server.review?.(id, JSON.parse(String(init?.body)) as ReviewBody, init ?? {}) ?? notServed('review');
     if (init?.method !== undefined && init.method !== 'GET') return writeOf(server, id, sub, decodeURIComponent(version ?? ''), init);
     const read = server.reads[`${id}@${url.searchParams.get('version') ?? ''}`];
     return read === undefined ? json({ error: `no item ${id}` }, 404) : json(read);

@@ -1,9 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { removeVariable } from '../../src/template-edit';
-import { useAnnotations } from '@/hooks/use-annotations';
+import type { AgentAnnotation } from '../../src/reviewer';
+import { checkOf, isAgent, useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
+import { hasFix } from '@/lib/annotation-fix';
 import { CATALOGUE, type ItemsServer, json, readOf, type SaveBody, stubItems, WORKSPACES } from './plugins-fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,13 +38,13 @@ test("a declared, unused variable gives one yellow annotation; dismissing it dro
   const server = serverOf(ONE);
   const mock = stubItems(server);
   const { result } = await opened();
-  expect(result.current.annotations.list.map(({ line, severity, check, variable }) => [line, severity, check, variable])).toEqual([[5, 'yellow', 'unused', 'depth']]);
+  expect(result.current.annotations.list.map((a) => [a.line, a.severity, checkOf(a), isAgent(a) ? undefined : a.variable])).toEqual([[5, 'yellow', 'unused', 'depth']]);
   expect(mock).toHaveBeenCalledWith('/api/lint-input');
   act(() => result.current.annotations.dismiss(result.current.annotations.list[0]!));
   expect(result.current.annotations.list).toEqual([]);
   await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': [DEPTH_KEY] }));
   act(() => result.current.editor.edit(ONE.replace(DEPTH, '  depth: { default: deep }')));
-  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['unused']);
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['unused']);
 });
 
 test("applying an unused variable's fix removes its declaration, saving the clean buffer, and the annotation goes (#327)", async () => {
@@ -72,11 +74,11 @@ test('next() opens the one after the open card, cycling, and reveals its line; c
 test('a dismissal the server holds hides its annotation on open; a failed write brings the dismissed one back with the error; nothing is linted under "view as" (#327)', async () => {
   stubItems(serverOf(TWO, { dismissed: { 'hive:new-build@mine': [DEPTH_KEY] }, putDismissed: () => json({ error: 'disk' }, 500) }));
   const { result } = await opened();
-  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['undeclared']);
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['undeclared']);
   act(() => result.current.annotations.dismiss(result.current.annotations.list[0]!));
   expect(result.current.annotations.list).toEqual([]);
   await waitFor(() => expect(result.current.annotations.error).toBe('plugins.annotations.dismissFailed'));
-  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['undeclared']);
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['undeclared']);
   act(() => result.current.editor.setViewAs('hive-site'));
   expect(result.current.annotations.list).toEqual([]);
 });
@@ -88,13 +90,13 @@ test('two quick dismissals with the first write failing: the second stays hidden
     putDismissed: (_id, body) => { bodies.push(body.keys); calls += 1; return calls === 1 ? json({ error: 'disk' }, 500) : json(body.keys); },
   }));
   const { result } = await opened();
-  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['unused', 'undeclared']);
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['unused', 'undeclared']);
   const [first, second] = result.current.annotations.list;
   act(() => { result.current.annotations.dismiss(first!); result.current.annotations.dismiss(second!); });
   expect(result.current.annotations.list).toEqual([]);
   await waitFor(() => expect(bodies).toHaveLength(2));
   await waitFor(() => expect(result.current.annotations.error).toBe('plugins.annotations.dismissFailed'));
-  expect(result.current.annotations.list.map((a) => a.check)).toEqual(['unused']);
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['unused']);
   expect(bodies[1]).toHaveLength(1);
   expect(bodies[1]).not.toContain(DEPTH_KEY);
   // dismissing the failed one again, now that writes work, clears the error
@@ -113,4 +115,25 @@ test('two quick dismissals both succeed: the last write carries both keys and no
   expect(bodies.at(-1)).toHaveLength(2);
   expect(result.current.annotations.list).toEqual([]);
   expect(result.current.annotations.error).toBeUndefined();
+});
+
+const RUN_NOTE: AgentAnnotation = { line: 9, severity: 'yellow', title: 'says to run nothing in particular', body: 'name what runs', source: 'agent' };
+
+test("the agent's annotations follow the lint's; dismissing one hides it, saving its key with agent in the check's place, and the next review keeps it hidden; it has no fix (#329)", async () => {
+  const saves: SaveBody[] = [];
+  const server = serverOf(ONE, { review: () => json({ annotations: [RUN_NOTE] }), save: (id, body) => { saves.push(body); return echo(id, body); } });
+  stubItems(server);
+  const { result } = await opened();
+  act(() => result.current.annotations.review.now());
+  await waitFor(() => expect(result.current.annotations.list.map(checkOf)).toEqual(['unused', 'agent']));
+  const agent = result.current.annotations.list[1]!;
+  expect(hasFix(agent)).toBe(false);
+  act(() => result.current.annotations.apply(agent));
+  expect(saves).toEqual([]);
+  act(() => result.current.annotations.dismiss(agent));
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['unused']);
+  await waitFor(() => expect(server.dismissed).toEqual({ 'hive:new-build@mine': [`SKILL.md.liquid\0agent\0${RUN_NOTE.title}\0Run it.`] }));
+  act(() => result.current.annotations.review.now());
+  await waitFor(() => expect(result.current.annotations.review.running).toBe(false));
+  expect(result.current.annotations.list.map(checkOf)).toEqual(['unused']);
 });

@@ -9,6 +9,9 @@ export const CARD_HEIGHT = 104;
 export const NOTE_HEIGHT = 20;
 export interface MarginSlot { kind: 'card' | 'note'; top: number }
 
+// What drawing an annotation reads, the lint's and the agent's alike (#329): the page's union type is a hook's, which the main tsc cannot import
+type Placed = Pick<LintAnnotation, 'line' | 'severity'>;
+
 const overlaps = (a: number, b: number, height: number): boolean => a < b + height && b < a + height;
 
 /** Each annotation's slot, in order: a note when a chip, or an earlier card, starts within the card's height; a card otherwise. Notes of one
@@ -47,19 +50,19 @@ function rowAt(blocks: readonly MapBlock[], line: number): number | undefined {
 
 /** Each map row's annotations, keyed by the row's line: a header line's go to the first block (visual mode hides the header); a line no block
  * holds draws no dot, though the counter still counts it. */
-export function dotsOf(map: TemplateMap, bodyLine: number, list: readonly LintAnnotation[]): ReadonlyMap<number, readonly LintAnnotation[]> {
+export function dotsOf<A extends Placed>(map: TemplateMap, bodyLine: number, list: readonly A[]): ReadonlyMap<number, readonly A[]> {
   const first = map.blocks.flatMap(rowsOf).at(0)?.line;
   return list.reduce((dots, annotation) => {
     const row = annotation.line < bodyLine ? first : rowAt(map.blocks, annotation.line);
     return row === undefined ? dots : new Map(dots).set(row, [...(dots.get(row) ?? []), annotation]);
-  }, new Map<number, readonly LintAnnotation[]>());
+  }, new Map<number, readonly A[]>());
 }
 
 const UNDERLINE: Record<Severity, LookClass> = { yellow: 'template-annotation-yellow', red: 'template-annotation-red' };
 const FIRST_TEXT = /\S/;
 
 /** A wavy underline per annotated line, from its first non-blank column to its end, in the severity's colour; a blank line has none. */
-export function underlinesOf(list: readonly LintAnnotation[], text: string): Decoration[] {
+export function underlinesOf(list: readonly Placed[], text: string): Decoration[] {
   const lines = text.split('\n');
   return list.flatMap((annotation): Decoration[] => {
     const start = (lines[annotation.line - 1] ?? '').search(FIRST_TEXT);

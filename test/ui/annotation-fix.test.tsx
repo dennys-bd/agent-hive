@@ -25,3 +25,7 @@ test('fixOf answers a removal for unused, a default: null declaration for undecl
   expect(fixOf(of('reference'), TEXT)).toBeUndefined();
   expect(annotations.filter(hasFix).map((a) => a.check)).toEqual(['unused', 'undeclared', 'heading']);
 });
+
+test('an agent annotation offers no fix: the agent sends none (#329)', () => {
+  expect(hasFix({ line: 1, severity: 'yellow', title: 'vague', body: 'say what runs', source: 'agent' })).toBe(false);
+});
