@@ -52,8 +52,12 @@ export interface Phase {
   timeout?: string; // per RUN, a TIMEOUT text; absent = no limit (#511)
 }
 
-/** What one step reports as it ends (#742): its kind, its place in the run, its time and how it went; never the line. */
-export interface StepReport { kind: StepKind; index: number; durationMs: number; ok: boolean }
+/** What one step reports as it ends (#742): its kind, its place in the run (skipped steps counted, #390), its time and how it went; never the
+ * line. code: a RUN's exit code, `timeout` or `stopped`, which the Start dialog's row shows (#390). */
+export interface StepReport { kind: StepKind; index: number; durationMs: number; ok: boolean; code?: number | string }
+
+/** Where a setup run resumes (#390): the steps a failed run already passed are skipped, and each step that passes is recorded. */
+export interface Resume { skip: number; passed(done: number): Promise<void> }
 
 /** What running a script needs (#299, #351, #654). */
 export interface StepDeps {
@@ -65,6 +69,8 @@ export interface StepDeps {
   run?: RunShell; // runShell unless a test injects one
   home?: string; // where ~ expands in a COPY destination (#654): os.homedir() unless a test injects one
   onStepEnd?(report: StepReport): void; // #742: events.jsonl's worktree.step
+  onPlan?(steps: string[], skipped: number): void; // #390: the expanded steps as describeStep writes them, once before the first; skipped: what a resume skips
+  resume?: Resume; // #390: runSetup's; a teardown never resumes
 }
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -283,20 +289,32 @@ async function runStep(phase: Phase, worktree: string, step: SetupStep, index: n
   const ms = Date.now() - began;
   const outcome = done.ok ? 'ok (0)' : `failed (${done.err instanceof RunFailure ? done.err.code : 'error'})`;
   deps.log.info(`${phase.name} ${basename(worktree)} line ${step.line}: ${described} ${outcome} ${ms}ms`);
-  report(deps, phase, step, { kind: STEP_KINDS[step.kind], index, durationMs: ms, ok: done.ok });
+  const code = !done.ok && done.err instanceof RunFailure ? { code: done.err.code } : {}; // #390: the dialog's failed row
+  report(deps, phase, step, { kind: STEP_KINDS[step.kind], index, durationMs: ms, ok: done.ok, ...code });
   if (!done.ok) throw new Error(failure(phase, step, reasonOf(done.err, phase.timeout)));
   // The result line, then ok and its time (#654); a failure writes nothing here: the run's red end line sits right under the step
   if (done.result !== undefined) deps.output?.(`${done.result}\n`);
   deps.output?.(`${okLine(`ok ${ms}ms`)}\n`);
 }
 
-/** A script's steps in `worktree` (#299, #654): the LOAD lines are read first and expanded in place, then each step runs in order with the
- * phase's timeout. A failure throws `<phase> failed at line <n> (<step>): <reason>`. Answers how many steps ran, for the run's summary. */
+/** A script's LOAD lines read from the main checkout and expanded in place (#299): what runSetup hashes before anything runs (#390). */
+export async function expandSteps(phase: Phase, workspace: Workspace, steps: SetupStep[]): Promise<SetupStep[]> {
+  return (await Promise.all(steps.map((step) => (step.kind === 'load' ? loadSteps(phase, workspace, step) : [step])))).flat();
+}
+
+/** A script's steps in `worktree` (#299, #654): the LOAD lines are expanded first, then each step runs in order with the phase's timeout. A
+ * resume (#390) skips the steps a failed run passed and records each step that passes; onPlan hears the whole list first. A failure throws
+ * `<phase> failed at line <n> (<step>): <reason>`. Answers how many steps ran, for the run's summary. */
 export async function runSteps(phase: Phase, workspace: Workspace, worktree: string, steps: SetupStep[], deps: StepDeps): Promise<number> {
-  const expanded = (await Promise.all(steps.map((step) => (step.kind === 'load' ? loadSteps(phase, workspace, step) : [step])))).flat();
+  const expanded = await expandSteps(phase, workspace, steps); // a list runSetup already expanded holds no LOAD: the same list back
   const timeoutMs = phase.timeout === undefined ? undefined : timeoutMsOf(phase.timeout);
   // #738: every RUN sees the workspace's env, its setup's and its teardown's alike; COPY, DEL, LOAD and the Hive's git never read it
   const env = { ...process.env, ...workspace.env };
-  for (const [index, step] of expanded.entries()) await runStep(phase, worktree, step, index, { ...deps, timeoutMs, env });
-  return expanded.length;
+  const skip = deps.resume?.skip ?? 0;
+  deps.onPlan?.(expanded.map(describeStep), skip);
+  for (const [at, step] of expanded.slice(skip).entries()) {
+    await runStep(phase, worktree, step, skip + at, { ...deps, timeoutMs, env });
+    await deps.resume?.passed(skip + at + 1);
+  }
+  return expanded.length - skip;
 }

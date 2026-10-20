@@ -158,7 +158,7 @@ test('each step reports its kind, its place in the run, its time and how it went
     throw new RunFailure(1, 'TOKEN=secret');
   };
   await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env\nRUN cat .env'), { ...h.deps, run: failing, onStepEnd: (report) => reports.push(report) }));
-  assert.deepEqual(reports.map(({ durationMs: _ms, ...rest }) => rest), [{ kind: 'COPY', index: 0, ok: true }, { kind: 'RUN', index: 1, ok: false }]);
+  assert.deepEqual(reports.map(({ durationMs: _ms, ...rest }) => rest), [{ kind: 'COPY', index: 0, ok: true }, { kind: 'RUN', index: 1, ok: false, code: 1 }]);
   assert.ok(reports.every((r) => Number.isInteger(r.durationMs) && r.durationMs >= 0));
 });
 
