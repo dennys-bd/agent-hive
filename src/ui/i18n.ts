@@ -89,13 +89,7 @@ const en = {
   'flow.tab.flow': 'flow', // #756: the source header's tabs, with an external source picked
   'flow.tab.native.github': 'GitHub Project', // the native view of a github source: a product name, the same in every language
   'back.title': 'back · {key}', // #911: the page header's back button
-  'back.flow': 'flow · {pick}', // #911: the screens a page goes back to
-  'back.issue': 'issue #{n}',
-  'back.pr': 'PR #{n}',
-  'back.repoPrs': 'PRs · {repo}',
-  'back.repoIssues': 'issues · {repo}',
-  'back.activity': 'activity #{n}',
-  'back.activityTitled': 'activity · {title}', // a workspace's local activity, which has no number
+  'back.flow': 'flow · {pick}', // #911, #380: the flow a page goes back to
   'footer.rules': 'rules',
   'footer.rule.cap': 'max {n} workers',
   'footer.rule.stageCap': '{stage} max {n}',
@@ -2219,12 +2213,6 @@ const pt: Record<MessageKey, string> = {
   'flow.tab.native.github': 'GitHub Project',
   'back.title': 'voltar · {key}',
   'back.flow': 'fluxo · {pick}',
-  'back.issue': 'issue #{n}',
-  'back.pr': 'PR #{n}',
-  'back.repoPrs': 'PRs · {repo}',
-  'back.repoIssues': 'issues · {repo}',
-  'back.activity': 'atividade #{n}',
-  'back.activityTitled': 'atividade · {title}',
   'footer.rules': 'regras',
   'footer.rule.cap': 'máx {n} workers',
   'footer.rule.stageCap': '{stage} máx {n}',
