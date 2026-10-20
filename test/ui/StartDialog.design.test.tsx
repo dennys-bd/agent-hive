@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StartDialog } from '@/components/StartDialog';
-import { setLanguage } from '@/i18n';
+import { setLanguage, t } from '@/i18n';
 import type { BaseOptions, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
 import { withPointedWork, type WithWork } from '../fixtures/work';
@@ -32,4 +33,21 @@ test('Nova atividade names the field tarefas, with the hint under it, and the cl
   expect(screen.getByText('tarefas')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'tarefas' })).toHaveTextContent('buscar ou criar tarefa…');
   expect(screen.getByText('toda atividade parte de pelo menos uma tarefa. se ela não existir, crie aqui.')).toHaveClass('text-muted-foreground', 'text-xs');
+});
+
+test('the mode toggle is a segmented control: a muted track, the active segment on the background, no outline per item; it switches modes, and executar etapas stays disabled for a task with nothing to run (#893, #774)', async () => {
+  const user = userEvent.setup();
+  const { unmount } = render(<StartDialog state={state()} taskId="I9" onClose={vi.fn()} />);
+  const stagesItem = screen.getByRole('radio', { name: 'executar etapas' });
+  expect(stagesItem.parentElement).toHaveClass('bg-muted', 'p-0.5', 'gap-0.5');
+  expect(stagesItem).not.toHaveAttribute('data-variant', 'outline');
+  expect(stagesItem).toHaveClass('data-[state=on]:bg-background', 'text-[13px]', 'font-medium');
+  expect(stagesItem).toHaveAttribute('data-state', 'on');
+  await user.click(screen.getByRole('radio', { name: 'sessão livre' }));
+  expect(screen.getByRole('radio', { name: 'sessão livre' })).toHaveAttribute('data-state', 'on');
+  expect(screen.getByText(t('start.hint.free'))).toBeInTheDocument();
+  unmount();
+  render(<StartDialog state={state()} taskId="I7" onClose={vi.fn()} />);
+  expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
+  expect(screen.getByRole('radio', { name: 'sessão livre' })).toHaveAttribute('data-state', 'on');
 });
