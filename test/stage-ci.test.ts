@@ -415,4 +415,6 @@ test('a session ending on a task held in a wait-for-CI stage starts the wait in 
   }
   const cleared = reduce(held.state, { type: 'hook', ptyId: runId, payload: { hook_event_name: 'SessionEnd', reason: 'clear' } });
   assert.equal(effectOf(cleared.effects, 'ciRead'), undefined, 'a /clear ends the conversation, not the session');
+  const quitting = reduce({ ...held.state, cleanStop: true }, { type: 'exit', ptyId: runId });
+  assert.equal(effectOf(quitting.effects, 'ciRead'), undefined, 'a Quit\'s kills act on nothing');
 });

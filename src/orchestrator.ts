@@ -104,8 +104,8 @@ export function reduce(state: State, event: HiveEvent): Reduced {
 const refillIfChanged = (state: State, next: State): Reduced => (next === state ? none(state) : fill(none(next)));
 
 // A run that ends frees its task (#381): a task its session held out of an action stage is acted on now, as after a stage's finish, not on the
-// next poll, which can be the 5-minute idle one
-const ended = (reduced: Reduced): Reduced => fill(runActions(reduced.state, reduced.effects));
+// next poll, which can be the 5-minute idle one. Never during a Quit: its kills leave the state as the next boot must read it
+const ended = (reduced: Reduced): Reduced => fill(reduced.state.cleanStop ? reduced : runActions(reduced.state, reduced.effects));
 
 // A commands stage's answer (#755): once it changed something (the next command, or the stage's end and the move it made), the due actions
 // and the fill follow, as after activityDeleted; an answer that changed nothing (an older pty, a Quit) is left as it is
