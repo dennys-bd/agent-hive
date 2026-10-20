@@ -111,3 +111,21 @@ test('an against other than head or task, or none, and a missing path are 400s; 
   const gone = await startBases(t, true);
   assert.deepEqual(await ask(gone, { path: 'docs/spec.md', against: 'head' }), [409, { error: 'a atividade foi apagada' }]);
 });
+
+// #377: a repository inside the worktree (the task's docs/ checkout) answers for its own files: the outer one ignores them, so asking it
+// marked every line as added. The task's base ref is the outer repository's (absent here, so a merge-base would fail): task reads HEAD
+test('a file of a nested repository compares against that repository\'s HEAD, for head and for task (#377)', async (t) => {
+  const b = await startBases(t);
+  const nested = join(b.worktree, 'vendor');
+  await mkdir(nested, { recursive: true });
+  const git = (...args: string[]): Promise<{ stdout: string }> => run('git', ['-C', nested, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args]);
+  await git('init', '--quiet');
+  await writeFile(join(nested, 'notes.md'), 'kept\n');
+  await git('add', 'notes.md');
+  await git('commit', '--quiet', '-m', 'nested');
+  await writeFile(join(nested, 'notes.md'), 'kept\nedited\n');
+  const oid = (await git('rev-parse', 'HEAD:notes.md')).stdout.trim();
+  for (const against of ['head', 'task']) {
+    assert.deepEqual(await ask(b, { path: 'vendor/notes.md', against }), [200, { against, label: 'HEAD', oid, text: 'kept\n' }], against);
+  }
+});

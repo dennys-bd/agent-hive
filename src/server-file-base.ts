@@ -1,7 +1,7 @@
 // GET /activities/:id/file-base (#668): the base a file's changes compare against, for the editor pane's gutter marks and the changes pane.
 // HEAD, or the task's base: the merge-base the diff pane's worktree scope diffs from (diffBase). The file is located as the editor's routes
-// locate it; the blob is read with git in the activity's folder, every call an argv. Only the blob's id goes back when the page holds it.
-import { relative } from 'node:path';
+// locate it; the blob is read with git in the repository holding the file (#377), every call an argv. Only the blob's id goes back when the page holds it.
+import { dirname, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { holdableText } from './decode-text.js';
@@ -34,16 +34,18 @@ async function gitOut(folder: string, args: string[], exec: Exec): Promise<strin
   }
 }
 
-// The commit the file compares against and its label: HEAD, or the task's merge-base as the diff pane names it
-function commitOf(located: Located, against: ChangesBase, config: Pick<Config, 'baseBranch' | 'comb'>, exec: Exec): Promise<DiffBase> {
-  if (against === 'head' || located.task === undefined) return Promise.resolve({ commit: HEAD, label: HEAD });
+// The commit the file compares against and its label: HEAD, or the task's merge-base as the diff pane names it. A nested repository's file
+// reads its own HEAD for task too (#377): the task's base ref is the outer repository's, maybe a local branch the nested one never had
+function commitOf(located: Located, against: ChangesBase, isNested: boolean, config: Pick<Config, 'baseBranch' | 'comb'>, exec: Exec): Promise<DiffBase> {
+  if (against === 'head' || located.task === undefined || isNested) return Promise.resolve({ commit: HEAD, label: HEAD });
   return diffBase(located.task, located.activity, workspaceBase(config, taskWorkspace(config, located.task)), located.folder, 'worktree', exec); // #854
 }
 
-// The file's path in its repository; undefined outside a repository, or for a file outside it
-async function repoPath(located: Located, exec: Exec): Promise<string | undefined> {
-  const top = (await gitOut(located.folder, ['rev-parse', '--show-toplevel'], exec))?.trim();
-  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : relative(top, located.file);
+// The repository that holds the file, asked from the file's own folder so a nested one (the task's docs/ checkout) answers for its files
+// (#377), as the files tree does (#1): its top and the file's path in it; undefined outside a repository, or for a file outside it
+async function repoOf(located: Located, exec: Exec): Promise<{ top: string; path: string } | undefined> {
+  const top = (await gitOut(dirname(located.file), ['rev-parse', '--show-toplevel'], exec))?.trim();
+  return top === undefined || top === '' || !isInside(top, located.file) ? undefined : { top, path: relative(top, located.file) };
 }
 
 // The blob's text when the editor could hold it (#717's caps: EDITOR_FILE_MAX, UTF-8, no NUL), else undefined
@@ -56,14 +58,14 @@ async function blobText(folder: string, oid: string, exec: Exec): Promise<string
 
 // The answer (#668): no text without a base; '' for a file the base does not have (all of it added); the id alone when the page holds it
 async function fileBaseOf(located: Located, against: ChangesBase, held: string | undefined, config: Pick<Config, 'baseBranch' | 'comb'>, exec: Exec): Promise<FileBase> {
-  const { commit, label } = await commitOf(located, against, config, exec);
+  const repo = await repoOf(located, exec);
+  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(located.folder, repo.top), config, exec);
   const none: FileBase = { against, label };
-  const path = await repoPath(located, exec);
-  if (path === undefined) return none;
-  const oid = (await gitOut(located.folder, ['rev-parse', '--verify', '--quiet', `${commit}:${path}`], exec))?.trim();
+  if (repo === undefined) return none;
+  const oid = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}:${repo.path}`], exec))?.trim();
   if (oid === undefined || oid === '') return { ...none, text: '' };
   if (oid === held) return { ...none, oid };
-  const text = await blobText(located.folder, oid, exec);
+  const text = await blobText(repo.top, oid, exec);
   return text === undefined ? none : { ...none, oid, text };
 }
 
