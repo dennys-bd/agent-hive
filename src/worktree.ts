@@ -7,7 +7,7 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { chosenBase, defaultBase, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { chosenBase, defaultBase, existingBranch, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
 export { gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
@@ -42,8 +42,9 @@ export const workDir = (repo: string, task: Task, activity: Activity | undefined
   (activity && (record === undefined || record.id === activity.id) ? taskDir(repo, activity) : worktreePath(repo, record?.slug ?? slugFor(task.item)));
 
 /** What a spawn needs from the worktree step: where the worker runs, the `base: …` line to log when one was decided, and a fork's sync when
- * one ran for a worktree just made (#854). */
-export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult }
+ * one ran for a worktree just made (#854). `reused` is the existing branch the worktree was added on as it was (#267); absent when the branch
+ * was created, recreated or set aside. */
+export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult; reused?: string }
 
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 
@@ -113,7 +114,9 @@ const hasBranch = (repo: string, branch: string, exec: Exec): Promise<boolean> =
  * one we rendered is returned untouched, work in progress the base step never revisits, and an existing branch is checked out
  * instead of created, so a continue finds its own commits. A worktree someone else staged at that path, on another branch or
  * detached, is rejected. A path git still lists whose directory someone deleted by hand is pruned first. Every call goes through
- * gitOrWords, so a refusal carries git's own words and the task can show them.
+ * gitOrWords, so a refusal carries git's own words and the task can show them. An existing branch is classified against the start first
+ * (#267): one with nothing of its own is recreated at it, one with no history in common is set aside and started fresh, and the class's note
+ * follows the `base:` line; the classification rejects with git's words like the add.
  *
  * At a task's first spawn the base is decided first and `line` says what was decided: the #119 refresh (`defaultBase`), or the base a
  * manual start chose in the popup (`chosen`, #131). `base` is the workspace's base remote, branch and fork (#854): a fork's sync runs
@@ -134,15 +137,17 @@ export async function ensureWorktree(
   }
   if (listed !== undefined) await git('worktree', 'prune'); // a stale entry for a path that no longer exists would refuse the add
   const decided = chosen === undefined ? await defaultBase(git, repo, base, exec) : await chosenBase(git, base.remote, chosen);
-  // A branch that already exists carries work (a removal that failed, a task respawned): checked out, never recreated from the
-  // base, which is why it takes no start point either, nor a fork's local merge (#854). Same stance as cleanWorktree.
-  const reused = await hasBranch(repo, branch, exec);
-  const add = reused
-    ? ['worktree', 'add', '--', path, branch]
-    : ['worktree', 'add', '-b', branch, '--', path, ...(decided.start === undefined ? [] : [decided.start])];
+  // A branch that already exists carries work (a removal that failed, a task respawned): checked out as it is, with no start point and no
+  // fork's local merge (#854), unless its class against the start says it holds nothing to keep there (#267, existingBranch)
+  const existing = await hasBranch(repo, branch, exec);
+  const kept = existing ? await existingBranch(repo, branch, decided.start, exec) : undefined;
+  const reused = kept?.action === 'reuse';
+  const start = decided.start === undefined ? [] : [decided.start];
+  const add = reused ? ['worktree', 'add', '--', path, branch] : ['worktree', 'add', kept?.action === 'reset' ? '-B' : '-b', branch, '--', path, ...start];
   await addWorktree(git, add, { path, branch, start: decided.start }, () => hasBranch(repo, branch, exec));
   const sync = await settleSync(decided, reused ? undefined : (...args) => gitOrWords(path, args, exec)); // #854: the local merge in the new tree only
-  return { path, line: withSync(decided.line, sync), ...(sync === undefined ? {} : { sync }) };
+  const line = kept?.note === undefined ? withSync(decided.line, sync) : `${withSync(decided.line, sync)} · ${kept.note}`;
+  return { path, line, ...(sync === undefined ? {} : { sync }), ...(reused ? { reused: branch } : {}) };
 }
 
 // A lost config lock means git made the branch, and maybe the worktree, but not its upstream: the add is never repeated as it was (the

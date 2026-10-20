@@ -154,12 +154,14 @@ test('ensureWorktree on a path git does not list refreshes the base, then create
   ]);
 });
 
-test('a branch that already exists is reused (no -b and no start point): a respawn or a continue of the same task must find its own commits', async (t) => {
+test('a branch that already exists with work of its own is reused (no -b and no start point) and answered as reused: a respawn or a continue of the same task must find its own commits (#267)', async (t) => {
   const { repo, worktree } = await repoWith(t);
-  const { exec, calls } = baseGit({ 'refs/remotes/origin/main': 'a1b2c3d\n', [`refs/heads/${BRANCH}`]: 'deadbee\n' });
-  const { path, line } = await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, undefined, exec);
-  assert.deepEqual([path, line], [worktree, 'base: origin/main (a1b2c3d)']);
-  assert.deepEqual(calls.at(-1), ['worktree', 'add', '--', worktree, BRANCH], 'no -b and no origin/main: the work on that branch survives');
+  const answered = baseGit({ 'refs/remotes/origin/main': 'a1b2c3d\n', [`refs/heads/${BRANCH}`]: 'deadbee\n' });
+  // own: a merge base with the start (exit 0), and not an ancestor of it (exit 1)
+  const exec: Exec = async (file, args) => (args.includes('--is-ancestor') ? Promise.reject(Object.assign(new Error('exit 1'), { code: 1 })) : answered.exec(file, args));
+  const { path, line, reused } = await ensureWorktree(repo, SLUG_7, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([path, line, reused], [worktree, 'base: origin/main (a1b2c3d)', BRANCH]);
+  assert.deepEqual(answered.calls.at(-1), ['worktree', 'add', '--', worktree, BRANCH], 'no -b and no origin/main: the work on that branch survives');
 });
 
 test('a path git already lists on our own branch whose directory is there is adopted as is: nothing is created and the base is never touched, which is what a respawn after a kill needs', async (t) => {

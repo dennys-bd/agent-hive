@@ -166,3 +166,17 @@ export async function settleSync(decided: DecidedBase, inTree: Git | undefined):
 /** The `base: …` line with the sync's result after it (#854). The reason stays out: the line is logged, and the reason is gh's or git's words. */
 export const withSync = (line: string, sync: ForkSyncResult | undefined): string =>
   (sync === undefined ? line : `${line} · sync ${sync.mode} ${sync.result}${sync.commits === undefined ? '' : ` ${sync.commits}`}`);
+
+/** What ensureWorktree does with a branch that already exists (#267): reuse it, recreate it at the start (`reset`, `worktree add -B`), or set
+ * it aside and start it fresh (`fresh`), with the note its `base:` line gets. Without a start (the base could not be refreshed) there is
+ * nothing to classify against: reused, as before #267. */
+export interface ExistingBranch { action: 'reuse' | 'reset' | 'fresh'; note?: string }
+
+export async function existingBranch(repo: string, branch: string, start: string | undefined, exec: Exec): Promise<ExistingBranch> {
+  if (start === undefined) return { action: 'reuse' };
+  const relation = await branchRelation(repo, branch, start, exec);
+  if (relation === 'own') return { action: 'reuse' };
+  if (relation === 'stale') return { action: 'reset', note: `branch ${branch} was behind ${start} with nothing of its own: recreated from ${start}` };
+  const kept = await setAside(repo, branch, exec);
+  return { action: 'fresh', note: `branch ${branch} shares no history with ${start}: kept as ${kept}, started from ${start}` };
+}

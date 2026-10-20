@@ -4,8 +4,10 @@ import { execFile } from 'node:child_process';
 import { realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { branchRelation, setAside } from '../src/worktree-base.js';
+import { ensureWorktree, worktreePath } from '../src/worktree.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #267 with the real git: a branch's class against the start, and what each class makes of the task's worktree and branch.
@@ -13,6 +15,8 @@ import { type AfterHost, tempDir } from './temp-dir.js';
 const run = promisify(execFile);
 const exec: Exec = run;
 const BRANCH = 'hive/7-fix';
+const SLUG = 'hive-7-fix';
+const ORIGIN: WorkspaceBase = { remote: 'origin', fork: null };
 
 // The real git, with an identity of its own: the test machine's global config is never read for a commit.
 const git = async (cwd: string, ...args: string[]): Promise<string> =>
@@ -88,4 +92,39 @@ test('setAside renames the branch to <branch>-old-<sha7>; a name already on the 
   await git(repo, 'branch', `${BRANCH}-old-${main.slice(0, 7)}`, old); // a clash: the short name holds another commit
   assert.equal(await setAside(repo, BRANCH, exec), `${BRANCH}-old-${main}`);
   assert.equal(await git(repo, 'rev-parse', `${BRANCH}-old-${main}`), main);
+});
+
+test('ensureWorktree on a branch with no history in common with the start keeps it as <branch>-old-<sha7>, makes the branch fresh from the start, and its line names both (#267)', async (t) => {
+  const { repo, tip } = await repoWithOrigin(t);
+  const old = await unrelatedBranch(repo);
+  const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
+  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([prepared.path, prepared.reused], [worktreePath(repo, SLUG), undefined]);
+  assert.deepEqual([await git(repo, 'rev-parse', BRANCH), await git(repo, 'rev-parse', kept)], [tip, old]);
+  assert.ok(prepared.line?.endsWith(` · branch ${BRANCH} shares no history with origin/main: kept as ${kept}, started from origin/main`), prepared.line);
+});
+
+test('ensureWorktree on a branch behind the start with nothing of its own recreates it at the start, and keeps nothing: every commit is in the start (#267)', async (t) => {
+  const { repo, root, tip } = await repoWithOrigin(t);
+  await git(repo, 'branch', BRANCH, root);
+  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [tip, undefined]);
+  assert.ok(prepared.line?.endsWith(` · branch ${BRANCH} was behind origin/main with nothing of its own: recreated from origin/main`), prepared.line);
+  assert.equal(await git(repo, 'branch', '--list', `${BRANCH}-old-*`), '');
+});
+
+test('ensureWorktree on a branch with a commit of its own reuses it with that commit in place and answers reused (#267)', async (t) => {
+  const { repo, root } = await repoWithOrigin(t);
+  const own = await ownBranch(repo, root);
+  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [own, BRANCH]);
+  assert.ok(!prepared.line?.includes(' · branch '), prepared.line);
+});
+
+test('ensureWorktree with no start resolved reuses an existing branch as it is, whatever its history (#267)', async (t) => {
+  const repo = await plainRepo(t); // no origin: the base cannot be refreshed
+  const old = await unrelatedBranch(repo);
+  const prepared = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([await git(repo, 'rev-parse', BRANCH), prepared.reused], [old, BRANCH]);
+  assert.match(prepared.line ?? '', /starting from the local base$/);
 });
