@@ -6,7 +6,7 @@ import type { ParsedTemplate } from '../../template.js';
 
 export type EditorMode = 'visual' | 'text';
 export interface LineRange { from: number; to: number } // 1-based, inclusive
-export type LookClass = 'template-pill' | 'template-ref' | 'template-marker' | 'template-branch' | 'template-dim' | 'template-annotation-yellow' | 'template-annotation-red'; // index.css
+export type LookClass = 'template-pill' | 'template-ref' | 'template-marker' | 'template-branch' | 'template-dim' | 'template-annotation-yellow' | 'template-annotation-red' | 'template-proposal-old' | 'template-proposal-new'; // index.css
 /** A mark on a line: columns from..to (1-based, to exclusive), or the whole line's text; a background spans the line's width. */
 export interface Decoration { line: number; from?: number; to?: number; className: LookClass; isBackground?: boolean }
 export interface Chip { line: number; label: string }
