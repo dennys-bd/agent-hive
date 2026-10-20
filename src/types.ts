@@ -1492,6 +1492,9 @@ export interface ProjectSummary {
   url: string;
 }
 
+/** How an existing branch relates to the start a new worktree would branch from (#267). */
+export type BranchRelation = 'unrelated' | 'stale' | 'own';
+
 /** What GET /tasks/:id/bases answers: the popup's lists for a task with no worktree yet (#131). */
 export interface BaseOptions {
   hasWorktree: boolean; // true → the Start dialog asks no base; the lists below are then empty

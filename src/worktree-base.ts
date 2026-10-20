@@ -1,5 +1,5 @@
 import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type WorkspaceBase } from './fork.js';
-import type { Exec, ForkSyncAnswer, ForkSyncResult } from './types.js';
+import { type BranchRelation, type Exec, type ForkSyncAnswer, type ForkSyncResult, isBranchName } from './types.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
 // it (#854). Every git call goes through `gitOrWords` bound to a folder (the caller's `git`), so a refusal carries git's own words.
@@ -22,6 +22,42 @@ export async function gitOrWords(repo: string, args: string[], exec: Exec): Prom
   } catch (err) {
     throw new Error(wordsOf(err));
   }
+}
+
+/** A git question whose exit 1 is an answer (#267): exit 0 is true, exit 1 false (no merge base, not an ancestor, not merged), any other
+ * failure rejects with git's words. */
+export function gitAnswers(repo: string, args: string[], exec: Exec): Promise<boolean> {
+  return exec('git', ['-C', repo, ...args]).then(() => true, (err: { code?: unknown }) => {
+    if (err.code === 1) return false;
+    throw new Error(wordsOf(err));
+  });
+}
+
+/** How an existing branch relates to `start` (#267): `unrelated` with no merge base (#105's branch from before the docs split), `stale` when it
+ * is an ancestor of the start with nothing of its own, `own` otherwise. Read-only. The ref is built here and the start is the Hive's, never
+ * a client's: neither can start with `-`. */
+export async function branchRelation(repo: string, branch: string, start: string, exec: Exec): Promise<BranchRelation> {
+  const ref = `refs/heads/${branch}`;
+  if (!(await gitAnswers(repo, ['merge-base', '--', ref, start], exec))) return 'unrelated';
+  return (await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, start], exec)) ? 'stale' : 'own';
+}
+
+const OLD = '-old-';
+const SHORT_SHA = 7;
+
+/** Moves a branch out of the way without losing a commit (#267): renamed to `<branch>-old-<sha7>`, or deleted when that name already holds the
+ * very same commit; a short name another commit took gets the full sha. Answers the name the work now lives under. `branch` is always the
+ * name the Hive rendered, never a client's, so it cannot start with `-`. */
+export async function setAside(repo: string, branch: string, exec: Exec): Promise<string> {
+  const git: Git = (...args) => gitOrWords(repo, args, exec);
+  const tip = (await git('rev-parse', '--verify', `refs/heads/${branch}`)).trim();
+  const short = `${branch}${OLD}${tip.slice(0, SHORT_SHA)}`;
+  const taken = await git('rev-parse', '--verify', '--quiet', `refs/heads/${short}`).then((out) => out.trim(), () => undefined);
+  const name = taken === undefined || taken === tip ? short : `${branch}${OLD}${tip}`;
+  if (!isBranchName(name)) throw new Error(`${name}: not a branch name`);
+  if (taken === tip) await git('branch', '-D', '--', branch);
+  else await git('branch', '-m', '--', branch, name);
+  return name;
 }
 
 /** What the base step decided (#854): the start point and its short sha, the `base: …` line, a GitHub sync already run, and a local merge to
