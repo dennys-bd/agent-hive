@@ -174,7 +174,8 @@ function refsGit(answers: { listing?: string; heads?: string[]; remotes?: string
     }
     if (command[0] === 'symbolic-ref' && command[1] === '--short') return { stdout: 'origin/main\n' };
     if (command[0] === 'rev-parse' && command[1] === '--verify' && !(answers.refs ?? []).includes(command.at(-1) as string)) {
-      throw Object.assign(new Error('Command failed: git rev-parse'), { stderr: 'fatal: Needed a single revision\n' });
+      // git's own statuses: --quiet makes a missing ref exit 1 with no words (#267's set-aside reads only that as free)
+      throw Object.assign(new Error('Command failed: git rev-parse'), command.includes('--quiet') ? { code: 1, stderr: '' } : { code: 128, stderr: 'fatal: Needed a single revision\n' });
     }
     return { stdout: command[0] === 'rev-parse' ? 'b2c3d4e\n' : '' };
   };
