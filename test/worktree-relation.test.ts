@@ -148,3 +148,12 @@ test('cleanWorktree with setAside keeps an unmerged branch as <branch>-old-<sha7
   await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
   assert.equal(await git(repo, 'branch', '--list', `${BRANCH}*`), kept, 'deleted, and nothing new was kept');
 });
+
+test('deleting an activity removes its branch, so the task\'s next worktree is on a branch made again from the start (#267, acceptance 3)', async (t) => {
+  const { repo, tip } = await repoWithOrigin(t);
+  const first = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec); // delete activity's own clear, never forced
+  assert.equal(await git(repo, 'branch', '--list', BRANCH), '');
+  const again = await ensureWorktree(repo, SLUG, BRANCH, ORIGIN, undefined, exec);
+  assert.deepEqual([again.path, again.reused, await git(repo, 'rev-parse', BRANCH)], [first.path, undefined, tip]);
+});
