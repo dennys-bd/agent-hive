@@ -51,8 +51,19 @@ const BLOCKS: unknown[] = [
 test('check-hv.mjs prints nothing and exits 0 on a clean folder, the plugin\'s skeleton included (#241)', async (t) => {
   const folder = await tempDir(t, 'hv-');
   await writeFile(join(folder, 'home.hv.html'), screen('<section id="state-empty"><h2>empty</h2><img src="logo.svg" alt=""></section>', JSON.stringify(VALID)));
-  await copyFile(join(pluginSource(), 'reference', 'skeleton.hv.html'), join(folder, 'skeleton.hv.html'));
+  // a screen starts from the skeleton with the kit and the tokens copied beside it, as the designer does (#232)
+  for (const file of ['skeleton.hv.html', 'hv-kit.js', 'hv-tokens.css']) await copyFile(join(pluginSource(), 'reference', file), join(folder, file));
   assert.deepEqual(await check(folder), { code: 0, stdout: '' });
+});
+
+test('check-hv.mjs finds a script or a stylesheet a screen loads from its folder that is not there, as the skeleton\'s kit and tokens (#232)', async (t) => {
+  const folder = await tempDir(t, 'hv-');
+  const head = '<link rel="stylesheet" href="hv-tokens.css">\n<script src="hv-kit.js" defer></script>\n<script src="data:text/javascript,0"></script>';
+  await writeFile(join(folder, 'a.hv.html'), screen().replace('</head>', `${head}\n</head>`));
+  await writeFile(join(folder, 'hv-tokens.css'), ':root {}');
+  const { code, stdout } = await check(folder);
+  assert.equal(code, 1);
+  assert.deepEqual(stdout.trim().split('\n'), ['a.hv.html: loads hv-kit.js, which is not in its folder'], stdout);
 });
 
 test('the skeleton is a responsive page: its block declares desktop, tablet and mobile and no tweak (#341)', async () => {

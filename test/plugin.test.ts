@@ -84,7 +84,7 @@ test('the plugin ships the manifest, the five skills, the eleven agents and the 
   assert.equal(manifest.name, 'hive', 'the namespace: /hive:new-spec and hive:tdd are built from it');
   assert.ok(manifest.description.length > 0);
   assert.deepEqual((await readdir(PLUGIN)).sort(), ['.claude-plugin', 'CREDITS.md', 'agents', 'reference', 'scripts', 'skills']);
-  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, and the skeleton of a screen');
+  assert.deepEqual((await readdir(join(PLUGIN, 'reference'))).sort(), ['conventions.md', 'design.md', 'hv-kit.js', 'hv-tokens.css', 'skeleton.hv.html'], 'reference/ holds the conventions every new-* skill reads first, the design rules the designer and its reviewer read, the skeleton of a screen and the kit and tokens a design folder shares');
   assert.deepEqual((await readdir(join(PLUGIN, 'scripts'))).sort(), ['check-hv.mjs', 'import-dc.mjs'], 'scripts/ holds the plugin\'s checks and imports');
   assert.deepEqual((await readdir(join(PLUGIN, 'skills'))).sort(), SKILLS);
   assert.deepEqual((await readdir(join(PLUGIN, 'agents'))).sort(), AGENTS.map((a) => `${a}.md`));
@@ -279,6 +279,12 @@ test('the design check is the plugin\'s script, the designer imports through imp
   for (const heading of ['### Tweaks', '### The skeleton']) assert.ok(design.includes(heading), `design.md has ${heading}`);
   const designer = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
   for (const part of [`${PLUGIN_ROOT}/scripts/import-dc.mjs`, `${PLUGIN_ROOT}/reference/skeleton.hv.html`, '| import |']) assert.ok(designer.includes(part), `designer.md names ${part}`);
+  // the first imports came out as static markup: the export's clicks were dropped and a sidebar's section became a tweak (#232)
+  assert.match(designer, /Port every interaction of the export/, 'an import ports the export\'s clicks');
+  assert.match(designer, /reached by clicking through `data-hv-set`, never a tweak/, 'a prop the export\'s clicks change is not a tweak');
+  // a screen made from nothing has no export to carry its clicks: both modes declare them with the kit (#232)
+  for (const part of [`${PLUGIN_ROOT}/reference/hv-kit.js`, `${PLUGIN_ROOT}/reference/hv-tokens.css`, "declare each one with the kit's attributes"]) assert.ok(designer.includes(part), `designer.md names ${part}`);
+  assert.ok(design.includes('### Interactions'), 'design.md has ### Interactions');
   const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
   assert.ok(reviewer.includes(`${PLUGIN_ROOT}/scripts/check-hv.mjs`), 'the reviewer may run the check script');
 });

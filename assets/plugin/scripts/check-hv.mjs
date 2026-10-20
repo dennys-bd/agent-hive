@@ -5,7 +5,7 @@
 // keeps the two in step on the same blocks.
 import { realpathSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const OUTSIDE = /(src|srcset|href|action|formaction|poster|data)\s*=\s*["']?\s*(https?:|file:|\/\/|\/)|(url|image-set)\(\s*["']?\s*(https?:|file:|\/\/|\/)|@import\s+["']?\s*(https?:|file:|\/\/|\/)|import\s*\(?\s*["'](https?:|\/\/)|\.\.[/\\]|http-equiv\s*=\s*["']?refresh|sendBeacon|EventSource|window\.open|fetch\s*\(|XMLHttpRequest|WebSocket/i;
@@ -95,6 +95,13 @@ export function parseTweaks(raw) {
 }
 
 // --- the check ---
+// A script or stylesheet the screen loads by a relative path, as the skeleton's hv-kit.js and hv-tokens.css: missing, the screen still
+// renders, without its clicks or its tokens, so nothing else would tell
+const LOADED = /<(?:script\b[^>]*\bsrc|link\b[^>]*\bhref)\s*=\s*["']?([^"'\s>]+)/gi;
+const assetFindings = (file, text, present) => [...text.matchAll(LOADED)].map((match) => match[1])
+  .filter((path) => !/^[a-z][a-z0-9+.-]*:/i.test(path) && !present.has(path))
+  .map((path) => `${file}: loads ${path}, which is not in its folder`);
+
 const lineFindings = (file, text) => text.split('\n').flatMap((line, at) =>
   (OUTSIDE.test(line) ? [`${file}:${at + 1}: reaches outside its folder or the network: ${line.trim().slice(0, 160)}`] : []));
 
@@ -127,11 +134,12 @@ function tweakFindings(file, text) {
 export async function checkFolder(folder) {
   const all = await readdir(folder, { recursive: true, withFileTypes: true });
   const links = all.filter((entry) => entry.isSymbolicLink()).map((entry) => `${join(entry.parentPath, entry.name)}: a symbolic link`);
+  const present = new Set(all.filter((e) => e.isFile()).map((e) => relative(folder, join(e.parentPath, e.name)).split(sep).join('/')));
   const screens = (await readdir(folder, { withFileTypes: true })).filter((e) => e.isFile() && e.name.endsWith('.hv.html')).map((e) => e.name).sort();
   if (screens.length === 0) return [...links, `${folder}: no .hv.html screen`];
   const found = await Promise.all(screens.map(async (name) => {
     const text = await readFile(join(folder, name), 'utf8');
-    return [...lineFindings(name, text), ...tagFindings(name, text), ...tweakFindings(name, text)];
+    return [...lineFindings(name, text), ...tagFindings(name, text), ...tweakFindings(name, text), ...assetFindings(name, text, present)];
   }));
   return [...links, ...found.flat()];
 }

@@ -235,7 +235,7 @@ frame, with no network.
   shown at its own size.
 - Real copy in the product's own words and languages; never lorem ipsum.
 - Scripts only show states and interactions: no `fetch`, `XMLHttpRequest`
-  or `WebSocket`.
+  or `WebSocket`. Clicks go through the kit ("Interactions" below).
 - No secret, token or absolute home path in a screen or the handoff: the
   handoff may be posted to a public issue.
 
@@ -278,9 +278,41 @@ A screen declares its tweaks in one block in `<head>`:
 
 `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` holds the required tags,
 an `hv-tweaks` block declaring only the three `viewports` (a responsive
-page: drop the key for a window screen), the theme tokens under `:root` and
-`:root[data-theme="light"]`, and one section. Copy it for a new screen; with
-a design system, its tokens replace the skeleton's.
+page: drop the key for a window screen), the links to the folder's
+`hv-tokens.css` and `hv-kit.js`, and one section. Copy it for a new screen.
+Every design folder holds one copy of
+`${CLAUDE_PLUGIN_ROOT}/reference/hv-tokens.css` (the theme tokens under
+`:root` and `:root[data-theme="light"]`) and of
+`${CLAUDE_PLUGIN_ROOT}/reference/hv-kit.js`, shared by all its screens:
+copy both in with the folder's first screen, never edit the kit, and with a
+design system, its tokens replace those of `hv-tokens.css`. A token one
+screen alone needs stays in that screen's `<style>`.
+
+### Interactions
+
+A screen's clicks are declared in its markup and run by `hv-kit.js`; a
+screen writes no click script of its own. The kit's attributes:
+
+- `data-hv-set="<name>=<value>"` on a control sets `data-<name>` on
+  `<html>`: the screen's state, such as the section a sidebar picks, which
+  the screen's CSS shows and hides by attribute
+  (`:root[data-view="flow"] #flow`). Write the first state on `<html>`
+  itself; the kit marks the controls holding the state with
+  `aria-current`. `theme` and `tweak-*` are the design pane's and ignored.
+- `data-hv-toggle="<id>"` shows or hides `#<id>`, `data-hv-open="<id>"`
+  shows it, `data-hv-close` hides `#<id>` or, empty, the layer it sits in.
+- `data-hv-layer` marks a dialog, `data-hv-layer="popover"` a menu or
+  popover, which also closes on a click outside it or on a pick inside it.
+  Escape closes either. A layer starts `hidden`.
+- `data-hv-pick` selects within its `data-hv-group` (`aria-selected`); a
+  group's `data-hv-label="<id>"` writes the pick's text into `#<id>`, as a
+  select shows its value.
+- `data-hv-switch` flips a switch's `aria-checked` and `data-state`.
+
+A state the user picks from the pane is a tweak; a state the screen's own
+controls reach is `data-hv-set`, never both. Behaviour the kit cannot
+express, such as text typed into a filter that narrows a list, goes in a
+short `<script>` of the screen, and the handoff names it.
 
 ### The check
 
@@ -297,7 +329,8 @@ It reports, one line each: what reaches outside the folder or the network
 `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `window.open`);
 a symbolic link; `<!doctype html>`, `<html`, `<head`, `</head>`, `<body`,
 `</body>` or `</html>` missing or out of order; an `hv-tweaks` block that is
-not JSON or breaks "Tweaks".
+not JSON or breaks "Tweaks"; a script or stylesheet loaded by a relative
+path that is not in the folder, such as a missing `hv-kit.js`.
 
 ### Seeing it rendered
 
