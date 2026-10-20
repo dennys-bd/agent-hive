@@ -262,6 +262,18 @@ export function renderTemplate(parsed: ParsedTemplate, workspace: string): Rende
   }
 }
 
+/** The body's Liquid syntax error at its file line, or undefined (#336): a save refuses what would fail every workspace's render. The
+ * module's own engine, so the parse is the one a render meets. */
+export function liquidSyntaxError(parsed: ParsedTemplate): TemplateError | undefined {
+  if (!hasLiquid(parsed.body)) return undefined;
+  try {
+    engine.parse(parsed.body);
+    return undefined;
+  } catch (err) {
+    return liquidError(err, parsed.bodyLine);
+  }
+}
+
 /** A piece of a body rendered as renderTemplate renders the whole, in the workspace's context (#319): the preview renders line by line and
  * asks Liquid whether a condition holds through it. The piece itself when it holds no Liquid; undefined when Liquid refuses it alone (an
  * unclosed tag, an unknown variable). */
