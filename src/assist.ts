@@ -6,6 +6,8 @@ import type { CatalogueItem, DiffHunk, DiffLine, ItemKind } from './types.js';
 
 export interface AssistTarget { start: number; end: number } // inclusive; end = start - 1 only for an empty file
 export interface Proposal { from: number; to: number; text: string }
+/** POST /api/items/:id/assist's 200 answer (#330): server-assist.ts builds it, the editor's footer reads it (#331). */
+export interface AssistAnswer { proposal: Proposal; hunk: DiffHunk; text: string; changed: boolean }
 export interface AssistInput {
   request: string;
   path: string;
