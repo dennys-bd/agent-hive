@@ -7,7 +7,7 @@ import {
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { workspaceProtocolPaths } from '../src/hooks-settings.js';
-import { SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
+import { type ProtocolFor, SESSION_PROTOCOL, STAGE_PROTOCOL } from '../src/protocol.js';
 import { tempDir } from './temp-dir.js';
 import type { MemoryEntry, MemoryFile } from '../src/types.js';
 
@@ -68,9 +68,9 @@ test('looksLikeSecret catches the common token and key shapes and leaves ordinar
 
 test('memoryUsed sums the texts only; renderMemory gives nothing for no lessons, otherwise the title, the intro, the hive_applied line, then each kind in order with its ids, never an origin, a date or a use (#797)', () => {
   assert.equal(memoryUsed(FILE.entries), 'pnpm test is the gate'.length + 'never run git push --force'.length + 'specs are written in English'.length);
-  assert.equal(renderMemory([]), '');
+  assert.equal(renderMemory([], []), '');
   const used: MemoryEntry = { ...FILE.entries[0], origin: { task: '812', stage: 'build' }, uses: 5, lastUsed: { at: AT, task: '812', why: 'because' } };
-  assert.equal(renderMemory([used, FILE.entries[2]]), [
+  assert.equal(renderMemory([used, FILE.entries[2]], []), [
     '## Workspace memory',
     '',
     "Lessons earlier tasks in this workspace left. The repository's own instructions (CLAUDE.md and the like) win when they disagree.",
@@ -84,8 +84,8 @@ test('memoryUsed sums the texts only; renderMemory gives nothing for no lessons,
     '- [m-1] pnpm test is the gate',
     '',
   ].join('\n'));
-  assert.ok(renderMemory(FILE.entries).endsWith('### Avoid\n- [m-2] never run git push --force\n'));
-  assert.deepEqual(renderedOf(FILE.entries), { ids: ['m-3', 'm-1', 'm-2'], chars: renderMemory(FILE.entries).length });
+  assert.ok(renderMemory(FILE.entries, []).endsWith('### Avoid\n- [m-2] never run git push --force\n'));
+  assert.deepEqual(renderedOf(FILE.entries, []), { ids: ['m-3', 'm-1', 'm-2'], chars: renderMemory(FILE.entries, []).length });
 });
 
 test('withEntry adds m-<nextId> unused and refuses when the sum of the texts passes the cap; withEdit keeps origin and uses and never refuses what does not grow the sum; withUse counts and replaces lastUsed; withoutEntry never reuses an id; none mutates (#797)', () => {
@@ -123,13 +123,13 @@ test('the store keeps one file per workspace, rewrites its protocol files when t
   const live = new Set(['site']);
   const store = createMemoryStore(home, (name) => live.has(name));
   const paths = workspaceProtocolPaths(home, 'site');
-  await store.writeProtocol('site'); // the boot's
+  await store.writeProtocol('site', []); // the boot's
   assert.equal(await readFile(paths.stage, 'utf8'), STAGE_PROTOCOL);
   assert.deepEqual(store.rendered('site'), { ids: [], chars: 0 });
   const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT, CAP)));
   assert.deepEqual(JSON.parse(await readFile(memoryPath(home, 'site'), 'utf8')), saved);
   assert.deepEqual([(await stat(memoryPath(home, 'site'))).mode & 0o777, (await stat(join(home, 'memory'))).mode & 0o777], [0o600, 0o700], 'private to the user');
-  const section = renderMemory(saved.entries);
+  const section = renderMemory(saved.entries, []);
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`${STAGE_PROTOCOL}\n${section}`, `${SESSION_PROTOCOL}\n${section}`]);
   assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });
   await writeFile(paths.stage, 'by hand');
@@ -146,7 +146,7 @@ test('a memory file the Hive cannot read still gets its workspace the bare proto
   await mkdir(join(home, 'memory'));
   await writeFile(memoryPath(home, 'site'), '{"nextId":"x","entries":[]}');
   const store = createMemoryStore(home, () => true);
-  await assert.rejects(store.writeProtocol('site'), /not a memory file/);
+  await assert.rejects(store.writeProtocol('site', []), /not a memory file/);
   assert.equal(await readFile(workspaceProtocolPaths(home, 'site').stage, 'utf8'), STAGE_PROTOCOL);
 });
 
@@ -160,4 +160,29 @@ test('when writing the protocol files fails after the file was saved, the update
   assert.equal(logged.length, 1);
   assert.match(logged[0], /^memory site: .*\(Error\)$/);
   assert.ok(!logged[0].includes('pnpm'), 'no lesson text in the line');
+});
+
+test('renderMemory with hive_applied off has no hive_applied line, and renderedOf counts that shorter section (#336)', () => {
+  const without = renderMemory(FILE.entries, ['hive_applied']);
+  assert.equal(without, renderMemory(FILE.entries, []).replace('\nWhen one of these lessons changes what you do, call `hive_applied` with its id.', ''));
+  assert.equal(without.includes('hive_applied'), false);
+  assert.deepEqual(renderedOf(FILE.entries, ['hive_applied']), { ids: ['m-3', 'm-1', 'm-2'], chars: without.length });
+});
+
+test('writeProtocol writes what protocolFor answers for the workspace and the off it is given, the memory under it; a lesson saved later rewrites with that off (#336)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const asked: [string, readonly string[]][] = [];
+  const protocolFor: ProtocolFor = async (workspace, off) => {
+    asked.push([workspace, off]);
+    return { stage: `stage of ${workspace}\n`, session: `session of ${workspace}\n` };
+  };
+  const store = createMemoryStore(home, () => true, undefined, protocolFor);
+  const paths = workspaceProtocolPaths(home, 'site');
+  await store.writeProtocol('site', ['hive_applied']);
+  assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], ['stage of site\n', 'session of site\n']);
+  const saved = fileOf(await store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT, CAP)));
+  const section = renderMemory(saved.entries, ['hive_applied']);
+  assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], [`stage of site\n\n${section}`, `session of site\n\n${section}`]);
+  assert.deepEqual(asked, [['site', ['hive_applied']], ['site', ['hive_applied']]]);
+  assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });
 });

@@ -20,10 +20,11 @@ import { type Config, isMemoryKind, MEMORY_CAP_MAX, MEMORY_CAP_MIN, type MemoryE
 // the memory dialog's routes (Task 7). Nothing of a lesson's text reaches a log line or a record.
 
 /** Each workspace's protocol files from its stored memory (#797), before any run reads them. A file the Hive cannot read costs that workspace
- * its memory (the store still writes the bare protocol), logged, never the boot or the save. */
-export async function writeMemoryProtocols(memory: Pick<MemoryStore, 'writeProtocol'>, config: Pick<Config, 'comb'>, log: Pick<Logger, 'error'>): Promise<void> {
+ * its memory (the store still writes the bare protocol), logged, never the boot or the save. `off` comes from the config being activated, which
+ * is not live yet (#336). */
+export async function writeMemoryProtocols(memory: Pick<MemoryStore, 'writeProtocol'>, config: Pick<Config, 'comb' | 'mcp'>, log: Pick<Logger, 'error'>): Promise<void> {
   await Promise.all(config.comb.workspaces.map(({ name }) =>
-    memory.writeProtocol(name).catch((err: unknown) => log.error(`memory ${name}: unreadable (${errorName(err)})`))));
+    memory.writeProtocol(name, config.mcp.off).catch((err: unknown) => log.error(`memory ${name}: unreadable (${errorName(err)})`))));
 }
 
 /** run.spawned's memory fields (#797): the run's task's workspace's last rendered memory, which is what its protocol file holds; none for a run

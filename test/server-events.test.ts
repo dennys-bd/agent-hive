@@ -277,7 +277,7 @@ test('run.spawned names the lessons in rendered order, the characters of the sec
     await writeFile(memoryPath(home, WORKSPACE), JSON.stringify(file));
   });
   const fields = ['memory_ids', 'memory_chars', 'workspace'];
-  assert.deepEqual(pick(seeded.records.find((r) => r.event === 'run.spawned'), fields), { memory_ids: ['m-2', 'm-1'], memory_chars: renderMemory(file.entries).length, workspace: WORKSPACE });
+  assert.deepEqual(pick(seeded.records.find((r) => r.event === 'run.spawned'), fields), { memory_ids: ['m-2', 'm-1'], memory_chars: renderMemory(file.entries, []).length, workspace: WORKSPACE });
   const bare = await start(t);
   assert.deepEqual(pick(bare.records.find((r) => r.event === 'run.spawned'), fields), { memory_ids: undefined, memory_chars: undefined, workspace: undefined });
 });

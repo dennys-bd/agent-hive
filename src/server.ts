@@ -20,6 +20,7 @@ import { createLspHost } from './lsp-host.js';
 import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
+import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
@@ -235,7 +236,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const { home } = deps;
   const log = deps.log ?? createLogger(home);
   // A workspace's memory (#797): one file per workspace of the live config; its protocol files follow every change of its rendered text
-  const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log);
+  const passages = createPassageStore(home); // #336: the user's protocol passages, rendered into every workspace's protocol files
+  const protocolFor = protocolRenderer(passages, log);
+  const memory = createMemoryStore(home, (name) => live !== undefined && workspaceByName(live.runtime.config, name) !== undefined, log, protocolFor);
   const workerLsp = createWorkerLsp({ home, log }); // #803: one language-server plugin per workspace, for every claude run in it
   const pluginRender = createPluginRender({ home, pluginSource: pluginSource(), log }); // #316: one plugin folder per workspace, which every agent run of it loads
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read

@@ -1,11 +1,11 @@
 import { join } from 'node:path';
 import type { Logger } from './log.js';
 import { writeWorkspaceProtocol } from './hooks-settings.js';
-import { protocolTexts } from './protocol.js';
+import { type ProtocolFor, protocolTexts } from './protocol.js';
 import { createJsonStore } from './json-store.js';
 import {
   isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
-  type MemoryRefusalCode, type MemoryUse, type MemoryView,
+  type MemoryRefusalCode, type MemoryUse, type MemoryView, type OptionalTool,
 } from './types.js';
 
 // A workspace's memory (#797): one JSON file per workspace under <home>/memory/, outside State like the reviews, and its rendered section,
@@ -91,20 +91,22 @@ const INTRO = "Lessons earlier tasks in this workspace left. The repository's ow
 const APPLIED = 'When one of these lessons changes what you do, call `hive_applied` with its id.';
 const HEADINGS: Record<MemoryKind, string> = { pref: 'Preferences', fact: 'Repository facts', avoid: 'Avoid' };
 
-/** The memory section a run is told (#797): '' with no lesson. The ids are in the text, so hive_applied can name one; never origin, date or use. */
-export function renderMemory(entries: readonly MemoryEntry[]): string {
+/** The memory section a run is told (#797): '' with no lesson. The ids are in the text, so hive_applied can name one; never origin, date or
+ * use. With hive_applied turned off (#336) its line goes: a session is never told to call a tool it does not have. */
+export function renderMemory(entries: readonly MemoryEntry[], off: readonly OptionalTool[]): string {
   if (entries.length === 0) return '';
+  const intro = off.includes('hive_applied') ? INTRO : `${INTRO}\n${APPLIED}`;
   const sections = MEMORY_KINDS.flatMap((kind) => {
     const lines = entries.filter((e) => e.kind === kind).map((e) => `- [${e.id}] ${e.text}`);
     return lines.length === 0 ? [] : [[`### ${HEADINGS[kind]}`, ...lines].join('\n')];
   });
-  return `${[TITLE, `${INTRO}\n${APPLIED}`, ...sections].join('\n\n')}\n`;
+  return `${[TITLE, intro, ...sections].join('\n\n')}\n`;
 }
 
 export interface RenderedMemory { ids: string[]; chars: number }
 /** What run.spawned names of a memory (#797): its ids in the order the section shows them, and the section's length (what the run received). */
-export const renderedOf = (entries: readonly MemoryEntry[]): RenderedMemory =>
-  ({ ids: MEMORY_KINDS.flatMap((kind) => entries.filter((e) => e.kind === kind).map((e) => e.id)), chars: renderMemory(entries).length });
+export const renderedOf = (entries: readonly MemoryEntry[], off: readonly OptionalTool[]): RenderedMemory =>
+  ({ ids: MEMORY_KINDS.flatMap((kind) => entries.filter((e) => e.kind === kind).map((e) => e.id)), chars: renderMemory(entries, off).length });
 /** memory.changed's sizes (#797). */
 export const memoryCounts = (file: MemoryFile): { entries: number; used: number } => ({ entries: file.entries.length, used: memoryUsed(file.entries) });
 /** What the memory routes answer (#797); cap: the workspace's memoryCap (#73). */
@@ -145,23 +147,31 @@ export const withUse = (file: MemoryFile, id: string, lastUsed: MemoryUse): Memo
 export interface MemoryStore {
   read(workspace: string): Promise<MemoryFile>; // a missing file reads as EMPTY_MEMORY
   update(workspace: string, edit: (file: MemoryFile) => MemoryResult): Promise<MemoryResult>; // queued per workspace; the refusal, or the file
-  writeProtocol(workspace: string): Promise<void>; // the protocol files from the file as it is now: boot and every Settings save
+  writeProtocol(workspace: string, off: readonly OptionalTool[]): Promise<void>; // the protocol files from the file as it is now, with the tools `off` (boot and every Settings save)
   rendered(workspace: string): RenderedMemory | undefined; // the section last written, for run.spawned: no I/O
 }
 
+const bareProtocol: ProtocolFor = async (_workspace, off) => protocolTexts(off, []);
+
 /** `isLive`: whether the workspace is in the live config. A write for one a save removed writes nothing, its protocol files included, and its
  * file stays for a workspace re-added under that name. */
-export function createMemoryStore(home: string, isLive: (workspace: string) => boolean, log: Pick<Logger, 'error'> = { error: () => undefined }): MemoryStore {
+export function createMemoryStore(
+  home: string, isLive: (workspace: string) => boolean, log: Pick<Logger, 'error'> = { error: () => undefined }, protocolFor: ProtocolFor = bareProtocol,
+): MemoryStore {
   const files = createJsonStore<MemoryFile>({ pathOf: (name) => memoryPath(home, name), empty: EMPTY_MEMORY, parse: parseMemory, isLive, private: true });
   const lastRendered = new Map<string, RenderedMemory>();
+  // A lesson saved between two settings saves rewrites with the off the last boot or save wrote, never a live-config read (#336)
+  const lastOff = new Map<string, readonly OptionalTool[]>();
   const chains = new Map<string, Promise<void>>();
   // One write per workspace at a time, from the file as it is when its turn comes: two saves in flight never leave the older text on disk. A
   // file it cannot read still gets the bare protocol, so a run always finds its file; the failure goes to the caller
-  const writeProtocol = (name: string): Promise<void> => {
+  const writeProtocol = (name: string, off: readonly OptionalTool[]): Promise<void> => {
     const job = async (): Promise<void> => {
       const read = await files.read(name).then((file) => ({ file }), (err: unknown) => ({ file: EMPTY_MEMORY, err }));
-      await writeWorkspaceProtocol(home, name, protocolTexts([], []), renderMemory(read.file.entries)); // Task 5 renders through protocolFor
-      lastRendered.set(name, renderedOf(read.file.entries));
+      const protocol = await protocolFor(name, off); // inside the chain: the passages as they are when this write's turn comes
+      await writeWorkspaceProtocol(home, name, protocol, renderMemory(read.file.entries, off));
+      lastRendered.set(name, renderedOf(read.file.entries, off));
+      lastOff.set(name, off);
       if ('err' in read) throw read.err;
     };
     const next = (chains.get(name) ?? Promise.resolve()).then(job, job);
@@ -178,12 +188,12 @@ export function createMemoryStore(home: string, isLive: (workspace: string) => b
         refused = result;
         return file;
       }
-      rerender = renderMemory(file.entries) !== renderMemory(result.entries);
+      rerender = renderMemory(file.entries, []) !== renderMemory(result.entries, []); // whether the section changed does not depend on off: the hive_applied line is the same on both sides
       return result;
     });
     if (refused) return refused;
     // the lesson is saved: a protocol file that fails to write is logged, never the writer's refusal; the next save or boot rewrites it
-    if (rerender && isLive(name)) await writeProtocol(name).catch((err: unknown) => log.error(`memory ${name}: protocol files not written (${errorName(err)})`));
+    if (rerender && isLive(name)) await writeProtocol(name, lastOff.get(name) ?? []).catch((err: unknown) => log.error(`memory ${name}: protocol files not written (${errorName(err)})`));
     return saved;
   };
   return { read: files.read, update, writeProtocol, rendered: (name) => lastRendered.get(name) };
