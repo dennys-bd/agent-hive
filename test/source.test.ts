@@ -809,3 +809,62 @@ test('namespaced maps stored as it maps listItems: the same prefixed ids, source
   assert.deepEqual(stored, await wrapped.listItems());
   assert.deepEqual([stored?.[0].item.itemId, stored?.[0].item.id, stored?.[0].item.parent], ['work:PVTI_2', 'W-2', 'work:PVTI_1']);
 });
+
+// #291: a source whose resolveFields fails as `fail` says, every call recorded; gh's words when the network is down
+const OFFLINE = 'gh api graphql: error connecting to api.github.com';
+function resolving(fail: () => Error | undefined): { source: Source; calls: string[] } {
+  const calls: string[] = [];
+  const source: Source = {
+    resolveFields: async () => {
+      calls.push('resolve');
+      const err = fail();
+      if (err) throw err;
+    },
+    listItems: async () => {
+      calls.push('list');
+      return [];
+    },
+    setColumn: async () => {}, apply: async () => {}, settingsOptions: async () => [],
+  };
+  return { source, calls };
+}
+
+test('resolveSources with deferOffline keeps an offline source, wrapped: its listItems resolves first and retries on every call until a resolve succeeds, then only lists; a resolved source comes back as it is (#291)', async () => {
+  let isOnline = false;
+  const offline = resolving(() => (isOnline ? undefined : new Error(OFFLINE)));
+  const fine = resolving(() => undefined);
+  const { log, lines } = fakeLog();
+  const sources = await resolveSources(new Map([['work', offline.source], ['notes', fine.source]]), { deferOffline: true, log });
+  assert.deepEqual([...sources.keys()], ['work', 'notes']);
+  assert.equal(sources.get('notes'), fine.source, 'a resolved source is not wrapped');
+  const work = sources.get('work');
+  assert.ok(work !== undefined && work !== offline.source);
+  assert.equal(work.setColumn, offline.source.setColumn, 'every other method passes through');
+  await assert.rejects(work.listItems(), { message: OFFLINE });
+  isOnline = true;
+  await work.listItems();
+  await work.listItems();
+  assert.deepEqual(offline.calls, ['resolve', 'resolve', 'resolve', 'list', 'list'], 'boot, the failed retry, the good one; then lists only');
+  assert.deepEqual(lines, [`WARN source work: offline at boot, resolved on a later poll (${OFFLINE})`, 'INFO source work: resolved on a later poll']);
+});
+
+test('a deferred source resolved by a Settings save (its resolveFields, as createSources reuses it) does not resolve again on its next poll (#291)', async () => {
+  let isOnline = false;
+  const offline = resolving(() => (isOnline ? undefined : new Error(OFFLINE)));
+  const work = (await resolveSources(new Map([['work', offline.source]]), { deferOffline: true })).get('work');
+  assert.ok(work);
+  isOnline = true;
+  await resolveSources(new Map([['work', work]]));
+  await work.listItems();
+  assert.deepEqual(offline.calls, ['resolve', 'resolve', 'list']);
+});
+
+test('resolveSources rejects naming the source on a failure that is not the network, with deferOffline in a mixed map too; without the option an offline failure rejects as before and nothing is wrapped (#291)', async () => {
+  const offline = resolving(() => new Error(OFFLINE));
+  const gone = resolving(() => new Error('source not found: no GitHub Project 9 for "acme"'));
+  await assert.rejects(resolveSources(new Map([['work', offline.source], ['notes', gone.source]]), { deferOffline: true }),
+    { message: 'source notes: source not found: no GitHub Project 9 for "acme"' });
+  await assert.rejects(resolveSources(new Map([['work', offline.source]])), { message: `source work: ${OFFLINE}` });
+  const fine = resolving(() => undefined);
+  assert.equal((await resolveSources(new Map([['notes', fine.source]]))).get('notes'), fine.source);
+});

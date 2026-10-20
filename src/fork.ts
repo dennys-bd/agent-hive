@@ -29,8 +29,9 @@ export function parseFork(raw: unknown, field: string): WorkspaceFork | false | 
 
 const SYNC_TIMEOUT_MS = 60_000; // each gh call, as the wait for CI's (#834)
 export const NOT_GITHUB = 'origin or the original\'s remote is not a GitHub repository';
-// gh's and git's words for a host they could not reach
-const NETWORK = /could not resolve host|error connecting to|dial tcp|network is unreachable|connection (?:refused|reset|timed out)|operation timed out|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT/i;
+// gh's and git's words for a host they could not reach, and the codes Node's fetch puts on its cause when DNS, the route or the connect
+// fails (#291: apiGql's `fetch failed`)
+const NETWORK = /could not resolve host|error connecting to|dial tcp|network is unreachable|connection (?:refused|reset|timed out)|operation timed out|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|UND_ERR_CONNECT_TIMEOUT/i;
 const REMOTE_LINE = /^(\S+)\t(\S+) \(fetch\)$/;
 
 /** A fork's two GitHub repositories (#854), owner/name: the original's remote and origin. */
@@ -77,10 +78,22 @@ function wordsOf(err: unknown): string {
   return (typeof e.stderr === 'string' && e.stderr.trim() !== '' ? e.stderr : String(e.message ?? err)).trim();
 }
 
+const propsOf = (value: unknown): Record<string, unknown> => (typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {});
+
+/** A call that never reached the host (#854, #291): gh's or git's words for it, a killed call (the timeout), fetch's failure with a network
+ * code on its cause, or AbortSignal.timeout's TimeoutError. The one test of offline: the fork sync's and the boot's. */
+export function isNetworkError(err: unknown): boolean {
+  const e = propsOf(err);
+  if (e.killed === true || e.name === 'TimeoutError') return true;
+  const cause = propsOf(e.cause);
+  const words = typeof err === 'object' && err !== null ? wordsOf(err) : String(err);
+  return NETWORK.test(words) || NETWORK.test(`${String(cause.code ?? '')} ${String(cause.message ?? '')}`);
+}
+
 /** A sync that failed (#854): offline when gh or git could not reach the host (a killed call is the timeout), else error with the first line of their words. */
 export function failureOf(err: unknown): Pick<ForkSyncResult, 'result' | 'reason'> {
   const words = wordsOf(err);
-  if ((err as { killed?: unknown }).killed === true || NETWORK.test(words)) return { result: 'offline' };
+  if (isNetworkError(err)) return { result: 'offline' };
   return { result: 'error', reason: words.split('\n')[0] ?? '' };
 }
 

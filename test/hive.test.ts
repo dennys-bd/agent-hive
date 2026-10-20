@@ -584,6 +584,47 @@ test('bootHive hydrates the loaded tasks from every source\'s stored() before th
   assert.ok((await logLines(failing.home)).some((l) => l.includes('source board: the read model\'s listing was not read at boot: model gone')));
 });
 
+test('a source offline at boot boots hive mode: its tasks come from the read model, its poll error says why, and the poll once the network is back resolves it once and lists (#291)', async (t) => {
+  const OFFLINE = 'gh api graphql: error connecting to api.github.com';
+  const lean: Task = { item: { itemId: 'board:I1', id: '1', title: '', body: '', url: '', source: 'board' }, stage: 'fila', boardColumn: 'Ready', auto: true };
+  const facets = { assignees: ['bia'], labels: ['hive'], fields: { Priority: 'P1' } };
+  const kept: SourceItem = { item: { itemId: 'I1', id: '1', title: 'from the model', body: 'b', url: 'https://github.com/acme/r/issues/1', facets }, column: 'Ready' };
+  let isOnline = false;
+  const resolves: boolean[] = []; // whether the network was up at each resolveFields call
+  const offlineAtBoot = (spec: SourceSpec): Source => {
+    const fake = fakeSourceFactory().factory(spec);
+    return {
+      ...fake,
+      resolveFields: () => {
+        resolves.push(isOnline);
+        return isOnline ? fake.resolveFields() : Promise.reject(new Error(OFFLINE));
+      },
+      stored: async () => [kept],
+    };
+  };
+  const { home } = await hiveWithConfig(t, WITH_SOURCE);
+  await saveState(home, { ...initialState(0), tasks: [lean] });
+  const hive = await bootHive(home, { sourceFactory: offlineAtBoot });
+  t.after(() => hive.server.close());
+  const booted = hive.server.getState();
+  assert.ok(booted !== undefined, 'hive mode, not setup');
+  assert.deepEqual(booted.tasks.map((task) => [task.item.title, task.item.body, task.item.facets]), [['from the model', 'b', facets]]);
+  assert.equal(booted.syncs.board?.error, OFFLINE, 'the boot poll retried the resolve and failed on the network');
+  assert.deepEqual(resolves, [false, false], 'the boot resolve, then the boot poll\'s');
+
+  isOnline = true;
+  await hive.server.poll();
+  const polled = hive.server.getState();
+  assert.equal(polled?.syncs.board?.error, undefined);
+  assert.deepEqual(polled?.tasks.map((task) => task.item.title), ['from Ready'], 'the poll listed');
+  await hive.server.poll();
+  assert.deepEqual(resolves, [false, false, true], 'resolved once: the next poll only lists');
+  const lines = await logLines(home);
+  assert.ok(lines.some((l) => l === `WARN  source board: offline at boot, resolved on a later poll (${OFFLINE})`), lines.join('\n'));
+  assert.ok(lines.some((l) => l === 'INFO  source board: resolved on a later poll'), lines.join('\n'));
+  assert.ok(!lines.some((l) => l.includes('mode=setup')));
+});
+
 test('a hive.config.json without mcp opens setup mode with the parse error, prefilled with no tool off and no server; a locked tool in off still fails the boot (#333)', async (t) => {
   const { home } = await hiveWithConfig(t, { prefix: 'OLD', mcp: undefined });
   const { server, port } = await bootHive(home);

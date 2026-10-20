@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withSync } from '../src/worktree-base.js';
-import { baseRemote, failureOf, forkRepos, remotesOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
+import { baseRemote, failureOf, forkRepos, isNetworkError, remotesOf, runEnv, syncFork, workspaceBase } from '../src/fork.js';
 import type { Exec, Workspace } from '../src/types.js';
+import { NO_TOKEN_MESSAGE } from '../src/sources/github-gql.js';
 
 // A fork workspace (#854): the base remote, the base, the two repositories, the run env, and the GitHub sync, fast-forward only.
 
@@ -55,6 +56,29 @@ test('a sync that cannot run is offline when gh or git could not reach the host,
   const unreachable = Object.assign(new Error('Command failed: git fetch'), { stderr: "fatal: unable to access 'https://github.com/acme/app/': Could not resolve host: github.com\n" });
   assert.deepEqual(failureOf(unreachable), { result: 'offline' });
   assert.deepEqual(failureOf(Object.assign(new Error('Command failed: gh'), { killed: true })), { result: 'offline' }, 'the 60 s timeout');
+});
+
+test('isNetworkError is true when the host could not be reached: gh\'s and git\'s offline words, fetch failed with a network code on its cause, a TimeoutError, a killed call; false for an HTTP status, a GraphQL error, no token, a missing Status option and a non-object (#291)', () => {
+  const fetchFailed = (code: string, message: string) => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error(message), { code }) });
+  const offline: unknown[] = [
+    new Error('gh api graphql: error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com'),
+    Object.assign(new Error('Command failed: git fetch'), { stderr: "fatal: unable to access 'https://github.com/acme/app/': Could not resolve host: github.com\n" }),
+    fetchFailed('ENOTFOUND', 'getaddrinfo ENOTFOUND api.github.com'),
+    fetchFailed('UND_ERR_CONNECT_TIMEOUT', 'Connect Timeout Error'),
+    new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+    Object.assign(new Error('Command failed: gh'), { killed: true }),
+  ];
+  const reached: unknown[] = [
+    new Error('github api: HTTP 404'),
+    new Error('Could not resolve to a ProjectV2 with the number 6.'),
+    new Error(NO_TOKEN_MESSAGE),
+    new Error('"Ready" (fila) not found in source Status options: Todo, Done'),
+    new Error('source not found: no GitHub Project 9 for "acme"'),
+    'a thrown string',
+    null,
+  ];
+  assert.deepEqual(offline.map((err) => isNetworkError(err)), offline.map(() => true));
+  assert.deepEqual(reached.map((err) => isNetworkError(err)), reached.map(() => false));
 });
 
 test('remotesOf reads git remote -v once per remote with the GitHub repository each points at; forkRepos and runEnv resolve the remotes (#854)', async () => {

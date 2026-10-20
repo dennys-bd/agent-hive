@@ -82,8 +82,10 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
     readModel?.close(); // the boot fails: nothing else would close the handle just opened
     throw err;
   }
+  let resolved: Map<string, Source>;
   try {
-    await resolveSources(sources);
+    // #291: a source the network kept out is no broken config: hive mode with it unresolved, the tasks from the read model, a later poll resolves it
+    resolved = await resolveSources(sources, { deferOffline: true, log });
   } catch (err) {
     readModel?.close(); // setup mode runs no read sync
     // A saved config whose source is gone (a GitHub Project deleted, access revoked) must not kill the app: reopen the settings form with the reason, which names the source (#180).
@@ -91,7 +93,7 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
     log.error(`source: ${error}`);
     return bootSetupMode(home, log, language, deps, { config, error });
   }
-  return bootHiveMode(home, log, language, deps, config, sources, readModel);
+  return bootHiveMode(home, log, language, deps, config, resolved, readModel);
 }
 
 // The daemon's read model (#180): opened by bootLocked before the boot adapters (#190), under the hive.lock bootHive already holds, and closed
