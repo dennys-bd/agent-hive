@@ -291,6 +291,7 @@ export function StartDialog(props: StartDialogProps) {
               <div className="flex flex-col gap-2">
                 <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
                 <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={pickTask} onCreate={create} />
+                <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
               </div>
             )}
             <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />

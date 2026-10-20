@@ -90,7 +90,7 @@ test('sessão livre preselects the default agent and opens the session with it a
   vi.stubGlobal('fetch', fetchMock);
   const onClose = vi.fn();
   render(<DefaultAgentContext.Provider value={AGENT}><StartDialog state={startState} onStarted={vi.fn()} onClose={onClose} /></DefaultAgentContext.Provider>);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-4/ }));
   await user.click(screen.getByRole('radio', { name: 'sessão livre' }));
   expect(within(screen.getByRole('dialog')).getByRole('combobox', { name: 'agente' })).toHaveTextContent('othercli');

@@ -333,8 +333,9 @@ const en = {
   'start.newTitle': 'New activity', // redesign 11: the Start dialog
   'start.title': 'Start #{id}',
   'start.subtitle': '{title} · stage {stage}',
-  'start.task': 'task',
-  'start.taskPlaceholder': 'pick a task',
+  'start.task': 'tasks',
+  'start.taskPlaceholder': 'search or create a task…',
+  'start.taskHint': 'every activity starts from at least one task. if it does not exist, create it here.', // #893: under Nova atividade's task field
   'start.search': 'search tasks',
   'start.noTask': 'no task found',
   'start.create': 'create task "{title}"',
@@ -2578,8 +2579,9 @@ const pt: Record<MessageKey, string> = {
   'start.newTitle': 'Nova atividade', // redesign 11: the Start dialog
   'start.title': 'Iniciar #{id}',
   'start.subtitle': '{title} · etapa {stage}',
-  'start.task': 'tarefa',
-  'start.taskPlaceholder': 'escolha uma tarefa',
+  'start.task': 'tarefas',
+  'start.taskPlaceholder': 'buscar ou criar tarefa…',
+  'start.taskHint': 'toda atividade parte de pelo menos uma tarefa. se ela não existir, crie aqui.', // #893: under Nova atividade's task field
   'start.search': 'buscar tarefa',
   'start.noTask': 'nenhuma tarefa encontrada',
   'start.create': 'criar tarefa "{title}"',
