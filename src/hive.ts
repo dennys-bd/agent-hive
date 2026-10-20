@@ -69,39 +69,42 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   // so in hive.log. ponytail: a config that fails to parse leaves it open until the process exits, which it then does
   const usage = await openUsageStore(home, log);
   const deps: BootDeps = { ...given, agents, secret, usage };
-  if (raw === undefined) return bootSetupMode(home, log, language, deps);
-  const parsed = parseOrFallback(raw, log);
-  if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, parsed.fallback, parsed.proposed);
-  const { config } = parsed;
-  log.setLevel(config.logLevel);
-  // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included
+  // #190: the model opens before the boot adapters, so each one stores its items there, a reused one included. #401: setup mode gets it too,
+  // since the server wires it once: the first Settings save leaves setup mode in place, and its adapters and the read routes need it
   const readModel = await openModel(home, log);
-  const items = readModel && bootItemStore(readModel, config, log);
-  // A test injects a source that needs no gh (#740); the daemon builds the real adapters
-  const build: SourceFactory = given.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
-  let sources: Map<string, Source>;
   try {
-    sources = createSources(config, (spec) => build(spec, items));
+    return await bootMode(home, log, language, deps, raw, readModel);
   } catch (err) {
-    readModel?.close(); // the boot fails: nothing else would close the handle just opened
+    readModel?.close(); // the boot fails (a config that cannot parse, a failed bind): nothing else would close the handle just opened
     throw err;
   }
+}
+
+async function bootMode(home: string, log: Logger, language: Language, deps: BootDeps, raw: unknown, readModel: ReadModel | undefined): Promise<BootedHive> {
+  if (raw === undefined) return bootSetupMode(home, log, language, deps, readModel);
+  const parsed = parseOrFallback(raw, log);
+  if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, readModel, parsed.fallback, parsed.proposed);
+  const { config } = parsed;
+  log.setLevel(config.logLevel);
+  const items = readModel && bootItemStore(readModel, config, log);
+  // A test injects a source that needs no gh (#740); the daemon builds the real adapters
+  const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
+  const sources = createSources(config, (spec) => build(spec, items));
   let resolved: Map<string, Source>;
   try {
     // #291: a source the network kept out is no broken config: hive mode with it unresolved, the tasks from the read model, a later poll resolves it
     resolved = await resolveSources(sources, { deferOffline: true, log });
   } catch (err) {
-    readModel?.close(); // setup mode runs no read sync
     // A saved config whose source is gone (a GitHub Project deleted, access revoked) must not kill the app: reopen the settings form with the reason, which names the source (#180).
     const error = (err as Error).message;
     log.error(`source: ${error}`);
-    return bootSetupMode(home, log, language, deps, { config, error });
+    return bootSetupMode(home, log, language, deps, readModel, { config, error });
   }
   return bootHiveMode(home, log, language, deps, config, resolved, readModel);
 }
 
-// The daemon's read model (#180): opened by bootLocked before the boot adapters (#190), under the hive.lock bootHive already holds, and closed
-// when the boot falls back to setup mode. openReadModel imports node:sqlite itself, so its warning stays in the process that opens it. A file
+// The daemon's read model (#180): opened by bootLocked before the boot adapters (#190), under the hive.lock bootHive already holds, in either
+// mode (#401); the server closes it. openReadModel imports node:sqlite itself, so its warning stays in the process that opens it. A file
 // it cannot open is no reason to stop the Hive: logged, and no read sync runs.
 async function openModel(home: string, log: Logger): Promise<ReadModel | undefined> {
   try {
@@ -204,7 +207,7 @@ function withCommands(raw: unknown): unknown {
 
 // No hive.config.json (or one whose source cannot be read): serve only the settings form; POST /settings finishes the boot in place.
 async function bootSetupMode(
-  home: string, log: Logger, language: Language, deps: BootDeps,
+  home: string, log: Logger, language: Language, deps: BootDeps, readModel: ReadModel | undefined,
   setupFallback?: ServerDeps['setupFallback'], proposed?: string,
 ): Promise<BootedHive> {
   log.info(`boot home=${home} mode=setup reason=${setupFallback?.error ?? 'no hive.config.json'}`);
@@ -212,7 +215,8 @@ async function bootSetupMode(
   // level. A viewer launched from the Dock has cwd `/`, so it proposes nothing (#202).
   const cwd = process.cwd();
   const proposedWorkspace = proposed ?? (setupFallback?.config === undefined && (await workspacePathProblem(cwd)) === undefined ? cwd : undefined);
-  const server = createServer({ home, setupFallback, proposedWorkspace, log, systemLanguage: language, ...deps });
+  // The read loop idles until the save sets a config: a round with no repositories reads no login and sends no request
+  const server = createServer({ home, setupFallback, proposedWorkspace, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
   const bound = await listenAndRecord(server, home, deps.secret);
   console.log(`Agent Hive em modo setup em http://127.0.0.1:${bound} (home: ${home}, pid ${process.pid}, ${setupFallback?.error ?? 'sem hive.config.json'})`);
   return { port: bound, server };
