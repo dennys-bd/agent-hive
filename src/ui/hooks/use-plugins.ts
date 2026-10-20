@@ -31,9 +31,11 @@ export function usePlugins(isShown: boolean): Plugins {
   const [filter, setFilter] = useState<string>();
   const [isCreating, setCreating] = useState(false);
   const reads = useRef(0);
-  // The filter belongs to one list (decision 12): another section's list starts unfiltered
+  // The filter belongs to one list (decision 12): another section's list starts unfiltered. A form left open on one screen kind never
+  // opens on another (#334): "+ server" and "new skill" share isCreating
   const open = useCallback((next: PluginScreen): void => {
     if (next.kind === 'list' && (screen.kind !== 'list' || screen.section !== next.section)) setFilter(undefined);
+    if (next.kind !== screen.kind) setCreating(false);
     setScreen(next);
   }, [screen]);
   // The server logs a failed read's detail (ITEMS_ERROR_MESSAGE); anything but a list is a failure too
