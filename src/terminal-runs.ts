@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isAbsolute, relative, sep } from 'node:path';
 import { isLocalActivityId, taskOfActivity } from './activities.js';
 import { ranAgent } from './agents.js';
 import { localSessionsOf } from './local-sessions.js';
@@ -20,6 +21,21 @@ export const terminalSlug = (state: State, terminal: Terminal): string =>
 /** The live plain terminal with that id: the only kind that sleeps. */
 export const liveShell = (state: Pick<State, 'terminals'>, terminalId: string): Terminal | undefined =>
   state.terminals.find((t) => t.terminalId === terminalId && t.command === undefined && t.asleep === undefined);
+
+// What the shim's read loop cannot take (#696): a folder holding a line break would split it
+const LINE_BREAK = /[\r\n]/;
+
+const isWithin = (path: string, root: string): boolean => {
+  const rel = relative(root, path);
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+};
+
+/** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line inside `root` (the terminal's own folder), else
+ * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
+ * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. Here, not in shim.ts, since the reducer reads it too (#347) and
+ * shim.ts imports the reducer's isUuid. */
+export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
+  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
 
 /** The free sessions the shim captured in a terminal (#696) end with it: their claude dies with its shell, so their runs close as their exit
  * would. */

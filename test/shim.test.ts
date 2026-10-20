@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedCwd, capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
+import { capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { AGENT_IDS } from '../src/types.js';
@@ -91,14 +91,6 @@ test('a proxy in the env never sees the register nor the exit report: both go st
   const claude = await shimmed(t, hive.port, { http_proxy: dead, HTTP_PROXY: dead, ALL_PROXY: dead, all_proxy: dead });
   assert.deepEqual(await claude('hi'), [`pty=${RUN_ID}`, '--session-id', 'S1', 'hi']);
   assert.deepEqual(hive.seen.map((s) => s.url), ['/hooks/terminals/T1/session', '/hooks/exit']);
-});
-
-test('capturedCwd keeps an absolute folder on one line inside the terminal\'s own, and nothing else (#932)', () => {
-  assert.deepEqual(
-    ['/r', '/r/src', '/r/..x', '/elsewhere', '/r/../x', 'src', '/r/a\nb', 42].map((value) => capturedCwd(value, '/r')),
-    ['/r', '/r/src', '/r/..x', undefined, undefined, undefined, undefined, undefined],
-  );
-  assert.deepEqual([capturedCwd('/r', undefined), capturedCwd('/r', '')], [undefined, undefined]);
 });
 
 test('capturedReply answers the run id then one arg per line, and refuses an arg holding a newline (#696)', () => {

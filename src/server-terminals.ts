@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { requireWorkspace } from './config.js';
-import { capturedCwd, capturedReply, shimPath } from './shim.js';
+import { capturedReply, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
@@ -15,7 +15,7 @@ import { errorMessage } from './server-review.js';
 import { taskProtocol } from './server-spawn.js';
 import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
-import { liveShell } from './terminal-runs.js';
+import { capturedCwd, liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { AGENT_IDS, type Activity, type Config, type Effect, type Exec, type HiveEvent, type State, type Task, type Worker } from './types.js';
 

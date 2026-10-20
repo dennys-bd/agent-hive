@@ -1,5 +1,5 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // The agents' shim (#696, #924, #932): one template, assets/bin/shim, rendered per agent with its command, its first-arg passthrough words and
@@ -43,14 +43,3 @@ const LINE_BREAK = /[\r\n]/;
  * and never evaluates. Undefined when an arg holds a line break: the route refuses the register rather than send a split arg. */
 export const capturedReply = (runId: string, args: string[]): string | undefined =>
   (args.some((arg) => LINE_BREAK.test(arg)) ? undefined : [runId, ...args].join('\n'));
-
-/** The folder the shim ran in (#932), as posted: kept when it is an absolute path on one line inside `root` (the terminal's own folder), else
- * undefined and the register falls back to the terminal's cwd. Codex trusts the run's folder outright, so a folder the Hive does not manage (a
- * repository cloned and cd'ed into) keeps Codex's own folder-trust screen. */
-export const capturedCwd = (value: unknown, root: string | undefined): string | undefined =>
-  (typeof value === 'string' && isAbsolute(value) && !LINE_BREAK.test(value) && root !== undefined && root !== '' && isWithin(value, root) ? value : undefined);
-
-const isWithin = (path: string, root: string): boolean => {
-  const rel = relative(root, path);
-  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-};
