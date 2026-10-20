@@ -15,7 +15,7 @@ const box = () => within(screen.getByRole('region', { name: 'mergear' }));
 const AWAITING: State = { ...WITH_TASK, activities: [{ ...WITH_TASK.activities[0], approval: { since: '2026-09-30T09:00:00.000Z' } }] };
 const CONFLICT = prData({ mergeState: 'conflicts' });
 const SID = 'aaaaaaaa-1111-4111-8111-111111111111';
-const LIVE_WORKER = { id: 's1', status: 'working' as const, runId: 'W1', activityId: 'a-I1', freeSession: true, sessionId: SID };
+const LIVE_WORKER = { id: 's1', status: 'working' as const, runId: 'W1', activityId: 'a-I1', freeSession: true as const, sessionId: SID };
 const FEEDBACK: State = { ...AWAITING, transitions: [{ from: 'dev', to: 'dev', when: 'feedback' }] }; // dev takes feedback
 // The box over `pr`, task I1's when `state` holds it; the run opener and onSettled spies; onMerged only when given (#69)
 function renderBox(pr: PrData, state: State = WITH_TASK, onMerged?: () => void) {
