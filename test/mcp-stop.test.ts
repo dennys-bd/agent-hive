@@ -10,6 +10,7 @@ import { BLOCK_MESSAGE, BLOCK_WITH_REASON_MESSAGE, CANNOT_BLOCK_MESSAGE, mountMc
 import { initialState } from '../src/orchestrator.js';
 import type { RelateOutcome } from '../src/server-blockers.js';
 import type { RecordInput } from '../src/events.js';
+import { MCP_DEFAULTS } from '../src/types.js';
 import type { BlockerChange, Config, HiveEvent, State, Task, Worker } from '../src/types.js';
 import { fakeEvents } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
@@ -39,7 +40,7 @@ async function harness(t: TestContext, { refused = [], closed = [], canRelate = 
   };
   const app = express().use(express.json());
   mountMcp(app, {
-    exec: async () => ({ stdout: '' }), live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined,
+    exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); return []; }, canClose: () => true, relate, canRelate: () => canRelate,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
   });

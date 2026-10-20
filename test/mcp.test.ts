@@ -21,7 +21,7 @@ import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import type { Activity, Config, Exec, SourceConfig, State, Task, ItemAction, ReviewFile, SettingsBody, Worker, Workspace } from '../src/types.js';
 import { FEEDBACK_MAX, type MemoryFile } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { AUTH, STAGES, fakeEvents, fakeSourceFactory, GITHUB_ENTRY, fakeLog, fakeSpawn, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import type { RecordInput } from '../src/events.js';
 import { SECRET_HEADER } from '../src/secret.js';
@@ -392,7 +392,7 @@ test('a handler that throws still writes mcp.call with outcome error at error, a
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   mountMcp(app, {
     exec: async () => ({ stdout: '' }),
-    live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
+    live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined, dispatch: async () => { throw new Error('reducer'); }, canClose: () => false,
     relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
   });
@@ -538,4 +538,15 @@ test('hive_stop with block on a hive task writes the relation through blockerSet
   const local = server.getState()!.tasks.find((c) => c.item.id === 'HIVE-1')!;
   assert.deepEqual([local.item.blockedBy, activityOf(server.getState()!, local.item.itemId)?.stopped], [['HIVE-2'], undefined]);
   assert.equal(server.getState()!.workers.some((w) => w.status !== 'empty'), false, 'the fill does not take it back while blocked');
+});
+
+test('a tool turned off in mcp.off leaves tools/list and a call to it gets the SDK\'s unknown-tool answer; the locked tools stay (#333)', async (t) => {
+  const { base, ptyId, repo } = await start(t);
+  const off = await hiveFetch(`${base}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo), mcp: { off: ['hive_remember'], servers: [] } }) });
+  assert.equal(off.status, 200);
+  const client = await connect(t, base, ptyId);
+  assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), ['hive_applied', 'hive_ask', 'hive_conventions', 'hive_create_task', 'hive_done', 'hive_pr', 'hive_reply', 'hive_stop']);
+  const answer = await call(client, 'hive_remember', { kind: 'fact', text: 'x' });
+  assert.equal(answer.isError, true);
+  assert.match(answer.text, /Tool hive_remember not found/);
 });
