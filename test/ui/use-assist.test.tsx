@@ -124,3 +124,15 @@ test("accept writes the answer's text and saves it; discard writes nothing; both
   await waitFor(() => expect(result.current.editor.isDirty('SKILL.md.liquid')).toBe(false));
   expect(result.current.editor.textOf('SKILL.md.liquid')).toBe(ANSWER.text);
 });
+
+test('an accept the editor refuses is the answer line, not a silent drop (#331)', async () => {
+  stubItems(serverOf({ assist: () => json(ANSWER) }));
+  const { result } = await opened();
+  const applyEdit = vi.fn(() => 'plugins.variables.error.invalid' as const);
+  const editor = { ...result.current.editor, applyEdit };
+  const { result: assist } = renderHook(() => useAssist({ editor, path: 'SKILL.md.liquid', pick: CLAUDE, isWritable: true }));
+  act(() => assist.current.ask('two sentences'));
+  await waitFor(() => expect(assist.current.status).toBe('proposed'));
+  act(() => assist.current.accept());
+  expect([assist.current.status, assist.current.line, applyEdit.mock.calls.length]).toEqual(['idle', 'plugins.variables.error.invalid', 1]);
+});

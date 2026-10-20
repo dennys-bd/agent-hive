@@ -11,12 +11,12 @@ const PLACEHOLDER = 'pedir ao agente… selecione um trecho para mudar só ele';
 const PROPOSAL = { from: 9, to: 9, text: 'Intro.\nThen /hive:new-pr.' };
 const ANSWER: AssistAnswer = { proposal: PROPOSAL, hunk: proposalHunk(BUILD_TEXT, PROPOSAL), text: applyProposal(BUILD_TEXT, PROPOSAL), changed: true };
 const CLAUDE: AssistPick = { agent: 'claude', model: '' };
-const assistOf = (extra: Partial<Assist> = {}): Assist => ({ status: 'idle', ask: vi.fn(), accept: vi.fn(), discard: vi.fn(), ...extra });
+const assistOf = (extra: Partial<Assist> = {}): Assist => ({ status: 'idle', ask: vi.fn(() => true), accept: vi.fn(), discard: vi.fn(), ...extra });
 const field = (): HTMLInputElement => screen.getByPlaceholderText(PLACEHOLDER);
 const chip = (): HTMLButtonElement => screen.getByRole('button', { name: 'agente e modelo' });
-interface Extra { pick?: AssistPick; isDisabled?: boolean; onAsk?(request: string): void; onPick?(pick: AssistPick): void }
+interface Extra { pick?: AssistPick; isDisabled?: boolean; onAsk?(request: string): boolean; onPick?(pick: AssistPick): void }
 const footer = (assist: Assist, extra: Extra = {}) => (
-  <AssistFooter assist={assist} pick={extra.pick ?? CLAUDE} onPick={extra.onPick ?? vi.fn()} workspace="agent-hive" isDisabled={extra.isDisabled ?? false} onAsk={extra.onAsk ?? vi.fn()} />
+  <AssistFooter assist={assist} pick={extra.pick ?? CLAUDE} onPick={extra.onPick ?? vi.fn()} workspace="agent-hive" isDisabled={extra.isDisabled ?? false} onAsk={extra.onAsk ?? vi.fn(() => true)} />
 );
 
 beforeEach(() => {
@@ -26,7 +26,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 test('⌘I focuses the field; Enter sends the trimmed request and empties the field; an empty one sends nothing (#331)', () => {
-  const onAsk = vi.fn();
+  const onAsk = vi.fn(() => true);
   render(footer(assistOf(), { onAsk }));
   fireEvent.keyDown(document.body, { key: 'i', code: 'KeyI', ctrlKey: true });
   expect(field()).toHaveFocus();
@@ -74,4 +74,11 @@ test('the chip names the pick; its list holds only the available agents, and ano
   fireEvent.click(chip());
   const agents = within(await screen.findByRole('group', { name: 'agente' })).getAllByRole('button');
   expect(agents.map((button) => button.textContent)).toEqual(['claude']);
+});
+
+test('a request nothing sent keeps the draft in the field (#331)', () => {
+  render(footer(assistOf(), { onAsk: () => false }));
+  fireEvent.change(field(), { target: { value: 'two sentences' } });
+  fireEvent.keyDown(field(), { key: 'Enter' });
+  expect(field().value).toBe('two sentences');
 });

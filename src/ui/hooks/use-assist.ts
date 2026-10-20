@@ -14,7 +14,7 @@ export interface Assist {
   request?: string; // the last request sent, for the request line
   answer?: AssistAnswer; // only while status is 'proposed'
   line?: MessageKey; // an idle footer's answer line: no change, or a refusal's copy
-  ask(request: string, selection?: LineSelection): void;
+  ask(request: string, selection?: LineSelection): boolean; // false when nothing was sent
   accept(): void;
   discard(): void;
 }
@@ -65,9 +65,9 @@ export function useAssist({ editor, path, pick, isWritable }: AssistArgs): Assis
   useEffect(() => () => { flight.current?.abort(); setLocked(false); }, [setLocked]);
   useEffect(() => { setLocked(state.status !== 'idle'); }, [state.status, setLocked]);
   useEffect(() => { if (!isWritable) drop(); }, [isWritable, drop]);
-  const ask = (request: string, selection?: LineSelection): void => {
+  const ask = (request: string, selection?: LineSelection): boolean => {
     const trimmed = request.trim();
-    if (trimmed === '' || state.status !== 'idle' || !isWritable || editor.item === undefined) return;
+    if (trimmed === '' || state.status !== 'idle' || !isWritable || editor.item === undefined) return false;
     const text = editor.textOf(path);
     const within = selectionIn(text, selection);
     const controller = new AbortController();
@@ -82,13 +82,15 @@ export function useAssist({ editor, path, pick, isWritable }: AssistArgs): Assis
         setState({ status: 'idle', request: trimmed, line: refusalOf(err) });
       },
     );
+    return true;
   };
   return {
     ...state, ask,
     accept: () => {
       if (state.answer === undefined) return;
-      editor.applyEdit({ ok: true, text: state.answer.text }, { isSaveForced: true });
-      setState(IDLE);
+      // a refused edit is the answer line, not a silent drop
+      const refusal = editor.applyEdit({ ok: true, text: state.answer.text }, { isSaveForced: true });
+      setState(refusal === undefined ? IDLE : { status: 'idle', request: state.request, line: refusal });
     },
     discard: () => setState(IDLE),
   };

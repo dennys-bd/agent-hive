@@ -16,7 +16,7 @@ import { markedLines } from '@/lib/assist-view';
 import { isSettingsClosed, onShortcutKey } from '@/lib/dock-layout';
 import { binding, isMac } from '@/lib/shortcut-bindings';
 
-interface AssistFooterProps { assist: Assist; pick: AssistPick; onPick(pick: AssistPick): void; workspace?: string; isDisabled: boolean; onAsk(request: string): void }
+interface AssistFooterProps { assist: Assist; pick: AssistPick; onPick(pick: AssistPick): void; workspace?: string; isDisabled: boolean; onAsk(request: string): boolean }
 interface ChipProps { pick: AssistPick; onPick(pick: AssistPick): void; workspace?: string; isDisabled: boolean }
 
 // The agent's mark in its own colour, as the launch menus' agent select draws it; the rest of the chip stays neutral
@@ -87,14 +87,17 @@ export function AssistFooter({ assist, pick, onPick, workspace, isDisabled, onAs
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState('');
   useEffect(() => onShortcutKey([[true, 'askAgent']], () => input.current?.focus(), isSettingsClosed), []);
+  // A refused request (busy, unavailable, failed) hands the field its words back; "no change" was answered, so it stays empty
+  useEffect(() => {
+    if (assist.status === 'idle' && assist.line !== undefined && assist.line !== 'plugins.assist.noChange') setDraft((kept) => (kept === '' ? assist.request ?? '' : kept));
+  }, [assist.status, assist.line, assist.request]);
   const keys = binding('askAgent');
   const send = (event: KeyboardEvent<HTMLInputElement>): void => {
     if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
     event.preventDefault();
     const request = draft.trim();
     if (request === '') return; // the route's schema refuses an empty request anyway
-    onAsk(request);
-    setDraft('');
+    if (onAsk(request)) setDraft('');
   };
   return (
     <div className="flex flex-col gap-2 border-t px-3 py-2 text-xs">
