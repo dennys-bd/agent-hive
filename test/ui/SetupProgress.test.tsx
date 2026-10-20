@@ -1,0 +1,86 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { SetupProgressView } from '@/components/SetupProgress';
+import { ConsoleContext } from '@/hooks/use-console';
+import { setLanguage } from '@/i18n';
+import type { SetupRow, SetupRowStatus } from '../../src/types';
+
+const CONSOLE = 'setup:I9';
+const SESSION = 'iniciar sessão claude na etapa backlog';
+const HISTORY = ['── #9 · setup · 10:00:00 ──', '> git -C /repo worktree add', 'ok 120ms', '> RUN pnpm install', 'added 12 packages', 'ok 34000ms', '> RUN pnpm build', 'building'].join('\r\n');
+const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+const step = (label: string, status: SetupRowStatus, extra: Partial<SetupRow> = {}): SetupRow => ({ kind: 'step', status, label, header: `RUN ${label}`, ...extra });
+const PREPARED: SetupRow[] = [{ kind: 'worktree', status: 'done', durationMs: 1200 }, { kind: 'branch', status: 'done', branch: 'hive/9-landing-hero', base: 'origin/main' }];
+const ago = (ms: number): string => new Date(Date.now() - ms).toISOString();
+const view = (rows: SetupRow[], extra: { status?: SetupRowStatus; isFailed?: boolean; onClose?: () => void; onRetry?: () => void } = {}) => (
+  <SetupProgressView progress={{ consoleId: CONSOLE, rows }} isLive={false} isFailed={extra.isFailed ?? false}
+    session={{ text: SESSION, status: extra.status ?? 'queued' }} onClose={extra.onClose ?? vi.fn()} onRetry={extra.onRetry ?? vi.fn()} />
+);
+const rowOf = (text: string): HTMLElement => screen.getAllByText(text).flatMap((el) => el.closest('li') ?? [])[0];
+
+beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', vi.fn(async () => reply({ history: HISTORY, live: [], status: 'running' }))); });
+afterEach(() => vi.unstubAllGlobals());
+
+test('each row shows its icon and value: a time when done, executando and its clock, aguardando, falhou with its exit code, its timeout or nothing more (#390)', () => {
+  render(view([...PREPARED, step('pnpm install', 'running', { startedAt: ago(34_000) }), step('pnpm build', 'queued'),
+    step('pnpm a', 'failed', { code: '1' }), step('pnpm b', 'failed', { code: 'timeout' }), step('COPY .env', 'failed')]));
+  expect(rowOf('worktree criada')).toHaveTextContent('1s');
+  expect(rowOf('worktree criada').querySelector('svg')).not.toBeNull(); // lucide check
+  expect(rowOf('hive/9-landing-hero')).toHaveTextContent('branch hive/9-landing-hero a partir de origin/main');
+  expect(rowOf('pnpm install')).toHaveTextContent(/●.*setup · pnpm install.*executando · 3\ds/);
+  expect(rowOf('pnpm build')).toHaveTextContent(/○.*aguardando/);
+  expect(rowOf('pnpm a')).toHaveTextContent(/×.*falhou · exit 1/);
+  expect(rowOf('pnpm b')).toHaveTextContent('falhou · timeout');
+  expect(rowOf('COPY .env')).toHaveTextContent(/falhou$/);
+  expect(screen.getByText(/^pode fechar: o setup continua em segundo plano/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'preparando worktree…' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'fechar' })).toBeEnabled();
+});
+
+test('the bar is the rows done over all of them, the session row included; the session row is queued, running or done (#390)', () => {
+  const { rerender } = render(view([...PREPARED, step('pnpm install', 'running', { startedAt: ago(0) }), step('pnpm build', 'queued')]));
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40'); // 2 of 5
+  expect(rowOf(SESSION)).toHaveTextContent('○');
+  const done = [...PREPARED, step('pnpm install', 'done', { durationMs: 1000 }), step('pnpm build', 'done', { durationMs: 1000 })];
+  rerender(view(done, { status: 'running' }));
+  expect(rowOf(SESSION)).toHaveTextContent('●');
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '80');
+  rerender(view(done, { status: 'done' }));
+  expect(rowOf(SESSION).querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+});
+
+test('the log follows the running row; a pick of another stays on it until the running row is picked again (#390)', async () => {
+  const user = userEvent.setup();
+  const select = (): HTMLElement => screen.getByRole('combobox', { name: 'log' });
+  const at = ago(0);
+  const { rerender } = render(view([...PREPARED, step('pnpm install', 'done', { durationMs: 34_000 }), step('pnpm build', 'running', { startedAt: at }), step('pnpm test', 'queued'), step('pnpm lint', 'queued')]));
+  await waitFor(() => expect(screen.getByText('building')).toBeInTheDocument());
+  expect(select()).toHaveTextContent('pnpm build');
+  const testing = [...PREPARED, step('pnpm install', 'done', { durationMs: 34_000 }), step('pnpm build', 'done', { durationMs: 9_000 }), step('pnpm test', 'running', { startedAt: at }), step('pnpm lint', 'queued')];
+  rerender(view(testing));
+  expect(select()).toHaveTextContent('pnpm test');
+  await user.click(select());
+  await user.click(screen.getByRole('option', { name: 'pnpm install' }));
+  expect(screen.getByText('added 12 packages')).toBeInTheDocument();
+  rerender(view([...testing])); // a new list, the same running row
+  expect(select()).toHaveTextContent('pnpm install');
+  await user.click(select());
+  await user.click(screen.getByRole('option', { name: 'pnpm test' }));
+  rerender(view([...testing.slice(0, 4), step('pnpm test', 'done', { durationMs: 2_000 }), step('pnpm lint', 'running', { startedAt: at })]));
+  expect(select()).toHaveTextContent('pnpm lint');
+});
+
+test('abrir no console opens the run in the console and closes the dialog; a failed view offers tentar de novo (#390)', async () => {
+  const user = userEvent.setup();
+  const open = vi.fn();
+  const onClose = vi.fn();
+  const onRetry = vi.fn();
+  render(<ConsoleContext.Provider value={open}>{view([...PREPARED, step('pnpm install', 'failed', { durationMs: 40, code: '1' })], { isFailed: true, onClose, onRetry })}</ConsoleContext.Provider>);
+  await user.click(screen.getByRole('button', { name: 'abrir no console' }));
+  expect(open).toHaveBeenCalledWith('setup', CONSOLE, true);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button', { name: 'tentar de novo' }));
+  expect(onRetry).toHaveBeenCalledTimes(1);
+});
