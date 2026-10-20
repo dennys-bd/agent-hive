@@ -205,3 +205,17 @@ test('a lesson saved while a settings write is queued rewrites with that write\'
   await Promise.all([settings, lesson]);
   assert.deepEqual(asked, [['hive_applied'], ['hive_applied']]);
 });
+
+test('a lesson from a local session and a citation with no task parse, beside every older shape; a task, when there is one, is still a string (#256)', () => {
+  const file: MemoryFile = {
+    nextId: 4,
+    entries: [
+      { ...entry(1, 'fact', 'x'), origin: 'local', uses: 1, lastUsed: { at: AT, why: 'from a local session' } },
+      { ...entry(2, 'pref', 'y'), origin: { task: '812', stage: 'build' }, uses: 1, lastUsed: { at: AT, task: '812', stage: 'build', why: 'ran it' } },
+      { ...entry(3, 'avoid', 'z'), origin: { task: '790' } },
+    ],
+  };
+  assert.deepEqual(parseMemory(JSON.parse(JSON.stringify(file))), file);
+  assert.throws(() => parseMemory({ nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), origin: 'tasks' }] }), /not a memory file/);
+  assert.throws(() => parseMemory({ nextId: 2, entries: [{ ...entry(1, 'fact', 'x'), uses: 1, lastUsed: { at: AT, task: 812, why: 'x' } }] }), /not a memory file/);
+});

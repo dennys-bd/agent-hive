@@ -63,9 +63,11 @@ export function lessonRefusal(text: string): MemoryRefusal | undefined {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isCount = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0;
 const isOptionalString = (value: unknown): boolean => value === undefined || typeof value === 'string';
-const isOrigin = (value: unknown): value is MemoryOrigin => value === 'user' || (isObject(value) && typeof value.task === 'string' && isOptionalString(value.stage));
+const isOrigin = (value: unknown): value is MemoryOrigin =>
+  value === 'user' || value === 'local' || (isObject(value) && typeof value.task === 'string' && isOptionalString(value.stage));
+// #256: a local session's citation names no task
 const isUse = (value: unknown): value is MemoryUse =>
-  isObject(value) && typeof value.at === 'string' && typeof value.task === 'string' && isOptionalString(value.stage) && typeof value.why === 'string';
+  isObject(value) && typeof value.at === 'string' && isOptionalString(value.task) && isOptionalString(value.stage) && typeof value.why === 'string';
 const ID = /^m-[1-9]\d*$/;
 
 function isEntry(value: unknown): value is MemoryEntry {

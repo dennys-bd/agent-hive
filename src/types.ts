@@ -1856,8 +1856,8 @@ export type LaunchPty = (launch: PtyLaunch, handlers: PtyHandlers, options?: Spa
 export const MEMORY_KINDS = ['pref', 'fact', 'avoid'] as const;
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 export const isMemoryKind = (value: unknown): value is MemoryKind => typeof value === 'string' && (MEMORY_KINDS as readonly string[]).includes(value);
-export type MemoryOrigin = 'user' | { task: string; stage?: string }; // task: the visible id; stage only for a stage run
-export interface MemoryUse { at: string; task: string; stage?: string; why: string } // the latest hive_applied
+export type MemoryOrigin = 'user' | 'local' | { task: string; stage?: string }; // local: a local session's (#256); task: the visible id; stage only for a stage run
+export interface MemoryUse { at: string; task?: string; stage?: string; why: string } // the latest hive_applied; task absent: a local session's (#256)
 export interface MemoryEntry {
   id: string; kind: MemoryKind; text: string; origin: MemoryOrigin;
   at: string; // ISO time of the last write of kind or text
