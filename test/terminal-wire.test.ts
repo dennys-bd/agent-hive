@@ -117,3 +117,10 @@ test('describeKeys writes the probe\'s pinned line: events joined by " · ", +<m
     'keydown "\'" Quote composing=true · +12 data len=5 · +13 data "\\u001b"',
   );
 });
+
+test('parsePtyMessage keeps a resize\'s redraw only when it is exactly true; any other value is left out and the size still parses (#389)', () => {
+  assert.deepEqual(parsePtyMessage('{"type":"resize","cols":120,"rows":40,"redraw":true}'), { type: 'resize', cols: 120, rows: 40, redraw: true });
+  for (const redraw of ['"yes"', '1', 'false', 'null', '{}']) {
+    assert.deepEqual(parsePtyMessage(`{"type":"resize","cols":120,"rows":40,"redraw":${redraw}}`), { type: 'resize', cols: 120, rows: 40 }, redraw);
+  }
+});

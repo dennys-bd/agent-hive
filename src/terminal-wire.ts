@@ -61,8 +61,12 @@ export interface KeyProbeEvent {
   length?: number; // a data event's length when its data was too long to keep
 }
 
-/** What a terminal's WebSocket sends the daemon (#407): its keys, every new grid a fit gives, and the dead-key probe's batches (#732). */
-export type PtyMessage = { type: 'input'; data: string } | { type: 'resize'; cols: number; rows: number } | { type: 'keys'; events: KeyProbeEvent[] };
+/** What a terminal's WebSocket sends the daemon (#407): its keys, every new grid a fit gives, and the dead-key probe's batches (#732). A
+ * resize's redraw (#389) asks the host to make the program redraw even when the pty already has the grid. */
+export type PtyMessage =
+  | { type: 'input'; data: string }
+  | { type: 'resize'; cols: number; rows: number; redraw?: true }
+  | { type: 'keys'; events: KeyProbeEvent[] };
 
 // #732: a probe frame comes from the page like any other. Its strings are capped, so a crafted one cannot fill hive.log, and so is the batch
 export const PROBE_STRING_MAX = 16;
@@ -99,9 +103,10 @@ export function parsePtyMessage(raw: string): PtyMessage | undefined {
     return undefined;
   }
   if (typeof value !== 'object' || value === null) return undefined;
-  const { type, data, events } = value as Record<string, unknown>;
+  const { type, data, events, redraw } = value as Record<string, unknown>;
   if (type === 'input') return typeof data === 'string' ? { type: 'input', data } : undefined;
-  if (type === 'resize' && isSize(value)) return { type: 'resize', cols: value.cols, rows: value.rows };
+  // #389: anything but true is no redraw, never a refusal: the size still reaches the pty
+  if (type === 'resize' && isSize(value)) return { type: 'resize', cols: value.cols, rows: value.rows, ...(redraw === true && { redraw: true as const }) };
   // the batch is cut before its events are read, so a huge array costs nothing past the cap
   if (type === 'keys') return Array.isArray(events) ? { type: 'keys', events: events.slice(0, PROBE_BATCH_MAX).flatMap((e) => keyProbeEvent(e) ?? []) } : undefined;
   return undefined;
