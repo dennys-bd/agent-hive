@@ -15,6 +15,7 @@ import { USAGE_FILE } from '../src/usage-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceItem, SourceSpec, Task } from '../src/types.js';
 import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS, MCP_DEFAULTS } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive, claudePlan } from './fakes.js';
+import { settingsBody } from './review-server.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
 // A home with a Comb on a temp git repo: no source, zero workers, a port of its own (#466), so it boots without gh or a claude
@@ -85,7 +86,7 @@ test('bootHive falls back to setup mode when the configured source is unusable',
   assert.equal(info.proposedWorkspace, undefined, 'a saved config prefills the form: nothing is proposed');
 });
 
-test('bootHive opens the read model before the boot adapters and hands it to each; a fallback to setup mode closes it (#190)', async (t) => {
+test('bootHive opens the read model before the boot adapters and hands it to each; a fallback to setup mode keeps it for the next save (#190, #401)', async (t) => {
   const stores: (ItemStore | undefined)[] = [];
   const recording = (build: (spec: SourceSpec) => Source) => (spec: SourceSpec, items?: ItemStore): Source => {
     stores.push(items);
@@ -98,10 +99,29 @@ test('bootHive opens the read model before the boot adapters and hands it to eac
 
   const broken = await hiveWithConfig(t, WITH_SOURCE);
   const setup = await bootHive(broken.home, { sourceFactory: recording(unreadable) });
+  t.after(() => setup.server.close()); // a second close() is a no-op: this one only covers a failed assertion
+  const kept = stores.at(-1);
+  assert.ok(kept !== undefined, 'the boot adapter got the store');
+  assert.deepEqual(kept.db.listing('github:github.com:bia', 'acme/6'), [], 'open: leaving setup mode by a save reads it');
+  await setup.server.close();
+  assert.throws(() => kept.db.listing('github:github.com:bia', 'acme/6'), 'the server closes it');
+});
+
+test('bootHive in setup mode hands the read model to the first Settings save, so leaving setup mode needs no restart (#401)', async (t) => {
+  const stores: (ItemStore | undefined)[] = [];
+  const { home, repo } = await tempHive(t); // no hive.config.json: setup mode
+  const setup = await bootHive(home, {
+    sourceFactory: (spec, items) => {
+      stores.push(items);
+      return fakeSourceFactory().factory(spec);
+    },
+  });
   t.after(() => setup.server.close());
-  const closed = stores.at(-1);
-  assert.ok(closed !== undefined, 'the boot adapter got the store');
-  assert.throws(() => closed.db.listing('github:github.com:bia', 'acme/6'), 'closed: setup mode runs no read sync');
+  const body = { ...settingsBody(repo, STAGES), auth: AUTH, sources: [GITHUB_ENTRY] };
+  const saved = await fetch(`http://127.0.0.1:${setup.port}/settings`, { method: 'POST', headers: { ...asClient(home), 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify(body) });
+  assert.equal(saved.status, 200, await saved.text());
+  assert.equal((await settingsInfo(home, setup.port)).configured, true);
+  assert.deepEqual(stores.at(-1)?.db.listing('github:github.com:bia', 'acme/6'), [], "the save's adapter stores its items in the open model");
 });
 
 test('bootHive sweeps the prompt files a previous run left, in hive mode and in setup mode; hive mode keeps the directory', async (t) => {
@@ -544,7 +564,7 @@ test('a hive.config.json without the four sleep notice keys opens setup mode wit
   assert.deepEqual([config?.comb.prefix, config?.sleepNotice, config?.sleepAutoNotice, config?.sleepIdleNotice, config?.sleepAllNotice], ['OLD', true, true, true, true]);
 });
 
-test('hive mode opens the read model in the home, and setup mode opens none (#180)', async (t) => {
+test('both modes open the read model in the home: setup mode keeps it for the save that leaves it (#180, #401)', async (t) => {
   const { home } = await hiveWithConfig(t, {});
   const hive = await bootHive(home);
   t.after(() => hive.server.close());
@@ -552,7 +572,7 @@ test('hive mode opens the read model in the home, and setup mode opens none (#18
   const empty = await tempDir(t, 'home-');
   const setup = await bootHive(empty);
   t.after(() => setup.server.close());
-  assert.equal(existsSync(join(empty, READ_MODEL_FILE)), false);
+  assert.equal(existsSync(join(empty, READ_MODEL_FILE)), true);
 });
 
 test('bootHive opens usage.sqlite in the home in hive mode and in setup mode, since a setup saved in place runs workers too (#271)', async (t) => {
