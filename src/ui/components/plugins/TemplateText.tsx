@@ -158,7 +158,7 @@ export function TemplateText(props: TemplateTextProps) {
   const view = useTemplateEditor(host, props);
   useLook(view, props);
   const scrollTop = useScrollTop(view);
-  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE } = props;
+  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly } = props;
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;
   const marks = annotations?.list ?? [];
   return (
@@ -168,7 +168,7 @@ export function TemplateText(props: TemplateTextProps) {
         <div className="relative w-[230px] shrink-0 overflow-hidden border-l">
           <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
-            <AnnotationMargin annotations={annotations} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
+            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
           )}
         </div>
       )}

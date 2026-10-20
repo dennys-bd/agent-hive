@@ -31,7 +31,7 @@ const keyOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.ti
 export const headlineOf = (a: EditorAnnotation): string => (isAgent(a) ? a.title : t(COPY[a.check].title, varsOf(a)));
 const bodyOf = (a: EditorAnnotation): string => (isAgent(a) ? a.body : t(COPY[a.check].body, varsOf(a)));
 
-interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number }
+interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number; canFix: boolean }
 
 function Headline({ annotation }: { annotation: EditorAnnotation }) {
   return (
@@ -42,7 +42,7 @@ function Headline({ annotation }: { annotation: EditorAnnotation }) {
   );
 }
 
-function Card({ annotation, annotations, top }: SlotProps) {
+function Card({ annotation, annotations, top, canFix }: SlotProps) {
   const isOpen = annotations.open === annotation;
   return (
     <article
@@ -57,7 +57,7 @@ function Card({ annotation, annotations, top }: SlotProps) {
       <p className="line-clamp-2 text-muted-foreground">{bodyOf(annotation)}</p>
       {!isAgent(annotation) && ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
       <span className="mt-auto flex gap-1">
-        {hasFix(annotation) && <Button type="button" size="xs" variant="outline" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
+        {canFix && hasFix(annotation) && <Button type="button" size="xs" variant="outline" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
         <Button type="button" size="xs" variant="ghost" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
       </span>
     </article>
@@ -76,8 +76,9 @@ function Note({ annotation, annotations, top }: SlotProps) {
 }
 
 /** The margin's annotations (#327, handoff 11b): a card where it covers nothing, else a one-line note that opens it. The open one is always a
- * card, drawn over the rest; Esc closes it. `tops[i]` is `annotations.list[i]`'s top, as the chips' are theirs. */
-export function AnnotationMargin({ annotations, tops, chipTops }: { annotations: Annotations; tops: readonly number[]; chipTops: readonly number[] }) {
+ * card, drawn over the rest; Esc closes it. `tops[i]` is `annotations.list[i]`'s top, as the chips' are theirs. #331: no fix while the text
+ * is read-only (the agent working or proposing, the read-only original). */
+export function AnnotationMargin({ annotations, tops, chipTops, canFix = true }: { annotations: Annotations; tops: readonly number[]; chipTops: readonly number[]; canFix?: boolean }) {
   const { list, open, close } = annotations;
   useEffect(() => {
     if (open === undefined) return undefined;
@@ -93,7 +94,7 @@ export function AnnotationMargin({ annotations, tops, chipTops }: { annotations:
       {list.map((annotation, index) => {
         const slot = slots[index];
         const Slot = slot.kind === 'card' || annotation === open ? Card : Note;
-        return <Slot key={keyOf(annotation)} annotation={annotation} annotations={annotations} top={slot.top} />;
+        return <Slot key={keyOf(annotation)} annotation={annotation} annotations={annotations} top={slot.top} canFix={canFix} />;
       })}
     </div>
   );

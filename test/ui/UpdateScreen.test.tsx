@@ -55,7 +55,7 @@ function View() {
   const annotations = useAnnotations(editor, plugins.items, WORKSPACES);
   return (
     <>
-      <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={WORKSPACES} fontFamily="monospace" />
+      <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={WORKSPACES} fontFamily="monospace" pick={{ agent: 'claude', model: '' }} onPick={() => undefined} />
       <button type="button" onClick={() => plugins.open({ kind: 'update', id: PLAN.id, version: 'mine' })}>open-update</button>
     </>
   );
