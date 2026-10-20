@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
 import { openReadModel, type ReadModel } from '../../src/read-model/db.js';
-import { readListing, storeListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
+import { fieldRowsOf, normalizeItem, readListing, storeListing, writeItem, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
+import { rebuildFieldsNode } from '../../src/read-model/items-rebuild.js';
 import { createSource, sourceSpec } from '../../src/source.js';
+import { itemFields } from '../../src/sources/github-fields.js';
 import { projectFields, projectItem, type ProjectRead } from '../../src/sources/github-project.js';
-import type { GhBlockerRef, GhItemNode, GhProjectField, GhPullRequest, RelationsData } from '../../src/sources/github-queries.js';
+import type { GhBlockerRef, GhItemFieldsNode, GhItemNode, GhProjectField, GhPullRequest, RelationsData } from '../../src/sources/github-queries.js';
 import type { SourceItem } from '../../src/types.js';
 import { combConfig, FIXED, fakeGql } from '../fakes.js';
 import { itemNode, SOURCE, T1, T2 } from './fixtures.js';
@@ -100,4 +102,36 @@ test('the contract through the adapter (#190): with a store, a full poll and a p
   assert.deepEqual(await stored.listItems(), wire);
   assert.deepEqual(await stored.listItems(), wire, 'read back with the stored relations');
   assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations', 'probe']);
+});
+
+// The editors' read (ITEM_FIELDS) of #2: its repository's choices in the order the read model keeps them, by name, issue types in the owner's
+const FIELDS_NODE: GhItemFieldsNode = {
+  ...hive(2, 'Ready', {
+    assignees: { nodes: [{ id: 'U_bia', login: 'bia' }] }, labels: { nodes: [{ id: 'L_bug', name: 'bug' }] }, milestone: { id: 'M_1', title: 'v1' },
+    issueType: { id: 'T_bug', name: 'Bug' },
+    repository: {
+      nameWithOwner: 'acme/r', assignableUsers: { nodes: [{ id: 'U_ana', login: 'ana' }, { id: 'U_bia', login: 'bia' }] },
+      labels: { nodes: [{ id: 'L_bug', name: 'bug' }, { id: 'L_docs', name: 'Docs' }] }, milestones: { nodes: [{ id: 'M_1', title: 'v1' }, { id: 'M_2', title: 'v2' }] },
+      issueTypes: { nodes: [{ id: 'T_task', name: 'Task' }, { id: 'T_bug', name: 'Bug' }] },
+    },
+  }, { fieldValues: EVERY_VALUE }),
+  project: { id: 'PVT_1', fields: { nodes: RAW_FIELDS } },
+};
+const SYNCED = { cursor: null, etag: 'E', syncedAt: T1 };
+
+test('the contract (#282): itemFields over the wire ITEM_FIELDS node equals itemFields over it stored and rebuilt, once the repository\'s options are stored', async () => {
+  const db = await memoryModel();
+  writeItem(db, normalizeItem(SOURCE, PROJECT, FIELDS_NODE), 'write');
+  db.setProjectFields(SOURCE, PROJECT, fieldRowsOf(RAW_FIELDS));
+  assert.equal(rebuildFieldsNode(db, SOURCE, PROJECT, 'PVTI_2'), undefined, 'no options synced yet: the editor reads live');
+  db.setLabels(SOURCE, 'acme/r', ['Docs', 'bug']);
+  db.setAssignees(SOURCE, 'acme/r', ['bia', 'ana']);
+  db.setMilestones(SOURCE, 'acme/r', ['v2', 'v1']);
+  db.setIssueTypes(SOURCE, 'acme', ['Task', 'Bug']);
+  for (const kind of ['labels', 'assignees', 'milestones'] as const) db.setScope(SOURCE, 'acme/r', kind, SYNCED);
+  db.setScope(SOURCE, 'acme', 'issueTypes', SYNCED);
+  const rebuilt = rebuildFieldsNode(db, SOURCE, PROJECT, 'PVTI_2');
+  assert.ok(rebuilt);
+  assert.deepEqual(itemFields(rebuilt), itemFields(FIELDS_NODE));
+  assert.equal(rebuildFieldsNode(db, SOURCE, 'acme/7', 'PVTI_2'), undefined, 'an item of another Project is not this one\'s');
 });

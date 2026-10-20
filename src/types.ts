@@ -1787,6 +1787,8 @@ export interface IssuePage extends RepoIssue {
   commentCount: number; // GitHub's totalCount
 }
 
+export interface ReadOptions { fresh?: boolean } // #282: fresh reads GitHub now, not the read model
+
 /** What every source adapter implements; src/source.ts builds one per comb.sources entry (#180). */
 export interface Source {
   resolveFields(): Promise<void>; // every column name the config cites exists on the source
@@ -1797,7 +1799,7 @@ export interface Source {
   settingsOptions(): Promise<string[]>; // status values available, for the settings form
   quota?(): Promise<SourceQuota | undefined>; // the polling account's API quota; a source without one leaves it out
   comments?(itemId: string): Promise<TaskComment[]>; // oldest first, read when the panel opens on a task; a source without comments leaves it out
-  fieldsOf?(itemId: string): Promise<ItemField[]>; // #686: in the project's order, Status included
+  fieldsOf?(itemId: string, options?: ReadOptions): Promise<ItemField[]>; // #686: in the project's order, Status included; #282: from the read model unless fresh
   setField?(itemId: string, field: string, value: FieldValue): Promise<FieldWrite>; // #686: writes, then re-reads the item
   relate?(itemId: string, change: BlockerChange): Promise<BlockerWrite>; // #56: writes the relation, then re-reads the item's relations
   findBlockers?(itemId: string, text: string): Promise<BlockerRef[]>; // #57: issues of the item's repository whose title matches, at most 8

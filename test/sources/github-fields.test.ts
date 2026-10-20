@@ -8,6 +8,9 @@ import {
 import { PartialWriteError } from '../../src/field-values.js';
 import { parseConfig } from '../../src/config.js';
 import { createSource, sourceSpec } from '../../src/source.js';
+import { openReadModel } from '../../src/read-model/db.js';
+import { storeListing, type ItemStore } from '../../src/read-model/items.js';
+import { itemNode, SOURCE as ROWS, T1 } from '../read-model/fixtures.js';
 import type { Gql, SourceItem, TaskFilter } from '../../src/types.js';
 import { combConfig, FILTER, FIXED } from '../fakes.js';
 
@@ -264,4 +267,30 @@ test('a field write\'s re-read node reaches answer before writeItemField resolve
   };
   await assert.rejects(writeItemField({ gql: refusing, projectId: PROJECT, read: READ, entry: async () => undefined, answer }, 'PVTI_1', 'Assignees', ['bia']), PartialWriteError);
   assert.deepEqual(answered, ['In review', 'Done']);
+});
+
+test('fieldsOf answers from the read model with no call once it holds the item and its repository\'s options; before that, and when asked fresh, it reads ITEM_FIELDS (#282)', async () => {
+  const { db } = await openReadModel(':memory:');
+  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined };
+  const node: GhItemFieldsNode = { ...itemNode(12, 'Ready'), project: { id: 'PVT_1', fields: { nodes: FIELDS } } };
+  const calls: string[] = [];
+  const gql: Gql = async (query) => {
+    calls.push(query === ITEM_FIELDS ? 'itemFields' : query === PROJECT_FIELDS ? 'fields' : 'other');
+    if (query === ITEM_FIELDS) return { node };
+    return query === PROJECT_FIELDS ? { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_status', options: STATUS_OPTIONS } } } } : {};
+  };
+  const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER } }));
+  const source = createSource(sourceSpec(config, config.comb.sources[0]), { gql, items });
+  await source.resolveFields();
+  storeListing(db, { source: ROWS, project: 'acme/6' }, { nodes: [node], fields: FIELDS }, new Map());
+  calls.length = 0;
+  assert.deepEqual(await source.fieldsOf?.('PVTI_12'), itemFields(node), 'no options synced: the live read');
+  assert.deepEqual(calls, ['itemFields']);
+  for (const kind of ['labels', 'assignees', 'milestones'] as const) db.setScope(ROWS, 'acme/r', kind, { cursor: null, etag: null, syncedAt: T1 });
+  db.setScope(ROWS, 'acme', 'issueTypes', { cursor: null, etag: null, syncedAt: T1 });
+  calls.length = 0;
+  assert.equal((await source.fieldsOf?.('PVTI_12'))?.find((f) => f.name === 'Status')?.value, 'Ready');
+  assert.deepEqual(calls, [], 'stored: no call');
+  await source.fieldsOf?.('PVTI_12', { fresh: true });
+  assert.deepEqual(calls, ['itemFields'], 'fresh: the live read a write\'s check needs');
 });

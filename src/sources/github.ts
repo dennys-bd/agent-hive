@@ -2,7 +2,7 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
 import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
@@ -13,7 +13,7 @@ import {
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
-import { answerColumn, readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
+import { answerColumn, readItemFields, storedItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
 import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './github-pages.js';
 import { applyRelations, createItemsSync, fetchRelations, joinRelations, readProbe } from './github-items-sync.js';
@@ -351,9 +351,13 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return findBlockers(await fieldsContext(), itemId, text);
   }
 
-  async function fieldsOf(itemId: string): Promise<ItemField[]> { // #686
+  // #686, #282: the editors' fields from the read model when it holds the item and its repository's options; else, or fresh (a write's check),
+  // the live read
+  async function fieldsOf(itemId: string, options: ReadOptions = {}): Promise<ItemField[]> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    return readItemFields(gql, itemId, resolved.projectId);
+    const rows = options.fresh === true ? undefined : await items?.source();
+    const stored = items && rows !== undefined ? storedItemFields(items.db, rows, `${(await projectRead()).login}/${number}`, itemId) : undefined;
+    return stored ?? readItemFields(gql, itemId, resolved.projectId);
   }
   return {
     resolveFields, listItems, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,

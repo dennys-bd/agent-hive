@@ -1,6 +1,7 @@
 import { STATUS } from '../field-values.js';
-import type { GhBlockerRef, GhIssueRelations, GhItemNode, GhProjectField, GhPullRequest, GhSubIssue } from '../sources/github-queries.js';
+import type { GhBlockerRef, GhIssueRelations, GhItemFieldsNode, GhItemNode, GhProjectField, GhPullRequest, GhSubIssue } from '../sources/github-queries.js';
 import type { ProjectPr, Signal } from '../types.js';
+import type { ReadModel, ScopeKind } from './db.js';
 import type { FieldValueRow, IssueDetails, IssueRow, ProjectFieldRow, RelationRow, StoredItemRows } from './rows.js';
 
 // The rows back into the node the poll's steps and the views read (#282). The contract test compares the consumers' answers over this node and
@@ -65,3 +66,27 @@ export const rebuildFields = (rows: ProjectFieldRow[]): GhProjectField[] => rows
   name: f.name, ...(f.dataType === null ? {} : { dataType: f.dataType }),
   ...(f.options === null ? {} : f.dataType === 'ITERATION' ? { configuration: { iterations: f.options.map((title) => ({ title })) } } : { options: f.options.map((name) => ({ name })) }),
 }));
+
+const ownerOf = (repository: string): string => repository.slice(0, repository.indexOf('/'));
+const isSynced = (db: ReadModel, source: string, key: string, kind: ScopeKind): boolean => typeof db.scope(source, key, kind)?.syncedAt === 'string';
+// Only a synced scope says what the options are: an empty table then is "none", not "not stored" (#282)
+const optionsStored = (db: ReadModel, source: string, repository: string): boolean =>
+  (['labels', 'assignees', 'milestones'] as const).every((kind) => isSynced(db, source, repository, kind)) && isSynced(db, source, ownerOf(repository), 'issueTypes');
+
+/** The editor's node (#282): rebuildNode with the Project's fields and the repository's options; undefined when the item is not this Project's,
+ * is no issue, or its options were never synced, and the editor reads live. The ids are empty: a write never resolves against this node, it reads
+ * ITEM_FIELDS live. */
+export function rebuildFieldsNode(db: ReadModel, source: string, project: string, itemId: string): GhItemFieldsNode | undefined {
+  const [rows] = db.itemRows(source, [itemId]);
+  const repository = rows?.issue?.repository;
+  if (rows === undefined || rows.item.project !== project || repository === undefined || !optionsStored(db, source, repository)) return undefined;
+  const node = rebuildNode(rows);
+  if (!node.content) return undefined;
+  const choices = {
+    assignableUsers: { nodes: db.assignees(source, repository).map((login) => ({ id: '', login })) },
+    labels: { nodes: db.labels(source, repository).map((name) => ({ id: '', name })) },
+    milestones: { nodes: db.milestones(source, repository).map((title) => ({ id: '', title })) },
+    issueTypes: { nodes: db.issueTypes(source, ownerOf(repository)).map((name) => ({ id: '', name })) },
+  };
+  return { ...node, project: { id: '', fields: { nodes: rebuildFields(db.projectFields(source, project)) } }, content: { ...node.content, repository: { nameWithOwner: repository, ...choices } } };
+}

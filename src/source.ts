@@ -7,7 +7,7 @@ import { parseAuth } from './config.js';
 import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
-import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, SourceItem } from './types.js';
+import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, ReadOptions, SourceItem } from './types.js';
 
 export interface SourceDeps {
   gql?: Gql; // GraphQL runner, injectable for tests; the default is the transport `auth.github` names
@@ -93,7 +93,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => `${prefix}${await create(fields)}` } : {}),
     ...(comments ? { comments: (itemId: string) => comments(own(itemId)) } : {}),
     ...(project ? { project: async () => rows(await project()) } : {}),
-    ...(fieldsOf ? { fieldsOf: (itemId: string) => fieldsOf(own(itemId)) } : {}),
+    ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),
     ...(relate ? { relate: shownRelate(relate, own, ids, item) } : {}),
     // #57: the search under the listed ids, so a found issue reads as the section's rows and tasks do

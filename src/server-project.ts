@@ -152,8 +152,9 @@ function registerFieldRoutes(app: Express, deps: ProjectRouteDeps): void {
     const { field, value } = (req.body ?? {}) as { field?: unknown; value?: unknown };
     let written: FieldWrite;
     try {
+      // #282: checked against a fresh read, not the stored options: a label made on GitHub a minute ago must pass.
       // ponytail: this read, the adapter's read for the ids and its re-read are three reads per write; one cached read when quota matters
-      const found = (await target.source.fieldsOf(target.itemId)).find((f) => f.name === field);
+      const found = (await target.source.fieldsOf(target.itemId, { fresh: true })).find((f) => f.name === field);
       if (!found) return void res.status(HTTP_BAD_REQUEST).json({ error: FIELD_MESSAGE });
       const checked = checkValue(found, value);
       if ('error' in checked) return void res.status(HTTP_BAD_REQUEST).json({ error: checked.error });

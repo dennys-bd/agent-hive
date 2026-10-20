@@ -185,3 +185,10 @@ test('an item the source does not have is a 404 in both write routes, not a 502 
   const statusRes = await post(`${base}/sources/work/project/status`, { itemId: 'work:PVTI_1', status: 'Ready' });
   assert.equal(statusRes.status, 404);
 });
+
+test('POST …/fields checks the value against a fresh read: an option made on GitHub a minute ago passes (#282)', async (t) => {
+  const asked: unknown[] = [];
+  const base = routes(t, { work: { ...editable([]), fieldsOf: async (_itemId, options) => { asked.push(options); return FIELDS; } } });
+  assert.equal((await post(fieldsUrl(base), { field: 'Priority', value: 'P0' })).status, 200);
+  assert.deepEqual(asked, [{ fresh: true }]);
+});
