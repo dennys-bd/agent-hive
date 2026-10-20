@@ -14,6 +14,8 @@ const en = {
   'header.collapseLeft': 'collapse sidebar',
   'header.expandLeft': 'open sidebar',
   'header.openRight': 'open right sidebar',
+  'header.github': 'GitHub', // #352: a proper noun, the same in both languages
+  'header.github.title': 'open on GitHub',
   'rail.label': 'views', // #220: the view rail
   'rail.activities': 'activities',
   'rail.flow': 'flow',
@@ -2121,6 +2123,8 @@ const pt: Record<MessageKey, string> = {
   'header.collapseLeft': 'recolher lateral',
   'header.expandLeft': 'abrir lateral',
   'header.openRight': 'abrir lateral direita',
+  'header.github': 'GitHub',
+  'header.github.title': 'abrir no GitHub',
   'rail.label': 'views',
   'rail.activities': 'atividades',
   'rail.flow': 'fluxo',

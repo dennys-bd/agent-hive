@@ -1,4 +1,4 @@
-import { SearchIcon } from 'lucide-react';
+import { ExternalLinkIcon, SearchIcon } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { repoName } from '../../pull-requests';
 import { displayBinding } from '../../shortcuts';
@@ -174,6 +174,16 @@ function FlowTitle({ state, source, tasks }: { state: State; source?: string; ta
   );
 }
 
+// GitHub ↗ (#352): what the center shows, on GitHub. window.open is what the main window hands to the default browser, as every other
+// "open on github" does. The xs outline is atualizar's; its base keeps it from shrinking, so the search gives way first
+function GithubButton({ url }: { url: string }) {
+  return (
+    <Button type="button" variant="outline" size="xs" title={t('header.github.title')} onClick={() => window.open(url, '_blank', 'noreferrer')}>
+      {t('header.github')}<ExternalLinkIcon aria-hidden="true" className="text-muted-foreground" />
+    </Button>
+  );
+}
+
 interface FlowHeaderProps {
   state: State; source?: string; tasks: Task[]; search?: string; onSearch?(term: string): void; // #757: absent on the issue page, which has nothing to search
   isShown?: boolean;
@@ -181,6 +191,7 @@ interface FlowHeaderProps {
   onRefresh?(): Promise<unknown>; // #756: what atualizar runs instead of polling every source (the native view reads itself again); never rejects
   repository?: RepoHeader; // #757: a repository is picked: the repository header
   back?: BackLink; // #911: the previous screen; only the issue and PR pages pass it, while the back stack is not empty
+  github?: string; // #352: the GitHub page of what the center shows; only the repository views and the issue/PR pages pass it
   loops?: boolean; onLoops?(): void; // #909: the flowchart's ↺ voltas; only Flow passes them, so the native tab and the repository headers never show it
   tree?: boolean; onTree?(): void; // #34: the ⑂ tree toggle, the value Flow resolved; only Flow passes them, as with ↺ loops
 }
@@ -188,9 +199,9 @@ interface FlowHeaderProps {
 /** The flow's header (redesign 10, #542): fluxo, the picked source or todas as sources, the chips of the workspaces the shown tasks resolve
  * to, ⑂ tree with `onTree` (#34), ↺ voltas with `onLoops` (#909), buscar tarefas, the last poll and atualizar, which polls every source as the sidebar's atualizar agora does. `tasks`: the source pick's.
  * With `tabs` it is the source header instead (#756, handoff 01), on both tabs, with no chips and no last poll; with
- * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. It renders in the window header's center column (#295, HeaderSlot),
+ * `repository` the repository header (#757, handoff 02): no chips, no last poll, a narrower search. With `back` (#911) it starts with the back button. With `github` (#352), GitHub ↗ sits right before atualizar. It renders in the window header's center column (#295, HeaderSlot),
  * the header's 44px and border its own. */
-export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
+export function FlowHeader({ state, source, tasks, search, onSearch, isShown = true, tabs, onRefresh, repository, back, github, loops = true, onLoops, tree = false, onTree }: FlowHeaderProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isOwn = tabs !== undefined || repository !== undefined;
   const polled = isOwn ? undefined : lastPolled(state.syncs, source);
@@ -226,6 +237,7 @@ export function FlowHeader({ state, source, tasks, search, onSearch, isShown = t
       )}
       {onSearch && <SearchField label={t(repository ? 'repos.search' : 'flow.search')} value={search ?? ''} isShown={isShown} isNarrow={isOwn} onChange={onSearch} />}
       {polled !== undefined && <span>{t('flow.updated', { time: polled })}</span>}
+      {github !== undefined && <GithubButton url={github} />}
       <Button type="button" variant="outline" size="xs" disabled={isRefreshing} onClick={refresh}>
         {t('flow.refresh')}<ButtonKeyHint id="refreshFlow" />
       </Button>
