@@ -19,3 +19,14 @@ const hasControlOrSpace = (value: string): boolean => [...value].some((c) => c <
 /** A branch name the page may send as the merge's base (#758). */
 export const isBranchName = (value: unknown): value is string =>
   typeof value === 'string' && value !== '' && value !== '@' && value.length <= MAX_BRANCH && SAFE_CHARS.test(value) && !hasControlOrSpace(value) && !FORBIDDEN.test(value);
+
+/** A refused prompt's answer (#758, #379): the 400 of the open, feedback and resolve routes. */
+export const PROMPT_MESSAGE = 'prompt must be mergeBase, with promptBase a branch name';
+
+/** The prompt a body asks for (#379), the one check the open, feedback and resolve routes share: nothing without a `prompt`, the
+ * merge-from-base text on `remote` for mergeBase with a branch name, else refused. */
+export function promptText(prompt: unknown, promptBase: unknown, remote: string): { text?: string } | { refused: string } {
+  if (prompt === undefined) return {};
+  if (prompt !== MERGE_BASE_PROMPT || !isBranchName(promptBase)) return { refused: PROMPT_MESSAGE };
+  return { text: mergeBasePrompt(promptBase, remote) };
+}
