@@ -58,6 +58,7 @@ test('personalizar open drops the execução row from the stages box, keeps pró
   await screen.findByRole('combobox', { name: 'origin/main' });
   expect(screen.getByText(t('run.label'))).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'personalizar ›' }));
+  expect(screen.getByRole('button', { name: 'personalizar ‹' })).toHaveFocus(); // the button that held it unmounted
   const block = screen.getByRole('region', { name: 'execução de backlog' });
   expect(block).not.toHaveClass('border');
   expect(screen.queryByText(t('run.label'))).not.toBeInTheDocument();
@@ -67,6 +68,7 @@ test('personalizar open drops the execução row from the stages box, keeps pró
   await user.click(within(block).getByRole('button', { name: 'personalizar ‹' }));
   expect(screen.queryByRole('region', { name: 'execução de backlog' })).not.toBeInTheDocument();
   expect(screen.getByText(t('run.label'))).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'personalizar ›' })).toHaveFocus();
 });
 
 test('the session menu\'s nova and the specialized menu\'s nenhum show their second lines; the specialized menu\'s footer names the agent (#893)', async () => {

@@ -9,7 +9,7 @@ import { TaskPicker } from '@/components/TaskPicker';
 import { SetupProgressView, SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { RunFields, type RunFieldsProps } from '@/components/RunFields';
-import { RunCustomize, RunSummary } from '@/components/RunSummary';
+import { RunCustomize, RunSummary, useCustomizeFocus } from '@/components/RunSummary';
 import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -227,16 +227,17 @@ function RunSection({ id, mode, task, state, run, workspace }: { id: string; mod
       stageModel={mode === 'stages' ? run.stageModel : undefined}
       locked={mode === 'free' && task !== undefined ? resumedLaunch(run.picks, task, state) : undefined} />
   );
-  if (mode === 'free') return fields();
-  const canCustomize = isCustomizable(task, state);
+  const canCustomize = mode === 'stages' && isCustomizable(task, state);
   const isOpen = canCustomize && run.isCustomizing;
+  const focus = useCustomizeFocus(isOpen);
+  if (mode === 'free') return fields();
   // #893: open, the block goes above the box and the box drops its run row, which the block shows in full
   return (
     <div className="flex flex-col gap-2.5">
       {isOpen && task && (
-        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore} onClose={() => run.setCustomizing(false)}>{fields(run.initial)}</RunCustomize>
+        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} closeRef={focus.closeRef} onRestore={run.restore} onClose={() => run.setCustomizing(false)}>{fields(run.initial)}</RunCustomize>
       )}
-      <StagesBox task={task} stages={state.stages} run={isOpen ? undefined : <RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={false} onToggle={run.setCustomizing} />} />
+      <StagesBox task={task} stages={state.stages} run={isOpen ? undefined : <RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={false} onToggle={run.setCustomizing} buttonRef={focus.openRef} />} />
     </div>
   );
 }

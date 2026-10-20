@@ -22,7 +22,7 @@ const HIVE_ALONE: Destination[] = [{ name: HIVE_SOURCE }];
 const CHIP = 'shrink-0 rounded-[4px] border px-1.5 text-xs';
 
 // criar em's second line (#893): hive creates no external issue; a source names its type
-const hintOf = (d: Destination): string => (d.type === undefined ? t('start.createInHive') : t(`flow.source.type.${d.type}`));
+const hintOf = (d: Destination): string => (d.name === HIVE_SOURCE ? t('start.createInHive') : d.type === undefined ? '' : t(`flow.source.type.${d.type}`));
 
 // A task as a row: its workspace's colour, its title, its stage on the right
 function TaskRow({ task, workspaces, sourceWorkspaces }: { task: Task; workspaces: string[]; sourceWorkspaces?: Record<string, string> }) {
@@ -89,7 +89,7 @@ function TaskList({ tasks, workspaces, sourceWorkspaces, onSelect }: Pick<TaskPi
 
 // The create row's destination (#893): a chip that opens criar em, plain with hive alone, which leaves nothing to choose. The row's own
 // click and Enter create, so the chip stops both; the mouse keeps the focus in the search box
-function DestinationChip({ name, canChoose, onChoose }: { name: string; canChoose: boolean; onChoose(): void }) {
+function DestinationChip({ name, canChoose, isOpen, onChoose }: { name: string; canChoose: boolean; isOpen: boolean; onChoose(): void }) {
   const label = t('start.createIn', { source: name });
   if (!canChoose) return <span className={CHIP}>{label}</span>;
   const onClick = (e: ReactMouseEvent): void => { e.stopPropagation(); onChoose(); };
@@ -97,15 +97,17 @@ function DestinationChip({ name, canChoose, onChoose }: { name: string; canChoos
     if (e.key !== 'Enter') return; // cmdk's own Enter, one level up, would create
     e.preventDefault(); e.stopPropagation(); onChoose();
   };
+  // A button nested in the cmdk option is a conscious trade-off: the chip must be a real control for the keyboard and the screen reader, and
+  // the row's own click and Enter are stopped above, so the nesting costs nothing but a lint-level purity
   return (
-    <button type="button" aria-haspopup="listbox" onMouseDown={(e) => e.preventDefault()} onClick={onClick} onKeyDown={onKeyDown} className={`${CHIP} inline-flex items-center gap-1 hover:text-foreground`}>
+    <button type="button" aria-haspopup="listbox" aria-expanded={isOpen} aria-label={`${t('start.createInMenu')} ${name}`} onMouseDown={(e) => e.preventDefault()} onClick={onClick} onKeyDown={onKeyDown} className={`${CHIP} inline-flex items-center gap-1 hover:text-foreground`}>
       {label}<ChevronDownIcon className="size-3" />
     </button>
   );
 }
 
 // + criar tarefa "{term}" (#846, #893): one row, created in the chip's destination
-function CreateRow({ term, target, canChoose, onChoose, onSelect }: { term: string; target: Destination; canChoose: boolean; onChoose(): void; onSelect(value: string): void }) {
+function CreateRow({ term, target, canChoose, isChoosing, onChoose, onSelect }: { term: string; target: Destination; canChoose: boolean; isChoosing: boolean; onChoose(): void; onSelect(value: string): void }) {
   return (
     <>
       <CommandSeparator alwaysRender />
@@ -113,7 +115,7 @@ function CreateRow({ term, target, canChoose, onChoose, onSelect }: { term: stri
         <CommandItem value={CREATE} forceMount onSelect={onSelect}>
           <PlusIcon />
           <span className="min-w-0 flex-1 truncate">{t('start.create', { title: term })}</span>
-          <DestinationChip name={target.name} canChoose={canChoose} onChoose={onChoose} />
+          <DestinationChip name={target.name} canChoose={canChoose} isOpen={isChoosing} onChoose={onChoose} />
         </CommandItem>
       </CommandGroup>
     </>
@@ -152,7 +154,7 @@ export function TaskPicker({ id, tasks, workspaces, sourceWorkspaces, value, des
   const root = useRef<HTMLDivElement>(null);
   // cmdk gives its input an id of its own, so the field's id no longer finds it while the list is open
   const focusSearch = (): void => root.current?.querySelector<HTMLInputElement>('[cmdk-input]')?.focus();
-  const close = (): void => { setIsOpen(false); setIsChoosing(false); };
+  const close = (): void => { setIsOpen(false); setIsChoosing(false); setDestination(undefined); }; // reopening shows the configured default again
   useListKeys(id, isOpen, () => { if (isChoosing) setIsChoosing(false); else close(); });
   const openMenu = (): void => { setIsChoosing(true); setHighlight(`${PICK}:${target.name}`); focusSearch(); };
   const choose = (chosen: string): void => {
@@ -172,7 +174,7 @@ export function TaskPicker({ id, tasks, workspaces, sourceWorkspaces, value, des
       <CommandInput id={id} value={search} onValueChange={(next) => { setSearch(next); setIsChoosing(false); }} aria-label={t('start.search')} placeholder={t('start.search')} autoFocus />
       <CommandList className="absolute inset-x-0 top-full z-50 mt-1 rounded-md border bg-popover shadow-md">
         {!isChoosing && <TaskList tasks={tasks} workspaces={workspaces} sourceWorkspaces={sourceWorkspaces} onSelect={choose} />}
-        {term !== '' && <CreateRow term={term} target={target} canChoose={destinations.length > 1} onChoose={openMenu} onSelect={choose} />}
+        {term !== '' && <CreateRow term={term} target={target} canChoose={destinations.length > 1} isChoosing={isChoosing} onChoose={openMenu} onSelect={choose} />}
         {isChoosing && <DestinationMenu destinations={destinations} onSelect={choose} />}
       </CommandList>
     </Command>

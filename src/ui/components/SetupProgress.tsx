@@ -85,6 +85,7 @@ function followedRow(rows: readonly SetupRow[]): number {
 
 function LogOption({ row, index }: { row: SetupRow; index: number }) {
   const text = row.kind === 'worktree' ? t('setupProgress.row.worktree') : row.label ?? '';
+  // The last span of the item is Radix's ItemText: it needs min-w-0 so the truncate inside it can cut a long command
   return <SelectItem value={String(index)} title={text} className="*:[span]:last:min-w-0"><span className="truncate">{text}</span></SelectItem>;
 }
 

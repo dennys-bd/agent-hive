@@ -26,7 +26,7 @@ test('a typed term shows one create row on the default destination\'s chip; cria
   await user.keyboard('landing');
   expect(screen.getAllByRole('option', { name: /criar tarefa/ })).toHaveLength(1);
   const row = screen.getByRole('option', { name: /criar tarefa "landing"/ });
-  await user.click(within(row).getByRole('button', { name: 'em hive' }));
+  await user.click(within(row).getByRole('button', { name: 'criar em hive' }));
   expect(onCreate).not.toHaveBeenCalled();
   expect(screen.getByText('criar em')).toBeInTheDocument();
   expect(screen.getByRole('option', { name: /^hive.*só no hive, sem issue externa$/ })).toBeInTheDocument();
@@ -44,7 +44,7 @@ test('the keys reach criar em: Enter on the chip opens it on its destination, Es
   await user.click(screen.getByRole('button', { name: FIELD }));
   await user.keyboard('landing');
   await user.tab();
-  expect(screen.getByRole('button', { name: 'em hive' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'criar em hive' })).toHaveFocus();
   await user.keyboard('{Enter}');
   expect(screen.getByRole('combobox', { name: 'tarefas' })).toHaveFocus();
   expect(screen.getByRole('option', { name: /^hive/ })).toHaveAttribute('aria-selected', 'true');
@@ -66,4 +66,41 @@ test('with hive the only destination, the chip shows with no menu (#893)', async
   const row = screen.getByRole('option', { name: /criar tarefa "landing"/ });
   expect(row).toHaveTextContent(/em hive$/);
   expect(within(row).queryByRole('button')).not.toBeInTheDocument();
+});
+
+test('the chip names its destination for a screen reader and aria-expanded follows criar em (#893)', async () => {
+  const user = userEvent.setup();
+  picker(HIVE_AND_ROADMAP);
+  await user.click(screen.getByRole('button', { name: FIELD }));
+  await user.keyboard('landing');
+  const chip = screen.getByRole('button', { name: 'criar em hive' });
+  expect(chip).toHaveAttribute('aria-expanded', 'false');
+  await user.click(chip);
+  expect(screen.getByRole('button', { name: 'criar em hive' })).toHaveAttribute('aria-expanded', 'true');
+  await user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'criar em hive' })).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('closing the list resets the chip to the default destination (#893)', async () => {
+  const user = userEvent.setup();
+  picker(HIVE_AND_ROADMAP);
+  await user.click(screen.getByRole('button', { name: FIELD }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('button', { name: 'criar em hive' }));
+  await user.click(screen.getByRole('option', { name: /^roadmap/ }));
+  expect(screen.getByRole('button', { name: 'criar em roadmap' })).toBeInTheDocument();
+  await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: FIELD }));
+  await user.keyboard('landing');
+  expect(screen.getByRole('button', { name: 'criar em hive' })).toBeInTheDocument();
+});
+
+test('the hive text belongs to the destination named hive, not to one without a type (#893)', async () => {
+  const user = userEvent.setup();
+  picker([{ name: 'hive' }, { name: 'plain' }]);
+  await user.click(screen.getByRole('button', { name: FIELD }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('button', { name: 'criar em hive' }));
+  expect(screen.getByRole('option', { name: /^hive.*só no hive/ })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /^plain$/ })).toBeInTheDocument();
 });

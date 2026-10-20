@@ -558,7 +558,7 @@ test('on a source the typed task is held: one create row, on the default destina
   await user.keyboard('landing');
   const rows = screen.getAllByRole('option', { name: /criar tarefa "landing"/ });
   expect(rows).toHaveLength(1);
-  expect(within(rows[0]).getByRole('button', { name: 'em board' })).toBeInTheDocument();
+  expect(within(rows[0]).getByRole('button', { name: 'criar em board' })).toBeInTheDocument();
   await user.click(rows[0]);
   expect(screen.getByText(t('start.held', { title: 'landing', source: 'board' }))).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'cancelar' }));
@@ -570,7 +570,7 @@ test('picking hive in the chip\'s criar em menu and pressing the row creates the
   render(toBoard(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={vi.fn()} />));
   await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
-  await user.click(screen.getByRole('button', { name: 'em board' }));
+  await user.click(screen.getByRole('button', { name: 'criar em board' }));
   await user.click(screen.getByRole('option', { name: /^hive/ }));
   await user.click(screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ }));
   await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
