@@ -168,3 +168,21 @@ export function captureSession(state: State, { terminalId, runId, agent, session
   };
   return none(withCapturedSession(placed.state, placed.activity, worker, startedAt) ?? state);
 }
+
+/** A resumed capture's first SessionStart (#347), which names the conversation the user picked (-c, the picker, Codex's --last) or one the
+ * register could not place. A cwd outside the terminal's folder (a Codex rollout of another checkout) releases the worker with nothing
+ * recorded: the run goes on unregistered. A session an activity holds takes the worker there, its session used again and its tokens the
+ * baseline (#248); the run keeps the args it started with. Undefined: firstFreeSession records it where it runs. `state` carries the id. */
+export function resumedStart(state: State, worker: Worker, id: string, cwd: unknown): State | undefined {
+  const terminal = state.terminals.find((t) => t.terminalId === worker.terminalId);
+  if (capturedCwd(cwd, terminal?.cwd) === undefined) return { ...state, workers: releaseWorker(state.workers, worker) };
+  const held = heldSession(state, id);
+  const placed = held && ownerOf(state, held.record.id);
+  if (!held || !placed) return undefined;
+  const { tokens } = held.session;
+  const moved: State = {
+    ...placed.state,
+    workers: placed.state.workers.map((w) => (w.runId === worker.runId ? { ...w, activityId: placed.activity.id, ...(tokens === undefined ? {} : { tokens }) } : w)),
+  };
+  return recordCapturedSession(moved, placed.activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch) ?? moved;
+}

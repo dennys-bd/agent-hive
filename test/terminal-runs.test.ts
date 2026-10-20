@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { localActivityId } from '../src/activities.js';
+import { activityOf, localActivityId } from '../src/activities.js';
 import { localSessionsOf } from '../src/local-sessions.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import { sessionsOf } from '../src/tasks.js';
@@ -20,6 +20,7 @@ const ITEM = { itemId: 'board:I1', id: '1', title: 'T', body: '', url: 'https://
 const AT = '2026-10-20T10:00:00.000Z';
 const S1 = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'; // the task's session
 const S2 = '3f2504e0-4f89-11d3-9a0c-0305e82c3302'; // the workspace's local session
+const S3 = '3f2504e0-4f89-11d3-9a0c-0305e82c3303'; // a conversation no activity holds
 const SHELL = 'bbbbbbbb-0000-4000-8000-000000000001';
 const RUN = 'cccccccc-0000-4000-8000-000000000001';
 const held = (id: string, tokens: number): Session => ({ id, startedAt: AT, stages: [], lastUsedAt: AT, agent: 'claude', tokens });
@@ -61,4 +62,37 @@ test('a resume whose id is not known yet starts in the terminal\'s activity with
   assert.deepEqual([run?.activityId, run?.sessionId, run?.resumed, run?.agent], [workId(state, ITEM.itemId), undefined, true, 'codex']);
   assert.deepEqual(sessionsOf(captured, ITEM.itemId), sessionsOf(state, ITEM.itemId));
   assert.equal(capture(state, 'claude')?.workers.find((w) => w.runId === RUN)?.resumed, undefined, 'a new conversation is no resume');
+});
+
+const started = (state: State, id: string, cwd: string): State =>
+  reduce(state, { type: 'hook', ptyId: RUN, payload: { hook_event_name: 'SessionStart', session_id: id, cwd, source: 'resume' } }).state;
+
+test('a resumed capture\'s first SessionStart naming a session another activity holds moves the worker there and touches the session (#347)', () => {
+  const state = world('local');
+  const captured = capture(state, 'codex', {}); // codex resume --last: the id comes with the SessionStart
+  const seen = started(captured, S1, '/repo');
+  const run = runOf(seen);
+  assert.deepEqual([run?.activityId, run?.sessionId, run?.tokens], [workId(state, ITEM.itemId), S1, 900]);
+  assert.deepEqual(sessionsOf(seen, ITEM.itemId).map((s) => [s.id, s.lastUsedAt]), [[S1, run?.startedAt]]);
+  assert.deepEqual(localSessionsOf(seen, 'hive'), localSessionsOf(state, 'hive'));
+});
+
+test('a resumed capture\'s first SessionStart naming no held session records it in the terminal\'s activity; one its own activity holds is touched, never listed twice (#347)', () => {
+  const captured = capture(world('local'), 'claude', {}); // claude -c
+  const fresh = started(captured, S3, '/repo/src');
+  assert.deepEqual([runOf(fresh)?.activityId, localSessionsOf(fresh, 'hive').map((s) => s.id)], [localActivityId('hive'), [S2, S3]]);
+  const own = started(captured, S2, '/repo');
+  assert.deepEqual(localSessionsOf(own, 'hive').map((s) => [s.id, s.lastUsedAt]), [[S2, runOf(own)?.startedAt]]);
+  assert.equal(runOf(own)?.tokens, 400);
+});
+
+test('a resumed capture whose first SessionStart runs outside the terminal\'s folder is released with nothing recorded, and its later hooks find no worker (#347)', () => {
+  const state = world('task');
+  const captured = capture(state, 'codex', {}); // codex resume of a rollout from another checkout
+  const released = started(captured, S3, '/elsewhere');
+  assert.equal(runOf(released), undefined);
+  assert.deepEqual(sessionsOf(released, ITEM.itemId), sessionsOf(state, ITEM.itemId));
+  assert.equal(activityOf(released, ITEM.itemId)?.worktree, '/repo', 'its cwd is never written as the task\'s worktree');
+  const stop = reduce(released, { type: 'hook', ptyId: RUN, payload: { hook_event_name: 'Stop', session_id: S3 } });
+  assert.equal(stop.state, released);
 });

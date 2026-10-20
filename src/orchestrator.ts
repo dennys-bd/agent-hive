@@ -22,7 +22,7 @@ import { clearLocalSession, copySession, dropCopiesAtBoot, forgetFailedLocal, fo
 import { clearSession, renameSession } from './session-clear.js';
 import { canContinue, continueIntoCommands, fill, gateOf } from './fill.js';
 import { markForgotten, withSlept } from './slept.js';
-import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, sleepTerminal, wakeTerminal } from './terminal-runs.js';
+import { captureSession, dropOrphanTerminals, forgetTerminal, recordCapturedSession, resumedStart, sleepTerminal, wakeTerminal } from './terminal-runs.js';
 import { retryDue, settleWait, stopFailure } from './api-errors.js';
 import { freedLostRuns, stageCommandEnded, stageCommandOutput, stageCommandStarted, stageCommandsRefused, startCommands } from './stage-commands.js';
 import { ciClock, ciFailed, ciRead, haltCi, startCi } from './stage-ci.js';
@@ -799,8 +799,11 @@ function firstSession(state: State, worker: Worker, id: string): State {
 }
 
 // #932: a free run that started with no id (a captured Codex) records its first SessionStart's where captureSession records Claude's, with its
-// agent. The activity's own sessionId stays the stage run's: a free session never takes its place
-function firstFreeSession(state: State, worker: Worker, id: string): State {
+// agent. The activity's own sessionId stays the stage run's: a free session never takes its place. #347: a resumed capture goes through
+// resumedStart first, which releases it or places it with the activity holding the session
+function firstFreeSession(state: State, worker: Worker, id: string, cwd?: unknown): State {
+  const resumed = worker.resumed ? resumedStart(state, worker, id, cwd) : undefined;
+  if (resumed !== undefined) return resumed;
   const activity = activityOfWorker(state, worker);
   return (activity && recordCapturedSession(state, activity, id, worker.startedAt ?? new Date().toISOString(), ranAgent(worker), worker.launch)) ?? state; // #257: its picks too
 }
@@ -821,7 +824,7 @@ function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayloa
   if (p.source === 'clear' && isUuid(id) && id !== worker.sessionId) return clearSession(state, worker, id);
   if (worker.sessionId === undefined && isUuid(id)) {
     const named = patch(state, ptyId, { sessionId: id }).state;
-    return worker.freeSession === true ? firstFreeSession(named, worker, id) : firstSession(named, worker, id);
+    return worker.freeSession === true ? firstFreeSession(named, worker, id, p.cwd) : firstSession(named, worker, id);
   }
   return patch(state, ptyId, { sessionId: worker.sessionId ?? (isSessionId(id) ? id : undefined) }).state;
 }
@@ -829,7 +832,8 @@ function namedSession(state: State, ptyId: string, worker: Worker, p: HookPayloa
 // The worktree write below goes after the session's: inMainRepo reads the session the run now runs
 function sessionStart(state: State, ptyId: string, worker: Worker, p: HookPayload, branch?: string): Reduced {
   const started = namedSession(state, ptyId, worker, p);
-  const current = started.workers.find((s) => s.runId === ptyId) ?? worker; // inMainRepo reads the session it now runs
+  const current = started.workers.find((s) => s.runId === ptyId); // inMainRepo reads the session it now runs
+  if (!current) return none(started); // #347: a resumed capture of another folder was released: its cwd is no activity's to write
   const task = taskOfWorker(started, current);
   const activity = activityOfWorker(started, current);
   if (!task || !activity || inMainRepo(started, task, current)) return none(started); // the activity keeps no path: a repo session's cwd is the main repo (#208)
