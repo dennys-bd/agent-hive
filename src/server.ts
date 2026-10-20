@@ -60,6 +60,7 @@ import { registerRepoRoutes } from './server-repos.js';
 import { accessFor, type ReadAccess } from './read-model/access.js';
 import type { ReadModel, SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
+import type { UsageStore } from './usage-store.js';
 import { createReadModelLoop, readModelEvent } from './read-model/loop.js';
 import { listRepositories } from './repos/repositories.js';
 import { registerPrRoutes } from './server-pr.js';
@@ -171,6 +172,8 @@ export interface ServerDeps {
   settingsGql?: (auth: GithubAuth) => Gql;
   /** #180: hive mode's read model, opened by bootHive; absent (setup mode, a failed open, every server test) no read sync runs. */
   readModel?: ReadModel;
+  /** #271: the usage store bootHive opened; the event log hands it every record, and close() closes it. Absent (every server test but one): nothing is kept. */
+  usage?: UsageStore;
   /** #187: the read sync's login and transports; tests inject a fake, the default is accessFor with auth.github's transport. */
   readAccess?: () => Promise<ReadAccess | undefined>;
 }
@@ -241,7 +244,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   // run.spawned's server-side fields (#797, #803): the workspace memory and the language servers its launch read
   const memoryFields = runMemory(memory, () => live?.runtime.config);
   const lspFields = runLspServers(workerLsp, () => live?.runtime.config);
-  const wiring = createServerEvents(deps.events ?? createEventLog(home, 'info', { log }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // events.jsonl (#742): activate sets its level with the log's
+  const wiring = createServerEvents(deps.events ?? createEventLog(home, 'info', { log, ...(deps.usage === undefined ? {} : { keep: deps.usage.write }) }), log, Date.now, (state, worker) => ({ ...memoryFields(state, worker), ...lspFields(state, worker) })); // events.jsonl (#742): activate sets its level with the log's
   const createdAt = Date.now(); // hive.booted's start (#742)
   const systemLanguage = deps.systemLanguage ?? 'en';
   const sourceFactory: SourceFactory = deps.sourceFactory ?? ((spec, items) => createSource(spec, { log, ...(items === undefined ? {} : { items }) }));
@@ -282,6 +285,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   let pollTimer: NodeJS.Timeout | undefined;
   let planLimitsTimer: NodeJS.Timeout | undefined;
   let readModel = deps.readModel; // #180: close() closes it once
+  let usage = deps.usage; // #271: close() closes it once
   let planLimitsReasons: Partial<Record<AgentId, string>> = {}; // #929: the last failure logged per agent; a repeat is silent, a change and the recovery are one line each
   const clients = new Set<Response>();
   let saveChain: Promise<void> = Promise.resolve();
@@ -1358,6 +1362,8 @@ export function createServer(deps: ServerDeps): HiveServer {
     keepAwake.stop(); // #226: no power assertion outlives the server
     await pool.killAll(); // children of the Hive: none should outlive it; awaited so the sessions are gone before the process is
     await lsp.stopAll(); // #780: no language server outlives the Hive
+    usage?.close(); // #271: after the quit's records, the last it keeps
+    usage = undefined; // a second close() closes nothing twice
     const server = httpServer;
     httpServer = undefined; // a second close() (Electron will-quit after a test's after hook, or vice versa) is a no-op
     if (!server) return;

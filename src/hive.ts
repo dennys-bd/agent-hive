@@ -17,6 +17,7 @@ import { newSecret } from './secret.js';
 import { createServer, type HiveServer, type ServerDeps, type SourceFactory } from './server.js';
 import { loadState } from './state-store.js';
 import { hydrate } from './hydrate.js';
+import { openUsageStore } from './usage-store.js';
 import { workspacePathProblem } from './worktree.js';
 import { MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 
@@ -34,7 +35,7 @@ export interface BootOptions extends Pick<ServerDeps, 'readPlanLimits' | 'launch
 }
 
 /** What both modes' createServer get: the options plus this boot's secret (#467). */
-type BootDeps = Omit<BootOptions, 'locale'> & Pick<ServerDeps, 'secret'>;
+type BootDeps = Omit<BootOptions, 'locale'> & Pick<ServerDeps, 'secret' | 'usage'>;
 
 export async function bootHive(home: string, options: BootOptions = {}): Promise<BootedHive> {
   const log = createLogger(home); // before anything else: it creates the home, and a config that fails to parse and setup mode log too
@@ -64,7 +65,10 @@ async function bootLocked(home: string, options: BootOptions, log: Logger, secre
   });
   // Process state, read once: which agent CLIs this machine has (#516). Installing one later means restarting the Hive, which the hint says.
   const agents = given.agents ?? (await detectAgents(execFileAsync));
-  const deps: BootDeps = { ...given, agents, secret };
+  // #271: one store for both modes, since a setup saved in place runs workers too. It never rejects: one that cannot open keeps nothing and says
+  // so in hive.log. ponytail: a config that fails to parse leaves it open until the process exits, which it then does
+  const usage = await openUsageStore(home, log);
+  const deps: BootDeps = { ...given, agents, secret, usage };
   if (raw === undefined) return bootSetupMode(home, log, language, deps);
   const parsed = parseOrFallback(raw, log);
   if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, parsed.fallback, parsed.proposed);

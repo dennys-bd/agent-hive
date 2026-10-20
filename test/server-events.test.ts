@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ZERO_TOKENS, type RecordInput } from '../src/events.js';
+import { SCHEMA_VERSION, ZERO_TOKENS, type EventRecord, type RecordInput } from '../src/events.js';
 import { initialState } from '../src/orchestrator.js';
 import { createServer, type HiveServer } from '../src/server.js';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -347,4 +347,22 @@ test('a free session\'s end carries its worker, its agent and the last turn end\
     }], agent);
     assert.deepEqual(records.filter((r) => r.event === 'run.takeover' || r.event === 'stage.ended'), [], agent);
   }
+});
+
+test('the server hands its usage store every record its event log writes, and closes it once however often it closes (#271)', async (t) => {
+  const { home, repo } = await tempHive(t, 1);
+  const kept: EventRecord[] = [];
+  let closed = 0;
+  const usage = { write: (record: EventRecord): void => { kept.push(record); }, close: (): void => { closed += 1; } };
+  const server = createServer({ secret: SECRET, home, sourceFactory: fakeSourceFactory().factory, launchPty: fakeSpawn().spawn, log: fakeLog().log, usage, exec: async () => ({ stdout: '' }) });
+  const port = await server.listen(0);
+  t.after(() => server.close());
+  const saved = await hiveFetch(`http://127.0.0.1:${port}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hive-ui': '1' }, body: JSON.stringify({ ...BODY, workspaces: workspacesAt(repo) }) });
+  assert.equal(saved.status, 200);
+  await server.poll();
+  await server.close('stop');
+  await server.close('stop');
+  assert.ok(kept.some((r) => r.event === 'task.discovered'), kept.map((r) => r.event).join(','));
+  assert.ok(kept.every((r) => r.schema_version === SCHEMA_VERSION && typeof r.ts === 'string'), 'stamped as the line is');
+  assert.equal(closed, 1);
 });
