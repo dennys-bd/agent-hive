@@ -140,13 +140,16 @@ interface EndDeps {
   setPending(pending: boolean): void; setError(message: string): void;
 }
 
+// Why a start or an open was refused (#861: git's words under the dialog's own heading)
+const refusalOf = (error: Error & { code?: string }): string => (error.code === DISCARD_FAILED ? `${t('start.orphan.failed')}\n${error.message}` : error.message);
+
 // How a start or an open ends once the preparing view lets it (#390): the dialog closes on its run, or says why it did not start
 const endOf = (deps: EndDeps, task: Task) => (answer: Answer): void => {
   const itemId = task.item.itemId;
   if (deps.done.current) return; // closed meanwhile: nothing attaches it, the task carries the session (#351)
   if (!answer.ok) {
     deps.setPending(false);
-    deps.setError(answer.error.code === DISCARD_FAILED ? `${t('start.orphan.failed')}\n${answer.error.message}` : answer.error.message); // #861: git's words under the dialog's own heading
+    deps.setError(refusalOf(answer.error));
     return;
   }
   deps.done.current = true;
@@ -174,8 +177,8 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
   const isBlocked = held.entry === undefined && blocker(task, state, mode, base.choice);
   const close = (): void => {
     if (isCreating) return;
-    // created here and never started: they go. A start on its way keeps its task
-    if (!done.current) created.drop(pending ? picked : undefined);
+    // created here and never started: they go. A start on its way keeps its task, and so does one the preparing view shows failed (#390)
+    if (!done.current) created.drop(pending || view.progress !== undefined ? picked : undefined);
     done.current = true;
     onClose();
   };
@@ -196,7 +199,7 @@ function useStart({ state, taskId, initialMode = 'stages', workspace, title, onS
     held.clearAwaiting(); setPending(true); setError(undefined);
     const itemId = task.item.itemId;
     const isCreated = created.has(itemId) || heldIds.current.has(itemId); // created with auto off either way: the start turns it on
-    const settle = view.begin(endOf({ done, created, openRun, onStarted, onActivity, onClose, setPending, setError }, task), () => { setPending(false); created.drop(itemId); }); // #390: a failed setup stays on the view, its task kept
+    const settle = view.begin(endOf({ done, created, openRun, onStarted, onActivity, onClose, setPending, setError }, task), (answer) => { setPending(false); if (!answer.ok) setError(refusalOf(answer.error)); }); // #390: a failed setup stays on the view, its task kept for tentar de novo, a refusal's words under it
     const request = mode === 'stages' ? runStages(task, state, base.choice, isCreated, startBody(run.picks, run.initial)) : openFree(task, state, base.choice, run.picks);
     request.then((opened) => { if (!done.current) settle({ ok: true, ...(opened ? { opened } : {}) }); }, (error: Error & { code?: string }) => {
       if (done.current) { if (isCreated) void act(`${taskPath(itemId)}/close`); return; } // closed while it was on its way: a task created here that never started goes
@@ -248,9 +251,9 @@ function StartHeader({ id, task, isNew, isPreparing }: { id: string; task?: Task
 }
 
 // The preparing view of the dialog's request (#390): the server's rows, and the session row the dialog's own picks name
-function Preparing({ progress, view, mode, agent, stage, onClose, onRetry }: { progress: SetupRows; view: SetupView; mode: StartMode; agent: string; stage: string; onClose(): void; onRetry(): void }) {
+function Preparing({ progress, view, mode, agent, stage, error, onClose, onRetry }: { progress: SetupRows; view: SetupView; mode: StartMode; agent: string; stage: string; error?: string; onClose(): void; onRetry(): void }) {
   const text = mode === 'stages' ? t('setupProgress.session.stage', { agent, stage }) : t('setupProgress.session.free', { agent });
-  return <SetupProgressView progress={progress} isLive={view.isLive} isFailed={view.isFailed} session={{ text, status: sessionStatus(progress.rows, view.isAnswered) }} onClose={onClose} onRetry={onRetry} />;
+  return <SetupProgressView progress={progress} isLive={view.isLive} isFailed={view.isFailed} error={error} session={{ text, status: sessionStatus(progress.rows, view.isAnswered) }} onClose={onClose} onRetry={onRetry} />;
 }
 
 /** The Start dialog (redesign 11): Iniciar #id from a task's iniciar, abrir sessão and executar etapas… (2a, 2b), or Nova atividade from the
@@ -282,7 +285,7 @@ export function StartDialog(props: StartDialogProps) {
       {/* #774: DialogContent is a grid; with min-width auto a nowrap title sets the column's width and pushes every field past the edge */}
       <DialogContent className="gap-[18px] sm:max-w-[480px] *:min-w-0" onKeyDown={onKeyDown} aria-describedby={task && (taskId !== undefined || progress) ? `${id}-sub` : undefined}>
         <StartHeader id={id} task={task} isNew={taskId === undefined} isPreparing={progress !== undefined} />
-        {progress && task ? <Preparing progress={progress} view={view} mode={mode} agent={run.picks.agent} stage={task.stage} onClose={close} onRetry={submit} /> : (
+        {progress && task ? <Preparing progress={progress} view={view} mode={mode} agent={run.picks.agent} stage={task.stage} error={error} onClose={close} onRetry={submit} /> : (
           <>
             {taskId === undefined && (
               <div className="flex flex-col gap-2">

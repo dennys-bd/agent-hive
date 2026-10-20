@@ -171,6 +171,15 @@ test('a report callback that throws never replaces the step\'s own outcome: a fa
   await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN false'), { ...h.deps, run: failing, onStepEnd }), { message: /^setup failed at line 1 \(RUN false\)/ });
 });
 
+test('a progress file that cannot be written never fails the setup: the step passed, the run goes on and only a resume is lost (#390)', async (t) => {
+  const h = await harness(t);
+  const ran: string[] = [];
+  const recording: RunShell = async (_file, args) => { ran.push(String(args.at(-1))); };
+  const resume = { skip: 0, passed: async (): Promise<void> => { throw new Error('EACCES'); } };
+  assert.equal(await runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN a\nRUN b'), { ...h.deps, run: recording, resume }), 2);
+  assert.equal(ran.length, 2);
+});
+
 test('a RUN step gets the Hive\'s env with the workspace\'s on top, and only the Hive\'s when the workspace sets none (#738)', async (t) => {
   const h = await harness(t);
   const seen: (NodeJS.ProcessEnv | undefined)[] = [];

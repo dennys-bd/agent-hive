@@ -53,6 +53,7 @@ function useRunText(consoleId: string, isLive: boolean): string {
   useEffect(() => {
     let current = true;
     let socket: WebSocket | undefined;
+    setText(''); // a new run's read: the last run's tail never stands in for this one's
     getJson<unknown>(`/console/${encodeURIComponent(SETUP_CHANNEL.id)}?run=${encodeURIComponent(consoleId)}`).then((view) => {
       if (!current || !isView(view)) return;
       if (!view.live.some((run) => run.ptyId === consoleId)) return setText(lastRun(view.history));
@@ -64,7 +65,7 @@ function useRunText(consoleId: string, isLive: boolean): string {
         setText(live);
       });
       socket.addEventListener('close', () => { if (current) setReads((n) => n + 1); });
-    }, () => undefined); // a failed read keeps the last text: the console has the run
+    }).catch(() => undefined); // a failed read, or a socket that cannot open, shows no tail: the console has the run
     return () => { current = false; socket?.close(); };
   }, [consoleId, isLive, reads]);
   return text;

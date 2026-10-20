@@ -121,6 +121,7 @@ export interface SetupProgressViewProps {
   progress: SetupRows; // the live setup's, else the last failed one's
   isLive: boolean; // the run is the live setup's: the log reads it over its pty
   isFailed: boolean;
+  error?: string; // #390: why the request was refused, which no row may say (a spawn refused after the setup passed, a git refusal)
   session: { text: string; status: SetupRowStatus }; // the dialog's own row: what it launches
   onClose(): void;
   onRetry(): void;
@@ -128,7 +129,7 @@ export interface SetupProgressViewProps {
 
 /** The Start dialog's preparing view (#390, design_handoff_preparando): the bar, a row per step of the preparation and the session's, the log
  * tail, the note, fechar and the primary: the wait, or tentar de novo once a step failed. The title and subtitle are the dialog's. */
-export function SetupProgressView({ progress, isLive, isFailed, session, onClose, onRetry }: SetupProgressViewProps) {
+export function SetupProgressView({ progress, isLive, isFailed, error, session, onClose, onRetry }: SetupProgressViewProps) {
   useTick(progress.rows.some((row) => row.status === 'running'));
   const now = Date.now();
   return (
@@ -142,6 +143,7 @@ export function SetupProgressView({ progress, isLive, isFailed, session, onClose
       </div>
       <SetupLog progress={progress} isLive={isLive} onOpened={onClose} />
       <p className={`text-xs leading-4 ${MUTED}`}>{t('setupProgress.note')}</p>
+      {error && <p role="alert" className="whitespace-pre-line text-destructive text-sm">{error}</p>}
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onClose}>{t('setupProgress.close')}<span aria-hidden="true" className={`ml-2 font-normal ${MUTED}`}>{t('setupProgress.esc')}</span></Button>
         <Button type="button" disabled={!isFailed} onClick={onRetry} className="disabled:opacity-60">

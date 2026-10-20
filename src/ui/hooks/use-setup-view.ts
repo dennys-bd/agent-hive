@@ -21,15 +21,21 @@ export const sessionStatus = (rows: readonly SetupRow[], isAnswered: boolean): S
   return isAnswered ? 'done' : 'running';
 };
 
-interface Request { id: number; answer?: Answer; onEnd(answer: Answer): void; onFailed(): void }
+// A failure with no lastSetup (#390: a spawn refused after the setup passed, a git refusal): the last rows seen, the running one failed
+const failedRows = (seen: SetupRows): SetupRows => ({ ...seen, rows: seen.rows.map((row) => (row.status === 'running' ? { ...row, status: 'failed' } : row)) });
+
+// A lastSetup as its content: the state is broadcast whole, so the same failure comes back as a new object
+const keyOf = (rows: SetupRows | undefined): string | undefined => (rows === undefined ? undefined : JSON.stringify(rows));
+
+interface Request { id: number; answer?: Answer; onEnd(answer: Answer): void; onFailed(answer: Answer): void }
 
 /** The Start dialog's preparing view (#390). */
 export interface SetupView {
   progress?: SetupRows; // the rows the view shows: the live setup's, else the last failed one's, else the last seen; undefined: the form
   isLive: boolean; // the activity holds its live setup
-  isFailed: boolean;
+  isFailed: boolean; // only once the setup left the state: until then a submit would be refused, so tentar de novo keeps the wait
   isAnswered: boolean;
-  begin(onEnd: (answer: Answer) => void, onFailed: () => void): (answer: Answer) => void; // a submit or tentar de novo: answers the request's settle
+  begin(onEnd: (answer: Answer) => void, onFailed: (answer: Answer) => void): (answer: Answer) => void; // a submit or tentar de novo: answers the request's settle
 }
 
 /** The switch of the Start dialog (#390): a setup that marks the activity while the dialog's request is on its way turns the view on, for the
@@ -37,13 +43,15 @@ export interface SetupView {
 export function useSetupView(live: Activity | undefined): SetupView {
   const [request, setRequest] = useState<Request>();
   const [seen, setSeen] = useState<SetupRows>();
-  const [isFailed, setFailed] = useState(false);
+  const [hasFailed, setFailed] = useState(false);
+  const [stale, setStale] = useState<string>(); // the lastSetup present at begin: a retry's ok answer can beat its setupStarted to the state
   const ids = useRef(0);
   const setup = live?.setup;
   useEffect(() => {
     if (request !== undefined && setup !== undefined) setSeen(setup);
   }, [request, setup]);
-  const verdict = verdictOf(seen !== undefined, request?.answer, live);
+  const lastSetup = keyOf(live?.lastSetup) === stale ? undefined : live?.lastSetup;
+  const verdict = verdictOf(seen !== undefined, request?.answer, live && { ...live, lastSetup });
   useEffect(() => {
     const answer = request?.answer;
     if (request === undefined || answer === undefined || verdict === undefined) return;
@@ -53,15 +61,17 @@ export function useSetupView(live: Activity | undefined): SetupView {
       return;
     }
     setFailed(true);
-    request.onFailed();
+    request.onFailed(answer);
   }, [request, verdict]);
-  const begin = (onEnd: (answer: Answer) => void, onFailed: () => void): ((answer: Answer) => void) => {
+  const begin = (onEnd: (answer: Answer) => void, onFailed: (answer: Answer) => void): ((answer: Answer) => void) => {
     ids.current += 1;
     const id = ids.current;
     setRequest({ id, onEnd, onFailed });
     setFailed(false);
+    setStale(keyOf(live?.lastSetup));
     return (answer) => setRequest((r) => (r?.id === id ? { ...r, answer } : r)); // a stale request's answer never lands on the next
   };
-  const progress = seen === undefined ? undefined : setup ?? live?.lastSetup ?? seen;
+  const isFailed = hasFailed && setup === undefined;
+  const progress = seen === undefined ? undefined : setup ?? live?.lastSetup ?? (isFailed ? failedRows(seen) : seen);
   return { progress, isLive: setup !== undefined, isFailed, isAnswered: request?.answer !== undefined, begin };
 }

@@ -314,7 +314,8 @@ export async function runSteps(phase: Phase, workspace: Workspace, worktree: str
   deps.onPlan?.(expanded.map(describeStep), skip);
   for (const [at, step] of expanded.slice(skip).entries()) {
     await runStep(phase, worktree, step, skip + at, { ...deps, timeoutMs, env });
-    await deps.resume?.passed(skip + at + 1);
+    // the progress file only saves a resume: one that cannot be written costs the next run its skip, never this setup
+    await deps.resume?.passed(skip + at + 1).catch(() => undefined);
   }
   return expanded.length - skip;
 }

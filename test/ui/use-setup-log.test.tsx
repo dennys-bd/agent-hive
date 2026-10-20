@@ -58,3 +58,27 @@ test('a live run is read over its pty socket as it comes; once it ends, the task
   act(() => FakeWebSocket.all[0]?.end());
   await waitFor(() => expect(result.current[2]).toEqual(['> RUN pnpm install', 'new output', 'setup failed at line 1 (RUN pnpm install): exit 1']));
 });
+
+test('a new run drops the last one\'s text at once: a retry never shows the failed run\'s tail while its own is on its way (#390)', async () => {
+  const failed = '── #9 · setup · 10:00:00 ──\r\n> RUN pnpm install\r\nold output\r\n';
+  let calls = 0;
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    calls += 1;
+    return calls === 1 ? reply({ history: failed, live: [], status: 'failed' }) : new Promise<Response>(() => undefined); // the retry's read never answers
+  }));
+  vi.stubGlobal('WebSocket', FakeWebSocket);
+  const { result, rerender } = renderHook(({ isLive }) => useSetupLog(CONSOLE, ROWS, isLive), { initialProps: { isLive: false } });
+  await waitFor(() => expect(result.current[2]).toEqual(['> RUN pnpm install', 'old output']));
+  rerender({ isLive: true });
+  expect(result.current[2]).toEqual([]);
+});
+
+test('a read whose answer cannot be followed keeps the last text and rejects nothing unhandled (#390)', async () => {
+  const fetchMock = vi.fn(async () => reply({ history: '', live: [{ ptyId: CONSOLE }], status: 'running' }));
+  vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('WebSocket', class { constructor() { throw new Error('no socket'); } });
+  const { result } = renderHook(() => useSetupLog(CONSOLE, ROWS, true));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(result.current.every((lines) => lines.length === 0)).toBe(true);
+});

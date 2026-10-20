@@ -397,10 +397,73 @@ test('a sessão livre open refused while its worktree prepares fails the view at
   rerender(dialog(preparing()));
   expect(screen.getByText('abrir sessão claude')).toBeInTheDocument();
   refuse(reply({ error: 'setup failed at line 1 (RUN pnpm install): exit 1' }, 500));
-  const retry = await screen.findByRole('button', { name: 'tentar de novo' }); // before the state drops the setup
-  rerender(dialog(state([LANDING, { ...HERO, lastSetup: { consoleId: CONSOLE, rows: SETUP_FAILED } }]))); // a live setup blocks an open, as the server does
-  await user.click(retry);
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('setup failed at line 1 (RUN pnpm install): exit 1'));
+  // the state still holds the setup, which blocks an open as the server does: the wait stays until it leaves
+  expect(screen.getByRole('button', { name: 'preparando worktree…' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'tentar de novo' })).not.toBeInTheDocument();
+  rerender(dialog(state([LANDING, { ...HERO, lastSetup: { consoleId: CONSOLE, rows: SETUP_FAILED } }])));
+  await user.click(await screen.findByRole('button', { name: 'tentar de novo' }));
   await waitFor(() => expect(opens).toBe(2));
+});
+
+test('a refusal with no failed row keeps its message on the view and fails the row that was running (#390)', async () => {
+  const user = userEvent.setup();
+  const held = heldStart();
+  const dialog = (st: State) => <StartDialog state={st} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} />;
+  const { rerender } = render(dialog(state()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  rerender(dialog(preparing()));
+  held.answer(reply({ error: 'spawn failed: no agent' }, 500));
+  rerender(dialog(state())); // setupEnded with no failed row: no lastSetup
+  expect(await screen.findByRole('alert')).toHaveTextContent('spawn failed: no agent');
+  expect(within(screen.getByRole('list')).getByText('falhou')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'tentar de novo' })).toBeEnabled();
+});
+
+// A task created here (local:1) whose first start the test refuses while its worktree prepares (#390)
+async function createdAndRefused() {
+  const user = userEvent.setup();
+  let starts = 0;
+  let refuse = (): void => undefined;
+  const fetching = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === '/tasks') return reply({ id: 'HIVE-1', itemId: 'local:1' }, 201);
+    if (url.endsWith('/start') && init?.method === 'POST' && ++starts === 1) return new Promise<Response>((resolve) => { refuse = () => resolve(reply({ error: 'spawn failed: no agent' }, 500)); });
+    return reply(url.endsWith('/bases') ? BASES : { ok: true });
+  });
+  vi.stubGlobal('fetch', fetching);
+  const onClose = vi.fn();
+  const created = (extra: Partial<WithWork> = {}): State => state([LANDING, HERO, task('local:1', 'HIVE-1', 'landing', { created: true, auto: false, ...extra })]);
+  const dialog = (st: State) => <StartDialog state={st} onStarted={vi.fn()} onClose={onClose} />;
+  const { rerender } = render(dialog(state()));
+  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('option', { name: /criar tarefa "landing"/ }));
+  await waitFor(() => expect(fetching).toHaveBeenCalledWith('/tasks', expect.anything()));
+  rerender(dialog(created()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.keyboard('{Control>}{Enter}{/Control}');
+  rerender(dialog(created({ setup: { consoleId: 'setup:local:1', step: 'RUN pnpm install', rows: PREPARING } })));
+  refuse();
+  await screen.findByRole('alert');
+  rerender(dialog(created()));
+  const sent = (): string[] => fetching.mock.calls.filter(([, i]) => i?.method === 'POST').map(([u]) => String(u));
+  return { user, onClose, sent, retry: await screen.findByRole('button', { name: 'tentar de novo' }) };
+}
+
+test('fechar after a failure keeps the task created here: the plan keeps it, as a start on its way does (#390)', async () => {
+  const { user, onClose, sent } = await createdAndRefused();
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(sent()).not.toContain('/tasks/local%3A1/close');
+});
+
+test('tentar de novo on a task created here still hands it to the flow once it starts (#390)', async () => {
+  const { user, onClose, sent, retry } = await createdAndRefused();
+  await user.click(retry);
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(sent().slice(-2)).toEqual(['/tasks/local%3A1/start', '/tasks/local%3A1/auto']);
 });
 
 test('a task whose worktree is already set up never shows the preparing view: the start closes the dialog as before (#390)', async () => {
