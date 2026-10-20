@@ -7,7 +7,7 @@ import { syncRepository } from '../../src/read-model/loop.js';
 import { pullFlagsFromRest, pullFromRest, pullsFromGql, rollupOf, runsReading, statusReading, suitesReading, WireError } from '../../src/read-model/normalize.js';
 import { BATCH_SIZE, checkPath, pullPath, reviewsPath, syncPulls } from '../../src/read-model/pulls.js';
 import { reconcile, refetchIssue } from '../../src/read-model/reconcile.js';
-import { labelsPath, repoPath } from '../../src/read-model/repo-scopes.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { PullFlags } from '../../src/read-model/rows.js';
 import { MIGRATIONS } from '../../src/read-model/schema.js';
 import { scopePath, syncScope } from '../../src/read-model/sync.js';
@@ -288,11 +288,12 @@ test('a round runs the PR part after the issue scopes and reports pulls (#186)',
   const db = await tempModel(t);
   const gh = github({
     [repoPath(REPO)]: { body: REST_REPO, etag: 'ERP' }, [labelsPath(REPO)]: { body: [], etag: 'EL' },
+    [assigneesPath(REPO)]: { body: [], etag: 'EA' }, [milestonesPath(REPO)]: { body: [], etag: 'EM' }, [issueTypesPath('acme')]: { body: [], etag: 'ET' },
     [scopePath(REPO, 'issues', null)]: { body: [restPr(7, T1)], etag: 'EI' }, [scopePath(REPO, 'comments', null)]: { body: [], etag: 'EC' }, ...pagesAt(HEAD),
   });
   const batch = fakeBatch();
   const { report, error } = await syncRepository(roundDeps(db, gh.rest, batch.gql), REF);
   assert.equal(error, undefined);
   assert.deepEqual([report.kinds, batch.calls], [['issues', 'repo', 'pulls'], [['PR_7']]]);
-  assert.deepEqual(gh.calls.slice(4).map(([path]) => path), [pullPath(REPO, 7), ...CHECK_PARTS.map((part) => checkPath(REPO, HEAD, part)), reviewsPath(REPO, 7)]);
+  assert.deepEqual(gh.calls.slice(7).map(([path]) => path), [pullPath(REPO, 7), ...CHECK_PARTS.map((part) => checkPath(REPO, HEAD, part)), reviewsPath(REPO, 7)]);
 });

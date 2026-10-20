@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { checkPath, pullPath, reviewsPath } from '../../src/read-model/pulls.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { RefetchDeps } from '../../src/read-model/reconcile.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
@@ -75,7 +76,10 @@ export const REST_REPO = {
 };
 export const restLabel = (name: string): Record<string, unknown> => ({ id: name.length, node_id: `LA_${name}`, name, color: 'ededed', default: false });
 /** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */
-export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([])];
+export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([]), ok([]), ok([]), ok([])];
+/** The round's three option scopes beside labels (#282), and every repository scope in the order the round runs them. */
+export const OPTION_PATHS: readonly string[] = [assigneesPath(REPO), milestonesPath(REPO), issueTypesPath('acme')];
+export const REPO_SCOPE_PATHS: readonly string[] = [repoPath(REPO), labelsPath(REPO), ...OPTION_PATHS];
 export const restIssue = (n: number, updatedAt: string): Record<string, unknown> => ({ ...REST_ISSUE, node_id: `I_${n}`, number: n, title: `T${n}`, updated_at: updatedAt });
 
 /** A PR item of the issues endpoint (#186): open, or closed and merged when `mergedAt` is set; `extra` overrides any field. */

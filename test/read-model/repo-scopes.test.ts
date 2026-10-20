@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { syncRepository } from '../../src/read-model/loop.js';
 import { WireError } from '../../src/read-model/normalize.js';
-import { labelsPath, repoPath, syncLabels, syncRepo } from '../../src/read-model/repo-scopes.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath, syncAssignees, syncIssueTypes, syncLabels, syncMilestones, syncRepo } from '../../src/read-model/repo-scopes.js';
 import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
-import { fakeRest, NO_GQL, NOW, ok, REF, REPO, REPO_ROW, REST_REPO, restIssue, restLabel, SOURCE, SYNCED, T1, tempModel } from './fixtures.js';
+import { fakeRest, NO_GQL, NOW, ok, REF, REPO, REPO_ROW, REPO_SCOPE_PATHS, REST_REPO, restIssue, restLabel, SOURCE, SYNCED, T1, tempModel } from './fixtures.js';
 
 const LATER = (): Date => new Date('2026-10-12T13:00:00Z');
 
@@ -55,13 +55,13 @@ test('a malformed answer throws and leaves the stored row and its ETag as they w
 
 test('syncRepository runs the repo and labels scopes before issues; the round names them only when they changed (#181)', async (t) => {
   const db = await tempModel(t);
-  const { rest, calls } = fakeRest([ok(REST_REPO, { etag: 'ER' }), ok([restLabel('bug')], { etag: 'EL' }), ok([restIssue(1, T1)]), ok([])]);
+  const { rest, calls } = fakeRest([ok(REST_REPO, { etag: 'ER' }), ok([restLabel('bug')], { etag: 'EL' }), ok([]), ok([]), ok([]), ok([restIssue(1, T1)]), ok([])]);
   const first = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
-  assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
+  assert.deepEqual(calls.map(([path]) => path), [...REPO_SCOPE_PATHS, scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
   assert.deepEqual(first.report.kinds, ['issues', 'repo', 'labels']);
-  const quiet = fakeRest([ok(REST_REPO), ok([restLabel('bug')]), { status: 304 }, { status: 304 }]);
+  const quiet = fakeRest([ok(REST_REPO), ok([restLabel('bug')]), ok([]), ok([]), ok([]), { status: 304 }, { status: 304 }]);
   const second = await syncRepository({ db, rest: quiet.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
-  assert.deepEqual(second.report, { kinds: [], requests: { 200: 2, 304: 2 } }, 'an identical 200 names no kind');
+  assert.deepEqual(second.report, { kinds: [], requests: { 200: 5, 304: 2 } }, 'an identical 200 names no kind');
 });
 
 test('a round whose repo, labels and issues scopes all fail reports every failure, so none is missing from the log (#181)', async (t) => {
@@ -87,4 +87,33 @@ test('a stop after a failed repo scope still reports that failure; the stop itse
   assert.deepEqual(calls, [repoPath(REPO), labelsPath(REPO)]);
   assert.match(String(error), /repo HTTP 403/);
   assert.doesNotMatch(String(error), /stop/i);
+});
+
+test('assignees, milestones and issue types store on a 200, across pages, and write nothing on a 304; a kind is named only when it changed (#282)', async (t) => {
+  const db = await tempModel(t);
+  const page2 = 'repositories/1/assignees?per_page=100&page=2';
+  const first = fakeRest([
+    ok([{ login: 'caio' }], { etag: 'EA', next: page2 }), ok([{ login: 'Bia' }]), ok([{ title: 'v2' }, { title: 'v1' }], { etag: 'EM' }),
+    ok([{ name: 'Task' }, { name: 'Bug' }], { etag: 'ET' }),
+  ]);
+  const deps = { db, rest: first.rest, source: SOURCE, now: NOW };
+  assert.deepEqual(await syncAssignees(deps, REPO), { kinds: ['assignees'], requests: { 200: 2, 304: 0 } });
+  assert.deepEqual(await syncMilestones(deps, REPO), { kinds: ['milestones'], requests: { 200: 1, 304: 0 } });
+  assert.deepEqual(await syncIssueTypes(deps, REPO), { kinds: ['issueTypes'], requests: { 200: 1, 304: 0 } });
+  assert.deepEqual(first.calls.map(([path]) => path), [assigneesPath(REPO), page2, milestonesPath(REPO), issueTypesPath('acme')]);
+  assert.deepEqual([db.assignees(SOURCE, REPO), db.milestones(SOURCE, REPO), db.issueTypes(SOURCE, 'acme')], [['Bia', 'caio'], ['v1', 'v2'], ['Task', 'Bug']], 'by name, case-insensitive; issue types in the owner\'s order');
+  assert.deepEqual(db.scope(SOURCE, 'acme', 'issueTypes'), { cursor: null, etag: 'ET', syncedAt: SYNCED }, 'keyed by the owner');
+  const second = fakeRest([{ status: 304 }, { status: 304 }, { status: 304 }]);
+  const again = { ...deps, rest: second.rest };
+  for (const scope of [syncAssignees, syncMilestones, syncIssueTypes]) assert.deepEqual(await scope(again, REPO), { kinds: [], requests: { 200: 0, 304: 1 } });
+  assert.deepEqual(second.calls.map(([, etag]) => etag), ['EA', 'EM', 'ET']);
+});
+
+test('a 404 on issue types, a user owner\'s answer, stores none and still counts the scope as synced (#282)', async (t) => {
+  const db = await tempModel(t);
+  db.setIssueTypes(SOURCE, 'acme', ['Bug']);
+  const { rest } = fakeRest([{ status: 404 }]);
+  assert.deepEqual(await syncIssueTypes({ db, rest, source: SOURCE, now: NOW }, REPO), { kinds: ['issueTypes'], requests: { 200: 1, 304: 0 } });
+  assert.deepEqual(db.issueTypes(SOURCE, 'acme'), []);
+  assert.equal(db.scope(SOURCE, 'acme', 'issueTypes')?.syncedAt, SYNCED);
 });

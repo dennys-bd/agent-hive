@@ -5,7 +5,7 @@ import type { ReadAccess } from './access.js';
 import type { ReadModel, SyncKind } from './db.js';
 import { pollOne, syncPulls } from './pulls.js';
 import { reconcile, refetchIssue, stampReconcile, type RefetchDeps } from './reconcile.js';
-import { syncLabels, syncRepo } from './repo-scopes.js';
+import { syncAssignees, syncIssueTypes, syncLabels, syncMilestones, syncRepo } from './repo-scopes.js';
 import type { RestGet, RestQuota } from './rest.js';
 import { EMPTY_REPORT, mergeReports, PartialSyncError, SyncStopped, syncScope, type SyncDeps, type SyncReport } from './sync.js';
 
@@ -36,23 +36,28 @@ function joined(errors: unknown[]): unknown {
   return new AggregateError(errors, errors.map((err) => (err instanceof Error ? err.message : String(err))).join('; '));
 }
 
-// The repo and labels scopes (#181) run first and each on its own: a fork with issues disabled answers 410 on the issues scope, and a failing
+type RepoScope = (deps: SyncDeps, repository: string) => Promise<SyncReport>;
+/** The field editors' options (#282): what the round syncs after the repos row, and what the tab's refresh asks for now. */
+export const OPTION_SCOPES: readonly RepoScope[] = [syncLabels, syncAssignees, syncMilestones, syncIssueTypes];
+const ROUND_SCOPES: readonly RepoScope[] = [syncRepo, ...OPTION_SCOPES];
+
+// The repo and option scopes (#181, #282) run first and each on its own: a fork with issues disabled answers 410 on the issues scope, and a failing
 // repo scope must not keep the others from running. Only a stop ends the round here
-async function repoScopes(deps: SyncDeps, repository: string): Promise<Independent> {
+async function repoScopes(deps: SyncDeps, repository: string, scopes: readonly RepoScope[] = ROUND_SCOPES): Promise<Independent> {
   let report = EMPTY_REPORT;
   const errors: unknown[] = [];
-  for (const scope of [syncRepo, syncLabels]) {
+  for (const scope of scopes) {
     try {
       report = mergeReports(report, await scope(deps, repository));
     } catch (caught) {
-      if (caught instanceof SyncStopped) throw caught;
+      if (caught instanceof SyncStopped) break; // not a failure; the issues scope meets the stop next, and the earlier failures still reach the report
       errors.push(caught);
     }
   }
   return { report, errors };
 }
 
-/** One repository's round (#180): the repo and labels scopes (#181, each independent of the rest), then issues, then comments (whose issues the first scope stored), then the full
+/** One repository's round (#180): the repo scope and the option scopes (#181, #282, each independent of the rest), then issues, then comments (whose issues the first scope stored), then the full
  * listing when due, then its PRs (#186). A first round that read both issue scopes from null to their end already read everything: it counts as the listing. An issue scope that throws ends
  * the round there, keeping what the earlier one stored; its own place was never written. REST, but for the PR part's GraphQL batch: one call per 100 PRs whose updated_at moved. */
 export async function syncRepository(deps: RefetchDeps, ref: RepoRef): Promise<RoundResult> {

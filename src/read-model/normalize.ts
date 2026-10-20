@@ -154,6 +154,12 @@ export function repoFromRest(source: string, repository: string, json: unknown):
 
 /** A page of `GET /repos/{o}/{r}/labels` as names (#181). */
 export const labelNamesFromRest = (json: unknown): string[] => listOf(json, 'labels', 'name');
+/** A page of `GET /repos/{o}/{r}/assignees` as logins (#282). */
+export const assigneeLoginsFromRest = (json: unknown): string[] => listOf(json, 'assignees', 'login');
+/** A page of `GET /repos/{o}/{r}/milestones?state=open` as titles (#282). */
+export const milestoneTitlesFromRest = (json: unknown): string[] => listOf(json, 'milestones', 'title');
+/** `GET /orgs/{org}/issue-types` as names, in the owner's order (#282). */
+export const issueTypeNamesFromRest = (json: unknown): string[] => listOf(json, 'issue types', 'name');
 
 function arrayOf(value: unknown, what: string): unknown[] {
   if (!Array.isArray(value)) throw new WireError(what);

@@ -4,7 +4,7 @@ import { commentFromRest, issueFromRest, pullFlagsFromRest } from './normalize.j
 import type { RestGet } from './rest.js';
 import type { CommentRow, IssueRow } from './rows.js';
 
-const KINDS: readonly SyncKind[] = ['issues', 'comments', 'repo', 'labels', 'pulls'];
+const KINDS: readonly SyncKind[] = ['issues', 'comments', 'repo', 'labels', 'assignees', 'milestones', 'issueTypes', 'pulls']; // mergeReports' order: a kind missing here is dropped
 // the two since-cursor scopes; repo and labels are repo-scopes.ts's
 type ListKind = Extract<SyncKind, 'issues' | 'comments'>;
 

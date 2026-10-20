@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs } from '../types.js';
 import { prDetailsOf } from './pr-details.js';
 import { itemTablesOf } from './item-tables.js';
+import { optionTablesOf } from './option-tables.js';
 import { pullTablesOf } from './pull-tables.js';
 import type { CheckRow, CommentRow, FieldValueRow, IssueDetails, IssueRow, IssueView, ItemRow, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, ProjectFieldRow, RelationKind, RelationRow, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
@@ -30,8 +31,8 @@ const COUNTS = `SELECT COUNT(*) FILTER (WHERE kind = 'issue' AND state = 'open')
 const UPSERT_SCOPE = `INSERT INTO sync_scopes (source, repository, kind, cursor, etag, synced_at) VALUES ($source, $repository, $kind, $cursor, $etag, $syncedAt)
   ON CONFLICT (source, repository, kind) DO UPDATE SET cursor = excluded.cursor, etag = excluded.etag, synced_at = excluded.synced_at`;
 
-/** The `repo` and `labels` kinds keep only an ETag: each is replaced whole on a 200 (#181). `pulls`: a PR's own fields changed (#186). */
-export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'pulls';
+/** The `repo`, `labels`, `assignees`, `milestones` and `issueTypes` kinds keep only an ETag: each is replaced whole on a 200 (#181, #282). `pulls`: a PR's own fields changed (#186). */
+export type SyncKind = 'issues' | 'comments' | 'repo' | 'labels' | 'assignees' | 'milestones' | 'issueTypes' | 'pulls';
 /** A part of a PR's poll (#186, #187): pulls/{n}, its head's check runs, combined status and check suites, and its reviews. */
 export type PullPart = 'pr' | 'runs' | 'status' | 'suites' | 'reviews';
 /** A row of sync_scopes (#180): the two incremental scopes, the full listing's, whose synced_at spaces it, and an open PR's poll parts (#186),
@@ -59,6 +60,12 @@ export interface ReadModel {
   repo(source: string, repository: string): RepoRow | undefined;
   setLabels(source: string, repository: string, names: string[]): boolean; // replaces the set; whether it changed
   labels(source: string, repository: string): string[]; // by name
+  setAssignees(source: string, repository: string, logins: string[]): boolean; // #282: replaces the set; whether it changed
+  assignees(source: string, repository: string): string[]; // by login, case-insensitive
+  setMilestones(source: string, repository: string, titles: string[]): boolean; // the open ones
+  milestones(source: string, repository: string): string[]; // by title, case-insensitive
+  setIssueTypes(source: string, owner: string, names: string[]): boolean; // an owner's, in its order
+  issueTypes(source: string, owner: string): string[]; // in the owner's order
   counts(source: string, repository: string): RepoCounts;
   issue(source: string, repository: string, number: number): IssueView | undefined; // never a PR
   issueByNode(source: string, nodeId: string): IssueRow | undefined; // #187: an issue's or a PR's row, as stored
@@ -267,7 +274,7 @@ function modelOf(db: DatabaseSync, now: () => number): ReadModel {
   const reads = readsOf(db);
   const repos = repoTablesOf(db);
   return {
-    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now),
+    ...upsertsOf(db, now), ...removalsOf(db), ...reads, ...repos, ...countsOf(db), ...pullTablesOf(db), ...itemTablesOf(db, now), ...optionTablesOf(db),
     ...prDetailsOf(db, now, { comments: reads.comments, repo: repos.repo }),
     transaction: <T>(run: () => T): T => inTransaction(db, run), close: () => db.close(),
   };
