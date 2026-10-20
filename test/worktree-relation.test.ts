@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
 import { branchRelation, setAside } from '../src/worktree-base.js';
-import { baseOptions, ensureWorktree, worktreePath } from '../src/worktree.js';
+import { baseOptions, cleanWorktree, ensureWorktree, worktreePath } from '../src/worktree.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
 // #267 with the real git: a branch's class against the start, and what each class makes of the task's worktree and branch.
@@ -136,4 +136,15 @@ test('baseOptions reports how the orphan branch relates to the default start, wi
   const bare = await plainRepo(t); // no origin/main to classify against
   await unrelatedBranch(bare);
   assert.deepEqual((await baseOptions(bare, SLUG, [], ORIGIN, exec, BRANCH)).orphan, { worktree: false, branch: true });
+});
+
+test('cleanWorktree with setAside keeps an unmerged branch as <branch>-old-<sha7> instead of refusing, and still deletes a merged one with branch -d (#267)', async (t) => {
+  const { repo, root } = await repoWithOrigin(t);
+  const old = await unrelatedBranch(repo);
+  const kept = `${BRANCH}-old-${old.slice(0, 7)}`;
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  assert.deepEqual([await git(repo, 'branch', '--list', BRANCH), await git(repo, 'rev-parse', kept)], ['', old]);
+  await git(repo, 'branch', BRANCH, root); // merged into HEAD: delete activity's own rule deletes it
+  await cleanWorktree(repo, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'setAside');
+  assert.equal(await git(repo, 'branch', '--list', `${BRANCH}*`), kept, 'deleted, and nothing new was kept');
 });

@@ -7,7 +7,7 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchRelation, chosenBase, defaultBase, existingBranch, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
 export { gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
@@ -203,6 +203,9 @@ export async function ensureCheckout(
  * and its folder is on disk. A rejection is a refusal: nothing is removed. */
 export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
 
+/** What a clear does with a branch `branch -d` would refuse (#267): refuse, as delete activity does, or set it aside, as the start dialog's discard does. */
+export type Unmerged = 'refuse' | 'setAside';
+
 /**
  * The delete activity stage's action, and the first try of the ⋯ menu's delete activity (#182): removes the task's worktree and its local
  * branch, both WITHOUT force (unlike removeWorktree, the forced removal). All or nothing: what git would refuse is checked first (changes
@@ -211,10 +214,12 @@ export type BeforeRemove = (path: string, present: boolean) => Promise<void>;
  * not list and a branch it does not know count as done; a listed path whose directory is gone is pruned. The path comes from the slug
  * alone (the activity's worktree is a SessionStart cwd any local process can post); the branch is the one git lists on that path, else
  * the activity's branch only when it is the name the Hive's template renders for this task, else nothing. The remote branch is never touched.
- * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing.
+ * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `unmerged: 'setAside'` (#267) keeps an
+ * unmerged branch under setAside's name instead of refusing.
  */
 export async function cleanWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
+  unmerged: Unmerged = 'refuse',
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
   const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path);
@@ -223,10 +228,14 @@ export async function cleanWorktree(
   const named = listed ?? ownBranch(activity, branch);
   const found = named !== undefined && (await hasBranch(repo, named, exec)) ? named : undefined;
   if (present) await refuseDirty(path, exec);
-  if (found !== undefined) await refuseUnmerged(repo, found, exec);
+  const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
+  if (found !== undefined && check?.merged === false && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
-  if (found !== undefined) await gitOrWords(repo, ['branch', '-d', '--', found], exec);
+  if (found === undefined) return;
+  // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
+  if (check?.merged === false) await setAside(repo, found, exec);
+  else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
 }
 
 // What `worktree remove` without --force refuses, checked first (#182): tracked changes and untracked files. Read inside the worktree;
@@ -236,17 +245,21 @@ async function refuseDirty(path: string, exec: Exec): Promise<void> {
   if (status !== '') throw new Error(`${path} has changes that are not committed:\n${status}`);
 }
 
-// What `branch -d` refuses, checked first (#182) by git's own rule: merged into the branch's upstream when it has one, else into HEAD of
-// the main checkout. merge-base --is-ancestor exits 1 for "not merged"; any other failure is git's words. Both refs are built here, never
-// read off the task, so neither can start with `-`.
-export async function refuseUnmerged(repo: string, branch: string, exec: Exec): Promise<void> {
+// What `branch -d` checks (#182), by git's own rule: merged into the branch's upstream when it has one, else into HEAD of the main checkout.
+// merge-base --is-ancestor exits 1 for "not merged"; any other failure is git's words. Both refs are built here, never read off the task, so
+// neither can start with `-`.
+async function mergeCheck(repo: string, branch: string, exec: Exec): Promise<{ merged: boolean; target: string }> {
   const ref = `refs/heads/${branch}`;
   const target = (await gitOrWords(repo, ['for-each-ref', '--format=%(upstream)', ref], exec)).trim() || 'HEAD';
-  const merged = await exec('git', ['-C', repo, 'merge-base', '--is-ancestor', ref, target]).then(() => true, (err: { code?: unknown }) => {
-    if (err.code === 1) return false;
-    throw new Error(wordsOf(err));
-  });
-  if (!merged) throw new Error(`the branch '${branch}' is not fully merged into ${target}`);
+  return { merged: await gitAnswers(repo, ['merge-base', '--is-ancestor', ref, target], exec), target };
+}
+
+const unmergedError = (branch: string, target: string): Error => new Error(`the branch '${branch}' is not fully merged into ${target}`);
+
+/** What `branch -d` refuses, checked first (#182): rejects with the reason when the branch is not merged (mergeCheck). */
+export async function refuseUnmerged(repo: string, branch: string, exec: Exec): Promise<void> {
+  const { merged, target } = await mergeCheck(repo, branch, exec);
+  if (!merged) throw unmergedError(branch, target);
 }
 
 /**
