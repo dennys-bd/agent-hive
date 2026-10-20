@@ -198,6 +198,8 @@ export type Gql = (query: string, variables?: Record<string, string | number | b
 /** What the credential store holds, one key per provider. Never leaves the process except as an Authorization header. */
 export interface Credentials {
   github?: { token: string; login: string };
+  /** An external MCP server's header value by server name (#333). */
+  mcp?: Record<string, { value: string }>;
 }
 
 /** What GET /settings/github/auth answers: never the token, only what the screen shows. */
@@ -1072,6 +1074,19 @@ export type ReviewWhen = (typeof REVIEW_WHEN)[number];
 export interface ReviewerConfig { on: boolean; when: ReviewWhen; agent: AgentId | null; model: string | null; version: string | null }
 /** What a file without `reviewer`, or a field it leaves out, reads as (#328). */
 export const REVIEWER_DEFAULTS: ReviewerConfig = { on: true, when: 'save', agent: null, model: null, version: null };
+
+/** The Hive's MCP tools no config can turn off (#333): the stages and the skills depend on them. */
+export const LOCKED_TOOLS = ['hive_done', 'hive_ask', 'hive_stop', 'hive_pr', 'hive_reply', 'hive_conventions'] as const;
+/** The tools mcp.off may turn off for the whole Hive (#333, screen 11f). */
+export const OPTIONAL_TOOLS = ['hive_remember', 'hive_applied', 'hive_create_task'] as const;
+export type OptionalTool = (typeof OPTIONAL_TOOLS)[number];
+interface McpServerBase { name: string; workspace: string | null; on: boolean }
+export type ExternalMcpServer =
+  | (McpServerBase & { command: string; args: string[] })
+  | (McpServerBase & { url: string; authHeader?: string });
+export interface McpSettings { off: OptionalTool[]; servers: ExternalMcpServer[] }
+export const MCP_DEFAULTS: McpSettings = { off: [], servers: [] };
+export type McpServerState = 'connected' | 'no_answer' | 'off'; // off: the server's own switch, never probed
 /** GET /settings/formatters (#749, #780): the workspaces whose checkout has a supported formatter's binary. */
 export interface FormatterState { id: FormatterId; found: string[] }
 /** How long a language server process outlives its last client (#780). */
@@ -1236,6 +1251,8 @@ export interface Config {
   editor: EditorConfig;
   /** The template reviewer (#328). Optional in the file: absent, or a field left out, reads as REVIEWER_DEFAULTS; no migration. */
   reviewer: ReviewerConfig;
+  /** The Hive's optional tools turned off and the external MCP servers (#333). Required; a first save writes MCP_DEFAULTS. */
+  mcp: McpSettings;
 }
 
 /** The viewer's settings (#513, #199), was #198's two) and its effective language (#242): the config's, else the system's, never absent. The
@@ -1606,6 +1623,8 @@ export interface SettingsBody {
   editor?: EditorConfig;
   /** The template reviewer (#328): the Settings form never sends it, so a save keeps the saved one; the reviewer menu (4.3) may. */
   reviewer?: ReviewerConfig;
+  /** The Hive's MCP settings (#333): the Settings form never sends it, the MCP routes do. */
+  mcp?: McpSettings;
   /** Old source name → new source name (#278). The form always sends it ({} when nothing was renamed); an API caller that omits it renames
    * nothing; a first setup ignores it. Never written to hive.config.json. */
   renames?: Record<string, string>;

@@ -10,6 +10,7 @@ import { activityOf, resultOf } from '../src/activities.js';
 import { mountMcp } from '../src/mcp.js';
 import { initialState, reduce } from '../src/orchestrator.js';
 import type { RecordInput } from '../src/events.js';
+import { MCP_DEFAULTS } from '../src/types.js';
 import type { Config, HiveEvent, Stage, State, Task, Transition, Worker } from '../src/types.js';
 import { fakeEvents } from './fakes.js';
 import { activityIdOf, withWork } from './fixtures/work.js';
@@ -34,7 +35,7 @@ async function harness(t: TestContext, freeSession = true): Promise<Harness> {
   const unused = async (): Promise<never> => { throw new Error('unused'); };
   const app = express().use(express.json());
   mountMcp(app, {
-    exec: async () => ({ stdout: '' }), live: () => ({ state, config: {} as Config, sources: new Map() }), poll: async () => undefined,
+    exec: async () => ({ stdout: '' }), live: () => ({ state, config: { mcp: MCP_DEFAULTS } as Config, sources: new Map() }), poll: async () => undefined,
     dispatch: async (event) => { dispatched.push(event); state = reduce(state, event).state; return []; }, canClose: () => true, relate: unused, canRelate: () => false,
     reviews: { read: unused, update: unused }, notifyReview: () => undefined, localReviews: { read: unused, update: unused }, notifyLocalReview: () => undefined, events, memory: { read: unused, update: unused },
   });

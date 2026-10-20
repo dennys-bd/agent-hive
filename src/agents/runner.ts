@@ -7,6 +7,11 @@ import type { PlanLimitsDeps } from './claude-limits.js';
 
 export type { LaunchArg };
 
+/** An external server as a run receives it (#333): in scope, switched on, its header value resolved from credentials.json. */
+export type RunMcpServer =
+  | { name: string; command: string; args: string[] }
+  | { name: string; url: string; header?: { name: string; value: string } };
+
 /** Everything a runner needs to render one run's argv after its command. */
 export interface AgentRun {
   ptyId: string;

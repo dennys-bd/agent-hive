@@ -6,7 +6,7 @@ import { taskWorkspace, loadConfig, loadConfigIfPresent, parseConfig, predatesCo
 import { type LegacyStage, transitionsOf } from '../src/config-migrate.js';
 import { SHORTCUTS } from '../src/shortcut-registry.js';
 import type { SourceTaskProps, Config } from '../src/types.js';
-import { EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
+import { MCP_DEFAULTS, EDITOR_DEFAULTS, REVIEWER_DEFAULTS, SIGNALS_DEFAULTS, APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RESERVED_ENV_NAMES, SHUTDOWN_IDLE_DEFAULT, WORKSPACE_PRESET_COLORS } from '../src/types.js';
 import { sourceEntry, FIXED, STAGES, FILTER, LOCAL_STAGES, chained, combConfig, move, EPICS } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 
@@ -1194,4 +1194,16 @@ test('parseConfig reads a month rule and a plan rule\'s agent; it refuses an unk
   for (const source of ['hour', 'day']) {
     assert.throws(rules({ source, percent: 50, signal: 'red', agent: 'codex' }), { message: 'hive.config.json: "usageRules[0].agent" only applies to a plan source (session, week, month)' }, source);
   }
+});
+
+test('mcp is required: combConfig writes the defaults; a file without it, or with a locked tool in off, is refused naming the key (#333)', () => {
+  assert.deepEqual(parseConfig(GITHUB).mcp, MCP_DEFAULTS);
+  assert.throws(() => parseConfig(github({ mcp: undefined })), { message: 'hive.config.json: "mcp" must be an object with off and servers' });
+  assert.throws(() => parseConfig(github({ mcp: { off: ['hive_done'], servers: [] } })), { message: /^hive\.config\.json: "mcp\.off" holds hive_done: only / });
+});
+
+test('an mcp server scoped to a workspace the Comb does not have fails the parse naming the server; one scoped to a Comb workspace parses (#333)', () => {
+  const figma = { name: 'figma', url: 'http://127.0.0.1:3845/mcp', workspace: 'hive-site', on: false };
+  assert.equal(parseConfig(github({ mcp: { off: [], servers: [{ ...figma, workspace: 'hive' }] } })).mcp.servers[0].workspace, 'hive');
+  assert.throws(() => parseConfig(github({ mcp: { off: [], servers: [figma] } })), { message: 'hive.config.json: "mcp.servers": figma is scoped to hive-site, which no longer exists' });
 });

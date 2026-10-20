@@ -1,4 +1,4 @@
-import { MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_COLORS } from '../../src/types.js';
+import { MCP_DEFAULTS, MEMORY_CAP_DEFAULT, SIGNALS_DEFAULTS, WORKSPACE_PRESET_COLORS } from '../../src/types.js';
 import { SANDBOX_FILE } from './sandbox.js';
 import type { SeedTask, StageRole, StagesSeed } from './seed.js';
 import type { Arm } from './types.js';
@@ -41,7 +41,7 @@ export const EVAL_COMMANDS = [
 const SETTINGS = {
   onClose: 'quit', deleteActivity: { session: false, transcripts: false, nonAutoTasks: false }, shutdownIdleMinutes: 30, approvalMinutes: 10, rateLimitWaitMinutes: 300,
   showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: false, closeStageTabNotice: false, sleepNotice: false, sleepAutoNotice: false, sleepIdleNotice: false, sleepAllNotice: false, closeTerminalTab: 'keep', closeTerminalTabNotice: false,
-  defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS,
+  defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, mcp: MCP_DEFAULTS,
   editor: { formatOnSave: { enabled: true, workspaces: 'all' }, languages: {} },
 };
 

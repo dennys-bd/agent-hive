@@ -12,7 +12,7 @@ import type { ItemStore } from '../src/read-model/items.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { saveState } from '../src/state-store.js';
 import type { AgentAvailability, RateLimits, SettingsInfo, Source, SourceItem, SourceSpec, Task } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, VIEWER_DEFAULTS, MCP_DEFAULTS } from '../src/types.js';
 import { AUTH, GITHUB_ENTRY, LOCAL_STAGES, STAGES, combConfig, fakeSourceFactory, tempHive, claudePlan } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
@@ -582,4 +582,16 @@ test('bootHive hydrates the loaded tasks from every source\'s stored() before th
   t.after(() => booted.server.close());
   assert.deepEqual(booted.server.getState()?.tasks.map((task) => task.item.title), ['']);
   assert.ok((await logLines(failing.home)).some((l) => l.includes('source board: the read model\'s listing was not read at boot: model gone')));
+});
+
+test('a hive.config.json without mcp opens setup mode with the parse error, prefilled with no tool off and no server; a locked tool in off still fails the boot (#333)', async (t) => {
+  const { home } = await hiveWithConfig(t, { prefix: 'OLD', mcp: undefined });
+  const { server, port } = await bootHive(home);
+  t.after(() => server.close());
+  const info = await settingsInfo(home, port);
+  assert.equal(info.configured, false);
+  assert.equal(info.error, 'hive.config.json: "mcp" must be an object with off and servers');
+  assert.deepEqual([info.config?.comb.prefix, info.config?.mcp], ['OLD', MCP_DEFAULTS], 'the rest of the file, the defaults');
+  const wrong = await hiveWithConfig(t, { mcp: { off: ['hive_done'], servers: [] } });
+  await assert.rejects(bootHive(wrong.home), { message: /^hive\.config\.json: "mcp\.off" holds hive_done/ }, 'a key that is there but wrong is no file from before the key');
 });

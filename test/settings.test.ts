@@ -9,9 +9,9 @@ import { readCredentials } from '../src/credentials.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import type { Source, SourceSpec, TaskFilter, Config, EffectiveLimits, GithubAuth, GithubAuthStatus, Gql, Language, SourceConfig, Workspace, SettingsBody, SettingsInfo, State } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS, REVIEWER_DEFAULTS, MCP_DEFAULTS, type McpSettings } from '../src/types.js';
 import { isDeepStrictEqual } from 'node:util';
-import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained } from './fakes.js';
+import { AUTH, STAGES, FILTER, FIXED, fakeSourceFactory, fakeGql, GITHUB_ENTRY, EPICS, onOwnStages, fakeSpawn, jsonResponse, move, OPTIONS, workspacesAt, tempHive, chained, WORKSPACE } from './fakes.js';
 import { tempDir } from './temp-dir.js';
 import { SECRET_HEADER } from '../src/secret.js';
 import { hiveFetch, SECRET } from './secret-client.js';
@@ -1235,4 +1235,23 @@ test('POST /settings writes the four sleep notice switches, and the prefix with 
   const res = await hiveFetch(`${base}/settings`, { method: 'POST', headers: UI_HEADERS, body: JSON.stringify({ prefix: before.comb.prefix, sleepIdleNotice: false }) });
   assert.deepEqual(await json(res), { ok: true });
   assert.deepEqual(await saved(), { ...before, sleepIdleNotice: false });
+});
+
+test('POST /settings writes mcp\'s defaults on a first save, keeps the saved mcp when the body has none, and refuses a workspace rename under a scoped server, naming it (#333)', async (t) => {
+  const { base, home, repo } = await start(t);
+  const onDisk = async (): Promise<unknown> => (JSON.parse(await readFile(configFile(home), 'utf8')) as Config).mcp;
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), MCP_DEFAULTS, 'a body without it, as the Settings form sends, writes the defaults');
+  const mcp: McpSettings = { off: ['hive_remember'], servers: [{ name: 'figma', url: 'http://127.0.0.1:3845/mcp', workspace: WORKSPACE, on: true }] };
+  assert.equal((await postSettings(base, { ...BODY, mcp })).status, 200);
+  assert.equal((await postSettings(base, BODY)).status, 200);
+  assert.deepEqual(await onDisk(), mcp, 'the Settings form never sends mcp: the saved one stays');
+  // the source's default workspace follows the rename, so the server's scope is the one problem left
+  const renamed = await postSettings(base, {
+    ...BODY, workspaces: workspacesAt(repo).map((w) => ({ ...w, name: 'renamed' })),
+    sources: [{ ...GITHUB_ENTRY, taskProps: { ...FIXED, defaults: { ...FIXED.defaults, workspace: 'renamed' } } }],
+  });
+  assert.equal(renamed.status, 400);
+  assert.deepEqual(await json(renamed), { error: `hive.config.json: "mcp.servers": figma is scoped to ${WORKSPACE}, which no longer exists` });
+  assert.deepEqual(await onDisk(), mcp, 'refused before the write');
 });

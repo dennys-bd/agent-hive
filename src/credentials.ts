@@ -22,9 +22,18 @@ function isGithubCredential(value: unknown): value is { token: string; login: st
   return typeof token === 'string' && typeof login === 'string';
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// #333: an external server's header value by server name; an entry whose value is not a string is dropped, as a malformed github is: it
+// would reach a header as [object Object]. A map that is no object is dropped whole.
+function mcpValues(raw: unknown): Record<string, { value: string }> | undefined {
+  if (!isRecord(raw)) return undefined;
+  return Object.fromEntries(Object.entries(raw).flatMap(([name, entry]) => (isRecord(entry) && typeof entry.value === 'string' ? [[name, { value: entry.value }]] : [])));
+}
+
 /**
  * What is stored, `{}` when nothing is. A missing, unreadable or corrupt file reads as "not logged in", never as a
- * boot failure. A `github` field with a non-string token or login is dropped the same way, but in place: every other
+ * boot failure. A `github` field with a non-string token or login is dropped the same way (the `mcp` map is kept entry by entry, #333), but in place: every other
  * top-level key (a sibling provider's, once one exists) is kept, since `writeCredentials({ ...await readCredentials(),
  * github }, …)` is the write pattern every login uses — losing a sibling here would silently erase it on the next one.
  */
@@ -34,8 +43,9 @@ export async function readCredentials(env?: NodeJS.ProcessEnv): Promise<Credenti
   try {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-    const { github, ...rest } = parsed as { github?: unknown } & Record<string, unknown>;
-    return (isGithubCredential(github) ? { ...rest, github } : rest) as Credentials;
+    const { github, mcp, ...rest } = parsed as { github?: unknown; mcp?: unknown } & Record<string, unknown>;
+    const values = mcpValues(mcp);
+    return { ...rest, ...(isGithubCredential(github) ? { github } : {}), ...(values ? { mcp: values } : {}) } as Credentials;
   } catch {
     return {};
   }
