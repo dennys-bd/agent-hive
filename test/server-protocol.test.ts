@@ -58,7 +58,9 @@ test('a passage created after ask is in hive-site\'s stage and session files rig
   assert.deepEqual(await files(home, SITE), [renderProtocol('stage', [], site), renderProtocol('session', [], site)]);
   assert.deepEqual(await files(home, WORKSPACE), [STAGE_PROTOCOL, SESSION_PROTOCOL], 'its if does not hold for hive: nothing in its place');
   const [stage, session] = await files(home, SITE);
-  assert.deepEqual(await answer(hiveFetch(`${base}/api/protocol/render?workspace=${SITE}`)), [200, { stage, session }]);
+  const local = await readFile(workspaceProtocolPaths(home, SITE).local, 'utf8');
+  assert.equal(local, renderProtocol('local', [], site), 'the local protocol keeps the passage after ask too (#256)');
+  assert.deepEqual(await answer(hiveFetch(`${base}/api/protocol/render?workspace=${SITE}`)), [200, { stage, session, local }]);
   assert.deepEqual(await answer(hiveFetch(`${base}/api/protocol/render?workspace=ghost`)), [404, { error: UNKNOWN_WORKSPACE_MESSAGE }]);
   assert.deepEqual(await answer(send('PUT', `${base}/api/protocol/passages/p1`, { text: '---\nafter: intro\n---\nFor all.\n' })), [200, { id: 'p1' }]);
   assert.equal((await files(home, WORKSPACE))[0], renderProtocol('stage', [], [rendered('p1', 'intro', 'For all.')]));
