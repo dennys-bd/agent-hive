@@ -57,7 +57,8 @@ async function runStages(task: Task, state: State, base: BaseChoice, created: bo
 // sessão livre: the agent opened on the task with no prompt, a new session with its explicit picks or a resumed one with its record's (#257,
 // #290). The caller attaches the run it answers, unless the dialog closed meanwhile (#351)
 function openFree(task: Task, state: State, base: BaseChoice, picks: RunPicks): Promise<OpenResult> {
-  const body = { ...openBody(picks, task, state), ...baseBody(base), size: shownSize() };
+  // #267: sessão livre never discards, whatever executar etapas preselected: the open sends the reuse body and ensureWorktree acts on the class
+  const body = { ...openBody(picks, task, state), ...baseBody({ ...base, discard: false }), size: shownSize() };
   return postJson<OpenResult>(`${taskPath(task.item.itemId)}/open`, body);
 }
 
