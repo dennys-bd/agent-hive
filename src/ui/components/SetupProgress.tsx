@@ -55,12 +55,20 @@ function labelOf(row: SetupRow): ReactNode {
   return <>{t('setupProgress.row.step')} {mono(row.label ?? '')}</>;
 }
 
-function Row({ status, label, value }: { status: SetupRowStatus; label: ReactNode; value?: { text: string; tone: string } }) {
+// A row's full text (#893): the title of a row its one line may cut, a branch's name or a setup step's command
+function titleOf(row: SetupRow): string | undefined {
+  if (row.kind === 'branch') return `${t('setupProgress.row.branch')} ${row.branch ?? ''} ${t('setupProgress.row.from', { base: row.base ?? '' })}`;
+  if (row.kind === 'step') return `${t('setupProgress.row.step')} ${row.label ?? ''}`;
+  return undefined;
+}
+
+// One line per row (#893): a multi-line RUN filled the dialog, so the text cuts with an ellipsis and the value column never gives way
+function Row({ status, label, title, value }: { status: SetupRowStatus; label: ReactNode; title?: string; value?: { text: string; tone: string } }) {
   return (
-    <li className={`flex items-center gap-2.5 text-[13px] ${status === 'queued' ? MUTED : ''}`}>
+    <li title={title} className={`flex items-center gap-2.5 text-[13px] ${status === 'queued' ? MUTED : ''}`}>
       <span aria-hidden="true" className={`flex w-4 flex-none justify-center ${TONE[status]}`}>{GLYPH[status]}</span>
-      <span className="min-w-0 flex-1">{label}</span>
-      {value !== undefined && value.text !== '' && <span className={`whitespace-nowrap text-xs ${value.tone}`}>{value.text}</span>}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {value !== undefined && value.text !== '' && <span className={`flex-none whitespace-nowrap text-xs ${value.tone}`}>{value.text}</span>}
     </li>
   );
 }
@@ -76,7 +84,21 @@ function followedRow(rows: readonly SetupRow[]): number {
 }
 
 function LogOption({ row, index }: { row: SetupRow; index: number }) {
-  return <SelectItem value={String(index)}>{row.kind === 'worktree' ? t('setupProgress.row.worktree') : row.label}</SelectItem>;
+  const text = row.kind === 'worktree' ? t('setupProgress.row.worktree') : row.label ?? '';
+  return <SelectItem value={String(index)} title={text} className="*:[span]:last:min-w-0"><span className="truncate">{text}</span></SelectItem>;
+}
+
+// The log's step select (#390, #893): it opens under its trigger and never wider than the log box, every command on one line with its full
+// text in title; the trigger cuts at 60% of the header. Item-aligned took the window's width and wrapped the commands
+function LogSelect({ rows, shown, box, onPick }: { rows: readonly SetupRow[]; shown: number; box: HTMLElement | null; onPick(value: string): void }) {
+  return (
+    <Select value={String(shown)} onValueChange={onPick}>
+      <SelectTrigger size="sm" aria-label={t('setupProgress.log')} className="h-6 min-w-0 max-w-[60%] px-1.5 text-xs"><SelectValue className="min-w-0" /></SelectTrigger>
+      <SelectContent position="popper" align="start" collisionBoundary={box} collisionPadding={0} className="max-w-(--radix-select-content-available-width)">
+        {rows.flatMap((row, i) => (hasLog(row) ? [<LogOption key={rowKey(row, i)} row={row} index={i} />] : []))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 function LogLine({ text, isLast }: { text: string; isLast: boolean }) {
@@ -94,19 +116,17 @@ function SetupLog({ progress, isLive, onOpened }: { progress: SetupRows; isLive:
   const tails = useSetupLog(progress.consoleId, progress.rows, isLive);
   const open = useOpenConsole();
   const [picked, setPicked] = useState<number>();
+  const [box, setBox] = useState<HTMLDivElement | null>(null); // the popper reads it at render, so a callback ref held in state
   const followed = followedRow(progress.rows);
   const shown = picked ?? followed;
   const lines = tails[shown] ?? [];
   const pick = (value: string): void => setPicked(Number(value) === followed ? undefined : Number(value)); // the running row again: follow it
   const openConsole = (): void => { open?.(SETUP_CHANNEL.id, progress.consoleId, true); onOpened(); };
   return (
-    <div className="flex flex-col rounded-md border border-border bg-background">
+    <div ref={setBox} className="flex flex-col rounded-md border border-border bg-background">
       <div className={`flex items-center gap-2 border-border border-b px-2.5 py-1.5 text-xs ${MUTED}`}>
         <span className="text-foreground">{t('setupProgress.log')}</span>
-        <Select value={String(shown)} onValueChange={pick}>
-          <SelectTrigger size="sm" aria-label={t('setupProgress.log')} className="h-6 px-1.5 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>{progress.rows.flatMap((row, i) => (hasLog(row) ? [<LogOption key={rowKey(row, i)} row={row} index={i} />] : []))}</SelectContent>
-        </Select>
+        <LogSelect rows={progress.rows} shown={shown} box={box} onPick={pick} />
         <span className="flex-1" />
         {open && <button type="button" className="hover:text-foreground" onClick={openConsole}>{t('setupProgress.openConsole')}</button>}
       </div>
@@ -137,7 +157,7 @@ export function SetupProgressView({ progress, isLive, isFailed, error, session, 
       <div className="flex flex-col gap-2.5">
         <Progress value={barValue(progress.rows, session.status)} aria-label={t('setupProgress.preparing')} className="h-1 bg-muted" indicatorClassName="bg-working" />
         <ul className="flex flex-col gap-2.5">
-          {progress.rows.map((row, i) => <Row key={rowKey(row, i)} status={row.status} label={labelOf(row)} value={rightOf(row, now)} />)}
+          {progress.rows.map((row, i) => <Row key={rowKey(row, i)} status={row.status} label={labelOf(row)} title={titleOf(row)} value={rightOf(row, now)} />)}
           <Row status={session.status} label={session.text} />
         </ul>
       </div>
