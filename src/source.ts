@@ -126,12 +126,17 @@ const reasonOf = (err: unknown): string => (err instanceof Error ? err.message :
 // reducer rule. A failed resolve rejects the poll, which pollFailed shows on the source's status; the writes keep the adapter's own refusal
 function resolvedOnPoll(name: string, source: Source, log?: Pick<Logger, 'info'>): Source {
   let isResolved = false;
+  // A Settings save reuses this wrapper (createSources) and resolves it through here: the next poll must not resolve it again
+  const resolveFields = async (): Promise<void> => {
+    await source.resolveFields();
+    isResolved = true;
+  };
   return {
     ...source,
+    resolveFields,
     listItems: async () => {
       if (!isResolved) {
-        await source.resolveFields();
-        isResolved = true;
+        await resolveFields();
         log?.info(`source ${name}: resolved on a later poll`);
       }
       return source.listItems();

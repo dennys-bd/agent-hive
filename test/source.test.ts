@@ -848,6 +848,17 @@ test('resolveSources with deferOffline keeps an offline source, wrapped: its lis
   assert.deepEqual(lines, [`WARN source work: offline at boot, resolved on a later poll (${OFFLINE})`, 'INFO source work: resolved on a later poll']);
 });
 
+test('a deferred source resolved by a Settings save (its resolveFields, as createSources reuses it) does not resolve again on its next poll (#291)', async () => {
+  let isOnline = false;
+  const offline = resolving(() => (isOnline ? undefined : new Error(OFFLINE)));
+  const work = (await resolveSources(new Map([['work', offline.source]]), { deferOffline: true })).get('work');
+  assert.ok(work);
+  isOnline = true;
+  await resolveSources(new Map([['work', work]]));
+  await work.listItems();
+  assert.deepEqual(offline.calls, ['resolve', 'resolve', 'list']);
+});
+
 test('resolveSources rejects naming the source on a failure that is not the network, with deferOffline in a mixed map too; without the option an offline failure rejects as before and nothing is wrapped (#291)', async () => {
   const offline = resolving(() => new Error(OFFLINE));
   const gone = resolving(() => new Error('source not found: no GitHub Project 9 for "acme"'));
