@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { facetsOf, matchesFilter, projectQuery, splitBlocked, usesMe } from '../../src/sources/github-filter.js';
+import { facetsOf, matchesFilter, splitBlocked, usesMe } from '../../src/sources/github-filter.js';
 import { ITEMS, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { FilterOp, FilterRule } from '../../src/types.js';
 
@@ -97,8 +97,8 @@ test('facetsOf reads what a rule can match on an item: logins, labels, the miles
 test('the items query asks each issue\'s repository and each item\'s set field values with their field names, single-select or text (#245, #293)', () => {
   assert.match(ITEMS, /milestone \{ title \} repository \{ nameWithOwner \}/);
   assert.match(ITEMS, /fieldValues\(first: 20\) \{/);
-  assert.match(ITEMS, /\.\.\. on ProjectV2ItemFieldSingleSelectValue \{ name field \{ \.\.\. on ProjectV2SingleSelectField \{ name \} \} \}/);
-  assert.match(ITEMS, /\.\.\. on ProjectV2ItemFieldTextValue \{ text field \{ \.\.\. on ProjectV2Field \{ name \} \} \}/);
+  assert.match(ITEMS, /\.\.\. on ProjectV2ItemFieldSingleSelectValue \{ name field \{ \.\.\. on ProjectV2FieldCommon \{ name \} \} \}/);
+  assert.match(ITEMS, /\.\.\. on ProjectV2ItemFieldTextValue \{ text field \{ \.\.\. on ProjectV2FieldCommon \{ name \} \} \}/);
 });
 
 test('splitBlocked parts a source filter into its blocked rules and the others, each in order; matchesFilter alone reads every item as free (#441)', () => {
@@ -108,21 +108,4 @@ test('splitBlocked parts a source filter into its blocked rules and the others, 
   assert.deepEqual(splitBlocked([hive, free, p0]), { blocked: [free], other: [hive, p0] });
   assert.deepEqual(splitBlocked([]), { blocked: [], other: [] });
   assert.equal(matchesFilter([{ field: 'blocked', op: 'any' }], undefined, issue()), false, 'an item carries no relations: why listItems judges blocked after the relations query');
-});
-
-test('projectQuery writes each plain rule in the Project\'s filter syntax and ANDs them with a space; none negates (#234)', () => {
-  assert.equal(projectQuery([rule('milestone', 'any', ['Wave 1', 'beta'])]), 'milestone:"Wave 1","beta"');
-  assert.equal(projectQuery([rule('label', 'none', ['wip'])]), '-label:"wip"');
-  assert.equal(projectQuery([rule('assignee', 'any', ['@ME', 'ana'])]), 'assignee:@me,"ana"');
-  assert.equal(projectQuery([rule('repository', 'any', ['acme/app']), rule('label', 'any', ['bug'])]), 'repo:"acme/app" label:"bug"');
-});
-
-test('projectQuery: "nenhum" alone becomes no: or has:; a rule it cannot say is left to matchesFilter; no rule left gives undefined (#234)', () => {
-  assert.equal(projectQuery([rule('milestone', 'any', ['@none'])]), 'no:milestone');
-  assert.equal(projectQuery([rule('milestone', 'none', ['@none'])]), 'has:milestone');
-  assert.equal(projectQuery([rule('milestone', 'any', ['@none', 'beta'])]), undefined, 'emptiness OR a value is not one qualifier');
-  assert.equal(projectQuery([rule('label', 'any', ['say "hi"'])]), undefined);
-  assert.equal(projectQuery([priority('any', ['High']), { field: 'blocked', op: 'any' }]), undefined);
-  assert.equal(projectQuery([priority('any', ['High']), rule('label', 'any', ['bug'])]), 'label:"bug"');
-  assert.equal(projectQuery([]), undefined);
 });

@@ -1,10 +1,11 @@
 import type { ReadModel, SyncKind } from './db.js';
+import { writeItem } from './items.js';
 import { rowStands } from './sync.js';
-import type { CommentRow, IssueRow, ItemRow, PullFlags, ReviewRow } from './rows.js';
+import type { CommentRow, IssueRow, NormalizedItem, PullFlags, ReviewRow } from './rows.js';
 
 /** A write's confirmed answer as rows (#183, #187): what its mutation asked back, normalized; a PR write's review and flags too; a Project
  * field write's re-read item (#190). */
-export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[]; reviews?: ReviewRow[]; pullFlags?: PullFlags[]; items?: ItemRow[] }
+export interface WriteAnswer { issues?: IssueRow[]; comments?: CommentRow[]; reviews?: ReviewRow[]; pullFlags?: PullFlags[]; items?: NormalizedItem[] }
 
 /** The model, and the readModel event the sync sends (#180): a write's rows reload every other open view of the repository. */
 export interface WriteAnswerDeps { db: ReadModel; notify(repository: string, kinds: SyncKind[]): void }
@@ -14,8 +15,8 @@ export interface WriteAnswerDeps { db: ReadModel; notify(repository: string, kin
 export function applyWriteAnswer(deps: WriteAnswerDeps, repository: string, answer: WriteAnswer): SyncKind[] {
   const { db } = deps;
   const kinds = db.transaction((): SyncKind[] => {
-    // #190: items name no SyncKind: the itemRead dispatch updates the board, and the next poll reads them back
-    for (const row of answer.items ?? []) db.upsertItem(row, 'write');
+    // #282: an item's issue row is the repository views' too: a write that changed it names issues, so they follow with no round
+    const items = (answer.items ?? []).map((item) => writeItem(db, item, 'write'));
     // map, then includes: every row is upserted, not only up to the first that writes
     const issues = (answer.issues ?? []).map((row) => db.upsertIssue(row, 'write'));
     const comments = (answer.comments ?? []).map((row) => db.upsertComment(row, 'write'));
@@ -27,7 +28,7 @@ export function applyWriteAnswer(deps: WriteAnswerDeps, repository: string, answ
     };
     const pulls = [...(answer.reviews ?? []).map((row) => db.upsertReview(row, 'write')), ...(answer.pullFlags ?? []).filter(stands).map((flags) => db.setPullFlags(flags))];
     return [
-      ...(issues.includes(true) ? ['issues' as const] : []), ...(comments.includes(true) ? ['comments' as const] : []), ...(pulls.includes(true) ? ['pulls' as const] : []),
+      ...(issues.includes(true) || items.includes(true) ? ['issues' as const] : []), ...(comments.includes(true) ? ['comments' as const] : []), ...(pulls.includes(true) ? ['pulls' as const] : []),
     ];
   });
   if (kinds.length > 0) deps.notify(repository, kinds);

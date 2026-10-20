@@ -7,12 +7,12 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from '.
 import {
   createReadModelLoop, readModelEvent, RECONCILE_EVERY_MS, REFETCH_COOLDOWN_MS, syncRepository, type ReadModelLoop, type ReadModelLoopDeps,
 } from '../../src/read-model/loop.js';
-import { labelsPath, repoPath } from '../../src/read-model/repo-scopes.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
 import type { Gql } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
-import { deferred, fakeLinks, fakeRest, github, HEAD, issueRow, NO_GQL, NOW, ok, pagesAt, REF, REPO, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, restPr, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
+import { deferred, fakeLinks, fakeRest, github, HEAD, issueRow, NO_GQL, NOW, ok, OPTION_PATHS, pagesAt, REF, REPO, REPO_SCOPE_PATHS, REPO_SCOPES, REST_REPO, restComment, restIssue, restLabel, restPr, SOURCE, SYNCED, T1, T2, tempModel } from './fixtures.js';
 
 const OTHER = 'acme/other';
 const listing = (repository: string): string[] => [`repos/${repository}/issues?state=all&per_page=100`, `repos/${repository}/issues/comments?per_page=100`];
@@ -27,8 +27,8 @@ test('a repository syncs issues then comments; a first round from null that ends
   const { rest, calls } = fakeRest([...REPO_SCOPES, ok([restIssue(1, T1)]), ok([restComment('C1', 1, T1)])]);
   const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.equal(error, undefined);
-  assert.deepEqual(report, { kinds: ['issues', 'comments', 'repo'], requests: { 200: 4, 304: 0 } });
-  assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
+  assert.deepEqual(report, { kinds: ['issues', 'comments', 'repo'], requests: { 200: 7, 304: 0 } });
+  assert.deepEqual(calls.map(([path]) => path), [...REPO_SCOPE_PATHS, scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
 });
 
@@ -36,7 +36,7 @@ test('a first round cut short does not count as the full listing: the listing ru
   const db = await tempModel(t);
   const { rest, calls } = fakeRest([...REPO_SCOPES, ok([restIssue(1, T1)]), ok([restComment('C9', 9, T1)]), ok([restIssue(1, T1)]), ok([])]);
   await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
-  assert.deepEqual(calls.slice(4).map(([path]) => path), listing(REPO));
+  assert.deepEqual(calls.slice(7).map(([path]) => path), listing(REPO));
 });
 
 test('the full listing runs when the reconcile stamp is absent or older than 24 h, not at exactly 24 h (#180)', async (t) => {
@@ -46,18 +46,18 @@ test('the full listing runs when the reconcile stamp is absent or older than 24 
   }
   const stamp = (msAgo: number): void => db.setScope(SOURCE, REPO, 'reconcile', { cursor: null, etag: null, syncedAt: stampAgo(msAgo) });
   stamp(RECONCILE_EVERY_MS);
-  const quiet = fakeRest(Array(4).fill({ status: 304 }));
+  const quiet = fakeRest(Array(7).fill({ status: 304 }));
   await syncRepository({ db, rest: quiet.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
-  assert.equal(quiet.calls.length, 4, 'exactly 24 h is not older than 24 h');
+  assert.equal(quiet.calls.length, 7, 'exactly 24 h is not older than 24 h');
   stamp(RECONCILE_EVERY_MS + 1000);
-  const due = fakeRest([...Array(4).fill({ status: 304 }), ok([]), ok([])]);
+  const due = fakeRest([...Array(7).fill({ status: 304 }), ok([]), ok([])]);
   const { report } = await syncRepository({ db, rest: due.rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
-  assert.deepEqual(due.calls.slice(4).map(([path]) => path), listing(REPO));
-  assert.deepEqual(report.requests, { 200: 2, 304: 4 });
+  assert.deepEqual(due.calls.slice(7).map(([path]) => path), listing(REPO));
+  assert.deepEqual(report.requests, { 200: 2, 304: 7 });
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
-  const absent = fakeRest([...Array(4).fill({ status: 304 }), ok([]), ok([])]);
+  const absent = fakeRest([...Array(7).fill({ status: 304 }), ok([]), ok([])]);
   await syncRepository({ db, rest: absent.rest, gql: NO_GQL, source: SOURCE, now: NOW }, { repository: OTHER, workspace: 'hive' });
-  assert.deepEqual(absent.calls.slice(4).map(([path]) => path), listing(OTHER), 'no stamp at all is due');
+  assert.deepEqual(absent.calls.slice(7).map(([path]) => path), listing(OTHER), 'no stamp at all is due');
 });
 
 test('a scope that throws ends the repository\'s round: what the issues scope stored is reported, the comments scope keeps its place (#180)', async (t) => {
@@ -65,6 +65,7 @@ test('a scope that throws ends the repository\'s round: what the issues scope st
   db.setScope(SOURCE, REPO, 'comments', { cursor: T1, etag: 'EC', syncedAt: T1 });
   const rest: RestGet = async (path) => {
     if (path.includes('/comments')) throw new Error('gh api: HTTP 502');
+    if (OPTION_PATHS.includes(path)) return ok([]);
     return ok([restIssue(1, T2)]);
   };
   const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
@@ -96,7 +97,7 @@ test('a first round from null upserts, emits readModel once with its repository 
   const { rest, calls } = fakeRest([...REPO_SCOPES, ok([restIssue(1, T1)], { etag: 'EI' }), ok([restComment('C1', 1, T1)], { etag: 'EC' })]);
   const { loop, notified, gqlCalls } = loopOn(db, rest);
   await loop.runOnce();
-  assert.deepEqual(calls.map(([path]) => path), [repoPath(REPO), labelsPath(REPO), scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
+  assert.deepEqual(calls.map(([path]) => path), [...REPO_SCOPE_PATHS, scopePath(REPO, 'issues', null), scopePath(REPO, 'comments', null)]);
   assert.deepEqual(notified, [[REPO, ['issues', 'comments', 'repo']]]);
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
   assert.equal(gqlCalls(), 0, 'a round never calls GraphQL');
@@ -104,12 +105,13 @@ test('a first round from null upserts, emits readModel once with its repository 
 
 test('an unchanged repository costs one 304 per scope and emits nothing (#180)', async (t) => {
   const db = await tempModel(t);
-  for (const kind of ['issues', 'comments', 'repo', 'labels'] as const) db.setScope(SOURCE, REPO, kind, { cursor: T1, etag: `E-${kind}`, syncedAt: T1 });
+  for (const kind of ['issues', 'comments', 'repo', 'labels', 'assignees', 'milestones'] as const) db.setScope(SOURCE, REPO, kind, { cursor: T1, etag: `E-${kind}`, syncedAt: T1 });
+  db.setScope(SOURCE, 'acme', 'issueTypes', { cursor: T1, etag: 'E-issueTypes', syncedAt: T1 });
   db.setScope(SOURCE, REPO, 'reconcile', { cursor: null, etag: null, syncedAt: SYNCED });
-  const { rest, calls } = fakeRest(Array(4).fill({ status: 304 }));
+  const { rest, calls } = fakeRest(Array(7).fill({ status: 304 }));
   const { loop, notified } = loopOn(db, rest);
   await loop.runOnce();
-  assert.deepEqual(calls.map(([, etag]) => etag), ['E-repo', 'E-labels', 'E-issues', 'E-comments']);
+  assert.deepEqual(calls.map(([, etag]) => etag), ['E-repo', 'E-labels', 'E-assignees', 'E-milestones', 'E-issueTypes', 'E-issues', 'E-comments']);
   assert.deepEqual(notified, []);
 });
 
@@ -303,7 +305,7 @@ test('a round whose second page fails still emits the kinds the first page store
   let pages = 0;
   const rest: RestGet = async (path) => {
     if (path === repoPath(REPO)) return ok(REST_REPO);
-    if (path === labelsPath(REPO)) return ok([]);
+    if (path === labelsPath(REPO) || OPTION_PATHS.includes(path)) return ok([]);
     pages += 1;
     if (pages === 2) throw new Error('github rest: HTTP 500'); // what the transport throws for a 500
     return ok([restIssue(1, T2)], { next: 'repos/acme/hive/issues?page=2' });
@@ -322,7 +324,7 @@ test('stop() ends a scope between pages: the pages left are not requested, the p
   let pages = 0;
   const rest: RestGet = async (path) => {
     if (path === repoPath(REPO)) return ok(REST_REPO);
-    if (path === labelsPath(REPO)) return ok([]);
+    if (path === labelsPath(REPO) || OPTION_PATHS.includes(path)) return ok([]);
     pages += 1;
     if (pages === 2) await gate.promise;
     return ok([restIssue(pages, T2)], { next: `repos/acme/hive/issues?page=${pages + 1}` });
@@ -354,6 +356,7 @@ test('an issues scope that answers 410 (a fork with issues disabled) still store
   const rest: RestGet = async (path) => {
     if (path === repoPath(REPO)) return ok({ ...REST_REPO, has_issues: false });
     if (path === labelsPath(REPO)) return ok([restLabel('bug')]);
+    if (OPTION_PATHS.includes(path)) return ok([]);
     return { status: 410 };
   };
   const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
@@ -365,10 +368,10 @@ test('an issues scope that answers 410 (a fork with issues disabled) still store
 
 test('a repo scope that fails does not stop labels, issues, comments or the first-round stamp; the round reports its error (#181)', async (t) => {
   const db = await tempModel(t);
-  const { rest, calls } = fakeRest([{ status: 200, body: 'not a repository' }, ok([restLabel('bug')]), ok([restIssue(1, T1)]), ok([restComment('C1', 1, T1)])]);
+  const { rest, calls } = fakeRest([{ status: 200, body: 'not a repository' }, ok([restLabel('bug')]), ok([]), ok([]), ok([]), ok([restIssue(1, T1)]), ok([restComment('C1', 1, T1)])]);
   const { report, error } = await syncRepository({ db, rest, gql: NO_GQL, source: SOURCE, now: NOW }, REF);
   assert.match(String(error), /repository/);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 7);
   assert.deepEqual(report.kinds, ['issues', 'comments', 'labels']);
   assert.equal(db.scope(SOURCE, REPO, 'reconcile')?.syncedAt, SYNCED);
   assert.equal(db.scope(SOURCE, REPO, 'repo'), undefined);
@@ -431,4 +434,30 @@ test('a stop that lands between a PR\'s refetch and its poll ends the poll witho
   assert.deepEqual(errors, []);
   assert.deepEqual(gh.calls.slice(before).filter(([path]) => path.includes('/pulls/')), [], 'the stopped poll asked GitHub nothing');
   db.close();
+});
+
+test('refreshOptions runs the labels, assignees, milestones and issue types scopes of the repositories asked, now, and names what changed; once stopped it reads nothing (#282)', async (t) => {
+  const db = await tempModel(t);
+  const { rest, calls } = fakeRest([ok([restLabel('bug')]), ok([{ login: 'bia' }]), ok([]), { status: 404 }]);
+  const { loop, notified } = loopOn(db, rest);
+  await loop.refreshOptions([REPO]);
+  assert.deepEqual(calls.map(([path]) => path), [labelsPath(REPO), assigneesPath(REPO), milestonesPath(REPO), issueTypesPath('acme')]);
+  assert.deepEqual(notified, [[REPO, ['labels', 'assignees']]]);
+  await loop.stop();
+  await loop.refreshOptions([REPO]);
+  assert.equal(calls.length, 4);
+});
+
+test('two concurrent refreshOptions for one repository make one set of REST calls (#282)', async (t) => {
+  const db = await tempModel(t);
+  const gate = deferred();
+  const { rest, calls } = fakeRest([ok([restLabel('bug')]), ok([{ login: 'bia' }]), ok([]), { status: 404 }]);
+  const { loop } = loopOn(db, async (path, etag) => { await gate.promise; return rest(path, etag); });
+  const first = loop.refreshOptions([REPO]);
+  const second = loop.refreshOptions([REPO]);
+  gate.resolve();
+  await Promise.all([first, second]);
+  assert.equal(calls.length, 4);
+  await loop.refreshOptions([REPO]).catch(() => undefined);
+  assert.ok(calls.length > 4, 'once settled, a refresh runs again');
 });

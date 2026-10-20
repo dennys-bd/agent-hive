@@ -4,6 +4,7 @@ import { sourceSpec, createSource, createSources, namespaced, resolveSources } f
 import { groupUnderEpics, listFilterOptions, listProjects, listStatusOptions, treeLinks } from '../src/sources/github.js';
 import { RelationRereadError } from '../src/sources/github-blockers.js';
 import { ITEMS, ITEM_FIELDS, type GhItemNode } from '../src/sources/github-queries.js';
+import { PROJECT_ITEM_LIMIT } from '../src/sources/github-pages.js';
 import { citedColumns, itemSource } from '../src/tasks.js';
 import { parseConfig } from '../src/config.js';
 import type { FieldWrite, ProjectView, Source, SourceConfig, SourceSpec, TaskFilter, TaskRule } from '../src/types.js';
@@ -35,12 +36,12 @@ const item = (n: number, status = 'Ready') => ({
 type Rel = [number, string, string?];
 // A blocker relation's other issue as the relations query asks it (#56): in acme/r unless named, titled T<n>
 const relRef = ([number, state, repo = 'acme/r']: Rel) => ({ number, title: `T${number}`, state, repository: { nameWithOwner: repo } });
-const relations = (blockedBy: Rel[], subIssues: [number, string][] = [], blocking: Rel[] = []) => ({
-  issue: {
-    blockedBy: { nodes: blockedBy.map(relRef) },
-    blocking: { nodes: blocking.map(relRef) },
-    subIssues: { nodes: subIssues.map(([number, state]) => ({ number, state })) },
-  },
+// The relations query's answer since #282: blocking alone; blockedBy and the sub-issues ride on the item
+const relations = (blocking: Rel[] = []) => ({ issue: { blocking: { nodes: blocking.map(relRef) } } });
+/** An item carrying its own blockedBy and sub-issues, as the items read asks them (#282). */
+const related = <T extends { content: object }>(node: T, blockedBy: Rel[], subIssues: [number, string][] = []) => ({
+  ...node,
+  content: { ...node.content, blockedBy: { nodes: blockedBy.map(relRef) }, subIssues: { nodes: subIssues.map(([number, state]) => ({ id: `N${number}`, number, state })) } },
 });
 /** An issue item carrying the filter's attributes; absent ones come back as GitHub sends them (empty nodes, null). `fields`: single-select
  * values by field name (#245); `textFields`: text values by field name, which a project rule reads too (#293). */
@@ -179,12 +180,17 @@ test('listItems pages items by cursor and concatenates the pages, stopping at ha
   assert.deepEqual(items[1].variables, { login: 'acme', number: 6, after: 'CUR_1' });
 });
 
-test('listItems hands GitHub the filter as the items query, and warns when the pages still end before the items do (#234)', async () => {
-  const { gql, calls } = fakeGql({ items: [page([item(1)], true, 'CUR_1'), page([item(2)], true, 'CUR_2')], relations: {} });
+test('listItems reads the whole Project, unfiltered, up to PROJECT_ITEM_LIMIT, and filters locally; past the limit it warns (#234, #282)', async () => {
+  const pages = Array.from({ length: PROJECT_ITEM_LIMIT / 100 }, (_, k) => page([issue(k + 1, { milestone: k === 0 ? 'Wave 1' : 'Wave 2' })], true, `C${k + 1}`));
+  const { gql, calls } = fakeGql({ items: pages, relations: { i0: relations() } });
   const { log, lines } = fakeLog();
-  await createSource(filtered([{ field: 'milestone', op: 'any', values: ['Wave 1'] }]), { gql, log }).listItems();
-  assert.ok(calls.filter((c) => c.name === 'items').every((c) => c.variables?.filter === 'milestone:"Wave 1"'));
-  assert.deepEqual(lines.filter((l) => l.startsWith('WARN')), ['WARN source acme/6: more than 200 items pass its filter; the ones past them never reach the flow']);
+  const tasks = await createSource(filtered([{ field: 'milestone', op: 'any', values: ['Wave 1'] }]), { gql, log }).listItems();
+  assert.deepEqual(tasks.map((c) => c.item.id), ['1'], 'the filter GitHub applied before now runs here, over the same items');
+  const reads = calls.filter((c) => c.name === 'items');
+  assert.equal(reads.length, 10);
+  assert.ok(reads.every((c) => c.variables?.filter === undefined), 'no filter sent');
+  assert.doesNotMatch(ITEMS, /query:|\$filter/);
+  assert.deepEqual(lines.filter((l) => l.startsWith('WARN')), ['WARN source acme/6: more than 1000 items on the Project; the ones past them never reach the flow']);
 });
 
 test('with owner @me, listItems resolves the login once and polls with it', async () => {
@@ -211,12 +217,8 @@ test('citedColumns lists every source column the config mentions once, naming th
 
 test('with epics: ignore, listItems keeps epics and resolves open blockers with one graphql call, one alias per listed issue, OPEN only and deduped', async () => {
   const { gql, calls } = fakeGql({
-    items: page([item(1), item(2, 'Done'), item(3), item(4)]),
-    relations: {
-      i0: relations([[7, 'OPEN'], [8, 'CLOSED']], [[7, 'OPEN'], [9, 'OPEN']]),
-      i1: relations([[10, 'CLOSED']], [[11, 'CLOSED']]),
-      i2: relations([], []),
-    },
+    items: page([related(item(1), [[7, 'OPEN'], [8, 'CLOSED']], [[7, 'OPEN'], [9, 'OPEN']]), related(item(2, 'Done'), [[10, 'CLOSED']], [[11, 'CLOSED']]), item(3), item(4)]),
+    relations: { i0: relations(), i1: relations(), i2: relations() },
   });
   const tasks = await createSource(ignored, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['7', '9']], ['3', undefined], ['4', undefined]]);
@@ -224,7 +226,7 @@ test('with epics: ignore, listItems keeps epics and resolves open blockers with 
   const graphql = calls.filter((c) => c.name === 'relations');
   assert.equal(graphql.length, 1);
   const { query } = graphql[0];
-  assert.match(query, /^query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \} blocking\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \} subIssues\(first: 50\) \{ nodes \{ number state \} \} \} \} i1: /);
+  assert.match(query, /^query \{ i0: repository\(owner: "acme", name: "r"\) \{ issue\(number: 1\) \{ blocking\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \} \} \} i1: /);
   assert.match(query, /i1: repository\(owner: "acme", name: "r"\) \{ issue\(number: 3\)/);
   assert.match(query, /i2: repository\(owner: "acme", name: "r"\) \{ issue\(number: 4\)/);
   assert.ok(!query.includes('i3:'), 'no alias for issues outside the cited columns');
@@ -249,12 +251,8 @@ test('listItems treats issue: null, a null repository or a missing alias as no b
 
 test('listItems reads an issue\'s blocker relations both ways with titles and states into blockers, sub-issues never; blockedBy stays the start gate (#56)', async () => {
   const { gql, calls } = fakeGql({
-    items: page([item(1), item(2), item(3)]),
-    relations: {
-      i0: relations([[7, 'OPEN'], [8, 'CLOSED', 'other/lib']], [[9, 'OPEN']], [[5, 'OPEN']]),
-      i1: relations([]),
-      i2: { issue: null },
-    },
+    items: page([related(item(1), [[7, 'OPEN'], [8, 'CLOSED', 'other/lib']], [[9, 'OPEN']]), related(item(2), []), item(3)]),
+    relations: { i0: relations([[5, 'OPEN']]), i1: relations(), i2: { issue: null } },
   });
   const [blocked, free, unread] = (await createSource(config, { gql }).listItems()).map((c) => c.item);
   assert.deepEqual(blocked.blockers, {
@@ -271,8 +269,8 @@ test('listItems reads an issue\'s blocker relations both ways with titles and st
 test('with epics: hide, listItems drops epics (subIssuesSummary.total > 0) straight from the listing, with no relations alias spent on them', async () => {
   const epic = (n: number, total: number) => ({ ...item(n), content: { ...item(n).content, subIssuesSummary: { total } } });
   const { gql, calls } = fakeGql({
-    items: page([epic(1, 1), epic(2, 3), item(3), item(4)]),
-    relations: { i0: relations([[7, 'OPEN']]), i1: relations([[9, 'CLOSED']]) },
+    items: page([epic(1, 1), epic(2, 3), related(item(3), [[7, 'OPEN']]), item(4)]),
+    relations: { i0: relations(), i1: relations() },
   });
   const tasks = await createSource(hidden, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['3', ['7']], ['4', undefined]]);
@@ -293,8 +291,8 @@ test('epics: hide drops an epic wherever it sits on the source, before the relat
 });
 
 test('epics: ignore keeps an epic (unlike hide) and its open sub-issues block it', async () => {
-  const epic = { ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } }; // 'Ready': the prompt-entry column
-  const { gql } = fakeGql({ items: page([epic]), relations: { i0: relations([], [[5, 'OPEN'], [6, 'CLOSED']]) } });
+  const epic = related({ ...item(1), content: { ...item(1).content, subIssuesSummary: { total: 2 } } }, [], [[5, 'OPEN'], [6, 'CLOSED']]); // 'Ready': the prompt-entry column
+  const { gql } = fakeGql({ items: page([epic]), relations: { i0: relations() } });
   const tasks = await createSource(ignored, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['5']]]);
 });
@@ -349,8 +347,8 @@ test('treeLinks on a cycle, a duplicate sub-issue and a self-reference terminate
 });
 
 test('the listing and the one-item re-read ask each sub-issue\'s state (#28)', () => {
-  assert.match(ITEMS, /subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
-  assert.match(ITEM_FIELDS, /subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
+  assert.match(ITEMS, /subIssues\(first: 50\) \{ nodes \{ id number title state repository \{ nameWithOwner \} \} \}/);
+  assert.match(ITEM_FIELDS, /subIssues\(first: 50\) \{ nodes \{ id number title state repository \{ nameWithOwner \} \} \}/);
 });
 
 test('a poll\'s listed item carries parent, children and closedChildren, linked before the column and filter steps drop anything; a leaf carries none of them (#28)', async () => {
@@ -376,7 +374,7 @@ test('listItems groups before it drops: with epics: hide the epic\'s sub-issues 
   assert.deepEqual((await createSource(hidden, { gql }).listItems()).map((c) => c.item.id), ['1', '6', '7', '3', '4'], 'A F G C D');
   const kept = await createSource(ignored, { gql: fakeGql({ items: page(nodes), relations: {} }).gql }).listItems();
   assert.deepEqual(kept.map((c) => c.item.id), ['1', '2', '6', '7', '3', '4'], 'A B F G C D');
-  assert.match(calls[0].query, /\.\.\. on Issue \{ id number .* subIssues\(first: 50\) \{ nodes \{ id state \} \}/);
+  assert.match(calls[0].query, /\.\.\. on Issue \{ id number .* subIssues\(first: 50\) \{ nodes \{ id number title state repository \{ nameWithOwner \} \} \}/);
   assert.deepEqual(calls.map((c) => c.name), ['items', 'relations'], 'the grouping costs no call of its own');
 });
 
@@ -389,8 +387,8 @@ test('an epic the task filter hides still lends its place to the sub-issues that
 });
 
 test('the relations query covers every listed task whatever its column: a task outside a prompt-entry column gets its blockedBy too (#441)', async () => {
-  const nodes = [item(1), { ...item(2), fieldValueByName: { name: 'In progress' } }, { ...item(3), fieldValueByName: { name: 'In review' } }];
-  const { gql, calls } = fakeGql({ items: page(nodes), relations: { i0: relations([[7, 'OPEN']]), i2: relations([[8, 'OPEN'], [9, 'CLOSED']]) } });
+  const nodes = [related(item(1), [[7, 'OPEN']]), { ...item(2), fieldValueByName: { name: 'In progress' } }, related({ ...item(3), fieldValueByName: { name: 'In review' } }, [[8, 'OPEN'], [9, 'CLOSED']])];
+  const { gql, calls } = fakeGql({ items: page(nodes), relations: { i0: relations(), i2: relations() } });
   const tasks = await createSource(config, { gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['7']], ['2', undefined], ['3', ['8']]], 'board order is kept');
   const relationCalls = calls.filter((c) => c.name === 'relations');
@@ -536,17 +534,19 @@ test('listItems keeps only the issues every rule passes, before the relations qu
 });
 
 test('a blocked source rule is judged after the other rules, on the blockers the poll just read: none keeps the free tasks, any the blocked ones, an item a label rule drops costs no alias, and a task comes back once its blockers close (#441)', async () => {
-  const nodes = [issue(1, { labels: ['hive'] }), issue(2, { labels: ['hive'] }), issue(3), { ...issue(4, { labels: ['hive'] }), fieldValueByName: { name: 'In review' } }];
-  // the label rule keeps 1, 2 and 4, queried as i0, i1, i2; 1 and 4 are blocked, 4 outside a prompt-entry column
-  const blockedThen = { i0: relations([[7, 'OPEN']]), i1: relations([]), i2: relations([[8, 'OPEN']]) };
-  const closedNow = { i0: relations([[7, 'CLOSED']]), i1: relations([]), i2: relations([[8, 'OPEN']]) };
-  const { gql, calls } = fakeGql({ items: [page(nodes), page(nodes)], relations: [blockedThen, closedNow] });
+  // the label rule keeps 1, 2 and 4, queried as i0, i1, i2; 1 and 4 are blocked, 4 outside a prompt-entry column; the blockers ride on the items
+  const at = (seven: string) => [
+    related(issue(1, { labels: ['hive'] }), [[7, seven]]), issue(2, { labels: ['hive'] }), issue(3),
+    related({ ...issue(4, { labels: ['hive'] }), fieldValueByName: { name: 'In review' } }, [[8, 'OPEN']]),
+  ];
+  const answered = { i0: relations(), i1: relations(), i2: relations() };
+  const { gql, calls } = fakeGql({ items: [page(at('OPEN')), page(at('CLOSED'))], relations: answered });
   const free = createSource(filtered([{ field: 'label', op: 'any', values: ['hive'] }, { field: 'blocked', op: 'none' }]), { gql });
   assert.deepEqual((await free.listItems()).map((c) => c.item.id), ['2']);
   const { query } = calls.find((c) => c.name === 'relations')!;
   assert.ok(!query.includes('issue(number: 3)'), 'the item the label rule dropped gets no alias');
   assert.deepEqual((await free.listItems()).map((c) => c.item.id), ['1', '2'], 'next poll: #7 closed, 1 is back');
-  const onlyBlocked = fakeGql({ items: page(nodes), relations: blockedThen });
+  const onlyBlocked = fakeGql({ items: page(at('OPEN')), relations: answered });
   const tasks = await createSource(filtered([{ field: 'label', op: 'any', values: ['hive'] }, { field: 'blocked', op: 'any' }]), { gql: onlyBlocked.gql }).listItems();
   assert.deepEqual(tasks.map((c) => [c.item.id, c.item.blockedBy]), [['1', ['7']], ['4', ['8']]]);
 });
@@ -867,4 +867,17 @@ test('resolveSources rejects naming the source on a failure that is not the netw
   await assert.rejects(resolveSources(new Map([['work', offline.source]])), { message: `source work: ${OFFLINE}` });
   const fine = resolving(() => undefined);
   assert.equal((await resolveSources(new Map([['notes', fine.source]]))).get('notes'), fine.source);
+});
+
+test('namespaced hands project and fieldsOf their read options, so ?fresh=1 and a write\'s check reach the adapter (#282)', async () => {
+  const asked: unknown[] = [];
+  const view: ProjectView = { statuses: [], fields: [], builtins: {}, items: [], truncated: false };
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    project: async (options) => { asked.push(options); return view; }, fieldsOf: async (_itemId, options) => { asked.push(options); return []; },
+  };
+  const source = namespaced({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }, bare);
+  await source.project?.({ fresh: true });
+  await source.fieldsOf?.('work:PVTI_1', { fresh: true });
+  assert.deepEqual(asked, [{ fresh: true }, { fresh: true }]);
 });

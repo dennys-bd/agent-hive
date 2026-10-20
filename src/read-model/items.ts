@@ -1,75 +1,122 @@
-import type { DatabaseSync } from 'node:sqlite';
-import type { GhIssueRelations, GhItemNode } from '../sources/github-queries.js';
+import { STATUS } from '../field-values.js';
+import type { GhBlockerRef, GhIssueRelations, GhItemNode, GhProjectField } from '../sources/github-queries.js';
 import type { ReadModel, SyncKind } from './db.js';
-import type { ItemRow } from './rows.js';
-import { inTransaction, nullable, stamp, text, upsertSql, written } from './sql.js';
+import { blockingOf, rebuildNode } from './items-rebuild.js';
+import { closingPrsFromGql, issueFromGql, WireError } from './normalize.js';
+import type { FieldValueRow, IssueDetails, NormalizedItem, ProjectFieldRow, RelationRow, UpsertOrigin } from './rows.js';
 
-// A Project's items (#190): each item's GraphQL node as JSON under the replace rule on the item's own updatedAt, its relations beside it
-// outside that rule, and each full read's order. listed() runs over the stored nodes as it ran over the wire's
-const ITEM_COLUMNS: readonly string[] = ['source', 'node_id', 'project', 'updated_at', 'node'];
-const LISTING = `SELECT i.node, i.relations FROM project_listings l JOIN project_items i ON i.source = l.source AND i.node_id = l.node_id
-  WHERE l.source = ? AND l.scope = ? ORDER BY l.position`;
-// A row no listing of any scope names has left the Project: another source's listing over the same Project keeps its rows
-const DROP_UNLISTED = `DELETE FROM project_items WHERE source = ? AND project = ?
-  AND node_id NOT IN (SELECT node_id FROM project_listings WHERE source = ?)`;
+// A Project's items (#190), normalized (#282): what one wire node becomes in the read model's tables. items-rebuild.ts turns them back;
+// listed(), projectItem() and itemFields() run unchanged over the rebuilt node (items-contract.test.ts)
 
-/** What the adapter needs of the model (#190): the rows' source, and the database. */
+/** What the adapter needs of the model (#190): the rows' source, the database, and the readModel event a write's issue row names (#282). */
 export interface ItemStore { db: ReadModel; source(): Promise<string | undefined>; notify(repository: string, kinds: SyncKind[]): void }
-/** One listing (#190): the reading account, the Project (`<owner login>/<number>`) and its scope (the Project plus its filter text). */
-export interface ListingKey { source: string; project: string; scope: string }
-/** A listing as stored: the nodes in order, each with its relations (undefined: none stored; null: the issue was read and is gone). */
+/** One listing (#282): the reading account and the Project (`<owner login>/<number>`). The read is unfiltered, so sources over one Project share it. */
+export interface ListingKey { source: string; project: string }
+/** One full read (#282): the Project's fields and its items in order. */
+export interface ItemsRead { nodes: GhItemNode[]; fields: GhProjectField[] }
+/** A listing as stored: the rebuilt nodes in order, each with what the relations query answered of it (undefined never read, null gone). */
 export interface StoredListing { nodes: GhItemNode[]; relations: Map<string, GhIssueRelations | null | undefined> }
 
-export function itemTablesOf(db: DatabaseSync, now: () => number): Pick<ReadModel, 'upsertItem' | 'setItemRelations' | 'setListing' | 'removeUnlisted' | 'listing'> {
-  const upsert = db.prepare(upsertSql('project_items', ITEM_COLUMNS));
-  const relate = db.prepare('UPDATE project_items SET relations = ? WHERE source = ? AND node_id = ?');
-  const dropListing = db.prepare('DELETE FROM project_listings WHERE source = ? AND scope = ?');
-  const addListed = db.prepare('INSERT INTO project_listings (source, scope, position, node_id) VALUES (?, ?, ?, ?)');
-  const dropUnlisted = db.prepare(DROP_UNLISTED);
-  const listing = db.prepare(LISTING);
+type Content = NonNullable<GhItemNode['content']>;
+const VALUE_KINDS = ['name', 'text', 'number', 'date', 'title'] as const;
+
+// One row per field. Status is stored as any single-select: past FIELD_VALUE_LIMIT fieldValues may lack it while fieldValueByName names it
+function valuesOf(node: GhItemNode): FieldValueRow[] {
+  const rows = new Map<string, FieldValueRow>();
+  for (const v of node.fieldValues?.nodes ?? []) {
+    const kind = VALUE_KINDS.find((k) => v[k] !== undefined);
+    if (v.field?.name !== undefined && kind !== undefined) rows.set(v.field.name, { field: v.field.name, kind, value: String(v[kind]) });
+  }
+  const status = node.fieldValueByName?.name;
+  if (status !== undefined && !rows.has(STATUS)) rows.set(STATUS, { field: STATUS, kind: 'name', value: status });
+  return [...rows.values()];
+}
+
+const refRow = (kind: 'blockedBy' | 'blocking') => (ref: GhBlockerRef): RelationRow =>
+  ({ kind, nodeId: null, number: ref.number, title: ref.title, state: ref.state, repository: ref.repository.nameWithOwner });
+
+// The items read's own relations, read for every issue item, so "none" is no rows
+function relationRowsOf(c: Content): RelationRow[] {
+  const subIssues = (c.subIssues?.nodes ?? []).map((s): RelationRow => ({
+    kind: 'subIssue', nodeId: s.id, number: s.number ?? null, title: s.title ?? null, state: s.state, repository: s.repository?.nameWithOwner ?? null,
+  }));
+  return [...(c.blockedBy?.nodes ?? []).map(refRow('blockedBy')), ...subIssues];
+}
+
+/** The relations query's answer as rows (#282): its blocking side; null stays null, the issue is gone. */
+export const blockingRows = (issue: GhIssueRelations | null): RelationRow[] | null => (issue === null ? null : (issue.blocking?.nodes ?? []).map(refRow('blocking')));
+
+function detailsOf(c: Content): IssueDetails {
+  if (typeof c.url !== 'string') throw new WireError('url');
   return {
-    upsertItem: (row, origin) => written(upsert.run({ ...row, ...stamp(now(), origin) })),
-    // JSON's null is an issue read and gone; SQL's NULL, relations never stored
-    setItemRelations: (source, nodeId, relations) => { relate.run(JSON.stringify(relations), source, nodeId); },
-    setListing: (source, scope, nodeIds) => inTransaction(db, () => {
-      dropListing.run(source, scope);
-      for (const [position, nodeId] of nodeIds.entries()) addListed.run(source, scope, position, nodeId);
-    }),
-    removeUnlisted: (source, project) => { dropUnlisted.run(source, project, source); },
-    listing: (source, scope) => listing.all(source, scope).map((row) => ({ node: text(row, 'node'), relations: nullable(row, 'relations') })),
+    url: c.url, milestone: c.milestone?.title ?? null, issueType: c.issueType?.name ?? null, parentNumber: c.parent?.number ?? null,
+    parentTitle: c.parent?.title ?? null, subIssuesTotal: c.subIssuesSummary?.total ?? null, subIssuesCompleted: c.subIssuesSummary?.completed ?? null,
   };
 }
 
-// Drops the project (and its fields) and cuts the repository to its name: the repository's choices no poll step reads. The content keeps
-// whatever its query asked, so a write's re-read (ITEM_FIELDS) stores more content keys than a poll's node; no poll step reads them
-function pruned(node: GhItemNode): GhItemNode {
-  const { id, updatedAt, fieldValueByName, fieldValues, content } = node;
-  const repository = content?.repository;
-  const kept = content && repository ? { ...content, repository: { nameWithOwner: repository.nameWithOwner } } : content;
-  return { id, updatedAt, fieldValueByName, fieldValues, content: kept };
-}
-
-/** The normalizer: takes a poll node or a write's re-read node (GhItemFieldsNode extends GhItemNode), drops the project and the repository's choices. */
-export function itemRow(source: string, project: string, node: GhItemNode): ItemRow {
+/** The normalizer (#282): a poll's node or a write's re-read (GhItemFieldsNode extends GhItemNode) as the rows it becomes. An issue the wire
+ * answered malformed throws WireError: the caller normalizes before its transaction, so nothing is stored. */
+export function normalizeItem(source: string, project: string, node: GhItemNode): NormalizedItem {
+  const c = node.content;
   // both queries ask updatedAt; a node without it ties with every other, and the write window still decides
-  return { source, nodeId: node.id, project, updatedAt: node.updatedAt ?? '', node: JSON.stringify(pruned(node)) };
+  const item = { source, nodeId: node.id, project, contentType: c?.__typename ?? null, issueNodeId: null, updatedAt: node.updatedAt ?? '' };
+  const values = valuesOf(node);
+  const valuesSig = JSON.stringify([...values].sort((a, b) => (a.field < b.field ? -1 : 1)));
+  if (c?.__typename !== 'Issue') return { item: { ...item, valuesSig }, values, pullRequests: [] };
+  const repository = c.repository?.nameWithOwner;
+  if (repository === undefined) throw new WireError('repository');
+  const issue = issueFromGql(source, repository, c);
+  const pullRequests = c.closedByPullRequestsReferences ? closingPrsFromGql(c) : [];
+  return { item: { ...item, valuesSig, issueNodeId: issue.nodeId }, values, issue, details: detailsOf(c), pullRequests, relations: relationRowsOf(c) };
 }
 
-/** One full read stored: the rows upserted, the relations set, the listing replaced, unreferenced rows of the project removed; one transaction. */
-export function storeListing(db: ReadModel, key: ListingKey, nodes: GhItemNode[], relations: ReadonlyMap<string, GhIssueRelations | null>): void {
+/** The Project's named fields as project_fields keeps them (#282); a field GitHub could not read ({}) is not one. */
+export const fieldRowsOf = (fields: GhProjectField[]): ProjectFieldRow[] => fields.flatMap((f) => (f.name === undefined ? [] : [{
+  name: f.name, dataType: f.dataType ?? null, options: f.options?.map((o) => o.name) ?? f.configuration?.iterations?.map((i) => i.title) ?? null,
+}]));
+
+/** One normalized item written (#282): the item under the replace rule, and its values and content type only when that wrote, so a page read
+ * before a write cannot undo the write through a side table. Its relations (blockedBy, subIssue) are replaced on every read, as #190's
+ * relations were: a blocker or a sub-issue closing does not move the item's updatedAt, so under the item's rule they would never refresh.
+ * Its issues row under its own rule, its details on that row's terms, its closing PRs replaced whole (the last of their two writers wins).
+ * Whether its issues row wrote. */
+export function writeItem(db: ReadModel, n: NormalizedItem, origin: UpsertOrigin): boolean {
+  const { source, nodeId } = n.item;
+  if (db.upsertItem(n.item, origin)) db.setItemValues(source, nodeId, n.values);
+  if (n.issue !== undefined && n.relations !== undefined) db.setIssueRelations(source, n.issue.nodeId, ['blockedBy', 'subIssue'], n.relations);
+  if (n.issue === undefined) return false;
+  const wrote = db.upsertIssue(n.issue, origin);
+  if (n.details !== undefined) db.setIssueDetails(source, n.issue.nodeId, n.issue.updatedAt, n.details, origin);
+  db.setClosingPrs(source, n.issue.nodeId, n.pullRequests);
+  return wrote;
+}
+
+/** One full read stored (#282), in one transaction: every item, then the blocking the relations query answered, the Project's fields, the
+ * listing replaced, the items it no longer names removed. Normalized first: a malformed node stores nothing. */
+export function storeListing(db: ReadModel, key: ListingKey, read: ItemsRead, blocking: ReadonlyMap<string, GhIssueRelations | null>): void {
+  const items = read.nodes.map((node) => normalizeItem(key.source, key.project, node));
   db.transaction(() => {
-    for (const node of nodes) db.upsertItem(itemRow(key.source, key.project, node), 'sync');
-    for (const [nodeId, issue] of relations) db.setItemRelations(key.source, nodeId, issue);
-    db.setListing(key.source, key.scope, nodes.map((node) => node.id));
+    for (const item of items) writeItem(db, item, 'sync');
+    for (const [nodeId, issue] of blocking) db.setBlocking(key.source, nodeId, blockingRows(issue));
+    db.setProjectFields(key.source, key.project, fieldRowsOf(read.fields));
+    db.setListing(key.source, key.project, read.nodes.map((node) => node.id));
     db.removeUnlisted(key.source, key.project);
   });
 }
 
-/** The listing as stored, in position order, each node with its stored relations (undefined when none was stored). The JSON is the module's own. */
+/** The listing as stored, rebuilt in position order, each node with what the relations query answered of it. */
 export function readListing(db: ReadModel, key: ListingKey): StoredListing {
-  const rows = db.listing(key.source, key.scope);
-  const nodes = rows.map((row) => JSON.parse(row.node) as GhItemNode);
-  const relations = rows.map((row, i): [string, GhIssueRelations | null | undefined] =>
-    [nodes[i].id, row.relations === null ? undefined : (JSON.parse(row.relations) as GhIssueRelations | null)]);
-  return { nodes, relations: new Map(relations) };
+  const rows = db.itemRows(key.source, db.listing(key.source, key.project));
+  return { nodes: rows.map(rebuildNode), relations: new Map(rows.map((r) => [r.item.nodeId, blockingOf(r)])) };
+}
+
+/** Whether a full read was stored for the Project (#282): every Project has fields (Title, Status…), so none stored is none read. */
+export const hasListing = (db: ReadModel, key: ListingKey): boolean => db.projectFields(key.source, key.project).length > 0;
+
+/** A Project's stored nodes for a reader with no listing of its own (#282: the settings form's filter options); undefined when there is no
+ * store, no login, or nothing stored yet. */
+export async function storedNodes(store: ItemStore | undefined, project: string): Promise<GhItemNode[] | undefined> {
+  const source = await store?.source();
+  if (store === undefined || source === undefined || !hasListing(store.db, { source, project })) return undefined;
+  return readListing(store.db, { source, project }).nodes;
 }

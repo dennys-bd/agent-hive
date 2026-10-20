@@ -238,3 +238,15 @@ test('counts counts issue and PR rows by state and kind with the newest updated_
   assert.deepEqual(db.issues(SOURCE, REPO, 'open', 1).map((i) => i.number), [2]);
   assert.equal(db.issues(SOURCE, REPO, 'open').length, 2, 'no limit: every row');
 });
+
+test('migration 6 drops the #190 items and listings: a model at version 5 opens with none stored, so the next poll reads in full (#282)', async (t) => {
+  const path = join(await tempDir(t, 'read-model-'), READ_MODEL_FILE);
+  const raw = new DatabaseSync(path);
+  raw.exec(`${MIGRATIONS.slice(0, 5).join(' ')} PRAGMA user_version = 5;`);
+  raw.prepare('INSERT INTO project_items (source, node_id, project, updated_at, node) VALUES (?, ?, ?, ?, ?)').run('s', 'PVTI_1', 'acme/6', 'T', '{}');
+  raw.prepare('INSERT INTO project_listings (source, scope, position, node_id) VALUES (?, ?, ?, ?)').run('s', 'acme/6', 0, 'PVTI_1');
+  raw.close();
+  const { db, resync } = await openReadModel(path);
+  t.after(() => db.close());
+  assert.deepEqual([resync, db.listing('s', 'acme/6'), db.itemRows('s', ['PVTI_1']), db.projectFields('s', 'acme/6')], [false, [], [], []]);
+});

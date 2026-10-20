@@ -11,7 +11,7 @@ import { languageFrom, systemLanguage } from './language.js';
 import { createLogger, type Logger } from './log.js';
 import { predatesTaskProps } from './task-props.js';
 import { accessFor } from './read-model/access.js';
-import { openReadModel, READ_MODEL_FILE, type ReadModel } from './read-model/db.js';
+import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from './read-model/db.js';
 import type { ItemStore } from './read-model/items.js';
 import { newSecret } from './secret.js';
 import { createServer, type HiveServer, type ServerDeps, type SourceFactory } from './server.js';
@@ -86,7 +86,9 @@ async function bootMode(home: string, log: Logger, language: Language, deps: Boo
   if ('fallback' in parsed) return bootSetupMode(home, log, language, deps, readModel, parsed.fallback, parsed.proposed);
   const { config } = parsed;
   log.setLevel(config.logLevel);
-  const items = readModel && bootItemStore(readModel, config, log);
+  // #282: a boot adapter's write answer names its issue row's repository to the open views, through the server once it exists
+  const relay: { notify: ItemStore['notify'] } = { notify: () => undefined };
+  const items = readModel && bootItemStore(readModel, config, log, (repository, kinds) => relay.notify(repository, kinds));
   // A test injects a source that needs no gh (#740); the daemon builds the real adapters
   const build: SourceFactory = deps.sourceFactory ?? ((spec, store) => createSource(spec, { log, ...(store === undefined ? {} : { items: store }) }));
   const sources = createSources(config, (spec) => build(spec, items));
@@ -100,7 +102,7 @@ async function bootMode(home: string, log: Logger, language: Language, deps: Boo
     log.error(`source: ${error}`);
     return bootSetupMode(home, log, language, deps, readModel, { config, error });
   }
-  return bootHiveMode(home, log, language, deps, config, resolved, readModel);
+  return bootHiveMode(home, log, language, deps, config, resolved, readModel, relay);
 }
 
 // The daemon's read model (#180): opened by bootLocked before the boot adapters (#190), under the hive.lock bootHive already holds, in either
@@ -118,10 +120,10 @@ async function openModel(home: string, log: Logger): Promise<ReadModel | undefin
 }
 
 // The boot adapters' store (#190): rows under the login auth.github reads with, as the server's own store has them. A Settings save that
-// changes auth builds new adapters through the server's factory. notify stays silent: an item answer names no SyncKind, so nothing calls it
+// changes auth builds new adapters through the server's factory. notify: the server's readModel event, relayed (#282)
 // ponytail: one accessFor per poll (a gh config get in cli mode), as the repository reads already pay; cache it if the poll log shows it
-function bootItemStore(db: ReadModel, config: Config, log: Logger): ItemStore {
-  return { db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { exec: execFileAsync, log }))?.source, notify: () => undefined };
+function bootItemStore(db: ReadModel, config: Config, log: Logger, notify: ItemStore['notify']): ItemStore {
+  return { db, source: async () => (await accessFor(config.auth?.github ?? 'cli', { exec: execFileAsync, log }))?.source, notify };
 }
 
 // #191: what every source's read model holds, read with no network call before the first rule runs, so the lean tasks state.json loaded
@@ -139,7 +141,7 @@ async function storedItems(sources: ReadonlyMap<string, Source>, log: Logger): P
 }
 
 async function bootHiveMode(
-  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined,
+  home: string, log: Logger, language: Language, deps: BootDeps, config: Config, sources: Map<string, Source>, readModel: ReadModel | undefined, relay: { notify: ItemStore['notify'] },
 ): Promise<BootedHive> {
   const names = config.comb.workspaces.map((p) => p.name).join(',');
   log.info(`boot home=${home} workspaces=${names} mode=hive`);
@@ -149,6 +151,7 @@ async function bootHiveMode(
   const saved = { ...loaded, tasks: hydrate(loaded.tasks, await storedItems(sources, log)), budget: config.budget, usageRules: config.usageRules, stages: config.comb.stages, transitions: config.comb.transitions, signals: config.signals };
   // listen() builds the runtime on the bound port, hooks.json and the workspaces' git excludes included (#466)
   const server = createServer({ home, runtime: { config, sources }, state: saved, log, systemLanguage: language, ...deps, ...(readModel === undefined ? {} : { readModel }) });
+  relay.notify = (repository: string, kinds: SyncKind[]): void => server.notifyReadModel(repository, kinds);
   const port = await listenAndRecord(server, home, deps.secret);
   await server.boot(saved); // strays and the boot reducer: the same order as the first POST /settings
   await server.poll();

@@ -188,6 +188,7 @@ export interface HiveServer {
   listen(port: number | undefined): Promise<number>; // tried first; taken, or undefined, the OS picks one (#466)
   close(reason?: string): Promise<void>; // reason: hive.quit's (#742), `close` by default
   getState(): State | undefined;
+  notifyReadModel(repository: string, kinds: SyncKind[]): void; // #282: the readModel event, for the boot adapters' write answers
 }
 
 interface Live {
@@ -1010,7 +1011,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     try {
-      res.json(await listFilterOptions(owner, Number(number), settingsGql(authFromQuery(req.query).github)));
+      res.json(await listFilterOptions(owner, Number(number), settingsGql(authFromQuery(req.query).github), itemStore)); // #282: the stored listing when there is one
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
@@ -1212,7 +1213,6 @@ export function createServer(deps: ServerDeps): HiveServer {
     await poll();
     res.json({ ok: true });
   });
-  registerProjectRoutes(app, { requireLive, dispatch, log }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll
   registerBlockerRoutes(app, { requireLive, dispatch, latest: () => live?.state, log }); // POST /sources/:name/items/:itemId/blockers (#56): a hive task's relation by blockerSet, a source's through its relate, then itemRead
   // #180: the read model's sync over the repositories the Hive lists, as the login auth.github names, read per round so a Settings change
   // takes the next one. No auth (no GitHub source): cli, the transport the repository routes already read with
@@ -1223,6 +1223,7 @@ export function createServer(deps: ServerDeps): HiveServer {
     db: deps.readModel, log, notify: notifyReadModel, access: readAccess,
     repositories: async () => (live ? listRepositories(live.runtime.config, live.state, exec) : []),
   });
+  registerProjectRoutes(app, { requireLive, dispatch, log, ...(readLoop === undefined ? {} : { refreshOptions: readLoop.refreshOptions }) }); // GET /sources/:name/project, POST …/project/status and an item's fields (#756, #686): a write dispatches itemRead, no poll; ?fresh=1 refreshes the options through the loop (#282)
   // #181: the reads answer from the model, as the login the sync reads with (ponytail: one gh config get per read in cli mode); the writes
   // go to GitHub with the Hive's own login (#757), and their answer is upserted and named by the sync's own readModel event (#183)
   const repoModel = deps.readModel === undefined || readLoop === undefined ? {} : {
@@ -1379,5 +1380,5 @@ export function createServer(deps: ServerDeps): HiveServer {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
   }
 
-  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state };
+  return { dispatch, poll, boot, refreshPlanLimits, listen, close, getState: () => live?.state, notifyReadModel };
 }

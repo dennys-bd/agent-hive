@@ -42,16 +42,17 @@ function shown(source: string): ProjectState {
 
 /** A source's native view (#756), read when the tab opens and on each reload (atualizar, after an action): never polled. A cached view
  * shows while the read runs and is swapped when it answers; an answer that an older read overtook is dropped. A failure toasts, and is the
- * error state only when nothing is cached; reload never rejects. */
-export function useProject(source: string): { project: ProjectState; reload(): Promise<void>; replaceRow(row: ProjectItem): void } {
+ * error state only when nothing is cached; reload never rejects. The open reads what the read model holds (#282); fresh, the refresh button's,
+ * has the server read GitHub first. */
+export function useProject(source: string): { project: ProjectState; reload(options?: { fresh?: boolean }): Promise<void>; replaceRow(row: ProjectItem): void } {
   const [project, setProject] = useState<ProjectState>(() => shown(source));
   const latest = useRef(0);
-  const reload = useCallback(async (): Promise<void> => {
+  const reload = useCallback(async (options: { fresh?: boolean } = {}): Promise<void> => {
     latest.current += 1;
     const read = latest.current;
     setProject(shown(source));
     try {
-      const view = await readQuotaJson<ProjectView>(`/sources/${encodeURIComponent(source)}/project`);
+      const view = await readQuotaJson<ProjectView>(`/sources/${encodeURIComponent(source)}/project${options.fresh === true ? '?fresh=1' : ''}`);
       if (read !== latest.current) return; // overtaken: a newer read owns both the screen and the cache
       cache.set(source, view);
       setProject({ kind: 'view', view });

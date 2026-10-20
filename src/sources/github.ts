@@ -2,27 +2,27 @@ import type { Citation } from '../tasks.js';
 import { matchesRules } from '../task-filter.js';
 import { matchTaskProps } from '../task-props.js';
 import type {
-  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef,
+  Source, SourceItem, SourceConfig, SourceQuota, CloseAction, CloseReason, FilterOptions, Gql, Item, ItemAction, SourceTaskProps, ProjectSummary, TaskComment, ProjectView, FieldValue, FieldWrite, ItemField, BlockerChange, BlockerWrite, BlockerRef, ReadOptions,
 } from '../types.js';
 import { cliGql } from './github-gql.js';
-import { facetsOf, filterOptionsFrom, matchesFilter, ME, projectQuery, splitBlocked, usesMe } from './github-filter.js';
+import { facetsOf, filterOptionsFrom, matchesFilter, ME, splitBlocked, usesMe } from './github-filter.js';
 import type { Logger } from '../log.js';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PAGE_SIZE, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo,
-  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type GhProjectField, type GhRateLimit, type IssueIdData, type ItemsData,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROJECTS, PROJECT_FIELDS, SELECT_FIELDS, issueRepo,
+  SET_OPTION, VIEWER, type CommentsData, type FieldsData, type GhIssueRelations, type GhItemNode, type GhOption, type IssueIdData,
   type ProjectsData, type SelectFieldsData, type ViewerData,
 } from './github-queries.js';
 import { createProjectIssue, repositoryNodeId } from './github-create.js';
-import { answerColumn, readItemFields, writeItemField, type FieldsContext } from './github-fields.js';
+import { answerColumn, readItemFields, storedItemFields, writeItemField, type FieldsContext } from './github-fields.js';
 import { findBlockers, relateItem } from './github-blockers.js';
-import { applyRelations, createItemsSync, fetchRelations, readProbe } from './github-items-sync.js';
-import { readListing, type ItemStore, type ListingKey } from '../read-model/items.js';
-import { readProject, type ProjectRead } from './github-project.js';
+import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './github-pages.js';
+import { applyRelations, createItemsSync, fetchRelations, joinRelations, readProbe } from './github-items-sync.js';
+import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey } from '../read-model/items.js';
+import { readProject, storedProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
 export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
 
-const ITEM_LIMIT = 200; // the ceiling the gh --limit used to enforce; two pages of 100: the poll's and the filter options'
 const GHOST = 'ghost'; // what GitHub itself shows for a deleted account
 
 export type GithubSourceConfig = Extract<SourceConfig, { type: 'github' }>;
@@ -127,47 +127,17 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
 const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig): SourceItem =>
   ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt } } });
 
-const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-
-// The reading taken after a poll, from a field the poll already paid for, and after every repository read (#757). Any other shape → undefined.
-export function quotaFrom(rate: GhRateLimit | null | undefined): SourceQuota | undefined {
-  const { limit, remaining, resetAt } = rate ?? {};
-  if (!isCount(limit) || !isCount(remaining) || typeof resetAt !== 'string') return undefined;
-  return { limit, remaining, resetsAt: resetAt, at: new Date().toISOString() };
-}
-
-/** What pageItems read (#756): the nodes, the first page's rateLimit and project fields, and whether items were left past the limit. */
-export interface ItemPages { nodes: GhItemNode[]; rateLimit?: GhRateLimit | null; fields: GhProjectField[]; truncated: boolean }
-
-// Raw GraphQL caps `items` at 100 per page: up to `limit` items, ITEM_LIMIT for a poll and the filter options (#245), PROJECT_ITEM_LIMIT for
-// the native view (#756). The first page's rateLimit is the reading a poll takes its quota from; its fields, what the native view asks.
-export async function pageItems(gql: Gql, query: string, variables: Record<string, string | number>, notFound: string, limit: number): Promise<ItemPages> {
-  const nodes: GhItemNode[] = [];
-  let first: ItemsData | undefined;
-  let after: string | undefined;
-  for (let pageIndex = 0; pageIndex < limit / PAGE_SIZE; pageIndex++) {
-    const data = (await gql(query, { ...variables, ...(after === undefined ? {} : { after }) })) as ItemsData;
-    first ??= data;
-    const items = data.repositoryOwner?.projectV2?.items;
-    if (!items) throw new Error(notFound);
-    nodes.push(...items.nodes);
-    after = items.pageInfo.hasNextPage && items.pageInfo.endCursor ? items.pageInfo.endCursor : undefined;
-    if (after === undefined) break;
-  }
-  return { nodes, rateLimit: first?.rateLimit, fields: first?.repositoryOwner?.projectV2?.fields?.nodes ?? [], truncated: after !== undefined };
-}
-
-/** What the settings form offers a source's filter rules (#245): the values on its items, read with a poll's own pages, and its single-select
- * fields. The owner may be `@me`, as in the listings above. */
-export async function listFilterOptions(owner: string, number: number, gql: Gql = cliGql()): Promise<FilterOptions> {
+/** What the settings form offers a source's filter rules (#245): the values on its items and its single-select fields. #282: the items from the
+ * stored listing when there is one, so the form does not pay the items read on each open; else read live. The owner may be `@me`. */
+export async function listFilterOptions(owner: string, number: number, gql: Gql = cliGql(), store?: ItemStore): Promise<FilterOptions> {
   const login = await ownerLogin(owner, gql);
-  const { nodes } = await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), ITEM_LIMIT);
+  const nodes = (await storedNodes(store, `${login}/${number}`)) ?? (await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), PROJECT_ITEM_LIMIT)).nodes;
   const project = ((await gql(SELECT_FIELDS, { login, number })) as SelectFieldsData).repositoryOwner?.projectV2;
   return { ...filterOptionsFrom(nodes, project?.fields?.nodes ?? []), linkedRepositories: (project?.repositories?.nodes ?? []).map((r) => r.nameWithOwner) };
 }
 
 export function createGithubSource(source: GithubSourceConfig, cited: Citation[], gql: Gql = cliGql(), log?: Logger, items?: ItemStore): Source {
-  const { owner, number, epics } = source, query = projectQuery(source.filter); // #234: GitHub filters first, so the pages count kept items only
+  const { owner, number, epics } = source;
   const { blocked, other } = splitBlocked(source.filter); // #441: the blocked rules wait for the relations query
   let resolved: { projectId: string; statusFieldId: string; options: GhOption[]; optionIds: Record<string, string> } | undefined; // options: every Status option, in order (#756)
   let lastQuota: SourceQuota | undefined; // what the last poll read; undefined before the first one
@@ -201,12 +171,13 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     resolved = { projectId: status.projectId, statusFieldId: status.id, options: status.options, optionIds };
   }
 
-  async function listNodes(): Promise<GhItemNode[]> {
+  // #282: the whole Project, unfiltered (the filter runs in keep()), up to PROJECT_ITEM_LIMIT; past it, the items left never reach the flow
+  async function listNodes(): Promise<ItemPages> {
     login ??= await ownerLogin(owner, gql);
-    const { nodes, rateLimit, truncated } = await pageItems(gql, ITEMS, { login, number, ...(query === undefined ? {} : { filter: query }) }, sourceNotFound(owner, number), ITEM_LIMIT); // not `query`: gh api takes that name for the text
-    if (truncated) log?.warn(`source ${owner}/${number}: more than ${ITEM_LIMIT} items pass its filter; the ones past them never reach the flow`);
-    lastQuota = quotaFrom(rateLimit);
-    return nodes;
+    const pages = await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), PROJECT_ITEM_LIMIT);
+    if (pages.truncated) log?.warn(`source ${owner}/${number}: more than ${PROJECT_ITEM_LIMIT} items on the Project; the ones past them never reach the flow`);
+    lastQuota = quotaFrom(pages.rateLimit);
+    return pages;
   }
 
   // #190: 1 point; its rateLimit is the quota reading of a poll that reads nothing more. listItems resolved the login first
@@ -239,15 +210,15 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
 
   const blockedOut = (tasks: SourceItem[]): SourceItem[] => tasks.filter((task) => matchesRules(blocked, task.item)); // #441: judged on the relations
 
-  // Then the relations and the blocked rules (#441). Items carry no relations; a failed query rejects the poll, never "no blockers". What it
-  // read is kept for a write's answer (#190)
-  async function related(tasks: SourceItem[]): Promise<{ listed: SourceItem[]; relations: Map<string, GhIssueRelations | null> }> {
+  // Then the relations and the blocked rules (#441). The relations query answers blocking; blockedBy and the sub-issues ride on the nodes
+  // (#282). A failed query rejects the poll, never "no blockers". What it read is kept for a write's answer (#190)
+  async function related(tasks: SourceItem[], nodes: GhItemNode[]): Promise<{ listed: SourceItem[]; relations: Map<string, GhIssueRelations | null> }> {
     const relations = await fetchRelations(gql, tasks);
-    return { listed: blockedOut(applyRelations(tasks, relations)), relations };
+    return { listed: blockedOut(applyRelations(tasks, joinRelations(nodes, relations))), relations };
   }
 
   async function listed(nodes: GhItemNode[]): Promise<SourceItem[]> {
-    return (await related(keep(nodes))).listed;
+    return (await related(keep(nodes), nodes)).listed;
   }
 
   function remember(nodes: GhItemNode[]): void {
@@ -255,24 +226,21 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     lastNodes = nodes;
   }
 
-  // #191: the listing a login's poll stores, and what the boot read reads back
-  const keyOf = (rows: string, who: string): ListingKey => {
-    const project = `${who}/${number}`;
-    return { source: rows, project, scope: query === undefined ? project : `${project} ${query}` };
-  };
+  // #191, #282: the Project's one listing under a login
+  const keyOf = (rows: string, who: string): ListingKey => ({ source: rows, project: `${who}/${number}` });
 
   // #190: with a store and a login, the model's listing after a probe; without either (headless, setup mode, no login), the wire's, as before
   async function listItems(): Promise<SourceItem[]> {
     const rows = await items?.source();
     if (sync === undefined || rows === undefined) {
-      const nodes = await listNodes();
+      const { nodes } = await listNodes();
       remember(nodes);
       return listed(nodes);
     }
     login ??= await ownerLogin(owner, gql);
     const read = await sync.list(keyOf(rows, login));
     remember(read.nodes);
-    return blockedOut(await sync.relate(rows, keep(read.nodes), read.relations));
+    return blockedOut(await sync.relate(rows, keep(read.nodes), read));
   }
 
   // #191: the model's listing with no network call: the poll's item steps without the filter (`me` may need the network), and the stored
@@ -282,7 +250,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     const offline = login ?? (owner === ME ? undefined : owner);
     if (items === undefined || rows === undefined || offline === undefined) return [];
     const read = readListing(items.db, keyOf(rows, offline));
-    return applyRelations(keep(read.nodes, treeLinks(read.nodes), false), read.relations);
+    return applyRelations(keep(read.nodes, treeLinks(read.nodes), false), joinRelations(read.nodes, read.relations));
   }
 
   async function setColumn(itemId: string, column: string): Promise<void> {
@@ -344,12 +312,17 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return { login, number, notFound: sourceNotFound(owner, number), filter: other, me, epics, taskProps: source.taskProps };
   }
 
-  // #756: the native view, every issue unfiltered, read on demand by its route and never by the poll. The stage each option enters is the
-  // server's to name, from the Comb's stages
-  async function project(): Promise<ProjectView> {
+  // #756, #282: the native view. With a read model and a login, the stored listing, read in full first when nothing is stored yet or the tab's
+  // refresh asks fresh; without either, the live read. The stage each option enters is the server's to name
+  async function project(options: ReadOptions = {}): Promise<ProjectView> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     const statuses = resolved.options.map((o) => ({ name: o.name }));
-    return { statuses, ...(await readProject(gql, await projectRead())) };
+    const read = await projectRead();
+    const rows = await items?.source();
+    if (sync === undefined || items === undefined || rows === undefined) return { statuses, ...(await readProject(gql, read)) };
+    const key = keyOf(rows, read.login);
+    if (options.fresh === true || !hasListing(items.db, key)) await sync.refresh(key);
+    return { statuses, ...storedProject(items.db, key, read) };
   }
 
   // #686, #56: what a write on one item needs. related(keep([node])) is the poll's steps on one item. groupUnderEpics only reorders a list,
@@ -360,7 +333,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     const read = await projectRead();
     let fetched = new Map<string, GhIssueRelations | null>();
     const entry = async (node: GhItemNode): Promise<SourceItem | undefined> => {
-      const one = await related(keep([node], treeLinks(inPlace(lastNodes, node))));
+      const one = await related(keep([node], treeLinks(inPlace(lastNodes, node))), [node]);
       fetched = one.relations;
       return one.listed[0];
     };
@@ -383,9 +356,13 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return findBlockers(await fieldsContext(), itemId, text);
   }
 
-  async function fieldsOf(itemId: string): Promise<ItemField[]> { // #686
+  // #686, #282: the editors' fields from the read model when it holds the item and its repository's options; else, or fresh (a write's check),
+  // the live read
+  async function fieldsOf(itemId: string, options: ReadOptions = {}): Promise<ItemField[]> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
-    return readItemFields(gql, itemId, resolved.projectId);
+    const rows = options.fresh === true ? undefined : await items?.source();
+    const stored = items && rows !== undefined ? storedItemFields(items.db, rows, `${(await projectRead()).login}/${number}`, itemId) : undefined;
+    return stored ?? readItemFields(gql, itemId, resolved.projectId);
   }
   return {
     resolveFields, listItems, stored, setColumn: written(setColumn), create: written(create), apply: written(apply), settingsOptions, comments, project, fieldsOf,

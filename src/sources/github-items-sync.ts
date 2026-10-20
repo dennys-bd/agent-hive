@@ -1,5 +1,5 @@
 import type { Logger } from '../log.js';
-import { itemRow, readListing, storeListing, type ItemStore, type ListingKey, type StoredListing } from '../read-model/items.js';
+import { blockingRows, normalizeItem, readListing, storeListing, type ItemStore, type ItemsRead, type ListingKey, type StoredListing } from '../read-model/items.js';
 import { applyWriteAnswer } from '../read-model/write-answer.js';
 import type { Gql, SourceItem } from '../types.js';
 import { blockersOf } from './github-blockers.js';
@@ -48,11 +48,24 @@ export function applyRelations(tasks: SourceItem[], relations: Relations): Sourc
   });
 }
 
+/** #282: the relations query's answer (blocking alone) joined with what the item's own read carries, its blockedBy and its sub-issues: what
+ * applyRelations reads. Not read (undefined) and gone (null) pass through, so an item whose issue is gone gets no blockers. A sub-issue
+ * without a number gates nothing: it has no id to name. */
+export function joinRelations(nodes: GhItemNode[], answered: Relations): Map<string, GhIssueRelations | null | undefined> {
+  return new Map(nodes.map((node): [string, GhIssueRelations | null | undefined] => {
+    const issue = answered.get(node.id);
+    if (!issue) return [node.id, issue];
+    const c = node.content;
+    const subIssues = (c?.subIssues?.nodes ?? []).flatMap((s) => (s.number === undefined ? [] : [{ number: s.number, state: s.state }]));
+    return [node.id, { blockedBy: c?.blockedBy ?? { nodes: [] }, blocking: issue.blocking ?? { nodes: [] }, subIssues: { nodes: subIssues } }];
+  }));
+}
+
 /** What the sync needs of the adapter (#190): its closure pieces, so the GitHub details stay there. */
 export interface ItemsSyncDeps {
   store: ItemStore;
   probe(): Promise<string>; // the project's updatedAt; throws when the project is gone
-  listNodes(): Promise<GhItemNode[]>; // a full read
+  listNodes(): Promise<ItemsRead>; // a full read: the Project's fields and items
   kept(nodes: GhItemNode[]): SourceItem[]; // the poll's steps before the relations: what the relations query asks
   fetchRelations(tasks: SourceItem[]): Promise<Map<string, GhIssueRelations | null>>;
   log?: Logger;
@@ -63,12 +76,37 @@ export interface ItemsSync {
   /** A poll's read: the probe, then a full read only when it moved, the stamp was cleared, the key changed or FULL_READ_MAX_AGE_MS passed; the
    * listing read back from the model either way. */
   list(key: ListingKey): Promise<StoredListing>;
-  /** The kept tasks of a read back with their relations: the stored ones as they are, the missing ones fetched and stored. */
-  relate(source: string, tasks: SourceItem[], stored: Relations): Promise<SourceItem[]>;
+  /** The tab's refresh (#282): the stamp cleared, then list, so the full read runs now. */
+  refresh(key: ListingKey): Promise<StoredListing>;
+  /** The kept tasks of a read back with their relations, joined with each node's own: the stored answers as they are, the missing ones fetched and stored. */
+  relate(source: string, tasks: SourceItem[], read: StoredListing): Promise<SourceItem[]>;
   /** A write's re-read item stored with origin write, with the relations its entry read; a failure is logged, never thrown. */
   answer(node: GhItemNode, relations: ReadonlyMap<string, GhIssueRelations | null>, project: string): Promise<void>;
   /** Every adapter write: the next poll reads in full, since a relation write does not move the probe. */
   clear(): void;
+}
+
+function storeBlocking(store: ItemStore, source: string, relations: ReadonlyMap<string, GhIssueRelations | null>): void {
+  store.db.transaction(() => {
+    for (const [id, issue] of relations) store.db.setBlocking(source, id, blockingRows(issue));
+  });
+}
+
+async function relateTasks(deps: ItemsSyncDeps, source: string, tasks: SourceItem[], read: StoredListing): Promise<SourceItem[]> {
+  const fetched = await deps.fetchRelations(tasks.filter((task) => read.relations.get(task.item.itemId) === undefined));
+  storeBlocking(deps.store, source, fetched);
+  return applyRelations(tasks, joinRelations(read.nodes, new Map([...read.relations, ...fetched])));
+}
+
+async function storeAnswer(deps: ItemsSyncDeps, node: GhItemNode, relations: ReadonlyMap<string, GhIssueRelations | null>, project: string): Promise<void> {
+  try {
+    const source = await deps.store.source();
+    if (source === undefined) return;
+    applyWriteAnswer(deps.store, node.content?.repository?.nameWithOwner ?? '', { items: [normalizeItem(source, project, node)] });
+    storeBlocking(deps.store, source, relations);
+  } catch (err) {
+    deps.log?.error(`source ${project}: a write's answer was not stored in the read model: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // In memory only (#190): a restart or a new adapter pays one full read
@@ -77,46 +115,37 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
   const now = deps.now ?? Date.now;
   let stamp: string | undefined; // the probe read before the last full read: a change made during that read moves the next probe
   let readAt = 0;
-  let readKey: string | undefined; // the listing the last full read stored: another one (a new login, a new filter) has nothing stored yet
+  let readKey: string | undefined; // the listing the last full read stored: another one (a new login, another Project) has nothing stored yet
   let writes = 0; // clear() calls: a full read in flight when a write clears the stamp must not set it back
-  const setRelations = (source: string, relations: ReadonlyMap<string, GhIssueRelations | null>): void => {
-    store.db.transaction(() => {
-      for (const [id, issue] of relations) store.db.setItemRelations(source, id, issue);
-    });
+  let refreshing: Promise<StoredListing> | undefined;
+  const clear = (): void => {
+    writes += 1;
+    stamp = undefined;
   };
+  async function list(key: ListingKey): Promise<StoredListing> {
+    const probed = await deps.probe();
+    const keyed = `${key.source} ${key.project}`;
+    if (probed !== stamp || keyed !== readKey || now() - readAt >= FULL_READ_MAX_AGE_MS) {
+      const before = writes;
+      const read = await deps.listNodes();
+      const relations = await deps.fetchRelations(deps.kept(read.nodes)); // before the transaction: a failed query stores nothing
+      storeListing(store.db, key, read, relations);
+      stamp = writes === before ? probed : undefined;
+      readAt = now();
+      readKey = keyed;
+    }
+    return readListing(store.db, key); // one synchronous read: no write's upsert lands between it and the poll's dispatch
+  }
   return {
-    async list(key) {
-      const probed = await deps.probe();
-      const keyed = `${key.source} ${key.scope}`;
-      if (probed !== stamp || keyed !== readKey || now() - readAt >= FULL_READ_MAX_AGE_MS) {
-        const before = writes;
-        const nodes = await deps.listNodes();
-        const relations = await deps.fetchRelations(deps.kept(nodes)); // before the transaction: a failed query stores nothing
-        storeListing(store.db, key, nodes, relations);
-        stamp = writes === before ? probed : undefined;
-        readAt = now();
-        readKey = keyed;
-      }
-      return readListing(store.db, key); // one synchronous read: no write's upsert lands between it and the poll's dispatch
+    list,
+    // one full read in flight at most: ?fresh=1 is not throttled, so concurrent ones share the running read
+    refresh: (key) => {
+      clear();
+      if (refreshing === undefined) refreshing = list(key).finally(() => { refreshing = undefined; });
+      return refreshing;
     },
-    async relate(source, tasks, stored) {
-      const fetched = await deps.fetchRelations(tasks.filter((task) => stored.get(task.item.itemId) === undefined));
-      setRelations(source, fetched);
-      return applyRelations(tasks, new Map([...stored, ...fetched]));
-    },
-    async answer(node, relations, project) {
-      try {
-        const source = await store.source();
-        if (source === undefined) return;
-        applyWriteAnswer(store, node.content?.repository?.nameWithOwner ?? '', { items: [itemRow(source, project, node)] });
-        setRelations(source, relations);
-      } catch (err) {
-        deps.log?.error(`source ${project}: a write's answer was not stored in the read model: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
-    clear() {
-      writes += 1;
-      stamp = undefined;
-    },
+    relate: (source, tasks, read) => relateTasks(deps, source, tasks, read),
+    answer: (node, relations, project) => storeAnswer(deps, node, relations, project),
+    clear,
   };
 }

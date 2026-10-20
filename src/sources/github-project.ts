@@ -1,15 +1,16 @@
 import { STATUS } from '../field-values.js';
+import type { ReadModel } from '../read-model/db.js';
+import { readListing, type ListingKey } from '../read-model/items.js';
+import { rebuildFields } from '../read-model/items-rebuild.js';
 import { matchTaskProps } from '../task-props.js';
 import type { BlockerRef, EpicsMode, FilterRule, Gql, ProjectBuiltins, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, SourceTaskProps } from '../types.js';
 import { matchesFilter } from './github-filter.js';
 // A cycle with github.js, which calls readProject: only functions cross it, and they run after both modules loaded
-import { isEpicItem, itemReader, pageItems } from './github.js';
+import { isEpicItem, itemReader } from './github.js';
+import { pageItems, PROJECT_ITEM_LIMIT } from './github-pages.js';
 // A cycle (github-blockers → github-fields → this module): only functions cross it, and they run after every module loaded
 import { refsOf } from './github-blockers.js';
-import { PROJECT_ITEMS, type GhItemNode, type GhProjectField, type GhPullRequest } from './github-queries.js';
-
-/** Ten pages (#756): the poll's 200 is too few for an unfiltered view, and 1000 keeps one load bounded; past it the view says truncated. */
-export const PROJECT_ITEM_LIMIT = 1000;
+import { ITEMS, type GhItemNode, type GhProjectField, type GhPullRequest } from './github-queries.js';
 
 // GitHub's ProjectV2FieldType → how the view renders it; any other kind (reviewers, tracks, tracked by, one GitHub adds later) is `other`
 const FIELD_TYPES: Record<string, ProjectField['type']> = {
@@ -125,10 +126,21 @@ export function projectItem(node: GhItemNode, fields: ProjectField[], read: Proj
   };
 }
 
-/** A source's issues, unfiltered, in the project's order, with the fields the view shows (#756); the statuses are the adapter's to add. */
+// One view from any read: the fields the view shows, where the built-ins sit, and every issue's row
+function viewOf(nodes: GhItemNode[], raw: GhProjectField[], read: ProjectRead, truncated: boolean): Omit<ProjectView, 'statuses'> {
+  const fields = projectFields(raw);
+  return { fields, builtins: projectBuiltins(raw), items: nodes.flatMap((node) => projectItem(node, fields, read) ?? []), truncated };
+}
+
+/** A source's issues, unfiltered, in the project's order, with the fields the view shows (#756), read live; the statuses are the adapter's to add. */
 export async function readProject(gql: Gql, read: ProjectRead): Promise<Omit<ProjectView, 'statuses'>> {
-  const pages = await pageItems(gql, PROJECT_ITEMS, { login: read.login, number: read.number }, read.notFound, PROJECT_ITEM_LIMIT);
-  const fields = projectFields(pages.fields);
-  const items = pages.nodes.flatMap((node) => projectItem(node, fields, read) ?? []);
-  return { fields, builtins: projectBuiltins(pages.fields), items, truncated: pages.truncated };
+  const pages = await pageItems(gql, ITEMS, { login: read.login, number: read.number }, read.notFound, PROJECT_ITEM_LIMIT);
+  return viewOf(pages.nodes, pages.fields, read, pages.truncated);
+}
+
+/** #282: the same view from the read model, no call. ponytail: the stored listing keeps no "items were left" flag, so reaching the ceiling reads as
+ * truncated (a Project of exactly 1000 says so); store the flag with the listing if that misleads. */
+export function storedProject(db: ReadModel, key: ListingKey, read: ProjectRead): Omit<ProjectView, 'statuses'> {
+  const { nodes } = readListing(db, key);
+  return viewOf(nodes, rebuildFields(db.projectFields(key.source, key.project)), read, nodes.length >= PROJECT_ITEM_LIMIT);
 }

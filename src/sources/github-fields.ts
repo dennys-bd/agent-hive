@@ -1,6 +1,8 @@
 import { isReadOnly, ItemNotOnSourceError, PartialWriteError, STATUS } from '../field-values.js';
 import type { FieldValue, FieldWrite, Gql, ItemField, ProjectField, SourceItem } from '../types.js';
 import type { Logger } from '../log.js';
+import type { ReadModel } from '../read-model/db.js';
+import { rebuildFieldsNode } from '../read-model/items-rebuild.js';
 import { projectFields, projectItem, valuesOf, type ProjectRead } from './github-project.js';
 import {
   assigneesMutation, CLEAR_FIELD, CLEAR_ISSUE_TYPE, CLEAR_MILESTONE, ITEM_FIELDS, labelsMutation, SET_DATE, SET_ISSUE_TYPE, SET_ITERATION, SET_MILESTONE, SET_NUMBER,
@@ -157,6 +159,12 @@ export function writesFor(node: GhItemFieldsNode, field: string, value: FieldVal
 /** An item's fields for its editors (#686). */
 export async function readItemFields(gql: Gql, itemId: string, projectId: string): Promise<ItemField[]> {
   return itemFields(await readItem(gql, itemId, projectId));
+}
+
+/** #282: the editors' fields from the read model, when it holds the item and its repository's options; undefined sends the caller to the live read. */
+export function storedItemFields(db: ReadModel, source: string, project: string, itemId: string): ItemField[] | undefined {
+  const node = rebuildFieldsNode(db, source, project, itemId);
+  return node === undefined ? undefined : itemFields(node);
 }
 
 // The item as it reads now: the fields, the native view row and the entry the next poll would list (none when it would not)

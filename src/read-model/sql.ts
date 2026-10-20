@@ -1,9 +1,13 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
+import type { PrState, ProjectPr, Signal } from '../types.js';
 import type { IssueRow, UpsertOrigin } from './rows.js';
 
 // What every table's code reads and writes a row with (#178, #186, #187): shared by db.ts, pull-tables.ts and pr-details.ts
 
-const WRITE_WINDOW_MS = 30_000;
+/** #178's window: a sync page tied with a write's row loses to it for this long, by the daemon's clock. */
+export const WRITE_WINDOW_MS = 30_000;
+const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
+const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 const KEY: readonly string[] = ['source', 'node_id'];
 
 /** A row as node:sqlite answers it. */
@@ -51,4 +55,20 @@ export function issueOf(row: Row): IssueRow {
     author: nullable(row, 'author'), labels: JSON.parse(text(row, 'labels')) as string[], assignees: JSON.parse(text(row, 'assignees')) as string[],
     createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'), closedAt: nullable(row, 'closed_at'), comments: Number(row.comments),
   };
+}
+
+/** A closing PR as stored (#178). The stored values are the module's own writes, through pullRequest's shape. */
+export function prOf(row: Row): ProjectPr {
+  const checks = SIGNALS.find((s) => s === row.checks);
+  return {
+    number: Number(row.number), url: text(row, 'url'), state: PR_STATES.find((s) => s === row.state) ?? 'closed',
+    ...(checks === undefined ? {} : { checks }), ...(row.draft === 1 ? { draft: true as const } : {}),
+  };
+}
+
+/** Rows grouped by one column's value, each mapped (#282): one query's rows for many items, read in one pass. */
+export function groupBy<T>(rows: Row[], key: string, map: (row: Row) => T): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) groups.set(text(row, key), [...(groups.get(text(row, key)) ?? []), map(row)]);
+  return groups;
 }

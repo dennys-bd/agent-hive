@@ -2,10 +2,11 @@ import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { openReadModel, READ_MODEL_FILE, type ReadModel } from '../../src/read-model/db.js';
 import { checkPath, pullPath, reviewsPath } from '../../src/read-model/pulls.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { RefetchDeps } from '../../src/read-model/reconcile.js';
 import type { RestAnswer, RestGet, RestQuota } from '../../src/read-model/rest.js';
 import type { CommentRow, IssueRow, PullKey, RepoRow } from '../../src/read-model/rows.js';
-import type { GhPullRequest } from '../../src/sources/github-queries.js';
+import type { GhItemNode, GhPullRequest } from '../../src/sources/github-queries.js';
 import type { RepoRef } from '../../src/repos/repositories.js';
 import type { Gql, ProjectPr } from '../../src/types.js';
 import { tempDir } from '../temp-dir.js';
@@ -75,7 +76,10 @@ export const REST_REPO = {
 };
 export const restLabel = (name: string): Record<string, unknown> => ({ id: name.length, node_id: `LA_${name}`, name, color: 'ededed', default: false });
 /** What the repo and labels scopes answer in a first round (#181): the repository, and no label. */
-export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([])];
+export const REPO_SCOPES: RestAnswer[] = [ok(REST_REPO), ok([]), ok([]), ok([]), ok([])];
+/** The round's three option scopes beside labels (#282), and every repository scope in the order the round runs them. */
+export const OPTION_PATHS: readonly string[] = [assigneesPath(REPO), milestonesPath(REPO), issueTypesPath('acme')];
+export const REPO_SCOPE_PATHS: readonly string[] = [repoPath(REPO), labelsPath(REPO), ...OPTION_PATHS];
 export const restIssue = (n: number, updatedAt: string): Record<string, unknown> => ({ ...REST_ISSUE, node_id: `I_${n}`, number: n, title: `T${n}`, updated_at: updatedAt });
 
 /** A PR item of the issues endpoint (#186): open, or closed and merged when `mergedAt` is set; `extra` overrides any field. */
@@ -178,3 +182,17 @@ export const NO_REST: RestGet = async (path) => {
   throw new Error(`unexpected ${path}`);
 };
 export const roundDeps = (db: ReadModel, rest: RestGet, gql: Gql = NO_GQL): RefetchDeps => ({ db, rest, gql, source: SOURCE, now: NOW });
+
+type ItemContent = NonNullable<GhItemNode['content']>;
+/** A Project item as the widened items read answers it (#282): issue #n of acme/r in Status `status`, opened by bia, with every field the
+ * normalizer reads; `content` and `extra` override. The issue's own updatedAt is the item's. */
+export const itemNode = (n: number, status: string, updatedAt = T1, content: Partial<ItemContent> = {}, extra: Partial<GhItemNode> = {}): GhItemNode => ({
+  id: `PVTI_${n}`, updatedAt, fieldValueByName: { name: status }, fieldValues: { nodes: [{ name: status, field: { name: 'Status' } }] },
+  content: {
+    __typename: 'Issue', id: `I_${n}`, number: n, title: `T${n}`, body: `body ${n}`, url: `https://github.com/acme/r/issues/${n}`, state: 'OPEN',
+    author: { login: 'bia' }, comments: { totalCount: 0 }, createdAt: T1, updatedAt, closedAt: null, parent: null, issueType: null, milestone: null,
+    subIssuesSummary: { total: 0, completed: 0 }, subIssues: { nodes: [] }, blockedBy: { nodes: [] }, closedByPullRequestsReferences: { nodes: [] },
+    assignees: { nodes: [] }, labels: { nodes: [] }, repository: { nameWithOwner: 'acme/r' }, ...content,
+  },
+  ...extra,
+});

@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
+import { openReadModel } from '../../src/read-model/db.js';
+import type { ItemStore } from '../../src/read-model/items.js';
 import { createSource, sourceSpec } from '../../src/source.js';
-import { PROJECT_ITEM_LIMIT } from '../../src/sources/github-project.js';
-import { PROJECT_ITEMS } from '../../src/sources/github-queries.js';
+import { PROJECT_ITEM_LIMIT } from '../../src/sources/github-pages.js';
+import { ITEMS } from '../../src/sources/github-queries.js';
 import { combConfig, fakeGql, FILTER } from '../fakes.js';
+import { itemNode, SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
 const specOf = (extra: Record<string, unknown> = {}) => { const config = parseConfig(combConfig({ source: GITHUB_SOURCE, ...extra })); return sourceSpec(config, config.comb.sources[0]); };
@@ -42,7 +45,7 @@ test('project maps a page to the native view: the Status options in order, the f
       { number: 3, field: { name: 'Estimate' } }, { date: '2026-10-20', field: { name: 'Target' } }, { title: 'Sprint 4', field: { name: 'Sprint' } }, {},
     ] },
   };
-  const { gql, calls } = fakeGql({ fields: FIELDS, projectItems: page([node]) });
+  const { gql, calls } = fakeGql({ fields: FIELDS, items: page([node]) });
   const source = createSource(spec, { gql });
   await source.resolveFields();
   const view = await source.project!();
@@ -72,7 +75,7 @@ test('project keeps the issues only, marks the ones the filter or epics: hide ke
   ];
   // the blocked rule is not judged here: fakeGql rejects the relations query, so a call would fail the read
   const filter = [{ field: 'label', op: 'any', values: ['hive'] }, { field: 'blocked', op: 'none' }];
-  const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics: 'hide', filter } }), { gql: fakeGql({ fields: FIELDS, projectItems: page(nodes) }).gql });
+  const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics: 'hide', filter } }), { gql: fakeGql({ fields: FIELDS, items: page(nodes) }).gql });
   await source.resolveFields();
   const { items } = await source.project!();
   assert.deepEqual(items.map((i) => [i.itemId, i.out]), [['PVTI_1', undefined], ['PVTI_2', 'filter'], ['PVTI_3', 'epic'], ['PVTI_4', undefined]]);
@@ -81,7 +84,7 @@ test('project keeps the issues only, marks the ones the filter or epics: hide ke
 test('project marks an epic out only under epics: hide; show and ignore list it (#30)', async () => {
   const epic = issue(3, { subIssuesSummary: { completed: 0, total: 2 } }, 'Ready');
   const outs = async (epics: string) => {
-    const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics } }), { gql: fakeGql({ fields: FIELDS, projectItems: page([epic]) }).gql });
+    const source = createSource(specOf({ source: { ...GITHUB_SOURCE, epics } }), { gql: fakeGql({ fields: FIELDS, items: page([epic]) }).gql });
     await source.resolveFields();
     return (await source.project!()).items.map((i) => i.out);
   };
@@ -90,7 +93,7 @@ test('project marks an epic out only under epics: hide; show and ignore list it 
 
 test('project reads the PRs that close an issue: merged first, OPEN open, else closed; the checks rollup as a signal, none when absent or unknown (#756)', async () => {
   const prs = { nodes: [pr(7, 'OPEN', 'SUCCESS'), pr(8, 'MERGED', 'FAILURE'), pr(9, 'CLOSED', 'PENDING'), pr(10, 'OPEN'), pr(11, 'OPEN', 'ERROR'), pr(12, 'OPEN', 'NEUTRAL')] };
-  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: page([issue(1, { closedByPullRequestsReferences: prs })]) }).gql });
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: page([issue(1, { closedByPullRequestsReferences: prs })]) }).gql });
   await source.resolveFields();
   const [item] = (await source.project!()).items;
   const url = (n: number) => `https://github.com/acme/r/pull/${n}`;
@@ -103,22 +106,22 @@ test('project reads the PRs that close an issue: merged first, OPEN open, else c
 
 test('project pages by cursor up to PROJECT_ITEM_LIMIT, ten pages, and says truncated when items are left; a last page says not (#756)', async () => {
   const pages = Array.from({ length: PROJECT_ITEM_LIMIT / 100 }, (_, k) => page([issue(k + 1)], true, `C${k + 1}`));
-  const { gql, calls } = fakeGql({ fields: FIELDS, projectItems: pages });
+  const { gql, calls } = fakeGql({ fields: FIELDS, items: pages });
   const source = createSource(specOf(), { gql });
   await source.resolveFields();
   const view = await source.project!();
-  const reads = calls.filter((c) => c.name === 'projectItems');
+  const reads = calls.filter((c) => c.name === 'items');
   assert.equal(reads.length, 10);
   assert.deepEqual(reads[1].variables, { login: 'acme', number: 6, after: 'C1' });
   assert.deepEqual([view.items.length, view.truncated], [10, true]);
-  const short = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: [page([issue(1)], true, 'C1'), page([issue(2)])] }).gql });
+  const short = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: [page([issue(1)], true, 'C1'), page([issue(2)])] }).gql });
   await short.resolveFields();
   assert.equal((await short.project!()).truncated, false);
 });
 
 test('project before resolveFields rejects, and a project gone since names it (#756)', async () => {
   await assert.rejects(createSource(specOf(), { gql: fakeGql({}).gql }).project!(), /not resolved/);
-  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: { repositoryOwner: null } }).gql });
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: { repositoryOwner: null } }).gql });
   await source.resolveFields();
   await assert.rejects(source.project!(), { message: 'source not found: no GitHub Project 6 for "acme"' });
 });
@@ -132,7 +135,7 @@ test('project reads each single-select field\'s options and each iteration field
     { name: 'Labels', dataType: 'LABELS' }, { name: 'Notes', dataType: 'TEXT' },
   ];
   const read = { ...page([]), repositoryOwner: { projectV2: { fields: { nodes: fields }, items: { pageInfo: { hasNextPage: false }, nodes: [] } } } };
-  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: read }).gql });
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: read }).gql });
   await source.resolveFields();
   const view = await source.project!();
   assert.deepEqual(view.fields, [
@@ -159,7 +162,7 @@ test('project lists every other field as a column, by its kind or as other: mile
   };
   const closed = issue(2, { closedAt: '2026-10-04T10:00:00Z' });
   const read = { ...page([]), repositoryOwner: { projectV2: { fields: { nodes: fields }, items: { pageInfo: { hasNextPage: false }, nodes: [node, closed] } } } };
-  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: read }).gql });
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: read }).gql });
   await source.resolveFields();
   const view = await source.project!();
   assert.deepEqual(view.fields, [
@@ -178,7 +181,7 @@ test('project reads each issue\'s blocked-by relations, open and closed: a short
   const blockedBy = { nodes: [ref(274, 'Dock layout', 'OPEN', 'acme/r'), ref(521, 'Old pager', 'CLOSED', 'Acme/R'), ref(3, 'Lib', 'OPEN', 'other/lib')] };
   const own = { repository: { nameWithOwner: 'acme/r' } };
   const nodes = [issue(1, { ...own, blockedBy }), issue(2, { ...own, blockedBy: { nodes: [] } }), issue(3, own)];
-  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, projectItems: page(nodes) }).gql });
+  const source = createSource(specOf(), { gql: fakeGql({ fields: FIELDS, items: page(nodes) }).gql });
   await source.resolveFields();
   const { items } = await source.project!();
   assert.deepEqual(items.map((i) => i.blockedBy), [
@@ -187,5 +190,26 @@ test('project reads each issue\'s blocked-by relations, open and closed: a short
     undefined,
   ]);
   assert.equal('blockedBy' in items[2], false);
-  assert.match(PROJECT_ITEMS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
+  assert.match(ITEMS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
+});
+
+test('with a store, project answers the stored listing and fields with no call; nothing stored yet, or fresh, reads in full first (#282)', async () => {
+  const { db } = await openReadModel(':memory:');
+  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined };
+  const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
+  const { gql, calls } = fakeGql({
+    fields: FIELDS, probe, items: [page([itemNode(1, 'Ready')]), page([itemNode(1, 'In review', T2)])], relations: { i0: { issue: { blocking: { nodes: [] } } } },
+  });
+  const source = createSource(specOf(), { gql, items });
+  await source.resolveFields();
+  calls.length = 0;
+  const first = await source.project!();
+  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations'], 'nothing stored: one full read');
+  assert.deepEqual(first.items.map((i) => i.status), ['Ready']);
+  calls.length = 0;
+  assert.deepEqual(await source.project!(), first);
+  assert.equal(calls.length, 0, 'stored: no call');
+  const fresh = await source.project!({ fresh: true });
+  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations']);
+  assert.deepEqual(fresh.items.map((i) => i.status), ['In review']);
 });

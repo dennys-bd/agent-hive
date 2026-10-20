@@ -76,5 +76,31 @@ export interface PullPage {
  * its comments, its head's checks and its repository's row. */
 export interface PrPage { issue: IssueRow; pull: PullRow | undefined; reviews: ReviewRow[]; comments: CommentRow[]; checks: CheckRow[]; repo: RepoRow | undefined }
 
-/** A Project item (#190): its GraphQL node as JSON, pruned to the ITEMS shape; project is `<owner login>/<number>`. */
-export interface ItemRow { source: string; nodeId: string; project: string; updatedAt: string; node: string }
+/** A Project item's own columns (#190, #282): project is `<owner login>/<number>`; contentType the content's __typename, null when GitHub
+ * answered none; issueNodeId the issues row it shows, set for an issue only. */
+export interface ItemRow { source: string; nodeId: string; project: string; contentType: string | null; issueNodeId: string | null; updatedAt: string;
+  /** The item's values as one stable string, so the replace rule sees a changed value at a tied updatedAt (#282) */ valuesSig: string }
+/** One set value of an item (#282): kind is which GhFieldValue key holds it, so the rebuild restores a number as a number. */
+export interface FieldValueRow { field: string; kind: 'name' | 'text' | 'number' | 'date' | 'title'; value: string }
+/** Which side of an issue's relations a row is (#282): blockedBy and subIssue come with the items read, blocking with the relations query. */
+export type RelationKind = 'blockedBy' | 'blocking' | 'subIssue';
+/** One related issue (#282), in its kind's order. nodeId is a sub-issue's; a blocker ref has none. */
+export interface RelationRow { kind: RelationKind; nodeId: string | null; number: number | null; title: string | null; state: string; repository: string | null }
+/** What only the Project read says of an issue (#282), beside its REST columns. */
+export interface IssueDetails {
+  url: string; milestone: string | null; issueType: string | null; parentNumber: number | null; parentTitle: string | null;
+  subIssuesTotal: number | null; subIssuesCompleted: number | null;
+}
+/** One item as the normalizer cuts it (#282): what one wire node becomes. An issue item carries its issue row, details and relations. */
+export interface NormalizedItem { item: ItemRow; values: FieldValueRow[]; issue?: IssueRow; details?: IssueDetails; pullRequests: ProjectPr[]; relations?: RelationRow[] }
+/** A Project item as stored (#282): its row and the relations marker, NULL never read, 1 read, 0 the issue was read and is gone (#190's three states). */
+export interface StoredItem extends ItemRow { blockingRead: number | null }
+/** A Project field as project_fields keeps it (#282): a single-select's options or an iteration field's iterations, by name. */
+export interface ProjectFieldRow { name: string; dataType: string | null; options: string[] | null }
+/** Every row one item's rebuild reads (#282). details is absent until a Project read wrote the issue's row's own columns. */
+export interface StoredItemRows { item: StoredItem; values: FieldValueRow[]; issue?: IssueRow; details?: IssueDetails; pullRequests: ProjectPr[]; relations: RelationRow[] }
+
+const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Names in the order every view lists them (#282): by name, case-insensitive as SQLite's COLLATE NOCASE, a case-only tie by code unit, so the
+ * REST and the GraphQL reader store the same list and neither rewrites the row the other just wrote. */
+export const sortedNames = (names: readonly string[]): string[] => [...names].sort((a, b) => order(a.toLowerCase(), b.toLowerCase()) || order(a, b));
