@@ -160,13 +160,15 @@ export function createMemoryStore(
 ): MemoryStore {
   const files = createJsonStore<MemoryFile>({ pathOf: (name) => memoryPath(home, name), empty: EMPTY_MEMORY, parse: parseMemory, isLive, private: true });
   const lastRendered = new Map<string, RenderedMemory>();
-  // A lesson saved between two settings saves rewrites with the off the last boot or save wrote, never a live-config read (#336)
+  // The off the last write used: a lesson saved between two settings saves rewrites with it, never a live-config read (#336)
   const lastOff = new Map<string, readonly OptionalTool[]>();
   const chains = new Map<string, Promise<void>>();
   // One write per workspace at a time, from the file as it is when its turn comes: two saves in flight never leave the older text on disk. A
   // file it cannot read still gets the bare protocol, so a run always finds its file; the failure goes to the caller
-  const writeProtocol = (name: string, off: readonly OptionalTool[]): Promise<void> => {
+  // `off` absent: a lesson's rewrite, which takes the off of the write before it when its turn comes, so a settings save queued ahead wins
+  const writeProtocol = (name: string, given?: readonly OptionalTool[]): Promise<void> => {
     const job = async (): Promise<void> => {
+      const off = given ?? lastOff.get(name) ?? [];
       const read = await files.read(name).then((file) => ({ file }), (err: unknown) => ({ file: EMPTY_MEMORY, err }));
       const protocol = await protocolFor(name, off); // inside the chain: the passages as they are when this write's turn comes
       await writeWorkspaceProtocol(home, name, protocol, renderMemory(read.file.entries, off));
@@ -193,7 +195,7 @@ export function createMemoryStore(
     });
     if (refused) return refused;
     // the lesson is saved: a protocol file that fails to write is logged, never the writer's refusal; the next save or boot rewrites it
-    if (rerender && isLive(name)) await writeProtocol(name, lastOff.get(name) ?? []).catch((err: unknown) => log.error(`memory ${name}: protocol files not written (${errorName(err)})`));
+    if (rerender && isLive(name)) await writeProtocol(name).catch((err: unknown) => log.error(`memory ${name}: protocol files not written (${errorName(err)})`));
     return saved;
   };
   return { read: files.read, update, writeProtocol, rendered: (name) => lastRendered.get(name) };

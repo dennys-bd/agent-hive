@@ -32,7 +32,12 @@ const exists = (path: string): Promise<boolean> => stat(path).then(() => true, (
 async function readAll(dir: string): Promise<Passage[]> {
   const names = await readdir(dir).catch((err: unknown) => (isMissing(err) ? [] : Promise.reject(err)));
   const numbered = names.flatMap((name) => { const match = FILE_NAME.exec(name); return match ? [{ name, n: Number(match[1]) }] : []; }).sort((a, b) => a.n - b.n);
-  return Promise.all(numbered.map(async ({ name, n }) => ({ id: `p${n}`, text: await readFile(join(dir, name), 'utf8') })));
+  // a file a DELETE removed after the readdir is skipped, never the whole list's failure
+  const read = await Promise.all(numbered.map(async ({ name, n }) => {
+    const text = await readFile(join(dir, name), 'utf8').catch((err: unknown) => (isMissing(err) ? undefined : Promise.reject(err)));
+    return text === undefined ? [] : [{ id: `p${n}`, text }];
+  }));
+  return read.flat();
 }
 
 const refusalOf = (text: string): PassageSave | undefined => {

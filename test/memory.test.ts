@@ -186,3 +186,22 @@ test('writeProtocol writes what protocolFor answers for the workspace and the of
   assert.deepEqual(asked, [['site', ['hive_applied']], ['site', ['hive_applied']]]);
   assert.deepEqual(store.rendered('site'), { ids: ['m-1'], chars: section.length });
 });
+
+test('a lesson saved while a settings write is queued rewrites with that write\'s off, not the one before it (#336)', async (t) => {
+  const home = await tempDir(t, 'home-');
+  const asked: (readonly string[])[] = [];
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const protocolFor: ProtocolFor = async (_workspace, off) => {
+    asked.push(off);
+    if (asked.length === 1) await held; // the settings write's turn holds until the lesson's rewrite is queued behind it
+    return { stage: 'stage\n', session: 'session\n' };
+  };
+  const store = createMemoryStore(home, () => true, undefined, protocolFor);
+  const settings = store.writeProtocol('site', ['hive_applied']);
+  const lesson = store.update('site', (file) => withEntry(file, 'fact', 'pnpm test is the gate', 'user', AT, CAP));
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  await Promise.all([settings, lesson]);
+  assert.deepEqual(asked, [['hive_applied'], ['hive_applied']]);
+});
