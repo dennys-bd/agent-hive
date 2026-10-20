@@ -119,10 +119,10 @@ test('a stage spawn marks the task before its git and runs the git and the works
 test('a setup that fails in a spawn is a spawnFailed: no worker starts, the worker frees, the task keeps the reason, its console run ends with it, and no marker is written (#299, #351)', async (t) => {
   const { base, gitDir, server, workers } = await start(t, '# nothing copied yet\nCOPY .env');
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
-  const reason = 'setup failed at line 2 (COPY .env): not found in hive';
+  const reason = 'setup failed at step 1 of 1 (line 2, COPY .env): not found in hive';
   assert.equal(workers.length, 0);
   assert.deepEqual([work0(server)?.error, work0(server)?.setup], [SPAWN_FAILED + reason, undefined]);
-  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at line 2 \(COPY \.env\): not found in hive`)}$`));
+  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at step 1 of 1 \(line 2, COPY \.env\): not found in hive`)}$`));
   assert.equal(runOf(server), undefined, 'the worker is free again');
   assert.equal(await marked(gitDir), false);
 });
@@ -137,7 +137,7 @@ test('a Stop during a stage spawn\'s setup kills the running step: the task show
   assert.equal((await postJson(`${base}/ptys/${ptyId}/stop`)).status, 200);
   await starting;
   assert.ok(Date.now() - began < 10_000, 'the sleep died with its group instead of running 30 s');
-  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${FAILED(String.raw`setup failed at line 1 \(RUN sleep 30\): stopped`)}$`));
+  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${FAILED(String.raw`setup failed at step 1 of 1 \(line 1, RUN sleep 30\): stopped`)}$`));
   assert.deepEqual([workers.length, runOf(server), work0(server)?.setup, await marked(gitDir)], [0, undefined, undefined, false]);
 });
 
@@ -161,7 +161,7 @@ test('a first /open whose workspace has a setup marks the task before any git, r
 
 test('a first /open whose setup fails answers the 500 as before, puts the reason on the task and in its console run, and opens nothing; the next /open drops the reason and opens (#299, #351)', async (t) => {
   const { base, repo, server, workers, lines } = await start(t, 'COPY .env');
-  const reason = 'setup failed at line 1 (COPY .env): not found in hive';
+  const reason = 'setup failed at step 1 of 1 (line 1, COPY .env): not found in hive';
   const from = lines.length;
   const failed = await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' });
   assert.equal(failed.status, 500);
@@ -169,7 +169,7 @@ test('a first /open whose setup fails answers the 500 as before, puts the reason
   assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupEnded']);
   assert.ok(lines.includes(`DEBUG setupEnded activity=${shortId(work0(server)?.id)} failed`), 'the error reached the task, not the log; the event names the activity (#629)');
   assert.deepEqual([work0(server)?.error, work0(server)?.setup, work0(server)?.worktree, workers.length], [reason, undefined, undefined, 0], 'no worktreeReady, no shell');
-  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at line 1 \(COPY \.env\): not found in hive`)}$`));
+  assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at step 1 of 1 \(line 1, COPY \.env\): not found in hive`)}$`));
   await writeFile(join(repo, '.env'), 'TOKEN=x\n');
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
   assert.deepEqual([work0(server)?.error, work0(server)?.worktree, workers.length], [undefined, worktreePath(repo, SLUG), 1]);

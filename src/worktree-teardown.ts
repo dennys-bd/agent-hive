@@ -43,7 +43,7 @@ function teardownSteps(workspace: Workspace): SetupStep[] {
 /**
  * The workspace's teardown in `worktree` (#654), after git's refusal checks and before the worktree goes. It reads the worktree and writes
  * the main checkout. Skipped when the folder is gone, when there are no lines, or once the marker is in the git dir. A failing step throws
- * `teardown failed at line <n> (<step>): <reason>` and writes no marker; success writes it.
+ * `teardown failed at step <i> of <n> (line <l>, <step>): <reason>` (#267) and writes no marker; success writes it.
  */
 export async function runTeardown(workspace: Workspace, worktree: string, deps: TeardownDeps): Promise<TeardownResult> {
   if (!(await exists(worktree))) return skipped('gone');

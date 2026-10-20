@@ -7,7 +7,7 @@ export type SpawnFailureCode =
 
 const SPAWN_FAILURES: readonly [RegExp, SpawnFailureCode][] = [
   [/^agent \S+ is not on PATH/, 'agent_missing'], [/^choose a workspace$/, 'no_workspace'], [/^workspace .+ (?:is gone|não existe mais)$/, 'workspace_gone'],
-  [/^comando ".*" não está habilitado/, 'command_disabled'], [/^(?:setup|teardown) failed at line /, 'setup_failed'],
+  [/^comando ".*" não está habilitado/, 'command_disabled'], [/^(?:setup|teardown) failed at (?:step \d+ of \d+|line) /, 'setup_failed'],
   [/ has changes that are not committed:$/, 'checkout_dirty'], // #945: ensureCheckout's refusal, git's porcelain lines after it
   [/^(?:fatal|error): |^base: /, 'git_failed'], [/posix_spawn|^pty /, 'pty_failed'],
 ];
