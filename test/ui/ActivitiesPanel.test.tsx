@@ -6,9 +6,9 @@ import { type ActivitiesNav, ActivitiesPanel, type ActivitiesPanelProps } from '
 import { setLanguage, statusText, t } from '@/i18n';
 import type { LocalActivity, TaskActivity } from '@/lib/activities';
 import { readView } from '@/lib/view-state';
-import type { ActivityRecord, Task, Stage } from '../../src/types';
+import type { ActivityRecord, Task, Session, Stage, Worker } from '../../src/types';
 import { localActivityId } from '../../src/activities';
-import type { WithWork } from '../fixtures/work';
+import { localPairOf, type WithWork } from '../fixtures/work';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } })); // the batch's one toast is observable without a Toaster
 
@@ -326,4 +326,37 @@ test('a task\'s kept terminals hang under its sessions on the guide line, termin
   expect(screen.getByRole('button', { name: /^terminal 2/ })).toHaveTextContent(t('session.sleeping'));
   await user.click(sessions()[1]);
   expect(onOpenRun).toHaveBeenCalledWith('I1', 'W4');
+});
+
+// The session and terminal lines of a workspace's group, in order (#347)
+const lines = (workspace: string): string[] => within(group(workspace)).getAllByRole('button', { name: /^(claude|terminal)/ }).map((b) => b.textContent ?? '');
+
+test('a terminal running a live captured session of its task is one line, the session\'s, in the terminal\'s place; after its exit the terminal is back and the session sleeps among the sessions (#347)', async () => {
+  const user = userEvent.setup();
+  const onOpenRun = vi.fn();
+  const notes: Session = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', startedAt: '', stages: [], lastUsedAt: '', agent: 'claude', name: 'fix login' };
+  const captured = { ptyId: 'W3', label: 'Claude · fix login', kind: 'session' as const, session: 'fix login', terminalId: 'T2' };
+  const terminals = [{ terminalId: 'T1', label: 'Terminal 1', n: 1, asleep: false }, { terminalId: 'T2', label: 'Terminal 2', n: 2, asleep: false, runId: 'W3' }, { terminalId: 'T3', label: 'Terminal 3', n: 3, asleep: false }];
+  const running: TaskActivity = { ...worker, sessions: [worker.sessions[0], { session: notes, run: captured, status: 'working' }], terminals };
+  const { rerender } = render(<ActivitiesPanel {...props({ activities: [running, idle], onOpenRun })} />);
+  expect(lines('hive')).toEqual([expect.stringMatching(/^claude.*abcdef12/), 'terminal 1', expect.stringMatching(/^claude.*fix login/), 'terminal 3']);
+  await user.click(screen.getByRole('button', { name: /^claude.*fix login/ }));
+  expect(onOpenRun).toHaveBeenCalledWith('I1', 'T2');
+  const ended: TaskActivity = { ...running, sessions: [worker.sessions[0], { session: notes, status: 'empty' }], terminals: terminals.map(({ runId: _run, ...t }) => t) };
+  rerender(<ActivitiesPanel {...props({ activities: [ended, idle], onOpenRun })} />);
+  expect(lines('hive')).toEqual([expect.stringMatching(/^claude.*abcdef12/), expect.stringMatching(/^claude.*fix login/), 'terminal 1', 'terminal 2', 'terminal 3']);
+});
+
+test('a local terminal running a live local session is that session\'s line in its place; a terminal of another activity\'s session stays a terminal (#347)', () => {
+  const notes: Session = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3302', startedAt: '', stages: [], lastUsedAt: '', agent: 'claude', name: 'notes' };
+  const run = { ptyId: 'R1', label: 'Claude · notes', kind: 'session' as const, session: 'notes', terminalId: 'P2' };
+  const local: LocalActivity = {
+    kind: 'local', ...localPairOf('hive', [notes]), workspace: 'hive', runs: [run], sessions: [{ run, status: 'working', sessionId: notes.id }],
+    kept: [{ session: notes, run, status: 'working' }],
+    terminals: [{ terminalId: 'P1', label: 'Terminal 1', n: 1, asleep: false }, { terminalId: 'P2', label: 'Terminal 2', n: 2, asleep: false, runId: 'R1' }],
+  };
+  const workers: Worker[] = [{ id: 'w', status: 'working', activityId: localActivityId('hive'), freeSession: true, runId: 'R1', sessionId: notes.id, terminalId: 'P2', agent: 'claude' }];
+  render(<ActivitiesPanel {...props({ activities: [local, worker, idle], workers })} />);
+  expect(lines('hive').slice(0, 2)).toEqual(['terminal 1', expect.stringMatching(/^claude.*notes/)]);
+  expect(lines('hive').filter((line) => /notes/.test(line))).toHaveLength(1);
 });
