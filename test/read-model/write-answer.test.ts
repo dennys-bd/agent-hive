@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { openReadModel, type SyncKind } from '../../src/read-model/db.js';
 import { applyWriteAnswer, type WriteAnswerDeps } from '../../src/read-model/write-answer.js';
 import { syncScope } from '../../src/read-model/sync.js';
-import { COMMENT_ROW, fakeRest, ISSUE_ROW, NOW, ok, REPO, restPr, SOURCE, T1, T2 } from './fixtures.js';
-import { itemRow, readListing, storeListing } from '../../src/read-model/items.js';
+import { COMMENT_ROW, fakeRest, ISSUE_ROW, itemNode, NOW, ok, REPO, restPr, SOURCE, T1, T2 } from './fixtures.js';
+import { normalizeItem, readListing, storeListing } from '../../src/read-model/items.js';
 import type { GhItemNode } from '../../src/sources/github-queries.js';
 
 const WINDOW_MS = 30_000; // #178's written_at window
@@ -99,19 +99,26 @@ test('a write answer whose PR row the replace rule refuses does not write its fl
   assert.deepEqual(notified, []);
 });
 
-const ITEM_KEY = { source: SOURCE, project: 'acme/6', scope: 'acme/6' };
-const itemAt = (status: string, updatedAt: string): GhItemNode => ({
-  id: 'PVTI_1', updatedAt, fieldValueByName: { name: status }, content: { __typename: 'Issue', number: 1, url: 'https://github.com/acme/r/issues/1' },
+const ITEM_KEY = { source: SOURCE, project: 'acme/6' };
+const itemAt = (status: string, updatedAt: string, labels: string[] = []): GhItemNode =>
+  itemNode(1, status, updatedAt, { labels: { nodes: labels.map((name) => ({ name })) } });
+const listing = (nodes: GhItemNode[]) => ({ nodes, fields: [] });
+
+test('a status write\'s item upserts with origin write; a poll read before it, older or tied inside the window, keeps the written status (#190)', async () => {
+  const clock = { now: 1_000 };
+  const { deps } = await model(clock);
+  storeListing(deps.db, ITEM_KEY, listing([itemAt('Ready', T1)]), new Map());
+  applyWriteAnswer(deps, 'acme/r', { items: [normalizeItem(SOURCE, 'acme/6', itemAt('In review', T2))] });
+  clock.now += WINDOW_MS - 1;
+  storeListing(deps.db, ITEM_KEY, listing([itemAt('Ready', T1)]), new Map());
+  storeListing(deps.db, ITEM_KEY, listing([itemAt('Ready', T2)]), new Map());
+  assert.equal(readListing(deps.db, ITEM_KEY).nodes[0]?.fieldValueByName?.name, 'In review');
 });
 
-test('a status write\'s item upserts with origin write and notifies nothing; a poll read before it, older or tied inside the window, keeps the written status (#190)', async () => {
-  const clock = { now: 1_000 };
-  const { deps, notified } = await model(clock);
-  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T1)], new Map());
-  assert.deepEqual(applyWriteAnswer(deps, REPO, { items: [itemRow(SOURCE, 'acme/6', itemAt('In review', T2))] }), []);
-  clock.now += WINDOW_MS - 1;
-  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T1)], new Map());
-  storeListing(deps.db, ITEM_KEY, [itemAt('Ready', T2)], new Map());
-  assert.equal(readListing(deps.db, ITEM_KEY).nodes[0]?.fieldValueByName?.name, 'In review');
-  assert.deepEqual(notified, []);
+test('a labels write\'s re-read item updates the issues row and notifies issues for its repository: the repository views follow with no round (#282)', async () => {
+  const { deps, notified } = await model({ now: 1_000 });
+  storeListing(deps.db, ITEM_KEY, listing([itemAt('Ready', T1, ['hive'])]), new Map());
+  assert.deepEqual(applyWriteAnswer(deps, 'acme/r', { items: [normalizeItem(SOURCE, 'acme/6', itemAt('Ready', T2, ['hive', 'bug']))] }), ['issues']);
+  assert.deepEqual(deps.db.issue(SOURCE, 'acme/r', 1)?.labels, ['bug', 'hive']);
+  assert.deepEqual(notified, [['acme/r', ['issues']]]);
 });

@@ -146,7 +146,7 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
   let lastNodes: GhItemNode[] = []; // #28: the last listing's nodes, what a field write's re-read reads its tree links over
   let contents = new Map<string, GhItemNode['content']>(); // every item the last listing saw, draft or filtered out: what apply acts on (#286)
   // #190: with a read model the poll probes the project first and lists what the model holds; it reads in full only when the sync says so
-  const sync = items && createItemsSync({ store: items, probe, listNodes: async () => (await listNodes()).nodes, kept: (nodes) => keep(nodes), fetchRelations: (tasks) => fetchRelations(gql, tasks), log });
+  const sync = items && createItemsSync({ store: items, probe, listNodes, kept: (nodes) => keep(nodes), fetchRelations: (tasks) => fetchRelations(gql, tasks), log });
   // #190: every write makes the next poll read in full (a relation write does not move the probe). Cleared again once it lands: a poll that
   // started between the first clear and the mutation read the item from before it
   const written = <A extends unknown[], R>(write: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
@@ -226,11 +226,8 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     lastNodes = nodes;
   }
 
-  // #191: the listing a login's poll stores, and what the boot read reads back
-  const keyOf = (rows: string, who: string): ListingKey => {
-    const project = `${who}/${number}`;
-    return { source: rows, project, scope: project };
-  };
+  // #191, #282: the Project's one listing under a login
+  const keyOf = (rows: string, who: string): ListingKey => ({ source: rows, project: `${who}/${number}` });
 
   // #190: with a store and a login, the model's listing after a probe; without either (headless, setup mode, no login), the wire's, as before
   async function listItems(): Promise<SourceItem[]> {

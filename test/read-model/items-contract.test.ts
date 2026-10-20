@@ -13,7 +13,7 @@ import { itemNode, SOURCE, T1, T2 } from './fixtures.js';
 // #190, #282: the read model's contract. Every consumer of a stored item answers over it what it answers over the wire's node: listed() (the
 // poll's steps), projectItem() (the native view's row) and, once the repository's options are stored, itemFields() (the editors)
 const PROJECT = 'acme/6';
-const KEY: ListingKey = { source: SOURCE, project: PROJECT, scope: PROJECT };
+const KEY: ListingKey = { source: SOURCE, project: PROJECT };
 type Content = NonNullable<GhItemNode['content']>;
 const ref = (number: number, state: string, repo = 'acme/r'): GhBlockerRef => ({ number, title: `T${number}`, state, repository: { nameWithOwner: repo } });
 const sub = (number: number, state: 'OPEN' | 'CLOSED') => ({ id: `I_${number}`, number, title: `T${number}`, state, repository: { nameWithOwner: 'acme/r' } });
@@ -72,7 +72,7 @@ const memoryModel = async (): Promise<ReadModel> => (await openReadModel(':memor
 // The one place that knows how the nodes are stored and read back: everything below it is the contract
 async function storedAndRebuilt(nodes: GhItemNode[]): Promise<GhItemNode[]> {
   const db = await memoryModel();
-  storeListing(db, KEY, nodes, new Map());
+  storeListing(db, KEY, { nodes, fields: RAW_FIELDS }, new Map());
   return readListing(db, KEY).nodes;
 }
 

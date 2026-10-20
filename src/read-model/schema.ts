@@ -53,4 +53,33 @@ export const MIGRATIONS: readonly string[] = [
   CREATE INDEX project_items_by_project ON project_items (source, project);
   CREATE TABLE project_listings (source TEXT NOT NULL, scope TEXT NOT NULL, position INTEGER NOT NULL, node_id TEXT NOT NULL,
     PRIMARY KEY (source, scope, position));`,
+  // #282: the items normalized. The JSON nodes and their scoped listings go (the next poll pays one full read); an item keeps its own columns, its
+  // values, its issue's relations, its Project's fields and its repository's options each get a table; issues gains what only the Project read
+  // says of an issue, written by that read under its own rule
+  `DROP TABLE project_listings;
+  DROP TABLE project_items;
+  CREATE TABLE project_items (source TEXT NOT NULL, node_id TEXT NOT NULL, project TEXT NOT NULL, content_type TEXT, issue_node_id TEXT,
+    blocking_read INTEGER, updated_at TEXT NOT NULL, written_at INTEGER, PRIMARY KEY (source, node_id));
+  CREATE INDEX project_items_by_project ON project_items (source, project);
+  CREATE TABLE project_listings (source TEXT NOT NULL, project TEXT NOT NULL, position INTEGER NOT NULL, node_id TEXT NOT NULL,
+    PRIMARY KEY (source, project, position));
+  CREATE TABLE item_field_values (source TEXT NOT NULL, item_node_id TEXT NOT NULL, field TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
+    PRIMARY KEY (source, item_node_id, field));
+  CREATE INDEX item_field_values_by_value ON item_field_values (source, field, value);
+  CREATE TABLE project_fields (source TEXT NOT NULL, project TEXT NOT NULL, position INTEGER NOT NULL, name TEXT NOT NULL, data_type TEXT,
+    options TEXT, PRIMARY KEY (source, project, position));
+  CREATE TABLE issue_relations (source TEXT NOT NULL, issue_node_id TEXT NOT NULL, kind TEXT NOT NULL, position INTEGER NOT NULL,
+    node_id TEXT, number INTEGER, title TEXT, state TEXT NOT NULL, repository TEXT, PRIMARY KEY (source, issue_node_id, kind, position));
+  CREATE TABLE repo_assignees (source TEXT NOT NULL, repository TEXT NOT NULL, login TEXT NOT NULL, PRIMARY KEY (source, repository, login));
+  -- the \`issueTypes\` scope's sync_scopes row is keyed by the owner in its repository column
+  CREATE TABLE repo_milestones (source TEXT NOT NULL, repository TEXT NOT NULL, title TEXT NOT NULL, PRIMARY KEY (source, repository, title));
+  CREATE TABLE owner_issue_types (source TEXT NOT NULL, owner TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL,
+    PRIMARY KEY (source, owner, name));
+  ALTER TABLE issues ADD COLUMN url TEXT;
+  ALTER TABLE issues ADD COLUMN milestone TEXT;
+  ALTER TABLE issues ADD COLUMN issue_type TEXT;
+  ALTER TABLE issues ADD COLUMN parent_number INTEGER;
+  ALTER TABLE issues ADD COLUMN parent_title TEXT;
+  ALTER TABLE issues ADD COLUMN sub_issues_total INTEGER;
+  ALTER TABLE issues ADD COLUMN sub_issues_completed INTEGER;`,
 ];

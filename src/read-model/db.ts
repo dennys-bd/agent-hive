@@ -1,14 +1,13 @@
 import { chmodSync, closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import type { DatabaseSync } from 'node:sqlite';
-import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs, Signal } from '../types.js';
-import type { GhIssueRelations } from '../sources/github-queries.js';
+import type { MergeMethod, PrClosingIssue, PrRow, PrState, ProjectPr, RepoPrs } from '../types.js';
 import { prDetailsOf } from './pr-details.js';
-import { itemTablesOf } from './items.js';
+import { itemTablesOf } from './item-tables.js';
 import { pullTablesOf } from './pull-tables.js';
-import type { CheckRow, CommentRow, IssueRow, IssueView, ItemRow, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, RepoRow, ReviewRow, UpsertOrigin } from './rows.js';
+import type { CheckRow, CommentRow, FieldValueRow, IssueDetails, IssueRow, IssueView, ItemRow, OpenPull, PullFlags, PullKey, PullPoll, PrPage, PullPage, PullRead, PullToRead, ProjectFieldRow, RelationKind, RelationRow, RepoRow, ReviewRow, StoredItemRows, UpsertOrigin } from './rows.js';
 import { MIGRATIONS } from './schema.js';
-import { inTransaction, issueOf, nullable, type Row, stamp, text, upsertSql, written } from './sql.js';
+import { inTransaction, issueOf, nullable, prOf, type Row, stamp, text, upsertSql, written } from './sql.js';
 
 /** The read model's file in the daemon's home (#178). A cache: deleting it costs one full resync, so it has no backup. */
 export const READ_MODEL_FILE = 'read-model.sqlite';
@@ -17,8 +16,6 @@ const MEMORY = ':memory:';
 const SIDE_FILES = ['', '-wal', '-shm'] as const;
 const ISSUE_COLUMNS = ['source', 'node_id', 'repository', 'number', 'kind', 'state', 'title', 'body', 'author', 'labels', 'assignees', 'created_at', 'updated_at', 'closed_at', 'comments'];
 const COMMENT_COLUMNS = ['source', 'node_id', 'issue_node_id', 'repository', 'url', 'author', 'body', 'created_at', 'updated_at'];
-const PR_STATES: readonly PrState[] = ['open', 'merged', 'closed'];
-const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 const NO_LIMIT = -1; // SQLite's LIMIT -1: every row
 // The changed-row guard of upsertSql without its updated_at rule: a repository has no updated_at, and only the sync writes it
 const UPSERT_REPO = `INSERT INTO repos (source, repository, url, can_push, issues_enabled, fork_parent, pushed_at, methods)
@@ -83,11 +80,17 @@ export interface ReadModel {
   upsertReview(row: ReviewRow, origin: UpsertOrigin): boolean;
   pullAt(source: string, repository: string, number: number): OpenPull | undefined; // a PR's, open or not
   prPage(source: string, repository: string, number: number): PrPage | undefined; // never an issue
-  upsertItem(row: ItemRow, origin: UpsertOrigin): boolean; // #190: a Project item; whether it wrote
-  setItemRelations(source: string, nodeId: string, relations: GhIssueRelations | null): void; // outside the replace rule
-  setListing(source: string, scope: string, nodeIds: string[]): void; // replaces the scope's listing whole
-  removeUnlisted(source: string, project: string): void; // the project's rows no listing of any scope names
-  listing(source: string, scope: string): { node: string; relations: string | null }[]; // in position order
+  upsertItem(row: ItemRow, origin: UpsertOrigin): boolean; // #190: a Project item's own columns; whether it wrote
+  setItemValues(source: string, itemNodeId: string, values: FieldValueRow[]): void; // #282: replaces the item's set values
+  setIssueRelations(source: string, issueNodeId: string, kinds: RelationKind[], rows: RelationRow[]): void; // replaces those kinds' rows
+  setBlocking(source: string, itemNodeId: string, rows: RelationRow[] | null): void; // blocking_read 1 and the rows; null: 0, the issue is gone
+  setIssueDetails(source: string, issueNodeId: string, updatedAt: string, details: IssueDetails, origin: UpsertOrigin): boolean; // the replace rule's, on the row's own updated_at
+  setProjectFields(source: string, project: string, fields: ProjectFieldRow[]): void; // replaced whole
+  projectFields(source: string, project: string): ProjectFieldRow[]; // in the project's order
+  setListing(source: string, project: string, nodeIds: string[]): void; // replaces the Project's listing whole
+  removeUnlisted(source: string, project: string): void; // the items it no longer names, their values and relations; their issues stay
+  listing(source: string, project: string): string[]; // item node ids in position order
+  itemRows(source: string, nodeIds: string[]): StoredItemRows[]; // in the order asked; an id not stored is skipped
   transaction<T>(run: () => T): T;
   close(): void;
 }
@@ -100,15 +103,6 @@ function commentOf(row: Row): CommentRow {
   return {
     source: text(row, 'source'), nodeId: text(row, 'node_id'), issueNodeId: text(row, 'issue_node_id'), repository: text(row, 'repository'),
     url: text(row, 'url'), author: nullable(row, 'author'), body: text(row, 'body'), createdAt: text(row, 'created_at'), updatedAt: text(row, 'updated_at'),
-  };
-}
-
-// The stored values are the module's own writes, through pullRequest's shape
-function prOf(row: Row): ProjectPr {
-  const checks = SIGNALS.find((s) => s === row.checks);
-  return {
-    number: Number(row.number), url: text(row, 'url'), state: PR_STATES.find((s) => s === row.state) ?? 'closed',
-    ...(checks === undefined ? {} : { checks }), ...(row.draft === 1 ? { draft: true as const } : {}),
   };
 }
 

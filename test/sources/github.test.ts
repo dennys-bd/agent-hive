@@ -7,7 +7,7 @@ import { createSource, resolveSources, sourceSpec } from '../../src/source.js';
 import { ITEM_FIELDS, ITEMS, PROBE, PROJECT_FIELDS, type GhItemFieldsNode, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql } from '../../src/types.js';
 import { combConfig, fakeGql, fakeLog, FILTER } from '../fakes.js';
-import { SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
+import { itemNode, SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
 
 // The GitHub adapter with a read model (#190): what each poll sends, and what a write stores
 const OPTIONS = ['Ready', 'In progress', 'In review', 'Done'].map((name) => ({ id: `O_${name}`, name }));
@@ -15,10 +15,7 @@ const FIELDS = { repositoryOwner: { projectV2: { id: 'PVT_1', field: { id: 'F_st
 const RATE = { limit: 5000, remaining: 4320, resetAt: '2026-10-13T13:00:00Z' };
 const probeAt = (updatedAt: string): unknown => ({ rateLimit: { ...RATE, remaining: 4999 }, repositoryOwner: { projectV2: { updatedAt } } });
 const page = (nodes: GhItemNode[]): unknown => ({ rateLimit: RATE, repositoryOwner: { projectV2: { items: { pageInfo: { hasNextPage: false }, nodes } } } });
-const node = (n: number, status: string, updatedAt = T1): GhItemNode => ({
-  id: `PVTI_${n}`, updatedAt, fieldValueByName: { name: status },
-  content: { __typename: 'Issue', id: `I_${n}`, number: n, title: `T${n}`, body: '', url: `https://github.com/acme/r/issues/${n}`, repository: { nameWithOwner: 'acme/r' } },
-});
+const node = (n: number, status: string, updatedAt = T1): GhItemNode => itemNode(n, status, updatedAt);
 const config = parseConfig(combConfig({ source: { type: 'github', owner: 'acme', number: 6, filter: FILTER } }));
 const SPEC = sourceSpec(config, config.comb.sources[0]);
 const names = (calls: { name: string }[]): string[] => calls.map((c) => c.name);

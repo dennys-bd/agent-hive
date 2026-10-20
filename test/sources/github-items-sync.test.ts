@@ -1,20 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openReadModel } from '../../src/read-model/db.js';
-import { itemRow, readListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
+import { normalizeItem, readListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
 import { createItemsSync, FULL_READ_MAX_AGE_MS, joinRelations, readProbe, type ItemsSyncDeps } from '../../src/sources/github-items-sync.js';
 import { PROBE, type GhIssueRelations, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql, SourceItem } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
-import { SOURCE, T1, T2 } from '../read-model/fixtures.js';
+import { itemNode, SOURCE, T1, T2 } from '../read-model/fixtures.js';
 
 // #190: the probe-or-read decision, the store and read-back, and a write's answer, over an in-memory model
-const KEY: ListingKey = { source: SOURCE, project: 'acme/6', scope: 'acme/6' };
-const ISSUE: GhIssueRelations = { blockedBy: { nodes: [] }, blocking: { nodes: [] }, subIssues: { nodes: [] } };
-const node = (n: number, updatedAt = T1): GhItemNode => ({
-  id: `PVTI_${n}`, updatedAt, fieldValueByName: { name: 'Ready' },
-  content: { __typename: 'Issue', id: `I_${n}`, number: n, url: `https://github.com/acme/r/issues/${n}`, repository: { nameWithOwner: 'acme/r' } },
-});
+const KEY: ListingKey = { source: SOURCE, project: 'acme/6' };
+const ISSUE: GhIssueRelations = { blocking: { nodes: [] } };
+const node = (n: number, updatedAt = T1): GhItemNode => itemNode(n, 'Ready', updatedAt);
 const task = (n: number): SourceItem => ({ item: { itemId: `PVTI_${n}`, id: String(n), title: `T${n}`, body: '', url: `https://github.com/acme/r/issues/${n}` }, column: 'Ready' });
 
 // A sync with every edge recorded: the probe answers `stamps` in order and repeats the last; the clock is the test's
@@ -27,7 +24,7 @@ async function harness(stamps: string[], extra: Partial<ItemsSyncDeps> = {}, sou
   const deps: ItemsSyncDeps = {
     store, now: () => clock.now,
     probe: async () => { calls.push('probe'); return (queue.length > 1 ? queue.shift() : queue[0]) ?? ''; },
-    listNodes: async () => { calls.push('read'); return [node(1), node(2)]; },
+    listNodes: async () => { calls.push('read'); return { nodes: [node(1), node(2)], fields: [] }; },
     kept: (nodes) => nodes.map((n) => task(Number(n.id.slice('PVTI_'.length)))),
     fetchRelations: async (tasks) => { calls.push(`relations ${tasks.length}`); return new Map(tasks.map((t) => [t.item.itemId, ISSUE])); },
     ...extra,
@@ -63,7 +60,7 @@ test('list reads in full on the first poll, a moved probe, a cleared stamp, anot
   assert.deepEqual(await sent(), ['probe']);
   clock.now += 1;
   assert.deepEqual(await sent(), full, 'the forced full read');
-  assert.deepEqual(await sent({ ...KEY, scope: 'acme/6 label:"hive"' }), full, 'another scope has nothing stored yet');
+  assert.deepEqual(await sent({ ...KEY, project: 'acme/7' }), full, 'another Project has nothing stored yet');
 });
 
 test('list answers the listing read back from the model, each node with its stored relations (#190)', async () => {
@@ -91,7 +88,7 @@ test('a failed relations query stores nothing and rejects the poll; the next pol
 test('relate fetches only the kept tasks with no stored relations, and stores what it read (#190)', async () => {
   const { sync, db, calls } = await harness(['S1']);
   await sync.list(KEY);
-  db.setItemRelations(SOURCE, 'PVTI_2', null);
+  db.setBlocking(SOURCE, 'PVTI_2', null);
   calls.length = 0;
   const related = await sync.relate(SOURCE, [task(1), task(2)], { nodes: [node(1), node(2)], relations: new Map([['PVTI_1', ISSUE], ['PVTI_2', undefined]]) });
   assert.deepEqual(calls, ['relations 1']);
@@ -102,16 +99,16 @@ test('relate fetches only the kept tasks with no stored relations, and stores wh
 test('answer stores a write\'s re-read item with origin write and the relations its entry read (#190)', async () => {
   const { sync, db } = await harness(['S1']);
   await sync.list(KEY);
-  await sync.answer({ ...node(1, T2), fieldValueByName: { name: 'In review' } }, new Map([['PVTI_1', null]]), KEY.project);
+  await sync.answer(itemNode(1, 'In review', T2), new Map([['PVTI_1', null]]), KEY.project);
   const back = readListing(db, KEY);
   assert.deepEqual([back.nodes[0]?.fieldValueByName?.name, back.relations.get('PVTI_1')], ['In review', null]);
-  assert.equal(db.upsertItem(itemRow(SOURCE, KEY.project, node(1, T2)), 'sync'), false, 'a poll read before it, in its second, does not undo it');
+  assert.equal(db.upsertItem(normalizeItem(SOURCE, KEY.project, node(1, T2)).item, 'sync'), false, 'a poll read before it, in its second, does not undo it');
 });
 
 test('answer stores nothing without a login, and logs a failure instead of throwing it (#190)', async () => {
   const none = await harness(['S1'], {}, async () => undefined);
   await none.sync.answer(node(1), new Map(), KEY.project);
-  assert.equal(none.db.upsertItem(itemRow(SOURCE, KEY.project, node(1)), 'sync'), true, 'no row was there');
+  assert.equal(none.db.upsertItem(normalizeItem(SOURCE, KEY.project, node(1)).item, 'sync'), true, 'no row was there');
   const { log, lines } = fakeLog();
   const failing = await harness(['S1'], { log }, async () => { throw new Error('no credentials'); });
   await failing.sync.answer(node(1), new Map(), KEY.project);

@@ -1,5 +1,5 @@
 import type { Logger } from '../log.js';
-import { itemRow, readListing, storeListing, type ItemStore, type ListingKey, type StoredListing } from '../read-model/items.js';
+import { blockingRows, normalizeItem, readListing, storeListing, type ItemStore, type ItemsRead, type ListingKey, type StoredListing } from '../read-model/items.js';
 import { applyWriteAnswer } from '../read-model/write-answer.js';
 import type { Gql, SourceItem } from '../types.js';
 import { blockersOf } from './github-blockers.js';
@@ -65,7 +65,7 @@ export function joinRelations(nodes: GhItemNode[], answered: Relations): Map<str
 export interface ItemsSyncDeps {
   store: ItemStore;
   probe(): Promise<string>; // the project's updatedAt; throws when the project is gone
-  listNodes(): Promise<GhItemNode[]>; // a full read
+  listNodes(): Promise<ItemsRead>; // a full read: the Project's fields and items
   kept(nodes: GhItemNode[]): SourceItem[]; // the poll's steps before the relations: what the relations query asks
   fetchRelations(tasks: SourceItem[]): Promise<Map<string, GhIssueRelations | null>>;
   log?: Logger;
@@ -90,22 +90,22 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
   const now = deps.now ?? Date.now;
   let stamp: string | undefined; // the probe read before the last full read: a change made during that read moves the next probe
   let readAt = 0;
-  let readKey: string | undefined; // the listing the last full read stored: another one (a new login, a new filter) has nothing stored yet
+  let readKey: string | undefined; // the listing the last full read stored: another one (a new login, another Project) has nothing stored yet
   let writes = 0; // clear() calls: a full read in flight when a write clears the stamp must not set it back
   const setRelations = (source: string, relations: ReadonlyMap<string, GhIssueRelations | null>): void => {
     store.db.transaction(() => {
-      for (const [id, issue] of relations) store.db.setItemRelations(source, id, issue);
+      for (const [id, issue] of relations) store.db.setBlocking(source, id, blockingRows(issue));
     });
   };
   return {
     async list(key) {
       const probed = await deps.probe();
-      const keyed = `${key.source} ${key.scope}`;
+      const keyed = `${key.source} ${key.project}`;
       if (probed !== stamp || keyed !== readKey || now() - readAt >= FULL_READ_MAX_AGE_MS) {
         const before = writes;
-        const nodes = await deps.listNodes();
-        const relations = await deps.fetchRelations(deps.kept(nodes)); // before the transaction: a failed query stores nothing
-        storeListing(store.db, key, nodes, relations);
+        const read = await deps.listNodes();
+        const relations = await deps.fetchRelations(deps.kept(read.nodes)); // before the transaction: a failed query stores nothing
+        storeListing(store.db, key, read, relations);
         stamp = writes === before ? probed : undefined;
         readAt = now();
         readKey = keyed;
@@ -121,7 +121,7 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
       try {
         const source = await store.source();
         if (source === undefined) return;
-        applyWriteAnswer(store, node.content?.repository?.nameWithOwner ?? '', { items: [itemRow(source, project, node)] });
+        applyWriteAnswer(store, node.content?.repository?.nameWithOwner ?? '', { items: [normalizeItem(source, project, node)] });
         setRelations(source, relations);
       } catch (err) {
         deps.log?.error(`source ${project}: a write's answer was not stored in the read model: ${err instanceof Error ? err.message : String(err)}`);
