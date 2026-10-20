@@ -195,7 +195,7 @@ export function ProjectTable({ state, source, tabs, onGoTo, onOpenIssue }: Proje
   const { widths, onDrag, onResize } = useColumnWidths(prefs.widths, (next) => update({ widths: next }));
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} source={source.name} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} onRefresh={reload} />
+      <FlowHeader state={state} source={source.name} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} tabs={tabs} onRefresh={() => reload({ fresh: true })} />
       <Subbar project={project} linked={linked}>
         <ProjectGroupMenu options={view === undefined ? [] : groupOptions(view)} groupBy={prefs.groupBy} onChange={(groupBy) => update({ groupBy })} />
         <ProjectColumnsMenu columns={columns} visible={prefs.columns} onChange={(next) => update({ columns: next })} />

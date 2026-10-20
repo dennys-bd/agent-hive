@@ -98,3 +98,10 @@ test('replaceRow swaps one row of the shown view and of the cache, with no read 
   pending();
   expect(titleOf(renderHook(() => useProject('roadmap')).result.current.project)).toBe('written');
 });
+
+test('the tab\'s open reads the stored view; its refresh asks a fresh read with ?fresh=1 (#282)', async () => {
+  const { result } = renderHook(() => useProject('roadmap'));
+  await waitFor(() => expect(titleOf(result.current.project)).toBe('first'));
+  await act(() => result.current.reload({ fresh: true }));
+  expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/sources/roadmap/project', '/sources/roadmap/project?fresh=1']);
+});
