@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
 import type { ChainSpec } from '../../template-condition';
 import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../../template-edit';
@@ -28,9 +28,14 @@ export interface ItemEditor {
   viewAs?: string; setViewAs(workspace: string | undefined): void; // the right pane's "view as"; undefined is the template
   collapsed: readonly number[]; toggle(line: number): void; // the open item's collapsed `##`, by line
   error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string; // under the tabs, for the item they came from
-  applyEdit(result: EditResult): MessageKey | undefined; // the variables pane's writes (#321): the buffer, saved at once when it was clean
+  // The variables pane's writes (#321): the buffer, saved at once when it was clean. #331: isSaveForced (accept) saves it whatever it was,
+  // after any save in flight; nothing else writes while locked
+  applyEdit(result: WriteResult, options?: { isSaveForced?: boolean }): MessageKey | undefined;
+  isLocked: boolean; setLocked(isLocked: boolean): void; // #331: set while the agent works on the open file or proposes
   original?: ItemRead; // the Hive's original of the open item while a version is open (#321, decision 10)
 }
+/** What applyEdit takes: a template edit's result, or a whole new text (#331: an accepted proposal). */
+export type WriteResult = { ok: true; text: string } | Extract<EditResult, { ok: false }>;
 type Writes = Pick<ItemEditor, 'save' | 'newFile' | 'revert' | 'createVersion' | 'renameVersion' | 'assignTo'>;
 
 interface Note { id: string; error?: MessageKey; errorVars?: Record<string, string | number>; renamedTo?: string }
@@ -292,6 +297,55 @@ function textEdits(text: string | undefined, write: (text: string) => void): Tex
   };
 }
 
+interface EditTarget {
+  context?: WriteContext; isReadOnly: boolean; isLocked: boolean; saving: RefObject<boolean>;
+  isDirty(path: string): boolean; write(path: string, text: string): void; forceSave(): void;
+}
+
+// Decision 5 (#321): the pane's edit lands in the buffer; a buffer that was clean is saved with it, a dirty one waits for ⌘S. #331: only a
+// forced edit writes while locked, and it is saved whatever the buffer was
+function applyEditOf(target: EditTarget): ItemEditor['applyEdit'] {
+  return (result, options = {}) => {
+    if (!result.ok) return editErrorKey(result.error.message);
+    const { context, saving } = target;
+    const isForced = options.isSaveForced === true;
+    if (context === undefined || target.isReadOnly || (target.isLocked && !isForced)) return undefined;
+    if (result.text === context.text && !isForced) return undefined;
+    const wasClean = !target.isDirty(context.path);
+    target.write(context.path, result.text);
+    if (isForced) target.forceSave();
+    else if (wasClean && !saving.current) {
+      saving.current = true;
+      void saveFile({ ...context, text: result.text }).finally(() => { saving.current = false; });
+    }
+    return undefined;
+  };
+}
+
+// The save-in-flight flag, whose release also renders: a forced save waiting on it must not depend on some other state change landing after
+function useSaving(): RefObject<boolean> {
+  const flag = useRef(false);
+  const [, bump] = useState(0);
+  return useMemo(() => ({
+    get current() { return flag.current; },
+    set current(value: boolean) { flag.current = value; if (!value) bump((n) => n + 1); },
+  }), []);
+}
+
+// #331: accept's save runs after the render that holds the accepted text, with that render's context, so a save in flight (a rename's
+// included) has settled the path and the buffers first; the flag's release renders, which runs a waiting one.
+// ponytail: a write that changes no state (a "+" on a taken path) leaves it waiting for the next render
+function useForcedSave(context: WriteContext | undefined, saving: RefObject<boolean>): () => void {
+  const isPending = useRef(false);
+  useEffect(() => {
+    if (!isPending.current || saving.current || context === undefined) return;
+    isPending.current = false;
+    saving.current = true;
+    void saveFile(context).finally(() => { saving.current = false; });
+  });
+  return () => { isPending.current = true; };
+}
+
 /** The open item's editor state (#319, decisions 4–9, 12, 13, 18, 20, 22; #320, decisions 8–13; #321). */
 export function useItemEditor(plugins: Plugins): ItemEditor {
   const { screen, items, reload } = plugins;
@@ -302,7 +356,8 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const { buffers, set, settle, rekeyBuffers } = useBuffers();
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
-  const saving = useRef(false);
+  const saving = useSaving();
+  const [isLocked, setLocked] = useState(false);
   const original = useOriginal(item, read);
   const view = useViewState(id);
   const isReadOnly = version === null && (item?.versions.length ?? 0) > 0; // decision 8
@@ -320,25 +375,17 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
     dropVersion: () => { moveRead(id, read.version); rekeyBuffers(versionKey(id, read.version)); },
     carryBuffers: (to) => rekeyBuffers(versionKey(id, read.version), versionKey(id, to)),
   } : undefined;
+  const forceSave = useForcedSave(context, saving);
+  const write = (p: string, text: string): void => set(bufferKey(id, version, p), text);
   return {
     item, read, original, hasFailed, version, isReadOnly, path, textOf, isDirty,
     openVersion: (v) => { open(id, v); setNote(undefined); },
     openFile: (p) => { setPath(p); setNote(undefined); },
-    edit: (text) => { if (path !== undefined && !isReadOnly) set(bufferKey(id, version, path), text); },
+    edit: (text) => { if (path !== undefined && !isReadOnly && !isLocked) write(path, text); },
     ...writesOf(context, () => !isReadOnly && path !== undefined && isDirty(path), saving),
-    // Decision 5 (#321): the pane's edit lands in the buffer; a buffer that was clean is saved with it, a dirty one waits for ⌘S
-    applyEdit: (result) => {
-      if (!result.ok) return editErrorKey(result.error.message);
-      if (context === undefined || isReadOnly || result.text === context.text) return undefined;
-      const wasClean = !isDirty(context.path);
-      set(bufferKey(id, version, context.path), result.text);
-      if (wasClean && !saving.current) {
-        saving.current = true;
-        void saveFile({ ...context, text: result.text }).finally(() => { saving.current = false; });
-      }
-      return undefined;
-    },
-    ...textEdits(path === undefined || isReadOnly ? undefined : textOf(path), (text) => { if (path !== undefined) set(bufferKey(id, version, path), text); }),
+    applyEdit: applyEditOf({ context, isReadOnly, isLocked, saving, isDirty, write, forceSave }),
+    ...textEdits(path === undefined || isReadOnly || isLocked ? undefined : textOf(path), (text) => { if (path !== undefined) write(path, text); }),
+    isLocked, setLocked,
     ...view,
     error: note?.id === id ? note.error : undefined,
     errorVars: note?.id === id ? note.errorVars : undefined,

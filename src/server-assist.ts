@@ -4,7 +4,7 @@
 import type { Express, Response } from 'express';
 import { z } from 'zod';
 import { agentRefusal } from './agents.js';
-import { applyProposal, ASSIST_SCHEMA, assistPrompt, type AssistTarget, parseProposal, proposalHunk, targetOf } from './assist.js';
+import { applyProposal, ASSIST_SCHEMA, type AssistAnswer, assistPrompt, type AssistTarget, parseProposal, proposalHunk, targetOf } from './assist.js';
 import { isRefusal, mainFiles } from './custom-versions.js';
 import { type HeadlessInput, type HeadlessResult, runHeadless } from './headless-run.js';
 import type { ItemSources } from './item-sources.js';
@@ -115,7 +115,8 @@ async function runAndAnswer(res: Response, deps: AssistRouteDeps, id: string, ru
     return fail(res, HTTP_BAD_GATEWAY, MESSAGES.bad_answer, 'bad_answer');
   }
   const text = applyProposal(run.text, parsed.proposal);
-  res.json({ proposal: parsed.proposal, hunk: proposalHunk(run.text, parsed.proposal), text, changed: text !== run.text });
+  const answer: AssistAnswer = { proposal: parsed.proposal, hunk: proposalHunk(run.text, parsed.proposal), text, changed: text !== run.text };
+  res.json(answer);
 }
 
 /** POST /api/items/:id/assist (#330, contract api.assist), behind the server's host, secret and x-hive-ui gates. */

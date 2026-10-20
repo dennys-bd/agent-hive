@@ -1,8 +1,9 @@
-import type { editor } from 'monaco-editor';
+import type { editor, IRange } from 'monaco-editor';
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
 import { AnnotationMargin } from '@/components/plugins/Annotations';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import type { Annotations } from '@/hooks/use-annotations';
+import type { LineSelection } from '@/lib/assist-view';
 import { t } from '@/i18n';
 import { languageOf, loadMonaco } from '@/lib/editor-models';
 import { type Chip, type Decoration, isMarkdown, type LineRange } from '@/lib/template-view';
@@ -20,6 +21,8 @@ export interface TemplateTextProps {
   onChip?(line: number): void; // #322: opens the chain's popover
   popover?: ChipPopover;
   annotations?: Annotations; anchorOf?(line: number): number; // #327: the margin's annotations, each at the line the look shows it on
+  isProposal?: boolean; // #331: the text is an agent's proposal look; only a flip swaps the model's text
+  onSelection?(lines: LineSelection | undefined): void; // #331: the selection's lines, undefined when it is empty
 }
 
 const SAME_LINE = (line: number): number => line;
@@ -28,6 +31,12 @@ const HIDDEN_SOURCE = 'hive.template'; // Monaco merges hidden areas per source:
 const LAST_COLUMN = Number.MAX_SAFE_INTEGER; // Monaco clamps a decoration's range to its line
 
 const toRange = ({ from, to }: LineRange) => ({ startLineNumber: from, startColumn: 1, endLineNumber: to, endColumn: 1 });
+// #331: a selection's whole lines, as a request to the agent sends them; one ending at a line's first column does not hold that line
+function selectedLines(selection: IRange): LineSelection | undefined {
+  const { startLineNumber, startColumn, endLineNumber, endColumn } = selection;
+  if (startLineNumber === endLineNumber && startColumn === endColumn) return undefined;
+  return { startLine: startLineNumber, endLine: endColumn === 1 && endLineNumber > startLineNumber ? endLineNumber - 1 : endLineNumber };
+}
 function toDecoration(d: Decoration): editor.IModelDeltaDecoration {
   const range = { startLineNumber: d.line, startColumn: d.from ?? 1, endLineNumber: d.line, endColumn: d.to ?? LAST_COLUMN };
   return { range, options: d.isBackground === true ? { isWholeLine: true, className: d.className } : { inlineClassName: d.className } };
@@ -54,8 +63,9 @@ function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: Templa
       const open = createEditor(element, model, { fontFamily: latest.current.fontFamily, onSave: save, onSaveUnformatted: save });
       // a text the props gave is not reported back as an edit
       const typing = model.onDidChangeContent(() => { if (model.getValue() !== latest.current.text) latest.current.onChange(model.getValue()); });
+      const selecting = open.editor.onDidChangeCursorSelection(({ selection }) => latest.current.onSelection?.(selectedLines(selection)));
       setView(open.editor);
-      dispose = () => { typing.dispose(); open.dispose(); model.dispose(); };
+      dispose = () => { typing.dispose(); selecting.dispose(); open.dispose(); model.dispose(); };
     });
     return () => { live = false; dispose(); setView(undefined); };
   }, [host, modelKey, path]);
@@ -63,11 +73,23 @@ function useTemplateEditor(host: RefObject<HTMLDivElement | null>, props: Templa
 }
 
 // What the props say Monaco shows: the text, read-only and the font, the hidden lines, the marks, and the cursor of a map click
-function useLook(view: View | undefined, { text, isReadOnly, fontFamily, hidden, decorations, reveal }: TemplateTextProps): void {
+function useLook(view: View | undefined, { text, isProposal = false, isReadOnly, fontFamily, hidden, decorations, reveal }: TemplateTextProps): void {
+  // #331: a swap into or out of a proposal sets the value, which clears the undo stack, so ⌘Z after a discard cannot bring the proposal back
+  // into the buffer; any other text is a move, one undoable edit. setValue's content event stays quiet: the latest text prop is the new text
+  const shownProposal = useRef(isProposal);
   useEffect(() => {
     const model = view?.getModel();
-    if (model && model.getValue() !== text) model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null); // a move: one undoable edit
-  }, [view, text]);
+    if (!model) return;
+    const isSwap = shownProposal.current !== isProposal;
+    shownProposal.current = isProposal;
+    if (model.getValue() === text) return;
+    if (isSwap) {
+      const kept = view?.saveViewState(); // setValue resets the cursor and the scroll
+      model.setValue(text);
+      if (kept) view?.restoreViewState(kept);
+    }
+    else model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null);
+  }, [view, text, isProposal]);
   useEffect(() => { view?.updateOptions({ readOnly: isReadOnly, fontFamily }); }, [view, isReadOnly, fontFamily]);
   useEffect(() => { view?.setHiddenAreas(hidden.map(toRange), HIDDEN_SOURCE); }, [view, hidden]);
   useEffect(() => {
@@ -140,7 +162,7 @@ export function TemplateText(props: TemplateTextProps) {
   const view = useTemplateEditor(host, props);
   useLook(view, props);
   const scrollTop = useScrollTop(view);
-  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE } = props;
+  const { chips, onChip, popover, annotations, anchorOf = SAME_LINE, isReadOnly } = props;
   const topOf = (line: number): number => (view?.getTopForLineNumber(line) ?? 0) - scrollTop;
   const marks = annotations?.list ?? [];
   return (
@@ -150,7 +172,7 @@ export function TemplateText(props: TemplateTextProps) {
         <div className="relative w-[230px] shrink-0 overflow-hidden border-l">
           <Chips chips={chips} topOf={topOf} onChip={onChip} popover={popover} />
           {annotations && marks.length > 0 && (
-            <AnnotationMargin annotations={annotations} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
+            <AnnotationMargin annotations={annotations} canFix={!isReadOnly} tops={marks.map((a) => topOf(anchorOf(a.line)))} chipTops={chips.map((chip) => topOf(chip.line))} />
           )}
         </div>
       )}

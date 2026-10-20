@@ -79,16 +79,18 @@ export interface DismissedBody { version: string | null; keys: string[] }
 export interface ReviewBody { version: string | null; path: string; text: string }
 export interface SettingsPost { prefix?: string; reviewer: ReviewerConfig }
 export interface AssignBody { workspace: string; version: string | null }
+export interface AssistBody { version: string | null; path: string; text: string; request: string; selection?: { startLine: number; endLine: number }; agent?: string; model?: string }
 /** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. #327: the lint
  * input (empty when absent) and the dismissals, keyed as `reads`, which a PUT writes unless `putDismissed` answers it. */
 export interface ItemsServer {
   catalogue: CatalogueItem[];
   reads: Record<string, ItemRead>;
-  save?(id: string, body: SaveBody): Response;
+  save?(id: string, body: SaveBody): Response | Promise<Response>; // a promise holds the save in flight (#331)
   revert?(id: string, version: string): Response;
   createVersion?(id: string, body: NewVersionBody): Response; // POST …/versions
   rename?(id: string, version: string, body: { name: string }): Response; // PATCH …/versions/:version
   assign?(id: string, body: AssignBody): Response; // POST …/assign
+  assist?(id: string, body: AssistBody, signal?: AbortSignal | null): Response | Promise<Response>; // POST …/assist (#331), with the request's signal
   lintInput?: LintInputRead;
   dismissed?: Record<string, string[]>;
   putDismissed?(id: string, body: DismissedBody): Response;
@@ -121,11 +123,12 @@ export const withVersion = (catalogue: CatalogueItem[], id: string, name: string
 const notServed = (what: string): Response => json({ error: `no ${what}` }, 500);
 
 // One write of the editor: the body parsed, the test's answer, a 500 when the test gave none
-function writeOf(server: ItemsServer, id: string, sub: string | undefined, version: string, init: RequestInit): Response {
+function writeOf(server: ItemsServer, id: string, sub: string | undefined, version: string, init: RequestInit): Response | Promise<Response> {
   const body: unknown = JSON.parse(String(init.body ?? 'null'));
   if (init.method === 'PUT') return server.save?.(id, body as SaveBody) ?? notServed('save');
   if (init.method === 'DELETE') return server.revert?.(id, version) ?? notServed('revert');
   if (init.method === 'PATCH') return server.rename?.(id, version, body as { name: string }) ?? notServed('rename');
+  if (sub === 'assist') return server.assist?.(id, body as AssistBody, init.signal) ?? notServed('assist');
   if (sub === 'assign') return server.assign?.(id, body as AssignBody) ?? notServed('assign');
   return server.createVersion?.(id, body as NewVersionBody) ?? notServed('create');
 }

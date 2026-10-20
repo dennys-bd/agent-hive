@@ -125,3 +125,6 @@
 /* #327: the structural lint's annotations: a wavy underline in the severity's status colour */
 .monaco-editor .template-annotation-yellow { text-decoration: underline wavy var(--waiting); text-underline-offset: 3px; }
 .monaco-editor .template-annotation-red { text-decoration: underline wavy var(--destructive); text-underline-offset: 3px; }
+/* #331: an agent's proposal in the text: the old lines on a red tint, the new ones on a green one, both from the status tokens */
+.monaco-editor .template-proposal-old { background: color-mix(in oklab, var(--destructive) 18%, transparent); }
+.monaco-editor .template-proposal-new { background: color-mix(in oklab, var(--working) 18%, transparent); }

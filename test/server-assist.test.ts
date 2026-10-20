@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import express from 'express';
-import { ASSIST_SCHEMA } from '../src/assist.js';
+import { ASSIST_SCHEMA, type AssistAnswer } from '../src/assist.js';
 import type { HeadlessInput, HeadlessResult } from '../src/headless-run.js';
 import { createServer } from '../src/server.js';
 import { registerAssistRoutes } from '../src/server-assist.js';
@@ -60,7 +60,7 @@ test('a request over a selection answers the proposal, its hunk, the new text an
     hunk: { header: '@@ -5,1 +5,1 @@', lines: [{ kind: 'del', text: '# new-build', old: 5 }, { kind: 'add', text: '# New build', new: 5 }] },
     text: SKILL.replace('# new-build', '# New build'),
     changed: true,
-  });
+  } satisfies AssistAnswer);
   assert.deepEqual([calls[0].agent, calls[0].model, calls[0].schema], ['claude', 'opus', ASSIST_SCHEMA]);
   assert.ok(calls[0].prompt.includes('a friendlier title') && calls[0].prompt.includes('lines 5..5') && calls[0].prompt.includes(ARCHITECT));
   const [, same] = await ask(base, BUILD, { ...BODY, selection: undefined }); // no selection: the whole file, and an answer equal to it

@@ -328,3 +328,69 @@ test('the chain edits run on the open buffer as template-edit does and answer it
   const removed = removeChain(inserted.text, 14);
   expect([answer?.ok, result.current.editor.textOf('SKILL.md.liquid')]).toEqual([true, removed.ok && removed.text]);
 });
+
+test('applyEdit with isSaveForced saves even a dirty buffer, after the save in flight: the forced text is saved second and the buffer ends clean (#331)', async () => {
+  const saves: SaveBody[] = [];
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  stubItems(serverOf({ save: (_id, body) => {
+    saves.push(body);
+    const answer = json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
+    return saves.length === 1 ? held.then(() => answer) : answer;
+  } }));
+  const { result } = await opened('hive:new-build');
+  const typed = `${BUILD_TEXT}typed\n`;
+  act(() => result.current.editor.edit(typed));
+  let first: Promise<void> = Promise.resolve();
+  act(() => { first = result.current.editor.save(); });
+  const accepted = `${BUILD_TEXT}accepted\n`;
+  act(() => { result.current.editor.applyEdit({ ok: true, text: accepted }, { isSaveForced: true }); });
+  expect([saves.map((s) => s.text), result.current.editor.textOf('SKILL.md.liquid')]).toEqual([[typed], accepted]);
+  await act(async () => { release(); await first; });
+  await waitFor(() => expect(saves.map((s) => s.text)).toEqual([typed, accepted]));
+  await waitFor(() => expect(result.current.editor.isDirty('SKILL.md.liquid')).toBe(false));
+});
+
+test('a forced save waits for a save in flight that fails, and runs when it settles with no other change to render (#331)', async () => {
+  const saves: SaveBody[] = [];
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  stubItems(serverOf({ save: (_id, body) => {
+    saves.push(body);
+    if (saves.length === 1) return held.then(() => json({ error: 'disk' }, 500));
+    return json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
+  } }));
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.edit(`${BUILD_TEXT}typed\n`));
+  let first: Promise<void> = Promise.resolve();
+  act(() => { first = result.current.editor.save(); });
+  const accepted = `${BUILD_TEXT}accepted\n`;
+  act(() => { result.current.editor.applyEdit({ ok: true, text: accepted }, { isSaveForced: true }); });
+  await act(async () => { release(); await first; });
+  await waitFor(() => expect(saves.map((s) => s.text)).toEqual([`${BUILD_TEXT}typed\n`, accepted]));
+});
+
+test('while locked, applyEdit without isSaveForced, edit, move and the chain edits leave the buffer; a forced applyEdit still writes and saves it (#331)', async () => {
+  const saves: SaveBody[] = [];
+  stubItems(serverOf({ save: (_id, body) => {
+    saves.push(body);
+    return json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
+  } }));
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.setLocked(true));
+  expect(result.current.editor.isLocked).toBe(true);
+  const set = setVariableValue(BUILD_TEXT, 'delivery', 'agent-hive', 'stacked');
+  if (!set.ok) throw new Error(set.error.message);
+  const spec: ChainSpec = { branches: [{ connective: 'and', terms: [{ variable: 'delivery', op: 'is', value: 'single' }] }], else: false };
+  act(() => {
+    const { editor } = result.current;
+    editor.applyEdit(set);
+    editor.edit('typed\n');
+    editor.move(11, 1);
+    editor.insertChain(20, spec);
+    editor.removeChain(14);
+  });
+  expect([result.current.editor.textOf('SKILL.md.liquid'), result.current.editor.isDirty('SKILL.md.liquid'), saves]).toEqual([BUILD_TEXT, false, []]);
+  act(() => { result.current.editor.applyEdit(set, { isSaveForced: true }); });
+  await waitFor(() => expect(saves.map((s) => s.text)).toEqual([set.text]));
+});

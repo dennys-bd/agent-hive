@@ -121,6 +121,8 @@ export const SHORTCUT_MAP: readonly (ShortcutDef | FixedShortcut)[] = [
   // The handoff's ⇧1: Shift+digit types and is no binding (#585), so fit is a fixed key the flow matches by hand, as it does I, L and A
   fixed('zoomFit', 'flow', same(['Shift+1'])),
   row('searchPlugins', both('CmdOrCtrl+F'), 'plugins'), // #313: the plugins sidebar's search; it acts only with that view shown, so it meets no other ⌘F
+  // #331: the editor footer's field. From the capture phase it wins over Monaco's own ⌘I (trigger suggest), which stays on Ctrl+Space
+  row('askAgent', both('CmdOrCtrl+I'), 'plugins'),
   row('confirm', both('CmdOrCtrl+Enter'), 'dialogs'),
   row('feedbackQueue', both('CmdOrCtrl+Shift+Enter'), 'dialogs'),
   row('switchStartMode', both('CmdOrCtrl+Shift+M'), 'dialogs'),
