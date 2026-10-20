@@ -4,7 +4,7 @@ import { activityOf, prsOf, workIdOf } from '../../activities';
 import { prGroups, repoName } from '../../pull-requests';
 import { liveRuns, startMode } from '../../task-runs';
 import { progress } from '../../task-tree';
-import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction } from '../../tasks';
+import { taskLabel, removalBlocker, resolveWorkspace, workersOf, stageOf, inAction, canDismissError } from '../../tasks';
 import { parentOf } from '../../task-tree';
 import type { Task, State, Status } from '../../types';
 import { act, actThen, focusRun } from '@/components/actions';
@@ -181,6 +181,22 @@ function PrLine({ task, state }: { task: Task; state: State }) {
   );
 }
 
+// #354: ✕ beside the status while the task carries an error, refused as the route is while a run holds the task or it is leaving. The card's
+// click-to-open skips any click inside a button, so pressing it never opens the task. An epic's card has none: its error is dismissed from
+// its details only (the user's call)
+function DismissErrorButton({ task, state }: { task: Task; state: State }) {
+  if (task.missing || task.item.epic !== undefined || activityOf(state, task.item.itemId)?.error === undefined) return null;
+  const label = t('task.dismissError');
+  return (
+    <Button
+      type="button" variant="ghost" size="xs" aria-label={label} title={label} disabled={!canDismissError(task, state)} className="shrink-0 px-1"
+      onClick={() => void act(`/tasks/${encodeURIComponent(task.item.itemId)}/dismiss-error`)}
+    >
+      ✕
+    </Button>
+  );
+}
+
 // A missing task's fechar / manter (#182, #279), in place of the one button: nothing else acts on it
 function MissingActions({ task }: { task: Task }) {
   const id = encodeURIComponent(task.item.itemId);
@@ -283,6 +299,7 @@ export function FlowTask({ task, state, dragHandlers, isDimmed, isDropBefore, is
       <div className="flex min-w-0 items-center gap-1.5 text-xs">
         {task.auto && !isParent && task.item.epic === undefined && <span className={`shrink-0 rounded-sm border px-1 font-medium ${taskAutoBadge(task, state)}`}>{t('flow.auto')}</span>}
         {status.text !== undefined && <span className={`min-w-0 truncate ${tone ? TONE_TEXT[tone] : 'text-muted-foreground'}`} title={status.text}>{status.text}</span>}
+        <DismissErrorButton task={task} state={state} />
         {tries !== undefined && <span className="shrink-0 text-muted-foreground">{tries}</span>}
         <StageOutputButton task={task} state={state} />
         <span className="ml-auto flex shrink-0 items-center gap-1.5">{task.missing ? <MissingActions task={task} /> : <TaskButton task={task} state={state} onOpen={onOpen} />}</span>
