@@ -772,7 +772,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   async function activate(config: Config, sources: Map<string, Source>): Promise<Runtime> {
     if (boundPort === undefined) throw new Error('listen() precisa executar antes de configure()');
     const port = boundPort;
-    const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners)); // #924: every agent's own files, found or not, as hooks.json always was
+    const { hooksPath, promptsDir, protocol } = await prepareHome(home, port, Object.values(runners), config.mcp.off); // #924: every agent's own files, found or not, as hooks.json always was; #336: the global files drop a turned-off tool's block
     await writeMemoryProtocols(memory, config, log); // #797: each workspace's protocol files, its memory under the protocol, before any run reads them
     await workerLsp.write(config); // #803: each workspace's language-server plugin, before any run of the boot or the save loads it; a failure is logged, never the save's
     await pluginRender.write(config); // #316: each workspace's plugin folder, before any run of the boot or the save loads it; a failure is logged, never the save's

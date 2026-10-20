@@ -2,9 +2,9 @@ import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/pr
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentRunner } from './agents/runner.js';
-import { SESSION_PROTOCOL, STAGE_PROTOCOL } from './protocol.js';
+import { type ProtocolTexts, protocolTexts } from './protocol.js';
 import { installShellInit } from './shell-init.js';
-import { APPROVAL_HOLD_MAX_MIN } from './types.js';
+import { APPROVAL_HOLD_MAX_MIN, type OptionalTool } from './types.js';
 
 export const HIVE_DIR = '.hive'; // the workspace's folder for the Hive: only worktrees/ lives there (#202)
 export const PROMPTS_DIR = 'prompts';
@@ -88,12 +88,14 @@ export function pluginSource(): string {
   return fileURLToPath(new URL('../../assets/plugin', import.meta.url));
 }
 
-// Rewritten on every boot, as hooks.json is: upgrading the Hive changes what every worker is told (#167).
-async function writeProtocol(home: string): Promise<ProtocolPaths> {
+// Rewritten on every boot and every save, as hooks.json is: upgrading the Hive or turning a tool off changes what every worker is told (#167,
+// #336). No passage: with no workspace there is no `workspace` to render one with.
+async function writeProtocol(home: string, off: readonly OptionalTool[]): Promise<ProtocolPaths> {
   const dir = join(home, PROTOCOL_DIR);
   await mkdir(dir, { recursive: true, mode: HOME_MODE });
   const paths = { stage: join(dir, 'stage.md'), session: join(dir, 'session.md') };
-  await Promise.all([writeFile(paths.stage, STAGE_PROTOCOL), writeFile(paths.session, SESSION_PROTOCOL)]);
+  const texts = protocolTexts(off, []);
+  await Promise.all([writeFile(paths.stage, texts.stage), writeFile(paths.session, texts.session)]);
   return paths;
 }
 
@@ -103,18 +105,20 @@ export function workspaceProtocolPaths(home: string, workspace: string): Protoco
   return { stage: join(dir, 'stage.md'), session: join(dir, 'session.md') };
 }
 
-/** Writes a workspace's protocol files (#797): each protocol, then a blank line and `memory` (its rendered section) when there is one. The Hive
- * never reads them back: a hand edit is lost on the next write. */
-export async function writeWorkspaceProtocol(home: string, workspace: string, memory: string): Promise<ProtocolPaths> {
+/** A protocol with a workspace's memory section under it (#797): what its runs read. */
+export const withMemory = (protocol: string, memory: string): string => (memory === '' ? protocol : `${protocol}\n${memory}`);
+
+/** Writes a workspace's protocol files (#797): each protocol (its passages rendered in, #336), then a blank line and `memory` (its rendered
+ * section) when there is one. The Hive never reads them back: a hand edit is lost on the next write. */
+export async function writeWorkspaceProtocol(home: string, workspace: string, protocol: ProtocolTexts, memory: string): Promise<ProtocolPaths> {
   const paths = workspaceProtocolPaths(home, workspace);
   await mkdir(dirname(paths.stage), { recursive: true, mode: HOME_MODE });
-  const told = (protocol: string): string => (memory === '' ? protocol : `${protocol}\n${memory}`);
   // temp + rename, as the memory file is: a run starting mid-write reads the old file or the new one, never half; the lessons are private
   const put = async (path: string, text: string): Promise<void> => {
     await writeFile(`${path}.tmp`, text, { mode: PROTOCOL_FILE_MODE });
     await rename(`${path}.tmp`, path);
   };
-  await Promise.all([put(paths.stage, told(STAGE_PROTOCOL)), put(paths.session, told(SESSION_PROTOCOL))]);
+  await Promise.all([put(paths.stage, withMemory(protocol.stage, memory)), put(paths.session, withMemory(protocol.session, memory))]);
   return paths;
 }
 
@@ -123,14 +127,16 @@ export const hooksPath = (home: string): string => join(home, HOOKS_FILE);
 
 /** The home's runtime files for `port`: prompts/ (the spawn's prompt files), protocol/ (what the agent's protocol flag points at, #167), and each
  * runner's own (#924): Claude's hooks.json and shim, Codex's shim, and shell/ (the terminals' init files, #259). The plugin is not here: each
- * workspace's folder is the render's (#316), and no run loads another (#317). `runners` are the agents boot found. */
+ * workspace's folder is the render's (#316), and no run loads another (#317). `runners` are the agents boot found; `off` the tools `mcp.off`
+ * turns off (#336). */
 export async function prepareHome(
   home: string, port: number, runners: readonly Pick<AgentRunner, 'prepareHome'>[],
+  off: readonly OptionalTool[],
 ): Promise<{ hooksPath: string; promptsDir: string; protocol: ProtocolPaths }> {
   const promptsDir = join(home, PROMPTS_DIR);
   await mkdir(promptsDir, { recursive: true, mode: HOME_MODE }); // first: it creates the home with this user's mode
   for (const runner of runners) await runner.prepareHome(home, port);
   await installShellInit(home); // #259: after the runners' shims, which its functions call; one site for every agent
-  const protocol = await writeProtocol(home);
+  const protocol = await writeProtocol(home, off);
   return { hooksPath: hooksPath(home), promptsDir, protocol };
 }

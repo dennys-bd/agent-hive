@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import type { Logger } from './log.js';
 import { writeWorkspaceProtocol } from './hooks-settings.js';
+import { protocolTexts } from './protocol.js';
 import { createJsonStore } from './json-store.js';
 import {
   isMemoryKind, MEMORY_KINDS, MEMORY_TEXT_MAX, type MemoryEntry, type MemoryFile, type MemoryKind, type MemoryOrigin,
@@ -159,7 +160,7 @@ export function createMemoryStore(home: string, isLive: (workspace: string) => b
   const writeProtocol = (name: string): Promise<void> => {
     const job = async (): Promise<void> => {
       const read = await files.read(name).then((file) => ({ file }), (err: unknown) => ({ file: EMPTY_MEMORY, err }));
-      await writeWorkspaceProtocol(home, name, renderMemory(read.file.entries));
+      await writeWorkspaceProtocol(home, name, protocolTexts([], []), renderMemory(read.file.entries)); // Task 5 renders through protocolFor
       lastRendered.set(name, renderedOf(read.file.entries));
       if ('err' in read) throw read.err;
     };
