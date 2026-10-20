@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { Express, Request, Response } from 'express';
-import { activityOf } from './activities.js';
+import { activityOf, workersIn } from './activities.js';
 import { knownAgent } from './agents.js';
 import { activityParam, taskTarget } from './activity-routes.js';
 import { taskWorkspace } from './config.js';
@@ -13,11 +13,12 @@ import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, wo
 import { askedLaunch } from './launch-options.js';
 import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type Workspace } from './types.js';
+import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type State, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
 import { isSetUp } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
-import { PROMPT_MESSAGE, promptText } from './merge-prompt.js';
+import { MERGE_BASE_PROMPT, PROMPT_MESSAGE, promptText } from './merge-prompt.js';
+import type { Deliver } from './review-deliver.js';
 
 // Abrir sessão (#164, #237, #283), out of server-tasks.ts, which was over its size, when a first open's worktree setup became a state of
 // the task with a console run (#351).
@@ -241,5 +242,39 @@ export function registerOpenRoute(app: Express, deps: OpenRouteDeps): void {
     const target = taskTarget(current.state, activityParam(req));
     if ('status' in target) return refuse(res, target);
     await openOn(deps, current, target.task.item.itemId, req.body, res);
+  });
+}
+
+const NOT_LIVE_MESSAGE = 'to must be a session a live run of the task holds';
+
+/** The resolve route's deps (#379): the task routes' live view and log, and the server's #591 deliver. */
+export type ResolveRouteDeps = Pick<TaskRouteDeps, 'requireLive' | 'log'> & { deliver: Deliver };
+
+// Whether a live run of the task's activity holds session `to` (#379): worktreeSessions leaves the held ones out, and deliver would open a
+// stopped one, which is the open route's job
+const holdsLive = (state: State, activity: Activity | undefined, to: unknown): to is string =>
+  typeof to === 'string' && workersIn(state.workers, activity?.id).some((w) => w.runId !== undefined && w.sessionId === to);
+
+/** resolve in the activity on a live session (#379): the merge-from-base prompt, rendered on the task's base remote, pasted through #591's
+ * deliver into the session a live run of the task holds. A refused delivery (a prompt showing, the terminal gone) is a 409 with deliver's
+ * reason, logged; the page says it in its own words. */
+export function registerResolveRoute(app: Express, { requireLive, log, deliver }: ResolveRouteDeps): void {
+  app.post('/tasks/:id/resolve', async (req: Request, res: Response) => {
+    const current = requireLive(res);
+    if (!current) return;
+    const taskId = req.params.id as string;
+    const opened = openTask(current.state, taskId);
+    if ('status' in opened) return refuse(res, opened);
+    const { to, promptBase } = (req.body ?? {}) as { to?: unknown; promptBase?: unknown };
+    const { config } = current.runtime;
+    const asked = promptText(MERGE_BASE_PROMPT, promptBase, workspaceBase(config, taskWorkspace(config, opened.task)).remote);
+    if ('refused' in asked || asked.text === undefined) return refuse(res, { status: HTTP_BAD_REQUEST, message: PROMPT_MESSAGE });
+    if (!holdsLive(current.state, opened.activity, to)) return refuse(res, { status: HTTP_BAD_REQUEST, message: NOT_LIVE_MESSAGE });
+    const delivery = await deliver(taskId, to, asked.text);
+    if (!delivery.ok) {
+      log.info(`resolve ${taskId}: the merge prompt did not reach ${to} (${delivery.reason})`);
+      return refuse(res, { status: HTTP_CONFLICT, message: delivery.reason });
+    }
+    res.json({ ok: true });
   });
 }
