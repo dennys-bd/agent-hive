@@ -62,7 +62,7 @@ export interface PtyHost {
   adopt(ptyId: string, pty: Pty): void; // a pty the host did not spawn (#351): a worktree setup's output, served like a run's
   has(ptyId: string): boolean;
   write(ptyId: string, data: string): boolean; // false: an unknown worker
-  resize(ptyId: string, cols: number, rows: number): boolean;
+  resize(ptyId: string, cols: number, rows: number, redraw?: boolean): boolean; // redraw (#389): a SIGWINCH even at the pty's own grid
   subscribe(ptyId: string, onData: (data: string) => void, onExit: (exitCode: number) => void): (() => void) | undefined; // the scrollback first
   kill(ptyId: string): boolean;
   pid(ptyId: string): number | undefined; // #696: what a terminal's cwd and its agents are read under; undefined for an unknown or ended one
@@ -202,11 +202,28 @@ function grow(h: HostMaps, { cols, rows }: TerminalSize): void {
   h.largest = seen === undefined ? { cols, rows } : { cols: Math.max(seen.cols, cols), rows: Math.max(seen.rows, rows) };
 }
 
-// #808: the grid the pty already has is dropped, so a view that posts it again costs the program no SIGWINCH
-function resize(h: HostMaps, ptyId: string, cols: number, rows: number): boolean {
+// #389: a program redraws its whole screen only on SIGWINCH, which the kernel sends only on a real change of size, and signalling the
+// process group would reach the shell rather than the foreground program. So the pty goes one row off and back. entry.grid follows each
+// size the pty took, so a throw on the way back leaves it true and the next post of the grid is not dropped. No grow: the size in between
+// is no page's grid.
+function redrawAt(entry: Entry, { cols, rows }: TerminalSize): void {
+  const off = rows > 1 ? rows - 1 : rows + 1;
+  entry.pty.resize(cols, off);
+  entry.grid = { cols, rows: off };
+  entry.pty.resize(cols, rows);
+  entry.grid = { cols, rows };
+}
+
+// #808: the grid the pty already has is dropped, so a view that posts it again costs the program no SIGWINCH; unless the view asks for a
+// redraw (#389): it just attached, or its own grid changed while the pty's did not
+function resize(h: HostMaps, ptyId: string, cols: number, rows: number, redraw = false): boolean {
   const entry = h.entries.get(ptyId);
   if (!entry) return false;
-  if (entry.grid?.cols === cols && entry.grid.rows === rows) return true;
+  const isSame = entry.grid?.cols === cols && entry.grid.rows === rows;
+  if (isSame) {
+    if (redraw) redrawAt(entry, { cols, rows });
+    return true;
+  }
   entry.pty.resize(cols, rows);
   entry.grid = { cols, rows };
   grow(h, entry.grid);
@@ -229,7 +246,7 @@ export function createPtyHost(spawnPty: SpawnPty, onError: (message: string) => 
     restore: (ptyId, text) => { if (!h.entries.has(ptyId)) h.ended.set(ptyId, { text, exitCode: 0, pinned: true }); },
     has: (ptyId) => h.entries.has(ptyId) || h.ended.has(ptyId),
     write: (ptyId, data) => withPty(h, ptyId, (pty) => pty.write(data)),
-    resize: (ptyId, cols, rows) => resize(h, ptyId, cols, rows),
+    resize: (ptyId, cols, rows, redraw) => resize(h, ptyId, cols, rows, redraw),
     kill: (ptyId) => withPty(h, ptyId, (pty) => pty.kill()),
     pid: (ptyId) => h.entries.get(ptyId)?.pty.pid,
   };
