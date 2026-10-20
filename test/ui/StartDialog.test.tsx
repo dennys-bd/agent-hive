@@ -548,20 +548,32 @@ test('the dialog\'s children may shrink below their content, so a long title tru
   expect(screen.getByRole('button', { name: 'tarefas' })).toHaveAttribute('title', '#SITE-9 Landing hero for teams');
 });
 
-const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: ['board'] };
+const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: [{ name: 'board', type: 'github' }] };
 const toBoard = (ui: ReactElement) => <CreateTargetsContext.Provider value={TO_BOARD}>{ui}</CreateTargetsContext.Provider>;
 
-test('on a source the typed task is held: its row comes first, and neither the pick nor a cancel creates anything (#846)', async () => {
+test('on a source the typed task is held: one create row, on the default destination\'s chip, and neither the pick nor a cancel creates anything (#846, #893)', async () => {
   const user = userEvent.setup();
   render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={vi.fn()} />));
   await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   const rows = screen.getAllByRole('option', { name: /criar tarefa "landing"/ });
-  expect(rows.map((r) => r.textContent?.endsWith('em board') ? 'board' : 'hive')).toEqual(['board', 'hive']);
+  expect(rows).toHaveLength(1);
+  expect(within(rows[0]).getByRole('button', { name: 'em board' })).toBeInTheDocument();
   await user.click(rows[0]);
   expect(screen.getByText(t('start.held', { title: 'landing', source: 'board' }))).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'cancelar' }));
   expect(posts()).toEqual([]);
+});
+
+test('picking hive in the chip\'s criar em menu and pressing the row creates the task in the hive at once (#893)', async () => {
+  const user = userEvent.setup();
+  render(toBoard(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('button', { name: 'em board' }));
+  await user.click(screen.getByRole('option', { name: /^hive/ }));
+  await user.click(screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ }));
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
 });
 
 test('starting a held task creates it on its source, then starts it once the state holds it (#846)', async () => {

@@ -340,6 +340,8 @@ const en = {
   'start.noTask': 'no task found',
   'start.create': 'create task "{title}"',
   'start.createIn': 'in {source}',
+  'start.createInMenu': 'create in', // #893: the create row's destination menu
+  'start.createInHive': 'only in the hive, no external issue',
   'start.held': '"{title}" in {source}: created when the activity starts',
   'start.notInFlow': 'the issue was created on {source}, but it is not in the flow yet: the source\'s filter may leave it out, or the next poll will bring it in',
   'start.mode.stages': 'run stages',
@@ -2586,6 +2588,8 @@ const pt: Record<MessageKey, string> = {
   'start.noTask': 'nenhuma tarefa encontrada',
   'start.create': 'criar tarefa "{title}"',
   'start.createIn': 'em {source}',
+  'start.createInMenu': 'criar em', // #893: the create row's destination menu
+  'start.createInHive': 'só no hive, sem issue externa',
   'start.held': '"{title}" em {source}: criada quando a atividade começar',
   'start.notInFlow': 'a issue foi criada em {source}, mas ainda não está no fluxo: o filtro da source pode deixá-la de fora, ou a próxima leitura da source a traz',
   'start.mode.stages': 'executar etapas',

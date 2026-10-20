@@ -115,7 +115,7 @@ function useCreateRow(state: State, workspace: string | undefined, done: { curre
   const choices = destinations(useContext(CreateTargetsContext));
   const created = useCreatedTasks(state, workspace, done, onError);
   const held = usePendingTask(createStage(state), onError);
-  const create = (text: string, destination = choices[0]): void => {
+  const create = (text: string, destination = choices[0].name): void => {
     if (destination !== HIVE_SOURCE) { unpick(); held.hold({ title: text, source: destination }); return; }
     held.hold(undefined);
     created.create(text, pick);

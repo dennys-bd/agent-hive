@@ -1,8 +1,7 @@
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StartDialog } from '@/components/StartDialog';
-import { setLanguage, t } from '@/i18n';
+import { setLanguage } from '@/i18n';
 import type { BaseOptions, Stage, State, Task } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIGNALS_DEFAULTS } from '../../src/types';
 import { withPointedWork, type WithWork } from '../fixtures/work';
