@@ -125,6 +125,10 @@ function EditorBody(props: BodyProps) {
   const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const forms = useChainForms({ editor, parsed, map, workspaces, isReadOnly: !canEdit, reveal: revealLine });
   const selection = useRef<LineSelection>(undefined); // the text's last selection, which a request sends
+  const modelKey = [item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0');
+  // A new Monaco or a text no longer writable starts with no selection: the old one's lines are invisible now, and Monaco reports none
+  // biome-ignore lint/correctness/useExhaustiveDependencies: both are triggers, not read inside
+  useEffect(() => { selection.current = undefined; }, [modelKey, isWritable]);
   return (
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileTabs
@@ -141,7 +145,7 @@ function EditorBody(props: BodyProps) {
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
-          modelKey={[item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0')} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
+          modelKey={modelKey} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
           fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
           onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
           annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf}
