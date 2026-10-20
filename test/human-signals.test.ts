@@ -122,14 +122,24 @@ test('an ask with no waitingSince flushed unresolved does not swallow a later as
   assert.deepEqual(signals.onHook(PTY, hook('UserPromptSubmit'), asking, IDS, T0 + 1000), [{ event: 'question.answered', level: 'info', ...IDS, kind: 'ask', outcome: 'answered', duration_ms: 0 }]);
 });
 
-test('tokens_by_model keeps each model name on one line and at most 50 of them, as the writer does a list (#271)', () => {
+test('tokens_by_model keeps each model name on one line and at most 50 keys, the rest adding up under other, so it still sums to tokens (#271)', () => {
   const signals = createHumanSignals();
   signals.openStageRun({ ptyId: PTY, correlation: IDS, waitedMs: 0 }, T0);
   const tokensByModel = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`m${i}\nERROR forged`, USAGE.tokens]));
   signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 1, { ...USAGE, tokensByModel });
   const ended = signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 2) as { tokens_by_model: Record<string, unknown> } | undefined;
   const names = Object.keys(ended?.tokens_by_model ?? {});
-  assert.deepEqual([names.length, names[0]], [50, 'm0 ERROR forged']);
+  const other = USAGE.tokens.input * 11;
+  assert.deepEqual([names.length, names[0], ended?.tokens_by_model.other], [50, 'm0 ERROR forged', { input: other, output: USAGE.tokens.output * 11, cache_write: USAGE.tokens.cache_write * 11, cache_read: USAGE.tokens.cache_read * 11 }]);
+});
+
+test('two model names that clean to the same text add up instead of one replacing the other (#271)', () => {
+  const signals = createHumanSignals();
+  signals.openStageRun({ ptyId: PTY, correlation: IDS, waitedMs: 0 }, T0);
+  signals.onHook(PTY, hook('Stop'), working, IDS, T0 + 1, { ...USAGE, tokensByModel: { 'm\n1': USAGE.tokens, 'm\r1': USAGE.tokens } });
+  const ended = signals.endStageRun({ ptyId: PTY, outcome: 'done', waitedMs: 0 }, T0 + 2) as { tokens_by_model: Record<string, unknown> } | undefined;
+  const t = USAGE.tokens;
+  assert.deepEqual(ended?.tokens_by_model, { 'm 1': { input: t.input * 2, output: t.output * 2, cache_write: t.cache_write * 2, cache_read: t.cache_read * 2 } });
 });
 
 test('a free session\'s run carries its last turn end\'s usage for free_session.ended; its prompts are no takeover, and a pty with no run gives none (#271)', () => {

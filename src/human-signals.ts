@@ -1,3 +1,4 @@
+import { addTokens } from './agents/jsonl.js';
 import { since, type StartedRun } from './event-derive.js';
 import { LIST_MAX, rawText, ZERO_TOKENS, type Correlation, type RecordInput, type RunUsage, type StageOutcome, type Tokens } from './events.js';
 import type { AgentId, HookPayload, Worker } from './types.js';
@@ -11,6 +12,7 @@ const ELICITATIONS: readonly string[] = ['elicitation_dialog', 'elicitation_url_
 const PERMISSION = 'permission_prompt';
 const TOOLS_MAX = 50; // distinct tool names a stage run counts; any past it lands in OTHER_TOOL
 const OTHER_TOOL = 'other';
+const OTHER_MODEL = 'other'; // #271: where the models past LIST_MAX add up
 
 /** A stage run that ended (#742): the derivation's outcome and the worker's waits so far; the tracker adds what the hooks told. */
 export interface StageRunEnd { ptyId: string; outcome: StageOutcome; waitedMs: number }
@@ -112,10 +114,20 @@ function flushed(track: PtyTrack, worker: Worker | undefined, ids: Correlation, 
 
 // A run's usage as its end record carries it (#271): the last turn end's, zero before any. tokens_by_model's keys are a transcript's model
 // names, cut and capped as the writer does a list's strings
+// #271: the split must still sum to `tokens`, so names that clean to the same text add up, and models past LIST_MAX land in OTHER_MODEL
+function byModel(tokensByModel: Readonly<Record<string, Tokens>>): Record<string, Tokens> {
+  const merged = new Map<string, Tokens>();
+  for (const [model, tokens] of Object.entries(tokensByModel)) {
+    const clean = rawText(model);
+    const key = merged.has(clean) || merged.size < LIST_MAX - 1 ? clean : OTHER_MODEL;
+    merged.set(key, addTokens(merged.get(key) ?? ZERO_TOKENS, tokens));
+  }
+  return Object.fromEntries(merged);
+}
+
 function usageFields(usage: TurnUsage | undefined): RunUsage {
-  const byModel = Object.entries(usage?.tokensByModel ?? {}).slice(0, LIST_MAX).map(([model, tokens]): [string, Tokens] => [rawText(model), tokens]);
   return {
-    tokens: usage?.tokens ?? ZERO_TOKENS, subagent_tokens: usage?.subagentTokens ?? ZERO_TOKENS, models: usage?.models ?? [], tokens_by_model: Object.fromEntries(byModel),
+    tokens: usage?.tokens ?? ZERO_TOKENS, subagent_tokens: usage?.subagentTokens ?? ZERO_TOKENS, models: usage?.models ?? [], tokens_by_model: byModel(usage?.tokensByModel ?? {}),
   };
 }
 
