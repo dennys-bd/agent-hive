@@ -6,6 +6,7 @@ import { PluginsView } from '@/components/plugins/PluginsView';
 import { useAnnotations } from '@/hooks/use-annotations';
 import { useItemEditor } from '@/hooks/use-item-editor';
 import { usePlugins } from '@/hooks/use-plugins';
+import { useProtocol } from '@/hooks/use-protocol';
 import { setLanguage } from '@/i18n';
 import { itemOf, json, WORKSPACES } from './plugins-fixtures';
 
@@ -53,9 +54,10 @@ function View() {
   const plugins = usePlugins(true);
   const editor = useItemEditor(plugins);
   const annotations = useAnnotations(editor, plugins.items, WORKSPACES);
+  const protocol = useProtocol(false);
   return (
     <>
-      <PluginsView plugins={plugins} editor={editor} annotations={annotations} workspaces={WORKSPACES} fontFamily="monospace" pick={{ agent: 'claude', model: '' }} onPick={() => undefined} />
+      <PluginsView plugins={plugins} editor={editor} annotations={annotations} protocol={protocol} workspaces={WORKSPACES} fontFamily="monospace" pick={{ agent: 'claude', model: '' }} onPick={() => undefined} />
       <button type="button" onClick={() => plugins.open({ kind: 'update', id: PLAN.id, version: 'mine' })}>open-update</button>
     </>
   );

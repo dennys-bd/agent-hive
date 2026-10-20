@@ -83,7 +83,7 @@ test("the head's workspace filter keeps hive and that workspace; nova skill crea
   expect(within(sidebar()).getByRole('button', { name: /^preview/, current: true })).toBeInTheDocument();
 });
 
-test("an item opens its empty screen under its head: the mono name, the state chip in its colour, its section; mcp and protocol carry only their title (#313)", async () => {
+test("an item opens its empty screen under its head: the mono name, the state chip in its colour, its section; mcp carries only its title, protocol its title and meta (#313, #337)", async () => {
   const user = userEvent.setup();
   stubFetch();
   render(<Window />);
@@ -96,7 +96,7 @@ test("an item opens its empty screen under its head: the mono name, the state ch
   expect(within(head()).getByText('skills')).toBeInTheDocument();
   expect(screen.queryByRole('region', { name: 'skills' })).not.toBeInTheDocument();
   await user.click(within(sidebar()).getByRole('button', { name: 'protocolo' }));
-  expect(head()).toHaveTextContent(/^protocolo$/);
+  expect(head()).toHaveTextContent(/^protocoloinjetado em toda sessão · trechos da hive travados · os seus entre eles$/);
 });
 
 test("in plugins arquivos and detalhes are off and the right group holds the empty variables pane, not the task's details; Ctrl+1 and Ctrl+2 still switch away, the head leaving with the view (#313)", async () => {
