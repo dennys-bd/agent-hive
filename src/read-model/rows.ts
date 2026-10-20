@@ -78,3 +78,8 @@ export interface PrPage { issue: IssueRow; pull: PullRow | undefined; reviews: R
 
 /** A Project item (#190): its GraphQL node as JSON, pruned to the ITEMS shape; project is `<owner login>/<number>`. */
 export interface ItemRow { source: string; nodeId: string; project: string; updatedAt: string; node: string }
+
+const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Names in the order every view lists them (#282): by name, case-insensitive as SQLite's COLLATE NOCASE, a case-only tie by code unit, so the
+ * REST and the GraphQL reader store the same list and neither rewrites the row the other just wrote. */
+export const sortedNames = (names: readonly string[]): string[] => [...names].sort((a, b) => order(a.toLowerCase(), b.toLowerCase()) || order(a, b));

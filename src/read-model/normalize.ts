@@ -4,6 +4,7 @@ import { pullRequest } from '../sources/github-project.js';
 import type { GhPullRequest } from '../sources/github-queries.js';
 import type { MergeMethod, PrCheck, PrClosingIssue, PrMergeState, PrReviewDecision, ProjectPr } from '../types.js';
 import type { CheckRow, CommentRow, IssueKind, IssueRow, PullChecks, PullFlags, PullPage, RepoRow, ReviewRow } from './rows.js';
+import { sortedNames } from './rows.js';
 
 // The wire is untrusted (#178): every field read is checked, and anything that is not GitHub's shape throws instead of storing half a row
 type Json = Record<string, unknown>;
@@ -48,7 +49,7 @@ function flagOf(json: Json, key: string): boolean {
 // A deleted account answers a null user (REST) or author (GraphQL)
 const loginOf = (value: unknown): string | null => (value === null || value === undefined ? null : textOf(objectOf(value, 'user'), 'login'));
 
-// Labels by name, assignees by login, in GitHub's order
+// Labels by name, assignees by login, in GitHub's order: an issues row sorts them (sortedNames)
 function listOf(value: unknown, what: string, key: string): string[] {
   if (!Array.isArray(value)) throw new WireError(what);
   return value.map((item) => textOf(objectOf(item, what), key));
@@ -63,7 +64,7 @@ export function issueFromRest(source: string, repository: string, json: unknown)
     source, nodeId: textOf(issue, 'node_id'), repository, number: countOf(issue, 'number'),
     kind: issue.pull_request === undefined || issue.pull_request === null ? 'issue' : 'pr', state,
     title: textOf(issue, 'title'), body: nullableText(issue, 'body') ?? '', author: loginOf(issue.user),
-    labels: listOf(issue.labels, 'labels', 'name'), assignees: listOf(issue.assignees, 'assignees', 'login'),
+    labels: sortedNames(listOf(issue.labels, 'labels', 'name')), assignees: sortedNames(listOf(issue.assignees, 'assignees', 'login')),
     createdAt: textOf(issue, 'created_at'), updatedAt: textOf(issue, 'updated_at'), closedAt: nullableText(issue, 'closed_at'), comments: countOf(issue, 'comments'),
   };
 }
@@ -87,8 +88,8 @@ function gqlRowOf(source: string, repository: string, item: Json, kind: IssueKin
   return {
     source, nodeId: textOf(item, 'id'), repository, number: countOf(item, 'number'), kind, state,
     title: textOf(item, 'title'), body: textOf(item, 'body'), author: loginOf(item.author),
-    labels: listOf(objectOf(item.labels, 'labels').nodes, 'labels', 'name'),
-    assignees: listOf(objectOf(item.assignees, 'assignees').nodes, 'assignees', 'login'),
+    labels: sortedNames(listOf(objectOf(item.labels, 'labels').nodes, 'labels', 'name')),
+    assignees: sortedNames(listOf(objectOf(item.assignees, 'assignees').nodes, 'assignees', 'login')),
     createdAt: textOf(item, 'createdAt'), updatedAt: textOf(item, 'updatedAt'), closedAt: nullableText(item, 'closedAt'),
     comments: countOf(objectOf(item.comments, 'comments'), 'totalCount'),
   };
