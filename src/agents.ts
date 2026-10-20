@@ -21,16 +21,16 @@ export const AGENTS: Record<AgentId, AgentSpec> = {
       'agents', 'attach', 'auth', 'auto-mode', 'doctor', 'gateway', 'import', 'install', 'kill', 'logs', 'mcp', 'plugin', 'plugins', 'purge',
       'respawn', 'rm', 'setup-token', 'stop', 'ultrareview', 'update', 'upgrade',
     ],
-    shimFlags: ['--resume', '--resume=*', '-r', '--continue', '-c', '--session-id', '--session-id=*', '-p', '--print', '-h', '--help', '-v', '--version'],
+    shimFlags: ['-p', '--print', '-h', '--help', '-v', '--version'], // #347: a resume (-r, -c, --session-id) registers; these run no conversation
   },
   codex: {
     label: 'Codex', command: 'codex', planLimits: true, canChooseSessionId: false, resumesAnyFolder: true, // planLimits: #929, read from its rollouts
-    // as `codex --help` lists them (finding §12), aliases included; resume and fork open a session the user chose, which the shim runs as typed,
-    // as Claude's --resume (#932)
+    // as `codex --help` lists them (finding §12), aliases included; fork opens a session the user chose, which the shim runs as typed (#932);
+    // resume registers (#347)
     subcommands: [
       'agents', 'exec', 'e', 'review', 'login', 'logout', 'mcp', 'plugin', 'app-server', 'remote-control', 'app', 'completion', 'update', 'doctor',
       'sandbox', 'debug', 'apply', 'a', 'queue', 'archive', 'delete', 'migrate-rollouts', 'unarchive', 'cloud', 'exec-server', 'features', 'help',
-      'resume', 'fork',
+      'fork',
     ],
     shimFlags: ['-h', '--help', '-V', '--version'], // #932: no -c, which is a config override in Codex
   },
