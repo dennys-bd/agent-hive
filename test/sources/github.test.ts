@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
 import { openReadModel } from '../../src/read-model/db.js';
 import type { ItemStore } from '../../src/read-model/items.js';
-import { createSource, sourceSpec } from '../../src/source.js';
+import { createSource, resolveSources, sourceSpec } from '../../src/source.js';
 import { ITEM_FIELDS, ITEMS, PROBE, PROJECT_FIELDS, type GhItemFieldsNode, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql } from '../../src/types.js';
 import { combConfig, fakeGql, fakeLog, FILTER } from '../fakes.js';
@@ -161,4 +161,26 @@ test('without a store setColumn sends only the mutation; with one, a failed re-r
   await stored.resolveFields();
   await stored.setColumn('PVTI_1', 'In review');
   assert.ok(lines.some((l) => l.startsWith('ERROR item PVTI_1: the column write was not re-read for the read model')), lines.join('\n'));
+});
+
+// #291: gh's words with the network off, as ghExec rejects with them
+const GH_OFFLINE = 'gh api graphql: error connecting to api.github.com\ncheck your internet connection or https://githubstatus.com';
+
+test('offline at boot, the adapter resolveSources deferred answers stored() from the read model, its listItems rejects while offline, and once online it reads the Status field once, then lists as before (#291)', async () => {
+  const items = await memoryStore();
+  const nodes = page([node(1, 'Ready'), node(2, 'In progress')]);
+  const listed = await createSource(SPEC, { gql: fakeGql({ probe: probeAt(T1), items: nodes, relations: {} }).gql, items }).listItems();
+  assert.equal(listed.length, 2);
+  let isOnline = false;
+  const online = fakeGql({ fields: FIELDS, probe: probeAt(T1), items: nodes, relations: {} });
+  const gql: Gql = (query, variables) => (isOnline ? online.gql(query, variables) : Promise.reject(new Error(GH_OFFLINE)));
+  const source = (await resolveSources(new Map([['board', createSource(SPEC, { gql, items })]]), { deferOffline: true })).get('board');
+  assert.ok(source);
+  assert.deepEqual(await source.stored?.(), listed, 'the boot read needs no network');
+  await assert.rejects(source.listItems(), { message: GH_OFFLINE });
+  isOnline = true;
+  assert.deepEqual(await source.listItems(), listed);
+  assert.deepEqual(await source.listItems(), listed);
+  assert.equal(names(online.calls)[0], 'fields', 'the resolve runs before the first listing');
+  assert.equal(names(online.calls).filter((name) => name === 'fields').length, 1, 'and only once');
 });

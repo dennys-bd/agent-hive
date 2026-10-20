@@ -4,6 +4,7 @@ import { createGithubSource } from './sources/github.js';
 import { RelationRereadError } from './sources/github-blockers.js';
 import { citedColumns } from './tasks.js';
 import { parseAuth } from './config.js';
+import { isNetworkError } from './fork.js';
 import type { Logger } from './log.js';
 import type { ItemStore } from './read-model/items.js';
 import type { Source, SourceConfig, SourceSpec, Config, FieldValue, FieldWrite, Gql, Item, ItemBlockers, BlockerRef, ProjectView, SourceItem } from './types.js';
@@ -116,11 +117,41 @@ export function createSources(config: Config, build: (spec: SourceSpec) => Sourc
   }));
 }
 
-/** resolveFields on every source, in order; the first failure rejects naming its source (#180): what boot and a save refuse with. */
-export async function resolveSources(sources: ReadonlyMap<string, Source>): Promise<void> {
+/** #291: deferOffline (the boot only) keeps a source whose resolve failed on the network; log: its warn and its late info. */
+export interface ResolveOptions { deferOffline?: boolean; log?: Pick<Logger, 'warn' | 'info'> }
+
+const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+// #291: a source the network kept out at boot. The poll already goes through listItems, so the retry rides it: no state in the server, no
+// reducer rule. A failed resolve rejects the poll, which pollFailed shows on the source's status; the writes keep the adapter's own refusal
+function resolvedOnPoll(name: string, source: Source, log?: Pick<Logger, 'info'>): Source {
+  let isResolved = false;
+  return {
+    ...source,
+    listItems: async () => {
+      if (!isResolved) {
+        await source.resolveFields();
+        isResolved = true;
+        log?.info(`source ${name}: resolved on a later poll`);
+      }
+      return source.listItems();
+    },
+  };
+}
+
+/** resolveFields on every source, in order; a failure rejects naming its source (#180): what boot and a save refuse with. With deferOffline
+ * (#291) a network failure is no broken config: that source comes back resolved on its next poll, and the others as they are. */
+export async function resolveSources(sources: ReadonlyMap<string, Source>, opts: ResolveOptions = {}): Promise<Map<string, Source>> {
+  const resolved = new Map<string, Source>();
   for (const [name, source] of sources) {
-    await source.resolveFields().catch((err: unknown) => {
-      throw new Error(`source ${name}: ${err instanceof Error ? err.message : String(err)}`);
-    });
+    try {
+      await source.resolveFields();
+      resolved.set(name, source);
+    } catch (err) {
+      if (opts.deferOffline !== true || !isNetworkError(err)) throw new Error(`source ${name}: ${reasonOf(err)}`);
+      opts.log?.warn(`source ${name}: offline at boot, resolved on a later poll (${reasonOf(err).split('\n')[0]})`);
+      resolved.set(name, resolvedOnPoll(name, source, opts.log));
+    }
   }
+  return resolved;
 }
