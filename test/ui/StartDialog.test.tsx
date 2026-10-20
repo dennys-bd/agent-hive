@@ -738,7 +738,8 @@ test('a stage with a model shows it as the stage\'s default; another agent drops
   await user.click(screen.getByRole('option', { name: 'codex' }));
   expect(block.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('nova');
   expect(block.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do codex');
-  expect(screen.getByText('codex · padrão do codex · sessão nova')).toBeInTheDocument();
+  await user.click(block.getByRole('button', { name: 'personalizar ‹' }));
+  expect(screen.getByText('codex · padrão do codex · sessão nova')).toBeInTheDocument(); // closing keeps the picks
 });
 
 test('a continue shows the run without personalizar, since its session is fixed; so does a task whose handover decides its next run (#290, #134)', () => {

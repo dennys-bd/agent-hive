@@ -229,13 +229,15 @@ function RunSection({ id, mode, task, state, run, workspace }: { id: string; mod
   );
   if (mode === 'free') return fields();
   const canCustomize = isCustomizable(task, state);
+  const isOpen = canCustomize && run.isCustomizing;
+  // #893: open, the block goes above the box and the box drops its run row, which the block shows in full
   return (
-    <>
-      <StagesBox task={task} stages={state.stages} run={<RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={run.isCustomizing} onToggle={run.setCustomizing} />} />
-      {canCustomize && run.isCustomizing && task && (
-        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore}>{fields(run.initial)}</RunCustomize>
+    <div className="flex flex-col gap-2.5">
+      {isOpen && task && (
+        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore} onClose={() => run.setCustomizing(false)}>{fields(run.initial)}</RunCustomize>
       )}
-    </>
+      <StagesBox task={task} stages={state.stages} run={isOpen ? undefined : <RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={false} onToggle={run.setCustomizing} />} />
+    </div>
   );
 }
 

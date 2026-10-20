@@ -54,15 +54,18 @@ export function RunSummary({ picks, stageModel, isCustomizable, isOpen, onToggle
   );
 }
 
-interface RunCustomizeProps { stage: string; isChanged: boolean; onRestore(): void; children: ReactNode }
+interface RunCustomizeProps { stage: string; isChanged: boolean; onRestore(): void; onClose(): void; children: ReactNode }
 
-/** personalizar's block (#290): execução de {stage} with padrão da etapa, or restaurar padrão once a field changed; the fields; the note that the
- * pick is for this run only. */
-export function RunCustomize({ stage, isChanged, onRestore, children }: RunCustomizeProps) {
+/** personalizar's open block (#290, #893): above the stages box with no border, since the box drops its run row meanwhile and two boxes showed
+ * the run twice. execução de {stage}, then personalizar ‹, which closes it (the row that held the toggle is hidden), and padrão da etapa, or
+ * restaurar padrão once a field changed; the fields; the note that the pick is for this run only. */
+export function RunCustomize({ stage, isChanged, onRestore, onClose, children }: RunCustomizeProps) {
   return (
-    <section aria-label={t('run.title', { stage })} className="flex flex-col gap-2.5 rounded-md border p-2.5">
-      <div className="flex items-baseline justify-between gap-2">
+    <section aria-label={t('run.title', { stage })} className="flex flex-col gap-2.5">
+      <div className="flex items-baseline gap-2">
         <h3 className="font-medium text-sm">{t('run.title', { stage })}</h3>
+        <span className="flex-1" />
+        <button type="button" aria-expanded onClick={onClose} className="text-muted-foreground text-xs hover:text-foreground">{t('run.customize')} ‹</button>
         {isChanged
           ? <button type="button" onClick={onRestore} className="text-xs underline">{t('run.restore')}</button>
           : <span className="text-muted-foreground text-xs">{t('run.stageDefault')}</span>}

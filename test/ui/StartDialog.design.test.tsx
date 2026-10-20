@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { StartDialog } from '@/components/StartDialog';
@@ -50,4 +50,21 @@ test('the mode toggle is a segmented control: a muted track, the active segment 
   render(<StartDialog state={state()} taskId="I7" onClose={vi.fn()} />);
   expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
   expect(screen.getByRole('radio', { name: 'sessão livre' })).toHaveAttribute('data-state', 'on');
+});
+
+test('personalizar open drops the execução row from the stages box, keeps próximas and para em, and sits above the box with no border; personalizar ‹ closes it and brings the row back (#893)', async () => {
+  const user = userEvent.setup();
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={vi.fn()} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  expect(screen.getByText(t('run.label'))).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'personalizar ›' }));
+  const block = screen.getByRole('region', { name: 'execução de backlog' });
+  expect(block).not.toHaveClass('border');
+  expect(screen.queryByText(t('run.label'))).not.toBeInTheDocument();
+  const next = screen.getByText(t('start.next'));
+  expect(screen.getByText(t('start.stopsAt'))).toBeInTheDocument();
+  expect(block.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0); // the block above the box
+  await user.click(within(block).getByRole('button', { name: 'personalizar ‹' }));
+  expect(screen.queryByRole('region', { name: 'execução de backlog' })).not.toBeInTheDocument();
+  expect(screen.getByText(t('run.label'))).toBeInTheDocument();
 });

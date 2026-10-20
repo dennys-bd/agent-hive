@@ -152,8 +152,9 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** What executar etapas will do: the run (#290), the stages ahead, and where the task stops for the user. */
-export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run: ReactNode }) {
+/** What executar etapas will do: the run (#290), absent while personalizar shows it in full (#893), the stages ahead, and where the task
+ * stops for the user. */
+export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run?: ReactNode }) {
   const path = task === undefined ? undefined : stagePath(task.stage, stages);
   const stop = path?.stop === undefined ? '—' : path.approval ? `${path.stop} · ${statusText('approval')}` : path.stop;
   return (
