@@ -10,7 +10,7 @@ import { mainFiles } from './custom-versions.js';
 import { HIVE_ORIGIN, listFiles, versionFiles } from './item-sources.js';
 import { readCatalogue } from './items-catalogue.js';
 import type { Logger } from './log.js';
-import { deliveredName, hasDeclarations, parseTemplate, renderTemplate } from './template.js';
+import { deliveredHeader, deliveredName, hasDeclarations, type ParsedTemplate, parseTemplate, type RenderResult, renderTemplate } from './template.js';
 import type { CatalogueItem, Workspace } from './types.js';
 
 export const PLUGINS_DIR = 'plugins'; // <home>/plugins/<workspace>
@@ -107,6 +107,10 @@ function itemPath(path: string): string {
   return parts[0] === 'skills' && parts.length > 2 ? `skills/${parts[1]}` : path;
 }
 
+// A plain .md is not Liquid: only its header loses variables and basedOn, so a body that shows `{{ x }}` is delivered as written
+const stripHeader = (parsed: ParsedTemplate): RenderResult =>
+  parsed.errors.length > 0 ? { ok: false, errors: parsed.errors } : { ok: true, text: `${deliveredHeader(parsed)}${parsed.body}` };
+
 // Every .liquid file, and every .md whose header has declarations (#338, decision 10: its basedOn must not reach Claude Code), rendered for
 // `workspace` under its delivered name; any other .md is copied untouched. Answers the items whose template failed, each error logged once. The
 // template module's messages hold no path, and the path logged is relative to the folder
@@ -115,7 +119,7 @@ async function renderTemplates(tmp: string, workspace: string, log: Pick<Logger,
   for (const path of (await listFiles(tmp)).filter((p) => p.endsWith(LIQUID_SUFFIX) || p.endsWith(MD_SUFFIX))) {
     const parsed = parseTemplate(await readFile(join(tmp, path), 'utf8'));
     if (!path.endsWith(LIQUID_SUFFIX) && !hasDeclarations(parsed.header)) continue;
-    const result = renderTemplate(parsed, workspace);
+    const result = path.endsWith(LIQUID_SUFFIX) ? renderTemplate(parsed, workspace) : stripHeader(parsed);
     if (!result.ok) {
       for (const error of result.errors) log.error(`plugin render ${workspace}: ${path}:${error.line} ${error.message}`);
       failed.add(itemPath(path));

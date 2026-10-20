@@ -85,11 +85,11 @@ test('an agent\'s version replaces agents/<name>.md in its workspace only; a ver
   assert.equal(await text(r, 'c', 'agents/designer.md'), DESIGNER, 'a workspace no version lists keeps the original');
 });
 
-test('a plain .md agent with basedOn is delivered under its own name without it; a plain .md without declarations stays byte for byte; a malformed one is left out (#338, decision 10)', async (t) => {
-  const credited = '---\nname: planner\ndescription: Plans.\nmodel: opus\nbasedOn:\n  - { name: a, repo: b, ref: c, license: d, url: e }\n---\nPlan.\n';
+test('a plain .md agent with basedOn is delivered under its own name without it and its body untouched; a plain .md without declarations stays byte for byte; a malformed one is left out (#338, decision 10)', async (t) => {
+  const credited = '---\nname: planner\ndescription: Plans.\nmodel: opus\nbasedOn:\n  - { name: a, repo: b, ref: c, license: d, url: e }\n---\nPlan {{ x }}.\n';
   const r = await rig(t, { ...SHIPPED, 'agents/planner.md': credited, 'agents/broken.md': '---\nname: broken\ndescription: B\nbasedOn: x\n---\nB.\n' });
   await r.create().write(config(r.repo, 'a'));
-  assert.equal(await text(r, 'a', 'agents/planner.md'), '---\nname: planner\ndescription: Plans.\nmodel: opus\n---\nPlan.\n');
+  assert.equal(await text(r, 'a', 'agents/planner.md'), '---\nname: planner\ndescription: Plans.\nmodel: opus\n---\nPlan {{ x }}.\n', 'a .md is not Liquid: its body is delivered as is');
   assert.equal(await text(r, 'a', 'agents/designer.md'), DESIGNER);
   assert.equal(await text(r, 'a', 'skills/y/SKILL.md'), Y_SKILL);
   assert.equal(await isThere(join(pluginRenderPath(r.home, 'a'), 'agents', 'broken.md')), false, 'a .md that does not render is a failed item, as a .liquid one');
