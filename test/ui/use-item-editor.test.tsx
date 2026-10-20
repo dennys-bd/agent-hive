@@ -351,6 +351,25 @@ test('applyEdit with isSaveForced saves even a dirty buffer, after the save in f
   await waitFor(() => expect(result.current.editor.isDirty('SKILL.md.liquid')).toBe(false));
 });
 
+test('a forced save waits for a save in flight that fails, and runs when it settles with no other change to render (#331)', async () => {
+  const saves: SaveBody[] = [];
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  stubItems(serverOf({ save: (_id, body) => {
+    saves.push(body);
+    if (saves.length === 1) return held.then(() => json({ error: 'disk' }, 500));
+    return json(readOf('hive:new-build', 'mine', { 'SKILL.md.liquid': body.text, 'scripts/slice.py': 'print(1)\n' }));
+  } }));
+  const { result } = await opened('hive:new-build');
+  act(() => result.current.editor.edit(`${BUILD_TEXT}typed\n`));
+  let first: Promise<void> = Promise.resolve();
+  act(() => { first = result.current.editor.save(); });
+  const accepted = `${BUILD_TEXT}accepted\n`;
+  act(() => { result.current.editor.applyEdit({ ok: true, text: accepted }, { isSaveForced: true }); });
+  await act(async () => { release(); await first; });
+  await waitFor(() => expect(saves.map((s) => s.text)).toEqual([`${BUILD_TEXT}typed\n`, accepted]));
+});
+
 test('while locked, applyEdit without isSaveForced, edit, move and the chain edits leave the buffer; a forced applyEdit still writes and saves it (#331)', async () => {
   const saves: SaveBody[] = [];
   stubItems(serverOf({ save: (_id, body) => {

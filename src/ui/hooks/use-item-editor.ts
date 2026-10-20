@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { needsLiquid, parseTemplate } from '../../template';
 import type { ChainSpec } from '../../template-condition';
 import { type EditResult, insertChain, moveBlock, removeChain, replaceChain } from '../../template-edit';
@@ -322,8 +322,18 @@ function applyEditOf(target: EditTarget): ItemEditor['applyEdit'] {
   };
 }
 
+// The save-in-flight flag, whose release also renders: a forced save waiting on it must not depend on some other state change landing after
+function useSaving(): RefObject<boolean> {
+  const flag = useRef(false);
+  const [, bump] = useState(0);
+  return useMemo(() => ({
+    get current() { return flag.current; },
+    set current(value: boolean) { flag.current = value; if (!value) bump((n) => n + 1); },
+  }), []);
+}
+
 // #331: accept's save runs after the render that holds the accepted text, with that render's context, so a save in flight (a rename's
-// included) has settled the path and the buffers first; every write ends in a state change, whose render runs a waiting one.
+// included) has settled the path and the buffers first; the flag's release renders, which runs a waiting one.
 // ponytail: a write that changes no state (a "+" on a taken path) leaves it waiting for the next render
 function useForcedSave(context: WriteContext | undefined, saving: RefObject<boolean>): () => void {
   const isPending = useRef(false);
@@ -346,7 +356,7 @@ export function useItemEditor(plugins: Plugins): ItemEditor {
   const { buffers, set, settle, rekeyBuffers } = useBuffers();
   const [paths, setPaths] = useState<Readonly<Record<string, string>>>({});
   const [note, setNote] = useState<Note>();
-  const saving = useRef(false);
+  const saving = useSaving();
   const [isLocked, setLocked] = useState(false);
   const original = useOriginal(item, read);
   const view = useViewState(id);
