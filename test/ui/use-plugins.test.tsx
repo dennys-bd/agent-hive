@@ -90,3 +90,17 @@ test('reload reads the catalogue again and lands its answer (#325)', async () =>
   expect(result.current.items).toEqual([itemOf('hive:fresh')]);
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
+
+test('open to another screen kind closes the new-item field or the server form; the same kind keeps it (#334)', async () => {
+  stubFetch();
+  const { result } = renderHook(() => usePlugins(true));
+  await waitFor(() => expect(result.current.items).toBeDefined());
+  act(() => result.current.setCreating(true));
+  act(() => result.current.open({ kind: 'list', section: 'specialists' }));
+  expect(result.current.isCreating).toBe(true);
+  act(() => result.current.open({ kind: 'mcp' }));
+  expect(result.current.isCreating).toBe(false);
+  act(() => result.current.setCreating(true));
+  act(() => result.current.open({ kind: 'mcp' }));
+  expect(result.current.isCreating).toBe(true);
+});

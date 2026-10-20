@@ -1,6 +1,7 @@
 import type { CatalogueItem } from '../../../types';
 import { HeaderSlot } from '@/components/HeaderSlot';
 import { ListScreen } from '@/components/plugins/ListScreen';
+import { McpScreen } from '@/components/plugins/McpScreen';
 import { PluginsHead } from '@/components/plugins/PluginsHead';
 import { SkillEditor } from '@/components/plugins/SkillEditor';
 import { UpdateScreen } from '@/components/plugins/UpdateScreen';
@@ -13,8 +14,8 @@ const NO_ITEMS: CatalogueItem[] = [];
 interface PluginsViewProps { plugins: Plugins; editor: ItemEditor; annotations: Annotations; workspaces: readonly string[]; fontFamily: string; pick: AssistPick; onPick(pick: AssistPick): void }
 
 /** The plugins view's centre (#313, #319, #323): the open screen, its head portalled into the header's centre. A skill or a specialist opens
- * its editor and a version's update its screen (#325); mcp and protocol are still their own tasks (5.2, 6.2), an empty centre under their
- * head. Mounted only while the view is shown, so the slot holds its head and no other view's. */
+ * its editor, a version's update its screen (#325), mcp its tools and servers (#334); protocol is still its own task (6.2), an empty centre
+ * under its head. Mounted only while the view is shown, so the slot holds its head and no other view's. */
 export function PluginsView({ plugins, editor, annotations, workspaces, fontFamily, pick, onPick }: PluginsViewProps) {
   const { screen } = plugins;
   return (
@@ -23,6 +24,7 @@ export function PluginsView({ plugins, editor, annotations, workspaces, fontFami
       {screen.kind === 'list' && <ListScreen key={screen.section} plugins={plugins} section={screen.section} workspaces={workspaces} />}
       {editor.item && <SkillEditor editor={editor} annotations={annotations} items={plugins.items ?? NO_ITEMS} workspaces={workspaces} fontFamily={fontFamily} pick={pick} onPick={onPick} />}
       {screen.kind === 'update' && <UpdateScreen key={`${screen.id}/${screen.version}`} plugins={plugins} id={screen.id} version={screen.version} />}
+      {screen.kind === 'mcp' && <McpScreen plugins={plugins} workspaces={workspaces} />}
     </div>
   );
 }
