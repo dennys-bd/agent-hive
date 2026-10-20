@@ -149,3 +149,14 @@ test('with no task the tab bar names the issues the PR closes, each opening its 
   await screen.findByRole('heading', { name: 'The PR' });
   expect(screen.queryByText(/^fecha /)).toBeNull();
 });
+
+test('the header gets the PR\'s GitHub URL from the first frame, with /files while the files tab is open (#352)', async () => {
+  const user = userEvent.setup();
+  renderPage(STATE, { header: (_reload, github) => <p>{`github ${github}`}</p> });
+  expect(screen.getByText(`github ${PR}`)).toBeInTheDocument(); // before the read: prLink(ref)
+  await screen.findByRole('heading', { name: 'The PR' });
+  await user.click(screen.getByRole('tab', { name: 'arquivos 1' }));
+  expect(screen.getByText(`github ${PR}/files`)).toBeInTheDocument();
+  await user.click(screen.getByRole('tab', { name: /^conversa/ }));
+  expect(screen.getByText(`github ${PR}`)).toBeInTheDocument();
+});

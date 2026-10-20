@@ -131,3 +131,11 @@ test('an issue out of the flow lists no PRs in the slot (#65)', async () => {
   expect(await slot().findByRole('button', { name: 'fluxo…' })).toBeInTheDocument();
   expect(slot().queryByRole('region', { name: 'PRs' })).not.toBeInTheDocument();
 });
+
+test('the header gets the issue\'s GitHub URL: from its ref before the read, then the URL GitHub answers (#352)', async () => {
+  const MOVED = 'https://github.com/acme/web/issues/12'; // a renamed repository: GitHub answers the new URL
+  fetchMock.mockImplementation(async (input) => jsonRes(String(input) === '/repositories/acme/site/issues/12' ? { ...ISSUE, url: MOVED } : { ok: true }));
+  render(<IssuePage state={state()} issue={{ repository: 'acme/site', number: 12 }} meta="acme/site" header={(_reload, github) => <p>{`github ${github}`}</p>} onGoTo={vi.fn()} onOpenPr={onOpenPr} />);
+  expect(screen.getByText(`github ${URL12}`)).toBeInTheDocument();
+  expect(await screen.findByText(`github ${MOVED}`)).toBeInTheDocument();
+});
