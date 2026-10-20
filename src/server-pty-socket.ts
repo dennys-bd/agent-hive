@@ -94,7 +94,8 @@ function connect(ws: WebSocket, ptyId: string, { ptys, log }: Pick<PtySocketDeps
     // with every worker. The pty is going anyway: its exit closes this socket.
     try {
       if (message?.type === 'input') ptys.write(ptyId, message.data);
-      else if (message?.type === 'resize') ptys.resize(ptyId, message.cols, message.rows); // the last resize of any viewer wins (#251)
+      // the last resize of any viewer wins (#251); its redraw (#389) asks for a SIGWINCH even at the pty's own grid
+      else if (message?.type === 'resize') ptys.resize(ptyId, message.cols, message.rows, message.redraw);
       else if (message?.type === 'keys') log.debug(`pty ${shortId(ptyId)} keys: ${describeKeys(message.events)}`); // #732: never reaches the pty
     } catch {
       return;
