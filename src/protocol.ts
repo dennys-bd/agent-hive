@@ -1,6 +1,8 @@
 // The Hive's protocol (#167): what a session is told about the Hive's MCP tools. It is handed to the agent at launch, through the agent's
 // runner and its protocol flag (src/agents/claude.ts), instead of riding at the end of every prompt: a stage prompt describes the work and nothing else.
 // Agent-neutral: the tools are the same MCP tools whatever agent runs the session; only the flag differs.
+import type { RenderedPassage } from './protocol-inserts.js';
+import type { OptionalTool } from './types.js';
 
 const FROM_THE_HIVE = 'This text comes from the Hive, the app that runs this session. Its tools `hive_done`, `hive_ask` and `hive_stop` report to it.';
 
@@ -28,31 +30,54 @@ const WHY_LINE =
 const UNDO_LINE =
   'Before a large or risky change, commit the work that passes, so the attempt can be thrown away with git; try an experiment you may discard in a separate worktree.';
 
-/** A stage run's protocol (a spawn, Continue, feedback): the session ends the stage itself. */
-export const STAGE_PROTOCOL = [
-  FROM_THE_HIVE,
-  '',
-  'When this command is completely finished (nothing left to do, no subagent or background task still running, no answer pending from the user), call the `hive_done` tool and end your turn. Never call it earlier.',
-  RESULT_LINE,
-  ...askLines(' without `hive_done`'),
-  `If the task will not be done, call \`hive_stop\` instead of \`hive_done\`: ${STOP_RULES}`,
-  REMEMBER_LINE,
-  WHY_LINE,
-  UNDO_LINE,
-  '',
-].join('\n');
+// #336: one id per paragraph or rule of the text, the same in both kinds, so one anchor serves both files
+export const PROTOCOL_BLOCKS = ['intro', 'done', 'result', 'ask', 'stop', 'remember', 'why', 'undo'] as const;
+export type ProtocolBlockId = (typeof PROTOCOL_BLOCKS)[number];
+export type ProtocolKind = 'stage' | 'session';
+export type ProtocolTexts = Record<ProtocolKind, string>;
+/** What a workspace's runs are told above their memory section (#797), its passages rendered in (#336). */
+export type ProtocolFor = (workspace: string, off: readonly OptionalTool[]) => Promise<ProtocolTexts>;
+/** tool: the switch of mcp.off that drops the block (#333). */
+export interface ProtocolBlock { id: ProtocolBlockId; stage: string; session: string; tool?: OptionalTool }
 
+const same = (text: string): Omit<ProtocolBlock, 'id'> => ({ stage: text, session: text });
+// A Record, so a block id without its text fails tsc
+const TEXTS: Record<ProtocolBlockId, Omit<ProtocolBlock, 'id'>> = {
+  intro: same(FROM_THE_HIVE),
+  done: {
+    stage: 'When this command is completely finished (nothing left to do, no subagent or background task still running, no answer pending from the user), call the `hive_done` tool and end your turn. Never call it earlier.',
+    session: [
+      "The user drives this session. When you believe the task's work is finished, say so in chat and suggest moving the task to its next stage.",
+      'Call `hive_done` only when the user confirms or asks for it: it moves the task to its next stage at once.',
+    ].join('\n'),
+  },
+  result: same(RESULT_LINE),
+  ask: { stage: askLines(' without `hive_done`').join('\n'), session: askLines('').join('\n') },
+  stop: { stage: `If the task will not be done, call \`hive_stop\` instead of \`hive_done\`: ${STOP_RULES}`, session: `Call \`hive_stop\` only when the user asks for it: ${STOP_RULES}` },
+  remember: { ...same(REMEMBER_LINE), tool: 'hive_remember' }, // telling a session to call a tool it does not have is wrong
+  why: same(WHY_LINE),
+  undo: same(UNDO_LINE),
+};
+export const BLOCKS: readonly ProtocolBlock[] = PROTOCOL_BLOCKS.map((id) => ({ id, ...TEXTS[id] }));
+export const isProtocolBlockId = (value: string): value is ProtocolBlockId => (PROTOCOL_BLOCKS as readonly string[]).includes(value);
+
+// An empty render (its {% if %} does not hold) or a failed one adds nothing, not even a blank line
+const shown = (passage: RenderedPassage): string[] => (passage.text === undefined || passage.text === '' ? [] : [passage.text]);
+
+/** The protocol a run of `kind` is told (#336): each block not turned off, the passages anchored to it right after it, the orphans last.
+ * A passage on a block turned off keeps its place: only the Hive's text goes. Pure. */
+export function renderProtocol(kind: ProtocolKind, off: readonly OptionalTool[], passages: readonly RenderedPassage[]): string {
+  const after = (id: ProtocolBlockId): string[] => passages.filter((p) => !p.orphan && p.after === id).flatMap(shown);
+  const isOff = (block: ProtocolBlock): boolean => block.tool !== undefined && off.includes(block.tool);
+  const [intro, ...rest] = BLOCKS.map((block) => [...(isOff(block) ? [] : [block[kind]]), ...after(block.id)]);
+  const tail = [...rest.flat(), ...passages.filter((p) => p.orphan).flatMap(shown)];
+  return `${intro.join('\n')}\n\n${tail.join('\n')}\n`; // as today: a blank line after the intro, a trailing newline
+}
+
+export const protocolTexts = (off: readonly OptionalTool[], passages: readonly RenderedPassage[]): ProtocolTexts =>
+  ({ stage: renderProtocol('stage', off, passages), session: renderProtocol('session', off, passages) });
+
+/** A stage run's protocol (a spawn, Continue, feedback): the session ends the stage itself. */
+export const STAGE_PROTOCOL = renderProtocol('stage', [], []);
 /** A free session's protocol, on a task (#164, #283): hive_done moves the task on at once there, so ending the stage is the user's call. */
-export const SESSION_PROTOCOL = [
-  FROM_THE_HIVE,
-  '',
-  "The user drives this session. When you believe the task's work is finished, say so in chat and suggest moving the task to its next stage.",
-  'Call `hive_done` only when the user confirms or asks for it: it moves the task to its next stage at once.',
-  RESULT_LINE,
-  ...askLines(''),
-  `Call \`hive_stop\` only when the user asks for it: ${STOP_RULES}`,
-  REMEMBER_LINE,
-  WHY_LINE,
-  UNDO_LINE,
-  '',
-].join('\n');
+export const SESSION_PROTOCOL = renderProtocol('session', [], []);
