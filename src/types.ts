@@ -445,6 +445,23 @@ export interface TaskApproval {
 /** The longest feedback the Hive takes (#268), in characters: the route, the loader and the panel's box. */
 export const FEEDBACK_MAX = 10_000;
 
+/** The rows of a worktree preparation as the Start dialog shows them (#390): the worktree, its branch, or one setup step after LOAD's expansion. */
+export const SETUP_ROW_KINDS = ['worktree', 'branch', 'step'] as const;
+export type SetupRowKind = (typeof SETUP_ROW_KINDS)[number];
+export const SETUP_ROW_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
+export type SetupRowStatus = (typeof SETUP_ROW_STATUSES)[number];
+/** One row of a worktree preparation as the Start dialog shows it (#390). */
+export interface SetupRow {
+  kind: SetupRowKind;
+  status: SetupRowStatus;
+  label?: string; // step: the RUN's command, else describeStep's text
+  header?: string; // step: describeStep's text, what the run's header line holds after `> `
+  branch?: string; base?: string; // branch: what it is made from
+  startedAt?: string; // ISO, while running
+  durationMs?: number; // done or failed; absent on a step skipped by a resume, and on the branch row
+  code?: string; // failed: a RUN's exit code, 'timeout' or 'stopped'
+}
+
 /** A task's worktree setup while it runs (#351), in both the stage spawn and a first /open: the one place the task and the dialog read it. */
 export interface TaskSetup {
   consoleId: string; // its run's id in the console's one setup channel (#353, SETUP_CHANNEL): what the ver log buttons open
