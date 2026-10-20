@@ -44,8 +44,8 @@ async function commitFiles(repo: string, worktree: string, git: Bases['git']): P
   await writeFile(join(worktree, 'docs', 'new.md'), 'fresh\n');
 }
 
-// deleted: the activity is gone, its record alone kept (#629)
-async function startBases(t: TestContext, isDeleted = false): Promise<Bases> {
+// deleted: the activity is gone, its record alone kept (#629); unresolved: the workspace configured by its tmpdir path, a symlink on macOS (#377)
+async function startBases(t: TestContext, isDeleted = false, isUnresolved = false): Promise<Bases> {
   const made = await tempHive(t);
   const repo = await realpath(made.repo);
   const git = async (...args: string[]): Promise<string> =>
@@ -61,7 +61,7 @@ async function startBases(t: TestContext, isDeleted = false): Promise<Bases> {
   const port = await server.listen(0);
   t.after(() => server.close());
   const base = `http://127.0.0.1:${port}`;
-  const body: SettingsBody = { prefix: 'HIVE', workspaces: workspacesAt(repo), sources: [], stages: LOCAL_STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, commands: [] };
+  const body: SettingsBody = { prefix: 'HIVE', workspaces: workspacesAt(isUnresolved ? made.repo : repo), sources: [], stages: LOCAL_STAGES, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: false }, sidebarsPerView: { left: true, right: true, rightTab: true }, hiveSource: true, createIn: 'hive', notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, commands: [] };
   assert.equal((await hiveFetch(`${base}/settings`, { method: 'POST', headers: UI_HEADERS, body: JSON.stringify(body) })).status, 200);
   return { base, repo, worktree, server, git };
 }
@@ -110,4 +110,22 @@ test('an against other than head or task, or none, and a missing path are 400s; 
   assert.deepEqual(await ask(b, { against: 'head' }), [400, { error: 'path must be a non-empty string' }]);
   const gone = await startBases(t, true);
   assert.deepEqual(await ask(gone, { path: 'docs/spec.md', against: 'head' }), [409, { error: 'a atividade foi apagada' }]);
+});
+
+// #377: a repository inside the worktree (the task's docs/ checkout) answers for its own files: the outer one ignores them, so asking it
+// marked every line as added. The task's base ref is the outer repository's (absent here, so a merge-base would fail): task reads HEAD
+for (const isUnresolved of [false, true]) test(`a file of a nested repository compares against that repository's HEAD, for head and for task${isUnresolved ? ', the workspace configured through a symlink' : ''} (#377)`, async (t) => {
+  const b = await startBases(t, false, isUnresolved);
+  const nested = join(b.worktree, 'vendor');
+  await mkdir(nested, { recursive: true });
+  const git = (...args: string[]): Promise<{ stdout: string }> => run('git', ['-C', nested, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args]);
+  await git('init', '--quiet');
+  await writeFile(join(nested, 'notes.md'), 'kept\n');
+  await git('add', 'notes.md');
+  await git('commit', '--quiet', '-m', 'nested');
+  await writeFile(join(nested, 'notes.md'), 'kept\nedited\n');
+  const oid = (await git('rev-parse', 'HEAD:notes.md')).stdout.trim();
+  for (const against of ['head', 'task']) {
+    assert.deepEqual(await ask(b, { path: 'vendor/notes.md', against }), [200, { against, label: 'HEAD', oid, text: 'kept\n' }], against);
+  }
 });
