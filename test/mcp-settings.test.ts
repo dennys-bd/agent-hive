@@ -16,6 +16,7 @@ const EXAMPLE = {
 const ONE = { name: 'docs', url: 'https://mcp.example.com/mcp', workspace: null, on: true };
 const at = (servers: unknown[], off: unknown = []): McpSettings | string => parseMcp({ off, servers }, WORKSPACES);
 const NAME = '"mcp.servers[0].name" must be 1 to 32 lowercase letters, digits, _ or -, start with a letter, and not be hive';
+const COMMAND_PATH = '"mcp.servers[0].command" must be a bare program name or an absolute path, not a relative one';
 const URL_MESSAGE = '"mcp.servers[0].url" must be an http or https URL';
 
 test('parseMcp accepts the spec\'s example as written, a command\'s args default to [] and a repeat in off is dropped (#333)', () => {
@@ -48,6 +49,9 @@ test('parseMcp refuses each malformed server naming its index, a duplicate name,
     [{ ...ONE, on: 'yes' }, '"mcp.servers[0].on" must be true or false'],
     [{ ...ONE, workspace: 7 }, '"mcp.servers[0].workspace" must be null or a workspace name'],
     [{ ...ONE, workspace: 'gone' }, '"mcp.servers": docs is scoped to gone, which no longer exists'],
+    [{ ...ONE, url: 'https://user:pass@mcp.example.com/mcp' }, '"mcp.servers[0].url" must not carry a user name or password'],
+    [{ ...ONE, url: 'http://mcp.example.com/mcp', authHeader: 'Authorization' }, '"mcp.servers[0].url" must be https when authHeader is set, unless the host is this machine'],
+    [{ name: 'docs', command: './bin/x', workspace: null, on: true }, COMMAND_PATH], [{ name: 'docs', command: 'node_modules/.bin/x', workspace: null, on: true }, COMMAND_PATH],
     ['x', '"mcp.servers[0]" must be an object with name, command or url, workspace, on'],
   ];
   for (const [server, message] of refused) assert.equal(at([server]), message, JSON.stringify(server));
@@ -72,4 +76,10 @@ test('serversFor keeps the switched-on servers of every workspace and of the run
   ]);
   assert.deepEqual(serversFor(mcp, credentials, 'hive-site').map((s) => s.name), ['all', 'b', 'novalue', 'constructor']);
   assert.deepEqual(serversFor(mcp, {}, 'other'), [{ name: 'all', command: 'npx', args: ['x'] }, { name: 'novalue', url: 'https://n.example/mcp' }, { name: 'constructor', url: 'https://c.example/mcp' }]);
+});
+
+test('parseMcp accepts http with authHeader on a loopback host, an absolute command path and http without authHeader anywhere (#333)', () => {
+  for (const host of ['127.0.0.1', '[::1]', 'localhost']) assert.deepEqual(typeof at([{ ...ONE, url: `http://${host}:3845/mcp`, authHeader: 'Authorization' }]), 'object', host);
+  assert.deepEqual(typeof at([{ name: 'x', command: '/usr/local/bin/mcp-x', workspace: null, on: true }]), 'object');
+  assert.deepEqual(typeof at([{ ...ONE, url: 'http://mcp.example.com/mcp' }]), 'object');
 });

@@ -24,6 +24,7 @@ test('a command that exits, or that is not there, is no_answer, and the reason g
   assert.equal(await probeServer(node('exits', '-e', 'process.exit(1)'), { timeoutMs: 20_000, cwd, log }), 'no_answer');
   assert.equal(await probeServer({ name: 'missing', command: '/nonexistent/mcp-server', args: [] }, { timeoutMs: 20_000, cwd, log }), 'no_answer');
   assert.ok(lines.some((line) => line.startsWith('DEBUG mcp probe exits: no answer')), lines.join('\n'));
+  assert.equal(lines.some((line) => line.includes('/nonexistent/mcp-server')), false, 'no error message in the log');
   assert.ok(lines.some((line) => line.startsWith('DEBUG mcp probe missing: no answer')), lines.join('\n'));
 });
 
@@ -46,6 +47,7 @@ test('a URL server is asked with its header; a refusal is no_answer and the log 
   assert.equal(await probeServer(server, { timeoutMs: 20_000, cwd: await tempDir(t, 'probe-'), log }), 'no_answer');
   assert.equal(seen[0], 'Bearer t0k');
   assert.equal(lines.join('\n').includes('t0k'), false);
+  assert.ok(lines.some((line) => /^DEBUG mcp probe docs: no answer \(\w+\)$/.test(line)), `the name and the error's class only: ${lines.join('\n')}`);
 });
 
 test('the cache answers a second ask within 30 s without probing; a changed definition or header value, or 30 s, probes again (#333)', async () => {

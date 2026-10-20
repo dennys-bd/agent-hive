@@ -89,21 +89,32 @@ function registerTools(app: Express, deps: McpRouteDeps, change: Change): void {
 function registerServers(app: Express, deps: McpRouteDeps, change: Change): void {
   const { requireLive, credentials } = deps;
   const body = (req: Request): unknown => req.body ?? {};
+  // Written only when the change did something
+  const update = async (edit: (c: Credentials) => Credentials): Promise<void> => {
+    const stored = await credentials.read();
+    const next = edit(stored);
+    if (next !== stored) await credentials.write(next);
+  };
   app.post('/api/mcp/servers', (req: Request, res: Response) => {
     if (!requireLive(res)) return;
-    return change(res, (mcp) => ({ ...mcp, servers: [...mcp.servers, body(req)] }));
+    // A value stored under the name by a server since removed (or by hand) is no business of the new one
+    return change(res, (mcp) => ({ ...mcp, servers: [...mcp.servers, body(req)] }), async (parsed) => update((c) => dropValue(c, parsed.servers[parsed.servers.length - 1].name)));
   });
   app.put('/api/mcp/servers/:name', (req: Request<{ name: string }>, res: Response) => {
     if (!requireLive(res)) return;
     const { name } = req.params;
     let index = -1;
+    let before: ExternalMcpServer | undefined;
     const replaced = (mcp: McpSettings): unknown => {
       index = mcp.servers.findIndex((s) => s.name === name);
+      before = mcp.servers[index];
       return index < 0 ? undefined : { ...mcp, servers: mcp.servers.map((s, i) => (i === index ? body(req) : s)) };
     };
     return change(res, replaced, async (parsed) => {
-      const renamed = parsed.servers[index].name; // parseMcp kept the list's length and order
-      if (renamed !== name) await credentials.write(moveValue(await credentials.read(), name, renamed));
+      const after = parsed.servers[index]; // parseMcp kept the list's length and order
+      // The value is a credential for one endpoint and header: it never follows a server to another
+      const sameTarget = before !== undefined && 'url' in before && 'url' in after && before.url === after.url && before.authHeader === after.authHeader;
+      await update(sameTarget ? (c) => moveValue(c, name, after.name) : (c) => dropValue(dropValue(c, name), after.name));
     });
   });
   app.delete('/api/mcp/servers/:name', (req: Request<{ name: string }>, res: Response) => {
@@ -138,6 +149,7 @@ function registerValues(app: Express, { requireLive, queueSave, credentials }: M
   app.delete('/api/mcp/servers/:name/value', (req: Request<{ name: string }>, res: Response) => {
     if (!requireLive(res)) return;
     return queueSave(async () => {
+      if (!requireLive(res)?.runtime.config.mcp.servers.some((s) => s.name === req.params.name)) return fail(res, HTTP_NOT_FOUND, UNKNOWN_SERVER);
       try {
         await credentials.write(dropValue(await credentials.read(), req.params.name));
       } catch (err) {

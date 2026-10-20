@@ -1,8 +1,8 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readCredentials } from '../src/credentials.js';
+import { credentialsPath, readCredentials, writeCredentials } from '../src/credentials.js';
 import { createServer } from '../src/server.js';
 import { lockedMessage, VALUE_MESSAGE } from '../src/server-mcp.js';
 import type { Config, SettingsBody } from '../src/types.js';
@@ -104,6 +104,42 @@ test('PUT /api/mcp/servers/:name changes a server and a rename moves its stored 
   assert.deepEqual(await answer(send('DELETE', `${base}/api/mcp/servers/docs`)), [404, { error: 'unknown server' }]);
   assert.deepEqual(await answer(send('DELETE', `${base}/api/mcp/servers/wiki`)), [200, { ok: true }]);
   assert.deepEqual([(await savedMcp(home)).servers, (await readCredentials(env)).mcp], [[], {}]);
+});
+
+test('PUT /api/mcp/servers/:name drops the stored value when the url or authHeader changes or the server becomes a command; a toggle keeps it; POST of a new server drops a stale one (#333)', async (t) => {
+  const { base, env } = await start(t);
+  const stored = async (): Promise<unknown> => (await readCredentials(env)).mcp?.docs;
+  await writeCredentials({ mcp: { docs: { value: 'stale' } } }, env);
+  assert.equal((await send('POST', `${base}/api/mcp/servers`, DOCS)).status, 200);
+  assert.equal(await stored(), undefined, 'a new server never inherits a value stored under its name');
+  const edits: [string, unknown][] = [
+    ['url', { ...DOCS, url: 'https://other.example.com/mcp' }], ['authHeader', { ...DOCS, authHeader: 'X-Key' }], ['command', { name: 'docs', command: 'npx', args: [], workspace: null, on: true }],
+  ];
+  for (const [what, edit] of edits) {
+    assert.equal((await send('PUT', `${base}/api/mcp/servers/docs`, DOCS)).status, 200);
+    assert.equal((await send('PUT', `${base}/api/mcp/servers/docs/value`, { value: 'Bearer t0k' })).status, 200);
+    assert.equal((await send('PUT', `${base}/api/mcp/servers/docs`, { ...DOCS, on: false })).status, 200);
+    assert.deepEqual(await stored(), { value: 'Bearer t0k' }, 'a toggle keeps it');
+    assert.equal((await send('PUT', `${base}/api/mcp/servers/docs`, edit)).status, 200, what);
+    assert.equal(await stored(), undefined, `${what} changed: the value is dropped`);
+  }
+});
+
+test('DELETE /api/mcp/servers/:name/value answers 404 for an unknown server (#333)', async (t) => {
+  const { base } = await start(t);
+  assert.deepEqual(await answer(send('DELETE', `${base}/api/mcp/servers/ghost/value`)), [404, { error: 'unknown server' }]);
+});
+
+test('a stored value that cannot be updated after the config was written is a 500 that says so and never carries the value (#333)', async (t) => {
+  const { base, home, env } = await start(t);
+  assert.equal((await send('POST', `${base}/api/mcp/servers`, DOCS)).status, 200);
+  assert.equal((await send('PUT', `${base}/api/mcp/servers/docs/value`, { value: 'Bearer t0k' })).status, 200);
+  await rm(credentialsPath(env));
+  await mkdir(credentialsPath(env)); // a directory where the file was: the write fails
+  const [status, body] = await answer(send('DELETE', `${base}/api/mcp/servers/docs`));
+  assert.equal(status, 500);
+  assert.equal((body as { error: string }).error, 'the config was saved, but the stored value could not be updated');
+  assert.deepEqual((await savedMcp(home)).servers, [], 'the config was written');
 });
 
 test('PUT /api/mcp/servers/:name/value stores the value in credentials.json and never in hive.config.json; DELETE removes it (#333)', async (t) => {

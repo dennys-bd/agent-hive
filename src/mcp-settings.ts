@@ -9,6 +9,7 @@ const SHAPE = '"mcp" must be an object with off and servers';
 const SERVER_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const HIVE_SERVER = 'hive'; // the Hive's own server's name
 const HEADER_NAME = /^[A-Za-z0-9-]+$/;
+const LOOPBACK_HOSTS = ['127.0.0.1', '[::1]', 'localhost'];
 const URL_PROTOCOLS = ['http:', 'https:']; // Claude's http type and Codex's url both speak Streamable HTTP
 
 function parseOff(raw: unknown): OptionalTool[] | string {
@@ -22,6 +23,8 @@ function parseOff(raw: unknown): OptionalTool[] | string {
 function commandPart(raw: Record<string, unknown>, field: string): { command: string; args: string[] } | string {
   const { command, args = [] } = raw;
   if (typeof command !== 'string' || command.trim() === '' || command.startsWith('-')) return `"${field}.command" must be a program name or path, not starting with -`;
+  // A relative path would resolve inside a task's worktree, whose files the task's own agent can write
+  if (command.includes('/') && !command.startsWith('/')) return `"${field}.command" must be a bare program name or an absolute path, not a relative one`;
   if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) return `"${field}.args" must be an array of strings`;
   if (raw.authHeader !== undefined) return `"${field}.authHeader" is only for a url server`;
   return { command, args: args as string[] };
@@ -30,6 +33,9 @@ function commandPart(raw: Record<string, unknown>, field: string): { command: st
 function urlPart(raw: Record<string, unknown>, field: string): { url: string; authHeader?: string } | string {
   const { url, authHeader } = raw;
   if (typeof url !== 'string' || !URL.canParse(url) || !URL_PROTOCOLS.includes(new URL(url).protocol)) return `"${field}.url" must be an http or https URL`;
+  const { username, password, protocol, hostname } = new URL(url);
+  if (username !== '' || password !== '') return `"${field}.url" must not carry a user name or password`;
+  if (authHeader !== undefined && protocol === 'http:' && !LOOPBACK_HOSTS.includes(hostname)) return `"${field}.url" must be https when authHeader is set, unless the host is this machine`;
   if (authHeader !== undefined && (typeof authHeader !== 'string' || !HEADER_NAME.test(authHeader))) return `"${field}.authHeader" must be an HTTP header name`;
   return { url, ...(authHeader === undefined ? {} : { authHeader }) };
 }

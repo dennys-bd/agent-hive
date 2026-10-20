@@ -15,8 +15,8 @@ import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg, RunMcpServer } from
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
 export const MCP_SECRET_ENV = 'HIVE_MCP_SECRET';
-/** #333: the prefix of the variables Codex reads an external server's header value from: HIVE_MCP_HEADER_<i>, i the server's index in the run's list. */
-export const MCP_HEADER_ENV = 'HIVE_MCP_HEADER_';
+/** #333: the prefix of the variables Codex reads an external server's header value from: HIVE_MCP_TOKEN_<i>, i the server's index in the run's list. Named TOKEN on purpose: Codex's default shell env filter drops names matching *TOKEN*, so the value never reaches the agent's shell commands. */
+export const MCP_TOKEN_ENV = 'HIVE_MCP_TOKEN_';
 
 /** Every hook event the Hive reads from Codex (§1); hookPayload makes them the reducer's (#928). Codex has no Notification. */
 export const CODEX_HOOK_EVENTS: readonly string[] = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Stop', 'SessionEnd'];
@@ -65,12 +65,12 @@ function externalOverrides(external: readonly RunMcpServer[]): LaunchArg[] {
   return external.flatMap((server, i) => {
     const key = `mcp_servers.${server.name}`;
     if ('command' in server) return [override(`${key}.command`, tomlString(server.command)), override(`${key}.args`, `[${server.args.map(tomlString).join(',')}]`)];
-    const header = server.header ? [override(`${key}.env_http_headers`, `{${tomlString(server.header.name)}=${tomlString(`${MCP_HEADER_ENV}${i}`)}}`)] : [];
+    const header = server.header ? [override(`${key}.env_http_headers`, `{${tomlString(server.header.name)}=${tomlString(`${MCP_TOKEN_ENV}${i}`)}}`)] : [];
     return [override(`${key}.url`, tomlString(server.url)), ...header];
   });
 }
 const headerEnv = (external: readonly RunMcpServer[]): Record<string, string> =>
-  Object.fromEntries(external.flatMap((s, i) => ('url' in s && s.header ? [[`${MCP_HEADER_ENV}${i}`, s.header.value]] : [])));
+  Object.fromEntries(external.flatMap((s, i) => ('url' in s && s.header ? [[`${MCP_TOKEN_ENV}${i}`, s.header.value]] : [])));
 
 /** Every -c override of a run, in launch's order. */
 export const overrides = (run: AgentRun): LaunchArg[] => [
@@ -118,7 +118,7 @@ const headless = (run: HeadlessRun): string[] => [
 ];
 
 export const codexRunner: AgentRunner = {
-  hostEnv: [MCP_SECRET_ENV, `${MCP_HEADER_ENV}*`], // a Hive started inside a Codex run never hands the outer secret to its own children
+  hostEnv: [MCP_SECRET_ENV, `${MCP_TOKEN_ENV}*`], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
   // A fork is a new Codex id holding the source's turns (§7), under the same overrides as a launch. No -m: a copy runs no stage, as
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)

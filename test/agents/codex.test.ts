@@ -99,7 +99,7 @@ test('a local copy (no Hive server) forks with no mcp_servers.hive key (#933)', 
 test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear typed in the session); its rollouts are no per-cwd dir (#927, #929, #933)', async (t) => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.equal(codexRunner.clear(RUN), undefined);
-  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET', 'HIVE_MCP_HEADER_*'], '', []]);
+  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET', 'HIVE_MCP_TOKEN_*'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
   assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
@@ -221,7 +221,7 @@ const EXTERNAL_ARGS: LaunchArg[] = [
   ['-c', 'mcp_servers.playwright.command="npx"'],
   ['-c', 'mcp_servers.playwright.args=["@playwright/mcp@latest","--headless"]'],
   ['-c', 'mcp_servers.github.url="https://api.githubcopilot.com/mcp/"'],
-  ['-c', 'mcp_servers.github.env_http_headers={"Authorization"="HIVE_MCP_HEADER_1"}'],
+  ['-c', 'mcp_servers.github.env_http_headers={"Authorization"="HIVE_MCP_TOKEN_1"}'],
   ['-c', 'mcp_servers.figma.url="http://127.0.0.1:3845/mcp"'],
 ];
 
@@ -229,7 +229,7 @@ test('each external server follows the Hive\'s as -c overrides, with or without 
   assert.deepEqual(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL }), [...HOOKS, ...MCP, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
   assert.deepEqual(codexRunner.launch({ ...RUN, withHive: false, external: EXTERNAL }), [...HOOKS, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, ...STARTUP, '--dangerously-bypass-hook-trust']);
   const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: EXTERNAL };
-  assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET, HIVE_MCP_HEADER_1: 'Bearer t0k' });
-  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), { HIVE_MCP_HEADER_1: 'Bearer t0k' });
+  assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_1: 'Bearer t0k' });
+  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), { HIVE_MCP_TOKEN_1: 'Bearer t0k' });
   assert.equal(JSON.stringify(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL })).includes('t0k'), false);
 });

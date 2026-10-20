@@ -1,6 +1,6 @@
 // A server's state (#333): asked only when GET /api/mcp asks, never in the background. A command server is spawned from its argv (no shell)
 // and asked MCP's initialize over stdio, a URL server over Streamable HTTP with its header; the client, and so the child, is closed whatever
-// the answer. Anything but an initialize within the timeout is no_answer, its reason in hive.log at debug, never the header value.
+// the answer. Anything but an initialize within the timeout is no_answer, the error's class in hive.log at debug, never its message or the header value.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -33,7 +33,7 @@ export async function probeServer(server: RunMcpServer, { timeoutMs, cwd, log }:
     await client.connect(transportFor(server, cwd), { timeout: timeoutMs }); // connect sends initialize under this timeout
     return 'connected';
   } catch (err) {
-    log.debug(`mcp probe ${server.name}: no answer (${err instanceof Error ? err.message : String(err)})`); // the name only: the server holds the header value
+    log.debug(`mcp probe ${server.name}: no answer (${err instanceof Error ? err.constructor.name : typeof err})`); // never err.message: an HTTP error can echo the response body or the header
     return 'no_answer';
   } finally {
     await client.close().catch(() => undefined);

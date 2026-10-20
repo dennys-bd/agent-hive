@@ -88,7 +88,7 @@ const HIVE_ONLY_ENV = ['NODE_PATH', 'HIVE_SECRET', 'HIVE_HOME'];
  * describes the process the Hive was started from (#924). A language server (#780) is started with the same. */
 export function withoutHiveEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const names = [...AGENT_IDS.flatMap((id) => runners[id].hostEnv), ...HIVE_ONLY_ENV];
-  // a hostEnv name ending in * stands for a prefix (#333: Codex's HIVE_MCP_HEADER_<i>, one per external server)
+  // a hostEnv name ending in * stands for a prefix (#333: Codex's HIVE_MCP_TOKEN_<i>, one per external server)
   const dropped = (name: string): boolean => names.some((n) => (n.endsWith('*') ? name.startsWith(n.slice(0, -1)) : name === n));
   return Object.fromEntries(Object.entries(base).filter(([name]) => !dropped(name)));
 }

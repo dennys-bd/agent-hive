@@ -110,6 +110,7 @@ const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
 const HTTP_FORBIDDEN = 403;
 const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
+const AFTER_SAVE_MESSAGE = 'the config was saved, but the stored value could not be updated';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_NOT_IMPLEMENTED = 501; // POST /stop with no onStop, POST /plan-limits/refresh with no reader
 const HTTP_BAD_GATEWAY = 502;
@@ -1082,9 +1083,15 @@ export function createServer(deps: ServerDeps): HiveServer {
       await writeConfigFile(config);
       log.info('settings saved');
       await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
-      await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
+      return;
+    }
+    try {
+      await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
+    } catch (err) {
+      log.error(`settings saved, but the stored MCP value could not be updated: ${err instanceof Error ? err.constructor.name : typeof err}`); // never the message: it may carry the path or the value
+      res.status(HTTP_SERVER_ERROR).json({ error: AFTER_SAVE_MESSAGE });
       return;
     }
     const result: SettingsResult = { ok: true };

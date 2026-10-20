@@ -177,9 +177,9 @@ test('a codex stage run gets its workspace\'s switched-on servers as -c override
   const { launch } = workers[0];
   const pairs = (launch.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' ? [] : [arg[1]]));
   assert.ok(pairs.includes('mcp_servers.docs.url="https://mcp.example.com/mcp"'));
-  assert.ok(pairs.includes('mcp_servers.docs.env_http_headers={"Authorization"="HIVE_MCP_HEADER_0"}'));
+  assert.ok(pairs.includes('mcp_servers.docs.env_http_headers={"Authorization"="HIVE_MCP_TOKEN_0"}'));
   assert.equal(pairs.some((pair) => pair.startsWith('mcp_servers.idle')), false, 'a server switched off reaches no run');
-  assert.equal(launch.env?.HIVE_MCP_HEADER_0, 'Bearer t0k');
+  assert.equal(launch.env?.HIVE_MCP_TOKEN_0, 'Bearer t0k');
   assert.equal(JSON.stringify(launch.agent?.argv).includes('t0k'), false);
 });
 
