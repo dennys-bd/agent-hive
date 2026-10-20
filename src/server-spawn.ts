@@ -226,11 +226,11 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const server = { port, ptyId, secret, withHive: true };
+    const server = { port, ptyId, secret, withHive: true, external: [] };
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
     await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before launch reads the folder
     const run: AgentRun = {
-      ptyId, cwd, port, withHive: true, hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
+      ptyId, cwd, port, withHive: true, external: [], hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
       protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
     };
     pool.start({
@@ -268,7 +268,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const env = await runEnv(exec, place.workspace); // #854
     const first = copy?.notice ?? prompt;
     const runner = runners[agent];
-    const server = { port, ptyId, secret, withHive: task !== undefined };
+    const server = { port, ptyId, secret, withHive: task !== undefined, external: [] };
     // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
     const protocolPath = task === undefined ? undefined : taskProtocol(home, runtime, task).session; // #797: the task's workspace's
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
@@ -281,7 +281,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const [mcpPath, promptPath, protocolText] = files;
     await plugin.ready(); // #316: as spawn's, after the last await
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: server.withHive, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
+      ptyId, cwd: place.cwd, port, withHive: server.withHive, external: [], hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
       session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);

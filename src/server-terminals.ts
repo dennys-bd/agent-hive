@@ -101,7 +101,7 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   const agent = ranAgent(worker);
   const activity = state.activities.find((a) => a.id === worker.activityId);
   const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
-  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask }));
+  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask, external: [] }));
   const task = onTask ? taskOfWorker(state, worker) : undefined; // #797: its workspace's protocol, the memory under it
   // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
   if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
@@ -112,7 +112,7 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   await deps.plugin.ready(); // #316: a render queued by a save or the plugins store lands before this run reads its folder
   const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : undefined;
   return {
-    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
+    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, external: [], mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
     lspPluginDir: deps.lspDir(workspace),
     ...(protocolPath === undefined ? {} : { protocolPath, protocolText: await readFile(protocolPath, 'utf8') }),
     extraArgs: runtime.config.agentArgs[agent],

@@ -50,7 +50,7 @@ const commandOf = ({ flags, words }: Expected, prompt?: string): string => {
   return `cd '/wt' && HIVE_PTY_ID=W1 HIVE_PORT=4242 claude ${parts.join(' ')}; ${TRAILER}`;
 };
 
-const RUN: AgentRun = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
+const RUN: AgentRun = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, external: [], hooksPath: HOOKS, pluginDir: PLUGIN, extraArgs: [] };
 // ptyCommand over the runner's argv, as the spawner builds the launch
 const commandFor = (argv: LaunchArg[], prompt?: string): string =>
   ptyCommand({ ptyId: 'W1', slug: 'hive-1-task', cwd: '/wt', port: 4242, ...(prompt === undefined ? {} : { promptPath: prompt }), agent: { command: AGENTS.claude.command, argv } });
@@ -93,7 +93,7 @@ test('a copy, with and without a name: the pinned argv and command line; no sess
 
 test('Claude\'s stray pattern is its MCP config path, its run needs no env of its own, and it keeps the protocol as a path (#927)', () => {
   assert.equal(runners.claude.strayPattern('W1'), mcpConfigPattern('W1'));
-  assert.deepEqual(runners.claude.runEnv({ port: 4242, ptyId: 'W1', secret: 'not-in-argv', withHive: true }), {});
+  assert.deepEqual(runners.claude.runEnv({ port: 4242, ptyId: 'W1', secret: 'not-in-argv', withHive: true, external: [] }), {});
   const argv = runners.claude.launch({ ...RUN, protocolPath: STAGE_MD, protocolText: 'PROTOCOL-TEXT', session: { id: ID, resume: false } });
   assert.equal(JSON.stringify(argv).includes('PROTOCOL-TEXT'), false, 'the text is for an agent that takes it so');
   assert.deepEqual(argv.flat(), [...flat({ flags: [['--settings', HOOKS], ['--plugin-dir', PLUGIN], ['--append-system-prompt-file', STAGE_MD]], words: [] }), '--session-id', ID]);

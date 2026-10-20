@@ -18,6 +18,7 @@ export interface AgentRun {
   cwd: string; // #927: the folder the run starts in: Codex trusts it up front, or its TUI opens on the folder-trust screen
   port: number; // #927: the Hive's port, which Codex's inline hooks and MCP url name (Claude's read hooks.json and its MCP file)
   withHive: boolean; // #927: a task's run has the Hive's MCP server; a local session (#587) none
+  external: readonly RunMcpServer[]; // #333: the external MCP servers of the run's workspace (Codex renders its -c overrides from the run)
   hooksPath: string;
   pluginDir: string;
   mcpPath?: string;
@@ -31,7 +32,7 @@ export interface AgentRun {
 }
 
 /** What a run's MCP config names (#99, #467): the Hive's server for this pty, or none for a local session (#587). */
-export interface McpServer { port: number; ptyId: string; secret: string; withHive: boolean }
+export interface McpServer { port: number; ptyId: string; secret: string; withHive: boolean; external: readonly RunMcpServer[] }
 
 /** One server of a workspace's language-server plugin (#803), the entry its file lists per server binary: moved from worker-lsp.ts as is. */
 export interface LspServerEntry { command: string; args: string[]; extensionToLanguage: Record<string, string> }
@@ -49,7 +50,7 @@ export interface HeadlessRun {
 }
 
 export interface AgentRunner {
-  hostEnv: readonly string[]; // what no child of the Hive may inherit from the process the Hive was started from
+  hostEnv: readonly string[]; // what no child of the Hive may inherit from the process the Hive was started from; a name ending in * stands for every variable with that prefix
   launch(run: AgentRun): LaunchArg[];
   copy(run: AgentRun, from: string, name?: string): LaunchArg[] | undefined;
   clear(run: AgentRun): LaunchArg[] | undefined;

@@ -69,7 +69,7 @@ export function fakeSpawn(options: FakeSpawnOptions = {}): { spawn: LaunchPty; w
 
 // The run LAUNCH's agent renders (#924): ptyCommand's expected strings were written against these paths
 const LAUNCH_RUN: AgentRun = {
-  ptyId: 'W1', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, withHive: true, hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
+  ptyId: 'W1', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, withHive: true, external: [], hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
   session: { id: 'a1b2c3d4-0000-4000-8000-000000000001', resume: false }, extraArgs: [],
 };
 

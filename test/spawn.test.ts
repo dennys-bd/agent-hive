@@ -95,8 +95,8 @@ test('ptyEnv copies the base env without CLAUDECODE, CLAUDE_CODE_CHILD_SESSION, 
   assert.equal(base.TMPDIR, '/shared/tmp/');
 });
 
-test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924)', () => {
-  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_HOME: '/h', HOME: '/Users/x' };
+test('withoutHiveEnv strips every runner\'s host env (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION) and the Hive\'s own, whatever the run\'s agent; a run launch needs its agent (#924, #333)', () => {
+  const base = { PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', NODE_PATH: '/n', HIVE_SECRET: SECRET, HIVE_MCP_SECRET: SECRET, HIVE_MCP_HEADER_0: 'Bearer t0k', HIVE_MCP_HEADER_12: 'x', HIVE_HOME: '/h', HOME: '/Users/x' };
   assert.deepEqual(ptyEnv(base, 'W1', 4242, '/runs/W1', SECRET_FILE_PATH), { PATH: '/bin', HOME: '/Users/x', TMPDIR: '/runs/W1', HIVE_PTY_ID: 'W1', HIVE_PORT: '4242', HIVE_SECRET_FILE: SECRET_FILE_PATH });
   assert.throws(() => ptyCommand({ ptyId: 'W1', slug: 's', cwd: '/wt', port: 4242 }), { message: 'pty: a run launch with no agent' });
 });
@@ -333,13 +333,13 @@ test('launchInternalPty rejects started with pty: when the run\'s TMPDIR cannot 
 
 test('a copy resumes the source as a new session under the reducer\'s id, after the agent\'s own args (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  const copy = runners.claude.copy({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: ['--model', 'sonnet'] }, from);
+  const copy = runners.claude.copy({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: ['--model', 'sonnet'], external: [] }, from);
   assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: copy ?? [] } }), ['--model', 'sonnet', '--resume', from, '--fork-session', '--session-id', id]);
 });
 
 test('a copy gives the fork the dialog\'s name as its Claude Code title, in the --name= form a leading - cannot turn into an option, and the command quotes it (#587)', () => {
   const [from, id] = ['a1b2c3d4-0000-4000-8000-000000000001', 'b1b2c3d4-0000-4000-8000-000000000002'];
-  const run = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: [] };
+  const run = { ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', session: { id, resume: false }, extraArgs: [], external: [] };
   assert.deepEqual(plainArgs({ agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's mine") ?? [] } }), ['--resume', from, '--fork-session', '--session-id', id, "--name=-x it's mine"]);
   const command = ptyCommand({ ...LAUNCH, agent: { command: 'claude', argv: runners.claude.copy(run, from, "-x it's $HOME") ?? [] } });
   assert.ok(command.includes(shellQuote("--name=-x it's $HOME")), command);

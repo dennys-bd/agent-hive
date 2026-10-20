@@ -11,10 +11,12 @@ import type { HookPayload } from '../types.js';
 import { agentRoles, CODEX_PLUGIN, marketplaceName, roleFile, tomlString } from './codex-home.js';
 import { readCodexPlanLimits } from './codex-limits.js';
 import { ownsRollout, readRollout, rolloutFiles } from './codex-transcript.js';
-import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg } from './runner.js';
+import type { AgentRun, AgentRunner, HeadlessRun, LaunchArg, RunMcpServer } from './runner.js';
 
 /** The variable Codex reads the MCP secret header from (env_http_headers): the value rides the run's env, never the argv every account reads through ps (#467). */
 export const MCP_SECRET_ENV = 'HIVE_MCP_SECRET';
+/** #333: the prefix of the variables Codex reads an external server's header value from: HIVE_MCP_HEADER_<i>, i the server's index in the run's list. */
+export const MCP_HEADER_ENV = 'HIVE_MCP_HEADER_';
 
 /** Every hook event the Hive reads from Codex (§1); hookPayload makes them the reducer's (#928). Codex has no Notification. */
 export const CODEX_HOOK_EVENTS: readonly string[] = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Stop', 'SessionEnd'];
@@ -57,10 +59,24 @@ function developerOverride({ protocolText, specializedAgent }: AgentRun): Launch
   return parts.length === 0 ? [] : [override('developer_instructions', tomlString(parts.join('\n\n')))];
 }
 
+// #333: each external server under its own name, independent of withHive: a command as command + args, a URL as url with its header's value
+// read from the run's env (env_http_headers), never the argv. No approval mode: its tools ask as the user's own servers' do
+function externalOverrides(external: readonly RunMcpServer[]): LaunchArg[] {
+  return external.flatMap((server, i) => {
+    const key = `mcp_servers.${server.name}`;
+    if ('command' in server) return [override(`${key}.command`, tomlString(server.command)), override(`${key}.args`, `[${server.args.map(tomlString).join(',')}]`)];
+    const header = server.header ? [override(`${key}.env_http_headers`, `{${tomlString(server.header.name)}=${tomlString(`${MCP_HEADER_ENV}${i}`)}}`)] : [];
+    return [override(`${key}.url`, tomlString(server.url)), ...header];
+  });
+}
+const headerEnv = (external: readonly RunMcpServer[]): Record<string, string> =>
+  Object.fromEntries(external.flatMap((s, i) => ('url' in s && s.header ? [[`${MCP_HEADER_ENV}${i}`, s.header.value]] : [])));
+
 /** Every -c override of a run, in launch's order. */
 export const overrides = (run: AgentRun): LaunchArg[] => [
   ...CODEX_HOOK_EVENTS.map((event) => hookOverride(event, run.port)),
   ...(run.withHive ? mcpOverrides(run) : []),
+  ...externalOverrides(run.external),
   ...pluginOverrides(run.pluginDir), // every run, local or not, as Claude's --plugin-dir: its workspace's rendered folder (#316, #317)
   // appended before Codex's own developer blocks; model_instructions_file would replace its system prompt (§6)
   ...developerOverride(run),
@@ -102,7 +118,7 @@ const headless = (run: HeadlessRun): string[] => [
 ];
 
 export const codexRunner: AgentRunner = {
-  hostEnv: [MCP_SECRET_ENV], // a Hive started inside a Codex run never hands the outer secret to its own children
+  hostEnv: [MCP_SECRET_ENV, `${MCP_HEADER_ENV}*`], // a Hive started inside a Codex run never hands the outer secret to its own children
   launch: (run) => [...resumeWords(run.session), ...overrides(run), TRUST_FLAG, ...run.extraArgs, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model])],
   // A fork is a new Codex id holding the source's turns (§7), under the same overrides as a launch. No -m: a copy runs no stage, as
   // Claude's passes none. No name: fork has no name flag, the Hive's entry carries it. Never the placeholder id: Codex has no --session-id (§3)
@@ -126,6 +142,6 @@ export const codexRunner: AgentRunner = {
   planLimits: (deps) => readCodexPlanLimits(deps), // #929: from the newest rollout's rate_limits
   statusLimits: () => undefined,
   strayPattern: (ptyId) => ptyId, // in the x-hive-pty header's literal (§12)
-  runEnv: ({ secret, withHive }): Record<string, string> => (withHive ? { [MCP_SECRET_ENV]: secret } : {}),
+  runEnv: ({ secret, withHive, external }): Record<string, string> => ({ ...(withHive ? { [MCP_SECRET_ENV]: secret } : {}), ...headerEnv(external) }),
   hookPayload,
 };
