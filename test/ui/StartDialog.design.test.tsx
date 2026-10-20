@@ -68,3 +68,14 @@ test('personalizar open drops the execução row from the stages box, keeps pró
   expect(screen.queryByRole('region', { name: 'execução de backlog' })).not.toBeInTheDocument();
   expect(screen.getByText(t('run.label'))).toBeInTheDocument();
 });
+
+test('the session menu\'s nova and the specialized menu\'s nenhum show their second lines; the specialized menu\'s footer names the agent (#893)', async () => {
+  const user = userEvent.setup();
+  render(<StartDialog state={state()} taskId="I9" initialMode="free" onClose={vi.fn()} />);
+  const dialog = within(screen.getByRole('dialog'));
+  await user.click(dialog.getByRole('combobox', { name: 'sessão' }));
+  await user.click(await screen.findByRole('option', { name: /^nova.*começa sem contexto anterior$/ }));
+  await user.click(dialog.getByRole('combobox', { name: 'agente especializado' }));
+  expect(screen.getByRole('option', { name: /^nenhum.*o agente sem especialização$/ })).toBeInTheDocument();
+  expect(screen.getByText('mostra os agentes instalados para claude')).toHaveClass('text-muted-foreground', 'text-xs');
+});

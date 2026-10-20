@@ -213,7 +213,7 @@ test('abrir sessão on a task with its worktree opens on sessão livre with no b
   const session = screen.getByRole('combobox', { name: 'sessão' });
   expect(session).toHaveTextContent('mesma da etapa anterior');
   await user.click(session);
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude · dormindo há /), expect.stringMatching(/^bbbbbbbb · dev/)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['novacomeça sem contexto anterior', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude · dormindo há /), expect.stringMatching(/^bbbbbbbb · dev/)]);
   await user.click(screen.getByRole('option', { name: /^bbbbbbbb/ }));
   await user.click(open);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -231,7 +231,7 @@ test('the session picker offers the last stage run\'s session as mesma da etapa 
   render(<StartDialog state={withPointedWork({ ...state([landing]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions }] })} taskId="I4" initialMode="free" onClose={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole('button', { name: /sessão livre/ })).toBeEnabled());
   await user.click(screen.getByRole('combobox', { name: 'sessão' }));
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude/), expect.stringMatching(/^bbbbbbbb · sessão livre · /)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['novacomeça sem contexto anterior', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude/), expect.stringMatching(/^bbbbbbbb · sessão livre · /)]);
 });
 
 test('executar etapas on a task whose activity was deleted posts continue to its newest record when the stage already ran, never a start (#283, #629)', async () => {
@@ -689,7 +689,7 @@ test('sessão livre always shows the five run fields; a resume shows its session
   for (const name of ['modelo', 'agente especializado']) expect(dialog.getByRole('combobox', { name })).toBeDisabled();
   expect(dialog.getByRole('textbox', { name: 'argumentos' })).toBeDisabled();
   await user.click(dialog.getByRole('combobox', { name: 'sessão' }));
-  await user.click(screen.getByRole('option', { name: 'nova' }));
+  await user.click(screen.getByRole('option', { name: /^nova/ }));
   expect(dialog.getByRole('combobox', { name: 'modelo' })).toBeEnabled();
   expect(dialog.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do claude');
   await user.type(dialog.getByRole('textbox', { name: 'argumentos' }), '--verbose');

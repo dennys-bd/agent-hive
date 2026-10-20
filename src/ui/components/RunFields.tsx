@@ -45,7 +45,12 @@ function SessionField({ id, task, state, picks, onPick }: { id: string; task?: T
     <Select value={picks.session} onValueChange={onPick}>
       <SelectTrigger id={id} className="w-full"><SelectValue>{sessionText(picks.session)}</SelectValue></SelectTrigger>
       <SelectContent>
-        <SelectItem value={NEW_SESSION}>{t('session.new')}</SelectItem>
+        <SelectItem value={NEW_SESSION}>
+          <span className="flex min-w-0 flex-col">
+            <span>{t('session.new')}</span>
+            <span className="truncate text-muted-foreground text-xs">{t('run.session.newHint')}</span>
+          </span>
+        </SelectItem>
         <SelectItem value={PREVIOUS_SESSION} disabled={previous?.agent !== picks.agent}>
           <span className="flex min-w-0 flex-col">
             <span>{t('run.session.previous')}</span>
