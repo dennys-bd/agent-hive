@@ -2,10 +2,27 @@ import { type ForkRepos, failureOf, forkRepos, ownerOf, syncFork, type Workspace
 import type { Exec, ForkSyncAnswer, ForkSyncResult } from './types.js';
 
 // The start point of a new worktree or checkout branch (#119, #131), out of worktree.ts, which was at 398 lines when a fork's sync came around
-// it (#854). Every git call goes through the caller's `git`, worktree.ts's gitOrWords bound to a folder, so a refusal carries git's own words.
+// it (#854). Every git call goes through `gitOrWords` bound to a folder (the caller's `git`), so a refusal carries git's own words.
 
 /** git in one folder; a failure rejects with git's words. */
 export type Git = (...args: string[]) => Promise<string>;
+
+// git's own words for a failure: its stderr, else the error's message (execFile's would bury them under the command line). Here since #267, so
+// the branch's class can read them without an import cycle; worktree.ts re-exports both. Exported for the task diff (#270), which must tell
+// execFile's overflow apart before it rewords anything.
+export const wordsOf = (err: unknown): string => {
+  const e = err as { stderr?: string; message: string };
+  return (e.stderr ?? '').trim() || e.message;
+};
+
+// A failure carries git's own words (stderr) so the task says why; restart.ts runs its git the same way (#283).
+export async function gitOrWords(repo: string, args: string[], exec: Exec): Promise<string> {
+  try {
+    return (await exec('git', ['-C', repo, ...args])).stdout;
+  } catch (err) {
+    throw new Error(wordsOf(err));
+  }
+}
 
 /** What the base step decided (#854): the start point and its short sha, the `base: …` line, a GitHub sync already run, and a local merge to
  * run in the new tree once it exists. */

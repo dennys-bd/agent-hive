@@ -7,7 +7,8 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { chosenBase, defaultBase, type Git, remoteHead, settleSync, withSync } from './worktree-base.js';
+import { chosenBase, defaultBase, type Git, gitOrWords, remoteHead, settleSync, withSync, wordsOf } from './worktree-base.js';
+export { gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
@@ -83,22 +84,6 @@ export async function removeWorktree(
   await unlink(join(promptsDir, `${slugOfWork(activity)}.md`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code !== 'ENOENT') throw err;
   });
-}
-
-// git's own words for a failure: its stderr, else the error's message (execFile's would bury them under the command line). Exported for the
-// task diff (#270), which must tell execFile's overflow apart before it rewords anything.
-export const wordsOf = (err: unknown): string => {
-  const e = err as { stderr?: string; message: string };
-  return (e.stderr ?? '').trim() || e.message;
-};
-
-// A failure carries git's own words (stderr) so the task says why; restart.ts runs its git the same way (#283).
-export async function gitOrWords(repo: string, args: string[], exec: Exec): Promise<string> {
-  try {
-    return (await exec('git', ['-C', repo, ...args])).stdout;
-  } catch (err) {
-    throw new Error(wordsOf(err));
-  }
 }
 
 /**
