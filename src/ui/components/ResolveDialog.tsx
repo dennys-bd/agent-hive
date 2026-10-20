@@ -36,8 +36,8 @@ const taskPath = (task: Task, route: string): string => `/tasks/${encodeURICompo
 // new one opened through /open, its run attached as resolve's new session always was (#758)
 async function sendTo(task: Task, target: ResolveTarget, base: string, openRun: OpenRun | undefined): Promise<void> {
   if (target.run !== undefined) {
-    focusRun(runTab(task, target.run), openRun);
     await postJson(taskPath(task, 'resolve'), { to: target.id, promptBase: base });
+    focusRun(runTab(task, target.run), openRun); // after the paste: a refused one keeps the user on the dialog
     return;
   }
   const resume = target.id === NEW_SESSION ? {} : { continueId: target.id };
