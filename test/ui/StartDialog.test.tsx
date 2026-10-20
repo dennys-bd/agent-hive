@@ -68,10 +68,10 @@ test('Nova atividade opens on the closed task field; Enter opens the search, eac
   const onClose = vi.fn();
   render(<StartDialog state={state()} onStarted={onStarted} onClose={onClose} />);
   expect(screen.getByRole('dialog', { name: 'Nova atividade' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'tarefa' })).toHaveFocus(); // the field, closed: no list until the user opens it
+  expect(screen.getByRole('button', { name: 'tarefas' })).toHaveFocus(); // the field, closed: no list until the user opens it
   expect(screen.queryByRole('option')).not.toBeInTheDocument();
   await user.keyboard('{Enter}');
-  expect(screen.getByRole('combobox', { name: 'tarefa' })).toHaveFocus();
+  expect(screen.getByRole('combobox', { name: 'tarefas' })).toHaveFocus();
   const hero = screen.getByRole('option', { name: /#SITE-9 Landing hero for teams.*backlog/ });
   await user.click(hero);
   await screen.findByRole('combobox', { name: 'origin/main' });
@@ -88,7 +88,7 @@ test('a typed term offers + criar tarefa in hive: the task is created manual in 
   const user = userEvent.setup();
   const onClose = vi.fn();
   const { rerender } = render(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={onClose} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   const create = screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ });
   expect(screen.getAllByRole('option').at(-1)).toBe(create);
@@ -104,7 +104,7 @@ test('a typed term offers + criar tarefa in hive: the task is created manual in 
 test('a task created here and never started is removed on cancel; a picked task is left alone (redesign 11)', async () => {
   const user = userEvent.setup();
   render(<StartDialog state={state()} onStarted={vi.fn()} onClose={vi.fn()} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('temp');
   await user.click(screen.getByRole('option', { name: /criar tarefa "temp"/ }));
   await waitFor(() => expect(posts()).toHaveLength(1));
@@ -117,7 +117,7 @@ test('sessão livre shows the agent and the session and opens a new claude sessi
   const onStarted = vi.fn();
   const onClose = vi.fn();
   render(<StartDialog state={state()} onStarted={onStarted} onClose={onClose} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-4/ }));
   await user.click(screen.getByRole('radio', { name: 'sessão livre' }));
   expect(screen.getByText('sem prompts automáticos. você conduz o trabalho na tarefa e move a etapa quando quiser.')).toBeInTheDocument();
@@ -134,15 +134,15 @@ test('every task created here and not the one started is removed once the dialog
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('one');
   await user.click(screen.getByRole('option', { name: /criar tarefa "one"/ }));
   await waitFor(() => expect(posts()).toHaveLength(1));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('two');
   await user.click(screen.getByRole('option', { name: /criar tarefa "two"/ }));
   await waitFor(() => expect(posts()).toHaveLength(2));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-9/ }));
   await screen.findByRole('combobox', { name: 'origin/main' });
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
@@ -154,7 +154,7 @@ test('while the task still needs its workspace neither the button nor ⌘↵ sta
   const user = userEvent.setup();
   bases = { ...BASES, needsWorkspace: true };
   render(<StartDialog state={state()} onStarted={vi.fn()} onClose={vi.fn()} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-9/ }));
   await screen.findByRole('combobox', { name: 'workspace' });
   expect(screen.getByRole('button', { name: /executar etapas/ })).toBeDisabled();
@@ -166,11 +166,11 @@ test('Escape with the task list open closes the list alone and the focus goes ba
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   expect(screen.getAllByRole('option')).not.toHaveLength(0);
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('option')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'tarefa' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'tarefas' })).toHaveFocus();
   expect(onClose).not.toHaveBeenCalled();
   await user.keyboard('{Escape}');
   expect(onClose).toHaveBeenCalledTimes(1);
@@ -183,7 +183,7 @@ test('Iniciar #id from a task: its title and stage under the title, no task fiel
   render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
   const dialog = screen.getByRole('dialog', { name: 'Iniciar #SITE-9' });
   expect(dialog).toHaveAccessibleDescription('Landing hero for teams · etapa backlog');
-  expect(within(dialog).queryByRole('button', { name: 'tarefa' })).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('button', { name: 'tarefas' })).not.toBeInTheDocument();
   await user.click(await screen.findByRole('combobox', { name: 'origin/main' }));
   expect(screen.queryByRole('switch', { name: /avisar o worker/ })).not.toBeInTheDocument(); // not on the default base
   await user.click(screen.getByRole('option', { name: /#HIVE-11 510 a 516/ }));
@@ -213,7 +213,7 @@ test('abrir sessão on a task with its worktree opens on sessão livre with no b
   const session = screen.getByRole('combobox', { name: 'sessão' });
   expect(session).toHaveTextContent('mesma da etapa anterior');
   await user.click(session);
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude · dormindo há /), expect.stringMatching(/^bbbbbbbb · dev/)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['novacomeça sem contexto anterior', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude · dormindo há /), expect.stringMatching(/^bbbbbbbb · dev/)]);
   await user.click(screen.getByRole('option', { name: /^bbbbbbbb/ }));
   await user.click(open);
   await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -231,7 +231,7 @@ test('the session picker offers the last stage run\'s session as mesma da etapa 
   render(<StartDialog state={withPointedWork({ ...state([landing]), activityRecords: [{ id: 'a-I4', taskIds: ['I4'], sessions }] })} taskId="I4" initialMode="free" onClose={vi.fn()} />);
   await waitFor(() => expect(screen.getByRole('button', { name: /sessão livre/ })).toBeEnabled());
   await user.click(screen.getByRole('combobox', { name: 'sessão' }));
-  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['nova', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude/), expect.stringMatching(/^bbbbbbbb · sessão livre · /)]);
+  expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['novacomeça sem contexto anterior', expect.stringMatching(/^mesma da etapa anteriorcontinua a sessão de dev · claude/), expect.stringMatching(/^bbbbbbbb · sessão livre · /)]);
 });
 
 test('executar etapas on a task whose activity was deleted posts continue to its newest record when the stage already ran, never a start (#283, #629)', async () => {
@@ -437,7 +437,7 @@ async function createdAndRefused() {
   const created = (extra: Partial<WithWork> = {}): State => state([LANDING, HERO, task('local:1', 'HIVE-1', 'landing', { created: true, auto: false, ...extra })]);
   const dialog = (st: State) => <StartDialog state={st} onStarted={vi.fn()} onClose={onClose} />;
   const { rerender } = render(dialog(state()));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   await user.click(screen.getByRole('option', { name: /criar tarefa "landing"/ }));
   await waitFor(() => expect(fetching).toHaveBeenCalledWith('/tasks', expect.anything()));
@@ -481,7 +481,7 @@ test('a title from the search\'s + criar tarefa creates that task once on arriva
   const { rerender } = render(<StartDialog state={state()} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
   await waitFor(() => expect(posts()).toEqual([['/tasks', { title: 'Fix login', stage: 'backlog', auto: false, source: 'hive' }]]));
   rerender(<StartDialog state={state([LANDING, HERO, task('local:1', 'HIVE-1', 'Fix login', { created: true, auto: false })])} title="Fix login" onStarted={vi.fn()} onClose={onClose} />);
-  expect(screen.getByRole('button', { name: 'tarefa' })).toHaveTextContent('HIVE-1 Fix login');
+  expect(screen.getByRole('button', { name: 'tarefas' })).toHaveTextContent('HIVE-1 Fix login');
   expect(posts()).toHaveLength(1);
 });
 
@@ -514,13 +514,13 @@ test('the switchStartMode key flips executar etapas and sessão livre while the 
 test('picking a task with no stage left to run lands on sessão livre with executar etapas off and says why; a pick with stages to run turns it back on and leaves the mode alone (#774)', async () => {
   const user = userEvent.setup();
   render(<StartDialog state={finished()} onStarted={vi.fn()} onClose={vi.fn()} />);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-7/ }));
   expect(screen.getByRole('radio', { name: 'sessão livre' })).toBeChecked();
   expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeDisabled();
   expect(screen.getByText('nenhuma etapa para executar a partir de done.')).toBeInTheDocument();
   await waitFor(() => expect(screen.getByRole('button', { name: /sessão livre/ })).toBeEnabled());
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-9/ }));
   expect(screen.getByRole('radio', { name: 'executar etapas' })).toBeEnabled();
   expect(screen.getByRole('radio', { name: 'sessão livre' })).toBeChecked();
@@ -542,33 +542,45 @@ test('the dialog\'s children may shrink below their content, so a long title tru
   const user = userEvent.setup();
   render(<StartDialog state={state()} onClose={vi.fn()} />);
   expect(screen.getByRole('dialog')).toHaveClass('*:min-w-0'); // jsdom lays nothing out: the overflow itself is checked by eye
-  expect(screen.getByRole('button', { name: 'tarefa' })).not.toHaveAttribute('title');
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  expect(screen.getByRole('button', { name: 'tarefas' })).not.toHaveAttribute('title');
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-9/ }));
-  expect(screen.getByRole('button', { name: 'tarefa' })).toHaveAttribute('title', '#SITE-9 Landing hero for teams');
+  expect(screen.getByRole('button', { name: 'tarefas' })).toHaveAttribute('title', '#SITE-9 Landing hero for teams');
 });
 
-const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: ['board'] };
+const TO_BOARD: CreateTargets = { hiveSource: true, createIn: 'board', sources: [{ name: 'board', type: 'github' }] };
 const toBoard = (ui: ReactElement) => <CreateTargetsContext.Provider value={TO_BOARD}>{ui}</CreateTargetsContext.Provider>;
 
-test('on a source the typed task is held: its row comes first, and neither the pick nor a cancel creates anything (#846)', async () => {
+test('on a source the typed task is held: one create row, on the default destination\'s chip, and neither the pick nor a cancel creates anything (#846, #893)', async () => {
   const user = userEvent.setup();
   render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={vi.fn()} />));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   const rows = screen.getAllByRole('option', { name: /criar tarefa "landing"/ });
-  expect(rows.map((r) => r.textContent?.endsWith('em board') ? 'board' : 'hive')).toEqual(['board', 'hive']);
+  expect(rows).toHaveLength(1);
+  expect(within(rows[0]).getByRole('button', { name: 'criar em board' })).toBeInTheDocument();
   await user.click(rows[0]);
   expect(screen.getByText(t('start.held', { title: 'landing', source: 'board' }))).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'cancelar' }));
   expect(posts()).toEqual([]);
 });
 
+test('picking hive in the chip\'s criar em menu and pressing the row creates the task in the hive at once (#893)', async () => {
+  const user = userEvent.setup();
+  render(toBoard(<StartDialog state={state()} workspace="site" onStarted={vi.fn()} onClose={vi.fn()} />));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
+  await user.keyboard('landing');
+  await user.click(screen.getByRole('button', { name: 'criar em board' }));
+  await user.click(screen.getByRole('option', { name: /^hive/ }));
+  await user.click(screen.getByRole('option', { name: /criar tarefa "landing".*em hive/ }));
+  await waitFor(() => expect(posts()[0]).toEqual(['/tasks', { title: 'landing', stage: 'backlog', auto: false, workspace: 'site', source: 'hive' }]));
+});
+
 test('starting a held task creates it on its source, then starts it once the state holds it (#846)', async () => {
   const user = userEvent.setup();
   const onClose = vi.fn();
   const { rerender } = render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
@@ -583,7 +595,7 @@ test('a create that answers a notice leaves the dialog open with it and starts n
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
@@ -595,10 +607,10 @@ test('a create that answers a notice leaves the dialog open with it and starts n
 test('picking an existing task after holding a source entry drops the entry: the pick starts, nothing is created (#846)', async () => {
   const user = userEvent.setup();
   render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={vi.fn()} />));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.click(screen.getByRole('option', { name: /#SITE-9/ }));
   expect(screen.queryByText(t('start.held', { title: 'landing', source: 'board' }))).not.toBeInTheDocument();
   await user.click(await screen.findByRole('button', { name: /executar etapas/ }));
@@ -611,7 +623,7 @@ test('while a source create is in flight the dialog cannot be closed, by the but
   const user = userEvent.setup();
   const onClose = vi.fn();
   render(toBoard(<StartDialog state={state()} onStarted={vi.fn()} onClose={onClose} />));
-  await user.click(screen.getByRole('button', { name: 'tarefa' }));
+  await user.click(screen.getByRole('button', { name: 'tarefas' }));
   await user.keyboard('landing');
   await user.click(screen.getAllByRole('option', { name: /criar tarefa "landing"/ })[0]);
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
@@ -712,7 +724,7 @@ test('sessão livre always shows the five run fields; a resume shows its session
   for (const name of ['modelo', 'agente especializado']) expect(dialog.getByRole('combobox', { name })).toBeDisabled();
   expect(dialog.getByRole('textbox', { name: 'argumentos' })).toBeDisabled();
   await user.click(dialog.getByRole('combobox', { name: 'sessão' }));
-  await user.click(screen.getByRole('option', { name: 'nova' }));
+  await user.click(screen.getByRole('option', { name: /^nova/ }));
   expect(dialog.getByRole('combobox', { name: 'modelo' })).toBeEnabled();
   expect(dialog.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do claude');
   await user.type(dialog.getByRole('textbox', { name: 'argumentos' }), '--verbose');
@@ -761,7 +773,8 @@ test('a stage with a model shows it as the stage\'s default; another agent drops
   await user.click(screen.getByRole('option', { name: 'codex' }));
   expect(block.getByRole('combobox', { name: 'sessão' })).toHaveTextContent('nova');
   expect(block.getByRole('combobox', { name: 'modelo' })).toHaveTextContent('padrão do codex');
-  expect(screen.getByText('codex · padrão do codex · sessão nova')).toBeInTheDocument();
+  await user.click(block.getByRole('button', { name: 'personalizar ‹' }));
+  expect(screen.getByText('codex · padrão do codex · sessão nova')).toBeInTheDocument(); // closing keeps the picks
 });
 
 test('a continue shows the run without personalizar, since its session is fixed; so does a task whose handover decides its next run (#290, #134)', () => {

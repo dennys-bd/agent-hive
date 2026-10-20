@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { SetupProgressView } from '@/components/SetupProgress';
@@ -83,4 +83,32 @@ test('abrir no console opens the run in the console and closes the dialog; a fai
   expect(onClose).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole('button', { name: 'tentar de novo' }));
   expect(onRetry).toHaveBeenCalledTimes(1);
+});
+
+const LONG = 'pnpm install --frozen-lockfile && \\\n  pnpm -r build && pnpm exec playwright install --with-deps chromium'; // a multi-line RUN
+
+test('a long setup command and the branch stay on one line, cut with an ellipsis, their full text in the row\'s title; the value never shrinks (#893)', () => {
+  render(view([...PREPARED, step(LONG, 'running', { startedAt: ago(0) })]));
+  const rows = screen.getAllByRole('listitem');
+  const setup = rows.find((li) => li.getAttribute('title') === `setup · ${LONG}`);
+  expect(setup).toBeDefined();
+  if (setup === undefined) return;
+  expect(within(setup).getByText(/pnpm install --frozen-lockfile/).parentElement).toHaveClass('min-w-0', 'flex-1', 'truncate'); // jsdom lays nothing out: the one line is checked by eye
+  expect(within(setup).getByText(/^executando · /)).toHaveClass('flex-none', 'whitespace-nowrap');
+  expect(rows.some((li) => li.getAttribute('title') === 'branch hive/9-landing-hero a partir de origin/main')).toBe(true);
+});
+
+test('the log select opens under its trigger, at most the log box wide, each item on one line with its full text in title; the trigger cuts too (#893)', async () => {
+  const user = userEvent.setup();
+  render(view([...PREPARED, step(LONG, 'done', { durationMs: 1000 }), step('pnpm build', 'running', { startedAt: ago(0) })]));
+  const select = screen.getByRole('combobox', { name: 'log' });
+  expect(select).toHaveClass('min-w-0', 'max-w-[60%]');
+  await user.click(select);
+  select.focus();
+  await user.keyboard('{Enter}'); // a click here is swallowed after another test's userEvent in this file
+  const list = screen.getByRole('listbox');
+  expect(list).toHaveAttribute('data-side'); // set by the popper position alone; item-aligned has none
+  expect(list).toHaveClass('max-w-(--radix-select-content-available-width)');
+  expect(screen.getByRole('option', { name: /pnpm install --frozen-lockfile/ })).toHaveAttribute('title', LONG);
+  expect(screen.getByRole('option', { name: 'pnpm build' })).toHaveAttribute('title', 'pnpm build');
 });

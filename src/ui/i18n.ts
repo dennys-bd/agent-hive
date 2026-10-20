@@ -333,12 +333,15 @@ const en = {
   'start.newTitle': 'New activity', // redesign 11: the Start dialog
   'start.title': 'Start #{id}',
   'start.subtitle': '{title} · stage {stage}',
-  'start.task': 'task',
-  'start.taskPlaceholder': 'pick a task',
+  'start.task': 'tasks',
+  'start.taskPlaceholder': 'search or create a task…',
+  'start.taskHint': 'every activity starts from at least one task. if it does not exist, create it here.', // #893: under Nova atividade's task field
   'start.search': 'search tasks',
   'start.noTask': 'no task found',
   'start.create': 'create task "{title}"',
   'start.createIn': 'in {source}',
+  'start.createInMenu': 'create in', // #893: the create row's destination menu
+  'start.createInHive': 'only in the hive, no external issue',
   'start.held': '"{title}" in {source}: created when the activity starts',
   'start.notInFlow': 'the issue was created on {source}, but it is not in the flow yet: the source\'s filter may leave it out, or the next poll will bring it in',
   'start.mode.stages': 'run stages',
@@ -391,6 +394,7 @@ const en = {
   'run.sessionIs': 'session {session}',
   'run.model.stage': 'stage default · {model}',
   'run.session.previous': 'same as the previous stage',
+  'run.session.newHint': 'starts with no previous context', // #893
   'run.session.previousHint': 'continues the {stage} session · {agent} · asleep for {time}',
   'run.session.other': 'another session of the activity…',
   'activities.new': 'new activity…', // redesign 03: the sidebar's + menus
@@ -464,6 +468,8 @@ const en = {
   'newSession.model.typed': 'use "{model}"',
   'newSession.model.search': 'search models',
   'newSession.agents.none': 'none',
+  'newSession.agents.noneHint': 'the agent with no specialization', // #893
+  'newSession.agents.footer': 'shows the agents installed for {agent}',
   'newSession.agents.search': 'search agents',
   'newSession.agents.group': '{plugin} · {agent} plugin',
   'newSession.agents.empty': '{agent} has no specialized agents installed',
@@ -2582,12 +2588,15 @@ const pt: Record<MessageKey, string> = {
   'start.newTitle': 'Nova atividade', // redesign 11: the Start dialog
   'start.title': 'Iniciar #{id}',
   'start.subtitle': '{title} · etapa {stage}',
-  'start.task': 'tarefa',
-  'start.taskPlaceholder': 'escolha uma tarefa',
+  'start.task': 'tarefas',
+  'start.taskPlaceholder': 'buscar ou criar tarefa…',
+  'start.taskHint': 'toda atividade parte de pelo menos uma tarefa. se ela não existir, crie aqui.', // #893: under Nova atividade's task field
   'start.search': 'buscar tarefa',
   'start.noTask': 'nenhuma tarefa encontrada',
   'start.create': 'criar tarefa "{title}"',
   'start.createIn': 'em {source}',
+  'start.createInMenu': 'criar em', // #893: the create row's destination menu
+  'start.createInHive': 'só no hive, sem issue externa',
   'start.held': '"{title}" em {source}: criada quando a atividade começar',
   'start.notInFlow': 'a issue foi criada em {source}, mas ainda não está no fluxo: o filtro da source pode deixá-la de fora, ou a próxima leitura da source a traz',
   'start.mode.stages': 'executar etapas',
@@ -2640,6 +2649,7 @@ const pt: Record<MessageKey, string> = {
   'run.sessionIs': 'sessão {session}',
   'run.model.stage': 'padrão da etapa · {model}',
   'run.session.previous': 'mesma da etapa anterior',
+  'run.session.newHint': 'começa sem contexto anterior', // #893
   'run.session.previousHint': 'continua a sessão de {stage} · {agent} · dormindo há {time}',
   'run.session.other': 'outra sessão da atividade…',
   'activities.new': 'nova atividade…', // redesign 03: the sidebar's + menus
@@ -2713,6 +2723,8 @@ const pt: Record<MessageKey, string> = {
   'newSession.model.typed': 'usar "{model}"',
   'newSession.model.search': 'buscar modelo',
   'newSession.agents.none': 'nenhum',
+  'newSession.agents.noneHint': 'o agente sem especialização', // #893
+  'newSession.agents.footer': 'mostra os agentes instalados para {agent}',
   'newSession.agents.search': 'buscar agente',
   'newSession.agents.group': '{plugin} · plugin do {agent}',
   'newSession.agents.empty': '{agent} não tem agentes especializados instalados',

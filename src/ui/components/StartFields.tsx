@@ -30,17 +30,21 @@ const MODE = { stages: 'start.mode.stages', free: 'start.mode.free' } as const;
 
 interface ModeToggleProps { mode: StartMode; stagesOff?: string; onChange(mode: StartMode): void }
 
-/** executar etapas or sessão livre and the chosen mode's hint. `stagesOff` (#774) is why executar etapas is off for the task: the item is
- * disabled and the reason takes the hint's place. */
+// A segment of the mode toggle (#893, handoff): transparent on the muted track, the active one on the field background. Both read foreground:
+// muted text on muted fails contrast at this size (design-system). The base's rounding per position gives way to one radius
+const SEGMENT = 'h-auto flex-1 rounded-sm! py-[5px] font-medium text-[13px] hover:bg-transparent hover:text-foreground data-[state=on]:bg-background data-[state=on]:text-foreground';
+
+/** executar etapas or sessão livre as a segmented control (#893), and the chosen mode's hint. `stagesOff` (#774) is why executar etapas is
+ * off for the task: the segment is disabled and the reason takes the hint's place. */
 export function ModeToggle({ mode, stagesOff, onChange }: ModeToggleProps) {
   return (
     <div className="flex flex-col gap-2">
-      <ToggleGroup type="single" variant="outline" value={mode} onValueChange={(v) => { if (v) onChange(v as StartMode); }} className="w-full">
+      <ToggleGroup type="single" value={mode} onValueChange={(v) => { if (v) onChange(v as StartMode); }} className="w-full gap-0.5 bg-muted p-0.5">
         {(['stages', 'free'] as const).map((m) => (
-          <ToggleGroupItem key={m} value={m} disabled={m === 'stages' && stagesOff !== undefined} className="flex-1 font-medium text-[13px]">{t(MODE[m])}</ToggleGroupItem>
+          <ToggleGroupItem key={m} value={m} disabled={m === 'stages' && stagesOff !== undefined} className={SEGMENT}>{t(MODE[m])}</ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <p className="text-muted-foreground text-xs">{stagesOff ?? t(HINT[mode])}</p>
+      <p className="text-muted-foreground text-xs leading-4">{stagesOff ?? t(HINT[mode])}</p>
     </div>
   );
 }
@@ -162,8 +166,9 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** What executar etapas will do: the run (#290), the stages ahead, and where the task stops for the user. */
-export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run: ReactNode }) {
+/** What executar etapas will do: the run (#290), absent while personalizar shows it in full (#893), the stages ahead, and where the task
+ * stops for the user. */
+export function StagesBox({ task, stages, run }: { task?: Task; stages: Stage[]; run?: ReactNode }) {
   const path = task === undefined ? undefined : stagePath(task.stage, stages);
   const stop = path?.stop === undefined ? '—' : path.approval ? `${path.stop} · ${statusText('approval')}` : path.stop;
   return (

@@ -35,11 +35,11 @@ function FieldMenu({ label, shown, isDefault, disabled = false, open, onOpenChan
 }
 
 // A list row: ✓ on the pick, the id in mono, its hint muted on the right
-function Row({ id, hint, isPicked, isMono = true }: { id: string; hint?: string; isPicked: boolean; isMono?: boolean }) {
+function Row({ id, hint, isPicked }: { id: string; hint?: string; isPicked: boolean }) {
   return (
     <>
       <CheckIcon className={isPicked ? 'opacity-100' : 'opacity-0'} />
-      <span className={isMono ? 'font-mono text-xs' : ''}>{id}</span>
+      <span className="font-mono text-xs">{id}</span>
       {hint !== undefined && <span className="ml-auto truncate pl-2 text-muted-foreground text-xs">{hint}</span>}
     </>
   );
@@ -93,7 +93,8 @@ export function ModelMenu({ agent, options, value, disabled = false, defaultLabe
 interface AgentMenuProps { agent: AgentId; agents?: AgentLaunchOptions['specializedAgents']; value: string; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
 
 /** agente especializado (#257): none, or one of the Hive plugin's agents, searched by name or description; disabled with the reason when the
- * plugin lists none. '' is none. No list yet (the answer is still coming): the field works with none. */
+ * plugin lists none. '' is none. No list yet (the answer is still coming): the field works with none. The list ends with a footer naming which
+ * agent's installed agents it shows (#893). */
 export function SpecializedAgentMenu({ agent, agents, value, disabled = false, open, onOpenChange, onPick }: AgentMenuProps) {
   const pick = (name: string): void => { onPick(name); onOpenChange(false); };
   const isEmpty = agents !== undefined && agents.length === 0;
@@ -104,7 +105,13 @@ export function SpecializedAgentMenu({ agent, agents, value, disabled = false, o
       <Command label={t('newSession.agents.search')}>
         <CommandInput aria-label={t('newSession.agents.search')} placeholder={t('newSession.agents.search')} />
         <CommandList>
-          <CommandItem value={NONE_ITEM} keywords={[none]} onSelect={() => pick('')}><Row id={none} isPicked={value === ''} isMono={false} /></CommandItem>
+          <CommandItem value={NONE_ITEM} keywords={[none]} onSelect={() => pick('')}>
+            <CheckIcon className={value === '' ? 'opacity-100' : 'opacity-0'} />
+            <span className="flex min-w-0 flex-col">
+              <span>{none}</span>
+              <span className="truncate text-muted-foreground text-xs">{t('newSession.agents.noneHint')}</span>
+            </span>
+          </CommandItem>
           {agents !== undefined && agents.length > 0 && (
             <CommandGroup heading={t('newSession.agents.group', { plugin: PLUGIN, agent: agentName(agent) })}>
               {agents.map((a) => (
@@ -119,6 +126,7 @@ export function SpecializedAgentMenu({ agent, agents, value, disabled = false, o
             </CommandGroup>
           )}
         </CommandList>
+        <p className="border-t px-2 py-1.5 text-muted-foreground text-xs">{t('newSession.agents.footer', { agent: agentName(agent) })}</p>
       </Command>
     </FieldMenu>
   );

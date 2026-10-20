@@ -9,7 +9,7 @@ import { TaskPicker } from '@/components/TaskPicker';
 import { SetupProgressView, SetupSubmit } from '@/components/SetupProgress';
 import { ButtonKeyHint } from '@/components/KeyHint';
 import { RunFields, type RunFieldsProps } from '@/components/RunFields';
-import { RunCustomize, RunSummary } from '@/components/RunSummary';
+import { RunCustomize, RunSummary, useCustomizeFocus } from '@/components/RunSummary';
 import { BaseField, modeAfterKey, ModeToggle, StagesBox, type StartMode } from '@/components/StartFields';
 import { useOpenRun } from '@/components/terminal-tabs';
 import { Button } from '@/components/ui/button';
@@ -116,7 +116,7 @@ function useCreateRow(state: State, workspace: string | undefined, done: { curre
   const choices = destinations(useContext(CreateTargetsContext));
   const created = useCreatedTasks(state, workspace, done, onError);
   const held = usePendingTask(createStage(state), onError);
-  const create = (text: string, destination = choices[0]): void => {
+  const create = (text: string, destination = choices[0].name): void => {
     if (destination !== HIVE_SOURCE) { unpick(); held.hold({ title: text, source: destination }); return; }
     held.hold(undefined);
     created.create(text, pick);
@@ -228,15 +228,18 @@ function RunSection({ id, mode, task, state, run, workspace }: { id: string; mod
       stageModel={mode === 'stages' ? run.stageModel : undefined}
       locked={mode === 'free' && task !== undefined ? resumedLaunch(run.picks, task, state) : undefined} />
   );
+  const canCustomize = mode === 'stages' && isCustomizable(task, state);
+  const isOpen = canCustomize && run.isCustomizing;
+  const focus = useCustomizeFocus(isOpen);
   if (mode === 'free') return fields();
-  const canCustomize = isCustomizable(task, state);
+  // #893: open, the block goes above the box and the box drops its run row, which the block shows in full
   return (
-    <>
-      <StagesBox task={task} stages={state.stages} run={<RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={run.isCustomizing} onToggle={run.setCustomizing} />} />
-      {canCustomize && run.isCustomizing && task && (
-        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} onRestore={run.restore}>{fields(run.initial)}</RunCustomize>
+    <div className="flex flex-col gap-2.5">
+      {isOpen && task && (
+        <RunCustomize stage={task.stage} isChanged={isChanged(run.picks, run.initial)} closeRef={focus.closeRef} onRestore={run.restore} onClose={() => run.setCustomizing(false)}>{fields(run.initial)}</RunCustomize>
       )}
-    </>
+      <StagesBox task={task} stages={state.stages} run={isOpen ? undefined : <RunSummary picks={run.picks} stageModel={run.stageModel} isCustomizable={canCustomize} isOpen={false} onToggle={run.setCustomizing} buttonRef={focus.openRef} />} />
+    </div>
   );
 }
 
@@ -292,6 +295,7 @@ export function StartDialog(props: StartDialogProps) {
               <div className="flex flex-col gap-2">
                 <Label htmlFor={`${id}-task`}>{t('start.task')}</Label>
                 <TaskPicker id={`${id}-task`} tasks={pickable(state)} workspaces={state.workspaces} sourceWorkspaces={state.sourceWorkspaces} value={picked} destinations={choices} heldLabel={held && t('start.held', { title: held.title, source: held.source })} onPick={pickTask} onCreate={create} />
+                <p className="text-muted-foreground text-xs leading-4">{t('start.taskHint')}</p>
               </div>
             )}
             <ModeToggle mode={mode} stagesOff={stagesOff} onChange={setMode} />
