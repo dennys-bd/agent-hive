@@ -2178,6 +2178,7 @@ const en = {
   'plugins.mcp.hiveTools': 'hive tools',
   'plugins.mcp.servers': 'external servers',
   'plugins.mcp.addServer': '+ server',
+  'plugins.mcp.meta': 'tools the worker session can see',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4351,6 +4352,7 @@ const pt: Record<MessageKey, string> = {
   'plugins.mcp.hiveTools': 'ferramentas da hive',
   'plugins.mcp.servers': 'servidores externos',
   'plugins.mcp.addServer': '+ servidor',
+  'plugins.mcp.meta': 'ferramentas que a sessão do worker enxerga',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

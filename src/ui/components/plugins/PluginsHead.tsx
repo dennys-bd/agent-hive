@@ -51,6 +51,15 @@ function ListHead({ plugins, section, workspaces }: { plugins: Plugins; section:
 interface ItemProps { item: CatalogueItem; editor: ItemEditor; annotations: Annotations; workspaces: readonly string[] }
 interface ItemHeadProps extends ItemProps { onUpdate(version: string): void }
 
+// The handoff's mcp head: its "+ server" opens the screen's form through isCreating, as a list's "new skill" opens its field
+function McpHead({ plugins }: { plugins: Plugins }) {
+  return (
+    <Head title={t('plugins.section.mcp')} meta={t('plugins.mcp.meta')}>
+      <Button type="button" size="sm" variant="outline" className={NO_DRAG} onClick={() => plugins.setCreating(true)}>{t('plugins.mcp.addServer')}</Button>
+    </Head>
+  );
+}
+
 // The head's actions (decisions 11, 12): the reviewer's counter and menu (#327, #329), the test is HIVE-25's, drawn disabled; revert only for a Hive item with a
 // version open. The preview draws neither the counter nor revert
 function ItemActions({ item, editor, annotations, workspaces }: ItemProps) {
@@ -125,6 +134,7 @@ export function PluginsHead({ plugins, editor, annotations, workspaces }: { plug
   const { screen } = plugins;
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
   if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
+  if (screen.kind === 'mcp') return <McpHead plugins={plugins} />;
   if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
   const item = plugins.items?.find((i) => i.id === screen.id);
   const onUpdate = (version: string): void => plugins.open({ kind: 'update', id: screen.id, version });
