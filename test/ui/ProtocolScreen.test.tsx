@@ -145,7 +145,7 @@ test('an orphan shows after the last block with its yellow line; a passage that 
   const centre = await openProtocol(user);
   const orphan = await within(centre).findByRole('article', { name: 'p1' });
   expect(within(centre).getAllByRole('article').at(-1)).toBe(orphan);
-  expect(within(orphan).getByText('o bloco dele foi removido por uma atualização da Hive')).toHaveClass('text-waiting');
+  expect(within(orphan).getByText('o bloco dele foi removido por uma atualização da hive')).toHaveClass('text-waiting');
   const failing = within(centre).getByRole('article', { name: 'p2' });
   expect(within(failing).getByText(`fora de hive-site: linha 1 ${message}`)).toHaveClass('text-destructive');
 });

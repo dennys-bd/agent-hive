@@ -89,7 +89,7 @@ export function PassageCard({ protocol, after, saved, workspaces }: PassageCardP
         aria-label={t('plugins.protocol.body')} value={body} onKeyDown={onKeyDown}
         onChange={(event) => protocol.edit(passageKey, withBody(text, event.currentTarget.value))} className="min-h-10 font-mono text-xs md:text-xs"
       />
-      {errors.map((line) => <p key={line} className="text-destructive">{line}</p>)}
+      {[...new Set(errors)].map((line) => <p key={line} role="alert" className="text-destructive">{line}</p>)}
       {saved?.orphan && <p className="text-waiting">{t('plugins.protocol.orphan')}</p>}
       <CardActions protocol={protocol} passageKey={passageKey} isNew={saved === undefined} isUnchanged={isUnchanged} onSave={save} />
     </article>

@@ -70,8 +70,9 @@ function useProtocolRead(isShown: boolean) {
 }
 
 // "View as" a workspace: the saved protocol its runs receive; a workspace the config no longer has (404) is the template again
-function useRender() {
+function useRender(isShown: boolean) {
   const [viewAs, setViewAsState] = useState<string>();
+  const shownAs = useRef<string>(undefined); // the effect below reads it, so coming back refetches without "view as" in its deps
   const [rendered, setRendered] = useState<string>();
   const [renderError, setRenderError] = useState<MessageKey>();
   const renders = useRef(0);
@@ -85,14 +86,22 @@ function useRender() {
       if (n === renders.current) setRendered(answer.stage);
     } catch (err) {
       if (n !== renders.current) return;
-      if (statusOf(err) === NOT_FOUND) setViewAsState(undefined);
+      if (statusOf(err) === NOT_FOUND) {
+        shownAs.current = undefined;
+        setViewAsState(undefined);
+      }
       else setRenderError('plugins.protocol.renderFailed');
     }
   }, []);
   const setViewAs = useCallback((workspace: string | undefined): void => {
+    shownAs.current = workspace;
     setViewAsState(workspace);
     void fetchRender(workspace);
   }, [fetchRender]);
+  // Back on the screen: an mcp switch or a workspace's values may have changed what its runs receive meanwhile
+  useEffect(() => {
+    if (isShown && shownAs.current !== undefined) void fetchRender(shownAs.current);
+  }, [isShown, fetchRender]);
   return { viewAs, rendered, renderError, setViewAs, fetchRender };
 }
 
@@ -101,6 +110,7 @@ function useDrafts(afterWrite: () => Promise<void>) {
   const [drafts, setDrafts] = useState<Readonly<Record<string, string>>>({});
   const [saveErrors, setSaveErrors] = useState<Readonly<Record<string, SaveError>>>({});
   const [selected, setSelected] = useState<string>();
+  const saving = useRef(new Set<string>()); // a second click or ⌘S while a save flies would POST a duplicate passage
   const drop = useCallback((key: string): void => {
     setDrafts((prev) => without(prev, key));
     setSaveErrors((prev) => without(prev, key));
@@ -115,33 +125,40 @@ function useDrafts(afterWrite: () => Promise<void>) {
     drop(key);
     setSelected((prev) => (prev === key ? undefined : prev));
   }, [drop]);
+  const fail = useCallback(async (key: string, err: unknown): Promise<void> => {
+    setSaveErrors((prev) => ({ ...prev, [key]: saveErrorOf(err) }));
+    if (statusOf(err) === NOT_FOUND) await afterWrite(); // removed elsewhere: the stale card goes
+  }, [afterWrite]);
   const save = useCallback(async (key: string): Promise<void> => {
     const text = drafts[key];
-    if (text === undefined) return;
+    if (text === undefined || saving.current.has(key)) return;
+    saving.current.add(key);
     setSaveErrors((prev) => without(prev, key));
     try {
       const { id } = await (key.startsWith(NEW)
         ? sendJson<{ id: string }>('POST', '/api/protocol/passages', { text })
         : sendJson<{ id: string }>('PUT', passagePath(key), { text }));
       await afterWrite(); // the saved text is in the read before the draft goes, so the card never flashes the old one
-      drop(key);
+      setDrafts((prev) => (prev[key] === text ? without(prev, key) : prev)); // what was typed during the save stays a draft
       setSelected((prev) => (prev === key ? id : prev));
     } catch (err) {
-      setSaveErrors((prev) => ({ ...prev, [key]: saveErrorOf(err) }));
+      await fail(key, err);
+    } finally {
+      saving.current.delete(key);
     }
-  }, [drafts, afterWrite, drop]);
+  }, [drafts, afterWrite, fail]);
   const remove = useCallback(async (id: string): Promise<void> => {
     setSaveErrors((prev) => without(prev, id));
     try {
       await sendJson('DELETE', passagePath(id));
     } catch (err) {
-      setSaveErrors((prev) => ({ ...prev, [id]: saveErrorOf(err) }));
+      await fail(id, err);
       return;
     }
     drop(id);
     setSelected((prev) => (prev === id ? undefined : prev));
     await afterWrite();
-  }, [afterWrite, drop]);
+  }, [afterWrite, drop, fail]);
   return { drafts, saveErrors, selected, select: setSelected, insert, cancel, edit, save, remove };
 }
 
@@ -149,7 +166,7 @@ function useDrafts(afterWrite: () => Promise<void>) {
  * the drafts, the selected passage and "view as". `isShown`: the plugins view shows the protocol screen. */
 export function useProtocol(isShown: boolean): Protocol {
   const { read, loadError, load } = useProtocolRead(isShown);
-  const { viewAs, rendered, renderError, setViewAs, fetchRender } = useRender();
+  const { viewAs, rendered, renderError, setViewAs, fetchRender } = useRender(isShown);
   const afterWrite = useCallback(async (): Promise<void> => {
     await load();
     if (viewAs !== undefined) await fetchRender(viewAs);

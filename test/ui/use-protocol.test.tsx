@@ -71,3 +71,54 @@ test('setViewAs reads the render for the workspace; a 404 from it goes back to t
   await waitFor(() => expect(result.current.viewAs).toBeUndefined());
   expect([result.current.rendered, result.current.renderError]).toEqual([undefined, undefined]);
 });
+
+test('a second save while one flies sends nothing; text typed during the save stays a draft (#337)', async () => {
+  let answer: (response: Response) => void = () => undefined;
+  const { calls } = stubProtocol({ write: () => json({ id: 'p1' }, 201) });
+  const { result } = shown();
+  await waitFor(() => expect(result.current.read).toBeDefined());
+  act(() => result.current.insert('ask'));
+  act(() => result.current.edit(newKey('ask'), `${newDraft('ask')}mine`));
+  const fetchMock = vi.mocked(fetch);
+  const real = fetchMock.getMockImplementation();
+  fetchMock.mockImplementationOnce(async (path, init) => {
+    await new Promise<Response>((resolve) => { answer = resolve; });
+    return real!(path as string, init);
+  });
+  let first: Promise<void> = Promise.resolve();
+  act(() => { first = result.current.save(newKey('ask')); });
+  await act(() => result.current.save(newKey('ask')));
+  act(() => result.current.edit(newKey('ask'), `${newDraft('ask')}mine, more`));
+  answer(json({}));
+  await act(() => first);
+  expect(calls).toHaveLength(1);
+  expect(result.current.drafts[newKey('ask')]).toBe(`${newDraft('ask')}mine, more`);
+});
+
+test('a 404 on save reloads, so a passage removed elsewhere leaves the screen (#337)', async () => {
+  let read = withPassages(passageOf('p1', 'ask', 'mine'));
+  stubProtocol({
+    read: () => read,
+    write: () => {
+      read = PROTOCOL_READ;
+      return json({ error: 'unknown passage' }, 404);
+    },
+  });
+  const { result } = shown();
+  await waitFor(() => expect(result.current.read?.passages).toHaveLength(1));
+  act(() => result.current.edit('p1', 'changed'));
+  await act(() => result.current.save('p1'));
+  expect(result.current.saveErrors).toEqual({ p1: 'plugins.protocol.gone' });
+  expect(result.current.read?.passages).toEqual([]);
+});
+
+test('coming back to the screen refetches the render "view as" shows (#337)', async () => {
+  let n = 0;
+  stubProtocol({ render: () => json({ stage: `render ${++n}\n`, session: '' }) });
+  const { result, rerender } = shown();
+  act(() => result.current.setViewAs('hive-site'));
+  await waitFor(() => expect(result.current.rendered).toBe('render 1\n'));
+  rerender({ isShown: false });
+  rerender({ isShown: true });
+  await waitFor(() => expect(result.current.rendered).toBe('render 2\n'));
+});
