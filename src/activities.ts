@@ -1,4 +1,4 @@
-import type { Activity, ActivityRecord, ForkSyncResult, State, Task, TaskPr, TaskUsage, Terminal, UsagePart, Worker } from './types.js';
+import type { Activity, ActivityRecord, ForkSyncResult, Session, State, Task, TaskPr, TaskUsage, Terminal, UsagePart, Worker } from './types.js';
 
 // The activity's two records in State (#629): the reads the reducer, the routes and the UI share. No Node import, since the UI bundles it, and
 // no import of tasks.ts, which imports this file.
@@ -125,6 +125,11 @@ export const ensureLocal = (state: State, workspace: string): State => (state.wo
 /** The record of the task holding session `sessionId`: where its open, clear and copy act (#629). */
 export const recordWithSession = (state: Pick<State, 'activityRecords'>, taskId: string, sessionId: string): ActivityRecord | undefined =>
   recordsOf(state, taskId).find((r) => r.sessions.some((s) => s.id === sessionId));
+
+/** The record holding session `sessionId` and the session (#347): a task's record (a deleted activity's `repo` one too) or a workspace's local
+ * one. Session ids are uuids, so at most one record holds it. */
+export const heldSession = (state: Pick<State, 'activityRecords'>, sessionId: string): { record: ActivityRecord; session: Session } | undefined =>
+  state.activityRecords.flatMap((record) => record.sessions.filter((s) => s.id === sessionId).map((session) => ({ record, session })))[0];
 
 /** The occupied workers running in the activity (#629). */
 export const workersIn = (workers: Worker[], activityId: string | undefined): Worker[] =>

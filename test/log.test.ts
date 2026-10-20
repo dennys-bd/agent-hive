@@ -479,3 +479,11 @@ test('the createTask line says pr=yes for a task made from a PR, never its link 
   assert.ok(!line.includes(link));
   assert.equal(describeEvent(event), 'createTask stage=fila prefix=HIVE');
 });
+
+test('captureSession names a resume by its session\'s short id, and - while the id is learnt late (#347)', () => {
+  const S = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const base = { type: 'captureSession' as const, terminalId: PTY, runId: PTY, agent: 'claude' as const };
+  assert.equal(describeEvent(base), `captureSession pty=${shortId(PTY)} run=${shortId(PTY)}`);
+  assert.equal(describeEvent({ ...base, resume: { sessionId: S, activityId: 'a-1' } }), `captureSession pty=${shortId(PTY)} run=${shortId(PTY)} resume=${shortId(S)}`);
+  assert.equal(describeEvent({ ...base, resume: {} }), `captureSession pty=${shortId(PTY)} run=${shortId(PTY)} resume=-`);
+});

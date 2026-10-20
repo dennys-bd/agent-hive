@@ -225,7 +225,7 @@ export function describeEvent(event: HiveEvent): string {
     case 'sleepTerminal': return `sleepTerminal pty=${shortId(event.terminalId)}${event.cwd === undefined ? '' : ' cwd'}`; // never the path: it holds the home (#696)
     case 'wakeTerminal': return `wakeTerminal pty=${shortId(event.terminalId)}`;
     case 'forgetTerminal': return `forgetTerminal pty=${shortId(event.terminalId)}`;
-    case 'captureSession': return `captureSession pty=${shortId(event.terminalId)} run=${shortId(event.runId)}`; // #696
+    case 'captureSession': return `captureSession pty=${shortId(event.terminalId)} run=${shortId(event.runId)}${event.resume === undefined ? '' : ` resume=${shortId(event.resume.sessionId)}`}`; // #696, #347
     case 'worktreeReady': return `worktreeReady activity=${shortId(event.activityId)} branch=${event.branch}`;
     case 'moveToStage': return `moveToStage #${event.taskId} stage=${event.stage}`;
     case 'approve': return `approve ${act(event.activityId)}`;
