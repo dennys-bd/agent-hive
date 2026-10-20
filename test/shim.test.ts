@@ -6,10 +6,10 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { AGENTS } from '../src/agents.js';
-import { capturedReply, installShim, renderShim, shimPath, type ShimAgent } from '../src/shim.js';
+import { capturedReply, installShim, renderShim, resumeOf, shimPath, type ShimAgent, type ShimResume } from '../src/shim.js';
 import { runners } from '../src/agents/registry.js';
 import { SECRET_HEADER } from '../src/secret.js';
-import { AGENT_IDS } from '../src/types.js';
+import { AGENT_IDS, type AgentId } from '../src/types.js';
 import { SECRET } from './secret-client.js';
 import { tempDir } from './temp-dir.js';
 
@@ -172,4 +172,35 @@ test('the claude shim, from the same template, still passes -c and --resume thro
   assert.deepEqual(hive.forms, [], 'Claude\'s -c is continue: a session the user chose');
   assert.deepEqual(await claude(), [`pty=${RUN_ID}`, '--session-id', 'S1']);
   assert.deepEqual(hive.forms, [{ agent: 'claude', cwd: work }]);
+});
+
+test('resumeOf reads a new conversation or a resume, with the id only when the args name a uuid (#347)', () => {
+  const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const NEW: ShimResume = { kind: 'new' };
+  const cases: [AgentId, string[], ShimResume][] = [
+    ['claude', [], NEW],
+    ['claude', ['fix the bug'], NEW],
+    ['claude', ['-r'], { kind: 'resume' }], // the picker
+    ['claude', ['--resume'], { kind: 'resume' }],
+    ['claude', ['-r', id], { kind: 'resume', sessionId: id }],
+    ['claude', ['--resume', id, 'go on'], { kind: 'resume', sessionId: id }],
+    ['claude', [`--resume=${id}`], { kind: 'resume', sessionId: id }],
+    ['claude', ['-c'], { kind: 'resume' }],
+    ['claude', ['go', '--continue'], { kind: 'resume' }],
+    ['claude', ['--session-id', id], { kind: 'resume', sessionId: id }],
+    ['claude', [`--session-id=${id}`], { kind: 'resume', sessionId: id }],
+    ['claude', ['--resume', 'login bug'], { kind: 'resume' }], // a search term opens the picker: no id
+    ['claude', ['-r', 'abc'], { kind: 'resume' }], // not a uuid: no id
+    ['claude', ['-r', id, '--fork-session'], NEW], // a fork is a new conversation, under the Hive's id
+    ['claude', ['-c', '--fork-session', '--session-id', id], { kind: 'resume', sessionId: id }], // the fork's id is the user's own
+    ['codex', [], NEW],
+    ['codex', ['a prompt'], NEW],
+    ['codex', ['resume'], { kind: 'resume' }],
+    ['codex', ['resume', id], { kind: 'resume', sessionId: id }],
+    ['codex', ['resume', '--last'], { kind: 'resume' }],
+    ['codex', ['resume', 'abc'], { kind: 'resume' }],
+    ['codex', ['fork', id], NEW],
+    ['codex', ['a prompt', 'resume'], NEW], // a subcommand is the first word only, as the shim reads one
+  ];
+  for (const [agent, args, expected] of cases) assert.deepEqual(resumeOf(agent, args), expected, `${agent} ${args.join(' ')}`);
 });

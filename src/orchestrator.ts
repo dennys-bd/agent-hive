@@ -30,6 +30,7 @@ import { renameStages } from './stage-rename.js';
 import { placeVanished } from './vanished-stages.js';
 import { followEpics } from './epic-follow.js';
 import { blockerSet, closeRefsTo } from './hive-blockers.js';
+import { isUuid } from './uuid.js';
 
 export { isFree } from './reducer-kit.js';
 export { canSchedule, canStart, effectiveLimits } from './fill.js';
@@ -42,10 +43,7 @@ export const WAITING_NOTIFICATIONS: readonly string[] = [
 ];
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/;
 export const SESSION_ID = /^[A-Za-z0-9_-]{8,64}$/; // Claude Code uses uuids; anything else came from another local process
-// The uuid shape of the Hive's own ids (randomUUID): a run's, a terminal's, and a session id the Hive generated (#647). Boot hands a run id
-// to `pkill -f`, which matches a pattern anywhere in a command line: stricter than SESSION_ID on purpose, since a plain id that passes that
-// one can still be a substring shared by processes this worker does not own.
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export { isUuid, UUID } from './uuid.js'; // #347: their own module, so shim.ts reads a uuid without importing the reducer
 export const SIGNALS: readonly Signal[] = ['green', 'yellow', 'red'];
 export const STATUSES: readonly Status[] = ['empty', 'working', 'waiting', 'review', 'approval', 'backoff'];
 
@@ -69,12 +67,6 @@ export const isPrUrl = (url: string): boolean => new RegExp(`^${PR_URL.source}$`
 /** Any local process can hit /hooks/event and the id reaches the panel and the log: only a plain id of a sane length is kept. */
 export function isSessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID.test(value);
-}
-
-/** Whether `value` has the uuid shape: a restored run can be managed by it, so boot's kill pattern is only ever that, and a session id the
- * Hive keeps is checked the same way (#647). */
-export function isUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID.test(value);
 }
 
 /** A hook is from a subagent or teammate, not the worker's own top-level turn, when the worker already recorded a
