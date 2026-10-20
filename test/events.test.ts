@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createEventLog, EVENTS_FILE, RAW_TEXT_MAX, rawText, SCHEMA_VERSION, textRef } from '../src/events.js';
+import { createEventLog, EVENTS_FILE, type EventRecord, RAW_TEXT_MAX, rawText, SCHEMA_VERSION, textRef } from '../src/events.js';
 import { createLogger, LOG_FILE } from '../src/log.js';
 import { fakeLog } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -111,4 +111,22 @@ test('rawText turns control, separator and bidi characters into one space; the w
   const models = Array.from({ length: 60 }, (_, i) => `m${i}`);
   events.write({ event: 'stage.ended', level: 'info', outcome: 'done', duration_ms: 1, waited_ms: 0, tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, subagent_tokens: { input: 0, output: 0, cache_write: 0, cache_read: 0 }, models, tokens_by_model: {}, tool_counts: {} });
   assert.deepEqual(records(dir)[0]?.models, models.slice(0, 50));
+});
+
+test('the sink gets every record stamped and bounded as its line is, whatever the level and with events.jsonl disabled (#271)', async (t) => {
+  const dir = await eventsDir(t);
+  const kept: EventRecord[] = [];
+  const events = createEventLog(dir, 'warn', { log: fakeLog().log, stderr: quiet, keep: (record) => { kept.push(record); } });
+  events.write({ event: 'task.moved', level: 'info', task_id: 'board:I1', from: 'dev', to: `review\n${'x'.repeat(200)}`, by: 'hand' }); // info under warn: no line
+  events.write({ event: 'http.error', level: 'warn', route: '/signal', status: 400 });
+  assert.deepEqual(kept.map((r) => r.event), ['task.moved', 'http.error']);
+  assert.deepEqual(records(dir), [kept[1]], 'the line and the sink hold the same record, ts included');
+  const [moved] = kept;
+  assert.ok(moved?.event === 'task.moved');
+  assert.deepEqual([moved.schema_version, moved.to.length, moved.to.includes('\n')], [SCHEMA_VERSION, RAW_TEXT_MAX, false]);
+  const broken = join(await tempDir(t, 'events-'), '.hive');
+  await writeFile(broken, 'not a directory');
+  const after: EventRecord[] = [];
+  createEventLog(broken, 'info', { log: fakeLog().log, stderr: quiet, keep: (record) => { after.push(record); } }).write({ event: 'hive.quit', level: 'info', reason: 'stop' });
+  assert.deepEqual(after.map((r) => r.event), ['hive.quit']);
 });

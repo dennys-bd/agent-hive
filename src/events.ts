@@ -107,6 +107,7 @@ export interface EventLog {
 
 export interface EventLogOptions extends LoggerOptions {
   log: Pick<Logger, 'record'>; // where each record's text line goes: hive.log stays the file humans read
+  keep?: (record: EventRecord) => void; // #271: the usage store's write; it gets every record, whatever the level, and keeps its own events
 }
 
 export const ZERO_TOKENS: Tokens = { input: 0, output: 0, cache_write: 0, cache_read: 0 };
@@ -144,17 +145,22 @@ export function describeRecord(record: Record<string, unknown>): string {
 }
 
 /** events.jsonl in `dir` (#742), the same shape as createLogger: sync appends, one rotation at maxBytes, a broken disk disables the file with
- * one stderr line and never throws. A record under the level reaches neither file; error always passes. */
+ * one stderr line and never throws. A record under the level reaches neither file; error always passes. `keep` (#271) gets every record,
+ * stamped and bounded as its line is, under any level and with the file disabled. */
 export function createEventLog(dir: string, level: LogLevel, options: EventLogOptions): EventLog {
-  const { log, ...fileOptions } = options;
+  const { log, keep, ...fileOptions } = options;
   const append = createAppender(dir, EVENTS_FILE, fileOptions);
   let current = level;
   return {
     write: (record) => {
-      if (!passes(record.level, current)) return;
+      // #271: stamped and bounded above the level check, so the usage store keeps exactly the record the line holds, under any level
       const fields = bounded(record);
-      append(`${JSON.stringify({ schema_version: SCHEMA_VERSION, ts: new Date().toISOString(), ...fields })}\n`);
-      if (!OWN_LINE.includes(record.event)) log.record(record.level, describeRecord(fields)); // never error's stderr echo: its failure had its own
+      const line = { schema_version: SCHEMA_VERSION, ts: new Date().toISOString(), ...fields };
+      if (passes(record.level, current)) {
+        append(`${JSON.stringify(line)}\n`);
+        if (!OWN_LINE.includes(record.event)) log.record(record.level, describeRecord(fields)); // never error's stderr echo: its failure had its own
+      }
+      keep?.(line as EventRecord); // bounded keeps each field's type: a string stays a string, a list a list
     },
     setLevel: (next) => {
       current = next;
