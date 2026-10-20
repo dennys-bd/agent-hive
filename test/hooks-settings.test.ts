@@ -171,6 +171,6 @@ test('prepareHome writes the global protocol files without the block of a tool t
 
 test('writeWorkspaceProtocol writes the texts it is given, the memory section under each (#336)', async (t) => {
   const home = await tempDir(t, 'home-');
-  const paths = await writeWorkspaceProtocol(home, 'site', { stage: 'S\n', session: 'C\n' }, '## Workspace memory\n');
+  const paths = await writeWorkspaceProtocol(home, 'site', { stage: 'S\n', session: 'C\n', local: 'L\n' }, '## Workspace memory\n');
   assert.deepEqual([await readFile(paths.stage, 'utf8'), await readFile(paths.session, 'utf8')], ['S\n\n## Workspace memory\n', 'C\n\n## Workspace memory\n']);
 });

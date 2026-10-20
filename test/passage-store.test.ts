@@ -48,7 +48,7 @@ test('list reads only the passage files, in id order, and an unknown file or a l
   assert.deepEqual(await createPassageStore(home).create(C), { id: 'p11' });
 });
 
-test('protocolRenderer renders the passages for the workspace into both kinds, leaves out and logs one that fails there, and a folder it cannot read costs the passages only (#336)', async (t) => {
+test('protocolRenderer renders the passages for the workspace into every kind, leaves out and logs one that fails there, and a folder it cannot read costs the passages only (#336)', async (t) => {
   const home = await tempDir(t, 'home-');
   const store = createPassageStore(home);
   await store.create(A);
@@ -61,7 +61,7 @@ test('protocolRenderer renders the passages for the workspace into both kinds, l
   assert.equal(forA.stage, renderProtocol('stage', ['hive_remember'], [first, { id: 'p2', after: 'done', orphan: false, text: 'Ask core.', errors: [] }]));
   assert.deepEqual(logged, []);
   const forB = await protocolFor('b', []);
-  assert.deepEqual(forB, { stage: renderProtocol('stage', [], [first]), session: renderProtocol('session', [], [first]) });
+  assert.deepEqual(forB, { stage: renderProtocol('stage', [], [first]), session: renderProtocol('session', [], [first]), local: renderProtocol('local', [], [first]) });
   assert.deepEqual(logged, ['protocol b: p2:4 variable "team" is required and has no value for workspace "b"']);
   const broken = protocolRenderer({ list: () => Promise.reject(new Error('EACCES')) }, logger);
   assert.equal((await broken('a', [])).stage, renderProtocol('stage', [], []));

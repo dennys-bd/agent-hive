@@ -174,7 +174,7 @@ test('writeProtocol writes what protocolFor answers for the workspace and the of
   const asked: [string, readonly string[]][] = [];
   const protocolFor: ProtocolFor = async (workspace, off) => {
     asked.push([workspace, off]);
-    return { stage: `stage of ${workspace}\n`, session: `session of ${workspace}\n` };
+    return { stage: `stage of ${workspace}\n`, session: `session of ${workspace}\n`, local: `local of ${workspace}\n` };
   };
   const store = createMemoryStore(home, () => true, undefined, protocolFor);
   const paths = workspaceProtocolPaths(home, 'site');
@@ -195,7 +195,7 @@ test('a lesson saved while a settings write is queued rewrites with that write\'
   const protocolFor: ProtocolFor = async (_workspace, off) => {
     asked.push(off);
     if (asked.length === 1) await held; // the settings write's turn holds until the lesson's rewrite is queued behind it
-    return { stage: 'stage\n', session: 'session\n' };
+    return { stage: 'stage\n', session: 'session\n', local: 'local\n' };
   };
   const store = createMemoryStore(home, () => true, undefined, protocolFor);
   const settings = store.writeProtocol('site', ['hive_applied']);
