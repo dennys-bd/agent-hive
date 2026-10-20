@@ -1,5 +1,5 @@
 import { ChevronDownIcon, PlusIcon, SearchIcon } from 'lucide-react';
-import { type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react';
 import { HIVE_SOURCE, taskLabel, resolveWorkspace } from '../../tasks';
 import type { Task } from '../../types';
 import { Button } from '@/components/ui/button';
@@ -92,8 +92,8 @@ function TaskList({ tasks, workspaces, sourceWorkspaces, onSelect }: Pick<TaskPi
 function DestinationChip({ name, canChoose, onChoose }: { name: string; canChoose: boolean; onChoose(): void }) {
   const label = t('start.createIn', { source: name });
   if (!canChoose) return <span className={CHIP}>{label}</span>;
-  const onClick = (e: MouseEvent): void => { e.stopPropagation(); onChoose(); };
-  const onKeyDown = (e: KeyboardEvent): void => {
+  const onClick = (e: ReactMouseEvent): void => { e.stopPropagation(); onChoose(); };
+  const onKeyDown = (e: ReactKeyboardEvent): void => {
     if (e.key !== 'Enter') return; // cmdk's own Enter, one level up, would create
     e.preventDefault(); e.stopPropagation(); onChoose();
   };
