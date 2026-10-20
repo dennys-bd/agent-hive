@@ -198,3 +198,14 @@ test('a task queued in its prompt stage, with a handover, an open PR, no worker 
   expect(activitiesOf(slice).filter(isTask).map((a) => a.status)).toEqual(['review']);
   expect(activitiesOf({ ...slice, stages }).filter(isTask).map((a) => a.status)).toEqual(['empty']);
 });
+
+test('a kept terminal names the live captured run of its own activity running in it; another activity\'s run or a sleeping terminal names none (#347)', () => {
+  const terminals: Terminal[] = [terminal('T1', 'I1'), terminal('T2', 'I1'), { ...terminal('T3', 'I1'), asleep: true }];
+  const workers: Worker[] = [
+    worker('c1', 'I1', { freeSession: true, terminalId: 'T1' }),
+    worker('c2', 'I2', { freeSession: true, terminalId: 'T2' }), // a session of task 2 typed in task 1's terminal: listed in task 2 (#347)
+  ];
+  const [own] = of(workers, terminals);
+  expect(own.terminals?.map((t) => t.runId)).toEqual(['W-c1', undefined, undefined]);
+  expect(own.terminals?.map((t) => t.n)).toEqual([1, 2, 3]);
+});

@@ -13,8 +13,9 @@ import { isLive, taskState } from '@/lib/task-state';
 export interface SleepingRun { run: LiveRun; sessionId?: string; cause?: SleepCause } // no sessionId: a sleeping terminal (#696), which wakes in its own id; or, with run.agent set, a session slept before its first prompt (#931), which wakes into a new one
 
 /** A terminal an activity keeps (#696), live or sleeping: its label (Terminal, Terminal N, as its tab reads), its number once there are
- * several (what its line reads), and whether it sleeps. */
-export interface KeptTerminal { terminalId: string; label: string; n?: number; asleep: boolean }
+ * several (what its line reads), whether it sleeps, and the live captured run of this activity running in it (#347), whose session line the
+ * sidebar draws in its place. */
+export interface KeptTerminal { terminalId: string; label: string; n?: number; asleep: boolean; runId?: string }
 
 /** One agent run of an activity (redesign 03): its run and the status of the worker it runs in. Terminals have none, so they are not here. */
 export interface ActivitySession {
@@ -111,11 +112,21 @@ function taskSessions(activity: LiveActivity, runs: LiveRun[], workers: Worker[]
   return [...listed, ...unkept];
 }
 
-// The activity's kept terminals in open order (#696), a command's run left out: numbered once there are several, as their tabs are
-function keptOf(terminals: Terminal[], activityId: string): KeptTerminal[] {
+// The activity's kept terminals in open order (#696), a command's run left out: numbered once there are several, as their tabs are. A live one
+// names the live captured run of this activity in it (#347); one of another activity's session stays a terminal here
+function keptOf(terminals: Terminal[], workers: Worker[], activityId: string): KeptTerminal[] {
   const kept = keptTerminalsIn(terminals, activityId);
-  return kept.map((t, i) => ({ terminalId: t.terminalId, label: terminalLabel(t, kept), asleep: t.asleep === true, ...(kept.length > 1 ? { n: i + 1 } : {}) }));
+  const runIn = (t: Terminal): string | undefined =>
+    (t.asleep ? undefined : workers.find((w) => w.terminalId === t.terminalId && w.activityId === activityId && w.status !== 'empty')?.runId);
+  return kept.map((t, i) => {
+    const runId = runIn(t);
+    return { terminalId: t.terminalId, label: terminalLabel(t, kept), asleep: t.asleep === true, ...(kept.length > 1 ? { n: i + 1 } : {}), ...(runId === undefined ? {} : { runId }) };
+  });
 }
+
+/** The live runs the sidebar draws in their terminal's place (#347): what its sessions block leaves out. */
+export const mergedRuns = (terminals: readonly KeptTerminal[] | undefined): ReadonlySet<string> =>
+  new Set((terminals ?? []).flatMap((t) => (t.runId === undefined ? [] : [t.runId])));
 
 // Sleeping (#696): derived, never stored: the activity keeps something (a session, a terminal or a sleeping run, #931: one slept before its
 // first prompt keeps no session) and no session run nor terminal is live
@@ -137,7 +148,7 @@ function taskActivityOf(task: Task, state: Slice): TaskActivity | undefined {
   if (!activity || !record) return undefined;
   const runs = liveRuns(task, state, { commands: false }); // a run command has no terminal to show (#353)
   const kept = sessionsOf(state, task.item.itemId);
-  const terminals = keptOf(state.terminals, activity.id); // #696
+  const terminals = keptOf(state.terminals, state.workers, activity.id); // #696, #347
   const slept = [...sleepingIn(state.slept, (s) => s.taskId === task.item.itemId, kept), ...sleepingTerminals(terminals)]; // #672, #696
   if (runs.length === 0 && slept.length === 0 && terminals.length === 0 && !hasWorktree(activity) && activity.commands === undefined && activity.ci === undefined) return undefined; // as before #629: a worktree on disk, a run or a kept terminal (#696) lists it; a commands stage in flight too (#755), so its locked tab has an activity; a wait for CI too (#834), so the waiting task shows in the bar and its Stop has an activity
   const workers = workersIn(state.workers, activity.id);
@@ -163,7 +174,7 @@ function localActivityOf(workspace: string, state: Slice): LocalActivity | undef
     const run = worker && runs.find((r) => r.ptyId === worker.runId);
     return worker && run ? { session, run, status: worker.status } : { session, status: 'empty' };
   });
-  const terminals = keptOf(state.terminals, id); // #696
+  const terminals = keptOf(state.terminals, state.workers, id); // #696, #347
   const slept = [...sleepingIn(state.slept, (s) => s.workspace === workspace, record.sessions), ...sleepingTerminals(terminals)]; // #672, #696
   return { kind: 'local', activity, record, workspace, runs, sessions: agentSessions(runs, workers), kept, slept, terminals, sleeping: isSleeping(runs, record.sessions.length, terminals, slept) };
 }
