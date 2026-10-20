@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
 import type { Exec, Workspace } from '../src/types.js';
-import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps } from '../src/worktree-setup.js';
+import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps, withReused } from '../src/worktree-setup.js';
 import { RunFailure, type RunOptions, runShell } from '../src/worktree-steps.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
@@ -284,4 +284,10 @@ test('a setup edited since the failure, or a record that does not read, starts a
   await writeFile(join(h.gitDir, SETUP_PROGRESS), 'not json');
   await assert.rejects(runSetup(edited, h.worktree, h.deps));
   assert.deepEqual(h.steps.slice(6), ['RUN one', 'RUN 2', 'RUN three']);
+});
+
+test('withReused adds the reused branch to a failed setup\'s reason, and leaves the error as it is when the branch was made (#267)', () => {
+  const err = new Error('setup failed at step 1 of 1 (line 1, RUN x): the command exited with code 1');
+  assert.equal((withReused(err, 'hive/7-fix') as Error).message, `${err.message}\nThe worktree reused the existing branch hive/7-fix.`);
+  assert.equal(withReused(err, undefined), err);
 });

@@ -16,7 +16,7 @@ import { openPlace } from './server-local.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
 import { AGENT_IDS, type Activity, type AgentId, type Effect, type LaunchPick, type Task, type HiveEvent, type State, type Workspace } from './types.js';
 import { checkBase, ensureCheckout, ensureWorktree, worktreePath } from './worktree.js';
-import { isSetUp } from './worktree-setup.js';
+import { isSetUp, withReused } from './worktree-setup.js';
 import { clearTeardownMarker } from './worktree-teardown.js';
 import { MERGE_BASE_PROMPT, PROMPT_MESSAGE, promptText } from './merge-prompt.js';
 import type { Deliver } from './review-deliver.js';
@@ -89,11 +89,12 @@ async function confirmPlan(deps: TaskRouteDeps, task: Task, { task: placed, work
 async function makeWorktree(deps: TaskRouteDeps, current: LiveView, plan: WorktreePlan, activityId: string, setUp?: (path: string) => Promise<void>): Promise<void> {
   const { workspace, slug, branch, place } = plan;
   const base = workspaceBase(current.runtime.config, workspace); // #854
-  const { path, sync } = place.local
+  const { path, sync, line, reused } = place.local
     ? await ensureCheckout(workspace.path, branch, base, place.base?.ref, deps.exec)
     : await ensureWorktree(workspace.path, slug, branch, base, place.base?.ref, deps.exec);
+  if (line) deps.log.info(line); // #267: the base and what became of an existing branch, as a spawn logs them
   if (sync) await deps.dispatch({ type: 'forkSynced', activityId, sync }); // #854: an open's worktree keeps its sync as a spawn's does
-  await setUp?.(path);
+  if (setUp) await setUp(path).catch((err: unknown) => { throw withReused(err, reused); });
   await deps.dispatch({ type: 'worktreeReady', activityId, path, branch, base: place.base ?? null, local: place.local });
 }
 

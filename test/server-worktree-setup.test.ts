@@ -49,6 +49,9 @@ const GIT = `(${CMD(String.raw`git [^\r]*`)}${OK_MS})*${CMD(String.raw`git -C [^
 const RUN_HEADER = String.raw`── #1 · setup · \d\d:\d\d:\d\d ──\r\n`;
 const firstIndex = (lines: string[], prefix: string): number => lines.findIndex((l) => l.startsWith(prefix));
 
+// The fake git answers every rev-parse, so the task's branch exists and no start resolves: ensureWorktree reuses it, and a failed setup names it (#267)
+const REUSED = '\nThe worktree reused the existing branch hive/1-from-ready.';
+
 // The one Setup worktree channel as GET /console/:id answers it (#351); the fake source has one task, so every run in it is that task's
 async function channel(base: string, _task: Task): Promise<[number, ChannelView]> {
   const res = await hiveFetch(`${base}/console/setup`);
@@ -121,7 +124,7 @@ test('a setup that fails in a spawn is a spawnFailed: no worker starts, the work
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   const reason = 'setup failed at step 1 of 1 (line 2, COPY .env): not found in hive';
   assert.equal(workers.length, 0);
-  assert.deepEqual([work0(server)?.error, work0(server)?.setup], [SPAWN_FAILED + reason, undefined]);
+  assert.deepEqual([work0(server)?.error, work0(server)?.setup], [SPAWN_FAILED + reason + REUSED, undefined]);
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at step 1 of 1 \(line 2, COPY \.env\): not found in hive`)}$`));
   assert.equal(runOf(server), undefined, 'the worker is free again');
   assert.equal(await marked(gitDir), false);
@@ -165,10 +168,10 @@ test('a first /open whose setup fails answers the 500 as before, puts the reason
   const from = lines.length;
   const failed = await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' });
   assert.equal(failed.status, 500);
-  assert.deepEqual(await failed.json(), { error: reason });
+  assert.deepEqual(await failed.json(), { error: reason + REUSED });
   assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupEnded']);
   assert.ok(lines.includes(`DEBUG setupEnded activity=${shortId(work0(server)?.id)} failed`), 'the error reached the task, not the log; the event names the activity (#629)');
-  assert.deepEqual([work0(server)?.error, work0(server)?.setup, work0(server)?.worktree, workers.length], [reason, undefined, undefined, 0], 'no worktreeReady, no shell');
+  assert.deepEqual([work0(server)?.error, work0(server)?.setup, work0(server)?.worktree, workers.length], [reason + REUSED, undefined, undefined, 0], 'no worktreeReady, no shell');
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at step 1 of 1 \(line 1, COPY \.env\): not found in hive`)}$`));
   await writeFile(join(repo, '.env'), 'TOKEN=x\n');
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
