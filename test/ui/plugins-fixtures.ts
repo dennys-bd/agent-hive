@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { CatalogueItem, ItemRead, ItemVersion, LintInputRead } from '../../src/types';
+import type { CatalogueItem, ItemRead, ItemVersion, LaunchOptions, LintInputRead, ReviewerConfig } from '../../src/types';
 import type { BasedOn } from '../../src/template';
 
 const EDITED_AT = '2026-10-19T09:00:00.000Z';
@@ -76,6 +76,7 @@ export interface SaveBody { version: string | null; path: string; text: string; 
 export interface NewVersionBody { name: string; from: string }
 export interface DismissedBody { version: string | null; keys: string[] }
 export interface ReviewBody { version: string | null; path: string; text: string }
+export interface SettingsPost { prefix?: string; reviewer: ReviewerConfig }
 export interface AssignBody { workspace: string; version: string | null }
 /** The editor's server (#319, #320): `reads` keyed `id@version` ('' for the original); a test may swap `catalogue` from its hooks. #327: the lint
  * input (empty when absent) and the dismissals, keyed as `reads`, which a PUT writes unless `putDismissed` answers it. */
@@ -91,6 +92,9 @@ export interface ItemsServer {
   dismissed?: Record<string, string[]>;
   putDismissed?(id: string, body: DismissedBody): Response;
   review?(id: string, body: ReviewBody, init: RequestInit): Response | Promise<Response>; // #329: POST …/review
+  reviewer?: ReviewerConfig; // #329: the saved `reviewer` key, which an ok POST /settings writes; set, the harness provides the setting
+  postSettings?(body: SettingsPost): Response;
+  launchOptions?: LaunchOptions;
 }
 
 function answerDismissed(server: ItemsServer, id: string, url: URL, init?: RequestInit): Response {
@@ -99,6 +103,14 @@ function answerDismissed(server: ItemsServer, id: string, url: URL, init?: Reque
   if (server.putDismissed) return server.putDismissed(id, body);
   server.dismissed = { ...server.dismissed, [`${id}@${body.version ?? ''}`]: body.keys };
   return json(body.keys);
+}
+
+// POST /settings (#329): the test's answer, else ok; an ok answer writes the reviewer key, as the server's save would
+function answerSettings(server: ItemsServer, init?: RequestInit): Response {
+  const body = JSON.parse(String(init?.body)) as SettingsPost;
+  const answer = server.postSettings?.(body) ?? json({ ok: true });
+  if (answer.ok) server.reviewer = body.reviewer;
+  return answer;
 }
 
 /** The catalogue once a write made `name` (#320): the item lists it, customized, as GET /api/items answers after the store wrote it. */
@@ -122,6 +134,8 @@ export function stubItems(server: ItemsServer) {
   const mock = vi.fn(async (path: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(path, 'http://hive');
     if (url.pathname === '/api/lint-input') return json(server.lintInput ?? { catalogue: [], scripts: [] });
+    if (url.pathname === '/settings') return answerSettings(server, init);
+    if (url.pathname === '/launch-options') return json(server.launchOptions ?? {});
     const [, , , rawId, sub, version] = url.pathname.split('/'); // '', 'api', 'items', id, 'files' | 'versions' | 'assign' | 'dismissed', version
     if (rawId === undefined) return json(server.catalogue);
     const id = decodeURIComponent(rawId);

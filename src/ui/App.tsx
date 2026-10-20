@@ -11,6 +11,7 @@ import { AgentsContext, DefaultAgentContext } from '@/components/NewRunButton';
 import { TaskRefContext, type TaskRefs } from '@/components/PtyTab';
 import { Settings } from '@/components/settings/Settings';
 import { FileIconsContext } from '@/hooks/use-file-icons';
+import { ReviewerContext, type ReviewerSettings, reviewerSaver } from '@/hooks/use-reviewer';
 import { useHiveState } from '@/hooks/use-hive-state';
 import { useSettingsInfo } from '@/hooks/use-settings-info';
 import { LOCALE, setLanguage, t } from '@/i18n';
@@ -20,7 +21,7 @@ import { applyTheme, type ResolvedTheme } from '@/lib/theme';
 import { setShortcuts } from '@/lib/shortcut-bindings';
 import { onTrust, setTrustedDomains } from '@/lib/trusted-links';
 import { terminalFontStack } from '@/lib/xterm-setup';
-import { CLOSE_TAB_DEFAULTS, DEFAULT_AGENT, EDITOR_DEFAULTS, FILE_ICONS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, type Language, type SettingsInfo, type SettingsResult } from '../types';
+import { CLOSE_TAB_DEFAULTS, DEFAULT_AGENT, EDITOR_DEFAULTS, FILE_ICONS_DEFAULTS, REVIEWER_DEFAULTS, SLEEP_NOTICE_DEFAULTS, type Language, type SettingsInfo, type SettingsResult } from '../types';
 import { HIVE_SOURCE } from '../tasks';
 
 // window:select comes from main over IPC (#192): only a task request with a string id is taken (#283: the menu opens the task's panel).
@@ -108,6 +109,12 @@ export function App() {
     editor: info?.config?.editor ?? EDITOR_DEFAULTS,
     openLanguage: (language) => { setSettingsView({ section: 'editor', language }); setSettingsOpen(true); },
   }), [info]);
+  // The template reviewer's setting (#329) for the plugins view's menu: the saved key, and its write, which posts it with the prefix as the
+  // close-tab notices post theirs and reloads the info; a failed reload is a toast, as theirs is
+  const reviewer = useMemo<ReviewerSettings>(() => ({
+    config: info?.config?.reviewer ?? REVIEWER_DEFAULTS,
+    save: reviewerSaver(info?.config?.comb.prefix, () => reload().catch((err: Error) => { toast.error(err.message); })),
+  }), [info, reload]);
   if (settingsError) return <p className="p-4 pt-11 text-destructive">{settingsError}</p>;
   if (!info || !language) return null;
   const openSettings = (view: SettingsView): void => { setSettingsView(view); setSettingsOpen(true); };
@@ -149,7 +156,9 @@ export function App() {
               <CloseTabContext.Provider value={closeTab}>
                 <TaskRefContext.Provider value={taskRefs}>
                   <EditorLanguagesContext.Provider value={editorLanguages}>
+                    <ReviewerContext.Provider value={reviewer}>
                     <Dashboard state={state} effective={effective} selected={selected} locale={LOCALE[language]} tick={tick} hasSource={(info.config?.comb.sources.length ?? 0) > 0} fileLinks fontFamily={terminalFontStack(info.config?.terminalFont ?? '')} sources={sources} onSelect={setSelected} onEditRules={() => openSettings({ section: 'rules' })} onAddWorkspace={() => openSettings({ section: 'workspaces' })} onOpenSettings={() => setSettingsOpen(true)} openShortcuts={() => openSettings({ section: 'shortcuts' })} sidebarsPerView={info.config?.sidebarsPerView} />
+                    </ReviewerContext.Provider>
                   </EditorLanguagesContext.Provider>
                 </TaskRefContext.Provider>
               </CloseTabContext.Provider>

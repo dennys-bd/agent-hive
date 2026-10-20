@@ -1984,6 +1984,20 @@ const en = {
   'plugins.reviewer.error.badAnswer': "the reviewer's answer was refused; see hive.log",
   'plugins.reviewer.error.runFailed': 'the review failed; see hive.log',
   'plugins.reviewer.error.notSaved': 'reviewer setting not saved',
+  'plugins.head.reviewer.running': 'reviewer · reviewing…',
+  'plugins.head.reviewerOff.one': 'reviewer off · {count} annotation',
+  'plugins.head.reviewerOff.other': 'reviewer off · {count} annotations',
+  'plugins.head.reviewerOff.none': 'reviewer off',
+  'plugins.reviewer.menu': 'reviewer menu',
+  'plugins.reviewer.on': 'reviewer',
+  'plugins.reviewer.when': 'reviews',
+  'plugins.reviewer.when.type': 'as you type',
+  'plugins.reviewer.when.save': 'on save',
+  'plugins.reviewer.when.demand': 'on demand',
+  'plugins.reviewer.agent': 'agent',
+  'plugins.reviewer.agentDefault': 'default · {agent}',
+  'plugins.reviewer.plan': 'uses your plan for the chosen agent, like a session. when off, the editor only flags structural errors (variable with no value, skill that does not exist).',
+  'plugins.reviewer.now': 'review now',
   'plugins.revert.title': "Revert to the Hive's original",
   'plugins.revert.message': 'the version {version} is deleted with its files, and every workspace that used it goes back to the original.',
   'plugins.revert.confirm': 'revert',
@@ -4090,6 +4104,20 @@ const pt: Record<MessageKey, string> = {
   'plugins.reviewer.error.badAnswer': 'a resposta do revisor foi recusada; veja o hive.log',
   'plugins.reviewer.error.runFailed': 'a revisão falhou; veja o hive.log',
   'plugins.reviewer.error.notSaved': 'configuração do revisor não salva',
+  'plugins.head.reviewer.running': 'revisor · revisando…',
+  'plugins.head.reviewerOff.one': 'revisor desligado · {count} anotação',
+  'plugins.head.reviewerOff.other': 'revisor desligado · {count} anotações',
+  'plugins.head.reviewerOff.none': 'revisor desligado',
+  'plugins.reviewer.menu': 'menu do revisor',
+  'plugins.reviewer.on': 'revisor',
+  'plugins.reviewer.when': 'revisa',
+  'plugins.reviewer.when.type': 'ao escrever',
+  'plugins.reviewer.when.save': 'ao salvar',
+  'plugins.reviewer.when.demand': 'ao pedir',
+  'plugins.reviewer.agent': 'agente',
+  'plugins.reviewer.agentDefault': 'padrão · {agent}',
+  'plugins.reviewer.plan': 'usa o seu plano do agente escolhido, como uma sessão. desligado, o editor só acusa erros de estrutura (variável sem valor, skill que não existe).',
+  'plugins.reviewer.now': 'revisar agora',
   'plugins.revert.title': 'Voltar para a original da hive',
   'plugins.revert.message': 'a versão {version} é apagada com os arquivos dela, e todo workspace que a usava volta para a original.',
   'plugins.revert.confirm': 'voltar',
@@ -4254,7 +4282,7 @@ export const statusText = (status: Status | 'new'): string => t(STATUS_KEY[statu
 
 /** A family with a `.one` / `.other` variant: the main process's stop confirmation, by how many workers a stop would kill (#242), or a diff's file count (#270), or how many tasks a stage's
  *  view filter hides (#374), or a run command's own variables (#511), or the commits a Restart discards (#580). */
-export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer';
+export type PluralFamily = 'settings.stages.deleteMoves.move' | 'main.confirm.quit' | 'review.comments' | 'review.openThreads' | 'main.confirm.restart' | 'diff.files' | 'stage.hidden' | 'settings.commands.vars' | 'worktrees.count' | 'worktrees.orphanCount' | 'copy.messages' | 'copy.uncommitted' | 'search.count' | 'restart.commits' | 'editor.diag.errors' | 'editor.diag.warnings' | 'editor.diag.infos' | 'settings.memory.lessons' | 'settings.memory.citedTimes' | 'settings.memory.lessonsCited' | 'settings.memory.days' | 'pr.commits' | 'pr.review.along' | 'pr.merge.facts.approvals' | 'pr.merge.conflictsN' | 'pr.description.moreLines' | 'decomposition.issues' | 'decomposition.blockers' | 'decomposition.suggestions' | 'pr.block.base.merged' | 'design.send.all' | 'usage.panel.count' | 'plugins.update.clean' | 'plugins.update.passages' | 'plugins.update.left' | 'plugins.head.reviewer' | 'plugins.head.reviewerOff';
 
 /** Picks the `.one` / `.other` variant of `family` by `count`, then fills it like `t`. */
 export function tPlural(family: PluralFamily, count: number, vars?: Record<string, string | number>): string {
