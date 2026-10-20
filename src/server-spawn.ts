@@ -3,7 +3,7 @@ import { localWorkspaceOf } from './activities.js';
 import { runEnv, workspaceBase } from './fork.js';
 import { AGENTS, agentOf, agentRefusal, ranAgent, runModel } from './agents.js';
 import { runners } from './agents/registry.js';
-import type { AgentRun } from './agents/runner.js';
+import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
 import { runTaskSetup } from './task-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
@@ -21,7 +21,7 @@ import type { Runtime } from './server.js';
 import { renderPrompt, runSession, stackedPrLine, verdictsLine, withHandoff, terminalEnv, writePrompt } from './spawn.js';
 import { wakeDir } from './shell-procs.js';
 import { ensureTerminalsDir, readScrollback, scrollbackPath } from './terminal-files.js';
-import type { Activity, AgentAvailability, AgentId, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
+import type { Activity, AgentAvailability, AgentId, Config, Task, TaskBase, Stage, Effect, Exec, HiveEvent, PtyLaunch, Terminal, Workspace } from './types.js';
 import type { PtyPool } from './ptys.js';
 import type { TerminalSize } from './terminal-wire.js';
 import { taskDir, ensureCheckout, ensureWorktree } from './worktree.js';
@@ -69,6 +69,7 @@ export interface SpawnerDeps {
   events?: Pick<EventLog, 'write'>; // #742: the worktree setup's worktree.step
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin as the last write left it; every agent launch loads it
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, once the renders queued so far have landed
+  externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the external MCP servers a run of this workspace gets, header values resolved
 }
 
 type SpawnEffect = Extract<Effect, { type: 'spawn' }>;
@@ -140,7 +141,7 @@ function stageLaunch({ worker, stage }: SpawnEffect, config: Runtime['config'], 
 }
 
 export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
-  const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, events, lspDir, plugin } = deps;
+  const { pool, exec, log, dispatch, fail, isLive, ptys, consoleStore, agents, secret, home, events, lspDir, plugin, externalMcp } = deps;
   const setups = new Map<string, AbortController>(); // the worktree setups in flight, by run (#351): what a Stop's kill aborts
   // What the pool answers for any run: the exit frees it, a kill / focus failure reaches the bar, a start that never happened frees it too.
   const handlers = (ptyId: string, slug: string) => ({
@@ -210,11 +211,13 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     let cwd: string;
     let env: Record<string, string>;
     let workspace: string;
+    let external: readonly RunMcpServer[];
     let protocolText: string;
     const protocolPath = taskProtocol(home, runtime, task).stage; // spawn, Continue and feedback alike: the session ends the stage itself (#167); its workspace's memory under it (#797)
     try {
       const resolved = requireWorkspace(config, task);
       workspace = resolved.name;
+      external = await externalMcp(config, resolved.name); // #333
       env = await runEnv(exec, resolved); // #738, #854: the workspace prepare resolves, a fork's GH_REPO under its env; one a save removed fails the same way
       cwd = await prepare(runtime, activity, task, ptyId);
       protocolText = await readFile(protocolPath, 'utf8'); // #927: Codex takes the protocol as text; an unreadable file fails the run here, never a run left with no pty
@@ -226,11 +229,11 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     if (!isLive(ptyId)) return;
     if (effect.run === 'stage') await recordStart(runtime, activity, task, stage.name); // before the worker exists: nothing it commits can land first
     const promptPath = await writePrompt(promptsDir, slug, runPrompt(effect)); // the command line reads it
-    const server = { port, ptyId, secret, withHive: true, external: [] };
+    const server = { port, ptyId, secret, withHive: true, external };
     const mcpPath = await writeMcpConfig(promptsDir, ptyId, runner.mcpConfig(server)); // the tools' channel (#99); Claude's path puts the pty id in its argv
     await plugin.ready(); // #316: again after the setup's awaits, so a render queued meanwhile is swapped in before launch reads the folder
     const run: AgentRun = {
-      ptyId, cwd, port, withHive: true, external: [], hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
+      ptyId, cwd, port, withHive: true, external, hooksPath, pluginDir: launch.pluginDir, mcpPath, lspPluginDir: lspDir(workspace), ...launch.picked, session: runSession(activity.sessionId, session),
       protocolPath, protocolText, // #927: Codex takes the protocol as text; Claude keeps the path. picked: runModel's model, the config's args (#924) then the picks' (#290)
     };
     pool.start({
@@ -266,9 +269,10 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     // repo session runs in the main repo, and a checkout task in the user's own checkout, which Restart never resets (#444): nothing to record
     if (task !== undefined && !effect.activity.local && !(continues && effect.repo === true)) await recordStart(runtime, effect.activity, task, task.stage);
     const env = await runEnv(exec, place.workspace); // #854
+    const external = await externalMcp(config, place.workspace.name); // #333: a local session gets them too, still no Hive tools
     const first = copy?.notice ?? prompt;
     const runner = runners[agent];
-    const server = { port, ptyId, secret, withHive: task !== undefined, external: [] };
+    const server = { port, ptyId, secret, withHive: task !== undefined, external };
     // the protocol goes where the Hive's tools go (#167): a task's session has both, a local one neither (the same test as the MCP's)
     const protocolPath = task === undefined ? undefined : taskProtocol(home, runtime, task).session; // #797: the task's workspace's
     // A write that fails leaves no run to exit: spawnFailed frees the worker, and a copy's temporary transcript goes with it (#587)
@@ -281,7 +285,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const [mcpPath, promptPath, protocolText] = files;
     await plugin.ready(); // #316: as spawn's, after the last await
     const run: AgentRun = {
-      ptyId, cwd: place.cwd, port, withHive: server.withHive, external: [], hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
+      ptyId, cwd: place.cwd, port, withHive: server.withHive, external, hooksPath, pluginDir: place.pluginDir, mcpPath, lspPluginDir: lspDir(place.workspace.name), ...picked,
       session: runSession(sessionId, continues ? 'continue' : 'new'), ...(protocolPath === undefined ? {} : { protocolPath, protocolText }),
     };
     const argv = copy ? runner.copy(run, copy.from, copy.name) : runner.launch(run);

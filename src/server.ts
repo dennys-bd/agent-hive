@@ -42,6 +42,9 @@ import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-reque
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
+import { readCredentials } from './credentials.js';
+import { serversFor } from './mcp-settings.js';
+import type { RunMcpServer } from './agents/runner.js';
 import { createCiReader } from './server-ci.js';
 import { createStageCommandRunner } from './server-stage-commands.js';
 import { registerApprovalRoutes } from './server-approval.js';
@@ -131,6 +134,7 @@ export interface Runtime {
 }
 
 export interface ServerDeps {
+  credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
    *  bootHive makes it; tests inject one. */
@@ -252,7 +256,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender }); // dispatch and fail are hoisted; workerOf is called later
+  // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
+  const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
@@ -1169,7 +1175,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // wake, forget (#696); the shim's register under /hooks/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, exec, gql: cliGqlJson(gh) }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)

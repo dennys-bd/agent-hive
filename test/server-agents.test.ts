@@ -1,15 +1,18 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { writeCredentials } from '../src/credentials.js';
 import { createServer, type HiveServer, type ServerDeps } from '../src/server.js';
 import { ptyCommand } from '../src/spawn.js';
-import type { Activity, AgentAvailability, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
+import type { Activity, AgentAvailability, McpSettings, Task, Exec, SettingsBody, SettingsInfo, Worker } from '../src/types.js';
 import { activityOf } from '../src/activities.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, SPAWN_FAILED } from '../src/types.js';
-import { AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, move, onOwnStages, plainArgs, workspacesAt, tempHive } from './fakes.js';
+import { AUTH, GITHUB_ENTRY, STAGES, fakeLog, fakeSourceFactory, fakeSpawn, type FakeWorker, launchFlag, move, onOwnStages, plainArgs, WORKSPACE, workspacesAt, tempHive } from './fakes.js';
 import { hiveFetch, SECRET } from './secret-client.js';
 import { CODEX_TURN, codexHook } from './fixtures/codex-hooks.js';
+import { tempDir } from './temp-dir.js';
 
 // The agent a stage run starts (#516), end to end through the server: the detection, the resolution and the refusal before any worktree.
 const REFUSAL = 'agent claude is not on PATH: install it, then restart the Hive';
@@ -154,4 +157,36 @@ test('a forged hook whose event name is not a string never reaches the runner or
     assert.equal((await hookEvent(base, ptyId, { hook_event_name: name, agent_id: 'a' })).status, 204, JSON.stringify(name));
   }
   assert.deepEqual([worker0(server).runId, workers.length], [ptyId, 1]);
+});
+
+const MCP_ON: McpSettings = { off: [], servers: [
+  { name: 'docs', url: 'https://mcp.example.com/mcp', authHeader: 'Authorization', workspace: WORKSPACE, on: true },
+  { name: 'idle', command: 'npx', args: ['idle-mcp'], workspace: null, on: false },
+] };
+
+async function storedValue(t: TestContext): Promise<NodeJS.ProcessEnv> {
+  const env = { XDG_CONFIG_HOME: await tempDir(t, 'cred-') };
+  await writeCredentials({ mcp: { docs: { value: 'Bearer t0k' } } }, env);
+  return env;
+}
+
+test('a codex stage run gets its workspace\'s switched-on servers as -c overrides and the header value in its env, never an argv word (#333)', async (t) => {
+  const stage = { ...STAGES[0], agent: 'codex' as const };
+  const { workers } = await start(t, { ...BODY, stages: [stage], mcp: MCP_ON }, { credentialsEnv: await storedValue(t) });
+  await waitFor(() => workers.length === 1);
+  const { launch } = workers[0];
+  const pairs = (launch.agent?.argv ?? []).flatMap((arg) => (typeof arg === 'string' ? [] : [arg[1]]));
+  assert.ok(pairs.includes('mcp_servers.docs.url="https://mcp.example.com/mcp"'));
+  assert.ok(pairs.includes('mcp_servers.docs.env_http_headers={"Authorization"="HIVE_MCP_HEADER_0"}'));
+  assert.equal(pairs.some((pair) => pair.startsWith('mcp_servers.idle')), false, 'a server switched off reaches no run');
+  assert.equal(launch.env?.HIVE_MCP_HEADER_0, 'Bearer t0k');
+  assert.equal(JSON.stringify(launch.agent?.argv).includes('t0k'), false);
+});
+
+test('a claude stage run\'s MCP file holds the Hive\'s server and its workspace\'s switched-on servers with the header value (#333)', async (t) => {
+  const { workers } = await start(t, { ...BODY, mcp: MCP_ON }, { credentialsEnv: await storedValue(t) });
+  await waitFor(() => workers.length === 1);
+  const file = JSON.parse(await readFile(launchFlag(workers[0].launch, '--mcp-config') ?? '', 'utf8')) as { mcpServers: Record<string, unknown> };
+  assert.deepEqual(Object.keys(file.mcpServers), ['hive', 'docs']);
+  assert.deepEqual(file.mcpServers.docs, { type: 'http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer t0k' } });
 });
