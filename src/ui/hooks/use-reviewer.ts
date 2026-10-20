@@ -30,7 +30,8 @@ export const fileKeyOf = (scope: Scope): string => `${itemKeyOf(scope)}\0${scope
 /** What the head's menu reads and writes (#329). */
 export interface Review {
   config: ReviewerConfig;
-  running: boolean;
+  running: boolean; // a run going, or a busy answer waiting for its retry
+  canReview: boolean; // the open file has a scope: "review now" has something to review
   error?: MessageKey; // the last failure's copy, by ReviewCode, or a setting not saved
   now(): void; // "review now"
   set(change: Partial<ReviewerConfig>): Promise<void>;
@@ -114,7 +115,8 @@ async function request({ scope, text }: Target, signal: AbortSignal): Promise<Ou
 
 function start(ctx: Ctx, target: Target, isRetry = false): void {
   const controller = new AbortController();
-  ctx.runs.current = { ...ctx.runs.current, run: { id: target.scope.id, controller }, again: false };
+  clearTimeout(ctx.runs.current.retry); // a stale retry must not fire after, and overwrite, this run
+  ctx.runs.current = { ...ctx.runs.current, retry: undefined, run: { id: target.scope.id, controller }, again: false };
   ctx.setRunning(target.file);
   void request(target, controller.signal).then((outcome) => settle(ctx, target, controller, outcome, isRetry));
 }
@@ -126,20 +128,31 @@ function keep(ctx: Ctx, { file, text }: Target, annotations: readonly AgentAnnot
   ctx.setError(undefined);
 }
 
+// The text the setting reviews now, of the file just reviewed: the saved one when the setting says save, else the buffer
+function currentTarget(ctx: Ctx, file: string): Target | undefined {
+  const now = ctx.latest.current;
+  const text = now.config.when === 'save' ? now.saved : now.text;
+  return now.scope === undefined || now.file !== file || text === undefined ? undefined : { scope: now.scope, file, text };
+}
+
+// The retry reviews what the editor shows when it fires, not the text of the run that was busy: a trigger that came meanwhile is this one
 function retryLater(ctx: Ctx, target: Target): void {
   const retry = setTimeout(() => {
     ctx.runs.current = { ...ctx.runs.current, retry: undefined };
-    if (ctx.runs.current.run === undefined) start(ctx, target, true);
+    const next = currentTarget(ctx, target.file);
+    if (next === undefined) ctx.setRunning(undefined);
+    else if (ctx.runs.current.run === undefined) start(ctx, next, true);
   }, BUSY_RETRY_MS);
   ctx.runs.current = { ...ctx.runs.current, aborted: undefined, retry };
 }
 
-// A trigger that came during the run: one more, of the text the setting reviews now, if it moved on from the one just reviewed
+// A trigger that came during the run: one more, of the text the setting reviews now, if it moved on from the one just reviewed. Only while
+// the setting still reviews by itself: on demand, a trigger was a click that the run already served
 function runAgain(ctx: Ctx, reviewed: Target): void {
-  const now = ctx.latest.current;
-  const text = now.config.when === 'save' ? now.saved : now.text;
-  if (now.scope === undefined || now.file !== reviewed.file || text === undefined || text === reviewed.text) return;
-  start(ctx, { scope: now.scope, file: now.file, text });
+  const { config } = ctx.latest.current;
+  if (!config.on || config.when === 'demand') return;
+  const next = currentTarget(ctx, reviewed.file);
+  if (next !== undefined && next.text !== reviewed.text) start(ctx, next);
 }
 
 // The answer of the current run only: an aborted run's answer is for a text no longer shown
@@ -147,13 +160,14 @@ function settle(ctx: Ctx, target: Target, controller: AbortController, outcome: 
   const runs = ctx.runs.current;
   if (runs.run?.controller !== controller) return;
   ctx.runs.current = { ...runs, run: undefined, again: false };
-  ctx.setRunning(undefined);
-  if ('aborted' in outcome) return;
   const code = 'code' in outcome ? outcome.code : undefined;
-  if (code === 'busy' && !isRetry && runs.aborted === target.scope.id) {
+  const isBusyRetry = code === 'busy' && !isRetry && runs.aborted === target.scope.id;
+  if (!('aborted' in outcome) && isBusyRetry) { // running stays on until the retry has fired
     retryLater(ctx, target);
     return;
   }
+  ctx.setRunning(undefined);
+  if ('aborted' in outcome) return;
   if ('annotations' in outcome) keep(ctx, target, outcome.annotations);
   else if (!SILENT.includes(code ?? '')) ctx.setError(COPY[code ?? ''] ?? RUN_FAILED);
   if (runs.again) runAgain(ctx, target);
@@ -213,15 +227,20 @@ export function useReviewer(scope: Scope | undefined, text: string, saved: strin
   const lines = useMemo(() => text.split('\n'), [text]);
   const stored = file === undefined ? undefined : found[file];
   const list = useMemo(() => (stored === undefined || !config.on ? NONE : placed(stored, lines)), [stored, lines, config.on]);
+  const wanted = useRef(config); // the latest config requested: two quick changes merge, neither reverts the other
+  useEffect(() => { wanted.current = config; }, [config]);
   const set = async (change: Partial<ReviewerConfig>): Promise<void> => {
-    const next = { ...config, ...change };
+    const previous = wanted.current;
+    const next = { ...previous, ...change };
+    wanted.current = next;
     try {
       await save(next);
       setError((last) => (!next.on || last === NOT_SAVED ? undefined : last));
     } catch (err) {
       console.error('reviewer: the setting was not saved', err);
+      if (wanted.current === next) wanted.current = previous;
       setError(NOT_SAVED);
     }
   };
-  return { list, review: { config, running: file !== undefined && running === file, error, now: () => trigger(ctx, text), set } };
+  return { list, review: { config, running: file !== undefined && running === file, canReview: file !== undefined, error, now: () => trigger(ctx, text), set } };
 }

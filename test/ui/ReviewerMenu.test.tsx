@@ -6,6 +6,8 @@ import { REVIEWER_DEFAULTS, type ReviewerConfig } from '../../src/types';
 import { setLanguage } from '@/i18n';
 import { FakeEditor, resetMonacoFakes } from './monaco-fake';
 import { CATALOGUE, type ItemsServer, json, readOf, type SaveBody, stubItems, VARS_ORIGINAL, VARS_TEXT } from './plugins-fixtures';
+import { ReviewerMenu } from '@/components/plugins/ReviewerMenu';
+import type { Annotations } from '@/hooks/use-annotations';
 import { PluginsWindow } from './skill-editor-harness';
 
 vi.mock('@/lib/monaco', async () => (await import('./monaco-fake')).monacoModule);
@@ -140,3 +142,13 @@ test("an agent annotation's card carries the agent mark, its title and body, and
   expect(depth).toHaveTextContent('definida e nunca usada');
   expect(depth).not.toHaveTextContent(ON_DEPTH.title);
 });
+
+test('without a scope (a non-markdown file) review now is disabled (#329)', async () => {
+  const user = userEvent.setup();
+  const review = { config: SAVED, running: false, canReview: false, now: vi.fn(), set: vi.fn() };
+  const annotations = { list: [], review, canDismiss: true, openAt: vi.fn(), next: vi.fn(), close: vi.fn(), dismiss: vi.fn(), apply: vi.fn() } satisfies Annotations;
+  render(<ReviewerMenu annotations={annotations} workspaces={[]} />);
+  await user.click(chevron2());
+  expect(await screen.findByRole('button', { name: 'revisar agora' })).toBeDisabled();
+});
+const chevron2 = (): HTMLElement => screen.getByRole('button', { name: 'menu do revisor' });

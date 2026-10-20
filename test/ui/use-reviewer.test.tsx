@@ -154,8 +154,7 @@ test('a busy answer right after the hook aborted its own run on the item is retr
   act(() => result.current.review.now());
   rerender({ ...opened, scope: { ...SCOPE, version: 'tdd' } }); // another version of the same item: the run is aborted
   act(() => result.current.review.now());
-  await waitFor(() => expect(result.current.review.running).toBe(false));
-  expect(sent).toHaveLength(2);
+  await waitFor(() => expect(sent).toHaveLength(2));
   act(() => { vi.advanceTimersByTime(1000); });
   await waitFor(() => expect(sent).toHaveLength(3));
   await waitFor(() => expect(result.current.review.running).toBe(false));
@@ -167,12 +166,95 @@ test('a busy answer right after the hook aborted its own run on the item is retr
 test("set saves the config with only the changed field different; a refused save shows 'reviewer setting not saved' and the config stays (#329)", async () => {
   const save = vi.fn(async (_reviewer: ReviewerConfig): Promise<void> => undefined);
   const config = configOf('save', { version: 'strict' });
-  const { result } = renderReviewer({ scope: SCOPE, text: TEXT, saved: TEXT, config }, save);
+  const opened: Props = { scope: SCOPE, text: TEXT, saved: TEXT, config };
+  const { result, rerender } = renderReviewer(opened, save);
   await act(() => result.current.review.set({ when: 'demand' }));
   expect(save).toHaveBeenLastCalledWith({ ...config, when: 'demand' });
+  const reloaded = { ...config, when: 'demand' as const }; // the settings info reloaded after the save
+  rerender({ ...opened, config: reloaded });
   save.mockRejectedValueOnce(new Error('disk full'));
   await act(() => result.current.review.set({ on: false }));
-  expect(save).toHaveBeenLastCalledWith({ ...config, on: false });
+  expect(save).toHaveBeenLastCalledWith({ ...reloaded, on: false });
   expect(result.current.review.error).toBe('plugins.reviewer.error.notSaved');
-  expect(result.current.review.config).toEqual(config);
+  expect(result.current.review.config).toEqual(reloaded);
+});
+
+const busy = (): Response => json({ error: 'a review of this item is already running', code: 'busy' }, 409);
+// A run on another version is aborted, then the next one meets the busy answer: the retry timer is pending after this
+async function intoBusyRetry(opened: Props, reply: (n: number) => Response | Promise<Response>) {
+  const sent = stubReview(reply);
+  const hook = renderReviewer(opened);
+  act(() => hook.result.current.review.now());
+  hook.rerender({ ...opened, scope: { ...SCOPE, version: 'tdd' } });
+  const moved: Props = { ...opened, scope: { ...SCOPE, version: 'tdd' } };
+  act(() => hook.result.current.review.now());
+  await waitFor(() => expect(sent).toHaveLength(2));
+  return { ...hook, sent, moved };
+}
+
+test('the busy retry reviews the buffer as it is when it fires, not the text of the busy run; running stays on meanwhile (#329)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const opened: Props = { scope: SCOPE, text: TEXT, saved: TEXT, config: configOf('demand') };
+  const { result, rerender, sent, moved } = await intoBusyRetry(opened, (n) => (n === 1 ? held().promise : n === 2 ? busy() : answer([])));
+  expect(result.current.review.running).toBe(true);
+  rerender({ ...moved, text: EDITED });
+  act(() => { vi.advanceTimersByTime(1000); });
+  await waitFor(() => expect(sent).toHaveLength(3));
+  expect(sent[2]?.text).toBe(EDITED);
+  await waitFor(() => expect(result.current.review.running).toBe(false));
+});
+
+test('on save: a save that came during the busy run is the text the retry posts (#329)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const second = held();
+  const opened: Props = { scope: SCOPE, text: TEXT, saved: TEXT, config: configOf('save') };
+  const { rerender, sent, moved } = await intoBusyRetry(opened, (n) => (n === 1 ? held().promise : n === 2 ? second.promise : answer([])));
+  rerender({ ...moved, text: EDITED, saved: EDITED });
+  await act(async () => { second.resolve(busy()); });
+  act(() => { vi.advanceTimersByTime(1000); });
+  await waitFor(() => expect(sent).toHaveLength(3));
+  expect(sent[2]?.text).toBe(EDITED);
+});
+
+test('a newer run clears a pending busy retry, so the stale retry never fires over it (#329)', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const opened: Props = { scope: SCOPE, text: TEXT, saved: TEXT, config: configOf('demand') };
+  const { result, sent } = await intoBusyRetry(opened, (n) => (n === 1 ? held().promise : n === 2 ? busy() : answer([])));
+  act(() => result.current.review.now());
+  await waitFor(() => expect(sent).toHaveLength(3));
+  await waitFor(() => expect(result.current.review.running).toBe(false));
+  act(() => { vi.advanceTimersByTime(5000); });
+  expect(sent).toHaveLength(3);
+});
+
+test('on demand: a click during a run does not queue another run after it (#329)', async () => {
+  const first = held();
+  const sent = stubReview((n) => (n === 1 ? first.promise : answer([])));
+  const opened: Props = { scope: SCOPE, text: TEXT, saved: TEXT, config: configOf('demand') };
+  const { result, rerender } = renderReviewer(opened);
+  act(() => result.current.review.now());
+  rerender({ ...opened, text: EDITED });
+  act(() => result.current.review.now());
+  await act(async () => { first.resolve(answer([])); });
+  await waitFor(() => expect(result.current.review.running).toBe(false));
+  expect(sent).toHaveLength(1);
+});
+
+test('two quick set calls merge: the second keeps the first change; a refusal restores the config before it (#329)', async () => {
+  const save = vi.fn(async (_reviewer: ReviewerConfig): Promise<void> => undefined);
+  const config = configOf('save');
+  const { result } = renderReviewer({ scope: SCOPE, text: TEXT, saved: TEXT, config }, save);
+  await act(async () => { void result.current.review.set({ on: false }); await result.current.review.set({ when: 'demand' }); });
+  expect(save).toHaveBeenLastCalledWith({ ...config, on: false, when: 'demand' });
+  save.mockRejectedValueOnce(new Error('disk full'));
+  await act(() => result.current.review.set({ agent: 'codex' }));
+  await act(() => result.current.review.set({ model: 'm' }));
+  expect(save).toHaveBeenLastCalledWith({ ...config, on: false, when: 'demand', model: 'm' });
+});
+
+test('canReview is false without a scope and true with one (#329)', () => {
+  const { result, rerender } = renderReviewer({ text: TEXT, config: configOf('demand') });
+  expect(result.current.review.canReview).toBe(false);
+  rerender({ scope: SCOPE, text: TEXT, config: configOf('demand') });
+  expect(result.current.review.canReview).toBe(true);
 });

@@ -50,7 +50,7 @@ function AgentRow({ review, workspace }: { review: Review; workspace?: string })
 
 // Screen 11p, top to bottom: the switch, "reviews", the agent, review now, the failure's line; red is only the line's (design-system.md)
 function MenuBody({ review, workspace }: { review: Review; workspace?: string }) {
-  const { config, running, error } = review;
+  const { config, running, canReview, error } = review;
   return (
     <div className="flex flex-col text-[13px]">
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -65,7 +65,7 @@ function MenuBody({ review, workspace }: { review: Review; workspace?: string })
       </div>
       <AgentRow review={review} workspace={workspace} />
       <div className="border-t p-1.5">
-        <Button type="button" size="sm" variant="ghost" className="w-full justify-start" disabled={running || !config.on} onClick={() => review.now()}>{t('plugins.reviewer.now')}</Button>
+        <Button type="button" size="sm" variant="ghost" className="w-full justify-start" disabled={running || !config.on || !canReview} onClick={() => review.now()}>{t('plugins.reviewer.now')}</Button>
       </div>
       {error && <p role="alert" className="border-t px-3 py-2 text-destructive text-xs">{t(error)}</p>}
     </div>
