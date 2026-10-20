@@ -24,7 +24,13 @@ export interface ProjectRouteDeps {
   requireLive(res: Response): { state: State; runtime: { sources: ReadonlyMap<string, ProjectSource> } } | undefined;
   dispatch(event: HiveEvent): Promise<unknown>; // #686: itemRead, the re-read item applied to its task alone, no poll
   log?: Logger;
+  refreshOptions?(repositories: string[]): Promise<void>; // #282: the read model loop's, present exactly when there is a read model
 }
+
+// #282: a source answers from the read model exactly when there is one, and the loop (refreshOptions) exists exactly then. ponytail: a stored
+// adapter's live fallback (an item from a repository the round does not sync, a first open) is not refused in the backoff
+const isStored = (deps: ProjectRouteDeps): boolean => deps.refreshOptions !== undefined;
+const repositoriesOf = (view: ProjectView): string[] => [...new Set(view.items.flatMap((item) => item.repository ?? []))];
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
@@ -74,18 +80,21 @@ async function failed(deps: ProjectRouteDeps, res: Response, source: string, ite
   res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
 }
 
-/** GET /sources/:name/project (#756): the source's native view, read on demand: never by the poll, never stored. Refused inside the source's
- * quota backoff; a failed read is a 502 with the source's words. */
-function registerViewRoute(app: Express, { requireLive }: ProjectRouteDeps): void {
+/** GET /sources/:name/project (#756): the source's native view: from the read model, or with `?fresh=1` read in full first, then the view's
+ * repositories' options refreshed (#282). A GitHub read is refused inside the source's quota backoff; a failed read is a 502 with the source's words. */
+function registerViewRoute(app: Express, deps: ProjectRouteDeps): void {
   app.get('/sources/:name/project', async (req: Request, res: Response) => {
-    const current = requireLive(res);
+    const current = deps.requireLive(res);
     if (!current) return;
     const name = req.params.name as string;
     const source = current.runtime.sources.get(name);
     if (!source?.project) return void res.status(HTTP_NOT_FOUND).json({ error: NO_VIEW_MESSAGE });
-    if (refusedInBackoff(current.state, name, res)) return;
+    const isFresh = req.query.fresh === '1';
+    if ((isFresh || !isStored(deps)) && refusedInBackoff(current.state, name, res)) return;
     try {
-      res.json(withStages(await source.project(), current.state.stages, name));
+      const view = await source.project(isFresh ? { fresh: true } : {});
+      if (isFresh) void deps.refreshOptions?.(repositoriesOf(view)); // never rejects; the editors read what it stores
+      res.json(withStages(view, current.state.stages, name));
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }
@@ -119,8 +128,8 @@ function registerStatusRoute(app: Express, deps: ProjectRouteDeps): void {
 
 // What both field routes check first (#686): a live Hive, a source with fieldsOf and setField, an item of that source, no quota backoff.
 // undefined: the refusal already went out
-function fieldTarget(req: Request, res: Response, { requireLive }: ProjectRouteDeps): { name: string; itemId: string; source: FieldSource } | undefined {
-  const current = requireLive(res);
+function fieldTarget(req: Request, res: Response, deps: ProjectRouteDeps, isWrite: boolean): { name: string; itemId: string; source: FieldSource } | undefined {
+  const current = deps.requireLive(res);
   if (!current) return undefined;
   const name = req.params.name as string;
   const itemId = req.params.itemId as string;
@@ -129,7 +138,7 @@ function fieldTarget(req: Request, res: Response, { requireLive }: ProjectRouteD
   const setField = source?.setField;
   if (!fieldsOf || !setField) return void res.status(HTTP_NOT_FOUND).json({ error: NO_FIELDS_MESSAGE });
   if (itemSource(itemId) !== name) return void res.status(HTTP_BAD_REQUEST).json({ error: ITEM_MESSAGE });
-  if (refusedInBackoff(current.state, name, res)) return undefined;
+  if ((isWrite || !isStored(deps)) && refusedInBackoff(current.state, name, res)) return undefined; // #282: a stored read calls no GitHub
   return { name, itemId, source: { fieldsOf, setField } };
 }
 
@@ -138,7 +147,7 @@ function fieldTarget(req: Request, res: Response, { requireLive }: ProjectRouteD
  * dispatched as itemRead: the task shows the source's value with no poll. */
 function registerFieldRoutes(app: Express, deps: ProjectRouteDeps): void {
   app.get('/sources/:name/items/:itemId/fields', async (req: Request, res: Response) => {
-    const target = fieldTarget(req, res, deps);
+    const target = fieldTarget(req, res, deps, false);
     if (!target) return;
     try {
       res.json({ fields: await target.source.fieldsOf(target.itemId) });
@@ -147,7 +156,7 @@ function registerFieldRoutes(app: Express, deps: ProjectRouteDeps): void {
     }
   });
   app.post('/sources/:name/items/:itemId/fields', async (req: Request, res: Response) => {
-    const target = fieldTarget(req, res, deps);
+    const target = fieldTarget(req, res, deps, true);
     if (!target) return;
     const { field, value } = (req.body ?? {}) as { field?: unknown; value?: unknown };
     let written: FieldWrite;

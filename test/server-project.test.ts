@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { initialState } from '../src/orchestrator.js';
 import { ItemNotOnSourceError, PartialWriteError } from '../src/field-values.js';
-import { registerProjectRoutes } from '../src/server-project.js';
+import { registerProjectRoutes, type ProjectRouteDeps } from '../src/server-project.js';
 import type { FieldValue, FieldWrite, HiveEvent, ItemField, ProjectItem, ProjectView, Source, SourceItem, Stage, State } from '../src/types.js';
 
 // Two stages let work's Ready and In review in; Todo is cited by none
@@ -15,13 +15,14 @@ const LOW = { limit: 5000, remaining: 499, resetsAt: '2999-01-01T00:00:00.000Z',
 type ViewSource = Partial<Pick<Source, 'project' | 'fieldsOf' | 'setField' | 'settingsOptions'>>;
 
 // The project routes alone over these sources and this state, answering the base URL; every dispatched event lands in `dispatched`
-function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false): string {
+function routes(t: TestContext, sources: Record<string, ViewSource>, extra: Partial<State> = {}, dispatched: HiveEvent[] = [], rejecting = false, extraDeps: Pick<ProjectRouteDeps, 'refreshOptions'> = {}): string {
   const app = express();
   app.use(express.json());
   const state: State = { ...initialState(0), stages: STAGES, ...extra };
   registerProjectRoutes(app, {
     requireLive: () => ({ state, runtime: { sources: new Map(Object.entries(sources)) } }),
     dispatch: async (event) => { dispatched.push(event); if (rejecting) throw new Error('reducer failed'); },
+    ...extraDeps,
   });
   const server = app.listen(0);
   t.after(() => server.close());
@@ -191,4 +192,28 @@ test('POST …/fields checks the value against a fresh read: an option made on G
   const base = routes(t, { work: { ...editable([]), fieldsOf: async (_itemId, options) => { asked.push(options); return FIELDS; } } });
   assert.equal((await post(fieldsUrl(base), { field: 'Priority', value: 'P0' })).status, 200);
   assert.deepEqual(asked, [{ fresh: true }]);
+});
+
+test('GET /sources/:name/project?fresh=1 asks the source fresh, then the option scopes of the view\'s repositories; a plain open asks neither (#282)', async (t) => {
+  const asked: unknown[] = [];
+  const refreshed: string[][] = [];
+  const items = [{ ...ROW, repository: 'acme/r' }, { ...ROW, itemId: 'work:PVTI_2', repository: 'acme/r' }, { ...ROW, itemId: 'work:PVTI_3', repository: 'acme/site' }];
+  const work: ViewSource = { project: async (options) => { asked.push(options); return { ...VIEW, items }; } };
+  const base = routes(t, { work }, {}, [], false, { refreshOptions: async (repositories) => { refreshed.push(repositories); } });
+  assert.equal((await fetch(`${base}/sources/work/project`)).status, 200);
+  assert.equal((await fetch(`${base}/sources/work/project?fresh=1`)).status, 200);
+  assert.deepEqual([asked, refreshed], [[{}, { fresh: true }], [['acme/r', 'acme/site']]]);
+});
+
+test('inside the quota backoff a stored view and stored fields still answer; a fresh view, a write and any read of a source with no read model are refused (#282)', async (t) => {
+  const low = { syncs: { work: { quota: LOW } } };
+  const work: ViewSource = { project: async () => VIEW, ...editable([]) };
+  const stored = routes(t, { work }, low, [], false, { refreshOptions: async () => undefined });
+  assert.equal((await fetch(`${stored}/sources/work/project`)).status, 200);
+  assert.equal((await fetch(fieldsUrl(stored))).status, 200);
+  assert.equal((await fetch(`${stored}/sources/work/project?fresh=1`)).status, 429);
+  assert.equal((await post(fieldsUrl(stored), { field: 'Priority', value: 'P0' })).status, 429);
+  const live = routes(t, { work }, low);
+  assert.equal((await fetch(`${live}/sources/work/project`)).status, 429);
+  assert.equal((await fetch(fieldsUrl(live))).status, 429);
 });

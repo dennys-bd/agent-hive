@@ -103,8 +103,9 @@ export interface ReadModelLoopDeps {
 export interface ReadModelLoop {
   runOnce(): Promise<void>;
   refetch(repository: string, number: number, options?: { again?: boolean }): Promise<RefetchOutcome>; // again: past the cooldown (#187)
+  refreshOptions(repositories: string[]): Promise<void>; // #282: the tab's refresh: the option scopes of these repositories now; never rejects
   start(): void;
-  stop(): Promise<void>; // resolves once the running round and every refetch in flight settled
+  stop(): Promise<void>; // resolves once the running round, every refetch and every options refresh in flight settled
 }
 
 interface LoopCore { now(): Date; access(): Promise<RefetchDeps | undefined>; inBackoff(): boolean }
@@ -223,6 +224,34 @@ function refetchesOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => b
   };
 }
 
+// The tab's refresh (#282): the option scopes of the view's repositories, now and outside the round, each failure logged on its own. Its promises
+// are kept so stop() waits for them: the database closes after it
+function optionsRefreshOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { refreshOptions: ReadModelLoop['refreshOptions']; inFlight(): Promise<void>[] } {
+  const pending = new Set<Promise<void>>();
+  async function run(repositories: string[]): Promise<void> {
+    try {
+      const sync = await core.access();
+      if (sync === undefined) return;
+      for (const repository of repositories) {
+        const { report, errors } = await repoScopes({ ...sync, isStopped }, repository, OPTION_SCOPES);
+        for (const err of errors) deps.log.error(`read model: the options of ${repository} were not read: ${reasonOf(err)}`);
+        if (report.kinds.length > 0) deps.notify(repository, report.kinds);
+      }
+    } catch (err) {
+      if (!(err instanceof SyncStopped)) deps.log.error(`read model: the options refresh failed: ${reasonOf(err)}`);
+    }
+  }
+  return {
+    inFlight: () => [...pending],
+    refreshOptions: (repositories) => {
+      if (isStopped() || core.inBackoff()) return Promise.resolve();
+      const promise = run(repositories).finally(() => pending.delete(promise));
+      pending.add(promise);
+      return promise;
+    },
+  };
+}
+
 /** The daemon's read sync (#180): the network fills the read model in the background, one round every POLL_INTERVAL_MS, apart from the
  * Project poll and its GraphQL backoff; the views learn of a change by the readModel event. */
 export function createReadModelLoop(deps: ReadModelLoopDeps): ReadModelLoop {
@@ -232,9 +261,11 @@ export function createReadModelLoop(deps: ReadModelLoopDeps): ReadModelLoop {
   const core = coreOf(deps);
   const rounds = roundsOf(deps, core, isStopped);
   const refetches = refetchesOf(deps, core, isStopped);
+  const options = optionsRefreshOf(deps, core, isStopped);
   return {
     runOnce: rounds.runOnce,
     refetch: refetches.refetch,
+    refreshOptions: options.refreshOptions,
     start: () => {
       void rounds.runOnce();
       timer = setInterval(() => void rounds.runOnce(), POLL_INTERVAL_MS);
@@ -243,7 +274,7 @@ export function createReadModelLoop(deps: ReadModelLoopDeps): ReadModelLoop {
       stopped = true;
       if (timer) clearInterval(timer);
       // the database closes after this: never under a transaction a round or a refetch still holds
-      await Promise.allSettled([rounds.running(), ...refetches.inFlight()]);
+      await Promise.allSettled([rounds.running(), ...refetches.inFlight(), ...options.inFlight()]);
     },
   };
 }

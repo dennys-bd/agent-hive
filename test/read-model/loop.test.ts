@@ -7,7 +7,7 @@ import { openReadModel, READ_MODEL_FILE, type ReadModel, type SyncKind } from '.
 import {
   createReadModelLoop, readModelEvent, RECONCILE_EVERY_MS, REFETCH_COOLDOWN_MS, syncRepository, type ReadModelLoop, type ReadModelLoopDeps,
 } from '../../src/read-model/loop.js';
-import { labelsPath, repoPath } from '../../src/read-model/repo-scopes.js';
+import { assigneesPath, issueTypesPath, labelsPath, milestonesPath, repoPath } from '../../src/read-model/repo-scopes.js';
 import type { RestGet } from '../../src/read-model/rest.js';
 import { scopePath } from '../../src/read-model/sync.js';
 import type { Gql } from '../../src/types.js';
@@ -434,4 +434,16 @@ test('a stop that lands between a PR\'s refetch and its poll ends the poll witho
   assert.deepEqual(errors, []);
   assert.deepEqual(gh.calls.slice(before).filter(([path]) => path.includes('/pulls/')), [], 'the stopped poll asked GitHub nothing');
   db.close();
+});
+
+test('refreshOptions runs the labels, assignees, milestones and issue types scopes of the repositories asked, now, and names what changed; once stopped it reads nothing (#282)', async (t) => {
+  const db = await tempModel(t);
+  const { rest, calls } = fakeRest([ok([restLabel('bug')]), ok([{ login: 'bia' }]), ok([]), { status: 404 }]);
+  const { loop, notified } = loopOn(db, rest);
+  await loop.refreshOptions([REPO]);
+  assert.deepEqual(calls.map(([path]) => path), [labelsPath(REPO), assigneesPath(REPO), milestonesPath(REPO), issueTypesPath('acme')]);
+  assert.deepEqual(notified, [[REPO, ['labels', 'assignees']]]);
+  await loop.stop();
+  await loop.refreshOptions([REPO]);
+  assert.equal(calls.length, 4);
 });
