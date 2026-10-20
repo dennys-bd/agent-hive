@@ -23,9 +23,11 @@ export function AgentIcon({ agent, className = MARK }: { agent: AgentId; classNa
   return Icon === undefined ? null : <Icon className={className} />;
 }
 
-/** A session as the review names it (#591, #925): its agent's icon and name, the id's first 8 characters in mono; nova sessão for a new one. */
-export function SessionLabel({ id }: { id: string }) {
-  const agent = useSessionAgent(id);
+/** A session as the review names it (#591, #925): its agent's icon and name, the id's first 8 characters in mono; nova sessão for a new one.
+ * `agent`: the session's own, where the caller knows it outside a review pane (#379: the resolve dialog). */
+export function SessionLabel({ id, agent: known }: { id: string; agent?: AgentId }) {
+  const fromPane = useSessionAgent(id);
+  const agent = known ?? fromPane;
   if (id === NEW_SESSION) return <>{t('review.newSession')}</>;
   return (
     <span className="inline-flex min-w-0 items-center gap-1">
