@@ -2125,6 +2125,11 @@ const en = {
   'plugins.update.stale': 'the update changed while it was open; review it again',
   'plugins.update.readFailed': 'could not read the update',
   'plugins.update.applyFailed': 'could not apply the update',
+  // #334: the mcp screen
+  'plugins.mcp.refused': 'the hive refused it: check the name, the command or url, and the scope',
+  'plugins.mcp.gone': 'that server is no longer in the settings',
+  'plugins.mcp.failed': 'could not save it; see hive.log',
+  'plugins.mcp.valueNotSaved': 'the server was saved, but not its header value',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4245,6 +4250,11 @@ const pt: Record<MessageKey, string> = {
   'plugins.update.stale': 'a atualização mudou enquanto estava aberta; revise de novo',
   'plugins.update.readFailed': 'não foi possível ler a atualização',
   'plugins.update.applyFailed': 'não foi possível aplicar a atualização',
+  // #334: the mcp screen
+  'plugins.mcp.refused': 'a hive recusou: confira o nome, o comando ou a url e o escopo',
+  'plugins.mcp.gone': 'esse servidor não está mais nas configurações',
+  'plugins.mcp.failed': 'não foi possível salvar; veja o hive.log',
+  'plugins.mcp.valueNotSaved': 'o servidor foi salvo, mas o valor do cabeçalho não',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
