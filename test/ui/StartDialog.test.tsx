@@ -7,7 +7,7 @@ import { ConsoleContext } from '@/hooks/use-console';
 import { setLanguage, t } from '@/i18n';
 import { CreateTargetsContext, type CreateTargets } from '@/lib/create-targets';
 import { setShortcuts } from '@/lib/shortcut-bindings';
-import type { BaseOptions, Task, Worker, Stage, State } from '../../src/types';
+import type { BaseOptions, SetupRow, Task, Worker, Stage, State } from '../../src/types';
 import { APPROVAL_MINUTES_DEFAULT, DISCARD_FAILED, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../../src/types';
 import { activityIdOf, withPointedWork, withWork, type WithWork } from '../fixtures/work';
 
@@ -46,6 +46,18 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) =>
 });
 const posts = (): [string, unknown][] => fetchMock.mock.calls
   .filter(([, init]) => init?.method === 'POST').map(([url, init]) => [String(url), init?.body === undefined ? undefined : JSON.parse(String(init.body))]);
+
+const CONSOLE = 'setup:I9';
+const PREPARED: SetupRow[] = [{ kind: 'worktree', status: 'done', durationMs: 1200 }, { kind: 'branch', status: 'done', branch: 'hive/9-landing-hero', base: 'origin/main' }];
+const PREPARING: SetupRow[] = [...PREPARED, { kind: 'step', status: 'running', label: 'pnpm install', header: 'RUN pnpm install', startedAt: AT }];
+const SETUP_FAILED: SetupRow[] = [...PREPARED, { kind: 'step', status: 'failed', label: 'pnpm install', header: 'RUN pnpm install', durationMs: 34_000, code: '1' }];
+const preparing = (): State => state([LANDING, { ...HERO, setup: { consoleId: CONSOLE, step: 'RUN pnpm install', rows: PREPARING } }]);
+// The start held until the test answers it (#390): the bases first, then /start
+function heldStart(): { answer(res: Response): void } {
+  const held = { answer: (_res: Response): void => undefined };
+  fetchMock.mockImplementationOnce(async () => reply(BASES)).mockImplementationOnce(() => new Promise<Response>((resolve) => { held.answer = resolve; }));
+  return held;
+}
 
 beforeEach(() => { setLanguage('pt'); vi.stubGlobal('fetch', fetchMock); fetchMock.mockClear(); created = 0; bases = BASES; sourceAnswer = { id: '5', itemId: 'board:PVTI_5' }; });
 afterEach(() => vi.unstubAllGlobals());
@@ -292,16 +304,113 @@ test('onActivity hears the activity a start or a free session opened, whichever 
   await waitFor(() => expect(onActivity).toHaveBeenCalledWith('I9'));
 });
 
-test('while a start waits on the worktree setup the button says iniciando…, then preparando a worktree…, never the step\'s own command (#351)', async () => {
+test('a pending start whose activity gets its setup shows the preparing view: the task\'s title, the rows, the session row, the note and the wait; no ver log icon (#390, #290)', async () => {
   const user = userEvent.setup();
-  fetchMock.mockImplementationOnce(async () => reply(BASES)).mockImplementationOnce(() => new Promise<Response>(() => {})); // /start never answers
-  const { rerender } = render(<StartDialog state={state()} taskId="I9" onClose={vi.fn()} />);
+  heldStart();
+  const dialog = (st: State) => <ConsoleContext.Provider value={vi.fn()}><StartDialog state={st} taskId="I9" onClose={vi.fn()} /></ConsoleContext.Provider>;
+  const { rerender } = render(dialog(state()));
   await screen.findByRole('combobox', { name: 'origin/main' });
   await user.keyboard('{Control>}{Enter}{/Control}');
-  expect(await screen.findByRole('button', { name: 'iniciando…' })).toBeDisabled();
-  rerender(<StartDialog state={state([LANDING, { ...HERO, setup: { consoleId: 'setup:I9', step: 'RUN pnpm install', rows: [] } }])} taskId="I9" onClose={vi.fn()} />);
-  expect(screen.getByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
-  expect(screen.queryByText(/RUN pnpm install/)).not.toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'iniciando…' })).toBeDisabled(); // before the mark: the submit, as before
+  rerender(dialog(preparing()));
+  const shown = screen.getByRole('dialog', { name: 'Preparando a worktree de #SITE-9' });
+  expect(shown).toHaveAccessibleDescription('Landing hero for teams · etapa backlog');
+  const rows = within(shown).getByRole('list'); // the rows: the log's select names the running step too
+  for (const text of ['worktree criada', 'pnpm install', 'iniciar sessão claude na etapa backlog']) expect(within(rows).getByText(text)).toBeInTheDocument();
+  expect(within(shown).getByText(/^pode fechar:/)).toBeInTheDocument();
+  expect(within(shown).getByRole('button', { name: 'preparando worktree…' })).toBeDisabled();
+  expect(within(shown).getByRole('button', { name: 'abrir no console' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
+});
+
+test('fechar closes the preparing view and leaves the request running: nothing is cancelled and a late answer attaches nothing (#390)', async () => {
+  const user = userEvent.setup();
+  const held = heldStart();
+  const onClose = vi.fn();
+  const onStarted = vi.fn();
+  const { rerender } = render(<StartDialog state={state()} taskId="I9" onStarted={onStarted} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  rerender(<StartDialog state={preparing()} taskId="I9" onStarted={onStarted} onClose={onClose} />);
+  await user.click(screen.getByRole('button', { name: 'fechar' }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  held.answer(reply({ ok: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(posts()).toEqual([['/tasks/I9/start', { base: null, local: false }]]);
+  expect([onClose.mock.calls.length, onStarted.mock.calls.length]).toEqual([1, 0]);
+});
+
+test('an ok answer that comes before the state drops the setup waits; with no lastSetup the dialog then closes on the started run (#390)', async () => {
+  const user = userEvent.setup();
+  const held = heldStart();
+  const onClose = vi.fn();
+  const onStarted = vi.fn();
+  const dialog = (st: State) => <StartDialog state={st} taskId="I9" onStarted={onStarted} onClose={onClose} />;
+  const { rerender } = render(dialog(state()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  rerender(dialog(preparing()));
+  held.answer(reply({ ok: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(onClose).not.toHaveBeenCalled(); // the setup is still in the state
+  rerender(dialog(state()));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(onStarted).toHaveBeenCalledWith('I9');
+});
+
+test('a setup that failed stays on the view: × with its exit code and tentar de novo, which posts the same start again (#390)', async () => {
+  const user = userEvent.setup();
+  const held = heldStart();
+  const onClose = vi.fn();
+  const dialog = (st: State) => <StartDialog state={st} taskId="I9" onStarted={vi.fn()} onClose={onClose} />;
+  const { rerender } = render(dialog(state()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  rerender(dialog(preparing()));
+  held.answer(reply({ ok: true }));
+  rerender(dialog(state([LANDING, { ...HERO, lastSetup: { consoleId: CONSOLE, rows: SETUP_FAILED }, error: 'start failed: setup failed at line 1 (RUN pnpm install): exit 1' }])));
+  const retry = await screen.findByRole('button', { name: 'tentar de novo' });
+  expect(screen.getByText('falhou · exit 1')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); // the view, not the form's error line
+  expect(onClose).not.toHaveBeenCalled();
+  await user.click(retry);
+  await waitFor(() => expect(posts().filter(([url]) => url === '/tasks/I9/start')).toHaveLength(2));
+  expect(posts().at(-1)).toEqual(['/tasks/I9/start', { base: null, local: false }]);
+});
+
+test('a sessão livre open refused while its worktree prepares fails the view at once, and tentar de novo opens again (#390)', async () => {
+  const user = userEvent.setup();
+  let refuse = (_res: Response): void => undefined;
+  let opens = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/open') && init?.method === 'POST') {
+      opens += 1;
+      if (opens === 1) return new Promise<Response>((resolve) => { refuse = resolve; });
+    }
+    return reply(url.endsWith('/bases') ? BASES : { ok: true });
+  }));
+  const dialog = (st: State) => <StartDialog state={st} taskId="I9" initialMode="free" onClose={vi.fn()} />;
+  const { rerender } = render(dialog(state()));
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /sessão livre/ }));
+  rerender(dialog(preparing()));
+  expect(screen.getByText('abrir sessão claude')).toBeInTheDocument();
+  refuse(reply({ error: 'setup failed at line 1 (RUN pnpm install): exit 1' }, 500));
+  const retry = await screen.findByRole('button', { name: 'tentar de novo' }); // before the state drops the setup
+  rerender(dialog(state([LANDING, { ...HERO, lastSetup: { consoleId: CONSOLE, rows: SETUP_FAILED } }]))); // a live setup blocks an open, as the server does
+  await user.click(retry);
+  await waitFor(() => expect(opens).toBe(2));
+});
+
+test('a task whose worktree is already set up never shows the preparing view: the start closes the dialog as before (#390)', async () => {
+  const user = userEvent.setup();
+  const onClose = vi.fn();
+  render(<StartDialog state={state()} taskId="I9" onStarted={vi.fn()} onClose={onClose} />);
+  await screen.findByRole('combobox', { name: 'origin/main' });
+  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText(/Preparando a worktree/)).not.toBeInTheDocument();
 });
 
 test('a title from the search\'s + criar tarefa creates that task once on arrival and picks it (#584)', async () => {
@@ -565,19 +674,6 @@ test('a continue shows the run without personalizar, since its session is fixed;
   unmount();
   render(<StartDialog state={withWork(state(), 'I9', { handover: { prompt: 'from the transition' } })} taskId="I9" onClose={vi.fn()} />);
   expect(screen.queryByRole('button', { name: /personalizar/ })).not.toBeInTheDocument();
-});
-
-test('while the start prepares the worktree the submit says so and offers no ver log icon, even inside a console (#290)', async () => {
-  const user = userEvent.setup();
-  fetchMock.mockImplementationOnce(async () => reply(BASES)); // the bases; the start after it never answers
-  fetchMock.mockImplementationOnce(() => new Promise<Response>(() => undefined));
-  const dialog = (st: State) => <ConsoleContext.Provider value={vi.fn()}><StartDialog state={st} taskId="I9" onClose={vi.fn()} /></ConsoleContext.Provider>;
-  const { rerender } = render(dialog(state()));
-  await screen.findByRole('combobox', { name: 'origin/main' });
-  await user.click(screen.getByRole('button', { name: /executar etapas/ }));
-  rerender(dialog(withWork(state(), 'I9', { setup: { consoleId: 'setup:I9', rows: [] } }))); // the mark arrives while the start is on its way
-  expect(await screen.findByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
-  expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
 });
 
 test('sessão livre reads the launch options of the task\'s workspace (#316)', async () => {

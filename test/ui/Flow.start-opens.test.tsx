@@ -94,7 +94,7 @@ test('a delete activity stage\'s start runs git, no run: it hands nothing (#210,
   expect(started).not.toHaveBeenCalled();
 });
 
-test('the Start dialog stays open while its start sets up, though the task now runs: its button says it prepares the worktree (#351)', async () => {
+test('the Start dialog stays open on the preparing view while its start sets up, though the task now runs; it closes once the setup leaves the state (#351, #390)', async () => {
   bases = NO_WORKTREE;
   let answer: (res: Response) => void = () => undefined;
   held = new Promise<Response>((resolve) => { answer = resolve; });
@@ -102,10 +102,11 @@ test('the Start dialog stays open while its start sets up, though the task now r
   const { rerender } = render(board([task('3')]));
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   await runStages(user);
-  const running: Task = task('3', { workerId: 's1', setup: { consoleId: 'setup:I3', step: 'RUN pnpm install', rows: [] } });
-  rerender(<StartedTaskContext.Provider value={started}><Flow state={{ ...state([running]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] }} /></StartedTaskContext.Provider>);
-  expect(within(screen.getByRole('dialog', { name: 'Iniciar #3' })).getByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
+  const flow = (t: Task) => <StartedTaskContext.Provider value={started}><Flow state={{ ...state([t]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] }} /></StartedTaskContext.Provider>;
+  rerender(flow(task('3', { workerId: 's1', setup: { consoleId: 'setup:I3', step: 'RUN pnpm install', rows: [] } })));
+  expect(within(screen.getByRole('dialog', { name: 'Preparando a worktree de #3' })).getByRole('button', { name: 'preparando worktree…' })).toBeDisabled();
   answer(reply({ ok: true }));
+  rerender(flow(task('3', { workerId: 's1' }))); // the setup ended with no lastSetup: it passed
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   expect(started).toHaveBeenCalledWith('I3');
 });
