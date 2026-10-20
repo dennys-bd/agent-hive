@@ -202,3 +202,17 @@ test('a list the model never synced shows sincronizando… in place of the open 
   expect(within(screen.getByRole('table')).getByRole('status', { name: 'sincronizando…' })).toHaveClass('text-muted-foreground');
   expect(screen.getAllByRole('row')).toHaveLength(2); // the header and the syncing row
 });
+
+test('the header\'s GitHub opens the repository\'s pulls; a fork\'s opens the fork\'s own, never the original\'s (#352)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  const { unmount } = renderTable();
+  await user.click(screen.getByRole('button', { name: 'GitHub' }));
+  expect(open).toHaveBeenCalledWith('https://github.com/acme/site/pulls', '_blank', 'noreferrer');
+  unmount();
+  const FORK: RepoSummary = { ...SITE, repository: 'me/site', url: 'https://github.com/me/site', role: 'fork', pr: 'original', fork: { parent: 'acme/site' } };
+  render(<RepoPrTable state={state} summary={FORK} onTab={vi.fn()} />);
+  await user.click(screen.getByRole('button', { name: 'GitHub' }));
+  expect(open).toHaveBeenLastCalledWith('https://github.com/me/site/pulls', '_blank', 'noreferrer');
+  open.mockRestore();
+});

@@ -24,7 +24,7 @@ type PageTab = 'conversation' | 'files';
 
 export interface PrPageProps {
   state: State; pr: PrRef;
-  header(reload: () => Promise<void>): ReactNode; // the repository header; its atualizar reads the PR again
+  header(reload: () => Promise<void>, github: string): ReactNode; // the repository header; its atualizar reads the PR again, its GitHub ↗ opens `github` (#352)
   onGoTo(taskId: string): void; // a task with no GitHub issue: its detail in the flow
   onOpenIssue(url: string): void; // task #N: its issue's page
   onOpenPr(url: string): void; // a stack's part: its PR's page, or GitHub
@@ -103,6 +103,8 @@ export function PrPage({ state, pr: ref, header, onGoTo, onOpenIssue, onOpenPr, 
   const { load, refresh, review, reread } = usePr(url, isShown);
   const [tab, setTab] = useState<PageTab>('conversation');
   const pr = load.status === 'ready' ? load.pr : undefined;
+  // #352: GitHub's own URL once read, the ref's before, so the button is there from the first frame; the files tab has its own page there
+  const github = `${pr?.url ?? url}${tab === 'files' ? '/files' : ''}`;
   const reload = async (): Promise<void> => {
     reread();
     await refresh();
@@ -120,13 +122,13 @@ export function PrPage({ state, pr: ref, header, onGoTo, onOpenIssue, onOpenPr, 
     setJump(path);
   };
   if (pr === undefined || view.surface === undefined) {
-    return <div className="flex min-h-0 flex-1 flex-col">{header(reload)}<PrStatus load={load} /><DetailSlot><PrStatus load={load} /></DetailSlot></div>;
+    return <div className="flex min-h-0 flex-1 flex-col">{header(reload, github)}<PrStatus load={load} /><DetailSlot><PrStatus load={load} /></DetailSlot></div>;
   }
   const task = taskOfPr(state, url);
   const drafts = review?.drafts.length ?? 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {header(reload)}
+      {header(reload, github)}
       <div className="px-6 pt-4 pb-2"><PrTitle pr={pr} onChanged={reload} /></div>
       <PageTabs tab={tab} pr={pr} onTab={setTab}>
         {pr.state === 'open' && <ReviewPopover pr={pr} drafts={drafts} onSent={() => void reload()} />}

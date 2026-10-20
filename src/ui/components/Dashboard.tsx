@@ -231,8 +231,8 @@ interface RepoCenterArgs { state: State; picks: SourcePick; repo: RepoSummary; g
 // keeps the header
 function repoCenter({ state, picks, repo, goTo, onOpenIssue, onOpenPr, back }: RepoCenterArgs): ReactNode {
   const heading: RepoHeader = { summary: repo, tab: picks.repoTab, onTab: picks.onRepoTab, onRepository: picks.pickRepository };
-  // #911: a page's header carries the way back, never a list's
-  const header = (reload: () => Promise<void>) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} />;
+  // #911: a page's header carries the way back, never a list's; #352: the page names its own GitHub URL
+  const header = (reload: () => Promise<void>, github: string) => <FlowHeader state={state} tasks={[]} repository={heading} onRefresh={reload} back={back} github={github} />;
   const { issue, pr } = picks;
   // #69: the merge goes back as the header's button does; an empty stack has no back, so the page stays and shows the PR merged
   if (pr) return <PrPage key={`${pr.repository}#${pr.number}`} state={state} pr={pr} header={header} onGoTo={goTo} onOpenIssue={onOpenIssue} onOpenPr={onOpenPr} onMerged={back?.onBack} />;
@@ -261,7 +261,7 @@ function Center({ state, selected, picks, repositories, onSelect, goTo, stageCap
         <IssuePage
           key={`${issue.repository}#${issue.number}`} state={state} issue={issue} meta={external.name}
           workspace={repositories.find((r) => r.repository === issue.repository)?.workspace}
-          header={(reload) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} />} onGoTo={goTo} onOpenPr={prOpener(picks, repositories)}
+          header={(reload, github) => <FlowHeader state={state} source={external.name} tasks={[]} tabs={tabs} onRefresh={reload} back={back} github={github} />} onGoTo={goTo} onOpenPr={prOpener(picks, repositories)}
         />
       );
     }

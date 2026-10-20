@@ -16,7 +16,7 @@ export interface IssuePageProps {
   state: State; issue: IssueRef;
   meta: string; // the source's name, or the repository's owner/name: where the page was opened from
   workspace?: string; // the repository's workspace: the issue's when it is no task
-  header(reload: () => Promise<void>): ReactNode; // the header it was opened from; its atualizar reads the issue again
+  header(reload: () => Promise<void>, github: string): ReactNode; // the header it was opened from; its atualizar reads the issue again, its GitHub ↗ opens `github` (#352)
   onGoTo(taskId: string): void;
   onOpenPr(url: string): void; // #65: the task's PRs' "open", the dashboard's PR opener: its page when its repository is listed, else GitHub
 }
@@ -30,13 +30,15 @@ export function IssuePage(props: IssuePageProps) {
   const { state, issue: ref, meta, workspace, header, onGoTo, onOpenPr } = props;
   const { load, reload, optimistic } = useIssue(ref.repository, ref.number);
   const issue = load.kind === 'issue' ? load.issue : undefined;
-  // Before the read answers, the task from the ref, as the dashboard finds it (#64): the details grid leaves the PRs to this slot (#65)
-  const task = taskOfIssue(state.tasks, issue?.url ?? issueUrl(ref.repository, ref.number), ref.itemId);
+  // Before the read answers, the URL from the ref (#64): the task as the dashboard finds it, whose PRs the details grid leaves to this slot
+  // (#65), and the header's GitHub ↗ from the first frame (#352)
+  const url = issue?.url ?? issueUrl(ref.repository, ref.number);
+  const task = taskOfIssue(state.tasks, url, ref.itemId);
   const shownWorkspace = task ? resolveWorkspace(task, state.workspaces, state.sourceWorkspaces, state.tasks) : workspace;
   const line = load.kind === 'loading' ? t('project.loading') : load.kind === 'error' ? load.message : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {header(reload)}
+      {header(reload, url)}
       {issue ? (
         <div className="flex min-h-0 flex-1">
           <IssueBody issue={issue} task={task} state={state} meta={[meta, ...(shownWorkspace === undefined ? [] : [shownWorkspace])].join(' · ')} onChanged={reload} optimistic={optimistic} />

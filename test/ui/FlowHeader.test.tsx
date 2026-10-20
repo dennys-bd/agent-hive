@@ -275,3 +275,24 @@ test('under a header slot provider the bar renders in the registered slot, not i
   rerender(inSlot(false));
   expect(screen.queryByRole('region', { name: 'fluxo' })).not.toBeInTheDocument();
 });
+
+test('with github, GitHub sits right before atualizar, titled abrir no GitHub, its icon muted, and opens the URL in the browser; without it, no button (#352)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  onTestFinished(() => open.mockRestore());
+  const summary = { repository: 'acme/web', url: 'https://github.com/acme/web', workspace: 'site', openPrs: 2, openIssues: 23, closedIssues: 4, canPush: true, issuesEnabled: true, syncedAt: null };
+  const page = (github?: string) => <FlowHeader state={state(tasks)} tasks={[]} search="" onSearch={vi.fn()} repository={{ summary, tab: 'issues', onTab: vi.fn() }} github={github} />;
+  const { rerender } = render(page());
+  expect(within(header()).queryByRole('button', { name: 'GitHub' })).not.toBeInTheDocument();
+  rerender(page('https://github.com/acme/web/issues'));
+  const github = within(header()).getByRole('button', { name: 'GitHub' }); // the icon is aria-hidden: the name is the label
+  expect(github.nextElementSibling).toBe(within(header()).getByRole('button', { name: 'atualizar' }));
+  expect(github).toHaveAttribute('title', 'abrir no GitHub');
+  expect(github).toHaveClass('shrink-0', 'whitespace-nowrap'); // the search shrinks first
+  expect(github.querySelector('svg')).toHaveClass('text-muted-foreground');
+  await user.click(github);
+  expect(open).toHaveBeenCalledWith('https://github.com/acme/web/issues', '_blank', 'noreferrer');
+  setLanguage('en');
+  rerender(page('https://github.com/acme/web/issues'));
+  expect(within(screen.getByRole('region', { name: 'flow' })).getByRole('button', { name: 'GitHub' })).toHaveAttribute('title', 'open on GitHub');
+});

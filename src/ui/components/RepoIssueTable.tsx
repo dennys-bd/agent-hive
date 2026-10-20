@@ -107,7 +107,7 @@ export function RepoIssueTable({ state, summary, onTab, onOpen, onRepository }: 
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <FlowHeader state={state} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} repository={{ summary, tab: 'issues', onTab, onRepository }} onRefresh={refresh} />
+      <FlowHeader state={state} tasks={[]} search={search} onSearch={setSearch} isShown={isShown} repository={{ summary, tab: 'issues', onTab, onRepository }} onRefresh={refresh} github={`${summary.url}/issues`} />
       {summary.role === 'fork' && summary.issuesEnabled === false ? ( // #854: GitHub turns a fork's issues off by default
         <ForkEmpty text={t('repos.fork.noIssues', { fork: summary.repository })} original={summary.fork?.parent} onRepository={onRepository} />
       ) : (

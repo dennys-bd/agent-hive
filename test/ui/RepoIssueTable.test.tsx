@@ -192,3 +192,17 @@ test('a synced list with no issue is an empty table, with no syncing mark (#182)
   expect(screen.queryByRole('status', { name: 'sincronizando…' })).not.toBeInTheDocument();
   expect(screen.getAllByRole('row')).toHaveLength(1);
 });
+
+test('the header\'s GitHub opens the repository\'s issues; a fork\'s opens the fork\'s own, never the original\'s (#352)', async () => {
+  const user = userEvent.setup();
+  const open = vi.spyOn(window, 'open').mockReturnValue(null);
+  const { unmount } = renderTable();
+  await user.click(screen.getByRole('button', { name: 'GitHub' }));
+  expect(open).toHaveBeenCalledWith('https://github.com/acme/site/issues', '_blank', 'noreferrer');
+  unmount();
+  const FORK: RepoSummary = { ...SITE, repository: 'me/site', url: 'https://github.com/me/site', role: 'fork', fork: { parent: 'acme/site' } };
+  render(<RepoIssueTable state={state} summary={FORK} onTab={vi.fn()} />);
+  await user.click(screen.getByRole('button', { name: 'GitHub' }));
+  expect(open).toHaveBeenLastCalledWith('https://github.com/me/site/issues', '_blank', 'noreferrer');
+  open.mockRestore();
+});
