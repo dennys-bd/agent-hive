@@ -56,20 +56,21 @@ const CLAUDE_ID_FLAGS = ['-r', '--resume', '--session-id'];
 const flagOf = (arg: string): string => (arg.startsWith('--') ? arg.split('=')[0] : arg);
 
 // The uuid a value flag of Claude's names, `--flag <id>` or `--flag=<id>`: only a uuid can be a session id (namedSession); the last one wins
-function claudeId(args: readonly string[]): string | undefined {
+function claudeId(args: readonly string[], flags: readonly string[] = CLAUDE_ID_FLAGS): string | undefined {
   return args.flatMap((arg, i) => {
     const flag = flagOf(arg);
     const value = flag === arg ? args[i + 1] : arg.slice(flag.length + 1);
-    return CLAUDE_ID_FLAGS.includes(flag) && isUuid(value) ? [value] : [];
+    return flags.includes(flag) && isUuid(value) ? [value] : [];
   }).at(-1);
 }
 
 // Claude: --fork-session starts a new conversation the Hive names, unless the user names it with --session-id: a second one in the reply
-// would leave the worker on an id the run never uses
+// would leave the worker on an id the run never uses. A named fork runs its --session-id, never the session it forks from
 function claudeResume(args: readonly string[]): ShimResume {
   const flags = args.map(flagOf);
   if (!flags.some((flag) => CLAUDE_RESUMES.includes(flag))) return NEW;
-  return flags.includes('--fork-session') && !flags.includes('--session-id') ? NEW : resumed(claudeId(args));
+  if (!flags.includes('--fork-session')) return resumed(claudeId(args));
+  return flags.includes('--session-id') ? resumed(claudeId(args, ['--session-id'])) : NEW;
 }
 
 // Codex: the resume subcommand, first as the shim reads a subcommand; fork stays a passthrough (#932)

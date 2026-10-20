@@ -96,3 +96,12 @@ test('a resumed capture whose first SessionStart runs outside the terminal\'s fo
   const stop = reduce(released, { type: 'hook', ptyId: RUN, payload: { hook_event_name: 'Stop', session_id: S3 } });
   assert.equal(stop.state, released);
 });
+
+test('a resumed capture whose first SessionStart names a session another live run holds is released, never a second worker on that id (#347)', () => {
+  const state = world('local');
+  const live = { id: 'w-live', runId: 'dddddddd-0000-4000-8000-000000000001', activityId: workId(state, ITEM.itemId), status: 'working' as const, sessionId: S1, freeSession: true as const };
+  const captured = capture({ ...state, workers: [...state.workers, live] }, 'claude', {}); // claude -c picks the live run's conversation
+  const released = started(captured, S1, '/repo');
+  assert.equal(runOf(released), undefined);
+  assert.deepEqual(released.workers.filter((w) => w.sessionId === S1).map((w) => w.runId), [live.runId]);
+});

@@ -171,11 +171,13 @@ export function captureSession(state: State, { terminalId, runId, agent, session
 
 /** A resumed capture's first SessionStart (#347), which names the conversation the user picked (-c, the picker, Codex's --last) or one the
  * register could not place. A cwd outside the terminal's folder (a Codex rollout of another checkout) releases the worker with nothing
- * recorded: the run goes on unregistered. A session an activity holds takes the worker there, its session used again and its tokens the
+ * recorded: the run goes on unregistered, as does one naming a session another live run holds. A session an activity holds takes the worker there, its session used again and its tokens the
  * baseline (#248); the run keeps the args it started with. Undefined: firstFreeSession records it where it runs. `state` carries the id. */
 export function resumedStart(state: State, worker: Worker, id: string, cwd: unknown): State | undefined {
   const terminal = state.terminals.find((t) => t.terminalId === worker.terminalId);
-  if (capturedCwd(cwd, terminal?.cwd) === undefined) return { ...state, workers: releaseWorker(state.workers, worker) };
+  // claude -c on a conversation a stage run still runs: two workers on one id would split its hooks, as the register's refusal says
+  const isTaken = state.workers.some((w) => w.runId !== worker.runId && w.status !== 'empty' && w.sessionId === id);
+  if (capturedCwd(cwd, terminal?.cwd) === undefined || isTaken) return { ...state, workers: releaseWorker(state.workers, worker) };
   const held = heldSession(state, id);
   const placed = held && ownerOf(state, held.record.id);
   if (!held || !placed) return undefined;

@@ -207,6 +207,7 @@ test('resumeOf reads a new conversation or a resume, with the id only when the a
     ['claude', ['-r', 'abc'], { kind: 'resume' }], // not a uuid: no id
     ['claude', ['-r', id, '--fork-session'], NEW], // a fork is a new conversation, under the Hive's id
     ['claude', ['-c', '--fork-session', '--session-id', id], { kind: 'resume', sessionId: id }], // the fork's id is the user's own
+    ['claude', ['--session-id', id, '-r', '3f2504e0-4f89-11d3-9a0c-0305e82c3309', '--fork-session'], { kind: 'resume', sessionId: id }], // the fork runs its --session-id, whatever the order
     ['codex', [], NEW],
     ['codex', ['a prompt'], NEW],
     ['codex', ['resume'], { kind: 'resume' }],
