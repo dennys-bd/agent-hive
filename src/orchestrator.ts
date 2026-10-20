@@ -103,6 +103,10 @@ export function reduce(state: State, event: HiveEvent): Reduced {
 // right away, like setBudget.
 const refillIfChanged = (state: State, next: State): Reduced => (next === state ? none(state) : fill(none(next)));
 
+// A run that ends frees its task (#381): a task its session held out of an action stage is acted on now, as after a stage's finish, not on the
+// next poll, which can be the 5-minute idle one
+const ended = (reduced: Reduced): Reduced => fill(runActions(reduced.state, reduced.effects));
+
 // A commands stage's answer (#755): once it changed something (the next command, or the stage's end and the move it made), the due actions
 // and the fill follow, as after activityDeleted; an answer that changed nothing (an older pty, a Quit) is left as it is
 const afterCommands = (state: State, reduced: Reduced): Reduced => (reduced.state === state ? reduced : fill(runActions(reduced.state, reduced.effects)));
@@ -132,12 +136,12 @@ function step(state: State, event: HiveEvent): Reduced {
     case 'setWorkspaces': return fill(setWorkspaces(state, event)); // a task that resolved to none may be a candidate now
     case 'setWorkspace': return fill(none(setWorkspace(state, event.taskId, event.workspace))); // idem
     case 'hook': return settleCopy(state, event.ptyId, event.payload.hook_event_name, applyHook(state, event.ptyId, event.payload, event.branch, event.tokens, event.title)); // a copy's SessionStart or early end drops its temporary transcript (#587)
-    case 'exit': return settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, fill(exit(state, event.ptyId))));
+    case 'exit': return settleCopy(state, event.ptyId, undefined, forgetUnopenedLocal(state, event.ptyId, ended(exit(state, event.ptyId))));
     case 'done': return done(state, event.ptyId, event.result, event.verdict, event.evidence); // no fill: nothing freed, nothing loosened
     case 'pr': return markPr(state, event.ptyId, event.url, event.slice); // no fill: a PR frees nothing
     case 'prStates': return prStates(state, event.states); // no fill: a merged PR frees no worker (#207)
     case 'ask': return ask(state, event.ptyId, event.question); // no fill: nothing freed
-    case 'spawnFailed': return settleCopy(state, event.ptyId, undefined, fill(spawnFailed(state, event.ptyId, event.message))); // the worker frees; the failed task is out of the candidates, the next one may take it
+    case 'spawnFailed': return settleCopy(state, event.ptyId, undefined, ended(spawnFailed(state, event.ptyId, event.message))); // the worker frees; the failed task is out of the candidates, the next one may take it
     case 'setupStarted': return setupChanged(state, event); // no fill: a display state and a lock (#351)
     case 'setupStep': return setupChanged(state, event); // idem
     case 'setupEnded': return setupChanged(state, event); // idem: /open opens its session itself, the spawn path's worker is already there
@@ -879,7 +883,7 @@ function applyHook(initial: State, ptyId: string, p: HookPayload, branch?: strin
       // stage ends (or awaits approval, or asks its handoff) and the fill runs, with no backoff and no error. Otherwise the rule decides; no
       // fill on a wait: the worker keeps its slot, and a stop frees it on the exit
       return worker.done ? fill(endStage(settleWait(state, ptyId, 'Stop'), ptyId, task)) : stopFailure(state, ptyId, worker, p, Date.now());
-    case 'SessionEnd': return p.reason === 'clear' ? none(state) : fill(exit(state, ptyId)); // a /clear ends the conversation, not the process (#655)
+    case 'SessionEnd': return p.reason === 'clear' ? none(state) : ended(exit(state, ptyId)); // a /clear ends the conversation, not the process (#655)
     default: return none(state);
   }
 }
