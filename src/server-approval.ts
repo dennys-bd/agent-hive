@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import { resultOf } from './activities.js';
 import { activityParam, taskTarget } from './activity-routes.js';
-import { answerable } from './approval.js';
+import { answerable } from './transitions.js';
 import { taskWorkspace } from './config.js';
 import { workspaceBase } from './fork.js';
 import { PROMPT_MESSAGE, promptText } from './merge-prompt.js';

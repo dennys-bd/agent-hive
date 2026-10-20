@@ -2,10 +2,10 @@ import { openFeedbackSession } from './task-runs.js';
 import { askHandoff, needsHandoff } from './handoff.js';
 import { taskId, stageOf } from './tasks.js';
 import { advance, type EndOf, keepsRun, take, withoutHandover } from './transit.js';
-import { exitOf } from './transitions.js';
+import { answerable, exitOf } from './transitions.js';
 import { activityOf, slugOf, taskOfWorker, withActivity } from './activities.js';
 import { continueInPlace, dropWorker, releaseWorker, none, patchedWorker, type Reduced, releaseRun, withTask } from './reducer-kit.js';
-import { APPROVAL_HOLD_MAX_MIN, END, type Activity, type Task, type Stage, type Transition, type Trigger, type Worker, type State } from './types.js';
+import { APPROVAL_HOLD_MAX_MIN, END, type Activity, type Task, type Stage, type Transition, type Worker, type State } from './types.js';
 
 // A stage that ended in an approval stage (#268): the task waits for the user's approve or feedback. Pure and immutable, like the reducer
 // that calls these; the server holds the Stop's HTTP answer (hold / release) and runs the rest.
@@ -69,10 +69,6 @@ export function awaitApproval(state: State, ptyId: string, task: Task): Reduced 
   const workers = state.workers.map((s) => (s.id === worker.id ? patchedWorker(s, { status: 'approval', question: undefined }) : s));
   return { state: withActivity(withTask({ ...state, workers }, task), { ...live, approval: { since, until } }), effects: [{ type: 'hold', ptyId, until }] };
 }
-
-/** Whether the user's answer has somewhere to go (#134): a transition for it, or a stage gone from the flow, which lets the task leave. */
-export const answerable = (state: State, task: Task, trigger: Trigger): boolean =>
-  exitOf(state, task.stage, trigger) !== undefined || stageOf(state.stages, task.stage) === undefined;
 
 /** Whether a worker whose stage ended may go on in place into `next` (the orchestrator's canContinue), asked on the state as if freed. */
 export type CanContinue = (freed: State, worker: Worker, moved: Task, next: Stage) => boolean;
