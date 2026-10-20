@@ -5,20 +5,25 @@ import type { EditResult } from '../../../template-edit';
 import { buildMap, type TemplateMap } from '../../../template-map';
 import { chainsOf, previewTemplate } from '../../../template-preview';
 import type { CatalogueItem, ItemRead } from '../../../types';
+import { AssistFooter } from '@/components/plugins/AssistFooter';
 import { BlockMap, type MapGap } from '@/components/plugins/BlockMap';
 import { ChainCard } from '@/components/plugins/ChainCard';
 import { ConditionPopover } from '@/components/plugins/ConditionPopover';
 import { FileTabs } from '@/components/plugins/FileTabs';
 import { type ChipPopover, type Reveal, TemplateText } from '@/components/plugins/TemplateText';
 import type { Annotations } from '@/hooks/use-annotations';
+import { type Assist, type AssistPick, useAssist } from '@/hooks/use-assist';
 import type { ItemEditor } from '@/hooks/use-item-editor';
 import { t } from '@/i18n';
 import { dotsOf, underlinesOf } from '@/lib/annotation-layout';
+import { type LineSelection, proposalLook } from '@/lib/assist-view';
 import { appendLine, formVariables } from '@/lib/chain-draft';
 import { catalogueOf, HIVE_ORIGIN } from '@/lib/plugins';
-import { isMarkdown, plainLook, previewLook, templateLook } from '@/lib/template-view';
+import { isMarkdown, plainLook, previewLook, type TextLook, templateLook } from '@/lib/template-view';
 
-interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string }
+interface SkillEditorProps { editor: ItemEditor; annotations: Annotations; items: readonly CatalogueItem[]; workspaces: readonly string[]; fontFamily: string;
+  pick: AssistPick; onPick(pick: AssistPick): void; // #331: the chip's pick, held by the dock
+}
 interface BodyProps extends SkillEditorProps { item: CatalogueItem; read: ItemRead; path: string }
 const NOTE = 'border-b px-3 py-1 text-xs';
 
@@ -84,6 +89,27 @@ function useChainForms({ editor, parsed, map, workspaces, isReadOnly, reveal }: 
   return { ...forms, popover: { line: open.chip, content, onClose: close } };
 }
 
+// #331: while the agent proposes, the text is the proposal look over the file's; the lint's underlines are the buffer's lines, so they are
+// drawn only over the file's own look
+function useShownLook(look: TextLook, assist: Assist, list: Annotations['list']) {
+  const answer = assist.status === 'proposed' ? assist.answer : undefined;
+  const shown = useMemo(() => (answer === undefined ? look : proposalLook(look, answer.hunk)), [look, answer]);
+  const decorations = useMemo(() => (answer === undefined ? [...look.decorations, ...underlinesOf(list, look.text)] : shown.decorations), [answer, look, shown, list]);
+  return { shown, decorations, isProposal: answer !== undefined };
+}
+
+// The notes under the tabs: a write's error, the annotations' error, a save's rename, a preview that failed
+function Notes({ editor, annotations, workspace, failedLine }: { editor: ItemEditor; annotations: Annotations; workspace?: string; failedLine?: number }) {
+  return (
+    <>
+      {editor.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(editor.error, editor.errorVars)}</p>}
+      {annotations.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(annotations.error)}</p>}
+      {editor.renamedTo && <p role="status" className={`${NOTE} text-muted-foreground`}>{t('plugins.editor.renamed', { name: editor.renamedTo })}</p>}
+      {failedLine !== undefined && workspace && <p role="alert" className={`${NOTE} text-destructive`}>{t('plugins.viewAs.failed', { workspace, line: failedLine })}</p>}
+    </>
+  );
+}
+
 function EditorBody(props: BodyProps) {
   const { editor, annotations, item, read, path, fontFamily, workspaces } = props;
   const { isMd, parsed, map, workspace, preview, look } = useFileLook(props);
@@ -91,42 +117,47 @@ function EditorBody(props: BodyProps) {
   const [reveal, setReveal] = useState<Reveal>();
   const revealLine = (line: number): void => setReveal((last) => ({ line, n: (last?.n ?? 0) + 1 }));
   useAnnotationReveal(annotations.revealed, revealLine);
-  const decorations = useMemo(() => [...look.decorations, ...underlinesOf(annotations.list, look.text)], [look, annotations.list]);
-  const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const isPreview = workspace !== undefined;
-  const canEdit = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
+  const isWritable = !isPreview && !editor.isReadOnly; // #320, decision 8: the original once the item has a version reads as the preview does
+  const assist = useAssist({ editor, path, pick: props.pick, isWritable });
+  const canEdit = isWritable && assist.status === 'idle'; // #331: no writer of the buffer while the agent works or proposes
+  const { shown, decorations, isProposal } = useShownLook(look, assist, annotations.list);
+  const dots = useMemo(() => dotsOf(map, parsed.bodyLine, annotations.list), [map, parsed.bodyLine, annotations.list]);
   const forms = useChainForms({ editor, parsed, map, workspaces, isReadOnly: !canEdit, reveal: revealLine });
-  const failed = preview?.ok === false ? preview.errors[0] : undefined;
+  const selection = useRef<LineSelection>(undefined); // the text's last selection, which a request sends
+  const modelKey = [item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0');
+  // A new Monaco or a text no longer writable starts with no selection: the old one's lines are invisible now, and Monaco reports none
+  // biome-ignore lint/correctness/useExhaustiveDependencies: both are triggers, not read inside
+  useEffect(() => { selection.current = undefined; }, [modelKey, isWritable]);
   return (
     <section aria-label={item.name} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FileTabs
         files={read.files.map((file) => file.path)} open={path} isDirty={editor.isDirty} onOpen={editor.openFile} previewOf={workspace}
         onAdd={item.kind === 'skill' && canEdit ? editor.newFile : undefined} mode={isMd && !isPreview ? editor.mode : undefined} onMode={editor.setMode}
       />
-      {editor.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(editor.error, editor.errorVars)}</p>}
-      {annotations.error && <p role="alert" className={`${NOTE} text-destructive`}>{t(annotations.error)}</p>}
-      {editor.renamedTo && <p role="status" className={`${NOTE} text-muted-foreground`}>{t('plugins.editor.renamed', { name: editor.renamedTo })}</p>}
-      {failed && workspace && <p role="alert" className={`${NOTE} text-destructive`}>{t('plugins.viewAs.failed', { workspace, line: failed.line })}</p>}
+      <Notes editor={editor} annotations={annotations} workspace={workspace} failedLine={preview?.ok === false ? preview.errors[0]?.line : undefined} />
       <div className="flex min-h-0 flex-1">
         {isMd ? (
           <BlockMap
             map={map} collapsed={editor.collapsed} dimmed={look.dimmed} canDrag={canEdit} onToggle={editor.toggle} onMove={editor.move} appendLine={appendLine(parsed)}
             onReveal={revealLine} onPlus={forms.onPlus} gap={forms.gap}
-            dots={isPreview ? undefined : dots} onDot={annotations.openAt}
+            dots={isPreview || isProposal ? undefined : dots} onDot={annotations.openAt}
           />
         ) : <p className="w-[236px] shrink-0 border-r p-3 text-muted-foreground text-xs">{t('plugins.map.none')}</p>}
         <TemplateText
-          modelKey={[item.id, editor.version ?? '', path, preview?.ok ? workspace : ''].join('\0')} path={path} text={look.text} isReadOnly={!canEdit} fontFamily={fontFamily}
-          hidden={look.hidden} decorations={decorations} chips={look.chips} reveal={reveal && { line: look.lineOf(reveal.line), n: reveal.n }} onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()}
-          annotations={isPreview ? undefined : annotations} anchorOf={look.lineOf}
+          modelKey={modelKey} path={path} text={shown.text} isReadOnly={!canEdit} isProposal={isProposal}
+          fontFamily={fontFamily} hidden={shown.hidden} decorations={decorations} chips={shown.chips} reveal={reveal && { line: shown.lineOf(reveal.line), n: reveal.n }}
+          onChip={forms.onChip} popover={forms.popover} onChange={editor.edit} onSave={() => void editor.save()} onSelection={(lines) => { selection.current = lines; }}
+          annotations={isPreview ? undefined : annotations} anchorOf={shown.lineOf}
         />
       </div>
+      <AssistFooter assist={assist} pick={props.pick} onPick={props.onPick} workspace={workspaces[0]} isDisabled={!isWritable} onAsk={(request) => assist.ask(request, selection.current)} />
     </section>
   );
 }
 
 /** A skill's or a specialist's item screen (#319, #323, handoff 11b, 11c, 11e, 11m): its files, the map and the text, or the preview of one
- * workspace; #327: the open file's annotations in the text. A specialist is one file: no "+", and its header stays in the text. The body is keyed by item and file, so a switch starts with
+ * workspace; #327: the open file's annotations in the text. A specialist is one file: no "+", and its header stays in the text. #331: the footer that asks the agent, under the text. The body is keyed by item and file, so a switch starts with
  * no pending reveal. */
 export function SkillEditor(props: SkillEditorProps) {
   const { item, read, path, hasFailed } = props.editor;

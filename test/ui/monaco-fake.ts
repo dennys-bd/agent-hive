@@ -12,6 +12,9 @@ const GUTTER_LINE_DECORATIONS = 4; // monaco.editor.MouseTargetType's
 /** A decoration as the marks set it (#668). */
 export interface FakeDecoration { range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }; options: { linesDecorationsClassName?: string; className?: string; inlineClassName?: string; isWholeLine?: boolean } }
 type MouseListener = (event: { target: { type: number; position: Position | null } }) => void;
+/** A selection as Monaco's cursor event carries it (#331). */
+export interface FakeSelection { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }
+type SelectionListener = (event: { selection: FakeSelection }) => void;
 
 export const registered: { kind: string; language: string; provider: unknown }[] = [];
 export const markers: { model: FakeModel; owner: string; list: unknown[] }[] = [];
@@ -81,6 +84,7 @@ export class FakeEditor {
   private ends: Listener[] = [];
   decorations: FakeDecoration[] = [];
   private mouse: MouseListener[] = [];
+  private selecting: SelectionListener[] = [];
   hiddenAreas: { startLineNumber: number; endLineNumber: number }[] = [];
   readOnly = false;
 
@@ -114,6 +118,14 @@ export class FakeEditor {
   onMouseDown(listener: MouseListener): { dispose(): void } {
     this.mouse = [...this.mouse, listener];
     return { dispose: () => { this.mouse = this.mouse.filter((l) => l !== listener); } };
+  }
+  onDidChangeCursorSelection(listener: SelectionListener): { dispose(): void } {
+    this.selecting = [...this.selecting, listener];
+    return { dispose: () => { this.selecting = this.selecting.filter((l) => l !== listener); } };
+  }
+  /** What selecting text in the editor does (#331). */
+  select(selection: FakeSelection): void {
+    for (const listener of this.selecting) listener({ selection });
   }
   /** What a click on the gutter's mark column at `line` does. */
   clickGutter(line: number): void {
