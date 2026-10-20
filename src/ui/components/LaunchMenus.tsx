@@ -124,14 +124,25 @@ export function SpecializedAgentMenu({ agent, agents, value, disabled = false, o
   );
 }
 
-interface AgentFieldProps { id: string; value: AgentId; agents: readonly AgentAvailability[]; onChange(agent: AgentId): void; onOpenChange(open: boolean): void }
+interface AgentFieldProps {
+  id: string; value: AgentId | null; agents: readonly AgentAvailability[];
+  defaultLabel?: string; // #329: a first row for null, the config's default agent; the Start dialog passes none
+  onChange(agent: AgentId): void; onDefault?(): void; onOpenChange(open: boolean): void;
+}
 
-/** agente (#257, #290): each agent with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it. */
-export function AgentField({ id, value, agents, onChange, onOpenChange }: AgentFieldProps) {
+/** agente (#257, #290): each agent with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it.
+ * With defaultLabel, null reads as that row (the reviewer menu, #329). */
+export function AgentField({ id, value, agents, defaultLabel, onChange, onDefault, onOpenChange }: AgentFieldProps) {
+  const pick = (v: string): void => {
+    if (v === DEFAULT_ITEM) { onDefault?.(); return; }
+    const picked = knownAgent(v);
+    if (picked !== undefined) onChange(picked);
+  };
   return (
-    <Select value={value} onValueChange={(v) => { const picked = knownAgent(v); if (picked !== undefined) onChange(picked); }} onOpenChange={onOpenChange}>
+    <Select value={value ?? DEFAULT_ITEM} onValueChange={pick} onOpenChange={onOpenChange}>
       <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
+        {defaultLabel !== undefined && <SelectItem value={DEFAULT_ITEM}>{defaultLabel}</SelectItem>}
         {AGENT_IDS.map((agent) => (
           <SelectItem key={agent} value={agent} disabled={!isAvailable(agent, agents)}>
             <AgentIcon agent={agent} className={`size-4 ${AGENT_COLOR[agent] ?? ''}`} />

@@ -1,6 +1,6 @@
 import { ChevronDownIcon, ChevronRightIcon, GripVerticalIcon, PlusIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { LintAnnotation } from '../../../template-lint';
+import type { EditorAnnotation } from '@/hooks/use-annotations';
 import type { MapBlock, Reference, TemplateMap } from '../../../template-map';
 import type { ChainBlock } from '../../../template-preview';
 import { type MapDrag, useMapDrag } from '@/components/plugins/map-drag';
@@ -11,7 +11,7 @@ export interface MapGap { line: number; card: ReactNode } // the open "+"'s card
 export interface BlockMapProps {
   map: TemplateMap; collapsed: readonly number[]; dimmed: ReadonlySet<number>; canDrag: boolean;
   onReveal(line: number): void; onToggle(line: number): void; onMove(line: number, index: number): void;
-  dots?: ReadonlyMap<number, readonly LintAnnotation[]>; onDot?(annotation: LintAnnotation): void; // #327: each row's annotations, by its line
+  dots?: ReadonlyMap<number, readonly EditorAnnotation[]>; onDot?(annotation: EditorAnnotation): void; // #327: each row's annotations, by its line
   appendLine: number; onPlus?(line: number): void; gap?: MapGap; // #322: the trailing "+"'s line; no onPlus, no "+" (the preview)
 }
 type Heading = Extract<MapBlock, { kind: 'heading' }>;

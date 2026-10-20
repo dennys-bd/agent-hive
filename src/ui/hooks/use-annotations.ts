@@ -1,30 +1,38 @@
-import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { AgentAnnotation } from '../../reviewer';
 import { parseTemplate } from '../../template';
 import { type LintAnnotation, lintTemplate } from '../../template-lint';
 import type { CatalogueItem, LintInputRead } from '../../types';
 import type { ItemEditor } from '@/hooks/use-item-editor';
+import { fileKeyOf, itemKeyOf, type Review, ReviewerContext, type Scope, useReviewer } from '@/hooks/use-reviewer';
 import type { MessageKey } from '@/i18n';
 import { fixOf } from '@/lib/annotation-fix';
 import { getJson, sendJson } from '@/lib/api';
 import { HIVE_ORIGIN } from '@/lib/plugins';
 import { isMarkdown } from '@/lib/template-view';
 
+/** An annotation the editor shows (#329): the lint's, or the template reviewer's, which carries source: 'agent' (#328). */
+export type EditorAnnotation = LintAnnotation | AgentAnnotation;
+export const isAgent = (a: EditorAnnotation): a is AgentAnnotation => 'source' in a;
+/** The check an annotation's keys name: the agent's has none, so `agent` stands in. */
+export const checkOf = (a: EditorAnnotation): string => (isAgent(a) ? 'agent' : a.check);
+
 /** The open file's annotations (#327, ui.annotations): what the text, the map, the variables pane and the head's counter show; the reviewer
  * menu (4.3) and the assist footer (4.5) read it too. */
 export interface Annotations {
-  list: readonly LintAnnotation[]; // the open file's, not dismissed, in the lint's order
-  open?: LintAnnotation; // the card shown
+  list: readonly EditorAnnotation[]; // the open file's, not dismissed: the lint's, then the agent's
+  review: Review; // the reviewer's setting, run and failure (#329)
+  open?: EditorAnnotation; // the card shown
   revealed?: { line: number; n: number }; // the source line openAt last revealed; n changes on every reveal, so one line twice reveals twice
   canDismiss: boolean; // the dismissed keys are read: a write before would replace the server's list
   error?: MessageKey; // a dismissal not saved, or a fix the edit refused
-  openAt(annotation: LintAnnotation): void; // reveals its line and opens its card
+  openAt(annotation: EditorAnnotation): void; // reveals its line and opens its card
   next(): void; // the one after the open one (or the first), cycling
   close(): void;
-  dismiss(annotation: LintAnnotation): void;
-  apply(annotation: LintAnnotation): void; // only when hasFix(annotation)
+  dismiss(annotation: EditorAnnotation): void;
+  apply(annotation: EditorAnnotation): void; // only when hasFix(annotation)
 }
 
-interface Scope { id: string; version: string | null; path: string }
 interface Dismissed { server: readonly string[]; shown: readonly string[] } // server: the last list the server answered
 type Lists = Readonly<Record<string, Dismissed>>;
 interface FileNote<T> { file: string; value: T }
@@ -34,9 +42,7 @@ interface Ledger { latest: RefObject<Lists>; put(key: string, list: Dismissed): 
 const NONE: readonly LintAnnotation[] = [];
 const EMPTY_INPUT: LintInputRead = { catalogue: [], scripts: [] };
 const MAX_KEYS = 1000; // server-plugins.ts's MAX_DISMISSED: that module is the server's
-const itemKeyOf = ({ id, version }: Pick<Scope, 'id' | 'version'>): string => `${id}\0${version ?? ''}`;
-const fileKeyOf = (scope: Scope): string => `${itemKeyOf(scope)}\0${scope.path}`;
-const idOf = (a: LintAnnotation): string => `${a.line}\0${a.check}\0${a.title}`;
+const idOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.title}`;
 const isKeys = (value: unknown): value is string[] => Array.isArray(value) && value.every((key) => typeof key === 'string');
 const isLintInput = (value: unknown): value is LintInputRead =>
   typeof value === 'object' && value !== null && Array.isArray((value as Partial<LintInputRead>).catalogue) && Array.isArray((value as Partial<LintInputRead>).scripts);
@@ -46,8 +52,8 @@ function dismissedUrl(id: string, version?: string | null): string {
 }
 
 /** A dismissal's key (#327): the line number is left out, so a moved line keeps it, and any edit of the line's text drops it. */
-export const dismissalKey = (path: string, a: LintAnnotation, lines: readonly string[]): string =>
-  `${path}\0${a.check}\0${a.title}\0${(lines[a.line - 1] ?? '').replace(/\r$/, '')}`;
+export const dismissalKey = (path: string, a: EditorAnnotation, lines: readonly string[]): string =>
+  `${path}\0${checkOf(a)}\0${a.title}\0${(lines[a.line - 1] ?? '').replace(/\r$/, '')}`;
 
 // Only a Hive item's markdown file is linted, and never under "view as": the preview's lines are not the template's
 function scopeOf({ item, read, path, viewAs }: ItemEditor): Scope | undefined {
@@ -136,12 +142,12 @@ function useDismissed(scope: Scope | undefined): { shown?: readonly string[]; ha
 }
 
 // The open card and the last reveal, both kept per file: another file's never shows here
-function useOpenCard(file: string | undefined, list: readonly LintAnnotation[]) {
+function useOpenCard(file: string | undefined, list: readonly EditorAnnotation[]) {
   const [opened, setOpened] = useState<FileNote<string>>();
   const [revealed, setRevealed] = useState<FileNote<{ line: number; n: number }>>();
   const open = file !== undefined && opened !== undefined && opened.file === file ? list.find((a) => idOf(a) === opened.value) : undefined;
   const close = useCallback((): void => setOpened(undefined), []); // the Esc listener depends on it
-  const openAt = (annotation: LintAnnotation): void => {
+  const openAt = (annotation: EditorAnnotation): void => {
     if (file === undefined) return;
     setOpened({ file, value: idOf(annotation) });
     setRevealed((last) => ({ file, value: { line: annotation.line, n: (last?.value.n ?? 0) + 1 } }));
@@ -149,12 +155,16 @@ function useOpenCard(file: string | undefined, list: readonly LintAnnotation[]) 
   return { open, openAt, close, revealed: revealed !== undefined && revealed.file === file ? revealed.value : undefined };
 }
 
-/** The open file's annotations (#327): linted on every change of its buffer, its dismissals left out, one card open at a time. */
+/** The open file's annotations (#327): linted on every change of its buffer, the reviewer's after the lint's (#329), its dismissals left out, one card open at a time. */
 export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem[] | undefined, workspaces: readonly string[]): Annotations {
   const scope = scopeOf(editor);
   const path = scope?.path;
   const text = path === undefined ? '' : editor.textOf(path);
-  const all = useLint(scope === undefined ? undefined : editor.item, text, useLintInput(items), workspaces);
+  const linted = useLint(scope === undefined ? undefined : editor.item, text, useLintInput(items), workspaces);
+  const saved = path === undefined ? undefined : editor.read?.files.find((file) => file.path === path)?.text;
+  const { config, save } = useContext(ReviewerContext);
+  const reviewer = useReviewer(scope, text, saved, config, save); // #329: off, its list is empty
+  const all = useMemo<readonly EditorAnnotation[]>(() => (reviewer.list.length === 0 ? linted : [...linted, ...reviewer.list]), [linted, reviewer.list]);
   const { shown, hasFailed, add } = useDismissed(scope);
   const lines = useMemo(() => text.split('\n'), [text]);
   const list = useMemo(() => {
@@ -167,7 +177,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
   const [refused, setRefused] = useState<FileNote<MessageKey>>();
   const fixError = refused !== undefined && refused.file === file ? refused.value : undefined;
   return {
-    list, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
+    list, review: reviewer.review, open: card.open, revealed: card.revealed, canDismiss: shown !== undefined,
     error: hasFailed ? 'plugins.annotations.dismissFailed' : fixError,
     openAt: card.openAt, close: card.close,
     next: () => {
@@ -182,6 +192,7 @@ export function useAnnotations(editor: ItemEditor, items: readonly CatalogueItem
     },
     // The fix goes through applyEdit, as the variables pane writes: saved at once when the buffer was clean
     apply: (annotation) => {
+      if (isAgent(annotation)) return; // the agent sends no fix (#328)
       const result = fixOf(annotation, text);
       if (result === undefined || file === undefined) return;
       const key = editor.applyEdit(result);

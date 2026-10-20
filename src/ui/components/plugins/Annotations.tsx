@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import type { LintAnnotation, LintCheck, Severity } from '../../../template-lint';
 import { Button } from '@/components/ui/button';
-import type { Annotations } from '@/hooks/use-annotations';
+import { type Annotations, checkOf, type EditorAnnotation, isAgent } from '@/hooks/use-annotations';
 import { type MessageKey, t } from '@/i18n';
 import { hasFix } from '@/lib/annotation-fix';
 import { CARD_HEIGHT, layoutMargin } from '@/lib/annotation-layout';
@@ -25,14 +25,15 @@ const ENGINE_CHECKS: readonly LintCheck[] = ['parse', 'render']; // their title 
 const varsOf = (a: LintAnnotation): Record<string, string | number> => ({
   variable: a.variable ?? '', ref: a.ref ?? '', level: a.level ?? '', workspaces: (a.workspaces ?? []).join(', '),
 });
-const keyOf = (a: LintAnnotation): string => `${a.line}\0${a.check}\0${a.title}`;
+const keyOf = (a: EditorAnnotation): string => `${a.line}\0${checkOf(a)}\0${a.title}`;
 
-/** The annotation's headline in the viewer's language: the note's text and the card's first line. */
-export const headlineOf = (a: LintAnnotation): string => t(COPY[a.check].title, varsOf(a));
+/** The annotation's headline in the viewer's language: the note's text and the card's first line. The agent writes its own (#329). */
+export const headlineOf = (a: EditorAnnotation): string => (isAgent(a) ? a.title : t(COPY[a.check].title, varsOf(a)));
+const bodyOf = (a: EditorAnnotation): string => (isAgent(a) ? a.body : t(COPY[a.check].body, varsOf(a)));
 
-interface SlotProps { annotation: LintAnnotation; annotations: Annotations; top: number }
+interface SlotProps { annotation: EditorAnnotation; annotations: Annotations; top: number }
 
-function Headline({ annotation }: { annotation: LintAnnotation }) {
+function Headline({ annotation }: { annotation: EditorAnnotation }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span className={`size-1.5 shrink-0 rounded-full ${DOT[annotation.severity]}`} />
@@ -48,9 +49,13 @@ function Card({ annotation, annotations, top }: SlotProps) {
       aria-label={headlineOf(annotation)} data-open={isOpen} style={{ top, height: CARD_HEIGHT }}
       className={`absolute right-2 left-2 flex flex-col gap-1 overflow-hidden rounded-md border border-l-2 bg-popover p-2 text-[11px] ${EDGE[annotation.severity]} ${isOpen ? 'z-10 ring-1 ring-ring' : ''}`}
     >
-      <span className="font-medium"><Headline annotation={annotation} /></span>
-      <p className="line-clamp-2 text-muted-foreground">{t(COPY[annotation.check].body, varsOf(annotation))}</p>
-      {ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
+      <span className="flex min-w-0 items-center gap-1.5 font-medium">
+        {/* #329: the issue's "marked as the agent's"; the severity stays the card's one colour */}
+        {isAgent(annotation) && <span className="shrink-0 rounded border px-1 font-normal text-[10px] text-muted-foreground">{t('plugins.annotations.agent')}</span>}
+        <Headline annotation={annotation} />
+      </span>
+      <p className="line-clamp-2 text-muted-foreground">{bodyOf(annotation)}</p>
+      {!isAgent(annotation) && ENGINE_CHECKS.includes(annotation.check) && <p title={annotation.title} className="truncate font-mono text-muted-foreground">{annotation.title}</p>}
       <span className="mt-auto flex gap-1">
         {hasFix(annotation) && <Button type="button" size="xs" variant="outline" onClick={() => annotations.apply(annotation)}>{t('plugins.annotations.apply')}</Button>}
         <Button type="button" size="xs" variant="ghost" disabled={!annotations.canDismiss} onClick={() => annotations.dismiss(annotation)}>{t('plugins.annotations.dismiss')}</Button>
