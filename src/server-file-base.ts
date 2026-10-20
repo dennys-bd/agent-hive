@@ -1,6 +1,7 @@
 // GET /activities/:id/file-base (#668): the base a file's changes compare against, for the editor pane's gutter marks and the changes pane.
 // HEAD, or the task's base: the merge-base the diff pane's worktree scope diffs from (diffBase). The file is located as the editor's routes
 // locate it; the blob is read with git in the repository holding the file (#377), every call an argv. Only the blob's id goes back when the page holds it.
+import { realpath } from 'node:fs/promises';
 import { dirname, relative } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
@@ -59,7 +60,9 @@ async function blobText(folder: string, oid: string, exec: Exec): Promise<string
 // The answer (#668): no text without a base; '' for a file the base does not have (all of it added); the id alone when the page holds it
 async function fileBaseOf(located: Located, against: ChangesBase, held: string | undefined, config: Pick<Config, 'baseBranch' | 'comb'>, exec: Exec): Promise<FileBase> {
   const repo = await repoOf(located, exec);
-  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(located.folder, repo.top), config, exec);
+  // git's top is real; the folder may not be (macOS's tmpdir, a symlinked workspace), and a missed nested repository would read the outer base
+  const folder = await realpath(located.folder).catch(() => located.folder);
+  const { commit, label } = await commitOf(located, against, repo !== undefined && isInside(folder, repo.top), config, exec);
   const none: FileBase = { against, label };
   if (repo === undefined) return none;
   const oid = (await gitOut(repo.top, ['rev-parse', '--verify', '--quiet', `${commit}:${repo.path}`], exec))?.trim();
