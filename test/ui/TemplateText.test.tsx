@@ -61,3 +61,28 @@ test("a reveal puts the cursor on its line; each chip sits at its line's top in 
   fireEvent.click(chip);
   expect(onChip).toHaveBeenCalledWith(3);
 });
+
+test('a swap into the proposal and back replaces the text with setValue and reports no change; any other new text stays one undoable edit (#331)', async () => {
+  const onChange = vi.fn();
+  const { rerender } = render(<TemplateText {...props({ onChange })} />);
+  const view = await firstEditor();
+  const setValue = vi.spyOn(view.model, 'setValue');
+  const pushed = vi.spyOn(view.model, 'pushEditOperations');
+  rerender(<TemplateText {...props({ onChange, isProposal: true, isReadOnly: true, text: 'a\nb\nB\nc\n' })} />);
+  expect([view.model.getValue(), setValue.mock.calls.length, pushed.mock.calls.length]).toEqual(['a\nb\nB\nc\n', 1, 0]);
+  rerender(<TemplateText {...props({ onChange, text: 'a\nb\nc\n' })} />);
+  expect([view.model.getValue(), setValue.mock.calls.length]).toEqual(['a\nb\nc\n', 2]);
+  rerender(<TemplateText {...props({ onChange, text: 'moved\n' })} />);
+  expect([setValue.mock.calls.length, pushed.mock.calls.length]).toEqual([2, 1]);
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+test("a selection reports its first and last line; one ending at a line's first column leaves that line out; an empty one reports undefined (#331)", async () => {
+  const onSelection = vi.fn();
+  render(<TemplateText {...props({ onSelection })} />);
+  const view = await firstEditor();
+  act(() => view.select({ startLineNumber: 1, startColumn: 1, endLineNumber: 2, endColumn: 2 }));
+  act(() => view.select({ startLineNumber: 1, startColumn: 1, endLineNumber: 3, endColumn: 1 }));
+  act(() => view.select({ startLineNumber: 2, startColumn: 1, endLineNumber: 2, endColumn: 1 }));
+  expect(onSelection.mock.calls).toEqual([[{ startLine: 1, endLine: 2 }], [{ startLine: 1, endLine: 2 }], [undefined]]);
+});
