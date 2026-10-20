@@ -57,10 +57,14 @@ export const writtenSince = async (path: string, since: number): Promise<boolean
 /** One model response's usage by type, with its model and time (#742): what a stage run's tally adds up. */
 export interface UsageEntry { id: string; byType: Tokens; model?: string; at: number }
 
-/** One stage run's usage as it adds up: each id once across the session's file and its subagents'. */
-export interface StageTally { seen: Set<string>; models: Set<string>; tokens: Tokens; subagentTokens: Tokens }
+/** The model a response with none counts under in tokensByModel (#271): a Codex turn with no turn_context, a Claude line with no model. */
+export const UNKNOWN_MODEL = 'unknown';
 
-export const newTally = (): StageTally => ({ seen: new Set(), models: new Set(), tokens: ZERO_TOKENS, subagentTokens: ZERO_TOKENS });
+/** One stage run's usage as it adds up: each id once across the session's file and its subagents'. byModel (#271): a Map, so a transcript's
+ * model name is only ever a key, `__proto__` included. */
+export interface StageTally { seen: Set<string>; models: Set<string>; tokens: Tokens; subagentTokens: Tokens; byModel: Map<string, Tokens> }
+
+export const newTally = (): StageTally => ({ seen: new Set(), models: new Set(), tokens: ZERO_TOKENS, subagentTokens: ZERO_TOKENS, byModel: new Map() });
 
 export function tally(t: StageTally, usage: UsageEntry | undefined, since: number, subagent: boolean): void {
   if (!usage || t.seen.has(usage.id)) return;
@@ -69,6 +73,10 @@ export function tally(t: StageTally, usage: UsageEntry | undefined, since: numbe
   t.tokens = addTokens(t.tokens, usage.byType);
   if (subagent) t.subagentTokens = addTokens(t.subagentTokens, usage.byType);
   if (usage.model !== undefined) t.models.add(usage.model);
+  // #271: a response with no model still counts, so the split always sums to tokens
+  const model = usage.model ?? UNKNOWN_MODEL;
+  t.byModel.set(model, addTokens(t.byModel.get(model) ?? ZERO_TOKENS, usage.byType));
 }
 
-export const turnUsage = (t: StageTally): TurnUsage => ({ tokens: t.tokens, models: [...t.models], subagentTokens: t.subagentTokens });
+export const turnUsage = (t: StageTally): TurnUsage =>
+  ({ tokens: t.tokens, models: [...t.models], subagentTokens: t.subagentTokens, tokensByModel: Object.fromEntries(t.byModel) });

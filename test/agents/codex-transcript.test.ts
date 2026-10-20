@@ -4,12 +4,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ownsRollout, readRollout, rolloutFiles, sessionsRoot } from '../../src/agents/codex-transcript.js';
 import { ZERO_TOKENS } from '../../src/events.js';
-import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, writeRollout } from '../codex-rollouts.js';
+import { CHILD, CWD, DAY, NOW, OTHER, OTHER_CHILD, SESSION, STALE, sessionMeta, subagent, TWO_TURNS, usageRecord, writeRollout } from '../codex-rollouts.js';
 import { tempDir } from '../temp-dir.js';
 
 const START = Date.parse('2026-10-12T10:00:00.000Z');
 const BETWEEN = Date.parse('2026-10-12T10:05:00.000Z');
 const TURN_2 = { input: 5000, output: 500, cache_write: 100, cache_read: 15000 };
+const TURN_1 = { input: 2803, output: 63, cache_write: 0, cache_read: 9000 }; // 11803 input with 9000 cached
 const CHILD_TURN = { input: 2000, output: 200, cache_write: 0, cache_read: 1000 };
 
 test('readRollout maps each response once: input without the cached tokens, cached as cache_read, reasoning left inside output; the session total is the last thread total (#929)', async (t) => {
@@ -17,9 +18,9 @@ test('readRollout maps each response once: input without the cached tokens, cach
   assert.doesNotMatch(TWO_TURNS.join('\n'), /creator_/, 'no account id in the fixture');
   assert.deepEqual(await readRollout(path), { tokens: 32366 }, 'without since: no stage tally and no subagent scan');
   assert.deepEqual(await readRollout(path, START, NOW), {
-    tokens: 32366, usage: { tokens: { input: 7803, output: 563, cache_write: 100, cache_read: 24000 }, models: ['gpt-5.6-luna', 'gpt-5.6-terra'], subagentTokens: ZERO_TOKENS },
+    tokens: 32366, usage: { tokens: { input: 7803, output: 563, cache_write: 100, cache_read: 24000 }, models: ['gpt-5.6-luna', 'gpt-5.6-terra'], subagentTokens: ZERO_TOKENS, tokensByModel: { 'gpt-5.6-luna': TURN_1, 'gpt-5.6-terra': TURN_2 } },
   });
-  assert.deepEqual(await readRollout(path, BETWEEN, NOW), { tokens: 32366, usage: { tokens: TURN_2, models: ['gpt-5.6-terra'], subagentTokens: ZERO_TOKENS } }, 'only the turn at or after since');
+  assert.deepEqual(await readRollout(path, BETWEEN, NOW), { tokens: 32366, usage: { tokens: TURN_2, models: ['gpt-5.6-terra'], subagentTokens: ZERO_TOKENS, tokensByModel: { 'gpt-5.6-terra': TURN_2 } } }, 'only the turn at or after since');
 });
 
 test('readRollout counts the session\'s own subagents written since the stage run, in any folder of the range; not another session\'s, nor a stale one (#929)', async (t) => {
@@ -32,6 +33,7 @@ test('readRollout counts the session\'s own subagents written since the stage ru
   assert.equal(turn.tokens, 32366, 'the session total stays the session\'s own');
   assert.deepEqual(turn.usage, {
     tokens: { input: 9803, output: 763, cache_write: 100, cache_read: 25000 }, models: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-6-luna'], subagentTokens: CHILD_TURN,
+    tokensByModel: { 'gpt-5.6-luna': TURN_1, 'gpt-5.6-terra': TURN_2, 'gpt-6-luna': CHILD_TURN },
   });
 });
 
@@ -41,6 +43,15 @@ test('readRollout skips a half-written last line and counts a non-finite number 
   const turn = await readRollout(path, BETWEEN, NOW);
   assert.equal(turn.tokens, 0, 'the last thread total read 1e400: Infinity counts 0');
   assert.deepEqual(turn.usage?.tokens, { ...TURN_2, output: TURN_2.output + 5 });
+});
+
+test('readRollout counts a response whose turn named no model under unknown in tokensByModel, and lists no model for it (#271)', async (t) => {
+  // turn-x has no turn_context: no model reaches its usage record
+  const orphan = usageRecord('2026-10-12T10:20:00.000Z', 'turn-x', 'resp-x', { input: 300, cached: 100, cacheWrite: 0, output: 30 }, 32696);
+  const path = await writeRollout(await tempDir(t, 'codex-'), DAY, SESSION, [...TWO_TURNS, orphan]);
+  const turn = await readRollout(path, BETWEEN, NOW);
+  assert.deepEqual(turn.usage?.tokensByModel, { 'gpt-5.6-terra': TURN_2, unknown: { input: 200, output: 30, cache_write: 0, cache_read: 100 } });
+  assert.deepEqual(turn.usage?.models, ['gpt-5.6-terra']);
 });
 
 test('ownsRollout takes only <sessions root>/YYYY/MM/DD/…-<session id>.jsonl, and nothing without a session id (#929)', () => {

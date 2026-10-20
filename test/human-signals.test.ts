@@ -9,7 +9,10 @@ const T0 = Date.parse('2026-10-03T12:00:00.000Z');
 const IDS: Correlation = { task_id: 'board:I1', activity_id: 'a-board:I1', stage: 'dev', attempt: 1 };
 const working: Worker = { id: 'w1', runId: PTY, status: 'working', activityId: 'a-board:I1' };
 const hook = (hook_event_name: string, extra: Partial<HookPayload> = {}): HookPayload => ({ hook_event_name, ...extra });
-const USAGE = { tokens: { input: 10, output: 20, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1'], subagentTokens: { input: 5, output: 0, cache_write: 0, cache_read: 1 } };
+const USAGE = {
+  tokens: { input: 10, output: 20, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1'], subagentTokens: { input: 5, output: 0, cache_write: 0, cache_read: 1 },
+  tokensByModel: { 'claude-opus-4-1': { input: 10, output: 20, cache_write: 30, cache_read: 40 } },
+};
 
 test('the spawn\'s prompt is the Hive\'s; each later prompt is a run.takeover timed to the next Stop, written once (#742)', () => {
   const signals = createHumanSignals();

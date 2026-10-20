@@ -21,8 +21,9 @@ export function cleanTitle(value: unknown): string | undefined {
 }
 
 /** A stage run's own usage (#742): the tokens by type and the models of the turns at or after its start, its subagents' included;
- * subagentTokens is the subagents' share of tokens. */
-export interface TurnUsage { tokens: Tokens; models: string[]; subagentTokens: Tokens }
+ * subagentTokens is the subagents' share of tokens. tokensByModel (#271) splits tokens by each response's model, `unknown` for one that names
+ * none, so it always sums to tokens and any run can be priced per model later. */
+export interface TurnUsage { tokens: Tokens; models: string[]; subagentTokens: Tokens; tokensByModel: Record<string, Tokens> }
 
 /** What a turn end reads from a session's transcript (#248, #489): its token total, the last /rename title when the user named it, and, asked
  * with a start time, that stage run's usage (#742). */

@@ -196,7 +196,10 @@ test('readTranscript with a since also sums by type the turns from that time on 
     JSON.stringify({ type: 'assistant', message: { id: 'a4', usage: { output_tokens: 7 } } }), // no time: never the stage run's
   ]);
   assert.deepEqual(await readTranscript(path, Date.parse('2026-10-03T12:00:00.000Z')), {
-    tokens: 114, usage: { tokens: { input: 10, output: 25, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1', 'claude-haiku-4-5'], subagentTokens: ZERO_TOKENS },
+    tokens: 114, usage: {
+      tokens: { input: 10, output: 25, cache_write: 30, cache_read: 40 }, models: ['claude-opus-4-1', 'claude-haiku-4-5'], subagentTokens: ZERO_TOKENS,
+      tokensByModel: { 'claude-opus-4-1': { input: 10, output: 20, cache_write: 30, cache_read: 40 }, 'claude-haiku-4-5': { input: 0, output: 5, cache_write: 0, cache_read: 0 } },
+    },
   });
   assert.deepEqual(await readTranscript(path), { tokens: 114 });
 });
@@ -226,6 +229,10 @@ test('readTranscript with a since adds the session\'s subagent transcripts to th
     usage: {
       tokens: { input: 110, output: 28, cache_write: 0, cache_read: 3 }, models: ['claude-opus-4-1', 'claude-haiku-4-5', 'claude-sonnet-4-5'],
       subagentTokens: { input: 100, output: 27, cache_write: 0, cache_read: 3 },
+      tokensByModel: {
+        'claude-opus-4-1': { input: 10, output: 1, cache_write: 0, cache_read: 0 }, 'claude-haiku-4-5': { input: 100, output: 20, cache_write: 0, cache_read: 3 },
+        'claude-sonnet-4-5': { input: 0, output: 7, cache_write: 0, cache_read: 0 },
+      },
     },
   });
   assert.deepEqual(await readTranscript(path), { tokens: 11 }, 'the session total, for budgets, never reads the subagents');
