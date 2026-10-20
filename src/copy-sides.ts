@@ -1,4 +1,4 @@
-import { activityOf, activityOfWorker, localWorkspaceOf, taskOfWorker } from './activities.js';
+import { activityOf, localWorkspaceOf, taskOfActivity } from './activities.js';
 import { keptTarget, liveTarget, UNKNOWN_ACTIVITY_MESSAGE } from './activity-routes.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { hasDirectory } from './local-sessions.js';
@@ -96,16 +96,19 @@ export const noticeSide = (side: CopySide, branch: string | null): string => `${
 
 export const copyNotice = (from: string, to: string): string => `Hive: this conversation was copied from ${from}. It now continues in ${to}.\n\n${NOTICE_TAIL}`;
 
-// The directory a worker's run works in: its task's (taskDir) or its workspace's checkout; undefined when neither is known any more
-function workerCwd(state: State, config: Pick<Config, 'comb'>, worker: Worker): string | undefined {
-  const task = taskOfWorker(state, worker);
-  if (task !== undefined) {
-    const workspace = taskWorkspace(config, task);
-    return workspace && workDir(workspace.path, task, activityOfWorker(state, worker));
-  }
-  const local = activityOfWorker(state, worker);
-  return local?.kind === 'local' ? workspaceByName(config, local.workspace)?.path : undefined;
+/** The directory an activity's runs work in: its task's (workDir) or its workspace's checkout; undefined when neither is known any more. The
+ * register compares a held session's folder with its terminal's by it (#347). */
+export function activityDir(state: State, config: Pick<Config, 'comb'>, activityId: string): string | undefined {
+  const activity = state.activities.find((a) => a.id === activityId);
+  if (activity?.kind === 'local') return workspaceByName(config, activity.workspace)?.path;
+  const task = taskOfActivity(state, activityId);
+  const workspace = task && taskWorkspace(config, task);
+  return task && workspace && workDir(workspace.path, task, activity);
 }
+
+// The directory a worker's run works in
+const workerCwd = (state: State, config: Pick<Config, 'comb'>, worker: Worker): string | undefined =>
+  (worker.activityId === undefined ? undefined : activityDir(state, config, worker.activityId));
 
 /** A saved state's copy marks (#587), each kept only when its dir is the transcript dir of its own worker's directory, where the route put the
  * temporary copy: a forged state.json never points the boot's removal at any other file. */

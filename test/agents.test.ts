@@ -75,6 +75,7 @@ test('codex runs as `codex`, reports plan limits (#929) and cannot choose its se
   assert.ok(['resume', 'fork'].every((c) => AGENTS.codex.subcommands.includes(c)), 'both open a session the user chose: the shim runs them as typed (#932)');
   assert.deepEqual(AGENTS.codex.shimFlags, ['-h', '--help', '-V', '--version'], 'no -c: Codex\'s is a config override, not continue (#932)');
   assert.ok(AGENTS.claude.shimFlags.includes('-c') && AGENTS.claude.shimFlags.includes('--resume=*'));
+  assert.deepEqual([AGENTS.claude.resumesAnyFolder, AGENTS.codex.resumesAnyFolder], [false, true], 'Codex resumes a rollout of any folder (#347)');
 });
 
 test('isAvailable is true only for an agent boot found; one it never checked is not (#931)', () => {
