@@ -4,6 +4,12 @@ import { END_SIZE, type Layout } from '@/lib/flow-layout';
 
 interface FlowEdgesProps { layout: Layout; labels: Record<string, string>; pills?: ReadonlySet<string>; selected?: string; onSelect?(id: string): void }
 
+/** A fixed 6px head in user space (#269): with the default strokeWidth units it grew with the line and changed size on selection. refX at the
+ * tip, since every path ends on its target's edge. */
+function ArrowHead({ id, fill }: { id: string; fill: string }) {
+  return <marker id={id} viewBox="0 0 8 8" refX="8" refY="4" markerUnits="userSpaceOnUse" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill={fill} /></marker>;
+}
+
 const PILL = 'absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-[9px] border bg-background px-2 text-muted-foreground text-xs leading-[18px]';
 
 /** The flowchart's arrows (#134): one SVG under the nodes, each arrow 1.5px in border with a triangular head, dashed (4 4) when automatic and
@@ -16,11 +22,12 @@ export function FlowEdges({ layout, labels, pills, selected, onSelect }: FlowEdg
     <>
       <svg aria-hidden="true" className="pointer-events-none absolute top-0 left-0" width={layout.width} height={layout.height}>
         <defs>
-          <marker id={marker} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 8 4 L 0 8 z" fill="var(--border)" /></marker>
+          <ArrowHead id={marker} fill="var(--border)" />
+          <ArrowHead id={`${marker}-selected`} fill="var(--foreground)" />
         </defs>
         {layout.edges.map((e) => (
           <path
-            key={e.id} data-edge={e.id} data-kind={e.kind} d={e.path} fill="none" markerEnd={`url(#${marker})`}
+            key={e.id} data-edge={e.id} data-kind={e.kind} d={e.path} fill="none" markerEnd={`url(#${e.id === selected ? `${marker}-selected` : marker})`}
             stroke={e.id === selected ? 'var(--foreground)' : 'var(--border)'} strokeWidth={e.id === selected ? 1.75 : 1.5} strokeDasharray={e.dashed ? '4 4' : undefined}
           />
         ))}
