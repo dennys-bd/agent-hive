@@ -1605,6 +1605,7 @@ const en = {
   'shortcuts.searchTasks': 'search tasks', // #542
   'shortcuts.searchSettings': 'search settings', // #689
   'shortcuts.searchPlugins': 'search plugins', // #313
+  'shortcuts.askAgent': 'ask the agent', // #331
   'shortcuts.newTerminal': 'new terminal',
   'shortcuts.splitSame': 'split with the same type', // #536
   'shortcuts.newSession': 'new session of the default agent',
@@ -2098,6 +2099,21 @@ const en = {
   'plugins.annotations.callRequired.body': '{ref} requires {variable}, which has no value for {workspaces}.',
   'plugins.annotations.heading.title': 'skipped heading level',
   'plugins.annotations.heading.body': 'the map nests this heading as an h{level}; the fix writes it so.',
+  // #331: ask the agent in the editor
+  'plugins.assist.placeholder': 'ask the agent… select a passage to change only that',
+  'plugins.assist.running': 'the agent is working…',
+  'plugins.assist.marked': 'change marked in the text (lines {from}–{to})',
+  'plugins.assist.noChange': 'the agent proposed no change',
+  'plugins.assist.accept': 'accept',
+  'plugins.assist.discard': 'discard',
+  'plugins.assist.acceptNote': 'the reviewer runs again afterwards',
+  'plugins.assist.proposal': 'agent proposal',
+  'plugins.assist.chip': 'agent and model',
+  'plugins.assist.busy': 'the agent is already working on this item',
+  'plugins.assist.unavailable': 'this agent is not available',
+  'plugins.assist.badAnswer': "the agent's answer was refused",
+  'plugins.assist.failed': 'the agent run failed',
+  'plugins.assist.unexpected': 'unexpected error',
   // #325: the plugins update screen
   'plugins.update.screen': 'update',
   'plugins.update.review': 'review the update',
@@ -3726,6 +3742,7 @@ const pt: Record<MessageKey, string> = {
   'shortcuts.searchTasks': 'buscar tarefas', // #542
   'shortcuts.searchSettings': 'buscar configuração', // #689
   'shortcuts.searchPlugins': 'buscar nos plugins', // #313
+  'shortcuts.askAgent': 'pedir ao agente', // #331
   'shortcuts.newTerminal': 'novo terminal',
   'shortcuts.splitSame': 'dividir com o mesmo tipo', // #536
   'shortcuts.newSession': 'nova sessão do agente padrão',
@@ -4218,6 +4235,21 @@ const pt: Record<MessageKey, string> = {
   'plugins.annotations.callRequired.body': '{ref} exige {variable}, que não tem valor em {workspaces}.',
   'plugins.annotations.heading.title': 'nível de título pulado',
   'plugins.annotations.heading.body': 'o mapa aninha este título como h{level}; a correção o escreve assim.',
+  // #331: ask the agent in the editor
+  'plugins.assist.placeholder': 'pedir ao agente… selecione um trecho para mudar só ele',
+  'plugins.assist.running': 'o agente está trabalhando…',
+  'plugins.assist.marked': 'mudança marcada no texto (linhas {from}–{to})',
+  'plugins.assist.noChange': 'o agente não propôs mudança',
+  'plugins.assist.accept': 'aceitar',
+  'plugins.assist.discard': 'descartar',
+  'plugins.assist.acceptNote': 'o revisor executa de novo depois',
+  'plugins.assist.proposal': 'proposta do agente',
+  'plugins.assist.chip': 'agente e modelo',
+  'plugins.assist.busy': 'o agente já está trabalhando neste item',
+  'plugins.assist.unavailable': 'este agente não está disponível',
+  'plugins.assist.badAnswer': 'a resposta do agente foi recusada',
+  'plugins.assist.failed': 'a execução do agente falhou',
+  'plugins.assist.unexpected': 'erro inesperado',
   // #325: the plugins update screen
   'plugins.update.screen': 'atualização',
   'plugins.update.review': 'revisar a atualização',

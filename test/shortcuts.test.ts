@@ -127,7 +127,7 @@ test('the registry is the map: the seven scopes in order, every row in its scope
   assert.deepEqual(rows('activities'), ['newTerminal', 'newSession', 'newSessionDialog', 'openDiff', 'newFile', 'close', 'nextTab', 'prevTab', 'fixed:goToTab', 'fixed:copy', 'fixed:paste', 'fixed:selectAll', 'splitSame', 'splitTerminalVertical', 'splitTerminalHorizontal', 'clear', 'findInTerminal', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity', 'toggleSideTab', 'sleepSession', 'sleepAll']);
   assert.deepEqual(rows('files'), ['treeNewFile', 'treeNewFolder', 'treeRename', 'treeDelete', 'treeReveal', 'treeOpenTerminal', 'treeCopyPath', 'treeCopyRelativePath', 'treeCopyCheckoutPath', 'fixed:treeCut', 'fixed:treeCopy', 'fixed:treePaste']);
   assert.deepEqual(rows('flow'), ['searchTasks', 'fixed:moveFocus', 'fixed:openDetails', 'fixed:closeDetails', 'fixed:runStages', 'fixed:freeSession', 'fixed:approve', 'fixed:feedback', 'fixed:openActivity', 'fixed:autoTask', 'fixed:taskMenu', 'fixed:pickSource', 'refreshFlow', 'goBack', 'zoomOut', 'zoomIn', 'zoomReset', 'fixed:zoomFit']);
-  assert.deepEqual(rows('plugins'), ['searchPlugins']);
+  assert.deepEqual(rows('plugins'), ['searchPlugins', 'askAgent']);
   assert.deepEqual(rows('dialogs'), ['confirm', 'feedbackQueue', 'switchStartMode', 'fixed:cancel']);
   assert.deepEqual(rows('settings'), ['searchSettings']);
   assert.deepEqual(SHORTCUTS.filter((s) => s.soon).map((s) => s.id), ['nextTab', 'prevTab', 'nextPane', 'prevPane', 'nextActivity', 'prevActivity']);
@@ -305,4 +305,11 @@ test("viewPlugins is CmdOrCtrl+3, a global key; searchPlugins is CmdOrCtrl+F in 
   assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
   assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+K' }, MAC), [], "an activity's key: never both live");
   assert.deepEqual(collisions({ searchPlugins: 'CmdOrCtrl+J' }, MAC), [['toggleConsole', 'searchPlugins']], 'a global key reaches the plugins view');
+});
+
+test('askAgent is CmdOrCtrl+I on both platforms in the plugins scope, out of the terminal, colliding with no default (#331)', () => {
+  assert.deepEqual(pair('askAgent'), ['CmdOrCtrl+I', 'CmdOrCtrl+I']);
+  assert.deepEqual([shortcutDef('askAgent').scope, shortcutDef('askAgent').inTerminal, shortcutDef('askAgent').label], ['plugins', false, 'shortcuts.askAgent']);
+  assert.deepEqual([collisions({}, MAC), collisions({}, OTHER)], [[], []]);
+  assert.deepEqual(collisions({ askAgent: 'CmdOrCtrl+J' }, MAC), [['toggleConsole', 'askAgent']], 'a global key reaches the plugins view');
 });
