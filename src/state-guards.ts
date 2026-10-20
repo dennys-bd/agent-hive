@@ -4,7 +4,7 @@ import { cleanTitle } from './usage.js';
 import { addUsage, localActivityId } from './activities.js';
 import { knownAgent, savedAgent } from './agents.js';
 import { savedLaunch } from './launch-pick.js';
-import { FEEDBACK_MAX, isBranchName, SLICE_DELIVERIES, type Activity, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type RunPick, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
+import { FEEDBACK_MAX, isBranchName, SETUP_ROW_KINDS, SETUP_ROW_STATUSES, SLICE_DELIVERIES, type Activity, type SetupRow, type SetupRowKind, type SetupRowStatus, type ActivityRecord, type CommandFailure, type ForkSyncResult, type PrSlice, type PrState, type RunPick, type Session, type SliceDelivery, type StageCi, type StageCommands, type StageStart, type TaskApproval, type TaskBase, type TaskPr, type TaskUsage, type TryRecord, type UsagePart, type Checkpoint, type CheckpointEnd } from './types.js';
 
 // The validators of what state.json holds, shared by the loader and the pre-#629 migration: each keeps a value only in the shape the
 // reducer writes, so a hand-edited file cannot feed it garbage.
@@ -211,6 +211,25 @@ function savedRunPick(value: unknown): Pick<Activity, 'runPick'> {
   return Object.keys(runPick).length === 0 ? {} : { runPick };
 }
 
+// #390: one row of a failed setup as the reducer wrote it, copied field by field; texts capped, a time a date, a duration a count
+const ROW_TEXTS = ['label', 'header', 'branch', 'base', 'code'] as const;
+function savedRow(value: unknown): SetupRow[] {
+  if (!isJsonObject(value) || !SETUP_ROW_KINDS.includes(value.kind as SetupRowKind) || !SETUP_ROW_STATUSES.includes(value.status as SetupRowStatus)) return [];
+  const texts = ROW_TEXTS.filter((key) => value[key] !== undefined);
+  const { startedAt, durationMs } = value;
+  if (!texts.every((key) => isCapped(value[key], FEEDBACK_MAX))) return [];
+  if ((startedAt !== undefined && !isDate(startedAt)) || (durationMs !== undefined && !isCount(durationMs))) return [];
+  const copied = Object.fromEntries(texts.map((key) => [key, value[key]])) as Pick<SetupRow, (typeof ROW_TEXTS)[number]>;
+  return [{ kind: value.kind as SetupRowKind, status: value.status as SetupRowStatus, ...copied, ...(startedAt === undefined ? {} : { startedAt }), ...(durationMs === undefined ? {} : { durationMs }) }];
+}
+
+// #390: the last failed setup, kept whole or not at all: a row dropped alone would make the dialog's bar count wrong
+function savedLastSetup(value: unknown): Pick<Activity, 'lastSetup'> {
+  if (!isJsonObject(value) || !isCapped(value.consoleId, FEEDBACK_MAX) || !Array.isArray(value.rows)) return {};
+  const rows = value.rows.flatMap(savedRow);
+  return rows.length > 0 && rows.length === value.rows.length ? { lastSetup: { consoleId: value.consoleId, rows } } : {};
+}
+
 export function savedWork(value: Record<string, unknown>): Partial<Activity> {
   const { worktree, branch, worktreeGone, local, base, sessionId, workerId, stopped, stoppedAt, stageStart, error, handover, handoffPending, handoffFeedback, tries, tryLog, via, freeSessionStage } = value;
   return {
@@ -230,6 +249,7 @@ export function savedWork(value: Record<string, unknown>): Partial<Activity> {
     ...savedSync(value.sync), // #854: shown while the activity lives
     ...savedCheckpoints(value.checkpoints), // #619: listed until the activity's delete
     ...savedRunPick(value.runPick), // #290
+    ...savedLastSetup(value.lastSetup), // #390
   };
 }
 

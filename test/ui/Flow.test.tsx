@@ -760,13 +760,13 @@ test('a task awaiting approval shows the approval colour and aguardando aprovaç
 });
 
 test('a task running its worktree setup says so from task.setup: iniciando with no worker, then its step; with its stage worker, the status; nothing without it (#299, #351, #542)', () => {
-  const opening = task('1', 'dev', { setup: { consoleId: 'setup:I1' } });
+  const opening = task('1', 'dev', { setup: { consoleId: 'setup:I1', rows: [] } });
   const { rerender } = render(<Flow state={state([opening], [worker('s1')])} />);
   expect(screen.getByText('iniciando')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: t('task.start') })).not.toBeInTheDocument();
-  rerender(<Flow state={state([{ ...opening, setup: { consoleId: 'setup:I1', step: 'RUN pnpm install' } }], [worker('s1')])} />);
+  rerender(<Flow state={state([{ ...opening, setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }], [worker('s1')])} />);
   expect(screen.getByText('preparando: RUN pnpm install')).toBeInTheDocument();
-  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1', setup: { consoleId: 'setup:I1', step: 'COPY .env' } })], [worker('s1', 'I1')])} />);
+  rerender(<Flow state={state([task('1', 'dev', { workerId: 's1', setup: { consoleId: 'setup:I1', step: 'COPY .env', rows: [] } })], [worker('s1', 'I1')])} />);
   expect(screen.getByText('trabalhando')).toBeInTheDocument();
   rerender(<Flow state={state([task('1', 'dev', { workerId: 's1' })], [{ ...worker('s1', 'I1'), lastEvent: { kind: 'prompt' } }])} />);
   expect(screen.queryByText(/preparando|iniciando/)).not.toBeInTheDocument();

@@ -158,7 +158,7 @@ test('each step reports its kind, its place in the run, its time and how it went
     throw new RunFailure(1, 'TOKEN=secret');
   };
   await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env\nRUN cat .env'), { ...h.deps, run: failing, onStepEnd: (report) => reports.push(report) }));
-  assert.deepEqual(reports.map(({ durationMs: _ms, ...rest }) => rest), [{ kind: 'COPY', index: 0, ok: true }, { kind: 'RUN', index: 1, ok: false }]);
+  assert.deepEqual(reports.map(({ durationMs: _ms, ...rest }) => rest), [{ kind: 'COPY', index: 0, ok: true }, { kind: 'RUN', index: 1, ok: false, code: 1 }]);
   assert.ok(reports.every((r) => Number.isInteger(r.durationMs) && r.durationMs >= 0));
 });
 
@@ -169,6 +169,15 @@ test('a report callback that throws never replaces the step\'s own outcome: a fa
   assert.equal(await runSteps(setupPhase(h), h.workspace, h.worktree, steps('COPY .env'), { ...h.deps, onStepEnd }), 1);
   const failing: RunShell = async () => { throw new RunFailure(2, 'out'); };
   await assert.rejects(runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN false'), { ...h.deps, run: failing, onStepEnd }), { message: /^setup failed at line 1 \(RUN false\)/ });
+});
+
+test('a progress file that cannot be written never fails the setup: the step passed, the run goes on and only a resume is lost (#390)', async (t) => {
+  const h = await harness(t);
+  const ran: string[] = [];
+  const recording: RunShell = async (_file, args) => { ran.push(String(args.at(-1))); };
+  const resume = { skip: 0, passed: async (): Promise<void> => { throw new Error('EACCES'); } };
+  assert.equal(await runSteps(setupPhase(h), h.workspace, h.worktree, steps('RUN a\nRUN b'), { ...h.deps, run: recording, resume }), 2);
+  assert.equal(ran.length, 2);
 });
 
 test('a RUN step gets the Hive\'s env with the workspace\'s on top, and only the Hive\'s when the workspace sets none (#738)', async (t) => {

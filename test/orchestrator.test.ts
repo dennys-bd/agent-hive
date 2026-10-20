@@ -1532,12 +1532,12 @@ test('setupStarted puts the setup on the task with its console id and drops its 
   const opened = born(idle, 1); // #629: the open makes the activity first, and the last failure is on it
   const failedBefore: State = withActivity(opened, { ...work(opened, 1)!, error: earlier });
   const id = ACT(failedBefore, 1);
-  const began = reduce(failedBefore, { type: 'setupStarted', activityId: id, consoleId: 'setup:board:item1' });
-  assert.deepEqual([work(began.state, 1)?.setup, work(began.state, 1)?.error, began.effects], [{ consoleId: 'setup:board:item1' }, undefined, []]);
-  const stepped = reduce(began.state, { type: 'setupStep', activityId: id, step: 'RUN pnpm install' }).state;
-  assert.deepEqual(work(stepped, 1)?.setup, { consoleId: 'setup:board:item1', step: 'RUN pnpm install' });
-  assert.equal(reduce(failedBefore, { type: 'setupStep', activityId: id, step: 'COPY .env' }).state, failedBefore, 'no setup on the activity: same object');
-  assert.equal(reduce(idle, { type: 'setupStarted', activityId: 'ghost', consoleId: 'setup:ghost' }).state, idle, 'unknown activity: same object');
+  const began = reduce(failedBefore, { type: 'setupStarted', activityId: id, consoleId: 'setup:board:item1', rows: [] });
+  assert.deepEqual([work(began.state, 1)?.setup, work(began.state, 1)?.error, began.effects], [{ consoleId: 'setup:board:item1', rows: [] }, undefined, []]);
+  const stepped = reduce(began.state, { type: 'setupStep', activityId: id, step: 'RUN pnpm install', rows: [] }).state;
+  assert.deepEqual(work(stepped, 1)?.setup, { consoleId: 'setup:board:item1', step: 'RUN pnpm install', rows: [] });
+  assert.equal(reduce(failedBefore, { type: 'setupStep', activityId: id, step: 'COPY .env', rows: [] }).state, failedBefore, 'no setup on the activity: same object');
+  assert.equal(reduce(idle, { type: 'setupStarted', activityId: 'ghost', consoleId: 'setup:ghost', rows: [] }).state, idle, 'unknown activity: same object');
   const ended = reduce(stepped, { type: 'setupEnded', activityId: id });
   assert.deepEqual([work(ended.state, 1)?.setup, work(ended.state, 1)?.error, ended.effects], [undefined, undefined, []]);
   const message = 'setup failed at line 1 (RUN pnpm install): exit 1\nERR_PNPM_NO_LOCKFILE';
@@ -1551,7 +1551,7 @@ test('setupStarted puts the setup on the task with its console id and drops its 
 test('a task whose setup runs is no candidate, takes no Start, Continue, Restart or session, and a boot drops the setup (#351)', () => {
   const idle = polled(signaled(base(1), 'red').state, many(1)).state;
   const opened = born(idle, 1); // #629: the open makes the activity first
-  const setting = reduce(opened, { type: 'setupStarted', activityId: ACT(opened, 1), consoleId: 'setup:board:item1' }).state;
+  const setting = reduce(opened, { type: 'setupStarted', activityId: ACT(opened, 1), consoleId: 'setup:board:item1', rows: [] }).state;
   const opening = task(setting, 1)!;
   assert.deepEqual(cands(setting), []);
   assert.deepEqual(signaled(setting, 'green').effects, [], 'green hands it no worker');
@@ -1727,7 +1727,7 @@ test('canOpenSession: any task on the source not being deleted, set up or leavin
   assert.equal(canOpenSession({ ...ok, auto: false }, { ...live, workerId: 's1', stopped: true }), true); // #629: the run fields are the activity's
   assert.equal(canOpenSession({ ...ok, item: { ...item(1), blockedBy: ['9'] } }, live), true, 'a blocker holds the stage run, not what the user opens (#491)');
   const refused: [Task, Activity, string][] = [
-    [{ ...ok, missing: true }, live, 'missing'], [ok, { ...live, deleting: true }, 'deleting'], [{ ...ok, leaving: true }, live, 'leaving'], [ok, { ...live, setup: { consoleId: 'C1' } }, 'setting up'],
+    [{ ...ok, missing: true }, live, 'missing'], [ok, { ...live, deleting: true }, 'deleting'], [{ ...ok, leaving: true }, live, 'leaving'], [ok, { ...live, setup: { consoleId: 'C1', rows: [] } }, 'setting up'],
   ];
   for (const [c, a, why] of refused) assert.equal(canOpenSession(c, a), false, why);
 });

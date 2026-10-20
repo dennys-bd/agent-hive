@@ -172,9 +172,9 @@ test('an epic hides the ⊘ line when its blockers are only its children, and na
 
 test('the status in muted: the worktree setup (iniciando, then its step), a spawn error in full as its title; iniciar stays on an error (#351, #542)', async () => {
   const user = userEvent.setup();
-  const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1' } }))} />);
+  const { rerender } = render(<Flow state={state(task({ setup: { consoleId: 'setup:I1', rows: [] } }))} />);
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument();
-  rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install' } }))} />);
+  rerender(<Flow state={state(task({ setup: { consoleId: 'setup:I1', step: 'RUN pnpm install', rows: [] } }))} />);
   expect(within(tile()).getByText('preparando: RUN pnpm install')).toHaveClass('text-muted-foreground');
   rerender(<Flow state={state(task({ error: 'pty: posix_spawnp failed.' }))} />);
   expect(within(tile()).getByText('pty: posix_spawnp failed.')).toHaveAttribute('title', 'pty: posix_spawnp failed.');
@@ -268,7 +268,7 @@ test('a commands stage shows the command running after the setup\'s own line and
   const at = (work: Partial<Activity>, made: Parameters<typeof withWork>[3] = {}): State => withWork(state(task({ stage: 'checks' }), [], { stages: [...stages, checks] }), 'I1', work, made);
   const flow = (s: State) => <StageOutputContext.Provider value={openOutput}><Flow state={s} /></StageOutputContext.Provider>;
   const running = { stage: 'checks', at: 1, ptyId: 'P1', runId: 'R1', failed: [], workerId: 'w1', started: [] };
-  const { rerender } = render(flow(at({ commands: running, setup: { consoleId: 'setup:I1' } })));
+  const { rerender } = render(flow(at({ commands: running, setup: { consoleId: 'setup:I1', rows: [] } })));
   expect(within(tile()).getByText('iniciando')).toBeInTheDocument(); // the worktree setup's line first
   rerender(flow(at({ commands: running })));
   expect(within(tile()).getByText('executando lint · 2/2')).toBeInTheDocument();

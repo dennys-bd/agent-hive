@@ -73,3 +73,18 @@ test('savedWork keeps a run pick only in the shape the start route writes: a mal
   assert.equal('runPick' in savedWork({ runPick: { agent: 'gemini', launch: { model: '-x' } } }), false);
   assert.equal('runPick' in savedWork({ runPick: 'x' }), false);
 });
+
+test('savedWork keeps a failed setup\'s rows only in the shape the reducer writes, field by field; one malformed row drops them all (#390)', () => {
+  const rows = [
+    { kind: 'worktree', status: 'done', durationMs: 900 }, { kind: 'branch', status: 'done', branch: 'hive/1-x', base: 'origin/main' },
+    { kind: 'step', status: 'failed', label: 'pnpm install', header: 'RUN pnpm install', durationMs: 40, code: '1' },
+  ];
+  const lastSetup = { consoleId: 'setup:board:1', rows };
+  assert.deepEqual(savedWork({ lastSetup }).lastSetup, lastSetup);
+  assert.deepEqual(savedWork({ lastSetup: { ...lastSetup, rows: [{ ...rows[0], extra: 'x' }] } }).lastSetup?.rows, [rows[0]], 'an unknown key is not copied');
+  for (const bad of [{ ...rows[0], kind: 'deploy' }, { ...rows[0], status: 'skipped' }, { ...rows[0], durationMs: -1 }, { ...rows[2], code: 1 }, { ...rows[0], startedAt: 'yesterday' }, 'x']) {
+    assert.equal('lastSetup' in savedWork({ lastSetup: { ...lastSetup, rows: [bad, ...rows.slice(1)] } }), false, JSON.stringify(bad));
+  }
+  assert.equal('lastSetup' in savedWork({ lastSetup: { rows } }), false, 'no console id');
+  assert.equal('lastSetup' in savedWork({ lastSetup: { consoleId: 'setup:board:1', rows: [] } }), false, 'no rows');
+});

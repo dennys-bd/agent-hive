@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { activityOf } from '../../activities';
 import { stageChannel } from '../../console';
 import { stageOf } from '../../tasks';
@@ -7,6 +7,7 @@ import { act } from '@/components/actions';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { useOpenStageOutput } from '@/hooks/use-console';
+import { useTick } from '@/hooks/use-tick';
 import { t } from '@/i18n';
 import { ciLines, commandLines, lineDuration, type RunningLine, type RunningMark, silence } from '@/lib/running-lines';
 import { viaTries } from '@/lib/tries';
@@ -14,22 +15,11 @@ import { viaTries } from '@/lib/tries';
 // The details panel's block while a stage runs with no agent (#914): a wait for CI or a commands stage, one line per check or command with its
 // time, the loop the task came through, a silent command's line, ver saída and parar. DetailPanel shows it in place of the status box.
 
-const TICK_MS = 1000; // a running clock must move
 const MUTED = 'text-muted-foreground';
 const GLYPH: Record<RunningMark, ReactNode> = { done: '✓', failed: '✕', running: <Spinner />, skipped: '', queued: '' };
 // Colour only for status: a failure destructive, the running line working; a queued or skipped line is muted whole
 const GLYPH_TONE: Record<RunningMark, string> = { done: '', failed: 'text-destructive', running: 'text-working', skipped: '', queued: '' };
 const isQuiet = (mark: RunningMark): boolean => mark === 'queued' || mark === 'skipped';
-
-// A re-render every second while a line runs, so its clock moves; no timer otherwise
-function useTick(isTicking: boolean): void {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!isTicking) return undefined;
-    const id = setInterval(() => setTick((n) => n + 1), TICK_MS);
-    return () => clearInterval(id);
-  }, [isTicking]);
-}
 
 function Line({ line, now }: { line: RunningLine; now: number }) {
   const time = lineDuration(line, now);

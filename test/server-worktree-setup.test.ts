@@ -151,7 +151,7 @@ test('a first /open whose workspace has a setup marks the task before any git, r
   const answer = await opening;
   assert.equal(answer.status, 200);
   assert.equal(((await answer.json()) as OpenResult).ptyId, workers[0].launch.ptyId, 'the page attaches it at once, as before (#249)');
-  assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'worktreeReady', 'setupEnded', 'openTerminal']);
+  assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'worktreeReady', 'setupEnded', 'openTerminal']);
   const after = lines.slice(from);
   assert.ok(after.findIndex((l) => l.startsWith('DEBUG setupStarted')) < after.findIndex((l) => l.startsWith('GIT ')), 'marked before the git');
   assert.deepEqual([work0(server)?.setup, work0(server)?.worktree, work0(server)?.error], [undefined, worktreePath(repo, SLUG), undefined]);
@@ -166,7 +166,7 @@ test('a first /open whose setup fails answers the 500 as before, puts the reason
   const failed = await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' });
   assert.equal(failed.status, 500);
   assert.deepEqual(await failed.json(), { error: reason });
-  assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupEnded']);
+  assert.deepEqual(trail(lines, from), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupEnded']);
   assert.ok(lines.includes(`DEBUG setupEnded activity=${shortId(work0(server)?.id)} failed`), 'the error reached the task, not the log; the event names the activity (#629)');
   assert.deepEqual([work0(server)?.error, work0(server)?.setup, work0(server)?.worktree, workers.length], [reason, undefined, undefined, 0], 'no worktreeReady, no shell');
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`\\r\\n${CMD(String.raw`COPY \.env`)}${FAILED(String.raw`setup failed at line 1 \(COPY \.env\): not found in hive`)}$`));
@@ -218,7 +218,7 @@ test('a first /open on a workspace with no setup steps marks the task, runs the 
   const { base, server, workers, lines } = await start(t, '# nothing yet\n');
   const from = lines.length;
   assert.equal((await postJson(`${base}/tasks/board:I1/open`, { kind: 'terminal' })).status, 200);
-  assert.deepEqual([trail(lines, from), workers.length, work0(server)?.setup], [['setupStarted', 'worktreeReady', 'setupEnded', 'openTerminal'], 1, undefined]);
+  assert.deepEqual([trail(lines, from), workers.length, work0(server)?.setup], [['setupStarted', 'setupStep', 'worktreeReady', 'setupEnded', 'openTerminal'], 1, undefined]);
   assert.ok(!lines.some((l) => l.includes('> git')), 'the run\'s git lines never reach the log');
   assert.deepEqual(await json(hiveFetch(`${base}/console`)), [{ id: 'setup', kind: 'setup', label: 'Setup worktree', status: 'done' }]);
   assert.match(shown((await channel(base, task0(server)))[1].history), new RegExp(`^${RUN_HEADER}(${CMD(String.raw`git [^\r]*`)}${OK_MS})+${SETUP_OK}$`));
@@ -248,4 +248,16 @@ test('a start through the worktree setup spawns its worker at the grid the start
   await waitFor(() => runOf(server) === undefined);
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   assert.deepEqual(workers.map((w) => w.launch.size), [{ cols: 132, rows: 41 }, undefined]);
+});
+
+test('a stage spawn whose setup fails keeps its rows on the task as lastSetup; the next start resumes from the failed step, skipping the one that passed, and drops them (#390)', async (t) => {
+  const { base, repo, server, workers } = await start(t, 'COPY .env\nCOPY seed.sql');
+  await writeFile(join(repo, '.env'), 'TOKEN=x\n');
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
+  assert.equal(work0(server)?.lastSetup?.consoleId, 'setup:board:I1');
+  assert.deepEqual((work0(server)?.lastSetup?.rows ?? []).map((r) => [r.kind, r.status]), [['worktree', 'done'], ['branch', 'done'], ['step', 'done'], ['step', 'failed']]);
+  await rm(join(repo, '.env')); // the first step, run again, would now fail
+  await writeFile(join(repo, 'seed.sql'), 'select 1;\n');
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
+  assert.deepEqual([workers.length, work0(server)?.lastSetup, work0(server)?.error], [1, undefined, undefined]);
 });

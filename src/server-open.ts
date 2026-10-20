@@ -8,6 +8,7 @@ import { baseRemote, workspaceBase } from './fork.js';
 import { taskBranch } from './task-runs.js';
 import { openWorktreeRun } from './task-setup.js';
 import { setupRunId } from './console.js';
+import { shownBase } from './setup-rows.js';
 import { branchFor, slugFor, slugOwner, slugTakenMessage, worktreeSessions } from './tasks.js';
 import { answerOpen, type TaskRouteDeps, type LiveView, openTask, placedTask, workspaceOf, type Refusal, refuse, RUNNING_MESSAGE, SETUP_RUNNING_MESSAGE } from './server-tasks.js';
 import { askedLaunch } from './launch-options.js';
@@ -132,13 +133,14 @@ async function openWithSetup(deps: OpenRouteDeps, current: LiveView, task: Task,
   const born = bornActivity(deps, res, task, plan);
   if (!born) return noActivity(res);
   const { activityId, settled } = born;
-  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId });
-  await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id })]);
+  const base = shownBase(plan.place.base?.ref, workspaceBase(current.runtime.config, plan.workspace)); // #390: the branch row's
+  const setup = openWorktreeRun(deps, { id: setupRunId(task.item.itemId), label: `#${plan.task.item.id}`, kind: 'setup', activityId, branch: plan.branch, base });
+  await Promise.all([settled, deps.dispatch({ type: 'setupStarted', activityId, consoleId: setup.id, rows: setup.rows() })]);
   const logged: OpenRouteDeps = { ...deps, exec: setup.exec };
   let refusal: Refusal | undefined;
   try { // everything after the mark: no throw may leave the task marked until the next boot
     refusal = await confirmPlan(logged, task, plan);
-    if (!refusal) await makeWorktree(logged, current, plan, activityId, (path) => setup.setUp(plan.workspace, path));
+    if (!refusal) await makeWorktree(logged, current, plan, activityId, (path) => { setup.prepared(); return setup.setUp(plan.workspace, path); });
   } catch (err) {
     setup.end(err);
     await deps.dispatch({ type: 'setupEnded', activityId, error: errorMessage(err) });

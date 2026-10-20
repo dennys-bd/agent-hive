@@ -38,7 +38,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 test('the + is disabled while the task sets up, is being cleaned or is gone from the board, and enabled on a blocked task (#491)', () => {
-  const { rerender } = render(wrapped(task({ setup: { consoleId: 'C1' } })));
+  const { rerender } = render(wrapped(task({ setup: { consoleId: 'C1', rows: [] } })));
   expect(plus()).toBeDisabled();
   const refused: Partial<WithWork>[] = [{ deleting: true }, { missing: true }];
   for (const extra of refused) {
@@ -178,7 +178,7 @@ test('newSession opens the default agent in the shown activity and openDiff its 
   expect(openDiff).toHaveBeenCalledWith(expect.objectContaining({ item: expect.objectContaining({ itemId: 'I1' }) }), 'stage');
   openDiff.mockClear();
   fetchMock.mockClear();
-  rerender(keys(task({ setup: { consoleId: 'C1' }, worktree: undefined })));
+  rerender(keys(task({ setup: { consoleId: 'C1', rows: [] }, worktree: undefined })));
   await user.keyboard('{Control>}{Alt>}{Shift>}N{/Shift}{/Alt}{/Control}'); // newSession off macOS (#585)
   await user.keyboard('{Control>}{Shift>}G{/Shift}{/Control}'); // openDiff off macOS (#585)
   expect(fetchMock).not.toHaveBeenCalled();
@@ -211,7 +211,7 @@ test('newRunEntries lists terminal, each agent (the default one with newSession\
     ['terminal', false], ['claude', false], ['codex', false], ['diff', true],
   ]);
   expect(newRunEntries({ kind: 'local', workspace: 'hive', activity: localPairOf('hive').activity }, 'claude', ALL_AGENTS).map((e) => e.kind)).toEqual(['terminal', 'claude', 'codex']);
-  const settingUp = task({ setup: { consoleId: 'C1' } });
+  const settingUp = task({ setup: { consoleId: 'C1', rows: [] } });
   expect(newRunEntries({ kind: 'task', task: bareTask(settingUp), activity: liveIn(settingUp) }, 'claude', ALL_AGENTS).every((e) => e.disabled)).toBe(true);
 });
 
@@ -301,7 +301,7 @@ test('newSessionDialog\'s key and nova sessão… open the dialog; its Enter ope
 
 test('the dialog\'s key does nothing where the + is disabled (#257)', async () => {
   const user = userEvent.setup();
-  render(<RunOpenerContext.Provider value={openRun}><Center c={task({ setup: { consoleId: 'C1' } })} /></RunOpenerContext.Provider>);
+  render(<RunOpenerContext.Provider value={openRun}><Center c={task({ setup: { consoleId: 'C1', rows: [] } })} /></RunOpenerContext.Provider>);
   await user.keyboard('{Control>}{Alt>}{Shift>}S{/Shift}{/Alt}{/Control}');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

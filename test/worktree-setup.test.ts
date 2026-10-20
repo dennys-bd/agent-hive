@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { commandLine, okLine } from '../src/console.js';
 import type { Exec, Workspace } from '../src/types.js';
-import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, type SetupDeps } from '../src/worktree-setup.js';
+import { hasSetup, isSetUp, needsSetup, runSetup, SETUP_MARKER, SETUP_PROGRESS, type SetupDeps } from '../src/worktree-setup.js';
 import { RunFailure, type RunOptions, runShell } from '../src/worktree-steps.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 
@@ -248,4 +248,40 @@ test('runShell hands every chunk to onOutput as it comes; an abort kills the who
 test('runShell without timeoutMs arms no timer: a step that outlasts nothing still resolves (#511)', async (t) => {
   const cwd = await tempDir(t, 'run-');
   await runShell('/bin/sh', ['-c', 'sleep 0.2'], { cwd });
+});
+
+test('a setup that fails at its third step records two done; the next run skips them and starts at the third, its reports counting the skipped ones; success writes the marker and removes the record (#390)', async (t) => {
+  let isFailing = true;
+  const run: SetupDeps['run'] = async (_file, args) => {
+    if (isFailing && args[1] === 'three') throw new RunFailure(1, '');
+  };
+  const h = await harness(t, 'RUN one\nRUN two\nRUN three\nRUN four', run);
+  const plans: [string[], number][] = [];
+  const reports: number[] = [];
+  const deps: SetupDeps = { ...h.deps, onPlan: (steps, skipped) => plans.push([steps, skipped]), onStepEnd: (report) => reports.push(report.index) };
+  await assert.rejects(runSetup(h.workspace, h.worktree, deps), { message: /^setup failed at line 3 \(RUN three\)/ });
+  const record = JSON.parse(await readFile(join(h.gitDir, SETUP_PROGRESS), 'utf8')) as { steps: string; done: number };
+  assert.equal(record.done, 2);
+  assert.match(record.steps, /^[0-9a-f]{64}$/);
+  isFailing = false;
+  assert.equal(await runSetup(h.workspace, h.worktree, deps), 2, 'two steps ran');
+  assert.deepEqual(h.steps.slice(3), ['RUN three', 'RUN four']);
+  assert.deepEqual(reports, [0, 1, 2, 2, 3], 'index counts the skipped steps');
+  assert.deepEqual(plans, [[['RUN one', 'RUN two', 'RUN three', 'RUN four'], 0], [['RUN one', 'RUN two', 'RUN three', 'RUN four'], 2]]);
+  assert.equal(await marked(h), true);
+  await assert.rejects(access(join(h.gitDir, SETUP_PROGRESS)), { code: 'ENOENT' });
+});
+
+test('a setup edited since the failure, or a record that does not read, starts again from its first step (#390)', async (t) => {
+  const failing: SetupDeps['run'] = async (_file, args) => {
+    if (args[1] === 'three') throw new RunFailure(1, '');
+  };
+  const h = await harness(t, 'RUN one\nRUN two\nRUN three', failing);
+  await assert.rejects(runSetup(h.workspace, h.worktree, h.deps));
+  const edited = { ...h.workspace, setup: 'RUN one\nRUN 2\nRUN three' };
+  await assert.rejects(runSetup(edited, h.worktree, h.deps));
+  assert.deepEqual(h.steps.slice(3), ['RUN one', 'RUN 2', 'RUN three'], 'another list: from the first step');
+  await writeFile(join(h.gitDir, SETUP_PROGRESS), 'not json');
+  await assert.rejects(runSetup(edited, h.worktree, h.deps));
+  assert.deepEqual(h.steps.slice(6), ['RUN one', 'RUN 2', 'RUN three']);
 });

@@ -445,11 +445,31 @@ export interface TaskApproval {
 /** The longest feedback the Hive takes (#268), in characters: the route, the loader and the panel's box. */
 export const FEEDBACK_MAX = 10_000;
 
+/** The rows of a worktree preparation as the Start dialog shows them (#390): the worktree, its branch, or one setup step after LOAD's expansion. */
+export const SETUP_ROW_KINDS = ['worktree', 'branch', 'step'] as const;
+export type SetupRowKind = (typeof SETUP_ROW_KINDS)[number];
+export const SETUP_ROW_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
+export type SetupRowStatus = (typeof SETUP_ROW_STATUSES)[number];
+/** One row of a worktree preparation as the Start dialog shows it (#390). */
+export interface SetupRow {
+  kind: SetupRowKind;
+  status: SetupRowStatus;
+  label?: string; // step: the RUN's command, else describeStep's text
+  header?: string; // step: describeStep's text, what the run's header line holds after `> `
+  branch?: string; base?: string; // branch: what it is made from
+  startedAt?: string; // ISO, while running
+  durationMs?: number; // done or failed; absent on a step skipped by a resume, and on the branch row
+  code?: string; // failed: a RUN's exit code, 'timeout' or 'stopped'
+}
+
 /** A task's worktree setup while it runs (#351), in both the stage spawn and a first /open: the one place the task and the dialog read it. */
 export interface TaskSetup {
   consoleId: string; // its run's id in the console's one setup channel (#353, SETUP_CHANNEL): what the ver log buttons open
   step?: string; // the step running, as describeStep writes it; absent before the first one
+  rows: SetupRow[]; // #390: the worktree, the branch and each step, as the Start dialog shows them
 }
+/** A setup's run and its rows (#390): the live setup's, or the last failed one's (Activity.lastSetup). */
+export type SetupRows = Pick<TaskSetup, 'consoleId' | 'rows'>;
 
 /** One failed command of a commands stage (#755): its name, its exit code (124 after its timeout) and the tail of its output. */
 export interface CommandFailure { name: string; code: number; output: string }
@@ -579,6 +599,7 @@ export interface Activity {
   base?: TaskBase; // #131, set by a start's popup
   runPick?: RunPick; // #290: a manual start's picks, written by start and taken off by the occupy of the same reduction
   setup?: TaskSetup; deleting?: true; // never survive a boot
+  lastSetup?: SetupRows; // #390: the last setup that failed, its run and rows, for the Start dialog once the mark is gone; dropped by the next setupStarted and a manual start; persisted like error
   commands?: StageCommands; // #755: a commands stage in flight: the task is running; persisted so the boot stops it, never past the boot
   ci?: StageCi; // #834: a wait-for-CI stage in flight: no worker, no process; persisted, so the wait goes on after a boot
   sync?: ForkSyncResult; // #854: the last automatic fork sync before this activity's worktree, failed or not; persisted while the activity lives
@@ -1418,8 +1439,8 @@ export type HiveEvent =
   | { type: 'ask'; ptyId: string; question: string } // hive_ask: the worker needs the user; 1 to 2000 characters (#99)
   | { type: 'spawnFailed'; ptyId: string; message: string } // the spawner could not open the session / tab
   | { type: 'createActivity'; taskId: string } // the first /tasks/:id/open is about to make the worktree (#629): the task's activity is born now, so its setup has an id to act on
-  | { type: 'setupStarted'; activityId: string; consoleId: string } // a worktree setup began, as that run of the console's setup channel (#351): the task's mark and lock
-  | { type: 'setupStep'; activityId: string; step: string } // its step about to run, as '<INSTRUCTION> <arg>' (#299, #351)
+  | { type: 'setupStarted'; activityId: string; consoleId: string; rows: SetupRow[] } // a worktree setup began, as that run of the console's setup channel (#351): the task's mark and lock; rows: the worktree and branch rows, running from the mark (#390)
+  | { type: 'setupStep'; activityId: string; step?: string; rows: SetupRow[] } // its rows changed (#390): the whole list, and the step running as '<INSTRUCTION> <arg>' (#299, #351), absent before the first
   | { type: 'setupEnded'; activityId: string; error?: string } // it ended; error only from the /open path, the spawn's failure goes through spawnFailed (#351)
   | { type: 'activityDeleted'; activityId: string } // the deleteActivity effect ended well: the task advances as after a prompt
   | { type: 'deleteActivityFailed'; activityId: string; message: string } // git refused: the task carries the message until a manual start

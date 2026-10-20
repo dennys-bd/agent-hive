@@ -208,8 +208,8 @@ test('describeEvent: deleteActivityFailed keeps only the first line of its messa
 });
 
 test('describeEvent: the setup events name only their task, never the step or the error, and spawnFailed keeps only the first line of its message, so a setup\'s output never reaches the log (#299, #351)', () => {
-  assert.equal(describeEvent({ type: 'setupStarted', activityId: 'a-PVTI_1', consoleId: 'setup:PVTI_1' }), 'setupStarted activity=a-PVTI_1');
-  assert.equal(describeEvent({ type: 'setupStep', activityId: 'a-PVTI_1', step: 'RUN pnpm install' }), 'setupStep activity=a-PVTI_1');
+  assert.equal(describeEvent({ type: 'setupStarted', activityId: 'a-PVTI_1', consoleId: 'setup:PVTI_1', rows: [] }), 'setupStarted activity=a-PVTI_1');
+  assert.equal(describeEvent({ type: 'setupStep', activityId: 'a-PVTI_1', step: 'RUN pnpm install', rows: [] }), 'setupStep activity=a-PVTI_1');
   assert.equal(describeEvent({ type: 'setupEnded', activityId: 'a-PVTI_1' }), 'setupEnded activity=a-PVTI_1');
   assert.equal(describeEvent({ type: 'setupEnded', activityId: 'a-PVTI_1', error: 'setup failed at line 1 (RUN cat .env): exit 1\nTOKEN=secret' }), 'setupEnded activity=a-PVTI_1 failed');
   assert.equal(

@@ -309,20 +309,27 @@ function worktreeReady(state: State, { activityId, path, branch, base, local }: 
   return none(withActivity(frozen, withLocal({ ...rest, worktree: path, branch, ...(base ? { base } : {}) }, local)));
 }
 
-// The worktree setup on the task (#351): started with its console channel, a step, ended. A start is a new attempt, so the last failure goes,
-// as a manual start clears it; setupEnded's error is the /open path's failure, kept where a failed spawn keeps its own. An unknown task, or
+// The worktree setup on the task (#351): started with its console channel, a step, ended. A start is a new attempt, so the last failure and
+// its rows (lastSetup, #390) go, as a manual start clears them; setupEnded keeps a setup with a failed row as lastSetup; setupEnded's error is the /open path's failure, kept where a failed spawn keeps its own. An unknown task, or
 // a step with no setup (a stale one), changes nothing.
 function setupChanged(state: State, event: Extract<HiveEvent, { type: 'setupStarted' | 'setupStep' | 'setupEnded' }>): Reduced {
   const activity = state.activities.find((a) => a.id === event.activityId);
   const task = taskOfActivity(state, event.activityId);
   if (!activity || !task) return none(state);
   if (event.type === 'setupStarted') {
-    const { error: _error, ...retried } = activity;
-    return none(withActivity(state, { ...retried, setup: { consoleId: event.consoleId } }));
+    const { error: _error, lastSetup: _lastSetup, ...retried } = activity;
+    return none(withActivity(state, { ...retried, setup: { consoleId: event.consoleId, rows: event.rows } }));
   }
-  if (event.type === 'setupStep') return activity.setup ? none(withActivity(state, { ...activity, setup: { ...activity.setup, step: event.step } })) : none(state);
-  const { setup: _setup, ...rest } = activity;
-  return none(withActivity(state, event.error === undefined ? rest : { ...rest, error: event.error }));
+  if (event.type === 'setupStep') {
+    if (!activity.setup) return none(state);
+    const setup = { consoleId: activity.setup.consoleId, rows: event.rows, ...(event.step === undefined ? {} : { step: event.step }) }; // #390: replaces both
+    return none(withActivity(state, { ...activity, setup }));
+  }
+  const { setup, ...rest } = activity;
+  const isFailed = setup?.rows.some((row) => row.status === 'failed') === true; // #390: the dialog shows a failed setup once its mark is gone
+  return none(withActivity(state, {
+    ...rest, ...(event.error === undefined ? {} : { error: event.error }), ...(isFailed && setup ? { lastSetup: { consoleId: setup.consoleId, rows: setup.rows } } : {}),
+  }));
 }
 
 // The user's answer to a stage awaiting approval (#268, #134): to its own stage, a held worker goes on in place with the transition's prompt
