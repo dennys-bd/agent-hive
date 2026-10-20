@@ -2240,6 +2240,8 @@ const en = {
   'plugins.protocol.orphan': 'its block was removed by a Hive update',
   'plugins.protocol.passageLeftOut': '{id} left out: {message}',
   'plugins.protocol.rendered': 'protocol for {workspace}',
+  'plugins.protocol.viewAsHint': 'shows the text the session receives in this workspace',
+  'plugins.protocol.selectHint': 'select a passage to see its variables',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4475,6 +4477,8 @@ const pt: Record<MessageKey, string> = {
   'plugins.protocol.orphan': 'o bloco dele foi removido por uma atualização da Hive',
   'plugins.protocol.passageLeftOut': '{id} fora: {message}',
   'plugins.protocol.rendered': 'protocolo de {workspace}',
+  'plugins.protocol.viewAsHint': 'mostra o texto que a sessão recebe neste workspace',
+  'plugins.protocol.selectHint': 'selecione um trecho para ver as variáveis dele',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };

@@ -1,9 +1,12 @@
 import { LockIcon } from 'lucide-react';
 import { Fragment } from 'react';
 import { PassageCard } from '@/components/plugins/PassageCard';
+import { VariableList } from '@/components/plugins/VariableList';
+import { ViewAsSelect } from '@/components/plugins/ViewAsSelect';
 import { Button } from '@/components/ui/button';
-import { newKey, type Protocol, type ProtocolBlockView, type ProtocolRead } from '@/hooks/use-protocol';
-import { t } from '@/i18n';
+import { editErrorKey, type WriteResult } from '@/hooks/use-item-editor';
+import { newKey, passageText, type Protocol, type ProtocolBlockView, type ProtocolRead } from '@/hooks/use-protocol';
+import { type MessageKey, t } from '@/i18n';
 
 export interface ProtocolScreenProps { protocol: Protocol; workspaces: readonly string[] }
 interface TemplateProps extends ProtocolScreenProps { read: ProtocolRead }
@@ -78,5 +81,26 @@ export function ProtocolScreen({ protocol, workspaces }: ProtocolScreenProps) {
     <section aria-label={t('plugins.section.protocol')} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-6 py-5">
       <Content protocol={protocol} workspaces={workspaces} />
     </section>
+  );
+}
+
+/** The right pane on the protocol screen (#337): "view as", its hint, then the selected passage's variables. A value lands in that passage's
+ * draft and is saved with it; nothing reaches the server from here. */
+export function ProtocolPane({ protocol, workspaces }: ProtocolScreenProps) {
+  const { selected } = protocol;
+  const text = selected === undefined ? undefined : passageText(protocol, selected);
+  const onApply = (result: WriteResult): MessageKey | undefined => {
+    if (!result.ok) return editErrorKey(result.error.message);
+    if (selected !== undefined) protocol.edit(selected, result.text);
+    return undefined;
+  };
+  return (
+    <>
+      <ViewAsSelect value={protocol.viewAs} workspaces={workspaces} onChange={protocol.setViewAs} />
+      <p className="border-b px-3 py-2 text-muted-foreground text-xs">{t('plugins.protocol.viewAsHint')}</p>
+      {text === undefined
+        ? <p className="p-3 text-muted-foreground text-xs">{t('plugins.protocol.selectHint')}</p>
+        : <VariableList key={selected} text={text} workspaces={workspaces} onApply={onApply} />}
+    </>
   );
 }

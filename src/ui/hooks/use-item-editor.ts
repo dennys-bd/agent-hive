@@ -275,7 +275,8 @@ const EDIT_ERRORS: readonly [RegExp, MessageKey][] = [
   [/ is already declared$/, 'plugins.variables.error.taken'],
   [/a name is a letter|is built in|is not a name a variable can take/, 'plugins.variables.error.badName'],
 ];
-const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
+/** A refused template edit as copy; the protocol's variables pane (#337) maps its refusals the same way. */
+export const editErrorKey = (message: string): MessageKey => EDIT_ERRORS.find(([pattern]) => pattern.test(message))?.[1] ?? 'plugins.variables.error.invalid';
 
 const NO_FILE: EditResult = { ok: false, error: { line: 1, message: 'no file is open' } };
 type TextEdits = Pick<ItemEditor, 'move' | 'insertChain' | 'replaceChain' | 'removeChain'>;

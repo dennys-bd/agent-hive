@@ -3,6 +3,7 @@ import type { DockPanel } from '@/components/DockGroup';
 import { DefaultAgentContext } from '@/components/NewRunButton';
 import { PluginsSidebar } from '@/components/plugins/PluginsSidebar';
 import { PluginsView } from '@/components/plugins/PluginsView';
+import { ProtocolPane } from '@/components/plugins/ProtocolScreen';
 import { VariablesPane } from '@/components/plugins/VariablesPane';
 import { ViewAsSelect } from '@/components/plugins/ViewAsSelect';
 import type { AssistPick } from '@/hooks/use-assist';
@@ -33,11 +34,12 @@ export function usePluginsDock({ isShown, workspaces, activate, fontFamily }: Pl
   const isHiveItem = editor.item?.origin === HIVE_ORIGIN; // a workspace item has no variables, so no "view as" (decision 22)
   return {
     panel: { id: 'plugins', title: t('dock.plugins'), ownHeader: true, body: <PluginsSidebar plugins={plugins} workspaces={workspaces} isShown={isShown} activate={activate} /> },
-    // "View as" heads the variables pane (#319); the open file's variables sit under it (#321)
+    // "View as" heads the variables pane (#319); the open file's variables sit under it (#321), or the selected passage's (#337)
     right: {
       id: 'detail', title: t('files.tab.variables'), ownHeader: true,
       body: (
         <section aria-label={t('files.tab.variables')} className="flex min-h-0 flex-1 flex-col">
+          {plugins.screen.kind === 'protocol' && <ProtocolPane protocol={protocol} workspaces={workspaces} />}
           {isHiveItem && <ViewAsSelect value={editor.viewAs} workspaces={workspaces} onChange={editor.setViewAs} />}
           {isHiveItem && <VariablesPane editor={editor} annotations={annotations} workspaces={workspaces} />}
         </section>

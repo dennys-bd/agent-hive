@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { setLanguage } from '@/i18n';
+import { setVariableValue } from '../../src/template-edit';
 import { resetMonacoFakes } from './monaco-fake';
 import { json } from './plugins-fixtures';
 import { PROTOCOL_READ, passageOf, stubProtocol, withPassages } from './protocol-fixtures';
@@ -156,4 +157,47 @@ test('a failed read of the protocol replaces the list with its message (#337)', 
   const centre = await openProtocol(user);
   expect(await within(centre).findByRole('alert')).toHaveTextContent('não foi possível ler o protocolo');
   expect(within(centre).queryAllByRole('article')).toEqual([]);
+});
+
+test('ver como a workspace shows its stage text read-only with no cards and the passages left out there; a 404 from the render goes back to the template (#337)', async () => {
+  const user = userEvent.setup();
+  let isGone = false;
+  stubProtocol({
+    read: () => withPassages(passageOf('p1', 'ask', 'mine', { errors: { 'hive-site': [{ line: 4, message: 'boom' }] } })),
+    render: (workspace: string) => (isGone ? json({ error: 'unknown workspace' }, 404) : json({ stage: `stage of ${workspace}\nmine\n`, session: '' })),
+  });
+  render(<PluginsWindow />);
+  const centre = await openProtocol(user);
+  await within(centre).findByRole('article', { name: 'p1' });
+  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
+  await user.click(await screen.findByRole('option', { name: 'hive-site' }));
+  expect(await within(centre).findByLabelText('protocolo de hive-site')).toHaveTextContent('stage of hive-site mine');
+  expect(within(centre).queryAllByRole('article')).toEqual([]);
+  expect(within(centre).getByText('p1 fora: boom')).toHaveClass('text-destructive');
+  isGone = true;
+  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
+  await user.click(await screen.findByRole('option', { name: 'agent-hive' }));
+  expect(await within(centre).findByRole('article', { name: 'p1' })).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'ver como' })).toHaveTextContent('template');
+});
+
+test("the right pane lists the selected passage's variables; a value set there changes the draft, not the server, until salvar (#337)", async () => {
+  const user = userEvent.setup();
+  const text = '---\nafter: ask\nvariables:\n  docsRepo: { default: null }\n---\nSee {{ docsRepo }}.\n';
+  const { calls } = stubProtocol({ read: () => withPassages({ ...passageOf('p1', 'ask', ''), text }), write: () => json({ id: 'p1' }) });
+  render(<PluginsWindow />);
+  const card = await within(await openProtocol(user)).findByRole('article', { name: 'p1' });
+  const aside = screen.getByRole('complementary');
+  expect(within(aside).getByText('mostra o texto que a sessão recebe neste workspace')).toBeInTheDocument();
+  expect(within(aside).getByText('selecione um trecho para ver as variáveis dele')).toBeInTheDocument();
+  await user.click(within(card).getByRole('textbox', { name: BODY }));
+  await user.click(within(within(aside).getByRole('listitem', { name: 'docsRepo' })).getByLabelText('docsRepo · hive-site'));
+  await user.type(within(aside).getByRole('textbox', { name: 'docsRepo · hive-site' }), 'site-docs{Enter}');
+  await waitFor(() => expect(within(aside).getByLabelText('docsRepo · hive-site')).toHaveTextContent('site-docs'));
+  expect(calls).toEqual([]);
+  expect(within(card).getByRole('textbox', { name: BODY })).toHaveValue('See {{ docsRepo }}.\n');
+  const written = setVariableValue(text, 'docsRepo', 'hive-site', 'site-docs');
+  if (!written.ok) throw new Error(written.error.message);
+  await user.click(within(card).getByRole('button', { name: 'salvar' }));
+  await waitFor(() => expect(calls).toEqual([{ method: 'PUT', path: '/api/protocol/passages/p1', body: { text: written.text } }]));
 });
