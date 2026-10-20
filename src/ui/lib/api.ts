@@ -12,16 +12,18 @@ export function getJson<T>(path: string): Promise<T> {
   return fetch(path).then((res) => parseJson<T>(res));
 }
 
+interface SendOptions { keepalive?: boolean; signal?: AbortSignal } // signal: a request its caller may abort (#329: a review no longer shown)
+
 /** `keepalive` lets the request outlive the page: the view state's flush on pagehide (#484). */
-export function sendJson<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, { keepalive }: { keepalive?: boolean } = {}): Promise<T> {
+export function sendJson<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, { keepalive, signal }: SendOptions = {}): Promise<T> {
   return fetch(path, {
     // x-hive-ui is the CSRF gate of every dashboard write (see server.ts): a form on another site cannot set it
     method, headers: { 'content-type': 'application/json', 'x-hive-ui': '1' },
-    body: body === undefined ? undefined : JSON.stringify(body), keepalive,
+    body: body === undefined ? undefined : JSON.stringify(body), keepalive, signal,
   }).then((res) => parseJson<T>(res));
 }
 
-export const postJson = <T>(path: string, body?: unknown, opts: { keepalive?: boolean } = {}): Promise<T> => sendJson<T>('POST', path, body, opts);
+export const postJson = <T>(path: string, body?: unknown, opts: SendOptions = {}): Promise<T> => sendJson<T>('POST', path, body, opts);
 
 /** A hive task made from a PR (#67): POST /tasks with the link as pr and the destination hive, the only one such a task has, so the answer is
  * always the task, never a source's notice. The title and stage are the caller's (the PR page sends the PR's title). */
