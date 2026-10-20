@@ -228,6 +228,7 @@ function refetchesOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => b
 // are kept so stop() waits for them: the database closes after it
 function optionsRefreshOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: () => boolean): { refreshOptions: ReadModelLoop['refreshOptions']; inFlight(): Promise<void>[] } {
   const pending = new Set<Promise<void>>();
+  const byRepository = new Map<string, Promise<void>>(); // a repository's refresh in flight: the tab's refresh is not throttled
   async function run(repositories: string[]): Promise<void> {
     try {
       const sync = await core.access();
@@ -245,9 +246,16 @@ function optionsRefreshOf(deps: ReadModelLoopDeps, core: LoopCore, isStopped: ()
     inFlight: () => [...pending],
     refreshOptions: (repositories) => {
       if (isStopped() || core.inBackoff()) return Promise.resolve();
-      const promise = run(repositories).finally(() => pending.delete(promise));
+      const running = repositories.flatMap((r) => byRepository.get(r) ?? []);
+      const fresh = repositories.filter((r) => !byRepository.has(r));
+      if (fresh.length === 0) return Promise.all(running).then(() => undefined);
+      const promise = run(fresh).finally(() => {
+        pending.delete(promise);
+        for (const r of fresh) byRepository.delete(r);
+      });
       pending.add(promise);
-      return promise;
+      for (const r of fresh) byRepository.set(r, promise);
+      return Promise.all([...running, promise]).then(() => undefined);
     },
   };
 }

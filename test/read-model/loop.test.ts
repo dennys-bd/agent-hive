@@ -447,3 +447,17 @@ test('refreshOptions runs the labels, assignees, milestones and issue types scop
   await loop.refreshOptions([REPO]);
   assert.equal(calls.length, 4);
 });
+
+test('two concurrent refreshOptions for one repository make one set of REST calls (#282)', async (t) => {
+  const db = await tempModel(t);
+  const gate = deferred();
+  const { rest, calls } = fakeRest([ok([restLabel('bug')]), ok([{ login: 'bia' }]), ok([]), { status: 404 }]);
+  const { loop } = loopOn(db, async (path, etag) => { await gate.promise; return rest(path, etag); });
+  const first = loop.refreshOptions([REPO]);
+  const second = loop.refreshOptions([REPO]);
+  gate.resolve();
+  await Promise.all([first, second]);
+  assert.equal(calls.length, 4);
+  await loop.refreshOptions([REPO]).catch(() => undefined);
+  assert.ok(calls.length > 4, 'once settled, a refresh runs again');
+});

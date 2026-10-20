@@ -117,6 +117,7 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
   let readAt = 0;
   let readKey: string | undefined; // the listing the last full read stored: another one (a new login, another Project) has nothing stored yet
   let writes = 0; // clear() calls: a full read in flight when a write clears the stamp must not set it back
+  let refreshing: Promise<StoredListing> | undefined;
   const clear = (): void => {
     writes += 1;
     stamp = undefined;
@@ -137,9 +138,11 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
   }
   return {
     list,
+    // one full read in flight at most: ?fresh=1 is not throttled, so concurrent ones share the running read
     refresh: (key) => {
       clear();
-      return list(key);
+      if (refreshing === undefined) refreshing = list(key).finally(() => { refreshing = undefined; });
+      return refreshing;
     },
     relate: (source, tasks, read) => relateTasks(deps, source, tasks, read),
     answer: (node, relations, project) => storeAnswer(deps, node, relations, project),

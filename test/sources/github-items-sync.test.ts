@@ -6,7 +6,7 @@ import { createItemsSync, FULL_READ_MAX_AGE_MS, joinRelations, readProbe, type I
 import { PROBE, type GhIssueRelations, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql, SourceItem } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
-import { itemNode, SOURCE, T1, T2 } from '../read-model/fixtures.js';
+import { deferred, itemNode, SOURCE, T1, T2 } from '../read-model/fixtures.js';
 
 // #190: the probe-or-read decision, the store and read-back, and a write's answer, over an in-memory model
 const KEY: ListingKey = { source: SOURCE, project: 'acme/6' };
@@ -132,4 +132,17 @@ test('refresh reads in full now, whatever the probe says, and keeps the probe\'s
   calls.length = 0;
   await sync.list(KEY);
   assert.deepEqual(calls, ['probe']);
+});
+
+test('concurrent refreshes share one full read: ?fresh=1 cannot fan out into GitHub calls (#282)', async () => {
+  const gate = deferred();
+  const calls: string[] = [];
+  const { sync } = await harness(['S1'], { listNodes: async () => { calls.push('read'); await gate.promise; return { nodes: [node(1)], fields: [] }; } });
+  const first = sync.refresh(KEY);
+  const second = sync.refresh(KEY);
+  gate.resolve();
+  await Promise.all([first, second]);
+  assert.equal(calls.filter((c) => c === 'read').length, 1);
+  await sync.refresh(KEY);
+  assert.equal(calls.filter((c) => c === 'read').length, 2, 'a refresh after the first settled reads again');
 });
