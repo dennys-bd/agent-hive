@@ -44,14 +44,15 @@ export function useSetupView(live: Activity | undefined): SetupView {
   const [request, setRequest] = useState<Request>();
   const [seen, setSeen] = useState<SetupRows>();
   const [hasFailed, setFailed] = useState(false);
-  const [stale, setStale] = useState<string>(); // the lastSetup present at begin: a retry's ok answer can beat its setupStarted to the state
+  const [stale, setStale] = useState<string>(); // the lastSetup present at begin: a retry's ok answer can beat any state of its own
   const ids = useRef(0);
   const setup = live?.setup;
   useEffect(() => {
     if (request !== undefined && setup !== undefined) setSeen(setup);
   }, [request, setup]);
-  const lastSetup = keyOf(live?.lastSetup) === stale ? undefined : live?.lastSetup;
-  const verdict = verdictOf(seen !== undefined, request?.answer, live && { ...live, lastSetup });
+  // an ok answer waits while the last failure's lastSetup is still there: the retry's setupStarted (or the start's clear) drops it, a new failure replaces it
+  const isStale = stale !== undefined && keyOf(live?.lastSetup) === stale;
+  const verdict = isStale && request?.answer?.ok === true ? undefined : verdictOf(seen !== undefined, request?.answer, live);
   useEffect(() => {
     const answer = request?.answer;
     if (request === undefined || answer === undefined || verdict === undefined) return;

@@ -82,3 +82,18 @@ test('a read whose answer cannot be followed keeps the last text and rejects not
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(result.current.every((lines) => lines.length === 0)).toBe(true);
 });
+
+test('a run\'s end keeps its tail while the channel is read again: only a new run drops it (#390)', async () => {
+  let calls = 0;
+  vi.stubGlobal('fetch', vi.fn(async () => {
+    calls += 1;
+    return calls === 1 ? reply({ history: '', live: [{ ptyId: CONSOLE }], status: 'running' }) : new Promise<Response>(() => undefined);
+  }));
+  vi.stubGlobal('WebSocket', FakeWebSocket);
+  const { result, rerender } = renderHook(({ isLive }) => useSetupLog(CONSOLE, ROWS, isLive), { initialProps: { isLive: true } });
+  await waitFor(() => expect(FakeWebSocket.all).toHaveLength(1));
+  act(() => FakeWebSocket.all[0]?.receive('> RUN pnpm install\r\nadded 3\r\n'));
+  act(() => FakeWebSocket.all[0]?.end());
+  rerender({ isLive: false });
+  expect(result.current[2]).toEqual(['> RUN pnpm install', 'added 3']);
+});

@@ -49,7 +49,7 @@ test('a failure with no lastSetup shows the last seen rows with their running ro
   expect(view.result.current.progress?.rows.map((row) => row.status)).toEqual(['done', 'failed']);
 });
 
-test('a retry\'s ok answer before its setupStarted reads the last failure\'s lastSetup as stale: the dialog ends (#390)', () => {
+test('a retry\'s ok answer before any state of its own waits while the last failure\'s lastSetup is still there: dropped, the dialog ends (#390)', () => {
   const view = viewOn(activity({ setup: { consoleId: 'setup:I9', rows: RUNNING } }));
   view.rerender({ live: activity({ lastSetup: { consoleId: 'setup:I9', rows: FAILED } }) });
   view.settle({ ok: true });
@@ -57,6 +57,18 @@ test('a retry\'s ok answer before its setupStarted reads the last failure\'s las
   view.retry();
   view.rerender({ live: activity({ lastSetup: { consoleId: 'setup:I9', rows: FAILED.map((row) => ({ ...row })) } }) }); // a new broadcast, the same failure
   view.settle({ ok: true });
+  expect([view.onEnd.mock.calls.length, view.onFailed.mock.calls.length]).toEqual([0, 1]);
+  view.rerender({ live: activity() }); // the retry's setupStarted, or the start's clearedError, drops it
   expect(view.onEnd).toHaveBeenCalledWith({ ok: true });
-  expect(view.onFailed).toHaveBeenCalledTimes(1);
+});
+
+test('a retry\'s ok answer that waited on the stale lastSetup fails once a new one comes (#390)', () => {
+  const view = viewOn(activity({ setup: { consoleId: 'setup:I9', rows: RUNNING } }));
+  view.rerender({ live: activity({ lastSetup: { consoleId: 'setup:I9', rows: FAILED } }) });
+  view.settle({ ok: true });
+  view.retry();
+  view.settle({ ok: true });
+  view.rerender({ live: activity({ lastSetup: { consoleId: 'setup:I9', rows: FAILED.map((row) => ({ ...row, durationMs: 7 })) } }) });
+  expect([view.onEnd.mock.calls.length, view.onFailed.mock.calls.length]).toEqual([0, 2]);
+  expect(view.result.current.isFailed).toBe(true);
 });

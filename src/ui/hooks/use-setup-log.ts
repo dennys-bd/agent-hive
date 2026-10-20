@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SETUP_CHANNEL } from '../../console';
 import type { SetupRow } from '../../types';
 import { getJson } from '@/lib/api';
@@ -49,11 +49,15 @@ function lastRun(history: string): string {
 function useRunText(consoleId: string, isLive: boolean): string {
   const [text, setText] = useState('');
   const [reads, setReads] = useState(0);
+  const last = useRef<{ consoleId: string; isLive: boolean }>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: isLive and reads are the triggers of a new read, not values it uses
   useEffect(() => {
     let current = true;
     let socket: WebSocket | undefined;
-    setText(''); // a new run's read: the last run's tail never stands in for this one's
+    // a new run (another task's, or a retry going live) drops the last one's tail; a run's end keeps it while the channel is read again.
+    // consoleId alone cannot tell: it is the task's, the same for every retry
+    if (last.current !== undefined && (last.current.consoleId !== consoleId || (isLive && !last.current.isLive))) setText('');
+    last.current = { consoleId, isLive };
     getJson<unknown>(`/console/${encodeURIComponent(SETUP_CHANNEL.id)}?run=${encodeURIComponent(consoleId)}`).then((view) => {
       if (!current || !isView(view)) return;
       if (!view.live.some((run) => run.ptyId === consoleId)) return setText(lastRun(view.history));
