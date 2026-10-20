@@ -22,6 +22,7 @@ import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
 import { registerMemoryRoutes, runMemory, writeMemoryProtocols } from './server-memory.js';
+import { registerProtocolRoutes } from './server-protocol.js';
 import { excludeFromGit, pluginSource, prepareHome, type ProtocolPaths } from './hooks-settings.js';
 import { AGENTS, ALL_AGENTS, knownAgent, planLimitAgents, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
@@ -1169,6 +1170,8 @@ export function createServer(deps: ServerDeps): HiveServer {
   // The memory dialog's routes (#797): GET/POST /workspaces/:name/memory, GET …/stats, PUT/DELETE …/:id, saved at once; PUT …/cap (#115) on
   // the same chain and saveSettings as POST /settings
   registerMemoryRoutes(app, { requireLive, memory, events: wiring.events, log, home, queueSave, saveSettings });
+  // The protocol routes (#336): blocks, passages and a workspace's render; a passage write rewrites the protocol files on the settings chain
+  registerProtocolRoutes(app, { requireLive, queueSave, passages, memory, protocolFor, log });
 
   // create, start, bases, close, keep, session, session exit, delete-activity, move, reset-order, close-missing, auto, worktree, open, move-to, open-ref, files: same host/origin middleware ordering, registered here
   // The page attaches a run POST /open started at once (#249): the answer waits for its pty to exist.
