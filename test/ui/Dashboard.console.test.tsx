@@ -133,7 +133,7 @@ test('limpar posts the channel\'s clear and reads it again, now without its fini
 
 test('a task running its worktree setup shows iniciando with no ver log icon on its card (#290)', () => {
   channels = [CHANNEL, SETUP];
-  const setting: State = withTasks(state, [{ ...taskA, setup: { consoleId: SETUP_RUN } }]);
+  const setting: State = withTasks(state, [{ ...taskA, setup: { consoleId: SETUP_RUN, rows: [] } }]);
   render(<Dashboard state={setting} locale="pt-BR" tick={0} onSelect={() => {}} />);
   showFlow();
   expect(screen.getByText('iniciando')).toBeInTheDocument();

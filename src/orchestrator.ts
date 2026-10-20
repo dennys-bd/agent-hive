@@ -318,9 +318,13 @@ function setupChanged(state: State, event: Extract<HiveEvent, { type: 'setupStar
   if (!activity || !task) return none(state);
   if (event.type === 'setupStarted') {
     const { error: _error, ...retried } = activity;
-    return none(withActivity(state, { ...retried, setup: { consoleId: event.consoleId } }));
+    return none(withActivity(state, { ...retried, setup: { consoleId: event.consoleId, rows: event.rows } }));
   }
-  if (event.type === 'setupStep') return activity.setup ? none(withActivity(state, { ...activity, setup: { ...activity.setup, step: event.step } })) : none(state);
+  if (event.type === 'setupStep') {
+    if (!activity.setup) return none(state);
+    const setup = { consoleId: activity.setup.consoleId, rows: event.rows, ...(event.step === undefined ? {} : { step: event.step }) }; // #390: replaces both
+    return none(withActivity(state, { ...activity, setup }));
+  }
   const { setup: _setup, ...rest } = activity;
   return none(withActivity(state, event.error === undefined ? rest : { ...rest, error: event.error }));
 }

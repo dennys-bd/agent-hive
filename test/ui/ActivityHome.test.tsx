@@ -147,6 +147,6 @@ test('diff is disabled with no worktree to diff, and every new-run button while 
   const { rerender } = render(view(taskActivity({}, {})));
   expect(within(newRun()).getByRole('button', { name: 'diff' })).toBeDisabled();
   expect(within(newRun()).getByRole('button', { name: 'terminal' })).toBeEnabled();
-  rerender(view(taskActivity({}, { worktree: '/w/1', setup: { consoleId: 'C1' } })));
+  rerender(view(taskActivity({}, { worktree: '/w/1', setup: { consoleId: 'C1', rows: [] } })));
   for (const button of within(newRun()).getAllByRole('button')) expect(button).toBeDisabled();
 });

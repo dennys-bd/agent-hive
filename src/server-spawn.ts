@@ -5,6 +5,7 @@ import { AGENTS, agentOf, agentRefusal, ranAgent, runModel } from './agents.js';
 import { runners } from './agents/registry.js';
 import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { taskBranch } from './task-runs.js';
+import { shownBase } from './setup-rows.js';
 import { runTaskSetup } from './task-setup.js';
 import { branchFor, LOCAL_SLUG, slugFor } from './tasks.js';
 import { taskWorkspace, noWorkspaceReason, workspaceByName, requireWorkspace } from './config.js';
@@ -186,7 +187,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     const controller = new AbortController();
     setups.set(ptyId, controller);
     try {
-      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, events }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, controller.signal);
+      return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, events }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } finally {
       setups.delete(ptyId);
     }

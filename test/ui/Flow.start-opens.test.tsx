@@ -102,7 +102,7 @@ test('the Start dialog stays open while its start sets up, though the task now r
   const { rerender } = render(board([task('3')]));
   await user.click(screen.getByRole('button', { name: 'iniciar' }));
   await runStages(user);
-  const running: Task = task('3', { workerId: 's1', setup: { consoleId: 'setup:I3', step: 'RUN pnpm install' } });
+  const running: Task = task('3', { workerId: 's1', setup: { consoleId: 'setup:I3', step: 'RUN pnpm install', rows: [] } });
   rerender(<StartedTaskContext.Provider value={started}><Flow state={{ ...state([running]), workers: [{ id: 's1', status: 'working', activityId: activityIdOf('I3'), runId: 'W1' }] }} /></StartedTaskContext.Provider>);
   expect(within(screen.getByRole('dialog', { name: 'Iniciar #3' })).getByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
   answer(reply({ ok: true }));

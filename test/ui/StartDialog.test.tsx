@@ -299,7 +299,7 @@ test('while a start waits on the worktree setup the button says iniciando…, th
   await screen.findByRole('combobox', { name: 'origin/main' });
   await user.keyboard('{Control>}{Enter}{/Control}');
   expect(await screen.findByRole('button', { name: 'iniciando…' })).toBeDisabled();
-  rerender(<StartDialog state={state([LANDING, { ...HERO, setup: { consoleId: 'setup:I9', step: 'RUN pnpm install' } }])} taskId="I9" onClose={vi.fn()} />);
+  rerender(<StartDialog state={state([LANDING, { ...HERO, setup: { consoleId: 'setup:I9', step: 'RUN pnpm install', rows: [] } }])} taskId="I9" onClose={vi.fn()} />);
   expect(screen.getByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
   expect(screen.queryByText(/RUN pnpm install/)).not.toBeInTheDocument();
 });
@@ -575,7 +575,7 @@ test('while the start prepares the worktree the submit says so and offers no ver
   const { rerender } = render(dialog(state()));
   await screen.findByRole('combobox', { name: 'origin/main' });
   await user.click(screen.getByRole('button', { name: /executar etapas/ }));
-  rerender(dialog(withWork(state(), 'I9', { setup: { consoleId: 'setup:I9' } }))); // the mark arrives while the start is on its way
+  rerender(dialog(withWork(state(), 'I9', { setup: { consoleId: 'setup:I9', rows: [] } }))); // the mark arrives while the start is on its way
   expect(await screen.findByRole('button', { name: 'preparando a worktree…' })).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'ver log' })).not.toBeInTheDocument();
 });

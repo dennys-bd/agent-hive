@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { type TaskSetupDeps, removeInRun, runTaskSetup } from '../src/task-setup.js';
 import { type ConsoleStore, createConsoleStore } from '../src/console.js';
 import { createPtyHost, NO_PTY, type PtyHost } from '../src/pty-host.js';
-import type { Task, Effect, Exec, HiveEvent, Workspace } from '../src/types.js';
+import type { Task, Effect, Exec, HiveEvent, SetupRow, Workspace } from '../src/types.js';
 import { SETUP_MARKER } from '../src/worktree-setup.js';
 import { TEARDOWN_MARKER } from '../src/worktree-teardown.js';
 import { RunFailure, type RunShell } from '../src/worktree-steps.js';
@@ -60,21 +60,32 @@ const prepareIn = (worktree: string) => async (exec: Exec): Promise<string> => {
   return worktree;
 };
 
+// The branch row of every setup here (#390)
+const BRANCH = { branch: 'hive/1-task-1', base: 'origin/main' };
+// The rows each setupStarted and setupStep carried, in order (#390)
+const rowsOf = (events: HiveEvent[]): SetupRow[][] => events.flatMap((e) => (e.type === 'setupStarted' || e.type === 'setupStep' ? [e.rows] : []));
+const statuses = (rows: SetupRow[]): string => rows.map((row) => row.status).join(' ');
+// An event without its rows, for the tests that read only the order and the step
+const withoutRows = (event: HiveEvent): object => {
+  if (event.type !== 'setupStarted' && event.type !== 'setupStep') return event;
+  const { rows: _rows, ...rest } = event;
+  return rest;
+};
+
 test('runTaskSetup on a worktree already on disk of a workspace with no steps prepares with the plain exec: no console run, no event (#351, #576)', async (t) => {
   const none = await harness(t, '# later\n', quiet);
   const execs: Exec[] = [];
-  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, none.worktree, async (exec) => { execs.push(exec); return none.worktree; });
+  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, none.worktree, async (exec) => { execs.push(exec); return none.worktree; }, BRANCH);
   assert.deepEqual([path, execs, none.events, none.store.channels()], [none.worktree, [none.deps.exec], [], []]);
 });
 
 test('runTaskSetup on a new worktree of a workspace with no steps marks the task and runs its git in the Setup worktree channel, ended by setup ok (#576)', async (t) => {
   const none = await harness(t, '# later\n', quiet);
   const worktree = join(none.worktree, 'new'); // no folder yet
-  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, worktree, prepareIn(worktree));
+  const path = await runTaskSetup(none.deps, TASK, ACTIVITY, none.workspace, worktree, prepareIn(worktree), BRANCH);
   assert.equal(path, worktree);
-  assert.deepEqual(none.events, [
-    { type: 'setupStarted', activityId: ACTIVITY, consoleId: ID },
-    { type: 'setupEnded', activityId: ACTIVITY },
+  assert.deepEqual(none.events.map(withoutRows), [
+    { type: 'setupStarted', activityId: ACTIVITY, consoleId: ID }, { type: 'setupStep', activityId: ACTIVITY }, { type: 'setupEnded', activityId: ACTIVITY },
   ]);
   assert.deepEqual(none.store.channels(), [{ id: CHANNEL, kind: 'setup', label: 'Setup worktree', status: 'done' }]);
   assert.match(shown(none.store.history(CHANNEL)?.history), new RegExp(`${HEADER.source}${cmd(`git worktree add ${escaped(worktree)}`)}${MS}${SETUP_OK_LINE}$`));
@@ -92,13 +103,14 @@ test('runTaskSetup marks the task before the git, logs every git command of the 
     markedFirst = h.events.length === 1 && h.events[0].type === 'setupStarted';
     await exec('git', ['worktree', 'add', h.worktree]);
     return h.worktree;
-  });
+  }, BRANCH);
   assert.equal(path, h.worktree);
   assert.ok(markedFirst, 'setupStarted before any git');
   assert.deepEqual(whileRunning, [true, 1], 'a viewer attaches it over the pty socket while it runs');
-  assert.deepEqual(h.events, [
+  assert.deepEqual(h.events.map(withoutRows), [
     { type: 'setupStarted', activityId: ACTIVITY, consoleId: ID },
-    { type: 'setupStep', activityId: ACTIVITY, step: 'RUN pnpm install' },
+    { type: 'setupStep', activityId: ACTIVITY }, { type: 'setupStep', activityId: ACTIVITY }, // prepared, then the plan
+    { type: 'setupStep', activityId: ACTIVITY, step: 'RUN pnpm install' }, { type: 'setupStep', activityId: ACTIVITY, step: 'RUN pnpm install' },
     { type: 'setupEnded', activityId: ACTIVITY },
   ]);
   assert.deepEqual(h.store.channels(), [{ id: CHANNEL, kind: 'setup', label: 'Setup worktree', status: 'done' }]);
@@ -114,15 +126,15 @@ test('a worktree already there and set up prepares with the plain exec: no mark,
   const done = await harness(t, 'RUN pnpm install', quiet);
   await writeFile(join(done.gitDir, SETUP_MARKER), '');
   const execs: Exec[] = [];
-  await runTaskSetup(done.deps, TASK, ACTIVITY, done.workspace, done.worktree, async (exec) => { execs.push(exec); return done.worktree; });
+  await runTaskSetup(done.deps, TASK, ACTIVITY, done.workspace, done.worktree, async (exec) => { execs.push(exec); return done.worktree; }, BRANCH);
   assert.deepEqual([execs, done.events, done.store.channels()], [[done.deps.exec], [], []]);
   const fresh = await harness(t, 'RUN pnpm install', quiet);
   const git: string[][] = [];
   const exec: Exec = async (file, args) => { git.push(args); return fresh.deps.exec(file, args); };
   let before: string[][] = [];
-  await runTaskSetup({ ...fresh.deps, exec }, TASK, ACTIVITY, fresh.workspace, join(fresh.worktree, 'new'), async (logged) => { before = [...git]; return prepareIn(fresh.worktree)(logged); });
+  await runTaskSetup({ ...fresh.deps, exec }, TASK, ACTIVITY, fresh.workspace, join(fresh.worktree, 'new'), async (logged) => { before = [...git]; return prepareIn(fresh.worktree)(logged); }, BRANCH);
   assert.deepEqual(before, [], 'no git before the mark for a new worktree');
-  assert.deepEqual(fresh.events.map((e) => e.type), ['setupStarted', 'setupStep', 'setupEnded']);
+  assert.deepEqual(fresh.events.map((e) => e.type), ['setupStarted', 'setupStep', 'setupStep', 'setupStep', 'setupStep', 'setupEnded']);
 });
 
 test('a git command that fails writes its message under it and ends the run with it; setupEnded still comes and the failure is rethrown (#351)', async (t) => {
@@ -131,8 +143,8 @@ test('a git command that fails writes its message under it and ends the run with
     if (args[0] === 'worktree') throw new Error('fatal: invalid reference: nope');
     return h.deps.exec('git', args);
   };
-  await assert.rejects(runTaskSetup({ ...h.deps, exec }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree)), { message: 'fatal: invalid reference: nope' });
-  assert.deepEqual(h.events.map((e) => e.type), ['setupStarted', 'setupEnded']);
+  await assert.rejects(runTaskSetup({ ...h.deps, exec }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'fatal: invalid reference: nope' });
+  assert.deepEqual(h.events.map((e) => e.type), ['setupStarted', 'setupStep', 'setupEnded']); // the failed git's end fails both rows
   assert.match(shown(h.store.history(CHANNEL)?.history), new RegExp(`\\r\\n${cmd('git worktree add [^\\r]*')}${fail('fatal: invalid reference: nope')}${fail('fatal: invalid reference: nope')}$`));
 });
 
@@ -141,23 +153,23 @@ test('a failed or stopped setup ends its run with the failure\'s first line, sti
     throw new RunFailure(1, 'npm ERR! TOKEN=secret');
   };
   const h = await harness(t, 'RUN pnpm install', failing);
-  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree)), { message: 'setup failed at line 1 (RUN pnpm install): exit 1\nnpm ERR! TOKEN=secret' });
+  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH), { message: 'setup failed at line 1 (RUN pnpm install): exit 1\nnpm ERR! TOKEN=secret' });
   assert.deepEqual(h.events.at(-1), { type: 'setupEnded', activityId: ACTIVITY });
   assert.equal(h.store.channels()[0]?.status, 'failed', 'the console chip reads the failed setup (#537)');
   const history = h.store.history(CHANNEL)?.history ?? '';
   assert.match(shown(history), new RegExp(`\\r\\n${cmd('RUN pnpm install')}${fail('setup failed at line 1 \\(RUN pnpm install\\): exit 1')}$`));
   assert.ok(!history.includes('TOKEN=secret'), 'the tail stays on the task\'s error');
   const stopped = await harness(t, 'RUN pnpm install', quiet);
-  await assert.rejects(runTaskSetup(stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), AbortSignal.abort()), { message: 'setup failed at line 1 (RUN pnpm install): stopped' });
+  await assert.rejects(runTaskSetup(stopped.deps, TASK, ACTIVITY, stopped.workspace, stopped.worktree, prepareIn(stopped.worktree), { ...BRANCH, signal: AbortSignal.abort() }), { message: 'setup failed at line 1 (RUN pnpm install): stopped' });
 });
 
 test('the setups of two tasks are runs of the one Setup worktree channel: each keeps its own run id, and its header names its task (#351)', async (t) => {
   const h = await harness(t, 'RUN pnpm install', quiet);
   const other: Task = { ...TASK, item: { ...TASK.item, itemId: 'board:I2', id: '2', title: 'Task 2' } };
   const second = await harness(t, 'RUN pnpm install', quiet); // its own worktree and git dir, the first one's console
-  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree));
-  await runTaskSetup({ ...second.deps, consoleStore: h.store, ptys: h.ptys }, other, OTHER_ACTIVITY, second.workspace, second.worktree, prepareIn(second.worktree));
-  assert.deepEqual([h.events[0], second.events[0]], [
+  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
+  await runTaskSetup({ ...second.deps, consoleStore: h.store, ptys: h.ptys }, other, OTHER_ACTIVITY, second.workspace, second.worktree, prepareIn(second.worktree), BRANCH);
+  assert.deepEqual([h.events[0], second.events[0]].map(withoutRows), [
     { type: 'setupStarted', activityId: ACTIVITY, consoleId: 'setup:board:I1' },
     { type: 'setupStarted', activityId: OTHER_ACTIVITY, consoleId: 'setup:board:I2' },
   ]);
@@ -226,7 +238,7 @@ test('runTaskSetup deletes the teardown marker of a worktree on disk before it r
   const h = await harness(t, 'RUN pnpm install', quiet);
   await writeFile(join(h.gitDir, SETUP_MARKER), '');
   await writeFile(join(h.gitDir, TEARDOWN_MARKER), '');
-  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async () => h.worktree);
+  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, async () => h.worktree, BRANCH);
   assert.equal(await access(join(h.gitDir, TEARDOWN_MARKER)).then(() => true, () => false), false);
   assert.deepEqual(h.events, [], 'set up already: still no run');
 });
@@ -237,9 +249,41 @@ test('a task\'s setup writes worktree.step for each step with its activity and p
   };
   const h = await harness(t, 'RUN pnpm install', failing);
   const { events, records } = fakeEvents();
-  await assert.rejects(runTaskSetup({ ...h.deps, events }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree)));
+  await assert.rejects(runTaskSetup({ ...h.deps, events }, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
   assert.deepEqual(records.map((r) => ({ ...(r as unknown as Record<string, unknown>), duration_ms: 0 })),
     [{ event: 'worktree.step', level: 'error', activity_id: ACTIVITY, phase: 'setup', index: 0, kind: 'RUN', duration_ms: 0, outcome: 'failed' }]);
   assert.ok(!JSON.stringify(records).includes('pnpm'));
   assert.ok(!JSON.stringify(records).includes('secret'));
+});
+
+test('a task\'s setup dispatches its rows on every change: the worktree and branch running from the mark and done once prepared, then each step queued, running and done in order; its run is a console group of its own (#390)', async (t) => {
+  const h = await harness(t, 'RUN one\nRUN two', quiet);
+  await runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH);
+  assert.deepEqual(rowsOf(h.events).map(statuses), [
+    'running running', 'done done', 'done done queued queued', 'done done running queued', 'done done done queued', 'done done done running', 'done done done done',
+  ]);
+  const [worktree, branch, ...steps] = rowsOf(h.events).at(-1) ?? [];
+  assert.ok(Number.isInteger(worktree?.durationMs), 'the worktree row has its time');
+  assert.deepEqual(branch, { kind: 'branch', status: 'done', ...BRANCH }, 'the branch row none');
+  assert.deepEqual(steps.map(({ durationMs: _ms, ...row }) => row), [
+    { kind: 'step', status: 'done', header: 'RUN one', label: 'one' }, { kind: 'step', status: 'done', header: 'RUN two', label: 'two' },
+  ]);
+  const stepsShown = h.events.flatMap((e) => (e.type === 'setupStep' ? [e.step] : []));
+  assert.deepEqual(stepsShown, [undefined, undefined, 'RUN one', 'RUN one', 'RUN two', 'RUN two'], 'the flow card\'s step goes with the rows');
+  assert.match(h.store.history(CHANNEL, ID)?.history ?? '', /^── #1 · setup · /, 'GET /console/setup?run=<id> reads this task\'s runs');
+});
+
+test('a RUN that fails marks its row failed with its exit code; a git failure marks the worktree and branch rows failed with no code (#390)', async (t) => {
+  const failing: RunShell = async () => { throw new RunFailure(1, ''); };
+  const h = await harness(t, 'RUN pnpm install', failing);
+  await assert.rejects(runTaskSetup(h.deps, TASK, ACTIVITY, h.workspace, h.worktree, prepareIn(h.worktree), BRANCH));
+  const failed = rowsOf(h.events).at(-1) ?? [];
+  assert.deepEqual([statuses(failed), failed[2]?.code], ['done done failed', '1']);
+  const git = await harness(t, 'RUN pnpm install', quiet);
+  const refusing: Exec = async (_file, args) => {
+    if (args[0] === 'worktree') throw new Error('fatal: invalid reference: nope');
+    return git.deps.exec('git', args);
+  };
+  await assert.rejects(runTaskSetup({ ...git.deps, exec: refusing }, TASK, ACTIVITY, git.workspace, git.worktree, prepareIn(git.worktree), BRANCH));
+  assert.deepEqual((rowsOf(git.events).at(-1) ?? []).map(({ kind, status, code }) => [kind, status, code]), [['worktree', 'failed', undefined], ['branch', 'failed', undefined]]);
 });
