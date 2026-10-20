@@ -1,4 +1,7 @@
 import { STATUS } from '../field-values.js';
+import type { ReadModel } from '../read-model/db.js';
+import { readListing, type ListingKey } from '../read-model/items.js';
+import { rebuildFields } from '../read-model/items-rebuild.js';
 import { matchTaskProps } from '../task-props.js';
 import type { BlockerRef, EpicsMode, FilterRule, Gql, ProjectBuiltins, ProjectField, ProjectItem, ProjectPr, ProjectView, Signal, SourceTaskProps } from '../types.js';
 import { matchesFilter } from './github-filter.js';
@@ -123,10 +126,21 @@ export function projectItem(node: GhItemNode, fields: ProjectField[], read: Proj
   };
 }
 
-/** A source's issues, unfiltered, in the project's order, with the fields the view shows (#756); the statuses are the adapter's to add. */
+// One view from any read: the fields the view shows, where the built-ins sit, and every issue's row
+function viewOf(nodes: GhItemNode[], raw: GhProjectField[], read: ProjectRead, truncated: boolean): Omit<ProjectView, 'statuses'> {
+  const fields = projectFields(raw);
+  return { fields, builtins: projectBuiltins(raw), items: nodes.flatMap((node) => projectItem(node, fields, read) ?? []), truncated };
+}
+
+/** A source's issues, unfiltered, in the project's order, with the fields the view shows (#756), read live; the statuses are the adapter's to add. */
 export async function readProject(gql: Gql, read: ProjectRead): Promise<Omit<ProjectView, 'statuses'>> {
   const pages = await pageItems(gql, ITEMS, { login: read.login, number: read.number }, read.notFound, PROJECT_ITEM_LIMIT);
-  const fields = projectFields(pages.fields);
-  const items = pages.nodes.flatMap((node) => projectItem(node, fields, read) ?? []);
-  return { fields, builtins: projectBuiltins(pages.fields), items, truncated: pages.truncated };
+  return viewOf(pages.nodes, pages.fields, read, pages.truncated);
+}
+
+/** #282: the same view from the read model, no call. ponytail: the stored listing keeps no "items were left" flag, so reaching the ceiling reads as
+ * truncated (a Project of exactly 1000 says so); store the flag with the listing if that misleads. */
+export function storedProject(db: ReadModel, key: ListingKey, read: ProjectRead): Omit<ProjectView, 'statuses'> {
+  const { nodes } = readListing(db, key);
+  return viewOf(nodes, rebuildFields(db.projectFields(key.source, key.project)), read, nodes.length >= PROJECT_ITEM_LIMIT);
 }

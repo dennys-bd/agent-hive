@@ -1010,7 +1010,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       return;
     }
     try {
-      res.json(await listFilterOptions(owner, Number(number), settingsGql(authFromQuery(req.query).github)));
+      res.json(await listFilterOptions(owner, Number(number), settingsGql(authFromQuery(req.query).github), itemStore)); // #282: the stored listing when there is one
     } catch (err) {
       res.status(HTTP_BAD_GATEWAY).json({ error: errorMessage(err) });
     }

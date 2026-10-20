@@ -868,3 +868,16 @@ test('resolveSources rejects naming the source on a failure that is not the netw
   const fine = resolving(() => undefined);
   assert.equal((await resolveSources(new Map([['notes', fine.source]]))).get('notes'), fine.source);
 });
+
+test('namespaced hands project and fieldsOf their read options, so ?fresh=1 and a write\'s check reach the adapter (#282)', async () => {
+  const asked: unknown[] = [];
+  const view: ProjectView = { statuses: [], fields: [], builtins: {}, items: [], truncated: false };
+  const bare: Source = {
+    resolveFields: async () => {}, settingsOptions: async () => [], setColumn: async () => {}, apply: async () => {}, listItems: async () => [],
+    project: async (options) => { asked.push(options); return view; }, fieldsOf: async (_itemId, options) => { asked.push(options); return []; },
+  };
+  const source = namespaced({ name: 'work', qualifyId: false, type: 'github', owner: 'acme', number: 6, filter: FILTER, taskProps: FIXED, ...EPICS }, bare);
+  await source.project?.({ fresh: true });
+  await source.fieldsOf?.('work:PVTI_1', { fresh: true });
+  assert.deepEqual(asked, [{ fresh: true }, { fresh: true }]);
+});

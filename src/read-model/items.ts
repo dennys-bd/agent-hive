@@ -111,3 +111,11 @@ export function readListing(db: ReadModel, key: ListingKey): StoredListing {
 
 /** Whether a full read was stored for the Project (#282): every Project has fields (Title, Status…), so none stored is none read. */
 export const hasListing = (db: ReadModel, key: ListingKey): boolean => db.projectFields(key.source, key.project).length > 0;
+
+/** A Project's stored nodes for a reader with no listing of its own (#282: the settings form's filter options); undefined when there is no
+ * store, no login, or nothing stored yet. */
+export async function storedNodes(store: ItemStore | undefined, project: string): Promise<GhItemNode[] | undefined> {
+  const source = await store?.source();
+  if (store === undefined || source === undefined || !hasListing(store.db, { source, project })) return undefined;
+  return readListing(store.db, { source, project }).nodes;
+}

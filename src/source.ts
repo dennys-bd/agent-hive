@@ -92,7 +92,7 @@ export function namespaced(entry: SourceConfig, adapter: Source): Source {
     apply: (itemId, action) => adapter.apply(own(itemId), action),
     ...(create ? { create: async (fields: Parameters<NonNullable<Source['create']>>[0]) => `${prefix}${await create(fields)}` } : {}),
     ...(comments ? { comments: (itemId: string) => comments(own(itemId)) } : {}),
-    ...(project ? { project: async () => rows(await project()) } : {}),
+    ...(project ? { project: async (options?: ReadOptions) => rows(await project(options)) } : {}),
     ...(fieldsOf ? { fieldsOf: (itemId: string, options?: ReadOptions) => fieldsOf(own(itemId), options) } : {}),
     ...(setField ? { setField: async (itemId: string, field: string, value: FieldValue) => written(await setField(own(itemId), field, value)) } : {}),
     ...(relate ? { relate: shownRelate(relate, own, ids, item) } : {}),

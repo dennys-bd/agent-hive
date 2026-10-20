@@ -17,8 +17,8 @@ import { answerColumn, readItemFields, storedItemFields, writeItemField, type Fi
 import { findBlockers, relateItem } from './github-blockers.js';
 import { pageItems, PROJECT_ITEM_LIMIT, quotaFrom, type ItemPages } from './github-pages.js';
 import { applyRelations, createItemsSync, fetchRelations, joinRelations, readProbe } from './github-items-sync.js';
-import { readListing, type ItemStore, type ListingKey } from '../read-model/items.js';
-import { readProject, type ProjectRead } from './github-project.js';
+import { hasListing, readListing, storedNodes, type ItemStore, type ListingKey } from '../read-model/items.js';
+import { readProject, storedProject, type ProjectRead } from './github-project.js';
 import { groupUnderEpics, statusOf, treeLinks, type TreeLinks } from './github-tree.js';
 
 export { groupUnderEpics, treeLinks, type TreeLinks } from './github-tree.js';
@@ -127,11 +127,11 @@ function issueItem(node: GhItemNode, names: Set<string>, taskProps: SourceTaskPr
 const asEpic = (task: SourceItem, { epicFollows, switchAt }: GithubSourceConfig): SourceItem =>
   ({ ...task, item: { ...task.item, epic: { follows: epicFollows, switchAt } } });
 
-/** What the settings form offers a source's filter rules (#245): the values on its items, read with a poll's own pages, and its single-select
- * fields. The owner may be `@me`, as in the listings above. */
-export async function listFilterOptions(owner: string, number: number, gql: Gql = cliGql()): Promise<FilterOptions> {
+/** What the settings form offers a source's filter rules (#245): the values on its items and its single-select fields. #282: the items from the
+ * stored listing when there is one, so the form does not pay the items read on each open; else read live. The owner may be `@me`. */
+export async function listFilterOptions(owner: string, number: number, gql: Gql = cliGql(), store?: ItemStore): Promise<FilterOptions> {
   const login = await ownerLogin(owner, gql);
-  const { nodes } = await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), PROJECT_ITEM_LIMIT);
+  const nodes = (await storedNodes(store, `${login}/${number}`)) ?? (await pageItems(gql, ITEMS, { login, number }, sourceNotFound(owner, number), PROJECT_ITEM_LIMIT)).nodes;
   const project = ((await gql(SELECT_FIELDS, { login, number })) as SelectFieldsData).repositoryOwner?.projectV2;
   return { ...filterOptionsFrom(nodes, project?.fields?.nodes ?? []), linkedRepositories: (project?.repositories?.nodes ?? []).map((r) => r.nameWithOwner) };
 }
@@ -312,12 +312,17 @@ export function createGithubSource(source: GithubSourceConfig, cited: Citation[]
     return { login, number, notFound: sourceNotFound(owner, number), filter: other, me, epics, taskProps: source.taskProps };
   }
 
-  // #756: the native view, every issue unfiltered, read on demand by its route and never by the poll. The stage each option enters is the
-  // server's to name, from the Comb's stages
-  async function project(): Promise<ProjectView> {
+  // #756, #282: the native view. With a read model and a login, the stored listing, read in full first when nothing is stored yet or the tab's
+  // refresh asks fresh; without either, the live read. The stage each option enters is the server's to name
+  async function project(options: ReadOptions = {}): Promise<ProjectView> {
     if (!resolved) throw new Error('source not resolved: call resolveFields() first');
     const statuses = resolved.options.map((o) => ({ name: o.name }));
-    return { statuses, ...(await readProject(gql, await projectRead())) };
+    const read = await projectRead();
+    const rows = await items?.source();
+    if (sync === undefined || items === undefined || rows === undefined) return { statuses, ...(await readProject(gql, read)) };
+    const key = keyOf(rows, read.login);
+    if (options.fresh === true || !hasListing(items.db, key)) await sync.refresh(key);
+    return { statuses, ...storedProject(items.db, key, read) };
   }
 
   // #686, #56: what a write on one item needs. related(keep([node])) is the poll's steps on one item. groupUnderEpics only reorders a list,

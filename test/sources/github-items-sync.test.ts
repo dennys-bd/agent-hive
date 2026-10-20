@@ -122,3 +122,14 @@ test('joinRelations takes blocking from the relations answer and blockedBy and t
   assert.deepEqual(joined.get('PVTI_1'), { blockedBy: { nodes: [blocker] }, blocking: { nodes: [blocker] }, subIssues: { nodes: [{ number: 9, state: 'OPEN' }] } }, 'a sub-issue with no number is no gate');
   assert.deepEqual([joined.get('PVTI_2'), joined.get('PVTI_3')], [null, undefined]);
 });
+
+test('refresh reads in full now, whatever the probe says, and keeps the probe\'s stamp: the next poll only probes (#282)', async () => {
+  const { sync, calls } = await harness(['S1']);
+  await sync.list(KEY);
+  calls.length = 0;
+  await sync.refresh(KEY);
+  assert.deepEqual(calls, ['probe', 'read', 'relations 2']);
+  calls.length = 0;
+  await sync.list(KEY);
+  assert.deepEqual(calls, ['probe']);
+});

@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseConfig } from '../../src/config.js';
+import { openReadModel } from '../../src/read-model/db.js';
+import type { ItemStore } from '../../src/read-model/items.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import { PROJECT_ITEM_LIMIT } from '../../src/sources/github-pages.js';
 import { ITEMS } from '../../src/sources/github-queries.js';
 import { combConfig, fakeGql, FILTER } from '../fakes.js';
+import { itemNode, SOURCE as ROWS, T1, T2 } from '../read-model/fixtures.js';
 
 const GITHUB_SOURCE = { type: 'github', owner: 'acme', number: 6, filter: FILTER };
 const specOf = (extra: Record<string, unknown> = {}) => { const config = parseConfig(combConfig({ source: GITHUB_SOURCE, ...extra })); return sourceSpec(config, config.comb.sources[0]); };
@@ -188,4 +191,25 @@ test('project reads each issue\'s blocked-by relations, open and closed: a short
   ]);
   assert.equal('blockedBy' in items[2], false);
   assert.match(ITEMS, /blockedBy\(first: 50\) \{ nodes \{ number title state repository \{ nameWithOwner \} \} \}/);
+});
+
+test('with a store, project answers the stored listing and fields with no call; nothing stored yet, or fresh, reads in full first (#282)', async () => {
+  const { db } = await openReadModel(':memory:');
+  const items: ItemStore = { db, source: async () => ROWS, notify: () => undefined };
+  const probe = { rateLimit: null, repositoryOwner: { projectV2: { updatedAt: T1 } } };
+  const { gql, calls } = fakeGql({
+    fields: FIELDS, probe, items: [page([itemNode(1, 'Ready')]), page([itemNode(1, 'In review', T2)])], relations: { i0: { issue: { blocking: { nodes: [] } } } },
+  });
+  const source = createSource(specOf(), { gql, items });
+  await source.resolveFields();
+  calls.length = 0;
+  const first = await source.project!();
+  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations'], 'nothing stored: one full read');
+  assert.deepEqual(first.items.map((i) => i.status), ['Ready']);
+  calls.length = 0;
+  assert.deepEqual(await source.project!(), first);
+  assert.equal(calls.length, 0, 'stored: no call');
+  const fresh = await source.project!({ fresh: true });
+  assert.deepEqual(calls.map((c) => c.name), ['probe', 'items', 'relations']);
+  assert.deepEqual(fresh.items.map((i) => i.status), ['In review']);
 });
