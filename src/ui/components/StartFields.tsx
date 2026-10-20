@@ -110,8 +110,9 @@ function OrphanChoice({ mode, choice, onChange }: { mode: StartMode; choice: Bas
   const orphan = choice.lists?.orphan;
   if (orphan === undefined) return null;
   const relation = flagged(orphan);
-  // a free open on the branch alone goes through ensureWorktree, which acts on the class; a worktree on disk is adopted as it is
-  const acts = mode === 'free' && !orphan.worktree;
+  // a reuse on the branch alone (any free open, or Reuse in executar etapas) goes through ensureWorktree, which acts on the class; a worktree
+  // on disk is adopted as it is
+  const acts = !orphan.worktree && (mode === 'free' || !choice.discard);
   return (
     <div className="flex flex-col gap-2">
       <p className="text-muted-foreground text-xs">{t(orphan.worktree ? 'start.orphan.worktree' : 'start.orphan.branch')}</p>

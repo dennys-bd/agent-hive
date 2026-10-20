@@ -67,7 +67,7 @@ export async function isSetUp(workspace: Workspace, worktree: string, exec: Exec
  * branch from before the docs split broke the docs step. The server's English, as every setup error is; no reused branch, the error as is. */
 export function withReused(err: unknown, reused: string | undefined): unknown {
   if (reused === undefined) return err;
-  return new Error(`${err instanceof Error ? err.message : String(err)}\nThe worktree reused the existing branch ${reused}.`);
+  return new Error(`${err instanceof Error ? err.message : String(err)}\nThe worktree reused the existing branch ${reused}.`, { cause: err });
 }
 
 /**

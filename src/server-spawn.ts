@@ -192,7 +192,7 @@ export function createRunSpawner(deps: SpawnerDeps): RunSpawner {
     try {
       return await runTaskSetup({ exec, log, dispatch, ptys, consoleStore, events }, task, activity.id, workspace, taskDir(workspace.path, activity), ensure, { branch, base: shownBase(activity.base?.ref, base), signal: controller.signal }); // #390: the branch row's
     } catch (err) {
-      throw withReused(err, reused);
+      throw controller.signal.aborted ? err : withReused(err, reused); // a Stop is no failure the branch could explain
     } finally {
       setups.delete(ptyId);
     }

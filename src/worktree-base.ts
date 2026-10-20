@@ -34,8 +34,8 @@ export function gitAnswers(repo: string, args: string[], exec: Exec): Promise<bo
 }
 
 /** How an existing branch relates to `start` (#267): `unrelated` with no merge base (#105's branch from before the docs split), `stale` when it
- * is an ancestor of the start with nothing of its own, `own` otherwise. Read-only. The ref is built here and the start is the Hive's, never
- * a client's: neither can start with `-`. */
+ * is an ancestor of the start with nothing of its own, `own` otherwise. Read-only. The ref is built here and the start is the resolved default or
+ * a base checkBase passed: neither can start with `-`. */
 export async function branchRelation(repo: string, branch: string, start: string, exec: Exec): Promise<BranchRelation> {
   const ref = `refs/heads/${branch}`;
   if (!(await gitAnswers(repo, ['merge-base', '--', ref, start], exec))) return 'unrelated';
@@ -52,7 +52,11 @@ export async function setAside(repo: string, branch: string, exec: Exec): Promis
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   const tip = (await git('rev-parse', '--verify', `refs/heads/${branch}`)).trim();
   const short = `${branch}${OLD}${tip.slice(0, SHORT_SHA)}`;
-  const taken = await git('rev-parse', '--verify', '--quiet', `refs/heads/${short}`).then((out) => out.trim(), () => undefined);
+  // only exit 1 means the name is free: any other failure is git's words, never a rename into a name git could not read
+  const taken = await exec('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${short}`]).then(({ stdout }) => stdout.trim(), (err: { code?: unknown }) => {
+    if (err.code === 1) return undefined;
+    throw new Error(wordsOf(err));
+  });
   const name = taken === undefined || taken === tip ? short : `${branch}${OLD}${tip}`;
   if (!isBranchName(name)) throw new Error(`${name}: not a branch name`);
   if (taken === tip) await git('branch', '-D', '--', branch);
