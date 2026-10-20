@@ -213,5 +213,7 @@ export function dismissError(state: State, id: string): Reduced | undefined {
   const { error: _error, ...cleared } = live;
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = cleared;
   const hasAction = stageOf(state.stages, task.stage)?.action !== undefined;
-  return { state: withActivity(state, hasAction ? unstopped : cleared), effects: [] };
+  // A prompt stage stops even when the error came without a stop, or the fill would start a session on this dispatch
+  const held: Activity = cleared.stopped === true ? cleared : { ...cleared, stopped: true, stoppedAt: new Date().toISOString() };
+  return { state: withActivity(state, hasAction ? unstopped : held), effects: [] };
 }

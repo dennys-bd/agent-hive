@@ -162,6 +162,8 @@ test('dismissError in a stage with an action drops the error and the stop; in a 
   const fix = activityOf(inFix.state, ID);
   assert.deepEqual([inFix.state.tasks[0].stage, fix?.error, fix?.stopped, fix?.stoppedAt], ['fix', undefined, true, AT], 'a prompt stage stays stopped: no session until someone starts it');
   assert.deepEqual([fix?.tries, fix?.tryLog], [SPENT.tries, SPENT.tryLog]);
+  const unheld = pure(placed({ error: 'no transition: done' }, { stage: 'fix' }), (s) => dismissError(s, ID));
+  assert.equal(activityOf(unheld?.state ?? placed({}), ID)?.stopped, true, 'an error that came without a stop still leaves a prompt stage stopped');
 });
 
 test('dismissError answers undefined for an unknown task, a missing one, one with no error and one a run holds (#354)', () => {

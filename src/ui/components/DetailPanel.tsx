@@ -101,8 +101,8 @@ function PageMeta({ task, state }: { task: Task; state: State }) {
 }
 
 // The scrolling body (redesign 06), with no visible bar and 14px under its last line (#57): the title, the task's error in full (a failed
-// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with dispensar under it (#354), the status block (the status box, the
-// running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
+// start's short message, its raw text behind details, #945), which the flow's chip truncates (#482), with dispensar under it (#354),
+// the status block (the status box, the running block while a wait for CI or a commands stage runs, #914, or the exhausted block once the tries ran out, #916) and the tries
 // section under it, the tree (#36), the blockers (#57), the metadata, the sessions and what the task produced, then behind a divider the
 // issue and its comments. On a page (#64, handoff "Estrutura comum"): the workspace · source line under the title, the page's slot right
 // after the notices, and no issue body or comments, which are the center already
