@@ -1,6 +1,6 @@
 import type { Item } from '../types.js';
 
-export const PAGE_SIZE = 100; // raw GraphQL caps `items` at 100 per page; the adapter pages up to ITEM_LIMIT
+export const PAGE_SIZE = 100; // raw GraphQL caps `items` at 100 per page; the adapter pages up to PROJECT_ITEM_LIMIT
 const PROJECT_LIMIT = 100;
 const RELATION_LIMIT = 50; // ponytail: no pagination, GitHub's own cap per type: an issue with more blockers, blocked issues or open sub-issues than this is under-reported
 const COMMENT_LIMIT = 100; // ponytail: one page, oldest first; a longer thread shows its first 100 (paging is a later issue)
