@@ -42,6 +42,11 @@ import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-reque
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
+import { readCredentials, writeCredentials } from './credentials.js';
+import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
+import { registerMcpRoutes } from './server-mcp.js';
+import { serversFor } from './mcp-settings.js';
+import type { RunMcpServer } from './agents/runner.js';
 import { createCiReader } from './server-ci.js';
 import { createStageCommandRunner } from './server-stage-commands.js';
 import { registerApprovalRoutes } from './server-approval.js';
@@ -96,7 +101,7 @@ import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
-  type Signal, type SourceItem, type Worker, type LaunchPty, type State,
+  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State,
 } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
@@ -105,6 +110,7 @@ const UI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'ui');
 const HTTP_BAD_REQUEST = 400;
 const HTTP_FORBIDDEN = 403;
 const HTTP_CONFLICT = 409; // not configured, or the state refuses what was asked
+const AFTER_SAVE_MESSAGE = 'the config was saved, but the stored value could not be updated';
 const HTTP_SERVER_ERROR = 500;
 const HTTP_NOT_IMPLEMENTED = 501; // POST /stop with no onStop, POST /plan-limits/refresh with no reader
 const HTTP_BAD_GATEWAY = 502;
@@ -131,6 +137,8 @@ export interface Runtime {
 }
 
 export interface ServerDeps {
+  credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
+  probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
    *  bootHive makes it; tests inject one. */
@@ -252,7 +260,9 @@ export function createServer(deps: ServerDeps): HiveServer {
   const agents = deps.agents ?? ALL_AGENTS;
   const exec = deps.exec ?? execFileAsync;
   const settingsGql = deps.settingsGql ?? ((auth: GithubAuth): Gql => gqlFor(auth, log));
-  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender }); // dispatch and fail are hoisted; workerOf is called later
+  // #333: a run's external MCP servers, its header values read at launch, so a value stored since reaches the next run
+  const externalMcp = async (config: Config, workspace: string): Promise<RunMcpServer[]> => serversFor(config.mcp, await readCredentials(deps.credentialsEnv), workspace);
+  const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, events: wiring.events, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
@@ -1047,7 +1057,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
 
-  async function saveSettings(body: Partial<SettingsBody>, res: Response): Promise<void> {
+  async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
     try {
       config = await configFrom(home, body);
@@ -1075,6 +1085,13 @@ export function createServer(deps: ServerDeps): HiveServer {
       await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
+      return;
+    }
+    try {
+      await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
+    } catch (err) {
+      log.error(`settings saved, but the stored MCP value could not be updated: ${err instanceof Error ? err.constructor.name : typeof err}`); // never the message: it may carry the path or the value
+      res.status(HTTP_SERVER_ERROR).json({ error: AFTER_SAVE_MESSAGE });
       return;
     }
     const result: SettingsResult = { ok: true };
@@ -1133,6 +1150,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // POST /trusted-domains (#404): the terminal link dialog's "always trust", saved through the same chain and saveSettings as POST /settings
   registerTrustedDomainRoutes(app, { requireLive, queueSave, saveSettings });
+  // The MCP routes (#333): the tool switches and the external servers through the settings chain, their header values in credentials.json
+  const mcpCredentials = { read: () => readCredentials(deps.credentialsEnv), write: (next: Credentials) => writeCredentials(next, deps.credentialsEnv) };
+  registerMcpRoutes(app, { requireLive, queueSave, saveSettings, credentials: mcpCredentials, probe: cachedProbe(deps.probeMcp ?? ((server) => probeServer(server, { timeoutMs: PROBE_TIMEOUT_MS, cwd: home, log }))) });
 
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
@@ -1169,7 +1189,7 @@ export function createServer(deps: ServerDeps): HiveServer {
   registerLaunchOptionsRoute(app, taskDeps); // GET /launch-options: the new session dialog's lists (#257)
   // POST /ptys/:id/stop and POST /crash/dismiss (#283, #570): behind the same host / origin middleware
   registerRunRoutes(app, taskDeps);
-  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender }); // wake, forget (#696); the shim's register under /hooks/
+  registerTerminalRoutes(app, { requireLive, live: () => live, running: pool.has, dispatch, started: pool.started, secret: deps.secret, exec, pid: (ptyId) => ptys.pid(ptyId), home, recordStart: spawner.recordStart, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // wake, forget (#696); the shim's register under /hooks/
   registerApprovalRoutes(app, taskDeps); // POST /activities/:id/approve, /feedback, /approval/extend (#268)
   registerDecompositionRoutes(app, { requireLive, dispatch, exec, gql: cliGqlJson(gh) }); // GET and POST /activities/:id/decomposition (#865): read the tree, write it with the Hive's own login as #757's writes
   registerConsoleRoutes(app, { requireLive, consoleStore }); // GET /console and /console/:id (#353)

@@ -109,7 +109,7 @@ test('renderMcpConfig points the hive server at /hooks/mcp with the worker id an
     mcpServers: { hive: { type: 'http', url: 'http://127.0.0.1:4242/hooks/mcp', headers: { 'x-hive-pty': 'W1', 'x-hive-secret': SECRET } } },
   });
   const dir = await tempDir(t, '');
-  const path = await writeMcpConfig(dir, 'W1', runners.claude.mcpConfig({ port: 4242, ptyId: 'W1', secret: SECRET, withHive: true }));
+  const path = await writeMcpConfig(dir, 'W1', runners.claude.mcpConfig({ port: 4242, ptyId: 'W1', secret: SECRET, withHive: true, external: [] }));
   assert.ok(path);
   assert.equal(path, join(dir, 'W1.mcp.json'), 'the path carries the worker id: pkill / pgrep find claude by it');
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), renderMcpConfig(4242, 'W1', SECRET));
@@ -131,7 +131,7 @@ test('every hook and the status line send the secret as curl\'s header file, nev
 test('writeMcpConfig with withHive false writes a config that lists no server, still named after the worker and 0600 (#587)', async (t) => {
   const dir = await tempDir(t, 'prompts-');
   const worker = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-  const path = await writeMcpConfig(dir, worker, runners.claude.mcpConfig({ port: 47821, ptyId: worker, secret: SECRET, withHive: false }));
+  const path = await writeMcpConfig(dir, worker, runners.claude.mcpConfig({ port: 47821, ptyId: worker, secret: SECRET, withHive: false, external: [] }));
   assert.ok(path);
   assert.equal(path, join(dir, `${worker}.mcp.json`));
   assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), { mcpServers: {} });

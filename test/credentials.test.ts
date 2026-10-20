@@ -84,3 +84,13 @@ test('a pre-planted file at the old fixed temp-file name is never written throug
   assert.equal((await stat(path)).mode & MODE_MASK, OWNER_ONLY_FILE, 'credentials.json got its own 0600, not the planted file\'s mode');
   assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' } });
 });
+
+test('a stored mcp map keeps each well-formed value and drops a malformed entry in place; a map that is no object is dropped whole (#333)', async (t) => {
+  const env = await configHome(t);
+  const path = credentialsPath(env);
+  await writeCredentials({}, env); // creates the directory
+  await writeFile(path, JSON.stringify({ github: { token: 'gho_x', login: 'ana' }, mcp: { docs: { value: 'Bearer t0k' }, bad: { value: 7 }, worse: 'x' } }));
+  assert.deepEqual(await readCredentials(env), { github: { token: 'gho_x', login: 'ana' }, mcp: { docs: { value: 'Bearer t0k' } } }, 'a non-string value must never reach a header');
+  await writeFile(path, JSON.stringify({ asana: { token: 'sibling' }, mcp: ['x'] }));
+  assert.deepEqual(await readCredentials(env), { asana: { token: 'sibling' } });
+});

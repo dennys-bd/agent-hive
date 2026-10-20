@@ -6,7 +6,7 @@ import { requireWorkspace } from './config.js';
 import { capturedCwd, capturedReply, shimPath } from './shim.js';
 import { AGENTS, knownAgent, ranAgent } from './agents.js';
 import { runners } from './agents/registry.js';
-import type { AgentRun } from './agents/runner.js';
+import type { AgentRun, RunMcpServer } from './agents/runner.js';
 import { writeMcpConfig } from './hooks-settings.js';
 import { isUuid } from './orchestrator.js';
 import type { PluginRender } from './plugin-render.js';
@@ -17,7 +17,7 @@ import { answerOpen, type Refusal, refuse } from './server-tasks.js';
 import { strayAgents } from './shell-procs.js';
 import { liveShell } from './terminal-runs.js';
 import { sizeIn, type TerminalSize } from './terminal-wire.js';
-import { AGENT_IDS, type Activity, type Effect, type Exec, type HiveEvent, type State, type Task, type Worker } from './types.js';
+import { AGENT_IDS, type Activity, type Config, type Effect, type Exec, type HiveEvent, type State, type Task, type Worker } from './types.js';
 
 // The routes of one kept terminal (#696): wake and forget, from its sidebar line, its sleeping tab and its activity's pick; and the agent
 // shim's register, which captures an agent typed in it as a free session.
@@ -48,6 +48,7 @@ export interface TerminalRouteDeps {
   recordStart(runtime: Runtime, activity: Activity, task: Task, stage: string): Promise<void>; // #812: the spawner's, for a captured session
   lspDir(workspace: string): string | undefined; // #803: the workspace's language-server plugin, which a terminal's agent loads as any run does
   plugin: Pick<PluginRender, 'dir' | 'ready'>; // #316: the workspace's plugin folder, which a terminal's agent loads as any run does
+  externalMcp(config: Config, workspace: string): Promise<readonly RunMcpServer[]>; // #333: the spawner's, for a captured session
 }
 
 export const terminalParam = (req: Request): string => String(req.params.id);
@@ -101,7 +102,6 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   const agent = ranAgent(worker);
   const activity = state.activities.find((a) => a.id === worker.activityId);
   const onTask = activity?.kind === 'task'; // the Hive's tools and protocol on a task's only
-  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask }));
   const task = onTask ? taskOfWorker(state, worker) : undefined; // #797: its workspace's protocol, the memory under it
   // #812: before the shim starts the agent, as an open's spawn does; never in a checkout task's own checkout (#444)
   if (task && activity && !activity.local) await deps.recordStart(runtime, activity, task, task.stage);
@@ -109,10 +109,12 @@ async function captureRun(deps: TerminalRouteDeps, live: { state: State; runtime
   // #317: and its workspace's plugin folder: a task whose workspace left the config, or a workspace with no folder, refuses the capture (throws)
   const workspace = task === undefined ? activity?.workspace : requireWorkspace(runtime.config, task).name;
   if (workspace === undefined) throw new Error(NO_CAPTURE_MESSAGE);
+  const external = await deps.externalMcp(runtime.config, workspace); // #333
+  const mcpPath = await writeMcpConfig(runtime.promptsDir, o.runId, runners[agent].mcpConfig({ port: runtime.port, ptyId: o.runId, secret: deps.secret, withHive: onTask, external }));
   await deps.plugin.ready(); // #316: a render queued by a save or the plugins store lands before this run reads its folder
   const protocolPath = onTask ? (task ? taskProtocol(deps.home, runtime, task).session : runtime.protocol.session) : undefined;
   return {
-    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
+    ptyId: o.runId, cwd: o.cwd, port: runtime.port, withHive: onTask, external, mcpPath, hooksPath: runtime.hooksPath, pluginDir: deps.plugin.dir(workspace),
     lspPluginDir: deps.lspDir(workspace),
     ...(protocolPath === undefined ? {} : { protocolPath, protocolText: await readFile(protocolPath, 'utf8') }),
     extraArgs: runtime.config.agentArgs[agent],

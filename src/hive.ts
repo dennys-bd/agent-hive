@@ -18,7 +18,7 @@ import { createServer, type HiveServer, type ServerDeps, type SourceFactory } fr
 import { loadState } from './state-store.js';
 import { hydrate } from './hydrate.js';
 import { workspacePathProblem } from './worktree.js';
-import { APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
+import { MCP_DEFAULTS, APPROVAL_MINUTES_DEFAULT, DELETE_ACTIVITY_DEFAULTS, CLOSE_TAB_DEFAULTS, CONSOLE_LINES_DEFAULT, RATE_LIMIT_WAIT_DEFAULT, SHUTDOWN_IDLE_DEFAULT, SIDEBARS_PER_VIEW_DEFAULTS, SIGNALS_DEFAULTS, SLEEP_NOTICE_DEFAULTS, VIEWER_DEFAULTS, type Source, type SourceItem, type Config, type Exec, type Language } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 
@@ -179,7 +179,7 @@ function parseOrFallback(raw: unknown, log: Logger): { config: Config } | { fall
 // sees it; nothing is written until a save. A key that is there but wrong still fails here, and so does any other problem.
 function prefillWithoutSettings(raw: unknown): Config | undefined {
   try {
-    return parseConfig({ ...VIEWER_DEFAULTS, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: CONSOLE_LINES_DEFAULT, shortcuts: {}, sidebarsPerView: SIDEBARS_PER_VIEW_DEFAULTS, signals: SIGNALS_DEFAULTS, ...(withCommands(raw) as Record<string, unknown>) });
+    return parseConfig({ ...VIEWER_DEFAULTS, ...CLOSE_TAB_DEFAULTS, ...SLEEP_NOTICE_DEFAULTS, deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, theme: 'system', terminalFont: '', trustedDomains: [], consoleLines: CONSOLE_LINES_DEFAULT, shortcuts: {}, sidebarsPerView: SIDEBARS_PER_VIEW_DEFAULTS, signals: SIGNALS_DEFAULTS, mcp: MCP_DEFAULTS, ...(withCommands(raw) as Record<string, unknown>) });
   } catch {
     return undefined;
   }

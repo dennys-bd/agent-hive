@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { AGENTS } from '../../src/agents.js';
 import { codexRunner } from '../../src/agents/codex.js';
 import { agentRoles, marketplaceName, roleFile, tomlString } from '../../src/agents/codex-home.js';
-import type { AgentRun, HeadlessRun } from '../../src/agents/runner.js';
+import type { AgentRun, HeadlessRun, RunMcpServer } from '../../src/agents/runner.js';
 import { hookCommand, pluginSource, STOP_HOOK_TIMEOUT_S } from '../../src/hooks-settings.js';
 import { shimPath } from '../../src/shim.js';
 import { ptyCommand } from '../../src/spawn.js';
@@ -23,7 +23,7 @@ const CWD = '/repo/.hive/worktrees/hive-1-task';
 const PROMPT = '/h/prompts/hive-1-task.md';
 const PROTOCOL = 'Call hive_done when "done".\nA path: C:\\work\\x\tand a tab.';
 const PLUGIN_FOLDER = pluginSource(); // #316: a run's roles are read from its own plugin folder, so the fixture's folder must hold agents
-const RUN: AgentRun = { ptyId: PTY, cwd: CWD, port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: PLUGIN_FOLDER, extraArgs: [] };
+const RUN: AgentRun = { ptyId: PTY, cwd: CWD, port: 4242, withHive: true, hooksPath: '/h/hooks.json', pluginDir: PLUGIN_FOLDER, extraArgs: [], external: [] };
 
 const hook = (event: string): LaunchArg => ['-c', `hooks.${event}=[{hooks=[{type="command",command=${JSON.stringify(hookCommand(4242))}}]}]`];
 const STOP: LaunchArg = ['-c', `hooks.Stop=[{hooks=[{type="command",command=${JSON.stringify(hookCommand(4242, STOP_HOOK_TIMEOUT_S))},timeout=${STOP_HOOK_TIMEOUT_S}}]}]`];
@@ -63,7 +63,7 @@ test('no model has no -m, no protocol text no developer_instructions, and a run 
 });
 
 test('the MCP secret is in the run\'s env, never in an argv word; a run without the Hive\'s server gets none (#927)', () => {
-  const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true };
+  const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] };
   assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET });
   assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), {});
   assert.equal(JSON.stringify(codexRunner.launch(STAGE_RUN)).includes(SECRET), false);
@@ -99,7 +99,7 @@ test('a local copy (no Hive server) forks with no mcp_servers.hive key (#933)', 
 test('Codex\'s stray pattern is the pty id; a clear has no argv (it is /clear typed in the session); its rollouts are no per-cwd dir (#927, #929, #933)', async (t) => {
   assert.equal(codexRunner.strayPattern(PTY), PTY);
   assert.equal(codexRunner.clear(RUN), undefined);
-  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET'], '', []]);
+  assert.deepEqual([codexRunner.hostEnv, codexRunner.mcpConfig({ port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: [] }), codexRunner.lspPlugin({})], [['HIVE_MCP_SECRET', 'HIVE_MCP_TOKEN_*'], '', []]);
   assert.equal(codexRunner.transcriptDir('/repo'), undefined, 'no per-cwd dir: removal and copy find nothing there (#929)');
   assert.equal(codexRunner.ownsTranscript(`/codex-home/sessions/2026/10/12/rollout-x-${ID}.jsonl`, '/repo', ID, { CODEX_HOME: '/codex-home' }), true);
   await assert.rejects(codexRunner.readTurn('/x.jsonl'));
@@ -210,4 +210,26 @@ test("headlessAnswer reads Codex's -o file, never its stdout; a missing or blank
   assert.equal(codexRunner.headlessAnswer('progress lines', '{"from":1,"to":1,"text":"x"}\n'), '{"from":1,"to":1,"text":"x"}');
   assert.equal(codexRunner.headlessAnswer('{"from":1}', undefined), undefined);
   assert.equal(codexRunner.headlessAnswer('', '  \n'), undefined);
+});
+
+const EXTERNAL: RunMcpServer[] = [
+  { name: 'playwright', command: 'npx', args: ['@playwright/mcp@latest', '--headless'] },
+  { name: 'github', url: 'https://api.githubcopilot.com/mcp/', header: { name: 'Authorization', value: 'Bearer t0k' } },
+  { name: 'figma', url: 'http://127.0.0.1:3845/mcp' },
+];
+const EXTERNAL_ARGS: LaunchArg[] = [
+  ['-c', 'mcp_servers.playwright.command="npx"'],
+  ['-c', 'mcp_servers.playwright.args=["@playwright/mcp@latest","--headless"]'],
+  ['-c', 'mcp_servers.github.url="https://api.githubcopilot.com/mcp/"'],
+  ['-c', 'mcp_servers.github.env_http_headers={"Authorization"="HIVE_MCP_TOKEN_1"}'],
+  ['-c', 'mcp_servers.figma.url="http://127.0.0.1:3845/mcp"'],
+];
+
+test('each external server follows the Hive\'s as -c overrides, with or without the Hive\'s server; its header value is only in the run\'s env (#333)', () => {
+  assert.deepEqual(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL }), [...HOOKS, ...MCP, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, PROTOCOL_ARG, ...STARTUP, ...TAIL]);
+  assert.deepEqual(codexRunner.launch({ ...RUN, withHive: false, external: EXTERNAL }), [...HOOKS, ...EXTERNAL_ARGS, ...HIVE_PLUGIN, ...STARTUP, '--dangerously-bypass-hook-trust']);
+  const server = { port: 4242, ptyId: PTY, secret: SECRET, withHive: true, external: EXTERNAL };
+  assert.deepEqual(codexRunner.runEnv(server), { HIVE_MCP_SECRET: SECRET, HIVE_MCP_TOKEN_1: 'Bearer t0k' });
+  assert.deepEqual(codexRunner.runEnv({ ...server, withHive: false }), { HIVE_MCP_TOKEN_1: 'Bearer t0k' });
+  assert.equal(JSON.stringify(codexRunner.launch({ ...STAGE_RUN, external: EXTERNAL })).includes('t0k'), false);
 });

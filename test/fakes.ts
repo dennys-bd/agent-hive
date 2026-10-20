@@ -16,7 +16,7 @@ import type { GqlJson } from '../src/sources/github-gql.js';
 import type { EventLog, RecordInput } from '../src/events.js';
 import type { Pty, PtySpawnOptions, SpawnPty } from '../src/pty-host.js';
 import type { Source, SourceConfig, SourceTaskProps, SourceQuota, SourceSpec, TaskFilter, Stage, Transition, Gql, ItemAction, MoveAction, Workspace, SpawnOptions, LaunchPty, PtyHandlers, PtyLaunch, PlanLimitsReport, RateLimits } from '../src/types.js';
-import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT } from '../src/types.js';
+import { APPROVAL_MINUTES_DEFAULT, SIGNALS_DEFAULTS, RATE_LIMIT_WAIT_DEFAULT, DELETE_ACTIVITY_DEFAULTS, EDITOR_DEFAULTS, SHUTDOWN_IDLE_DEFAULT, MCP_DEFAULTS } from '../src/types.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
 import { AGENTS } from '../src/agents.js';
 import { runners } from '../src/agents/registry.js';
@@ -69,7 +69,7 @@ export function fakeSpawn(options: FakeSpawnOptions = {}): { spawn: LaunchPty; w
 
 // The run LAUNCH's agent renders (#924): ptyCommand's expected strings were written against these paths
 const LAUNCH_RUN: AgentRun = {
-  ptyId: 'W1', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, withHive: true, hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
+  ptyId: 'W1', cwd: '/repo/.hive/worktrees/hive-1-task', port: 4242, withHive: true, external: [], hooksPath: '/repo/.hive/hooks.json', pluginDir: '/home/agent-hive/plugin', mcpPath: '/repo/.hive/prompts/W1.mcp.json',
   session: { id: 'a1b2c3d4-0000-4000-8000-000000000001', resume: false }, extraArgs: [],
 };
 
@@ -218,7 +218,7 @@ export function combConfig({
   source, sources = source === undefined ? [] : [sourceEntry(source as Record<string, unknown>)], stages = STAGES, transitions, prefix = 'HIVE', path = '/repo',
   workspaces = [{ name: WORKSPACE, path, env: {}, fork: null, memoryCap: 4000, color: 'oklch(0.72 0.12 25)' }], commands = [], hiveSource = true, createIn = 'hive', ...rest
 }: Record<string, unknown> = {}): Record<string, unknown> {
-  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', agentArgs: { claude: [], codex: [] }, theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
+  return { auth: AUTH, onClose: 'menuBar', deleteActivity: DELETE_ACTIVITY_DEFAULTS, shutdownIdleMinutes: SHUTDOWN_IDLE_DEFAULT, approvalMinutes: APPROVAL_MINUTES_DEFAULT, rateLimitWaitMinutes: RATE_LIMIT_WAIT_DEFAULT, showGithubQuota: false, closeSessionTab: 'keep', closeStageTab: 'keep', closeSessionTabNotice: true, closeStageTabNotice: true, sleepNotice: true, sleepAutoNotice: true, sleepIdleNotice: true, sleepAllNotice: true, closeTerminalTab: 'sleep', closeTerminalTabNotice: true, defaultAgent: 'claude', agentArgs: { claude: [], codex: [] }, theme: 'system', terminalFont: '', consoleLines: 5000, trustedDomains: [], shortcuts: {}, fileIcons: { set: 'material', scope: 'all', muted: true }, sidebarsPerView: { left: true, right: true, rightTab: true }, notifications: { waiting: true, approval: true, pr: true, failed: true }, signals: SIGNALS_DEFAULTS, editor: EDITOR_DEFAULTS, mcp: MCP_DEFAULTS, ...rest, comb: { prefix, workspaces, sources: Array.isArray(sources) ? sources.map(withEpics(stages)) : sources, stages, transitions: transitions ?? derivedFlow(stages), commands, hiveSource, createIn } };
 }
 
 /** A pre-#134 stage list, onFinish and all, as the flow its migration makes (#134): what a reducer fixture spreads where it set `stages`. */

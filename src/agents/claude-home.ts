@@ -6,7 +6,7 @@ import { AGENTS } from '../agents.js';
 import { hookCommand, hooksPath, MCP_ROUTE, statusCommand, STOP_HOOK_TIMEOUT_S } from '../hooks-settings.js';
 import { SECRET_HEADER } from '../secret.js';
 import { installShim } from '../shim.js';
-import type { LspServers, McpServer } from './runner.js';
+import type { LspServers, McpServer, RunMcpServer } from './runner.js';
 
 export const HOOK_EVENTS: readonly string[] = [
   'SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure', 'SessionEnd', // StopFailure: #805, fire-and-forget
@@ -14,8 +14,9 @@ export const HOOK_EVENTS: readonly string[] = [
 const MCP_TOOLS_ALLOW = 'mcp__hive__*'; // Claude Code names the tools mcp__<server>__<tool>; allowed so no call stops at a permission prompt
 const LSP_MANIFEST = { name: 'hive-lsp', description: 'The language servers the Hive installed, for this workspace (#803)', version: '1.0.0' };
 
+type ClaudeMcpEntry = { type: 'http'; url: string; headers?: Record<string, string> } | { type: 'stdio'; command: string; args: string[] };
 export interface McpConfig {
-  mcpServers: { hive: { type: 'http'; url: string; headers: Record<string, string> } };
+  mcpServers: Record<string, ClaudeMcpEntry>;
 }
 
 // Every file here as the Hive always wrote it: two-space JSON and a final newline
@@ -43,9 +44,15 @@ export function renderMcpConfig(port: number, ptyId: string, secret: string): Mc
   return { mcpServers: { hive: { type: 'http', url: `http://127.0.0.1:${port}${MCP_ROUTE}`, headers: { 'x-hive-pty': ptyId, [SECRET_HEADER]: secret } } } };
 }
 
-/** A run's MCP config file (#924): the Hive's server, or none for a local session (#587), whose file still puts the pty id in the argv. */
-export const claudeMcpConfig = ({ port, ptyId, secret, withHive }: McpServer): string =>
-  asFile(withHive ? renderMcpConfig(port, ptyId, secret) : { mcpServers: {} });
+// #333: a command as stdio, a URL as http with its header; its tools go through Claude Code's own permission prompts (MCP_TOOLS_ALLOW names hive only)
+const externalEntry = (server: RunMcpServer): ClaudeMcpEntry => ('command' in server
+  ? { type: 'stdio', command: server.command, args: [...server.args] }
+  : { type: 'http', url: server.url, ...(server.header ? { headers: { [server.header.name]: server.header.value } } : {}) });
+
+/** A run's MCP config file (#924): the Hive's server unless a local session (#587), then every external server of its workspace (#333). */
+export const claudeMcpConfig = ({ port, ptyId, secret, withHive, external }: McpServer): string => asFile({
+  mcpServers: { ...(withHive ? renderMcpConfig(port, ptyId, secret).mcpServers : {}), ...Object.fromEntries(external.map((s) => [s.name, externalEntry(s)])) },
+});
 
 /** A workspace's language-server plugin (#803): its manifest and its .lsp.json, each path relative to the plugin's folder. */
 export const claudeLspPlugin = (servers: LspServers): { path: string; content: string }[] => [

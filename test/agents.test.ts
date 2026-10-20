@@ -39,7 +39,7 @@ test('every agent has a probe command, a label and its subcommands; Claude\'s pr
     assert.ok(AGENTS[id].label.length > 0, id);
     assert.ok(AGENTS[id].subcommands.length > 0, id);
   }
-  const argv = runners.claude.launch({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, hooksPath: '/h', pluginDir: '/p', protocolPath: '/s.md', extraArgs: [] });
+  const argv = runners.claude.launch({ ptyId: 'W1', cwd: '/wt', port: 4242, withHive: true, external: [], hooksPath: '/h', pluginDir: '/p', protocolPath: '/s.md', extraArgs: [] });
   assert.deepEqual(argv.at(-1), ['--append-system-prompt-file', '/s.md'], 'appends to Claude Code\'s own system prompt, in interactive runs and with --resume');
 });
 
