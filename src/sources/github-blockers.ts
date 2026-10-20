@@ -56,7 +56,7 @@ function parseRef(ref: string, own: { owner: string; name: string }): IssueKey {
 // them from
 async function readBlockers(gql: Gql, url: string, repo: string): Promise<ItemBlockers> {
   const item: Item = { itemId: '', id: '', title: '', body: '', url };
-  const query = relationsQuery([item]);
+  const query = relationsQuery([item], ['blockedBy', 'blocking']); // #282: the poll's query asks blocking alone; the section shows both
   const issue = query === undefined ? undefined : ((await gql(query)) as RelationsData).i0?.issue;
   return issue ? blockersOf(issue, repo) : NO_BLOCKERS;
 }

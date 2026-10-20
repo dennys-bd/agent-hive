@@ -4,7 +4,7 @@ import { createServer as createNetServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import {
-  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, PROJECT_ITEMS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
+  ARCHIVE_ITEM, CLOSE_ISSUE, COMMENTS, DELETE_ISSUE, DELETE_ITEM, ISSUE_ID, ITEMS, PROBE, PROJECTS, PROJECT_FIELDS, ITEM_FIELDS, SELECT_FIELDS, SET_OPTION, REPOSITORY_ID, CREATE_ISSUE, ADD_PROJECT_ITEM, VIEWER,
 } from '../src/sources/github-queries.js';
 import { type LegacyStage, stripLegacy, transitionsOf } from '../src/config-migrate.js';
 import { citedColumns, onSource } from '../src/tasks.js';
@@ -109,7 +109,7 @@ function queryName(query: string): string {
   if (query === SELECT_FIELDS) return 'selectFields';
   if (query === ITEMS) return 'items';
   if (query === PROBE) return 'probe';
-  if (query === PROJECT_ITEMS) return 'projectItems';
+  if (query === ITEM_FIELDS) return 'itemFields';
   if (query === SET_OPTION) return 'setOption';
   if (query === COMMENTS) return 'comments';
   if (query === VIEWER) return 'viewer';
@@ -121,7 +121,7 @@ function queryName(query: string): string {
   if (query === REPOSITORY_ID) return 'repositoryId';
   if (query === CREATE_ISSUE) return 'createIssue';
   if (query === ADD_PROJECT_ITEM) return 'addProjectItem';
-  return query.includes('blockedBy(') ? 'relations' : 'unknown';
+  return query.includes('blocking(') ? 'relations' : 'unknown';
 }
 
 export interface GqlCall { name: string; query: string; variables?: Record<string, string | number | boolean> }

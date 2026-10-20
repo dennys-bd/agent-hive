@@ -48,6 +48,19 @@ export function applyRelations(tasks: SourceItem[], relations: Relations): Sourc
   });
 }
 
+/** #282: the relations query's answer (blocking alone) joined with what the item's own read carries, its blockedBy and its sub-issues: what
+ * applyRelations reads. Not read (undefined) and gone (null) pass through, so an item whose issue is gone gets no blockers. A sub-issue
+ * without a number gates nothing: it has no id to name. */
+export function joinRelations(nodes: GhItemNode[], answered: Relations): Map<string, GhIssueRelations | null | undefined> {
+  return new Map(nodes.map((node): [string, GhIssueRelations | null | undefined] => {
+    const issue = answered.get(node.id);
+    if (!issue) return [node.id, issue];
+    const c = node.content;
+    const subIssues = (c?.subIssues?.nodes ?? []).flatMap((s) => (s.number === undefined ? [] : [{ number: s.number, state: s.state }]));
+    return [node.id, { blockedBy: c?.blockedBy ?? { nodes: [] }, blocking: issue.blocking ?? { nodes: [] }, subIssues: { nodes: subIssues } }];
+  }));
+}
+
 /** What the sync needs of the adapter (#190): its closure pieces, so the GitHub details stay there. */
 export interface ItemsSyncDeps {
   store: ItemStore;
@@ -63,8 +76,8 @@ export interface ItemsSync {
   /** A poll's read: the probe, then a full read only when it moved, the stamp was cleared, the key changed or FULL_READ_MAX_AGE_MS passed; the
    * listing read back from the model either way. */
   list(key: ListingKey): Promise<StoredListing>;
-  /** The kept tasks of a read back with their relations: the stored ones as they are, the missing ones fetched and stored. */
-  relate(source: string, tasks: SourceItem[], stored: Relations): Promise<SourceItem[]>;
+  /** The kept tasks of a read back with their relations, joined with each node's own: the stored answers as they are, the missing ones fetched and stored. */
+  relate(source: string, tasks: SourceItem[], read: StoredListing): Promise<SourceItem[]>;
   /** A write's re-read item stored with origin write, with the relations its entry read; a failure is logged, never thrown. */
   answer(node: GhItemNode, relations: ReadonlyMap<string, GhIssueRelations | null>, project: string): Promise<void>;
   /** Every adapter write: the next poll reads in full, since a relation write does not move the probe. */
@@ -99,10 +112,10 @@ export function createItemsSync(deps: ItemsSyncDeps): ItemsSync {
       }
       return readListing(store.db, key); // one synchronous read: no write's upsert lands between it and the poll's dispatch
     },
-    async relate(source, tasks, stored) {
-      const fetched = await deps.fetchRelations(tasks.filter((task) => stored.get(task.item.itemId) === undefined));
+    async relate(source, tasks, read) {
+      const fetched = await deps.fetchRelations(tasks.filter((task) => read.relations.get(task.item.itemId) === undefined));
       setRelations(source, fetched);
-      return applyRelations(tasks, new Map([...stored, ...fetched]));
+      return applyRelations(tasks, joinRelations(read.nodes, new Map([...read.relations, ...fetched])));
     },
     async answer(node, relations, project) {
       try {

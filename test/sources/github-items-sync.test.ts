@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openReadModel } from '../../src/read-model/db.js';
 import { itemRow, readListing, type ItemStore, type ListingKey } from '../../src/read-model/items.js';
-import { createItemsSync, FULL_READ_MAX_AGE_MS, readProbe, type ItemsSyncDeps } from '../../src/sources/github-items-sync.js';
+import { createItemsSync, FULL_READ_MAX_AGE_MS, joinRelations, readProbe, type ItemsSyncDeps } from '../../src/sources/github-items-sync.js';
 import { PROBE, type GhIssueRelations, type GhItemNode } from '../../src/sources/github-queries.js';
 import type { Gql, SourceItem } from '../../src/types.js';
 import { fakeLog } from '../fakes.js';
@@ -93,7 +93,7 @@ test('relate fetches only the kept tasks with no stored relations, and stores wh
   await sync.list(KEY);
   db.setItemRelations(SOURCE, 'PVTI_2', null);
   calls.length = 0;
-  const related = await sync.relate(SOURCE, [task(1), task(2)], new Map([['PVTI_1', ISSUE], ['PVTI_2', undefined]]));
+  const related = await sync.relate(SOURCE, [task(1), task(2)], { nodes: [node(1), node(2)], relations: new Map([['PVTI_1', ISSUE], ['PVTI_2', undefined]]) });
   assert.deepEqual(calls, ['relations 1']);
   assert.deepEqual(readListing(db, KEY).relations.get('PVTI_2'), ISSUE);
   assert.ok(related.every((t) => t.item.blockers !== undefined), 'both read: "none" both ways');
@@ -116,4 +116,12 @@ test('answer stores nothing without a login, and logs a failure instead of throw
   const failing = await harness(['S1'], { log }, async () => { throw new Error('no credentials'); });
   await failing.sync.answer(node(1), new Map(), KEY.project);
   assert.deepEqual(lines, ["ERROR source acme/6: a write's answer was not stored in the read model: no credentials"]);
+});
+
+test('joinRelations takes blocking from the relations answer and blockedBy and the sub-issues from the item itself; not read and gone pass through (#282)', () => {
+  const blocker = { number: 7, title: 'T7', state: 'OPEN', repository: { nameWithOwner: 'acme/r' } };
+  const own: GhItemNode = { ...node(1), content: { ...node(1).content, blockedBy: { nodes: [blocker] }, subIssues: { nodes: [{ id: 'I_9', number: 9, state: 'OPEN' }, { id: 'I_8', state: 'CLOSED' }] } } };
+  const joined = joinRelations([own, node(2), node(3)], new Map([['PVTI_1', { blocking: { nodes: [blocker] } }], ['PVTI_2', null]]));
+  assert.deepEqual(joined.get('PVTI_1'), { blockedBy: { nodes: [blocker] }, blocking: { nodes: [blocker] }, subIssues: { nodes: [{ number: 9, state: 'OPEN' }] } }, 'a sub-issue with no number is no gate');
+  assert.deepEqual([joined.get('PVTI_2'), joined.get('PVTI_3')], [null, undefined]);
 });

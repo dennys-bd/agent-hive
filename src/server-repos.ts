@@ -11,7 +11,7 @@ import { issuePageOf, issuesOf, prsOf, summaryOf } from './read-model/views.js';
 import { PR_STATES } from './pull-requests.js';
 import { listRepositories, type RepoRef } from './repos/repositories.js';
 import type { GqlJson } from './sources/github-gql.js';
-import { quotaFrom } from './sources/github.js';
+import { quotaFrom } from './sources/github-pages.js';
 import type { GhRateLimit } from './sources/github-queries.js';
 import type { Config, Exec, RepoIssues, SourceQuota, State } from './types.js';
 

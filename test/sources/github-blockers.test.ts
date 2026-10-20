@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BadBlockerRefError, BlockerRefNotFoundError, findBlockers, relateItem, RelationRereadError, SelfBlockerError } from '../../src/sources/github-blockers.js';
 import type { FieldsContext } from '../../src/sources/github-fields.js';
-import { ADD_BLOCKED_BY, ISSUE_ID, ITEM_FIELDS, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhItemFieldsNode } from '../../src/sources/github-queries.js';
+import { ADD_BLOCKED_BY, ISSUE_ID, ITEM_FIELDS, relationsQuery, REMOVE_BLOCKED_BY, SEARCH_ISSUES, type GhItemFieldsNode } from '../../src/sources/github-queries.js';
 import { parseConfig } from '../../src/config.js';
 import { createSource, sourceSpec } from '../../src/source.js';
 import type { BlockerChange, Gql, SourceItem } from '../../src/types.js';
@@ -142,4 +142,10 @@ test('the GitHub adapter has relate and findBlockers, both refused before resolv
   assert.ok(source.findBlockers);
   await assert.rejects(source.relate('PVTI_1', change('add', 'blockedBy', '7')), /source not resolved/);
   await assert.rejects(source.findBlockers('PVTI_1', 'pager'), /source not resolved/);
+});
+
+test('the poll\'s relations query asks blocking alone; a relation write\'s read asks both directions (#282)', () => {
+  const item = { itemId: 'PVTI_1', id: '12', title: '', body: '', url: 'https://github.com/acme/site/issues/12' };
+  assert.doesNotMatch(relationsQuery([item]) ?? '', /blockedBy|subIssues/);
+  assert.match(relationsQuery([item], ['blockedBy', 'blocking']) ?? '', /blockedBy\(first: 50\) .* blocking\(first: 50\)/);
 });
