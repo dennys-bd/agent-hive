@@ -135,7 +135,7 @@ export function PluginsHead({ plugins, editor, annotations, workspaces }: { plug
   if (screen.kind === 'list') return <ListHead plugins={plugins} section={screen.section} workspaces={workspaces} />;
   if (screen.kind === 'update') return null; // the update screen portals its own head: its meta needs the preview (#325)
   if (screen.kind === 'mcp') return <McpHead plugins={plugins} />;
-  if (screen.kind !== 'item') return <Head title={t(`plugins.section.${screen.kind}`)} />;
+  if (screen.kind === 'protocol') return <Head title={t('plugins.section.protocol')} meta={t('plugins.protocol.meta')} />; // #337: no actions
   const item = plugins.items?.find((i) => i.id === screen.id);
   const onUpdate = (version: string): void => plugins.open({ kind: 'update', id: screen.id, version });
   return item === undefined ? null : <ItemHead item={item} editor={editor} annotations={annotations} workspaces={workspaces} onUpdate={onUpdate} />;
