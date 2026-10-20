@@ -61,12 +61,13 @@ export function normalizeItem(source: string, project: string, node: GhItemNode)
   // both queries ask updatedAt; a node without it ties with every other, and the write window still decides
   const item = { source, nodeId: node.id, project, contentType: c?.__typename ?? null, issueNodeId: null, updatedAt: node.updatedAt ?? '' };
   const values = valuesOf(node);
-  if (c?.__typename !== 'Issue') return { item, values, pullRequests: [] };
+  const valuesSig = JSON.stringify([...values].sort((a, b) => (a.field < b.field ? -1 : 1)));
+  if (c?.__typename !== 'Issue') return { item: { ...item, valuesSig }, values, pullRequests: [] };
   const repository = c.repository?.nameWithOwner;
   if (repository === undefined) throw new WireError('repository');
   const issue = issueFromGql(source, repository, c);
   const pullRequests = c.closedByPullRequestsReferences ? closingPrsFromGql(c) : [];
-  return { item: { ...item, issueNodeId: issue.nodeId }, values, issue, details: detailsOf(c), pullRequests, relations: relationRowsOf(c) };
+  return { item: { ...item, valuesSig, issueNodeId: issue.nodeId }, values, issue, details: detailsOf(c), pullRequests, relations: relationRowsOf(c) };
 }
 
 /** The Project's named fields as project_fields keeps them (#282); a field GitHub could not read ({}) is not one. */

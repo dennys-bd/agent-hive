@@ -59,7 +59,7 @@ export const MIGRATIONS: readonly string[] = [
   `DROP TABLE project_listings;
   DROP TABLE project_items;
   CREATE TABLE project_items (source TEXT NOT NULL, node_id TEXT NOT NULL, project TEXT NOT NULL, content_type TEXT, issue_node_id TEXT,
-    blocking_read INTEGER, updated_at TEXT NOT NULL, written_at INTEGER, PRIMARY KEY (source, node_id));
+    blocking_read INTEGER, values_sig TEXT NOT NULL, updated_at TEXT NOT NULL, written_at INTEGER, PRIMARY KEY (source, node_id));
   CREATE INDEX project_items_by_project ON project_items (source, project);
   CREATE TABLE project_listings (source TEXT NOT NULL, project TEXT NOT NULL, position INTEGER NOT NULL, node_id TEXT NOT NULL,
     PRIMARY KEY (source, project, position));

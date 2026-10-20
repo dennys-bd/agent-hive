@@ -78,7 +78,8 @@ export interface PrPage { issue: IssueRow; pull: PullRow | undefined; reviews: R
 
 /** A Project item's own columns (#190, #282): project is `<owner login>/<number>`; contentType the content's __typename, null when GitHub
  * answered none; issueNodeId the issues row it shows, set for an issue only. */
-export interface ItemRow { source: string; nodeId: string; project: string; contentType: string | null; issueNodeId: string | null; updatedAt: string }
+export interface ItemRow { source: string; nodeId: string; project: string; contentType: string | null; issueNodeId: string | null; updatedAt: string;
+  /** The item's values as one stable string, so the replace rule sees a changed value at a tied updatedAt (#282) */ valuesSig: string }
 /** One set value of an item (#282): kind is which GhFieldValue key holds it, so the rebuild restores a number as a number. */
 export interface FieldValueRow { field: string; kind: 'name' | 'text' | 'number' | 'date' | 'title'; value: string }
 /** Which side of an issue's relations a row is (#282): blockedBy and subIssue come with the items read, blocking with the relations query. */

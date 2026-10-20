@@ -134,3 +134,37 @@ test('a malformed issue throws before anything is stored (#282)', async () => {
   assert.throws(() => storeListing(db, KEY, read([at('Ready', T1, 1), itemNode(2, 'Ready', T1, { comments: null })]), new Map()), WireError);
   assert.deepEqual(ids(db), []);
 });
+
+test('a read at the same updatedAt with another field value stores it; inside the write window after a write it does not (#282)', async () => {
+  const clock = { now: 1_000 };
+  const db = await memoryModel(() => clock.now);
+  const status = (): string | undefined => readListing(db, KEY).nodes[0]?.fieldValueByName?.name;
+  storeListing(db, KEY, read([at('Ready', T2)]), new Map());
+  storeListing(db, KEY, read([at('In review', T2)]), new Map());
+  assert.equal(status(), 'In review', 'a tie with other values writes');
+  writeItem(db, normalizeItem(SOURCE, PROJECT, at('Done', T2)), 'write');
+  clock.now += WINDOW_MS - 1;
+  storeListing(db, KEY, read([at('Ready', T2)]), new Map());
+  assert.equal(status(), 'Done', 'the window protects the write');
+});
+
+test('a write changing only the milestone is kept against a page read before it, inside the window (#282)', async () => {
+  const clock = { now: 1_000 };
+  const db = await memoryModel(() => clock.now);
+  storeListing(db, KEY, read([itemNode(1, 'Ready', T2, { milestone: { title: 'v1' } })]), new Map());
+  writeItem(db, normalizeItem(SOURCE, PROJECT, itemNode(1, 'Ready', T2, { milestone: { title: 'v2' } })), 'write');
+  clock.now += WINDOW_MS - 1;
+  storeListing(db, KEY, read([itemNode(1, 'Ready', T2, { milestone: { title: 'v1' } })]), new Map());
+  assert.equal(readListing(db, KEY).nodes[0]?.content?.milestone?.title, 'v2');
+});
+
+test('an issue that is an item of two Projects keeps its relations when one Project drops it (#282)', async () => {
+  const db = await memoryModel();
+  const other: ListingKey = { ...KEY, project: 'acme/7' };
+  const blocked = itemNode(1, 'Ready', T1, { blockedBy: { nodes: [seven] } });
+  storeListing(db, KEY, read([blocked]), new Map());
+  storeListing(db, other, read([{ ...blocked, id: 'PVTI_9' }]), new Map());
+  storeListing(db, KEY, read([]), new Map());
+  const [rows] = db.itemRows(SOURCE, ['PVTI_9']);
+  assert.deepEqual(rows?.relations.map((r) => r.number), [7]);
+});

@@ -8,12 +8,13 @@ import { groupBy, inTransaction, issueOf, nullable, prOf, type Row, stamp, text,
 type ItemTables = Pick<ReadModel, 'upsertItem' | 'setItemValues' | 'setIssueRelations' | 'setBlocking' | 'setIssueDetails' | 'setProjectFields'
   | 'projectFields' | 'setListing' | 'removeUnlisted' | 'listing' | 'itemRows'>;
 
-const ITEM_COLUMNS: readonly string[] = ['source', 'node_id', 'project', 'content_type', 'issue_node_id', 'updated_at'];
+const ITEM_COLUMNS: readonly string[] = ['source', 'node_id', 'project', 'content_type', 'issue_node_id', 'values_sig', 'updated_at'];
 const IN_IDS = 'IN (SELECT value FROM json_each(?))';
 // The issue's own columns only the Project read says (#282), under the replace rule's terms: at this read's updated_at, and never a write's inside
 // its window. A REST row stored first at the same updated_at takes them, which "only when the issue row wrote" would leave stale for good
 const DETAILS = `UPDATE issues SET url = $url, milestone = $milestone, issue_type = $issueType, parent_number = $parentNumber, parent_title = $parentTitle,
-  sub_issues_total = $subIssuesTotal, sub_issues_completed = $subIssuesCompleted
+  sub_issues_total = $subIssuesTotal, sub_issues_completed = $subIssuesCompleted,
+  written_at = CASE WHEN $writtenAt IS NOT NULL THEN $writtenAt ELSE written_at END
   WHERE source = $source AND node_id = $nodeId AND updated_at = $updatedAt
     AND ($writtenAt IS NOT NULL OR written_at IS NULL OR $now - written_at >= ${WRITE_WINDOW_MS})`;
 // The items of a Project its listing no longer names: they left it
@@ -21,7 +22,10 @@ const UNLISTED = `SELECT node_id FROM project_items WHERE source = $source AND p
   AND node_id NOT IN (SELECT node_id FROM project_listings WHERE source = $source AND project = $project)`;
 const REMOVALS = [ // values and relations first: the relations are found through the rows the last statement deletes
   `DELETE FROM item_field_values WHERE source = $source AND item_node_id IN (${UNLISTED})`,
-  `DELETE FROM issue_relations WHERE source = $source AND issue_node_id IN (SELECT issue_node_id FROM project_items WHERE source = $source AND node_id IN (${UNLISTED}))`,
+  // an issue another Project (or this one's kept items) still lists keeps its relations: they are the issue's, not the Project's
+  `DELETE FROM issue_relations WHERE source = $source AND issue_node_id IN (SELECT issue_node_id FROM project_items WHERE source = $source AND node_id IN (${UNLISTED}))
+    AND issue_node_id NOT IN (SELECT issue_node_id FROM project_items WHERE source = $source AND issue_node_id IS NOT NULL
+      AND node_id NOT IN (${UNLISTED}))`,
   `DELETE FROM project_items WHERE source = $source AND node_id IN (${UNLISTED})`,
 ];
 const VALUE_KINDS: readonly FieldValueRow['kind'][] = ['name', 'text', 'number', 'date', 'title'];
@@ -82,7 +86,7 @@ function writesOf(db: DatabaseSync, now: () => number): Pick<ReadModel, 'upsertI
 
 const storedItemOf = (row: Row): StoredItem => ({
   source: text(row, 'source'), nodeId: text(row, 'node_id'), project: text(row, 'project'), contentType: nullable(row, 'content_type'),
-  issueNodeId: nullable(row, 'issue_node_id'), updatedAt: text(row, 'updated_at'), blockingRead: count(row, 'blocking_read'),
+  issueNodeId: nullable(row, 'issue_node_id'), updatedAt: text(row, 'updated_at'), valuesSig: text(row, 'values_sig'), blockingRead: count(row, 'blocking_read'),
 });
 const valueRowOf = (row: Row): FieldValueRow => ({ field: text(row, 'field'), kind: VALUE_KINDS.find((k) => k === row.kind) ?? 'text', value: text(row, 'value') });
 const relationOf = (row: Row): RelationRow => ({
