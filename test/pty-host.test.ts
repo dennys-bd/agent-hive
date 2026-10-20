@@ -72,6 +72,7 @@ test('an unknown worker is a no-op everywhere, never a throw (#251)', () => {
   assert.equal(host.has('nope'), false);
   assert.equal(host.write('nope', 'x'), false);
   assert.equal(host.resize('nope', 1, 1), false);
+  assert.equal(host.resize('nope', 1, 1, true), false);
   assert.equal(host.kill('nope'), false);
   assert.equal(host.subscribe('nope', () => {}, () => {}), undefined);
 });
@@ -255,4 +256,44 @@ test('a spawn with no seed, or an empty one, replays no reset: a live program ke
     return seen;
   });
   assert.deepEqual(replays, [['$ '], ['$ '], ['$ ']]);
+});
+
+test('a resize to the grid the pty already has, asked to redraw, resizes the pty one row short and back to it; without redraw it is still dropped, however often a view posts it (#389, #808)', () => {
+  const { host, pty } = hosted(); // spawned at 200x50
+  assert.equal(host.resize('W1', 200, 50), true);
+  assert.equal(host.resize('W1', 200, 50), true); // two tabs switched back and forth with no size change: no SIGWINCH
+  assert.deepEqual(pty.sizes, []);
+  assert.equal(host.resize('W1', 200, 50, true), true);
+  assert.deepEqual(pty.sizes, [[200, 49], [200, 50]]);
+  host.resize('W1', 200, 50);
+  assert.deepEqual(pty.sizes, [[200, 49], [200, 50]], 'the host\'s grid is the pty\'s again: a plain post of it is dropped');
+});
+
+test('a resize to another grid reaches the pty once, redraw or not: the real change already sends SIGWINCH (#389)', () => {
+  const { host, pty } = hosted();
+  host.resize('W1', 120, 40, true);
+  host.resize('W1', 100, 30);
+  assert.deepEqual(pty.sizes, [[120, 40], [100, 30]]);
+});
+
+test('a one-row grid\'s redraw goes one row up and back, and the size it passed through never widens the fallback (#389, #808)', () => {
+  const { spawnPty, ptys } = fakePtys();
+  const host = createPtyHost(spawnPty);
+  host.spawn('W1', CLAUDE, WORKTREE, ENV, undefined, { cols: 100, rows: 1 });
+  host.resize('W1', 100, 1, true);
+  host.spawn('W2', CLAUDE, WORKTREE, ENV); // the fallback: the largest grid a page asked for
+  assert.deepEqual([ptys[0].sizes, gridOf(ptys[1])], [[[100, 2], [100, 1]], [100, 1]]);
+});
+
+test('a redraw whose way back throws leaves the host\'s grid at the size the pty took, so the next post of the grid is not dropped against a wrong one (#389)', () => {
+  const { host, pty } = hosted(); // spawned at 200x50
+  const resizeOf = pty.resize;
+  pty.resize = (cols, rows) => {
+    if (rows === 50) throw new Error('EBADF'); // the fd closing under a racing exit, on the way back
+    resizeOf(cols, rows);
+  };
+  assert.throws(() => host.resize('W1', 200, 50, true), /EBADF/);
+  pty.resize = resizeOf;
+  host.resize('W1', 200, 50);
+  assert.deepEqual(pty.sizes, [[200, 49], [200, 50]]);
 });

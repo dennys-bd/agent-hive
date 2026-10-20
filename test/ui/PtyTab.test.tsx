@@ -119,7 +119,7 @@ test('a hidden tab turned active and focused fits and posts its grid at once, pa
   expect(socket.sent).toEqual([]);
   size = { width: 800, height: 600 };
   rerender(view(true));
-  expect(sentSizes(socket)).toEqual([{ type: 'resize', cols: 120, rows: 30 }]);
+  expect(sentSizes(socket)).toEqual([{ type: 'resize', cols: 120, rows: 30, redraw: true }]); // #389: a tab mounted hidden redraws when first shown
 });
 
 test('the first fit that finds the tab shown posts its grid even when the fit left xterm at 80x24; a later fit that changes nothing posts nothing (#808)', () => {
@@ -130,7 +130,7 @@ test('the first fit that finds the tab shown posts its grid even when the fit le
   FakeTerminal.all[0].rows = 24;
   resized(800, 600);
   resized(800, 600);
-  expect(sentSizes(socket)).toEqual([{ type: 'resize', cols: 80, rows: 24 }]);
+  expect(sentSizes(socket)).toEqual([{ type: 'resize', cols: 80, rows: 24, redraw: true }]);
 });
 
 test('the find binding opens the bar over its own tab only, on an xterm with the proposed API on; a tab turned away and back keeps its bar and its query (#12)', async () => {

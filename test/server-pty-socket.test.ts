@@ -17,6 +17,7 @@ interface FakeHost {
   subscribed: string[];
   written: string[];
   sizes: [number, number][];
+  redraws: boolean[]; // #389: whether each resize asked for a redraw, in the order of `sizes`
   unsubscribed: number;
   emit(data: string): void;
   exit(): void;
@@ -27,7 +28,7 @@ interface FakeHost {
 function fakeHost(): FakeHost {
   let listeners: { onData(data: string): void; onExit(exitCode: number): void }[] = [];
   const fake: FakeHost = {
-    subscribed: [], written: [], sizes: [], unsubscribed: 0,
+    subscribed: [], written: [], sizes: [], redraws: [], unsubscribed: 0,
     emit: (data) => { for (const l of listeners) l.onData(data); },
     exit: () => { for (const l of listeners) l.onExit(0); },
     host: {
@@ -35,7 +36,7 @@ function fakeHost(): FakeHost {
       adopt: () => undefined,
       has: (ptyId) => ptyId === WORKER,
       write: (_ptyId, data) => { fake.written.push(data); return true; },
-      resize: (_ptyId, cols, rows) => { fake.sizes.push([cols, rows]); return true; },
+      resize: (_ptyId, cols, rows, redraw) => { fake.sizes.push([cols, rows]); fake.redraws.push(redraw === true); return true; },
       subscribe: (ptyId, onData, onExit) => {
         if (ptyId !== WORKER) return undefined;
         fake.subscribed.push(ptyId);
@@ -176,6 +177,16 @@ test('a pty whose resize or write throws (its fd closing under a racing exit) ne
   ws.send('{"type":"input","data":"ls"}');
   await sleep(50);
   assert.equal(ws.readyState, WebSocket.OPEN);
+  ws.close();
+});
+
+test('a resize frame\'s redraw reaches the pty host with its size; a frame without it asks for none (#389)', async (t) => {
+  const { port, fake } = await serve(t);
+  const { ws } = await dial(port, PTY_PATH, fromBoard(port));
+  ws.send('{"type":"resize","cols":120,"rows":40,"redraw":true}');
+  ws.send('{"type":"resize","cols":100,"rows":30}');
+  await until(() => fake.sizes.length === 2);
+  assert.deepEqual([fake.sizes, fake.redraws], [[[120, 40], [100, 30]], [true, false]]);
   ws.close();
 });
 
