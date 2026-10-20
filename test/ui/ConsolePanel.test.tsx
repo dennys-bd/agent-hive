@@ -120,7 +120,7 @@ test('the console\'s first fit that finds it shown posts the live run\'s grid, e
   width = 600;
   fire();
   fire();
-  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 120, rows: 30 }]);
+  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 120, rows: 30, redraw: true }]); // #389: the console's program redraws too
 });
 
 const STAGE: ChannelEntry = { id: 'stage:checks', kind: 'stage', label: 'stage · checks', status: 'running' };

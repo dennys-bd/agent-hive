@@ -3,7 +3,7 @@
 // which a stream and two POSTs per terminal used to exhaust, leaving every other fetch of the page waiting.
 import type { Terminal } from '@xterm/xterm';
 import { probeKeys } from '@/lib/key-probe';
-import type { PtyMessage } from '../../terminal-wire.js'; // what parsePtyMessage reads; type only, nothing of the daemon's reaches the bundle
+import type { PtyMessage, TerminalSize } from '../../terminal-wire.js'; // what parsePtyMessage reads; type only, nothing of the daemon's reaches the bundle
 
 // A drag's ResizeObserver ticks dozens of times; the shell redraws its prompt on every SIGWINCH, so it should see one per drag, not one per
 // tick. #451
@@ -49,8 +49,22 @@ function senderOf(socket: WebSocket): (message: PtyMessage) => void {
   };
 }
 
+// #389: a program redraws its whole screen only on SIGWINCH, and the host drops a grid the pty already has (#808). So a resize asks for a
+// redraw on the connection's first post (the ring it replayed can start mid-frame) and whenever the grid changed since the last one sent
+// (xterm reflowed what it held at its old grid). A repeat of the last grid, a plain tab switch, asks for none: a redraw flickers and can
+// repeat the transcript in the scrollback.
+function sizeSender(send: (message: PtyMessage) => void): (cols: number, rows: number) => void {
+  let last: TerminalSize | undefined; // none until the first post
+  return (cols, rows) => {
+    const isNew = !(last?.cols === cols && last.rows === rows);
+    last = { cols, rows };
+    send(isNew ? { type: 'resize', cols, rows, redraw: true } : { type: 'resize', cols, rows });
+  };
+}
+
 /** What connectPty hands its view (#808). postSize sends the xterm's grid now, past the debounce, dropping a resize still pending: a view
- * calls it on its first shown fit and whenever it becomes the one in front of the user. The host drops a grid the pty already has. */
+ * calls it on its first shown fit and whenever it becomes the one in front of the user. The host drops a grid the pty already has, unless
+ * the post asks for a redraw: the connection's first, or one whose grid changed since its last (#389). */
 export interface PtyConnection { disconnect(): void; postSize(): void }
 
 /** Streams the run's scrollback, then its live output, into `term`. What xterm answers to the scrollback never reaches the pty (#831).
@@ -61,6 +75,7 @@ export interface PtyConnection { disconnect(): void; postSize(): void }
 export function connectPty(term: Terminal, ptyId: string, onExit: () => void): PtyConnection {
   const socket = new WebSocket(`ws://${location.host}/ptys/${encodeURIComponent(ptyId)}/pty`);
   const send = senderOf(socket);
+  const sendSize = sizeSender(send);
   let stopped = false; // the teardown's own close is not the run's end
   const frames = replayGate(term);
   socket.addEventListener('message', (event) => {
@@ -85,12 +100,12 @@ export function connectPty(term: Terminal, ptyId: string, onExit: () => void): P
     dropPending();
     resizeTimer = setTimeout(() => {
       resizeTimer = undefined;
-      send({ type: 'resize', cols, rows });
+      sendSize(cols, rows);
     }, RESIZE_SETTLE_MS);
   });
   const postSize = (): void => {
     dropPending();
-    send({ type: 'resize', cols: term.cols, rows: term.rows });
+    sendSize(term.cols, term.rows);
   };
   const disconnect = (): void => {
     stopped = true;

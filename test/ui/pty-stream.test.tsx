@@ -39,7 +39,7 @@ test('one WebSocket on the page\'s own host carries the pty: its output is writt
   expect(term.written).toEqual(['hi\r\n']);
   expect(socket.sent.map((text) => JSON.parse(text))).toEqual([
     { type: 'input', data: 'l' },
-    { type: 'resize', cols: 100, rows: 40 },
+    { type: 'resize', cols: 100, rows: 40, redraw: true },
     { type: 'input', data: 's\r' },
   ]);
   expect(fetchMock).not.toHaveBeenCalled();
@@ -69,7 +69,7 @@ test('a single resize is not sent before it settles, and is sent once RESIZE_SET
   vi.advanceTimersByTime(RESIZE_SETTLE_MS - 1);
   expect(socket.sent).toEqual([]);
   vi.advanceTimersByTime(1);
-  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 100, rows: 40 }]);
+  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 100, rows: 40, redraw: true }]);
 });
 
 test('a burst of resizes during a drag sends only the last grid, once, after it settles (#451)', () => {
@@ -81,7 +81,7 @@ test('a burst of resizes during a drag sends only the last grid, once, after it 
   vi.advanceTimersByTime(50);
   term.resize(100, 40); // the drag's last grid, the one the shell should redraw for
   vi.advanceTimersByTime(RESIZE_SETTLE_MS);
-  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 100, rows: 40 }]);
+  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 100, rows: 40, redraw: true }]);
 });
 
 test('a key typed while a resize is pending goes out immediately, ahead of the settled resize (#451)', () => {
@@ -93,7 +93,7 @@ test('a key typed while a resize is pending goes out immediately, ahead of the s
   vi.advanceTimersByTime(RESIZE_SETTLE_MS);
   expect(socket.sent.map((text) => JSON.parse(text))).toEqual([
     { type: 'input', data: 'l' },
-    { type: 'resize', cols: 100, rows: 40 },
+    { type: 'resize', cols: 100, rows: 40, redraw: true },
   ]);
 });
 
@@ -126,14 +126,45 @@ test('postSize sends the xterm\'s grid at once and drops a debounced resize stil
   expect(socket.sent).toEqual([]); // not open yet: queued
   socket.open();
   vi.advanceTimersByTime(RESIZE_SETTLE_MS);
-  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 90, rows: 30 }]); // once: the pending one went
+  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 90, rows: 30, redraw: true }]); // once: the pending one went
   term.cols = 100; // a grid no onResize announced, as xterm's first one
   term.rows = 40;
   postSize();
-  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 90, rows: 30 }, { type: 'resize', cols: 100, rows: 40 }]);
+  expect(socket.sent.map((text) => JSON.parse(text))).toEqual([{ type: 'resize', cols: 90, rows: 30, redraw: true }, { type: 'resize', cols: 100, rows: 40, redraw: true }]);
 });
 
 const sentOf = (socket: FakeWebSocket): unknown[] => socket.sent.map((text) => JSON.parse(text));
+
+test('postSize asks the program to redraw on the connection\'s first post and whenever the grid changed since its last; a repeat of the last grid asks for none (#389)', () => {
+  const { term, socket, postSize } = connect();
+  socket.open();
+  postSize(); // the first post: a new tab, a woken session, a reopened window
+  postSize(); // the tab shown again with nothing changed: a plain tab switch
+  term.cols = 100; // the view's own grid changed, as a tab mounted hidden at 80x24 and then shown
+  term.rows = 40;
+  postSize();
+  expect(sentOf(socket)).toEqual([
+    { type: 'resize', cols: 120, rows: 30, redraw: true },
+    { type: 'resize', cols: 120, rows: 30 },
+    { type: 'resize', cols: 100, rows: 40, redraw: true },
+  ]);
+});
+
+test('a settled resize asks for a redraw when its grid differs from the last one sent, and for none when a drag ends on it (#389, #451)', () => {
+  const { term, socket, postSize } = connect();
+  socket.open();
+  postSize(); // 120x30
+  term.resize(100, 40);
+  vi.advanceTimersByTime(RESIZE_SETTLE_MS);
+  term.resize(90, 30);
+  term.resize(100, 40); // the drag comes back to the grid already sent
+  vi.advanceTimersByTime(RESIZE_SETTLE_MS);
+  expect(sentOf(socket)).toEqual([
+    { type: 'resize', cols: 120, rows: 30, redraw: true },
+    { type: 'resize', cols: 100, rows: 40, redraw: true },
+    { type: 'resize', cols: 100, rows: 40 },
+  ]);
+});
 
 test('what xterm answers while it parses the replay never reaches the pty; once parsed, keys and live answers do, and a later frame opens no new window (#831)', () => {
   const { term, socket } = connect();
