@@ -83,7 +83,11 @@ function useLook(view: View | undefined, { text, isProposal = false, isReadOnly,
     const isSwap = shownProposal.current !== isProposal;
     shownProposal.current = isProposal;
     if (model.getValue() === text) return;
-    if (isSwap) model.setValue(text);
+    if (isSwap) {
+      const kept = view?.saveViewState(); // setValue resets the cursor and the scroll
+      model.setValue(text);
+      if (kept) view?.restoreViewState(kept);
+    }
     else model.pushEditOperations([], [{ range: model.getFullModelRange(), text }], () => null);
   }, [view, text, isProposal]);
   useEffect(() => { view?.updateOptions({ readOnly: isReadOnly, fontFamily }); }, [view, isReadOnly, fontFamily]);

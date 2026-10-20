@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { applyProposal, type AssistAnswer, proposalHunk } from '../../src/assist';
@@ -37,6 +38,24 @@ beforeEach(() => {
   resetMonacoFakes();
 });
 afterEach(() => vi.unstubAllGlobals());
+
+test('a selection made before the text stopped being writable is not sent once it is writable again (#331)', async () => {
+  const user = userEvent.setup();
+  const bodies: AssistBody[] = [];
+  stubItems(serverOf({ assist: (_id, body) => { bodies.push(body); return json({ ...ANSWER, text: body.text, changed: false }); } }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  act(() => view().select({ startLineNumber: 9, startColumn: 1, endLineNumber: 9, endColumn: 26 }));
+  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
+  await user.click(await screen.findByRole('option', { name: 'hive-site' }, { timeout: 3000 }));
+  await waitFor(() => expect(view().readOnly).toBe(true));
+  await user.click(screen.getByRole('combobox', { name: 'ver como' }));
+  await user.click(await screen.findByRole('option', { name: 'template' }, { timeout: 3000 }));
+  await waitFor(() => expect(view().readOnly).toBe(false));
+  ask('shorter');
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(bodies[0]?.selection).toBeUndefined();
+}, 20_000); // two Radix selects under a loaded gate
 
 test('⌘I with the focus in the text focuses the field: the capture-phase key never reaches Monaco (#331)', async () => {
   stubItems(serverOf());
@@ -124,4 +143,25 @@ test('while the agent works the annotation card offers no fix (#331)', async () 
   ask('drop reviewDepth');
   await screen.findByText(RUNNING);
   expect(within(margin()).queryByRole('button', { name: 'aplicar correção' })).toBeNull();
+});
+
+test('a refused request gives the field its words back; a sent one leaves it empty (#331)', async () => {
+  stubItems(serverOf({ assist: () => json({ error: 'busy', code: 'busy' }, 409) }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  ask('two sentences');
+  expect(await screen.findByText(/agente/, { selector: '[role=status]' })).toBeInTheDocument();
+  await waitFor(() => expect(field().value).toBe('two sentences'));
+});
+
+test('accepting a swap keeps the editor view: the view state saved before the swap is restored after it (#331)', async () => {
+  stubItems(serverOf({ assist: () => json(ANSWER) }));
+  render(<PluginsWindow />);
+  await open('new-build');
+  const restore = vi.spyOn(view(), 'restoreViewState');
+  ask('two sentences');
+  await waitFor(() => expect(view().model.getValue()).toBe(LOOK_TEXT));
+  fireEvent.click(screen.getByRole('button', { name: 'descartar' }));
+  await waitFor(() => expect(view().model.getValue()).toBe(BUILD_TEXT));
+  expect(restore.mock.calls).toEqual([[{ scrollTop: 40 }], [{ scrollTop: 40 }]]);
 });
