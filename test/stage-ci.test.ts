@@ -9,6 +9,7 @@ import { startMode } from '../src/task-runs.js';
 import type { LegacyStage } from '../src/config-migrate.js';
 import type { Activity, CiCheck, CiPrRead, Effect, HiveEvent, Item, SourceItem, Stage, State, TaskPr, Transition } from '../src/types.js';
 import { chained } from './fakes.js';
+import { withWork } from './fixtures/work.js';
 
 // A wait-for-CI stage (#834): the reducer's side, end to end through reduce. The task is polled into the stage under red, so no fill spawns
 // anything and every effect below is the stage's own. A check's state is #758's: success, failure or pending.
@@ -392,4 +393,28 @@ test('a read with no open PR passes the wait once every PR of the task is merged
   assert.deepEqual([dropped.tasks[0].stage, live(dropped)?.ci?.waitingPr], ['ci', true], 'a PR closed without merge is no delivery');
   const bare = read(waiting, []).state;
   assert.deepEqual([bare.tasks[0].stage, live(bare)?.ci?.waitingPr], ['ci', true], 'no PR yet: waiting for one, as before');
+});
+
+// #381: a task that entered the wait while a session of the user's held it starts waiting as that session ends, not on the next poll
+test('a session ending on a task held in a wait-for-CI stage starts the wait in that reduction: exit, SessionEnd and spawnFailed; a /clear does not (#381)', () => {
+  const polledIn = reduce(base(), { type: 'poll', source: 'board', items: [listed('Review')] }).state;
+  const reviewed = withWork(polledIn, ID, { slug: 'hive-1-task-1', worktree: '/tmp/worktrees/hive-1-task-1' });
+  const opened = reduce(reviewed, { type: 'openSession', activityId: live(reviewed)?.id ?? 'none' }).state;
+  const runId = opened.workers.find((w) => w.freeSession)?.runId ?? 'none';
+  const held = reduce(opened, { type: 'poll', source: 'board', items: [listed('CI')] });
+  assert.deepEqual([held.state.tasks[0].stage, live(held.state)?.ci, effectOf(held.effects, 'ciRead')], ['ci', undefined, undefined], 'the session holds the wait');
+  const ends: HiveEvent[] = [
+    { type: 'exit', ptyId: runId },
+    { type: 'hook', ptyId: runId, payload: { hook_event_name: 'SessionEnd', reason: 'other' } },
+    { type: 'spawnFailed', ptyId: runId, message: 'no pty' },
+  ];
+  for (const event of ends) {
+    const ended = reduce(held.state, event);
+    assert.ok(live(ended.state)?.ci, `${event.type} starts the wait`);
+    assert.deepEqual(effectOf(ended.effects, 'ciRead'), { type: 'ciRead', activityId: live(ended.state)?.id });
+  }
+  const cleared = reduce(held.state, { type: 'hook', ptyId: runId, payload: { hook_event_name: 'SessionEnd', reason: 'clear' } });
+  assert.equal(effectOf(cleared.effects, 'ciRead'), undefined, 'a /clear ends the conversation, not the session');
+  const quitting = reduce({ ...held.state, cleanStop: true }, { type: 'exit', ptyId: runId });
+  assert.equal(effectOf(quitting.effects, 'ciRead'), undefined, 'a Quit\'s kills act on nothing');
 });
