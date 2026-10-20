@@ -44,6 +44,14 @@ const isRead = (answer: unknown): answer is ProtocolRead =>
   typeof answer === 'object' && answer !== null
   && Array.isArray((answer as Partial<ProtocolRead>).blocks) && Array.isArray((answer as Partial<ProtocolRead>).passages);
 
+// What was typed while a save flew stays a draft; a new passage's moves to its id, or saving it again would POST a duplicate
+function keptAfterSave(drafts: Readonly<Record<string, string>>, key: string, id: string, sent: string): Record<string, string> {
+  const rest = without(drafts, key);
+  const typed = drafts[key];
+  if (typed === undefined || typed === sent) return rest;
+  return key.startsWith(NEW) ? { ...rest, [id]: typed } : { ...rest, [key]: typed };
+}
+
 // A 400's template errors as the route answers them; any other refusal as copy, since the route's English sentence never reaches the screen
 function saveErrorOf(err: unknown): SaveError {
   const body = (err as { body?: { errors?: unknown } } | undefined)?.body;
@@ -139,7 +147,7 @@ function useDrafts(afterWrite: () => Promise<void>) {
         ? sendJson<{ id: string }>('POST', '/api/protocol/passages', { text })
         : sendJson<{ id: string }>('PUT', passagePath(key), { text }));
       await afterWrite(); // the saved text is in the read before the draft goes, so the card never flashes the old one
-      setDrafts((prev) => (prev[key] === text ? without(prev, key) : prev)); // what was typed during the save stays a draft
+      setDrafts((prev) => keptAfterSave(prev, key, id, text));
       setSelected((prev) => (prev === key ? id : prev));
     } catch (err) {
       await fail(key, err);

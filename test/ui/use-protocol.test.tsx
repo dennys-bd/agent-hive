@@ -72,8 +72,8 @@ test('setViewAs reads the render for the workspace; a 404 from it goes back to t
   expect([result.current.rendered, result.current.renderError]).toEqual([undefined, undefined]);
 });
 
-test('a second save while one flies sends nothing; text typed during the save stays a draft (#337)', async () => {
-  let answer: (response: Response) => void = () => undefined;
+test("a second save while one flies sends nothing; text typed during a new passage's save stays a draft of its id (#337)", async () => {
+  let release: () => void = () => undefined;
   const { calls } = stubProtocol({ write: () => json({ id: 'p1' }, 201) });
   const { result } = shown();
   await waitFor(() => expect(result.current.read).toBeDefined());
@@ -82,17 +82,17 @@ test('a second save while one flies sends nothing; text typed during the save st
   const fetchMock = vi.mocked(fetch);
   const real = fetchMock.getMockImplementation();
   fetchMock.mockImplementationOnce(async (path, init) => {
-    await new Promise<Response>((resolve) => { answer = resolve; });
+    await new Promise<void>((resolve) => { release = resolve; });
     return real!(path as string, init);
   });
   let first: Promise<void> = Promise.resolve();
   act(() => { first = result.current.save(newKey('ask')); });
   await act(() => result.current.save(newKey('ask')));
   act(() => result.current.edit(newKey('ask'), `${newDraft('ask')}mine, more`));
-  answer(json({}));
+  release();
   await act(() => first);
   expect(calls).toHaveLength(1);
-  expect(result.current.drafts[newKey('ask')]).toBe(`${newDraft('ask')}mine, more`);
+  expect(result.current.drafts).toEqual({ p1: `${newDraft('ask')}mine, more` }); // under the saved id: saving it again PUTs
 });
 
 test('a 404 on save reloads, so a passage removed elsewhere leaves the screen (#337)', async () => {
