@@ -76,6 +76,13 @@ function workerTask(deps: McpDeps, ptyId: string): { state: State; worker: Worke
 
 const workerTaskId = (deps: McpDeps, ptyId: string): string | undefined => workerTask(deps, ptyId)?.task.item.itemId;
 
+// #256: a live worker that holds no task (a local session) gets no tool that needs one. An unknown worker keeps them all: each answers
+// unknown_worker, as before
+const isLocalWorker = (deps: McpDeps, header: string | undefined): boolean => {
+  const ptyId = livePtyId(deps, header);
+  return ptyId !== undefined && workerTask(deps, ptyId) === undefined;
+};
+
 // The result already in the live record of the task the worker runs (#629), for the merged size check.
 function taskResult(deps: McpDeps, ptyId: string): Record<string, unknown> | undefined {
   const held = workerTask(deps, ptyId);
@@ -235,9 +242,10 @@ export function mountMcp(app: Express, deps: McpDeps): void {
   app.post(MCP_ROUTE, async (req: Request, res: Response) => {
     const server = new McpServer(SERVER_INFO);
     const header = req.header('x-hive-pty');
-    registerStageTools(server, deps, header);
+    const isLocal = isLocalWorker(deps, header); // #256: hive_done, hive_pr and hive_stop need a task
+    if (!isLocal) registerStageTools(server, deps, header);
     registerAskTool(server, deps, header);
-    registerStopTool(server, deps, header);
+    if (!isLocal) registerStopTool(server, deps, header);
     registerReplyTool(server, deps, header);
     registerConventionsTool(server, deps, header);
     // #333: read per request, so a switch reaches running sessions on their next request; no live config (setup mode) registers every tool
