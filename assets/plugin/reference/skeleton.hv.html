@@ -6,19 +6,10 @@
 <title>screen</title>
 <!-- The tweaks of this screen: see "Tweaks" in design.md. viewports: a responsive page lays out at all three; a window screen drops the key. -->
 <script type="application/json" id="hv-tweaks">{"viewports":["desktop","tablet","mobile"]}</script>
+<!-- The folder's tokens and interaction kit, copied beside the screen: see "The skeleton" and "Interactions" in design.md. -->
+<link rel="stylesheet" href="hv-tokens.css">
+<script src="hv-kit.js" defer></script>
 <style>
-  /* Dark by default; the design pane sets data-theme="light" on <html> for the light theme. With a design system, its tokens replace these. */
-  :root {
-    color-scheme: dark;
-    --background: #111418; --card: #1a1f26; --foreground: #e6e6e6; --muted-foreground: #8a94a6;
-    --border: #2a313b; --accent: #2a313b; --primary: #3b82f6;
-    --font: -apple-system, system-ui, sans-serif;
-  }
-  :root[data-theme="light"] {
-    color-scheme: light;
-    --background: #ffffff; --card: #f6f7f9; --foreground: #111418; --muted-foreground: #5b6472;
-    --border: #dde1e6; --accent: #eef0f3; --primary: #2563eb;
-  }
   body { margin: 0; background: var(--background); color: var(--foreground); font: 14px/1.4 var(--font); }
   section { padding: 24px; }
   section > h2 { margin: 0 0 16px; font-size: 13px; font-weight: 500; color: var(--muted-foreground); }

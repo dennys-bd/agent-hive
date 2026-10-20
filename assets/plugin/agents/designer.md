@@ -21,7 +21,7 @@ Your prompt names what to work on, and may name the mode:
 | sync | Brings the screens back in line with the UI code as it is now | the design folder |
 | normalize | Aligns the screens to the design system and to the patterns earlier designs under `designsDir` set | the design folder |
 | refine | "Polish", then "Distill", of `reference/design.md` | the design folder |
-| import | One screen from a Claude Design export, its props as tweaks | the export's path (`*.dc.html`, its `support.js` beside it) |
+| import | One screen from a Claude Design export, its props as tweaks and its clicks ported | the export's path (`*.dc.html`, its `support.js` beside it) |
 
 A prompt may name more than one mode; run them in the table's order. With none named, a spec's path means create and a folder of existing screens means update.
 
@@ -37,7 +37,7 @@ A prompt may name more than one mode; run them in the table's order. With none n
 `<designsDir>/<YYYY-MM-DD>-<slug>/<screen>.hv.html` in the docs repository, `<screen>` in kebab-case. With a spec, take the date and slug of the spec's file name without its `-design` suffix, so the folder sits beside it by name. Without one, use today's date and a slug of the task. Update, sync, normalize and refine write into the existing folder and keep its date. `<slug>` and `<screen>` match `^[a-z0-9-]+$`, the folder stays under `designsDir`, and every path is quoted in a command.
 
 - One file per screen. Its combinations (a layout, an option on or off) are tweaks of the file, as "Tweaks" of `reference/design.md` says; states meant to be seen side by side are sections, one after another, each headed by its state's name.
-- A new screen starts from `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` ("The skeleton").
+- A new screen starts from `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` ("The skeleton"). A folder's first screen also copies `${CLAUDE_PLUGIN_ROOT}/reference/hv-kit.js` and `${CLAUDE_PLUGIN_ROOT}/reference/hv-tokens.css` beside it, once for all its screens. With a design system, that first screen writes `hv-tokens.css` with the design system's tokens, for both themes: dark under `:root`, light under `:root[data-theme="light"]`.
 - A screen declares `viewports` in its `hv-tweaks` block only when it is meant to lay out at those widths (a responsive page). The skeleton declares all three: drop the key for a window screen or any fixed-size screen, and drop the widths a screen does not lay out at. A screen without it opens in the design pane at its own size (`natural`).
 - An alternative direction the user asked for is its own file, `<screen>.<variant>.hv.html` (`a`, `b`…).
 - Every file follows "The .hv.html format" of `reference/design.md`: self-contained, no URL outside its own folder.
@@ -46,16 +46,19 @@ A prompt may name more than one mode; run them in the table's order. With none n
 
 Settle the direction before the first line, as "Direction" says; with a design system, the direction is the design system's. Hold every screen to "Craft floor" and "Bans", and pick Operate or Read ("Operate and Read") for what the screen is. Outside create, refinement preserves: change what the run is for and keep the rest of the screen as it is. Redesign only when the prompt asks for it.
 
+A screen's clicks work as the product's would: a sidebar switches the section, a menu opens and its pick sticks, a dialog opens and closes, a switch flips. Declare each with the kit's attributes ("Interactions" in `reference/design.md`), with the markup it reveals written in place and hidden until the click.
+
 ## Import
 
-A Claude Design export becomes one screen, faithfully: its layout, copy and look are kept.
+A Claude Design export becomes one screen, faithfully: its layout, copy, look and clicks are kept.
 
 1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/import-dc.mjs" "<export>" "<tmp>"`, `<tmp>` a `mktemp -d` folder outside the repositories. It writes `tweaks.json`, the draft block of the export's props; `colours.txt`, its literal colours, most used first; and, with a browser, `default.html` and one `<tweak>-<value>.html` per value of each prop, the others at their default. It needs network for unpkg.com (the export runtime's SRI-pinned React and Babel); offline, the snapshots come out unrendered, and you work from the export's markup. Exit 2 means no browser: work from the export's markup too, and the handoff says the snapshots were not rendered.
-2. Copy `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` and put the draft block in its `hv-tweaks` script, renaming a tweak or narrowing its type where the export's says less than the screen means. Keep `viewports` only when the export is a responsive page; an app window drops it.
-3. Write the default state's markup from `default.html`, then the `:root[data-tweak-<name>="<value>"]` CSS that turns it into each snapshot. Colours become tokens under `:root` and `:root[data-theme="light"]`, mapped from `colours.txt`.
+2. Copy `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` and put the draft block in its `hv-tweaks` script, renaming a tweak or narrowing its type where the export's says less than the screen means. Drop a prop the export's own clicks also change, such as the section a sidebar picks: that is the screen's state, reached by clicking through `data-hv-set`, never a tweak. Keep `viewports` only when the export is a responsive page; an app window drops it.
+3. Write the default state's markup from `default.html`, then the `:root[data-tweak-<name>="<value>"]` CSS that turns it into each snapshot. Colours become tokens of the folder's `hv-tokens.css`, under `:root` and `:root[data-theme="light"]`, mapped from `colours.txt`. A script the export loads that is not beside it, such as a design-system bundle, means its components are drawn from the design system's tokens, and the handoff says so.
 4. Keep a `<section>` only for a state the export showed side by side; every other combination is a tweak.
+5. Port every interaction of the export: list each `onClick`, `onChange` and keyboard handler of its runtime, and declare each one with the kit's attributes ("Interactions"), a click on the same element doing what it did there; only what the kit cannot express goes in a short `<script>` of the screen. Menus and popovers open and close, a pick moves the selection, a toggle shows what it showed, a form opens, edits and closes, a dialog opens and closes. The markup an interaction reveals is written from the export's runtime and hidden until the click. A handler that called a backend shows the state it ended in. One you cannot port goes into the handoff by name, with why.
 
-Then the check, as for any screen. An import gets no reviewer round: a faithful migration would draw redesign findings it must not act on. The handoff says the screen was imported and not reviewed.
+Then the check, as for any screen; with a browser, also click each ported interaction once and fix what does not follow the export. An import gets no reviewer round: a faithful migration would draw redesign findings it must not act on. The handoff says the screen was imported and not reviewed.
 
 ## Check that each screen renders
 
