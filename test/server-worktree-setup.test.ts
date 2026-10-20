@@ -249,3 +249,15 @@ test('a start through the worktree setup spawns its worker at the grid the start
   assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
   assert.deepEqual(workers.map((w) => w.launch.size), [{ cols: 132, rows: 41 }, undefined]);
 });
+
+test('a stage spawn whose setup fails keeps its rows on the task as lastSetup; the next start resumes from the failed step, skipping the one that passed, and drops them (#390)', async (t) => {
+  const { base, repo, server, workers } = await start(t, 'COPY .env\nCOPY seed.sql');
+  await writeFile(join(repo, '.env'), 'TOKEN=x\n');
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
+  assert.equal(work0(server)?.lastSetup?.consoleId, 'setup:board:I1');
+  assert.deepEqual((work0(server)?.lastSetup?.rows ?? []).map((r) => [r.kind, r.status]), [['worktree', 'done'], ['branch', 'done'], ['step', 'done'], ['step', 'failed']]);
+  await rm(join(repo, '.env')); // the first step, run again, would now fail
+  await writeFile(join(repo, 'seed.sql'), 'select 1;\n');
+  assert.deepEqual(await json(postJson(`${base}/tasks/board:I1/start`)), { ok: true });
+  assert.deepEqual([workers.length, work0(server)?.lastSetup, work0(server)?.error], [1, undefined, undefined]);
+});

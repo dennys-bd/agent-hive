@@ -239,11 +239,11 @@ export function withError(state: State, task: Task, message: string): State {
   return born ? withActivity(born.state, { ...born.activity, error: message }) : state;
 }
 
-/** A manual start's retry (#58, #629): the task's live activity drops its last failure. */
+/** A manual start's retry (#58, #629): the task's live activity drops its last failure, and its failed setup's rows (#390). */
 export function clearedError(state: State, task: Task): State {
   const live = activityOf(state, taskId(task));
-  if (live?.error === undefined) return state;
-  const { error: _error, ...rest } = live;
+  if (!live || (live.error === undefined && live.lastSetup === undefined)) return state;
+  const { error: _error, lastSetup: _lastSetup, ...rest } = live;
   return withActivity(state, rest);
 }
 

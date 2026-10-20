@@ -599,6 +599,7 @@ export interface Activity {
   base?: TaskBase; // #131, set by a start's popup
   runPick?: RunPick; // #290: a manual start's picks, written by start and taken off by the occupy of the same reduction
   setup?: TaskSetup; deleting?: true; // never survive a boot
+  lastSetup?: SetupRows; // #390: the last setup that failed, its run and rows, for the Start dialog once the mark is gone; dropped by the next setupStarted and a manual start; persisted like error
   commands?: StageCommands; // #755: a commands stage in flight: the task is running; persisted so the boot stops it, never past the boot
   ci?: StageCi; // #834: a wait-for-CI stage in flight: no worker, no process; persisted, so the wait goes on after a boot
   sync?: ForkSyncResult; // #854: the last automatic fork sync before this activity's worktree, failed or not; persisted while the activity lives
