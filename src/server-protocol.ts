@@ -32,7 +32,8 @@ export interface ProtocolRouteDeps {
   log: Pick<Logger, 'error'>;
 }
 
-interface ProtocolView {
+/** GET /api/protocol's answer; the protocol screen (#337) imports it as a type. */
+export interface ProtocolView {
   blocks: { id: string; stage: string; session: string; off: boolean; tool?: OptionalTool }[];
   passages: { id: string; after: string; text: string; orphan: boolean; errors: Record<string, TemplateError[]> }[];
 }

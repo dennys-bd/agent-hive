@@ -2214,6 +2214,10 @@ const en = {
   'plugins.mcp.servers': 'external servers',
   'plugins.mcp.addServer': '+ server',
   'plugins.mcp.meta': 'tools the worker session can see',
+  'plugins.protocol.readFailed': 'could not read the protocol',
+  'plugins.protocol.failed': 'could not save it; see hive.log',
+  'plugins.protocol.gone': 'this passage no longer exists',
+  'plugins.protocol.renderFailed': 'could not build the protocol for this workspace',
 };
 
 export type MessageKey = keyof typeof en;
@@ -4423,6 +4427,10 @@ const pt: Record<MessageKey, string> = {
   'plugins.mcp.servers': 'servidores externos',
   'plugins.mcp.addServer': '+ servidor',
   'plugins.mcp.meta': 'ferramentas que a sessão do worker enxerga',
+  'plugins.protocol.readFailed': 'não foi possível ler o protocolo',
+  'plugins.protocol.failed': 'não foi possível salvar; veja o hive.log',
+  'plugins.protocol.gone': 'este trecho não existe mais',
+  'plugins.protocol.renderFailed': 'não foi possível montar o protocolo deste workspace',
 };
 
 export const MESSAGES: Record<Language, Record<MessageKey, string>> = { en, pt };
