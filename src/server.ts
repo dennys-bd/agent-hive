@@ -42,7 +42,9 @@ import { openPrUrls, parsePrStates, prNumber, prStatesQuery } from './pull-reque
 import { formatRateLimits, PLAN_LIMITS_INTERVAL_MS } from './rate-limits.js';
 import { deleteActivityOnDisk, registerTaskRoutes } from './server-tasks.js';
 import { createRunSpawner, stagePrompt } from './server-spawn.js';
-import { readCredentials } from './credentials.js';
+import { readCredentials, writeCredentials } from './credentials.js';
+import { cachedProbe, PROBE_TIMEOUT_MS, type Probe, probeServer } from './mcp-probe.js';
+import { registerMcpRoutes } from './server-mcp.js';
 import { serversFor } from './mcp-settings.js';
 import type { RunMcpServer } from './agents/runner.js';
 import { createCiReader } from './server-ci.js';
@@ -99,7 +101,7 @@ import {
   CONSOLE_LINES_DEFAULT, GITHUB_AUTHS, isLeaving, MAX_CONCURRENT_MAX, NEW_SOURCE_EPICS, SWITCH_AT_DEFAULT,
   type AuthConfig, type Source, type SourceSpec, type Config, type Effect, type EventsPayload, type Exec, type GithubAuth, type Gql,
   type AgentAvailability, type AgentId, type EditorInstallEvent, type GithubAuthStatus, type HiveEvent, type HookPayload, type Language, type PlanLimitsReader, type LivePty, type SettingsBody, type SettingsInfo, type SettingsResult,
-  type Signal, type SourceItem, type Worker, type LaunchPty, type State,
+  type Credentials, type Signal, type SourceItem, type Worker, type LaunchPty, type State,
 } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
@@ -135,6 +137,7 @@ export interface Runtime {
 
 export interface ServerDeps {
   credentialsEnv?: NodeJS.ProcessEnv; // #333: the config home credentials.json is read from; tests inject a temp XDG_CONFIG_HOME, the default is the process's
+  probeMcp?: Probe; // #333: GET /api/mcp's probe; tests inject a fake, the default spawns or calls the server
   home: string; // the Hive's own directory (#202): hive.config.json, state.json, hive.log, hooks.json, prompts/
   /** This boot's secret (#467): what every request and pty upgrade must carry, and what the workers get in their MCP config (their env gets only the path of hive.secret).
    *  bootHive makes it; tests inject one. */
@@ -1053,7 +1056,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   app.post('/settings', (req: Request, res: Response) => queueSave(() => saveSettings((req.body ?? {}) as Partial<SettingsBody>, res)));
 
-  async function saveSettings(body: Partial<SettingsBody>, res: Response): Promise<void> {
+  async function saveSettings(body: Partial<SettingsBody>, res: Response, afterSave?: () => Promise<void>): Promise<void> {
     let config: Config;
     try {
       config = await configFrom(home, body);
@@ -1079,6 +1082,7 @@ export function createServer(deps: ServerDeps): HiveServer {
       await writeConfigFile(config);
       log.info('settings saved');
       await (live ? reconfigure(config, sources, body.renames ?? {}, movedStages(body.stageRenames)) : configure(config, sources)); // a first setup has no tasks to carry (#278)
+      await afterSave?.(); // #333: a server's stored value follows its rename or removal before the answer
     } catch (err) {
       res.status(HTTP_SERVER_ERROR).json({ error: errorMessage(err) });
       return;
@@ -1139,6 +1143,9 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   // POST /trusted-domains (#404): the terminal link dialog's "always trust", saved through the same chain and saveSettings as POST /settings
   registerTrustedDomainRoutes(app, { requireLive, queueSave, saveSettings });
+  // The MCP routes (#333): the tool switches and the external servers through the settings chain, their header values in credentials.json
+  const mcpCredentials = { read: () => readCredentials(deps.credentialsEnv), write: (next: Credentials) => writeCredentials(next, deps.credentialsEnv) };
+  registerMcpRoutes(app, { requireLive, queueSave, saveSettings, credentials: mcpCredentials, probe: cachedProbe(deps.probeMcp ?? ((server) => probeServer(server, { timeoutMs: PROBE_TIMEOUT_MS, cwd: home, log }))) });
 
   // GET /view-state and POST /view-state/:key (#484): the dashboard's layout in the home, so a new port keeps it; loaded once, here
   registerViewStateRoutes(app, { store: createViewStore(home, readViewState(home)), log });
