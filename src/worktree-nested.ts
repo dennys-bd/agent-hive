@@ -130,11 +130,12 @@ async function switchOne(repo: string, path: string, branch: string, baseName: s
 export async function switchNested(
   workspace: NestedWorkspace, branch: string, baseName: string | undefined, exec: Exec = execFileAsync, observer?: NestedObserver,
 ): Promise<string[]> {
-  const current = await Promise.all(workspace.nestedRepos.map((path) => refusedAs(path, observer, async () => {
+  // In order, one at a time: a parallel check would let a second refusal report after the first has already ended the run
+  const current = await workspace.nestedRepos.reduce<Promise<string[]>>(async (done, path) => [...(await done), await refusedAs(path, observer, async () => {
     const repo = join(workspace.path, path);
     await requireNestedRepo(repo, path, exec);
     return (await gitOrWords(repo, ['branch', '--show-current'], exec)).trim();
-  })));
+  })], Promise.resolve([]));
   for (const [i, path] of workspace.nestedRepos.entries()) {
     if (current[i] !== branch) await refusedAs(path, observer, () => refuseDirty(join(workspace.path, path), exec));
   }
