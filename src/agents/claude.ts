@@ -32,10 +32,12 @@ const sessionWords = (session: AgentRun['session']): string[] =>
 const copyWords = (from: string, id: string, name: string | undefined): string[] =>
   ['--resume', from, '--fork-session', '--session-id', id, ...(name === undefined ? [] : [`--name=${name}`])];
 
+const READ_ONLY_TOOLS = 'Read,Grep,Glob'; // #877: an evaluation reads the worktree; no Bash, Edit or Write, so nothing in it changes
+
 // #330: the prompt on stdin, the answer as JSON under the schema. --tools "" leaves no tool, --strict-mcp-config with no --mcp-config no MCP
-// server, and nothing of the run is kept or offered as a slash command
+// server, and nothing of the run is kept or offered as a slash command; #877: readOnlyTools gives the read tools alone
 const headless = (run: HeadlessRun): string[] => [
-  '-p', '--output-format', 'json', '--json-schema', run.schema, '--tools', '', '--strict-mcp-config', '--no-session-persistence',
+  '-p', '--output-format', 'json', '--json-schema', run.schema, '--tools', run.readOnlyTools ? READ_ONLY_TOOLS : '', '--strict-mcp-config', '--no-session-persistence',
   '--disable-slash-commands', ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]),
 ];
 

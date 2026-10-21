@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { AGENTS } from '../src/agents.js';
@@ -88,4 +88,21 @@ test('an abort kills the whole group, a grandchild too, and fails the run as can
   assert.equal(result.failure, 'cancelled');
   assert.ok(await gone(pid), 'the sleep died with its group');
   assert.deepEqual(await readdir(cli.tmpRoot), []);
+});
+
+test('with cwd the agent starts in that folder, gets the read-only tools and the run\'s own timeout; the temp folder still goes (#877)', async (t) => {
+  // only --tools' value goes back: the whole argv holds the schema's quotes, which would break the JSON
+  const cli = await fakeCli(t, 'claude',
+    `while [ $# -gt 0 ]; do [ "$1" = --tools ] && tools="$2"; shift; done; cat > /dev/null; printf '{"type":"result","is_error":false,"structured_output":{"text":"%s|%s"}}' "$PWD" "$tools"`);
+  const cwd = await tempDir(t, 'worktree-');
+  const result = await runHeadless({ ...input('claude'), cwd, readOnlyTools: true, timeoutMs: 60_000 }, { env: cli.env, tmpRoot: cli.tmpRoot });
+  assert.ok('answer' in result, JSON.stringify(result));
+  const [pwd, tools] = (JSON.parse(result.answer) as { text: string }).text.split('|');
+  assert.equal(await realpath(pwd), await realpath(cwd));
+  assert.equal(tools, 'Read,Grep,Glob');
+  assert.deepEqual(await readdir(cli.tmpRoot), []);
+  const slow = await fakeCli(t, 'claude', 'cat > /dev/null; exec sleep 5');
+  const late = await runHeadless({ ...input('claude'), cwd, timeoutMs: 300 }, { env: slow.env, tmpRoot: slow.tmpRoot });
+  assert.deepEqual('failure' in late && late.failure, 'timed out after 300 ms');
+  assert.deepEqual(await readdir(slow.tmpRoot), []);
 });

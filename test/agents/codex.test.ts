@@ -206,6 +206,14 @@ test('the headless run is exec in a read-only sandbox, no session kept, none of 
   assert.deepEqual(codexRunner.headless({ ...HEADLESS, model: 'gpt-5' }), [...head, '-m', 'gpt-5', '-']);
 });
 
+// #877: `codex exec --help` says --ignore-rules skips "user or project execpolicy `.rules` files", not AGENTS.md. Probed with codex-cli 0.162.1
+// on 2026-10-21 (a scratch git repo whose AGENTS.md says to answer PINEAPPLE): both with and without the flag the answer was PINEAPPLE. So
+// the flag leaves AGENTS.md in, and an evaluation run keeps it, as every headless run does
+test('a headless run in a worktree is exec -C there, the sandbox read-only, no git-repo skip, rules still ignored; the repository\'s AGENTS.md is read (#877)', () => {
+  const inWorktree = ['exec', '--sandbox', 'read-only', '-C', '/w', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema', '/t/schema.json', '-o', '/t/answer.txt', '-'];
+  assert.deepEqual(codexRunner.headless({ ...HEADLESS, cwd: '/w', readOnlyTools: true }), inWorktree);
+});
+
 test("headlessAnswer reads Codex's -o file, never its stdout; a missing or blank file is no answer (#330)", () => {
   assert.equal(codexRunner.headlessAnswer('progress lines', '{"from":1,"to":1,"text":"x"}\n'), '{"from":1,"to":1,"text":"x"}');
   assert.equal(codexRunner.headlessAnswer('{"from":1}', undefined), undefined);
