@@ -6,7 +6,7 @@ import type { Express, Request, Response } from 'express';
 import { taskOfWorker } from './activities.js';
 import { taskWorkspace, workspaceByName } from './config.js';
 import { EVENTS_FILE, type EventLog } from './events.js';
-import type { Logger } from './log.js';
+import { generations, type Logger } from './log.js';
 import {
   errorName, isMemoryRefusal, lessonRefusal, MEMORY_KIND_MESSAGE, MEMORY_TEXT_MESSAGE, memoryCounts, memoryView, type MemoryRefusal, type MemoryResult,
   type MemoryStore, withEdit, withEntry, withoutEntry,
@@ -104,11 +104,11 @@ async function write(deps: MemoryRouteDeps, res: Response, workspace: Workspace,
   }
 }
 
-// The workspace's records of events.jsonl.1 then events.jsonl, each line parsed as it is read and dropped unless it is the workspace's; a file
-// that is not there has none
+// The workspace's records of every generation of events.jsonl, oldest first (#93), each line parsed as it is read and dropped unless it is the
+// workspace's; a generation that is not there has none
 async function eventRecords(home: string, workspace: string): Promise<MemoryRecord[]> {
   const records: MemoryRecord[] = [];
-  for (const file of [`${EVENTS_FILE}.1`, EVENTS_FILE]) {
+  for (const file of generations(EVENTS_FILE)) {
     const path = join(home, file);
     if (!(await access(path).then(() => true, () => false))) continue;
     for await (const line of createInterface({ input: createReadStream(path), crlfDelay: Number.POSITIVE_INFINITY })) {

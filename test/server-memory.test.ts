@@ -90,14 +90,18 @@ test('an unknown workspace or lesson is 404, a bad kind, a bad text or a secret 
   await refused(Promise.resolve(last as Response), 409, { error: MEMORY_FULL_MESSAGE, code: 'memory_full' }, 'past the cap');
 });
 
-test('GET …/memory/stats reads events.jsonl.1 then events.jsonl for the workspace\'s last 7 days, skipping a bad line; an unknown workspace is 404 (#797)', async (t) => {
+test('GET …/memory/stats reads every generation of events.jsonl, oldest first, for the workspace\'s last 7 days, skipping a bad line; an unknown workspace is 404 (#797, #93)', async (t) => {
   const { base, url, home } = await start(t);
   await send('POST', url, { kind: 'fact', text: 'pnpm test is the gate' }); // m-1
   const at = new Date(Date.now() - 3_600_000).toISOString();
   const line = (record: Record<string, unknown>): string => `${JSON.stringify({ schema_version: 1, ts: at, level: 'info', ...record })}\n`;
-  await writeFile(join(home, 'events.jsonl.1'), line({ event: 'run.spawned', workspace: WORKSPACE, worker: 1, memory_ids: ['m-1'], memory_chars: 400, task: '1', stage: 'fila', session_id: 's1' }));
+  const spawned = (task: string, session: string): string =>
+    line({ event: 'run.spawned', workspace: WORKSPACE, worker: 1, memory_ids: ['m-1'], memory_chars: 400, task, stage: 'fila', session_id: session });
+  await writeFile(join(home, 'events.jsonl.2'), spawned('1', 's0'));
+  await writeFile(join(home, 'events.jsonl.1'), spawned('2', 's1'));
   await writeFile(join(home, 'events.jsonl'), `${line({ event: 'memory.applied', workspace: WORKSPACE, id: 'm-1', kind: 'fact', uses: 1, session_id: 's1' })}{"workspace": broken\n`);
-  assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 1, cited: 1, tokensPerRun: 100, last: { at, task: '1', stage: 'fila', cited: 1 } });
+  // last is .1's run: read in any other order, the last run would be .2's, whose session cited nothing
+  assert.deepEqual(await (await hiveFetch(`${url}/stats`)).json(), { runs: 2, cited: 1, tokensPerRun: 100, last: { at, task: '2', stage: 'fila', cited: 1 } });
   await refused(hiveFetch(`${base}/workspaces/ghost/memory/stats`), 404, { error: UNKNOWN_WORKSPACE_MESSAGE }, 'unknown workspace');
 });
 
