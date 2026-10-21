@@ -148,8 +148,8 @@ function registerRemoveRoute(app: Express, deps: WorktreeRouteDeps): void {
 function removeListed(deps: WorktreeRouteDeps, workspace: Workspace, slug: string, branch: string, force?: { promptsDir: string }): Promise<void> {
   const target = { id: orphanTeardownRunId(workspace.name, slug), label: slug, workspace, force: force !== undefined };
   return removeInRun(deps, target, (before) => (force
-    ? removeWorktree(workspace.path, { slug }, branch, force.promptsDir, deps.exec)
-    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before)));
+    ? removeWorktree(workspace.path, { slug }, branch, force.promptsDir, deps.exec, workspace.nestedRepos)
+    : cleanWorktree(workspace.path, { slug }, branch, deps.exec, before, 'refuse', workspace.nestedRepos))); // #653
 }
 
 async function removeOrphan(req: Request, res: Response, deps: WorktreeRouteDeps, name: string, slug: string): Promise<void> {

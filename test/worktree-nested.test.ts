@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { realpath, writeFile } from 'node:fs/promises';
+import { access, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
 import type { Exec } from '../src/types.js';
-import { ensureCheckout, worktreePath } from '../src/worktree.js';
+import { cleanWorktree, ensureCheckout, removeWorktree, worktreePath } from '../src/worktree.js';
 import { ensureNestedWorktrees, nestedBaseName, type NestedWorkspace, prepareNested, switchNested } from '../src/worktree-nested.js';
 import { type AfterHost, tempDir } from './temp-dir.js';
 
@@ -17,6 +17,8 @@ const exec: Exec = run;
 const BRANCH = 'hive/653-nested';
 const SLUG = 'hive-653-nested';
 const ORIGIN: WorkspaceBase = { remote: 'origin', fork: null };
+const OTHER = { slug: 'hive-653-other', branch: 'hive/653-other' };
+const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 
 // The real git, with an identity of its own: the test machine's global config is never read for a commit.
 const git = async (cwd: string, ...args: string[]): Promise<string> =>
@@ -152,4 +154,54 @@ test('prepareNested starts a nested branch from the outer branch\'s upstream whe
   assert.deepEqual(await prepareNested(f.workspace, { path: made, start: 'origin/main' }, other.branch, false, 'origin', exec), ['docs: origin/main']);
   const none: Exec = async () => { throw new Error('no git for a workspace without nested repos'); };
   assert.deepEqual(await prepareNested({ path: f.outer, nestedRepos: [] }, { path: made }, other.branch, false, 'origin', none), []);
+});
+
+test('a normal clean refuses while a nested worktree has modified or untracked files, naming them, and removes nothing (#653)', async (t) => {
+  const f = await fixture(t);
+  const task = await outerWorktree(f.outer);
+  await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
+  const dir = join(task, 'docs');
+  await writeFile(join(dir, 'readme.md'), 'changed');
+  await writeFile(join(dir, 'notes.md'), 'new');
+  await assert.rejects(
+    cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'refuse', ['docs']),
+    { message: `${dir} has changes that are not committed:\n M readme.md\n?? notes.md` },
+  );
+  assert.deepEqual([await exists(task), await git(dir, 'branch', '--show-current')], [true, BRANCH], 'nothing removed');
+});
+
+test('a normal clean removes the nested worktree first, then the task\'s: no entry left in the nested repo; a merged nested branch is deleted, an unmerged one kept (#653)', async (t) => {
+  const f = await fixture(t);
+  const merged = await outerWorktree(f.outer);
+  const kept = await outerWorktree(f.outer, OTHER.slug, OTHER.branch);
+  await ensureNestedWorktrees(f.workspace, merged, BRANCH, 'main', exec);
+  await ensureNestedWorktrees(f.workspace, kept, OTHER.branch, 'main', exec);
+  await commit(join(kept, 'docs'), 'spec.md'); // its PR may still be open
+  await cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, undefined, 'refuse', ['docs']);
+  await cleanWorktree(f.outer, { slug: OTHER.slug, branch: OTHER.branch }, OTHER.branch, exec, undefined, 'refuse', ['docs']);
+  const listed = await git(f.docs, 'worktree', 'list', '--porcelain');
+  assert.equal(listed.includes(merged) || listed.includes(kept), false, 'no orphan entry in the nested repo');
+  assert.deepEqual([await git(f.docs, 'branch', '--list', BRANCH), await git(f.docs, 'branch', '--list', OTHER.branch)], ['', OTHER.branch]);
+  assert.deepEqual([await exists(merged), await exists(kept)], [false, false]);
+});
+
+test('the forced removal deletes a dirty nested worktree and its branch, inside out (#653)', async (t) => {
+  const f = await fixture(t);
+  const task = await outerWorktree(f.outer);
+  await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
+  await commit(join(task, 'docs'), 'spec.md');
+  await writeFile(join(task, 'docs', 'draft.md'), 'wip');
+  await removeWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, await tempDir(t, 'prompts-'), exec, ['docs']);
+  assert.equal((await git(f.docs, 'worktree', 'list', '--porcelain')).includes(task), false);
+  assert.deepEqual([await git(f.docs, 'branch', '--list', BRANCH), await exists(task)], ['', false]);
+});
+
+test('a nested worktree the teardown already removed counts as done (#653)', async (t) => {
+  const f = await fixture(t);
+  const task = await outerWorktree(f.outer);
+  await ensureNestedWorktrees(f.workspace, task, BRANCH, 'main', exec);
+  const teardown = async (path: string): Promise<void> => { await git(f.docs, 'worktree', 'remove', '--', join(path, 'docs')); }; // today's agent-hive teardown line
+  await cleanWorktree(f.outer, { slug: SLUG, branch: BRANCH }, BRANCH, exec, teardown, 'refuse', ['docs']);
+  assert.equal(await exists(task), false);
+  assert.equal((await git(f.docs, 'worktree', 'list', '--porcelain')).includes(task), false);
 });

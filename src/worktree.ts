@@ -8,7 +8,7 @@ import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
 import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
-import { refuseDirtyNested } from './worktree-nested.js';
+import { refuseDirtyNested, removeNested } from './worktree-nested.js';
 export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
@@ -54,16 +54,18 @@ const exists = (path: string): Promise<boolean> => access(path).then(() => true,
  * removal of the details panel's button (#182): only on a stopped task, never with a live process inside. Path and branch are git's own (the
  * deterministic worktree path and what git lists checked out there), never the task's: `/hooks/event` is open to any local process and
  * a forged SessionStart could point them anywhere; the branch the Hive rendered for the task (or a `-r<n>` a Restart made of it, #283) is the fallback when git no longer lists
- * the worktree. Already gone (no directory, no branch, no file) is not an error: `worktree prune` always runs so a directory deleted by
+ * the worktree. `nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first (removeNested); [] removes none. Already gone (no directory, no branch, no file) is not an error: `worktree prune` always runs so a directory deleted by
  * hand leaves no stale entry. Any other git error propagates and the later steps do not run.
  */
 export async function removeWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, promptsDir: string, exec: Exec = execFileAsync,
+  nested: readonly string[] = [],
 ): Promise<void> {
   const git = (...args: string[]): Promise<{ stdout: string }> => exec('git', ['-C', repo, ...args]);
   const path = worktreePath(repo, slugOfWork(activity));
   const listed = branchAt((await git('worktree', 'list', '--porcelain')).stdout, path);
   const fallback = listed === undefined ? (ownBranch(activity, branch) ?? branch) : listed; // not listed: the branch a Restart moved the task to (#283), else the template's. null: detached
+  await removeNested({ path: repo, nestedRepos: nested }, path, fallback ?? undefined, true, exec); // #653: inside out, forced as the outer removal is
   // --force twice: Claude Code locks the worktree while it runs and a SIGHUP kill does not release the lock
   if (await exists(path)) await git('worktree', 'remove', '--force', '--force', '--', path);
   await git('worktree', 'prune');
@@ -207,22 +209,28 @@ export type Unmerged = 'refuse' | 'setAside';
  * alone (the activity's worktree is a SessionStart cwd any local process can post); the branch is the one git lists on that path, else
  * the activity's branch only when it is the name the Hive's template renders for this task, else nothing. The remote branch is never touched.
  * `beforeRemove` (#654) runs between the checks and the removal; its rejection removes nothing. `unmerged: 'setAside'` (#267) keeps an
- * unmerged branch under setAside's name instead of refusing.
+ * unmerged branch under setAside's name instead of refusing. `nested` (#653): the workspace's nestedRepos, whose worktrees in this one go first
+ * (removeNested); [] removes none.
  */
 export async function cleanWorktree(
   repo: string, activity: Pick<Activity, 'slug' | 'branch'>, branch: string, exec: Exec = execFileAsync, beforeRemove?: BeforeRemove,
-  unmerged: Unmerged = 'refuse',
+  unmerged: Unmerged = 'refuse', nested: readonly string[] = [],
 ): Promise<void> {
   const path = worktreePath(repo, slugOfWork(activity));
+  const nestedOf = { path: repo, nestedRepos: nested };
   const listed = branchAt((await gitOrWords(repo, ['worktree', 'list', '--porcelain'], exec)), path);
   const present = listed !== undefined && (await exists(path));
   // a hook can forge the branch: trusted only when it is the template's name or a Restart's `-r<n>` of it (#283)
   const named = listed ?? ownBranch(activity, branch);
   const found = named !== undefined && (await hasBranch(repo, named, exec)) ? named : undefined;
-  if (present) await refuseDirty(path, exec);
+  if (present) {
+    await refuseDirty(path, exec);
+    await refuseDirtyNested(nestedOf, path, exec); // #653: an ignored nested worktree is deleted by the outer remove without a word; refuse first
+  }
   const check = found === undefined ? undefined : await mergeCheck(repo, found, exec);
   if (found !== undefined && check?.merged === false && unmerged === 'refuse') throw unmergedError(found, check.target);
   await beforeRemove?.(path, present); // #654: after every refusal check, so a teardown never runs for a removal git would refuse
+  await removeNested(nestedOf, path, named, false, exec); // #653: inside out; a gone outer folder holds none, so this only prunes
   if (listed !== undefined) await gitOrWords(repo, present ? ['worktree', 'remove', '--', path] : ['worktree', 'prune'], exec);
   if (found === undefined) return;
   // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout

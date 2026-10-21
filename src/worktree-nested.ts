@@ -113,6 +113,33 @@ export async function refuseDirtyNested(workspace: NestedWorkspace, root: string
   }
 }
 
+const NOT_MERGED = /not fully merged/; // branch -d on a nested branch whose PR may still be open: kept, never a refusal
+const BRANCH_NOT_FOUND = /error: branch '.*' not found/;
+
+// One nested repo's worktree for a task, inside out. Only the task's own branch is ever deleted: a nested worktree someone switched to main
+// must never lose main
+async function removeOne(repo: string, dir: string, branch: string | undefined, force: boolean, exec: Exec): Promise<void> {
+  const git: Git = (...args) => gitOrWords(repo, args, exec);
+  const listed = branchAt(await git('worktree', 'list', '--porcelain'), dir);
+  // --force twice, as removeWorktree's: forced is forced, dirty or locked
+  if (listed !== undefined && (await exists(dir))) await git('worktree', 'remove', ...(force ? ['--force', '--force'] : []), '--', dir);
+  await git('worktree', 'prune');
+  if (listed === undefined || listed === null || listed !== branch) return; // not listed (the teardown removed it, or it was never made), detached, or not the task's
+  await git('branch', force ? '-D' : '-d', '--', listed).catch((err: Error) => {
+    if (!(force ? BRANCH_NOT_FOUND : NOT_MERGED).test(err.message)) throw err;
+  });
+}
+
+/** Every nested worktree of a task, removed before the task's own (#653), so the nested repo keeps no orphan entry. Normal: `worktree remove`,
+ * then `branch -d` on the task's branch, kept when unmerged; forced: `--force --force` and `-D`. Either way `worktree prune` runs. A path git
+ * does not list counts as done; a nested repo gone from the workspace is skipped. `branch`: the task's, as the outer removal resolved it. */
+export async function removeNested(workspace: NestedWorkspace, taskPath: string, branch: string | undefined, force: boolean, exec: Exec = execFileAsync): Promise<void> {
+  for (const path of workspace.nestedRepos) {
+    const repo = join(workspace.path, path);
+    if (await hasGit(repo)) await removeOne(repo, join(taskPath, path), branch, force, exec);
+  }
+}
+
 /** The nested step of a task's preparation (#653): right after ensureWorktree (the worktrees) or ensureCheckout (a checkout task's switch),
  * in the same console run, before the setup. The base branch is the outer start's, else, for a branch reused or adopted, its upstream's;
  * neither: each nested repo's origin/HEAD. A workspace with no nested repo runs no git at all. */
