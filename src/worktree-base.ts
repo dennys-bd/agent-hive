@@ -33,6 +33,32 @@ export function gitAnswers(repo: string, args: string[], exec: Exec): Promise<bo
   });
 }
 
+const HEAD_PREFIX = 'branch refs/heads/';
+
+/**
+ * The branch checked out at `path` per `git worktree list --porcelain` (one block per worktree: `worktree <path>`, then `branch
+ * refs/heads/<name>` or `detached`): `null` when the worktree is listed but detached, `undefined` when it is not listed at all.
+ */
+export function branchAt(porcelain: string, path: string): string | null | undefined {
+  const block = porcelain.split(/\n\s*\n/).find((b) => b.split('\n').includes(`worktree ${path}`));
+  if (block === undefined) return undefined;
+  const ref = block.split('\n').find((line) => line.startsWith(HEAD_PREFIX));
+  return ref === undefined ? null : ref.slice(HEAD_PREFIX.length);
+}
+
+// What `worktree remove` without --force refuses, checked first (#182): tracked changes and untracked files. Read inside the worktree;
+// the lines are git's own, so the refusal names the files.
+export async function refuseDirty(path: string, exec: Exec): Promise<void> {
+  const status = (await gitOrWords(path, ['status', '--porcelain'], exec)).trimEnd();
+  if (status !== '') throw new Error(`${path} has changes that are not committed:\n${status}`);
+}
+
+/** The branch's upstream, short (`origin/main`): what a reused branch started from (#653). None: undefined. The ref is built here. */
+export async function upstreamOf(repo: string, branch: string, exec: Exec): Promise<string | undefined> {
+  const upstream = (await gitOrWords(repo, ['for-each-ref', '--format=%(upstream:short)', `refs/heads/${branch}`], exec)).trim();
+  return upstream === '' ? undefined : upstream;
+}
+
 /** How an existing branch relates to `start` (#267): `unrelated` with no merge base (#105's branch from before the docs split), `stale` when it
  * is an ancestor of the start with nothing of its own, `own` otherwise. Read-only. The ref is built here and the start is the resolved default or
  * a base checkBase passed: neither can start with `-`. */

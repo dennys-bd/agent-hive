@@ -7,13 +7,13 @@ import { ownBranch } from './task-runs.js';
 import { slugFor } from './tasks.js';
 import type { WorkspaceBase } from './fork.js';
 import { HIVE_DIR } from './hooks-settings.js';
-import { branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
-export { gitOrWords, wordsOf } from './worktree-base.js';
+import { branchAt, branchRelation, chosenBase, defaultBase, existingBranch, gitAnswers, type Git, gitOrWords, refuseDirty, remoteHead, setAside, settleSync, withSync, wordsOf } from './worktree-base.js';
+import { refuseDirtyNested } from './worktree-nested.js';
+export { branchAt, gitOrWords, wordsOf } from './worktree-base.js';
 import { type Activity, type ActivityRecord, type BaseOptions, type ForkSyncResult, type Task, type Exec, isBranchName, type WorktreeRow } from './types.js';
 
 const execFileAsync: Exec = promisify(execFile);
 const BRANCH_NOT_FOUND = /error: branch '.*' not found/; // git branch -D on a branch already deleted; execFile's message embeds the stderr
-const HEAD_PREFIX = 'branch refs/heads/';
 const WORKTREE_PREFIX = 'worktree '; // the first line of each block of `worktree list --porcelain`
 export const WORKTREES_DIR = 'worktrees';
 // Another git writing .git/config at the same moment (two tasks starting at once, on one daemon or two): the lock is held for milliseconds
@@ -47,17 +47,6 @@ export const workDir = (repo: string, task: Task, activity: Activity | undefined
 export interface PreparedWorktree { path: string; line?: string; sync?: ForkSyncResult; reused?: string }
 
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
-
-/**
- * The branch checked out at `path` per `git worktree list --porcelain` (one block per worktree: `worktree <path>`, then `branch
- * refs/heads/<name>` or `detached`): `null` when the worktree is listed but detached, `undefined` when it is not listed at all.
- */
-export function branchAt(porcelain: string, path: string): string | null | undefined {
-  const block = porcelain.split(/\n\s*\n/).find((b) => b.split('\n').includes(`worktree ${path}`));
-  if (block === undefined) return undefined;
-  const ref = block.split('\n').find((line) => line.startsWith(HEAD_PREFIX));
-  return ref === undefined ? null : ref.slice(HEAD_PREFIX.length);
-}
 
 /**
  * Removes a worker's worktree, its branch and the Hive's prompt file for the slug (in `promptsDir`, the home's prompts/). The forced
@@ -178,14 +167,15 @@ async function retryLocked(run: () => Promise<string>, tries = 1): Promise<strin
  * Puts the workspace's checkout on the task's branch (#444) and resolves to the repo path: ensureWorktree's counterpart for a checkout task,
  * run on every spawn. Already on the branch: nothing, uncommitted work included, since nothing moves. Otherwise uncommitted changes refuse
  * before any switch, since `git switch` carries the ones that do not conflict onto the new branch and the user's work must never move silently. An existing branch is switched to as it is; a new one starts
- * where a worktree's would (defaultBase / chosenBase) and `line` says so. Every call goes through gitOrWords, so a refusal carries git's words.
+ * where a worktree's would (defaultBase / chosenBase) and `line` says so. `nested` (#653): the workspace's nested repos, checked for uncommitted changes with the checkout itself; switchNested moves them after it. Every call goes through gitOrWords, so a refusal carries git's words.
  */
 export async function ensureCheckout(
-  repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, exec: Exec = execFileAsync,
+  repo: string, branch: string, base: WorkspaceBase, chosen: string | undefined, exec: Exec = execFileAsync, nested: readonly string[] = [],
 ): Promise<PreparedWorktree> {
   const git: Git = (...args) => gitOrWords(repo, args, exec);
   if ((await git('branch', '--show-current')).trim() === branch) return { path: repo }; // no switch: the task's own work in progress stays
   await refuseDirty(repo, exec);
+  await refuseDirtyNested({ path: repo, nestedRepos: nested }, repo, exec); // #653: no half-switched state, so a dirty nested checkout refuses first
   if (branch.startsWith('-')) throw new Error(`${branch}: a branch cannot start with "-"`); // switch would read it as an option
   if (await hasBranch(repo, branch, exec)) {
     await git('switch', branch);
@@ -236,13 +226,6 @@ export async function cleanWorktree(
   // #267: an unmerged branch the discard clears is kept as <branch>-old-<sha7>, after its worktree went, so the rename touches no checkout
   if (check?.merged === false) await setAside(repo, found, exec);
   else await gitOrWords(repo, ['branch', '-d', '--', found], exec);
-}
-
-// What `worktree remove` without --force refuses, checked first (#182): tracked changes and untracked files. Read inside the worktree;
-// the lines are git's own, so the refusal names the files.
-async function refuseDirty(path: string, exec: Exec): Promise<void> {
-  const status = (await gitOrWords(path, ['status', '--porcelain'], exec)).trimEnd();
-  if (status !== '') throw new Error(`${path} has changes that are not committed:\n${status}`);
 }
 
 // What `branch -d` checks (#182), by git's own rule: merged into the branch's upstream when it has one, else into HEAD of the main checkout.
