@@ -322,3 +322,12 @@ test('a middle pointerup posts panEnd, so a quick middle click released in the f
   document.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 1 }));
   expect(sent()).toEqual([{ hive: 'design', type: 'panEnd' }]);
 });
+
+test('on load, after ready, the bridge posts the parts the route assembled the screen from (#421)', () => {
+  const { sent } = harness();
+  stops = [...stops, designBridge(HELPERS, ['parts/gone.html', 'parts/nav.html'])];
+  window.dispatchEvent(new Event('load'));
+  expect(sent().filter((data) => (data as { type: string }).type !== 'size')).toEqual([
+    { hive: 'design', type: 'ready' }, { hive: 'design', type: 'parts', parts: ['parts/gone.html', 'parts/nav.html'] },
+  ]);
+});

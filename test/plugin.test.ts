@@ -288,3 +288,15 @@ test('the design check is the plugin\'s script, the designer imports through imp
   const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
   assert.ok(reviewer.includes(`${PLUGIN_ROOT}/scripts/check-hv.mjs`), 'the reviewer may run the check script');
 });
+
+test('the design rules describe parts, their markers and the check\'s findings; the designer extracts and edits parts; the reviewer flags repeated markup (#421)', async () => {
+  const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
+  assert.ok(design.includes('### Parts'), 'design.md has ### Parts');
+  for (const part of ['<hv-include src=', '<hv-slot name=', '<template data-hv-slot=', 'data-hv-source', 'a slot fill the part does not declare']) assert.ok(design.includes(part), `design.md names ${part}`);
+  const designer = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  assert.match(designer, /two or more screens of the folder/, 'the designer extracts repeated markup');
+  assert.match(designer, /in part <path>/, 'a comment on a part edits the part');
+  assert.match(designer, /includes the part instead/, 'an import uses the folder\'s parts');
+  const reviewer = await readFile(join(PLUGIN, 'agents', 'design-reviewer.md'), 'utf8');
+  assert.match(reviewer, /should be a part/, 'the reviewer flags repeated markup');
+});

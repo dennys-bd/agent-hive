@@ -6,6 +6,7 @@ import { basename, dirname, extname, relative, resolve, sep } from 'node:path';
 import type { Express, Request, Response } from 'express';
 import { activityParam } from './activity-routes.js';
 import { bridgeScript } from './design-bridge.js';
+import { assemble, readPartFrom } from './design-parts.js';
 import { isInside } from './ide.js';
 import type { Logger } from './log.js';
 import { DESIGN_FRAME_PREFIX, newSecret } from './secret.js';
@@ -59,11 +60,12 @@ export function framePolicy(host: string, token: string): string {
   ].join('; ');
 }
 
-/** The page with the bridge first in its <head>, else before its first element (#108): it runs before the design's own scripts. */
-export function withBridge(html: string): string {
+/** The page with the bridge first in its <head>, else before its first element (#108): it runs before the design's own scripts. parts: what
+ *  the screen was assembled from (#421), which the bridge reports to the pane. */
+export function withBridge(html: string, parts: readonly string[] = []): string {
   const head = HEAD_TAG.exec(html);
   const at = head ? head.index + head[0].length : Math.max(html.search(FIRST_ELEMENT), 0);
-  return `${html.slice(0, at)}${bridgeScript()}${html.slice(at)}`;
+  return `${html.slice(0, at)}${bridgeScript(parts)}${html.slice(at)}`;
 }
 
 // A dot segment (.env, .git, .hive) is never a design's asset, and serving one would hand a token holder the checkout's secrets
@@ -86,6 +88,13 @@ function refuseFrame(req: Request, res: Response, log: FrameDeps['log']): void {
   res.status(HTTP_NOT_FOUND).set('content-security-policy', REFUSED_POLICY).end();
 }
 
+// A screen is assembled from its parts before the bridge goes in (#421); any other page, a part asked directly included, is served as on disk
+async function pageOf(folder: string, file: string, text: string): Promise<string> {
+  if (!file.endsWith(DESIGN_SUFFIX)) return withBridge(text);
+  const { html, parts } = await assemble(relative(folder, file).split(sep).join('/'), text, readPartFrom(folder));
+  return withBridge(html, parts);
+}
+
 // ponytail: the whole file is read into memory, which is fine for a design's pages, styles and images; stream it if designs ever carry large media
 async function serveFrame(req: Request, res: Response, { tokens, log }: FrameDeps): Promise<void> {
   // no-store: the pane reloads on a version change and must get the new file; no-referrer: the token never leaves in a Referer
@@ -94,11 +103,11 @@ async function serveFrame(req: Request, res: Response, { tokens, log }: FrameDep
   const folder = tokens.folderOf(token);
   const segments: unknown = req.params.path; // Express 5's *path: the decoded segments
   const file = folder === undefined ? undefined : await servedFile(folder, Array.isArray(segments) ? segments.map(String) : [String(segments)]);
-  if (file === undefined) return refuseFrame(req, res, log);
+  if (folder === undefined || file === undefined) return refuseFrame(req, res, log);
   const bytes = await readFile(file);
   res.set('content-security-policy', framePolicy(String(req.headers.host), token)).type(extname(file)); // the Host check already ran
   const isHtml = res.get('content-type')?.startsWith('text/html') === true;
-  res.send(isHtml ? withBridge(bytes.toString('utf8')) : bytes);
+  res.send(isHtml ? await pageOf(folder, file, bytes.toString('utf8')) : bytes);
 }
 
 /** GET /design-frame/:token/*path (#108): read-only, never a listing. server.ts mounts it after the Host check and before the secret. */

@@ -921,8 +921,11 @@ export type DesignViewport = (typeof DESIGN_VIEWPORTS)[number];
 export const DESIGN_VIEWPORT_PX = { desktop: 1280, tablet: 768, mobile: 390 } as const;
 /** A viewport a screen declares in its hv-tweaks block (#341): natural is always offered, so it is never declared. */
 export type DeclaredViewport = keyof typeof DESIGN_VIEWPORT_PX;
-/** What a design comment points at (#111): an element, with its selector and text, or an area. */
-export type DesignTarget = { kind: 'element'; selector: string; text: string; rect: DesignRect } | { kind: 'area'; rect: DesignRect };
+/** What a design comment points at (#111): an element, with its selector and text, or an area. part (#421): the part the element came
+ *  from, relative to the activity as the anchor's path; slot: the element holds that slot, which the screen filled with text. */
+export type DesignTarget =
+  | { kind: 'element'; selector: string; text: string; rect: DesignRect; part?: string; slot?: string }
+  | { kind: 'area'; rect: DesignRect };
 /** A tweak's value (#241): an enum's option or a text, a number, a boolean. */
 export type DesignTweakValue = string | number | boolean;
 /** A design comment's place as a request carries it (#111): everything but the pin, which only the server sets; tweaks: the values it was made on (#241). */

@@ -74,11 +74,15 @@ function catchUp(earlier: readonly ReviewMessage[], agentOf: AgentOf): string[] 
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
 // What a design comment points at, as the agent reads it
+// The part an element came from (#421), so the agent edits that file; a slot's text is the screen's own fill, so it says who filled it
+const originText = ({ part, slot }: { part?: string; slot?: string }): string =>
+  `${part === undefined ? '' : ` in part ${oneLine(part)}`}${slot === undefined ? '' : `, slot ${oneLine(slot)} filled by the screen`}`;
+
 function targetOf(anchor: DesignAnchor): string {
   const { x, y, width, height } = anchor.rect;
   if (anchor.kind === 'area') return `area at ${x},${y}, ${width}×${height}`;
   const text = oneLine(anchor.text);
-  return `element \`${oneLine(anchor.selector).replaceAll('`', "'")}\`${text === '' ? '' : ` (${JSON.stringify(text)})`}`;
+  return `element \`${oneLine(anchor.selector).replaceAll('`', "'")}\`${text === '' ? '' : ` (${JSON.stringify(text)})`}${originText(anchor)}`;
 }
 
 // The tweaks the comment was made on (#241), in the anchor's order; a text tweak is the user's own, so each value stays on its line

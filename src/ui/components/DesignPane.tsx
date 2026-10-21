@@ -10,6 +10,7 @@ import { SUBMIT_KEY } from '@/components/DiffFooter';
 import { type DesignCommentsModel, useDesignComments } from '@/hooks/use-design-comments';
 import { anchorsOf, bridgeData, type CommentCanvas, type PinRects, type PinsBridge, useCommentCanvas, useDesignPins } from '@/hooks/use-design-pins';
 import { type DesignTweaks as DesignTweaksModel, type TweakBlock, useDesignTweaks } from '@/hooks/use-design-tweaks';
+import { inScreenFolder, useFrameParts, usePartVersions } from '@/hooks/use-design-parts';
 import { readVersion, useFileVersion } from '@/hooks/use-file-version';
 import { type DesignZoom, useDesignZoom } from '@/hooks/use-design-zoom';
 import type { Activity } from '@/lib/activities';
@@ -64,11 +65,15 @@ interface Reloads { count: number; take(): boolean }
 
 // The frame's reloads (#109). No watcher: the 2 s poll. Its first version is remembered; a later different one reloads the frame (a new React
 // key, the same URL) and waits for the frame's next ready to be marked, since the protocol has no reloaded message (#108). A file gone (null)
-// changes nothing until it comes back
-function useReloads(activityId: string, path: string, isShown: boolean): Reloads {
+// changes nothing until it comes back. A part the screen's assembly asked for (#421) reloads it the same way, a missing one once it appears
+function useReloads(activityId: string, path: string, parts: readonly string[], isShown: boolean): Reloads {
   const [count, setCount] = useState(0);
   const seen = useRef<string | undefined>(undefined);
   const isPending = useRef(false);
+  const bump = (): void => {
+    isPending.current = true;
+    setCount((n) => n + 1);
+  };
   // The first version read at once, not at the poll's first tick 2 s later: a change in between would become the baseline and never reload.
   // ponytail: a pane mounted behind another tab takes its baseline when first shown; re-key the frame on first show if that ever bites
   useEffect(() => {
@@ -79,12 +84,10 @@ function useReloads(activityId: string, path: string, isShown: boolean): Reloads
   }, [activityId, path, isShown]);
   useFileVersion(activityId, path, isShown, (version) => {
     if (version === null || version === seen.current) return;
-    if (seen.current !== undefined) {
-      isPending.current = true;
-      setCount((n) => n + 1);
-    }
+    if (seen.current !== undefined) bump();
     seen.current = version;
   });
+  usePartVersions(activityId, path, parts, isShown, bump);
   const take = (): boolean => {
     const was = isPending.current;
     isPending.current = false;
@@ -224,6 +227,10 @@ function takeCommentKey(event: ReactKeyboardEvent<HTMLElement>, canvas: CommentC
   return true;
 }
 
+// #421: the bridge names a part from the screen's folder; the comment carries it from the activity, as it does the screen's own path
+const fromActivity = (aimed: DesignTarget, path: string): DesignTarget =>
+  (aimed.kind === 'element' && aimed.part !== undefined ? { ...aimed, part: inScreenFolder(path, aimed.part) } : aimed);
+
 interface OverlayProps { model: DesignCommentsModel; canvas: CommentCanvas; rects: PinRects; percent: number; path: string; state: DesignState; frameWidth: number }
 
 // The canvas's overlay (#114): the open pins always, the resolved ones while the panel lists them, and the composer while a target is aimed
@@ -231,7 +238,7 @@ function CommentOverlay({ model, canvas, rects, percent, path, state, frameWidth
   const { theme } = state;
   const { target } = canvas;
   const scale = percent / FULL;
-  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...aimed, path, viewport: state.viewport, theme, tweaks: state.tweaks });
+  const anchorOf = (aimed: DesignTarget): UnpinnedDesignAnchor => ({ ...fromActivity(aimed, path), path, viewport: state.viewport, theme, tweaks: state.tweaks });
   const items = canvas.isPanelShown && canvas.tab === 'resolved' ? [...model.open, ...model.resolved] : model.open;
   const pin = nextPin(model);
   // The composer closes once the server took the comment; a refusal keeps it open with its text
@@ -266,7 +273,8 @@ function useDesignView({ activity, path, active }: DesignPaneProps, comments: De
   const [viewport, setViewport] = useState<DesignViewport>('natural');
   const [theme, setTheme] = useState<DesignTheme>(pageTheme);
   const mint = useMint(activity.activity.id, path);
-  const reloads = useReloads(activity.activity.id, path, active);
+  const parts = useFrameParts(frame);
+  const reloads = useReloads(activity.activity.id, path, parts, active);
   const [reloadedAt, setReloadedAt] = useState<Date>();
   const tweaks = useDesignTweaks(frame);
   const marks = useCommentCanvas(comments);
