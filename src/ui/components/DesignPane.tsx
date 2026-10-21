@@ -155,11 +155,13 @@ function useFrameZoom(frame: RefObject<HTMLIFrameElement | null>, zoom: DesignZo
   }, [frame]);
 }
 
-// natural (#341): the content's measured width, held to mobile–desktop. A fixed viewport: its width, or a window screen's wider overflow (#241)
+// natural (#341): the content's measured width, held to mobile–desktop, since a fluid page measures far wider than it lays out. A fixed
+// viewport: its width. Either takes a wider overflow (#241, #453): a window screen past desktop overflows natural's frame, a fluid page never does
 const frameWidthOf = (viewport: DesignViewport, size: FrameSize): number =>
-  (viewport === 'natural'
-    ? Math.min(NATURAL_MAX, Math.max(NATURAL_MIN, size.natural ?? NATURAL_MAX))
-    : Math.max(DESIGN_VIEWPORT_PX[viewport], size.width ?? 0));
+  Math.max(
+    viewport === 'natural' ? Math.min(NATURAL_MAX, Math.max(NATURAL_MIN, size.natural ?? NATURAL_MAX)) : DESIGN_VIEWPORT_PX[viewport],
+    size.width ?? 0,
+  );
 
 // The switch's list (#341): natural, the viewports the screen declares, then the current one when the screen no longer declares it, so a
 // comment pinned there can be reopened

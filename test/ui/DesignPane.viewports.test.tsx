@@ -50,8 +50,18 @@ test('with no viewports the pane opens in natural with no switch; the frame take
   expect(frame()).toHaveAttribute('width', '1280');
   size(0); // an empty page
   expect([frame().getAttribute('width'), percent()]).toEqual(['390', '100%']);
-  size('wide', { width: 1440 }); // a bad natural keeps the last; an overflow width is a fixed viewport's, not natural's
+  size('wide'); // a bad natural keeps the last
   expect(frame()).toHaveAttribute('width', '390');
+});
+
+test('in natural a window screen wider than desktop overflows the 1280 frame, which then takes its overflow width; a fluid page stays at 1280 (#453)', async () => {
+  await pane();
+  size(16_900); // a fluid text page fits the frame, so the bridge reports no overflow
+  expect(frame()).toHaveAttribute('width', '1280');
+  size(1440, { width: 1440 }); // a 1440 px window screen
+  expect([frame().getAttribute('width'), percent()]).toEqual(['1440', '44%']);
+  size(16_900, { width: 2000 }); // a fluid page whose table is wider than desktop widens too, as a fixed viewport does (#241)
+  expect(frame()).toHaveAttribute('width', '2000');
 });
 
 test('a block declaring desktop and mobile shows natural, desktop and mobile; they render at 1280 and 390, and natural keeps its measure (#341)', async () => {
