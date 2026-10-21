@@ -85,3 +85,18 @@ test('isAnchorList accepts the protocol\'s anchors and nothing else (#112)', () 
   ];
   expect(bad.map((value) => isAnchorList(value))).toEqual([false, false, false, false, false, false]);
 });
+
+test('an element from a part names it by the nearest data-hv-source; the screen\'s own fill names none; a text-filled slot\'s holder names its slot; findAnchor ignores both (#421)', () => {
+  document.body.innerHTML = [
+    '<nav data-hv-source="parts/sidebar.html"><a>Issues</a></nav>',
+    '<aside data-hv-source="parts/detail.html"><h2 data-hv-fill="title">Fix login</h2><p data-hv-source="issue.hv.html">Body</p></aside>',
+    '<main><p>Plain</p></main>',
+  ].join('');
+  const [a, h2, body, plain] = ['nav > a', 'h2', 'aside > p', 'main > p'].map((selector) => document.querySelector(selector)!);
+  expect(elementAnchor(a)).toEqual({ kind: 'element', selector: 'body > nav:nth-of-type(1) > a:nth-of-type(1)', text: 'Issues', rect: { x: 0, y: 0, width: 0, height: 0 }, part: 'parts/sidebar.html' });
+  expect(Object.keys(elementAnchor(a))).not.toContain('slot');
+  expect(elementAnchor(h2)).toMatchObject({ part: 'parts/detail.html', slot: 'title' });
+  expect(Object.keys(elementAnchor(body))).not.toContain('part');
+  expect(Object.keys(elementAnchor(plain))).toEqual(['kind', 'selector', 'text', 'rect']);
+  expect(findAnchor(document, elementAnchor(h2))).toBe(h2);
+});

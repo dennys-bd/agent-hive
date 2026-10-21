@@ -40,8 +40,16 @@ export function documentRect(el: Element): Rect {
   return { x: box.left + window.scrollX, y: box.top + window.scrollY, width: box.width, height: box.height };
 }
 
+/** part (#421): the part the element came from, by the nearest data-hv-source the route's assembly wrote, as written there (from the
+ *  screen's folder; the pane makes it the activity's); none when that source is the screen's own fill, a .hv.html, which a part never is.
+ *  slot: the element holds a slot the screen filled with text alone. Spread in only when set: the anchor crosses postMessage as it is. */
 export function elementAnchor(el: Element): ElementAnchor {
-  return { kind: 'element', selector: cssPath(el), text: elementText(el), rect: documentRect(el) };
+  const source = el.closest('[data-hv-source]')?.getAttribute('data-hv-source') ?? '';
+  const slot = el.getAttribute('data-hv-fill');
+  return {
+    kind: 'element', selector: cssPath(el), text: elementText(el), rect: documentRect(el),
+    ...(source === '' || source.endsWith('.hv.html') ? {} : { part: source }), ...(slot === null ? {} : { slot }),
+  };
 }
 
 /** Intersection over union: 1 for the same rect, 0 for rects that do not touch. */
