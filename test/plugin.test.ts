@@ -345,7 +345,7 @@ test('the design rules describe parts, their markers and the check\'s findings; 
   const design = await readFile(join(PLUGIN, 'reference', 'design.md'), 'utf8');
   assert.ok(design.includes('### Parts'), 'design.md has ### Parts');
   for (const part of ['<hv-include src=', '<hv-slot name=', '<template data-hv-slot=', 'data-hv-source', 'a slot fill the part does not declare']) assert.ok(design.includes(part), `design.md names ${part}`);
-  const designer = await readFile(join(PLUGIN, 'agents', 'designer.md'), 'utf8');
+  const designer = await agentText('designer');
   assert.match(designer, /two or more screens of the folder/, 'the designer extracts repeated markup');
   assert.match(designer, /in part <path>/, 'a comment on a part edits the part');
   assert.match(designer, /includes the part instead/, 'an import uses the folder\'s parts');
