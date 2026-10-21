@@ -1,7 +1,7 @@
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
-import { runsAgent } from './stage-agent.js';
+import { hiveAction, runsAgent } from './stage-agent.js';
 import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
@@ -514,11 +514,12 @@ export const taskLabel = (task: Pick<Task, 'item' | 'created'>): string => {
 export function dueActions(state: Pick<State, 'tasks' | 'stages' | 'deleteActivity' | 'workspaces' | 'sourceWorkspaces'> & WorkersState, now: number, workerless: boolean): Task[] {
   return state.tasks.filter((c) => {
     const stage = stageOf(state.stages, c.stage);
-    if (stage?.action === undefined || stage.action === 'commands' || !workerless) return false; // #727: a commands stage is the fill's; the others follow the workerless row
+    const action = hiveAction(stage); // #710: a skill stage runs an agent, the fill's like a prompt stage
+    if (stage === undefined || action === undefined || action === 'commands' || !workerless) return false; // #727: a commands stage is the fill's; the others follow the workerless row
     const live = activityOf(state, taskId(c));
-    const nonAuto = stage.action === 'waitForCi' || (stage.action === 'deleteActivity' && state.deleteActivity.nonAutoTasks); // #304; #755: the scope widens its own stage only
+    const nonAuto = action === 'waitForCi' || (action === 'deleteActivity' && state.deleteActivity.nonAutoTasks); // #304; #755: the scope widens its own stage only
     const allowed = isIdle(c, live, nonAuto);
-    const placed = stage.action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
+    const placed = action === 'deleteActivity' || resolveWorkspace(c, state.workspaces, state.sourceWorkspaces, state.tasks) !== undefined;
     return allowed && placed && !hasSessionRun(c, state) && isDue(c, stage, now);
   });
 }

@@ -4,6 +4,7 @@ import { ensureActivity, type Reduced, settleEntries, sourceWrites, stoppedWork,
 import { renderPrompt, verdictsLine } from './spawn.js';
 import { stageSession } from './task-runs.js';
 import { canDismissError, canMoveToStage, enter, onSource, stageOf, taskId } from './tasks.js';
+import { hiveAction, runsAgent } from './stage-agent.js';
 import { exitName, exitOf, isAutomatic, needsHandover, resolveSession, retryTransition, takeTry, transitionKey, transitionPrompt, verdictsOf, verdictText } from './transitions.js';
 import {
   END, FEEDBACK_MAX, NO_TRANSITION, STAGE_GONE, TRIES_OUT, type Activity, type Effect, type Handover, type Stage, type State, type Task, type Transition, type Trigger, type TryRecord,
@@ -73,7 +74,7 @@ const endedRun = (state: State, task: Task, transition: Transition, end?: EndOf)
 // What the destination's next run is told (#134), only when the transition says more than its stage would: its own prompt, a feedback, a
 // session of its own. Rendered here, {verdict} and {feedback} in the item's single pass
 function handoverOf(state: State, task: Task, transition: Transition, next: Stage, end: EndOf): Handover | undefined {
-  if (next.prompt === undefined || !needsHandover(transition)) return undefined;
+  if (!runsAgent(next) || !needsHandover(transition)) return undefined;
   const session = resolveSession(state, task, endedRun(state, task, transition, end), transition, next);
   const result = resultOf(state, taskId(task));
   const vars = { verdict: transition.when === 'verdict' ? verdictText(stageOf(state.stages, transition.from), result) : '', feedback: end.feedback ?? '' };
@@ -99,7 +100,7 @@ export function withoutHandover(state: State, task: Task): State {
 export function keepsRun(state: State, task: Task, transition: Transition, next: Stage): boolean {
   const live = activityOf(state, taskId(task));
   const session = resolveSession(state, task, endedRun(state, task, transition), transition, next);
-  return next.prompt !== undefined && session.policy === 'continue' && session.sessionId === live?.sessionId;
+  return runsAgent(next) && session.policy === 'continue' && session.sessionId === live?.sessionId;
 }
 
 const firstLine = (text: string): string => text.split('\n').find((line) => line.trim() !== '')?.trim() ?? '';
@@ -212,7 +213,7 @@ export function dismissError(state: State, id: string): Reduced | undefined {
   if (task === undefined || live?.error === undefined || !canDismissError(task, state)) return undefined;
   const { error: _error, ...cleared } = live;
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = cleared;
-  const hasAction = stageOf(state.stages, task.stage)?.action !== undefined;
+  const hasAction = hiveAction(stageOf(state.stages, task.stage)) !== undefined; // #710: a skill stage keeps its stop, as a prompt stage does
   // A prompt stage stops even when the error came without a stop, or the fill would start a session on this dispatch
   const held: Activity = cleared.stopped === true ? cleared : { ...cleared, stopped: true, stoppedAt: new Date().toISOString() };
   return { state: withActivity(state, hasAction ? unstopped : held), effects: [] };

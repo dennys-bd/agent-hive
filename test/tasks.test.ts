@@ -805,3 +805,11 @@ test('taskLabel reads #<id> with no trailing space for a lean task, #<id> <title
   assert.equal(taskLabel({ ...lean, item: item(1) }), '#1 Task 1');
   assert.equal(taskLabel({ ...lean, created: true, item: { ...lean.item, id: 'HIVE-1', title: 'T' } }), 'HIVE-1 T');
 });
+
+test('a skill stage queues like a prompt stage and is never a due action; its approval waits after the run, never a gate (#710)', () => {
+  const PLAN: LegacyStage = { name: 'plan', from: { board: ['Plan'] }, action: 'skill', skill: 'new-plan', approval: true };
+  const waiting = task(1, PLAN, { enteredAt: ago(DAY) });
+  assert.deepEqual(cands([waiting], [DEV, PLAN], NOW, runsOf([]), ONE).map((c) => c.item.id), ['1']);
+  assert.deepEqual(dues([waiting], [DEV, PLAN], NOW, runsOf([]), DELETE_ACTIVITY_DEFAULTS), []);
+  assert.deepEqual([canRunIn(PLAN), isGate(PLAN)], [true, false]);
+});

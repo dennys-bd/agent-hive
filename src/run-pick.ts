@@ -7,6 +7,7 @@ import { isRecord } from './rate-limits.js';
 import type { Refusal } from './server-tasks.js';
 import { startMode, startsFresh } from './task-runs.js';
 import { previousSession, stageOf, worktreeSessions } from './tasks.js';
+import { hiveAction } from './stage-agent.js';
 import type { AgentAvailability, AgentId, Language, RunPick, State, Task } from './types.js';
 import { MESSAGES } from './ui/i18n.js';
 
@@ -29,7 +30,7 @@ function resumeOf(session: unknown, state: State, task: Task, agent: AgentId): P
 // Why the task's run takes no picks, or undefined: a stage that runs no agent, a handover that decides the run (#134), a run that is not a start
 function pickRefusal(state: State, task: Task, language: Language): Refusal | undefined {
   const stage = stageOf(state.stages, task.stage);
-  if (stage === undefined || stage.action !== undefined) return refusal('action', language);
+  if (stage === undefined || hiveAction(stage) !== undefined) return refusal('action', language); // #710: a skill stage takes picks
   if (activityOf(state, task.item.itemId)?.handover !== undefined) return refusal('handover', language, HTTP_CONFLICT);
   return startsFresh(startMode(task, state)) ? undefined : refusal('continue', language, HTTP_CONFLICT);
 }

@@ -128,3 +128,12 @@ test('resolveSession never resumes a session of another agent: previous, continu
   assert.deepEqual(resolveSession({ ...state, defaultAgent: OTHER }, task, live, { session: 'previous' }, STAGES[1]), { policy: 'new' }, 'a stage with no agent runs the default');
   assert.deepEqual(resolveSession(state, task, live, { session: 'previous' }, { ...build, agent: 'claude' }), { policy: 'continue', sessionId: 's-spec' });
 });
+
+test('a skill stage reads as a prompt stage: its own verdicts, done for an unrouted one, the evidence for {verdict}, /hive:<skill> handed on (#710)', () => {
+  const plan: Stage = { name: 'plan', from: {}, action: 'skill', skill: 'new-plan', verdicts: ['redo'] };
+  const done: Transition = { from: 'plan', to: 'build', when: 'done' };
+  assert.deepEqual(verdictsOf(plan), ['redo']);
+  assert.equal(exitOf({ stages: [plan], transitions: [done] }, 'plan', 'verdict', 'redo'), done);
+  assert.equal(verdictText(plan, { verdict: { evidence: 'why', output: 'no' } }), 'why');
+  assert.equal(transitionPrompt({ when: 'feedback' }, plan, 'new'), `${FEEDBACK_TEMPLATE}\n\n/hive:new-plan`);
+});

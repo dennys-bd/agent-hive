@@ -5,6 +5,7 @@
 import { liveDefaultAgent } from './agents.js';
 import { behaviourOf, mayContinue, mayResume } from './signals.js';
 import { candidates, isPastFirstStage, isStarted, stageOf, taskId } from './tasks.js';
+import { runsAgent } from './stage-agent.js';
 import { treeStarted } from './task-tree.js';
 import { hasBudget } from './usage.js';
 import { activeRules, applyUsageRules, disableExpired, disabledStatuses, firedRules, isGlobalRule, rulePercents, stageCapRules, stageCaps, worstSignal } from './usage-rules.js';
@@ -115,7 +116,7 @@ function goesOn(freed: State, moved: Task): boolean {
 /** In-place continuation (#134: the caller already checked keepsRun): the destination has a prompt, the worker is not draining, and the gate
  * above lets the task go on; the destination's cap counts through startable (#475). */
 export function canContinue(freed: State, worker: Worker, moved: Task, next: Stage): boolean {
-  if (next.prompt === undefined || worker.draining) return false;
+  if (!runsAgent(next) || worker.draining) return false; // #710: a skill stage goes on in place too
   return goesOn(freed, moved);
 }
 

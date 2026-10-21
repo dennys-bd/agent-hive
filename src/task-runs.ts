@@ -3,6 +3,7 @@ import { activityOf, keptTerminalsIn, localActivityId } from './activities.js';
 import { withLaunch } from './launch-pick.js';
 import { localSessionsOf } from './local-sessions.js';
 import { canOpenSession, inAction, taskId, stageOf, isBlocked, isGate, onSource, resolveWorkspace, sessionsOf, terminalsOf, workersOf } from './tasks.js';
+import { hiveAction, runsAgent } from './stage-agent.js';
 import type { Activity, AgentId, LaunchPick, RunPick, Task, TaskBase, Session, DiffScope, SessionPolicy, Terminal, Worker, SpawnRun, State } from './types.js';
 
 /** What a task offers (#283), the one place the UI and the routes read it: nothing, its running stage, Start, or an object: Continue when
@@ -81,7 +82,7 @@ export function pickedRun(activity: Activity): { activity: Activity; pick?: RunP
 export const startsFresh = (mode: StartMode): boolean => mode === 'start' || (typeof mode === 'object' && !mode.continue);
 
 /**
- * What the task offers (#283). None for a blocked, missing, deleting or leaving (#286) task and a stage with nothing to run (no prompt, no deleteActivity action; a
+ * What the task offers (#283). None for a blocked, missing, deleting or leaving (#286) task and a stage with nothing to run (no prompt, no skill (#710), no deleteActivity action; a
  * delete activity stage ignores blockers, as its start does). Running while a stage worker holds it. Start while its stage has not run, in any stage
  * and on a non-auto task too, except a continue stage on a task with no session at all (#350): none. Otherwise Continue, and Restart only on a stage that starts a new session and whose start was recorded: restarting
  * a stage that continues the previous stage's session would throw that context away. A live worker of the task on the stage's session (only a
@@ -92,19 +93,19 @@ export function startMode(task: Task, state: Pick<State, 'stages' | 'workers' | 
   const stage = stageOf(state.stages, task.stage);
   const activity = activityOf(state, taskId(task));
   if (!stage || task.missing || activity?.deleting || task.leaving || task.item.epic !== undefined) return 'none'; // #31: a show epic never runs
-  if (stage.action === undefined && (stage.prompt === undefined || isBlocked(task.item))) return 'none';
+  if (hiveAction(stage) === undefined && (!runsAgent(stage) || isBlocked(task.item))) return 'none';
   if (activity?.workerId !== undefined || inAction(activity)) return 'running'; // #755, #834: a commands stage or a wait for CI in flight runs too
   if (activity?.setup) return 'none'; // a first open's worktree setup runs (#351): nothing to start, continue or restart until it ends
   if (activity?.approval) return 'approval'; // the stage waits for the user's approve or feedback (#268): nothing to start, continue or restart
-  const session = stage.action === undefined ? stageSession(task, state, task.stage) : undefined;
+  const session = hiveAction(stage) === undefined ? stageSession(task, state, task.stage) : undefined;
   const holder = session && workersOf(state, task).find((s) => s.sessionId === session.id);
   const restart = !activity?.local && stage.session !== 'continue' && activity?.stageStart?.stage === task.stage; // #444: never a reset of the user's checkout
   // #812: after a free run in this stage there is nothing of a stage run's to go on with, and continue would send the stage's continue prompt:
   // start, plus restart to undo what the free run did. Not while a live run (the user's hand resume) holds the stage's session: continue then
   // only focuses it, and a start would put a second process on the session
-  if (stage.action === undefined && activity?.freeSessionStage === task.stage && holder?.runId === undefined) return restart ? { continue: false, restart } : 'start';
+  if (hiveAction(stage) === undefined && activity?.freeSessionStage === task.stage && holder?.runId === undefined) return restart ? { continue: false, restart } : 'start';
   // A continue stage with no session at all has nothing to resume, and a new run would miss the context it expects: a manual session only (#350)
-  if (session === undefined) return stage.action === undefined && stage.session === 'continue' && sessionsOf(state, taskId(task)).length === 0 ? 'none' : 'start';
+  if (session === undefined) return hiveAction(stage) === undefined && stage.session === 'continue' && sessionsOf(state, taskId(task)).length === 0 ? 'none' : 'start';
   return { continue: true, restart, ...(holder?.runId ? { live: holder.runId } : {}) };
 }
 
