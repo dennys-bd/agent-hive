@@ -806,11 +806,15 @@ export const DEFAULT_AGENT: AgentId = 'claude';
 export type ExperimentStatus = 'draft' | 'running' | 'sleeping' | 'done';
 export type BenchStageRole = 'spec' | 'plan' | 'build' | 'pr';
 /** What a stage of a run is: the agent, its model and the skill or command the stage prompt calls (`/hive:new-build`, `/hive-build`). */
-export interface BenchStagePick { agent: AgentId; model?: string; skill: string }
+export interface BenchStagePick { agent: AgentId; model?: string; skill: string; prompt: string } // prompt: the stage's prompt, {id}/{title}/{body} left for the Hive
 export interface BenchTask { key: string; title: string; body: string; blockedBy: string[] }
 export interface BenchRules { allow: string[]; deny: string[] }
 /** The base, and what an arm overrides of it: the same shape, every field optional on the arm. */
-export interface ArmSetup { stages: Record<BenchStageRole, BenchStagePick>; plugins: string[]; rules: BenchRules; tasks: BenchTask[] }
+export interface ArmSetup {
+  stages: Record<BenchStageRole, BenchStagePick>; plugins: string[]; rules: BenchRules; tasks: BenchTask[];
+  items: Record<string, string>; // itemId (`origin:name`) → custom version name; an item absent runs its original
+  worktree: { setup: string; teardown: string }; // the workspace's Settings syntax (COPY / RUN lines)
+}
 export interface Arm { id: string; letter: string; name: string; overrides: Partial<ArmSetup> }
 export interface BenchScenario { id: string; title: string; text: string }
 /** The seed: the problem, the same for every arm. Its hash covers every field; a change forks the experiment (1.2). */

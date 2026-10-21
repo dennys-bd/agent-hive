@@ -1,12 +1,11 @@
 import { initialState } from '../../src/orchestrator.js';
-import type { Arm, ArmSetup, BenchIsolation, BenchRun, Experiment, State } from '../../src/types.js';
+import type { Arm, ArmSetup, BenchIsolation, BenchStagePick, BenchRun, Experiment, State } from '../../src/types.js';
 
+const pick = (skill: string): BenchStagePick => ({ agent: 'claude', skill, prompt: `${skill} {title}\n\n{body}` });
 export const SETUP: ArmSetup = {
-  stages: {
-    spec: { agent: 'claude', skill: '/hive:new-spec' }, plan: { agent: 'claude', skill: '/hive:new-plan' },
-    build: { agent: 'claude', skill: '/hive:new-build' }, pr: { agent: 'claude', skill: '/hive:new-pr' },
-  },
+  stages: { spec: pick('/hive:new-spec'), plan: pick('/hive:new-plan'), build: pick('/hive:new-build'), pr: pick('/hive:new-pr') },
   plugins: [], rules: { allow: [], deny: [] }, tasks: [{ key: 'T1', title: 'One', body: 'b', blockedBy: [] }],
+  items: {}, worktree: { setup: 'RUN pnpm install', teardown: '' },
 };
 
 export const ISOLATION: BenchIsolation = {
