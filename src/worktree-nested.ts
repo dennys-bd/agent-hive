@@ -16,6 +16,9 @@ const ORIGIN = 'origin'; // a nested repo's own remote, never the workspace's fo
 /** What the nested step reads of a workspace. */
 export type NestedWorkspace = Pick<Workspace, 'path'> & { nestedRepos: readonly string[] };
 
+/** How a nested repo's worktree or switch ended (#450): a new branch from `base`, or the task's branch checked out as it was. */
+export type NestedEnd = { base: string } | { reused: true };
+
 const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 const hasGit = (dir: string): Promise<boolean> => exists(join(dir, '.git')); // a checkout's .git folder, or a worktree's .git file
 const hasBranch = (repo: string, branch: string, exec: Exec): Promise<boolean> => gitAnswers(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], exec);

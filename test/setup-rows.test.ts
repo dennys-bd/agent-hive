@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { endedRows, failedRows, plannedRows, preparedRows, shownBase, startedRows, worktreeRows } from '../src/setup-rows.js';
+import { endedRows, failedRows, nestedEndedRows, nestedFailedRows, nestedStartedRows, plannedRows, preparedRows, shownBase, startedRows, worktreeRows } from '../src/setup-rows.js';
 
 // The rows of a worktree preparation as the Start dialog shows them (#390).
 const AT = '2026-10-19T10:00:00.000Z';
@@ -41,4 +41,32 @@ test('shownBase: the start\'s chosen base, else the workspace\'s base branch on 
   assert.equal(shownBase('hive/11-parent', { remote: 'origin', branch: 'main' }), 'hive/11-parent');
   assert.equal(shownBase(undefined, { remote: 'upstream', branch: 'dev' }), 'upstream/dev');
   assert.equal(shownBase(undefined, { remote: 'origin' }), 'origin');
+});
+
+const NESTED = () => worktreeRows('hive/1-task-1', 'origin/main', AT, ['docs', 'wiki']);
+
+test('the nested rows queue after the branch row, one per path with its header; prepared ends only the worktree and branch rows, the plan keeps them before the steps (#450)', () => {
+  assert.deepEqual(NESTED().slice(2), [
+    { kind: 'nested', status: 'queued', label: 'docs', header: 'nested docs' }, { kind: 'nested', status: 'queued', label: 'wiki', header: 'nested wiki' },
+  ]);
+  const ready = preparedRows(NESTED(), LATER);
+  assert.deepEqual(ready.map((r) => r.status), ['done', 'done', 'queued', 'queued']);
+  const running = nestedStartedRows(ready, 'docs', AT);
+  assert.equal(preparedRows(running, LATER), running, 'a running nested row is not the worktree\'s to end');
+  assert.deepEqual(plannedRows(running, ['RUN a'], 0).map((r) => r.kind), ['worktree', 'branch', 'nested', 'nested', 'step']);
+  assert.deepEqual(worktreeRows('b', 'origin/main', AT), worktreeRows('b', 'origin/main', AT, []), 'no nested repo: #390\'s two rows');
+});
+
+test('a nested row starts, ends from a base or reused with the task\'s branch, and fails, by its path; a path with no row is the same list; a run\'s failure fails a running one (#450)', () => {
+  const rows = preparedRows(NESTED(), LATER);
+  const docs = nestedStartedRows(rows, 'docs', AT);
+  assert.deepEqual(docs[2], { kind: 'nested', status: 'running', label: 'docs', header: 'nested docs', startedAt: AT });
+  assert.deepEqual(nestedEndedRows(docs, 'docs', { base: 'origin/main' }, 'hive/1-task-1', LATER)[2],
+    { kind: 'nested', status: 'done', label: 'docs', header: 'nested docs', durationMs: 1500, branch: 'hive/1-task-1', base: 'origin/main' });
+  assert.deepEqual(nestedEndedRows(docs, 'docs', { reused: true }, 'hive/1-task-1', LATER)[2],
+    { kind: 'nested', status: 'done', label: 'docs', header: 'nested docs', durationMs: 1500, branch: 'hive/1-task-1' });
+  assert.deepEqual(nestedFailedRows(rows, 'wiki', LATER)[3], { kind: 'nested', status: 'failed', label: 'wiki', header: 'nested wiki' }, 'refused before it started: no time');
+  assert.equal(nestedStartedRows(rows, 'ee', AT), rows);
+  assert.deepEqual(failedRows(docs, LATER).map((r) => r.status), ['done', 'done', 'failed', 'queued']);
+  assert.equal(failedRows(docs, LATER)[2]?.durationMs, 1500);
 });

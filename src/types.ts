@@ -452,8 +452,9 @@ export interface TaskApproval {
 /** The longest feedback the Hive takes (#268), in characters: the route, the loader and the panel's box. */
 export const FEEDBACK_MAX = 10_000;
 
-/** The rows of a worktree preparation as the Start dialog shows them (#390): the worktree, its branch, or one setup step after LOAD's expansion. */
-export const SETUP_ROW_KINDS = ['worktree', 'branch', 'step'] as const;
+/** The rows of a worktree preparation as the Start dialog shows them (#390): the worktree, its branch, each nested repo (#450), or one setup
+ * step after LOAD's expansion. */
+export const SETUP_ROW_KINDS = ['worktree', 'branch', 'nested', 'step'] as const;
 export type SetupRowKind = (typeof SETUP_ROW_KINDS)[number];
 export const SETUP_ROW_STATUSES = ['queued', 'running', 'done', 'failed'] as const;
 export type SetupRowStatus = (typeof SETUP_ROW_STATUSES)[number];
@@ -461,11 +462,11 @@ export type SetupRowStatus = (typeof SETUP_ROW_STATUSES)[number];
 export interface SetupRow {
   kind: SetupRowKind;
   status: SetupRowStatus;
-  label?: string; // step: the RUN's command, else describeStep's text
-  header?: string; // step: describeStep's text, what the run's header line holds after `> `
-  branch?: string; base?: string; // branch: what it is made from
+  label?: string; // step: the RUN's command, else describeStep's text; nested: the repo's path, as nestedRepos lists it
+  header?: string; // step: describeStep's text; nested: `nested <path>`; what the run's header line holds after `> `
+  branch?: string; base?: string; // branch: what it is made from; nested, once done: the task's branch, and its base unless it was reused
   startedAt?: string; // ISO, while running
-  durationMs?: number; // done or failed; absent on a step skipped by a resume, and on the branch row
+  durationMs?: number; // done or failed; absent on a step skipped by a resume, on the branch row, and on a nested repo refused before it started
   code?: string; // failed: a RUN's exit code, 'timeout' or 'stopped'
 }
 
