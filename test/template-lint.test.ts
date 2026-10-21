@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { type ParsedTemplate, parseTemplate } from '../src/template.js';
+import { deliveredName, type ParsedTemplate, parseTemplate } from '../src/template.js';
 import { type LintAnnotation, type LintInput, type LintItem, lintTemplate, variableUses } from '../src/template-lint.js';
 
 // The structural lint (#312): each check alone, the grouping of workspaces, the render's dedup, the shipped plugin linting clean.
@@ -183,8 +183,9 @@ test('every shipped skill and agent lints clean against a catalogue of the plugi
     .filter((entry) => entry.isDirectory())
     .map((entry) => ({ kind: 'skill' as const, name: entry.name, path: `skills/${entry.name}/SKILL.md.liquid` }));
   const agents = readdirSync(new URL('agents/', PLUGIN))
-    .filter((file) => file.endsWith('.md'))
-    .map((file) => ({ kind: 'specialist' as const, name: file.slice(0, -'.md'.length), path: `agents/${file}` }));
+    .filter((file) => deliveredName(file).endsWith('.md'))
+    .map((file) => ({ kind: 'specialist' as const, name: deliveredName(file).slice(0, -'.md'.length), path: `agents/${file}` }));
+  assert.ok(agents.some((agent) => agent.path === 'agents/designer.md.liquid' && agent.name === 'designer'), 'the designer template is linted (#416)');
   const shipped = [...skills, ...agents].map((item) => ({ ...item, parsed: read(item.path) }));
   const catalogue: LintItem[] = shipped.map(({ kind, name, parsed }) => ({ origin: 'hive', kind, name, variables: parsed.variables }));
   const scripts = readdirSync(new URL('scripts/', PLUGIN)).map((file) => `scripts/${file}`);

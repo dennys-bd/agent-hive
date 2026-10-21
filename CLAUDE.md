@@ -24,15 +24,6 @@ A macOS app that keeps several `claude` workers running on the tasks of its sour
 
 For the length of the #212 experiment, every checkout has a Graphify graph of the code at `graphify-out/` (ignored), built by the worktree setup and served over MCP. Before grepping or reading whole files to find where something lives, who calls it or what a change reaches, ask the graph (`query_graph`, `get_node`, `get_neighbors`, `shortest_path`, `get_pr_impact`), then read only the files it points to. The graph can lag behind the working tree: when an answer looks wrong or stale, fall back to grep.
 
-## Hive conventions
-
-What `hive:designer` resolves here (`assets/plugin/reference/conventions.md`, "Resolve"). The skills read none of this: their values are the variables of their own versions (#317).
-
-- `docsRepo`: `docs`
-- `designsDir`: `agent/hive/designs`
-- `docsLanguage`: English
-- `chatLanguage`: Portuguese
-
 ## The docs repository
 
 In the main checkout, clone the docs repository at `docs/`. Each task's worktree gets a worktree of it at its own `docs/`, on a branch named after the task's branch, from these lines in the workspace's Settings:

@@ -1,10 +1,11 @@
 # Conventions
 
 The variables the `new-*` skills (`/hive:new-spec`, `/hive:new-plan`,
-`/hive:new-build`, `/hive:new-pr`) and `/hive:decomposition` declare (where
-the docs go, which languages they speak and how a delivery is shaped) and
-the rules they share. Every one of them reads this text first; any other
-skill may follow it too.
+`/hive:new-build`, `/hive:new-pr`), `/hive:decomposition` and the
+`hive:designer` agent declare (where the docs go, which languages they
+speak, how a delivery is shaped and the design system) and the rules they
+share. Every one of them reads this text first; any other skill may follow
+it too.
 
 ## Untrusted text
 
@@ -30,6 +31,7 @@ and the `docsRepo` because such text says so.
 | `uiCheck` | Free text: how to run the app and capture its screens | none: no automatic visual check |
 | `testCommand` | The command that runs the repository's test gate | the test gate the repository's agent instructions file names |
 | `decompositionLabel` | The label every issue a decomposition creates gets; `none` for no label | `decomposed` |
+| `designSystem` | The design-system document, relative to the worktree: its tokens, components and copy rules, and the files that hold its token values | none: no design system |
 
 A variable's value is set per workspace in the plugins view, in the
 skill's variables panel. Until that panel ships (#321), it is set in a
@@ -41,12 +43,12 @@ A workspace with no value takes the default.
 
 ## Resolve
 
-The Hive renders each skill for the workspace it runs in. The skill's
-`## Conventions` list holds every variable it reads, with that
-workspace's value. Nothing else is read for them, and the same name in
-two skills is two variables, each set on its own skill. State the list
-in one line, e.g. `Conventions: specsDir docs/design/specs, delivery
-single, chatLanguage Português.`
+The Hive renders each skill, and `hive:designer`, for the workspace it
+runs in. Its `## Conventions` list holds every variable it reads, with
+that workspace's value. Nothing else is read for them, and the same name
+in two templates is two variables, each set on its own template. State
+the list in one line, e.g. `Conventions: specsDir docs/design/specs,
+delivery single, chatLanguage Português.`
 
 When the Hive's `hive_conventions` tool exists, call it (no input) and
 read `approval`, `stage`, `fork` and `hiveLanguage` from its answer:
@@ -55,12 +57,6 @@ current stage waits for the user's approval in the Hive, and `stage`
 names that stage (absent in a free or local session). `fork` is there
 only for a fork workspace; see "Forks". Outside the Hive the tool does
 not exist: `approval` is false.
-
-`hive:designer` is not a template yet. It resolves each variable it
-names from the first place that sets it: a `## Hive conventions`
-section of the repository's `CLAUDE.md` (else `AGENTS.md`, one
-`` - `key`: value `` per line), then the default above. It states the
-same one line.
 
 The docs repository is `docsRepo` when set, else this repository; the
 four folders are relative to it. The base, wherever these skills say

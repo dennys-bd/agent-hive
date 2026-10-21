@@ -61,7 +61,7 @@ test('with no version and no user item, a workspace\'s folder is the shipped plu
   for (const [path, bytes] of Object.entries(delivered)) assert.doesNotMatch(decode(bytes), /^basedOn:/m, `${path} is delivered with its basedOn`);
   // Codex's role reader parses an agent's header line by line: the delivery only takes the basedOn lines out
   const BASED_ON_LINES = /^basedOn:\n(?: {2}- .*\n)+/m;
-  for (const path of Object.keys(shipped).filter((p) => p.startsWith('agents/'))) {
+  for (const path of Object.keys(shipped).filter((p) => p.startsWith('agents/') && p.endsWith('.md'))) {
     assert.equal(decode(delivered[path]), decode(shipped[path]).replace(BASED_ON_LINES, ''), path);
   }
 });
