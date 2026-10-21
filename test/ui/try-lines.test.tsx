@@ -2,7 +2,7 @@
 import { beforeEach, expect, test } from 'vitest';
 import { setLanguage } from '@/i18n';
 import { exhaustedOf, recordsOf } from '@/lib/try-lines';
-import type { Task, Transition, TryRecord } from '../../src/types';
+import type { Stage, Task, Transition, TryRecord } from '../../src/types';
 import { taskPairOf } from '../fixtures/work';
 
 const BACK: Transition = { from: 'checks', to: 'build', when: 'verdict', verdict: 'failed', maxTries: 3 };
@@ -12,7 +12,7 @@ const rec = (n: number, at: string, transition = KEY): TryRecord => ({ transitio
 // The task's activity, holding `error` when given, under the flow's one transition
 function graph(error?: string) {
   const { activity, records } = taskPairOf('I1', error === undefined ? {} : { error });
-  return { transitions: [BACK], activities: [activity], activityRecords: records };
+  return { transitions: [BACK], stages: [], activities: [activity], activityRecords: records };
 }
 
 beforeEach(() => setLanguage('pt'));
@@ -23,6 +23,11 @@ test('recordsOf keeps the key\'s records, newest first by at and then by n; ever
   expect(recordsOf({ tryLog: log }).map((r) => r.transition)).toEqual([KEY, KEY, 'other', KEY]);
   expect(recordsOf(undefined)).toEqual([]);
   expect(log.map((r) => r.n)).toEqual([1, 1, 2, 3]); // the log itself is left as it was
+});
+
+test('exhaustedOf reads an evaluate origin\'s failed arrow as reprovou (#877)', () => {
+  const stages: Stage[] = [{ name: 'checks', from: {}, action: 'evaluate', reviewers: [], judge: { agent: 'claude' }, threshold: 7, rubric: 'a' }];
+  expect(exhaustedOf({ ...graph('tries out: verdict:failed · 3'), stages }, TASK)?.trigger).toBe('reprovou');
 });
 
 test('exhaustedOf names the spent transition, its trigger, its limit and its destination; undefined for a non-TRIES_OUT error, no error or a gone transition (#916)', () => {

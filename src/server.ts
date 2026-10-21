@@ -18,6 +18,7 @@ import { createInstaller } from './editor-install.js';
 import { createSchemaCatalog } from './json-schemas.js';
 import { createLspHost } from './lsp-host.js';
 import { createWorkerLsp, runLspServers, settles } from './worker-lsp.js';
+import type { HeadlessDeps } from './headless-run.js';
 import { createHeldStops } from './held-stops.js';
 import { createMemoryStore } from './memory.js';
 import { createPassageStore, protocolRenderer } from './passage-store.js';
@@ -50,6 +51,7 @@ import { registerMcpRoutes } from './server-mcp.js';
 import { serversFor } from './mcp-settings.js';
 import type { RunMcpServer } from './agents/runner.js';
 import { createCiReader } from './server-ci.js';
+import { createEvaluateRunner } from './server-evaluate.js';
 import { createStageCommandRunner } from './server-stage-commands.js';
 import { registerApprovalRoutes } from './server-approval.js';
 import { registerDecompositionRoutes } from './server-decomposition.js';
@@ -156,6 +158,7 @@ export interface ServerDeps {
   facts?: FactLog; // #742: tests inject a fake; default writes <home>/facts.jsonl beside hive.log
   /** The agent CLIs this machine has, detected on boot (#516). Absent (tests) means every agent is available. */
   agents?: AgentAvailability[];
+  headless?: HeadlessDeps; // #877: tests' fake agent CLI for an evaluation's runs
   exec?: Exec; // git for the spawn's worktree, the deleteActivity effect and the task routes, gh for the PR states (#207); tests inject a fake and see the calls
   keepAwakeSpawn?: KeepAwakeSpawn; // #226: the keep-awake child's spawn; tests inject a fake, the default starts caffeinate / systemd-inhibit
   /** The Hive's own reading of the plan limits; absent (every test) means it never reads. main.ts / run.ts inject the real one. */
@@ -273,6 +276,11 @@ export function createServer(deps: ServerDeps): HiveServer {
   const spawner = createRunSpawner({ pool, exec, log, dispatch, fail, isLive: (ptyId) => workerOf(ptyId) !== undefined, ptys, consoleStore, agents, secret: deps.secret, home, facts: wiring.facts, lspDir: workerLsp.dir, plugin: pluginRender, externalMcp }); // dispatch and fail are hoisted; workerOf is called later
   // #755: a commands stage's commands, each in a pty of its own; a Stop during index 0's setup is read off the live State once it ends
   const stageCommands = createStageCommandRunner({ exec, pool, ptys, consoleStore, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.commands });
+  // #877: an evaluate stage's reviewers and judge, headless in the task's worktree; a Stop or a Quit aborts them
+  const evaluator = createEvaluateRunner({
+    exec, agents, log, dispatch, prepare: spawner.prepare, current: (activityId) => live?.state.activities.find((a) => a.id === activityId)?.evaluate,
+    pluginDir: async (workspace) => { await pluginRender.ready(); return pluginRender.dir(workspace); }, ...(deps.headless === undefined ? {} : { headless: deps.headless }),
+  });
   // The PR's transport (#207, #592): gh, the login the workers open their PRs with, source or no source. Through an injected exec, so no test runs
   // gh: a write's stdin reaches it as `input`. The real runner is ghExec, which pipes the input itself.
   const gh: GhExec = deps.exec ? async (args, input) => (await exec('gh', args, input === undefined ? undefined : { input })).stdout : ghExec;
@@ -484,6 +492,16 @@ export function createServer(deps: ServerDeps): HiveServer {
       case 'ciCollect': // #834: always ends in ciFailed
         log.info(describeEffect(effect));
         void ci.collect(effect);
+        return;
+      case 'evaluate': // #877: minutes of headless runs: the batch never waits on them
+        if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }
+        log.info(describeEffect(effect));
+        void evaluator.run(runtime, effect);
+        return;
+      case 'abortEvaluate': // #877: a setup in flight is keyed by the run id, as readyWorktree prepared it
+        log.info(describeEffect(effect));
+        spawner.abortSetup(effect.runId);
+        evaluator.abort(effect.runId);
         return;
       case 'spawnSession':
         if (closing) { log.info(`${describeEffect(effect)} dropped: closing`); return; }
@@ -1350,6 +1368,7 @@ export function createServer(deps: ServerDeps): HiveServer {
 
   async function close(reason = 'close'): Promise<void> {
     closing = true;
+    evaluator.abortAll(); // #877: a Quit ignores what its aborts cause (cleanStop)
     if (pollTimer) clearInterval(pollTimer);
     if (planLimitsTimer) clearInterval(planLimitsTimer);
     await readLoop?.stop(); // #180: the running round and every refetch settle first: the database never closes under a transaction

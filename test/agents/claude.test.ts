@@ -134,6 +134,11 @@ test('the headless run asks for JSON under the schema, with no tool, MCP server,
   assert.deepEqual(runners.claude.headless({ ...HEADLESS, model: 'opus' }), [...base, '--model', 'opus']);
 });
 
+test('a read-only headless run gets Read, Grep and Glob and nothing else, --restricted so the worktree\'s settings and hooks never load; no cwd flag (#877)', () => {
+  const tail = ['--strict-mcp-config', '--no-session-persistence', '--disable-slash-commands'];
+  assert.deepEqual(runners.claude.headless({ ...HEADLESS, cwd: '/w', readOnlyTools: true }), ['-p', '--output-format', 'json', '--json-schema', '{"type":"object"}', '--tools', 'Read,Grep,Glob', '--restricted', ...tail]);
+});
+
 test("headlessAnswer reads Claude's structured_output, else its result; an error result or a stdout that is not JSON is no answer (#330)", () => {
   const answer = (stdout: string): string | undefined => runners.claude.headlessAnswer(stdout, undefined);
   assert.equal(answer('{"type":"result","is_error":false,"result":"","structured_output":{"from":1,"to":2,"text":"x"}}'), '{"from":1,"to":2,"text":"x"}');

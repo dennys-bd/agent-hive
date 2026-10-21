@@ -6,7 +6,7 @@ import { ButtonKeyHint } from '@/components/KeyHint';
 import { CONTEXT_KIT, type MenuKit } from '@/components/menu-kit';
 import { ranAgent } from '../../agents';
 import { agentName } from '@/components/NewRunButton';
-import { useSleep, waitsForCi } from '@/components/sleep-notice';
+import { stopsByRoute, useSleep } from '@/components/sleep-notice';
 import { StatusWord } from '@/components/StatusWord';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -90,9 +90,9 @@ export function useActivitySleepMenu(activity: Activity | undefined, { kit = CON
   const all = activity?.runs ?? [];
   const agents = all.filter((run) => run.kind !== 'terminal');
   const sleepAll = <Item onSelect={() => setPending(all)}>{t('sleep.all')}</Item>;
-  const isWaiting = waitsForCi(activity); // #834
+  const isWaiting = stopsByRoute(activity); // #834, #877
   let items: ReactNode = null;
-  if (all.length === 0 && isWaiting) items = <Item onSelect={sleep.ci}>{t('session.sleep')}</Item>;
+  if (all.length === 0 && isWaiting) items = <Item onSelect={sleep.action}>{t('session.sleep')}</Item>;
   else if (!isWaiting && all.length === 1 && agents.length === 1) items = <Item onSelect={() => sleep.one(agents[0])}>{t('session.sleep')}</Item>;
   else if (all.length > 0 && agents.length === 0) items = sleepAll;
   else if (all.length > 0) {

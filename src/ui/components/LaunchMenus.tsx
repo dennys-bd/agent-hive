@@ -48,12 +48,13 @@ function Row({ id, hint, isPicked }: { id: string; hint?: string; isPicked: bool
 // A [1m] alias names its context in the page's language; any other option its own hint
 const hintOf = ({ id, hint }: LaunchOption): string | undefined => (id.endsWith(ONE_M) ? t('newSession.model.context1m') : hint);
 
-interface ModelMenuProps { id?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
+// #877: a grid row names its control with `label`, having no <Label>
+interface ModelMenuProps { id?: string; label?: string; agent: AgentId; options?: AgentLaunchOptions; value: string; disabled?: boolean; defaultLabel?: string; open: boolean; onOpenChange(open: boolean): void; onPick(model: string): void }
 
 /** modelo (#257): the agent's default (the Hive passes no flag), its aliases and its versions, most recent first, and a typed name the lists
  * lack, offered when it has a model's shape. '' is the default; defaultLabel names what '' runs when a stage gives it a model (#290): '' never
  * unsets it. */
-export function ModelMenu({ id, agent, options, value, disabled = false, defaultLabel, open, onOpenChange, onPick }: ModelMenuProps) {
+export function ModelMenu({ id, label, agent, options, value, disabled = false, defaultLabel, open, onOpenChange, onPick }: ModelMenuProps) {
   const [search, setSearch] = useState('');
   const toggle = (isOpen: boolean): void => { onOpenChange(isOpen); if (!isOpen) setSearch(''); };
   const pick = (model: string): void => { onPick(model); toggle(false); };
@@ -67,7 +68,7 @@ export function ModelMenu({ id, agent, options, value, disabled = false, default
     <CommandItem key={option.id} value={option.id} onSelect={() => pick(option.id)}><Row id={option.id} hint={hintOf(option)} isPicked={option.id === value} /></CommandItem>
   );
   return (
-    <FieldMenu id={id} label={t('newSession.model')} shown={value === '' ? fallback : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
+    <FieldMenu id={id} label={label ?? t('newSession.model')} shown={value === '' ? fallback : value} isDefault={value === ''} disabled={disabled} open={open} onOpenChange={toggle}>
       <Command label={t('newSession.model.search')}>
         <CommandInput value={search} onValueChange={setSearch} aria-label={t('newSession.model.search')} placeholder={t('newSession.model.search')} />
         <CommandList>
@@ -103,18 +104,18 @@ function ItemRow({ name, description, isPicked }: { name: string; description: s
   );
 }
 
-interface AgentMenuProps { id?: string; agent: AgentId; agents?: AgentLaunchOptions['specializedAgents']; value: string; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
+interface AgentMenuProps { id?: string; label?: string; agent: AgentId; agents?: AgentLaunchOptions['specializedAgents']; value: string; disabled?: boolean; open: boolean; onOpenChange(open: boolean): void; onPick(name: string): void }
 
 /** agente especializado (#257): none, or one of the Hive plugin's agents, searched by name or description; disabled with the reason when the
  * plugin lists none. '' is none. No list yet (the answer is still coming): the field works with none. The list ends with a footer naming which
  * agent's installed agents it shows (#893). */
-export function SpecializedAgentMenu({ id, agent, agents, value, disabled = false, open, onOpenChange, onPick }: AgentMenuProps) {
+export function SpecializedAgentMenu({ id, label, agent, agents, value, disabled = false, open, onOpenChange, onPick }: AgentMenuProps) {
   const pick = (name: string): void => { onPick(name); onOpenChange(false); };
   const isEmpty = agents !== undefined && agents.length === 0;
   const none = t('newSession.agents.none');
   const shown = value !== '' ? value : isEmpty ? t('newSession.agents.empty', { agent: agentName(agent) }) : none;
   return (
-    <FieldMenu id={id} label={t('newSession.specializedAgent')} shown={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
+    <FieldMenu id={id} label={label ?? t('newSession.specializedAgent')} shown={shown} isDefault={value === ''} disabled={isEmpty || disabled} open={open} onOpenChange={onOpenChange}>
       <Command label={t('newSession.agents.search')}>
         <CommandInput aria-label={t('newSession.agents.search')} placeholder={t('newSession.agents.search')} />
         <CommandList>
@@ -165,14 +166,14 @@ export function SkillMenu({ id, skills = [], value, open, onOpenChange, onPick }
 }
 
 interface AgentFieldProps {
-  id: string; value: AgentId | null; agents: readonly AgentAvailability[];
+  id: string; label?: string; value: AgentId | null; agents: readonly AgentAvailability[];
   defaultLabel?: string; // #329: a first row for null, the config's default agent; the Start dialog passes none
   onChange(agent: AgentId): void; onDefault?(): void; onOpenChange(open: boolean): void;
 }
 
 /** agente (#257, #290): each agent with its mark in its own colour; one boot did not find is disabled and named off PATH, as the + names it.
  * With defaultLabel, null reads as that row (the reviewer menu, #329). */
-export function AgentField({ id, value, agents, defaultLabel, onChange, onDefault, onOpenChange }: AgentFieldProps) {
+export function AgentField({ id, label, value, agents, defaultLabel, onChange, onDefault, onOpenChange }: AgentFieldProps) {
   const pick = (v: string): void => {
     if (v === DEFAULT_ITEM) { onDefault?.(); return; }
     const picked = knownAgent(v);
@@ -180,7 +181,7 @@ export function AgentField({ id, value, agents, defaultLabel, onChange, onDefaul
   };
   return (
     <Select value={value ?? DEFAULT_ITEM} onValueChange={pick} onOpenChange={onOpenChange}>
-      <SelectTrigger id={id} className="w-full"><SelectValue /></SelectTrigger>
+      <SelectTrigger id={id} aria-label={label} className="w-full"><SelectValue /></SelectTrigger>
       <SelectContent>
         {defaultLabel !== undefined && <SelectItem value={DEFAULT_ITEM}>{defaultLabel}</SelectItem>}
         {AGENT_IDS.map((agent) => (

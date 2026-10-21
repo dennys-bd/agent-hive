@@ -328,8 +328,9 @@ export const SOURCE_ACTIONS: Record<SourceFields['type'], SourceAction['type'][]
 
 /** What a stage does with a stopped task instead of running a prompt (#573: was cleanup): deleteActivity deletes the task's activity; commands
  * runs a list of the workspace's commands in its worktree and ends with a verdict (#755); waitForCi waits for the checks of the task's open PRs
- * and ends with a verdict (#834); skill (#710) runs one of the Hive's skills as its agent's prompt, /hive:<skill>: an agent stage, unlike the others. */
-export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi' | 'skill';
+ * and ends with a verdict (#834); skill (#710) runs one of the Hive's skills as its agent's prompt, /hive:<skill>: an agent stage, unlike the others.
+ * evaluate (#877) runs reviewers and a judge read-only in the task's worktree and ends with a verdict from the judge's scores against the stage's threshold. */
+export type StageAction = 'deleteActivity' | 'commands' | 'waitForCi' | 'skill' | 'evaluate';
 
 /** What a commands stage does with a command that has no line in the task's workspace (#755): fail the stage before anything runs, or skip it.
  * A name the Comb no longer has fails it either way. */
@@ -361,7 +362,11 @@ export interface Stage {
   checks?: string[]; // #834: with ciChecks list only, required there: names or patterns (* = any run of characters), case-insensitive
   rerunOnce?: boolean; // #834: with action waitForCi only, required there: re-run the failed Actions jobs once per head commit before failing
   timeout?: string; // #834: with action waitForCi only: how long the wait may take from the stage's start (TIMEOUT); absent = no limit
-  verdicts?: string[]; // #134: prompt stages only: the verdicts hive_done may give here, each routed by its own transition; commands and waitForCi have FIXED_VERDICTS
+  reviewers?: EvaluateRow[]; // #877: with action evaluate only, required there (may be empty): each runs read-only in parallel with its focus
+  judge?: EvaluateRow; // #877: with action evaluate only, required there; no focus
+  threshold?: number; // #877: with action evaluate only, required there: 0..10, every dimension's score must reach it
+  rubric?: string; // #877: with action evaluate only, required there: a template, one dimension per non-blank line
+  verdicts?: string[]; // #134: prompt stages only: the verdicts hive_done may give here, each routed by its own transition; commands, waitForCi and evaluate have FIXED_VERDICTS
   after?: string; // delay from the task's entry into the stage before its prompt or action may run: "30m", "12h", "5d"; absent = right away
   approval?: true; // a stage end here waits for the user's approve or feedback (#268); prompt stages only: the parser refuses it next to action
   handoff?: true; // #692: the previous stage's session writes a handoff before the task enters here; the parser refuses it next to action or session continue
@@ -519,6 +524,18 @@ export interface StageCi {
 }
 /** How a wait-for-CI stage's failure starts on its activity's error (#834), the failed checks after it: the card shows it in the viewer's language. */
 export const CI_FAILED = 'CI failed: ';
+
+/** An evaluate stage in flight (#877): its stage, its id (what a late answer and the Stop name), the worker it holds, its start and its phase.
+ * Persisted so the boot stops it; it never survives the boot. */
+export interface StageEvaluate { stage: string; runId: string; workerId: string; startedAt: string; phase: 'reviewing' | 'judging' }
+/** One reviewer's finding (#877), with its evidence: a file, the line when it has one. */
+export interface ReviewFinding { file: string; line?: number; finding: string }
+/** The judge's score for one rubric dimension (#877), 0 to 10, with its evidence. */
+export interface JudgeScore { dimension: string; score: number; evidence: string }
+/** How a broken evaluation starts on its activity's error (#877): no verdict, no try; the reason follows. */
+export const EVALUATION_FAILED = 'evaluation failed: ';
+/** How a failed evaluation with no failed transition starts on its activity's error (#877): the failing dimensions follow. */
+export const EVALUATION_REJECTED = 'evaluation rejected: ';
 /** What fires a transition (#134): the stage ended with no approval, the user approved, the user sent feedback, or the stage gave a verdict. */
 export const TRIGGERS = ['done', 'approved', 'feedback', 'verdict'] as const;
 export type Trigger = (typeof TRIGGERS)[number];
@@ -604,6 +621,7 @@ export interface Activity {
   lastSetup?: SetupRows; // #390: the last setup that failed, its run and rows, for the Start dialog once the mark is gone; dropped by the next setupStarted and a manual start; persisted like error
   commands?: StageCommands; // #755: a commands stage in flight: the task is running; persisted so the boot stops it, never past the boot
   ci?: StageCi; // #834: a wait-for-CI stage in flight: no worker, no process; persisted, so the wait goes on after a boot
+  evaluate?: StageEvaluate; // #877: an evaluate stage in flight: the task is running; persisted so the boot stops it
   sync?: ForkSyncResult; // #854: the last automatic fork sync before this activity's worktree, failed or not; persisted while the activity lives
   sessionId?: string; // what a continue resumes
   workerId?: string; stopped?: true; stageStart?: StageStart; error?: string;
@@ -772,6 +790,8 @@ export const SWITCH_AT_DEFAULT = 'Build';
 /** The coding agents a stage can run (#516): ids only, their per-agent facts live in agents.ts. #101 adds codex here and there. */
 export const AGENT_IDS = ['claude', 'codex'] as const; // #927: codex runs flow stages; its free sessions are #931
 export type AgentId = (typeof AGENT_IDS)[number];
+/** One headless run of an evaluate stage (#877): its agent and launch picks; focus on a reviewer only. */
+export interface EvaluateRow { agent: AgentId; model?: string; specializedAgent?: string; focus?: string }
 /** What a new form offers as the default agent and what a file from before #516 reads as. */
 export const DEFAULT_AGENT: AgentId = 'claude';
 
@@ -1459,6 +1479,10 @@ export type HiveEvent =
   | { type: 'ciRead'; activityId: string; at: string; prs: CiPrRead[] } // #834: one read of the activity's open PRs' checks at `at` (ISO): the wait goes on, passes, re-runs or fetches the failed logs
   | { type: 'ciFailed'; activityId: string; names: string[]; output: string } // #834: the failed logs are in: the wait ends failed; names: the failed checks', what the error lists
   | { type: 'stopCi'; activityId: string } // #834: the task's Stop or a sleep reached a wait for CI, which holds no pty: the wait ends, stopped, with no verdict
+  | { type: 'evaluateJudging'; activityId: string; runId: string } // #877: every reviewer answered; the judge runs
+  | { type: 'evaluateEnded'; activityId: string; runId: string; scores: JudgeScore[]; findings: ReviewFinding[] } // #877: the judge answered, one score per dimension
+  | { type: 'evaluateBroken'; activityId: string; runId: string; message: string } // #877: a run broke: no verdict, no try
+  | { type: 'stopEvaluate'; activityId: string } // #877: the task's Stop or a sleep reached an evaluation, which holds no pty: every run aborts, no verdict
   | { type: 'decompositionIssue'; taskId: string; id: string; number: number } // #865: one step of the decomposition's write; merged into the task's result.decompositionIssues. Keyed by task: one awaiting approval may have no live worker
   | { type: 'forkSynced'; activityId: string; sync: ForkSyncResult } // #854: a fork synced (or failed to) before the activity's worktree was made
   | { type: 'sourceActionFailed'; taskId: string; message: string; leaving: boolean } // the source refused the stage's action (#286): the task keeps the adapter's message; leaving: the refused action was the leaving one (#515)
@@ -1537,6 +1561,8 @@ export type Effect =
   | { type: 'ciRead'; activityId: string } // #834: read the activity's CI now, at the stage's start; the timer reads it after
   | { type: 'ciRerun'; activityId: string; runs: CiRerun[] } // #834: gh run rerun --failed, each run once
   | { type: 'ciCollect'; activityId: string; failed: CiCheck[] } // #834: fetch the failed checks' logs, then answer ciFailed
+  | { type: 'evaluate'; activity: Activity; task: Task; stage: Stage; runId: string; result?: Record<string, unknown> } // #877: run the reviewers then the judge; result: what {result.<path>} renders in the rubric
+  | { type: 'abortEvaluate'; runId: string } // #877: Stop, sleep, delete or a vanished stage: abort every run of that evaluation
   | { type: 'spawnSession'; worker: Worker; activity: Activity; task?: Task; sessionId?: string /* #931: absent on a new session of an agent that picks its own id (Codex): the first SessionStart names it */; continues: boolean; copy?: SessionCopy; repo?: true /* #208, #629: the session it continues is a repo one: it runs in the workspace's main repo */; prompt?: string /* #758: its first message */ } // the user's own session (#164, #283): task: on a task's activity; none on a local one (#587, #629); copy: a copy's first run
   | { type: 'dropCopiedTranscript'; dir: string; sessionId: string } // #587: the temporary <sessionId>.jsonl a copy put in `dir`, a transcript dir
   | { type: 'forgetScrollback'; ptyId: string } // #672: the pty host drops a sleeping run's kept transcript, or a live run's at its exit

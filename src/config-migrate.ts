@@ -2,6 +2,7 @@
 // menuBar / stopOnClose pair), #515 (a stage's single onStart / onFinish action per source), #516 (the default agent), #924 (claudeArgs into agentArgs), #927 (agentArgs.codex), #754 (the files tree's icons), #846 (where new tasks are created), #134 (comb.transitions from the stage list) and #727 (retired keys). readConfig reads a file through here, in memory only: the next save writes today's shape. Pure and
 // idempotent; malformed entries pass through untouched, so parseConfig still names their fault.
 
+import { hasFixedVerdicts } from './stage-agent.js';
 import { END, FILE_ICONS_DEFAULTS, type SourceAction, type Stage, type Transition } from './types.js';
 
 type Entry = Record<string, unknown>;
@@ -103,7 +104,7 @@ export const migrateFileIcons = (raw: unknown): unknown => (isRecord(raw) && raw
 /** A stage as a file from before #134 writes it (#134): today's keys and the two the migration drops. */
 export type LegacyStage = Stage & { onFinish?: Record<string, SourceAction[]>; visible?: number };
 
-const runsCommands = (s: LegacyStage): boolean => s.action === 'commands' || s.action === 'waitForCi';
+const runsCommands = (s: LegacyStage): boolean => hasFixedVerdicts(s); // #877: an evaluate stage too, as test fixtures chain it
 
 // The trigger a stage end fired before #134: an approval, a passed check, or the end of whatever else ran
 const triggerOf = (s: LegacyStage): Pick<Transition, 'when' | 'verdict'> =>

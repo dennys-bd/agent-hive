@@ -503,3 +503,13 @@ test('a cut title shows in full in a tooltip on hover, hiding the card\'s drag h
   expect(card).toHaveAttribute('title', hint ?? '');
   cleanup();
 });
+
+test('an evaluation reads avaliando · n revisores on the card, then its rejection in the viewer\'s language (#877)', () => {
+  const evalStage: Stage = { name: 'eval', from: { board: ['Eval'] }, action: 'evaluate', reviewers: [{ agent: 'claude', focus: 'a' }, { agent: 'codex', focus: 'b' }], judge: { agent: 'claude' }, threshold: 7, rubric: 'Ok?' };
+  const at = (work: Partial<Activity>): State => withWork(state(task({ stage: 'eval' }), [], { stages: [...stages, evalStage] }), 'I1', work);
+  const run = { stage: 'eval', runId: 'R', workerId: 'w1', startedAt: '2026-10-21T10:00:00.000Z', phase: 'reviewing' as const };
+  const { rerender } = render(<Flow state={at({ evaluate: run })} />);
+  expect(within(tile()).getByText('avaliando · 2 revisores')).toBeInTheDocument();
+  rerender(<Flow state={at({ stopped: true, error: 'evaluation rejected: Ok?' })} />);
+  expect(within(tile()).getByText('avaliação reprovou: Ok?')).toBeInTheDocument();
+});

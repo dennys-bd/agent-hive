@@ -78,7 +78,7 @@ export function StageEditor({ stages, transitions, sources, commands, workspaces
     setSelection({ kind: 'stage', id: next[Math.min(index, next.length - 1)]?.id ?? '' });
   };
   const addStage = (): void => {
-    const added = emptyStage();
+    const added = emptyStage(defaultAgent);
     setStages([...stages, added]);
     setSelection({ kind: 'stage', id: added.id });
   };

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setLanguage, t } from '../src/ui/i18n.js';
 import {
-  actionLabel, addableActions, canContinueSession, deletionMoves, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
+  actionLabel, addableActions, badEvaluation, canContinueSession, deletionMoves, emptyRow, emptyStage, entryKey, entryKeys, entryLabel, fromKeys, stageDraft, stageFrom, stageMeta, stageRenamesFrom, withAction, withEntry, withoutAction,
 } from '../src/ui/lib/settings-stages.js';
 import { draftVerdicts } from '../src/ui/lib/settings-transitions.js';
 import type { SourceAction, Stage, Task } from '../src/types.js';
@@ -174,4 +174,29 @@ test('a stage may continue the previous session only when an earlier stage runs 
   assert.deepEqual(stages.map((_, i) => canContinueSession(stages, i, 'claude')), [false, false, false, true, true, true]);
   assert.equal(canContinueSession(stages, 2, 'codex'), true, "the default agent is codex: the first stage's agent");
   assert.equal(canContinueSession([{ ...emptyStage(), name: 'c', action: 'commands' }, run({})], 1, 'claude'), false, 'a commands stage opens no session');
+});
+
+test('an evaluate stage keeps its reviewers, judge, threshold and rubric through the draft, its cap too; a new draft has no reviewer, the judge on the default agent and 7; an empty pick sends no key (#877)', () => {
+  setLanguage('pt');
+  const stage: Stage = {
+    name: 'eval', from: { work: ['Eval'] }, action: 'evaluate', maxWorkers: 1,
+    reviewers: [{ agent: 'claude', specializedAgent: 'hive:security-reviewer', focus: 'security' }, { agent: 'codex', model: 'gpt-5.6-terra', focus: 'the spec' }],
+    judge: { agent: 'claude', model: 'opus' }, threshold: 8, rubric: 'a\nb',
+  };
+  const draft = stageDraft(stage, ROWS);
+  assert.deepEqual(stageFrom(draft, ROWS), stage);
+  assert.deepEqual(draft.reviewers.map((r) => [r.agent, r.model, r.specializedAgent, r.focus]), [['claude', '', 'hive:security-reviewer', 'security'], ['codex', 'gpt-5.6-terra', '', 'the spec']]);
+  const fresh = emptyStage('codex');
+  assert.deepEqual([fresh.reviewers, fresh.judge.agent, fresh.judge.model, fresh.threshold, fresh.rubric], [[], 'codex', '', '7', '']);
+  assert.equal(stageDraft({ name: 'p', from: {}, prompt: '/x' }, ROWS, 'codex').judge.agent, 'codex', 'a stage turned into one starts its judge on the default');
+  const prompt = stageFrom({ ...draft, action: '', prompt: '/x' }, ROWS);
+  assert.equal(['reviewers', 'judge', 'threshold', 'rubric'].some((key) => key in prompt), false);
+  assert.equal(stageMeta(draft, 'claude'), '2 revisores e um juiz');
+});
+
+test('badEvaluation: a blank focus, a threshold off 0..10 or not whole, a rubric with no line (#877)', () => {
+  const ok = { ...emptyStage(), action: 'evaluate' as const, reviewers: [{ ...emptyRow('claude'), focus: 'x' }], rubric: 'a' };
+  assert.equal(badEvaluation(ok), false);
+  for (const bad of [{ reviewers: [{ ...emptyRow('claude'), focus: ' ' }] }, { threshold: '11' }, { threshold: '6.5' }, { threshold: '' }, { rubric: ' \n ' }]) assert.equal(badEvaluation({ ...ok, ...bad }), true, JSON.stringify(bad));
+  assert.equal(badEvaluation({ ...ok, action: 'commands' as const, rubric: '' }), false, 'only an evaluate stage');
 });

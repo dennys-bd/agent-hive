@@ -39,7 +39,7 @@ function Exits({ stage, stages, transitions, sources, onUpdate, onSelect, onAdd 
         {transitions.filter((d) => d.from === stage.id).map((d) => (
           <li key={d.id}>
             <button type="button" onClick={() => onSelect(d.id)} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent">
-              <span>{`${triggerLabel(d.when, d.verdict)} → ${nameOf(d.to)}`}</span>
+              <span>{`${triggerLabel(d.when, d.verdict, stage.action)} → ${nameOf(d.to)}`}</span>
               {tagsOf(d).map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
               <ChevronRightIcon aria-hidden="true" className="ml-auto size-4 text-muted-foreground" />
             </button>
@@ -114,6 +114,7 @@ export function stageEntries(stage: StageDraft): SettingEntry[] {
     ...contextEntries([
       'settings.stages.name', 'settings.stages.enter', 'settings.stages.from', 'settings.stages.after', 'settings.stages.maxWorkers', 'settings.stages.run', 'settings.stages.action',
       ...(isAgentDraft(stage) ? agentFields : []),
+      ...(stage.action === 'evaluate' ? (['settings.stages.evaluate.reviewers', 'settings.stages.evaluate.judge', 'settings.stages.evaluate.threshold', 'settings.stages.evaluate.rubric'] as const) : []),
       ...(gate ? (['settings.stages.approval'] as const) : []),
       'settings.stages.exits',
     ], view, path, stage.id),

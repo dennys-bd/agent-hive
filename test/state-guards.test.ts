@@ -88,3 +88,11 @@ test('savedWork keeps a failed setup\'s rows only in the shape the reducer write
   assert.equal('lastSetup' in savedWork({ lastSetup: { rows } }), false, 'no console id');
   assert.equal('lastSetup' in savedWork({ lastSetup: { consoleId: 'setup:board:1', rows: [] } }), false, 'no rows');
 });
+
+test('an evaluation in flight round-trips so the boot can stop it; a malformed one reads as none (#877)', () => {
+  const evaluate = { stage: 'eval', runId: 'r1', workerId: 'w1', startedAt: '2026-10-21T10:00:00.000Z', phase: 'judging' as const };
+  assert.deepEqual(savedWork({ evaluate }).evaluate, evaluate);
+  assert.equal(savedWork({ evaluate: { ...evaluate, phase: 'sleeping' } }).evaluate, undefined);
+  assert.equal(savedWork({ evaluate: { stage: 'eval' } }).evaluate, undefined);
+  assert.equal(savedWork({ evaluate: { ...evaluate, startedAt: 'yesterday' } }).evaluate, undefined);
+});

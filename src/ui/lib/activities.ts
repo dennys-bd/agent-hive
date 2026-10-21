@@ -1,7 +1,7 @@
 // What the Activities tab lists (#457, redesign 03): every workspace's local activity (#590), then every task with a live run or a worktree,
 // whether the automation or the user started it. Derived from the State the dashboard already receives; nothing of it is stored.
 import { type LiveRun, liveRuns, localRuns, namedRun, terminalLabel } from '../../task-runs';
-import { canOpenSession, sessionsOf, taskLabel } from '../../tasks';
+import { canOpenSession, inAction, sessionsOf, taskLabel } from '../../tasks';
 import { activityOf, keptTerminalsIn, localActivityId, recordOf, recordsOf, workersIn } from '../../activities';
 import type { Activity as LiveActivity, ActivityRecord, Task, TaskPr, Session, SleepCause, SleptRun, Terminal, Worker, State, Status } from '../../types';
 import { type CenterLayout, groupsOf } from '@/lib/center-layout';
@@ -150,7 +150,7 @@ function taskActivityOf(task: Task, state: Slice): TaskActivity | undefined {
   const kept = sessionsOf(state, task.item.itemId);
   const terminals = keptOf(state.terminals, state.workers, activity.id); // #696, #347
   const slept = [...sleepingIn(state.slept, (s) => s.taskId === task.item.itemId, kept), ...sleepingTerminals(terminals)]; // #672, #696
-  if (runs.length === 0 && slept.length === 0 && terminals.length === 0 && !hasWorktree(activity) && activity.commands === undefined && activity.ci === undefined) return undefined; // as before #629: a worktree on disk, a run or a kept terminal (#696) lists it; a commands stage in flight too (#755), so its locked tab has an activity; a wait for CI too (#834), so the waiting task shows in the bar and its Stop has an activity
+  if (runs.length === 0 && slept.length === 0 && terminals.length === 0 && !hasWorktree(activity) && !inAction(activity)) return undefined; // as before #629: a worktree on disk, a run or a kept terminal (#696) lists it; a commands stage in flight too (#755), so its locked tab has an activity; a wait for CI too (#834) and an evaluation (#877), so the waiting task shows in the bar and its Stop has an activity
   const workers = workersIn(state.workers, activity.id);
   const current = taskState(task, state); // the task's state (#663): what the border, the groups and the search show
   const starts = workers.flatMap((worker) => (worker.startedAt === undefined ? [] : [worker.startedAt]));

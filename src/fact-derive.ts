@@ -61,7 +61,7 @@ export function prCorrelation(state: State, url: string): Correlation {
 // in the source); any other event is the flow itself (hive_done and its Stop)
 const MOVED_BY: Partial<Record<HiveEvent['type'], MoveBy>> = {
   moveToStage: 'hand', approve: 'approval', prStates: 'merge', activityDeleted: 'on_finish', activityRemoved: 'on_finish', stageCommandEnded: 'on_finish', ciRead: 'on_finish', poll: 'source', // #755: a passed commands stage; #834: a passed wait
-  stageCommandsRefused: 'on_finish', ciFailed: 'on_finish', ciClock: 'on_finish', // #134: a routed failure moves the task
+  stageCommandsRefused: 'on_finish', ciFailed: 'on_finish', ciClock: 'on_finish', evaluateEnded: 'on_finish', // #877: a passed or routed evaluation; #134: a routed failure moves the task
 };
 const BY_HAND: readonly HiveEvent['type'][] = ['closeTask', 'closeMissing', 'taskDeleted'];
 
@@ -335,7 +335,20 @@ function ciRecords(prev: State, next: State, event: HiveEvent, now: number): Rec
   return [{ event: 'ci.ended', level: failed ? 'warn' : 'info', ...ids, verdict: failed ? 'failed' : 'passed', duration_ms: since(before.since, now) }];
 }
 
-/** Every record one reduction yields (#742): tasks, approvals, runs, stage starts, capacity, PRs, a crash, an API error (#805), a wait for CI (#834). Nothing when the reducer returned
+// An evaluation (#877): its end with a verdict, or broken, with how long it took; a Stop is no end and writes none. Derived from the activity's
+// evaluate before and after, as ciRecords is
+function evaluateRecords(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
+  if (event.type !== 'evaluateEnded' && event.type !== 'evaluateBroken') return [];
+  const before = prev.activities.find((a) => a.id === event.activityId)?.evaluate;
+  if (before === undefined || next.activities.find((a) => a.id === event.activityId)?.evaluate !== undefined) return [];
+  const task = taskOfActivity(prev, event.activityId);
+  const result = event.type === 'evaluateBroken' || task === undefined ? undefined : resultOf(next, taskId(task))?.evaluate;
+  const recorded = typeof result === 'object' && result !== null && 'verdict' in result ? result.verdict : undefined;
+  const verdict = event.type === 'evaluateBroken' ? 'broken' : recorded === 'passed' ? 'passed' : 'failed';
+  return [{ event: 'evaluate.ended', level: verdict === 'passed' ? 'info' : 'warn', ...correlationOf(prev, undefined, task), verdict, duration_ms: since(before.startedAt, now) }];
+}
+
+/** Every record one reduction yields (#742): tasks, approvals, runs, stage starts, capacity, PRs, a crash, an API error (#805), a wait for CI (#834), an evaluation (#877). Nothing when the reducer returned
  * the state it was given. */
 export function deriveFacts(prev: State, next: State, event: HiveEvent, now: number): RecordInput[] {
   if (prev === next) return [];
@@ -343,6 +356,6 @@ export function deriveFacts(prev: State, next: State, event: HiveEvent, now: num
   return [
     ...taskRecords(prev, next, event, now), ...approvalRecords(prev, event, now), ...runStarts(prev, next, now), ...runEnds(prev, next, event, now), ...terminalEnds(prev, next, event, now),
     ...cutRecords(prev, event, now), ...stageStarts, ...capacityRecords(prev, next), ...prRecords(prev, next, event, now), ...crashRecords(prev, next, event),
-    ...apiErrorRecords(prev, event, now), ...ciRecords(prev, next, event, now),
+    ...apiErrorRecords(prev, event, now), ...ciRecords(prev, next, event, now), ...evaluateRecords(prev, next, event, now),
   ];
 }

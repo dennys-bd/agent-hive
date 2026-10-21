@@ -221,6 +221,10 @@ export function describeEvent(event: HiveEvent): string {
     case 'ciRead': return `ciRead activity=${shortId(event.activityId)} prs=${event.prs.map((p) => `#${prNumber(p.url)}`).join(',') || '-'}`; // #834: numbers, never the links
     case 'ciFailed': return `ciFailed activity=${shortId(event.activityId)} failed=${event.names.join(',')}`; // #834: the names only, never the output
     case 'stopCi': return `stopCi activity=${shortId(event.activityId)}`; // #834
+    case 'stopEvaluate': return `stopEvaluate activity=${shortId(event.activityId)}`; // #877
+    case 'evaluateJudging': return `evaluateJudging activity=${shortId(event.activityId)} run=${shortId(event.runId)}`; // #877
+    case 'evaluateEnded': return `evaluateEnded activity=${shortId(event.activityId)} run=${shortId(event.runId)} scores=${event.scores.map((s) => s.score).join(',')} findings=${event.findings.length}`; // #877: numbers only, never the evidence nor a finding
+    case 'evaluateBroken': return `evaluateBroken activity=${shortId(event.activityId)} run=${shortId(event.runId)}: ${event.message.split('\n')[0]}`; // #877: who broke and why, the first line only
     case 'decompositionIssue': return `decompositionIssue #${event.taskId} ${event.id}=#${event.number}`; // #865: never a title
     case 'forkSynced': return `forkSynced activity=${shortId(event.activityId)} ${event.sync.mode} ${event.sync.result}`; // #854: never the reason, git's or gh's words
     case 'sourceActionFailed': return `sourceActionFailed #${event.taskId}: ${event.message}`;
@@ -288,6 +292,8 @@ export function describeEffect(effect: Effect): string {
     case 'ciRead': return `ciRead activity=${shortId(effect.activityId)}`; // #834
     case 'ciRerun': return `ciRerun activity=${shortId(effect.activityId)} runs=${effect.runs.map((r) => r.runId).join(',')}`;
     case 'ciCollect': return `ciCollect activity=${shortId(effect.activityId)} failed=${effect.failed.map((c) => c.name).join(',')}`;
+    case 'evaluate': return `evaluate #${effect.task.item.id} stage=${JSON.stringify(effect.stage.name)} run=${shortId(effect.runId)} reviewers=${effect.stage.reviewers?.length ?? 0}`; // #877: never the rubric's render nor the prompt
+    case 'abortEvaluate': return `abortEvaluate run=${shortId(effect.runId)}`; // #877
     case 'shutdown': return 'shutdown';
     case 'spawnTerminal': return describeTerminal(effect);
     case 'spawnSession': {

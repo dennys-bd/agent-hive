@@ -1,7 +1,7 @@
 import { activityOf, holdsSlug, keptActivity, recordsOf, taskOfActivity, terminalsIn, worktreeOwner, workersIn, type WorkState } from './activities.js';
 import { staleRead } from './column-write.js';
 import { parentOf } from './task-tree.js';
-import { hiveAction, runsAgent } from './stage-agent.js';
+import { hiveAction, holdsWorker, runsAgent } from './stage-agent.js';
 import type { Activity, SourceAction, SourceItem, Task, Session, TaskUsage, DeleteActivityScope, Stage, Config, Effect, Terminal, Transition, Worker, State, Item, WorktreeRow } from './types.js';
 
 /** What a task's workers are read from (#629): the workers point at the activity, the activity's record lists the task. */
@@ -162,9 +162,10 @@ export const canRunIn = (stage: Pick<Stage, 'action' | 'prompt' | 'skill'>): boo
  * the stage left behind on the work (a stopped mark, an awaited approval, queued feedback) is settleEntries' (#629). */
 export const enter = ({ pinned: _pinned, ...task }: Task, stage: Stage): Task => ({ ...task, stage: stage.name, enteredAt: new Date().toISOString() });
 
-/** A stage action in flight on the activity (#755, #834): a commands stage running or a wait for CI. It holds the task as a worker does: not due
- * again, not moved, no workspace change, no start. One rule, so the two never drift. */
-export const inAction = (activity: Pick<Activity, 'commands' | 'ci'> | undefined): boolean => activity?.commands !== undefined || activity?.ci !== undefined;
+/** A stage action in flight on the activity (#755, #834, #877): a commands stage running, a wait for CI or an evaluation. It holds the task as a
+ * worker does: not due again, not moved, no workspace change, no start. One rule, so they never drift. */
+export const inAction = (activity: Pick<Activity, 'commands' | 'ci' | 'evaluate'> | undefined): boolean =>
+  activity?.commands !== undefined || activity?.ci !== undefined || activity?.evaluate !== undefined;
 
 /** A task a stage may act on: stopped, no delete activity in flight, still on the source, not carrying a failure that waits for a manual start, with
  * auto on (#164, #573) unless `nonAutoToo` (a wait-for-CI stage, #304: it holds no worker and runs nothing; a delete-activity stage under
@@ -322,7 +323,7 @@ export function mergeTasks(tasks: Task[], stages: Stage[], { source, items: list
  * its stage's `after`, or with no workspace to run in, is queued too: candidates adds those two checks, an open PR's review does not. */
 export function isQueued(task: Task, stages: Stage[], state: WorkersState): boolean {
   const stage = stageOf(stages, task.stage);
-  return stage !== undefined && (canRunIn(stage) || stage.action === 'commands') && isIdle(task, activityOf(state, taskId(task)))
+  return stage !== undefined && (canRunIn(stage) || holdsWorker(stage)) && isIdle(task, activityOf(state, taskId(task)))
     && workersOf(state, task).length === 0 && !isBlocked(task.item);
 }
 
@@ -515,7 +516,7 @@ export function dueActions(state: Pick<State, 'tasks' | 'stages' | 'deleteActivi
   return state.tasks.filter((c) => {
     const stage = stageOf(state.stages, c.stage);
     const action = hiveAction(stage); // #710: a skill stage runs an agent, the fill's like a prompt stage
-    if (stage === undefined || action === undefined || action === 'commands' || !workerless) return false; // #727: a commands stage is the fill's; the others follow the workerless row
+    if (stage === undefined || action === undefined || holdsWorker(stage) || !workerless) return false; // #727, #877: a commands or evaluate stage is the fill's; the others follow the workerless row
     const live = activityOf(state, taskId(c));
     const nonAuto = action === 'waitForCi' || (action === 'deleteActivity' && state.deleteActivity.nonAutoTasks); // #304; #755: the scope widens its own stage only
     const allowed = isIdle(c, live, nonAuto);

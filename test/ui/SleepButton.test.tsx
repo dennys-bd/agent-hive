@@ -170,3 +170,13 @@ test('a task waiting for CI: the bar\'s dormir ends the wait with no run focused
   await waitFor(() => expect(posts().sort()).toEqual(['/ptys/sleep', stopPath].sort()));
   expect(bodyOf('/ptys/sleep')).toEqual({ ptyIds: ['W3'] });
 });
+
+test('a task under evaluation: the bar\'s dormir posts the evaluation\'s stop route with no run focused (#877)', async () => {
+  const user = userEvent.setup();
+  const judging: WithWork = { ...task, evaluate: { stage: 'eval', runId: 'R', workerId: 'w', startedAt: '2026-10-21T10:00:00.000Z', phase: 'reviewing' } };
+  const [own] = activitiesOf(withPointedWork({ tasks: [judging], workers: [], terminals: [], workspaces: [], activities: [], activityRecords: [] }));
+  if (own === undefined) throw new Error('the evaluated task is an activity');
+  render(<SleepButton activity={own} />);
+  await user.click(screen.getByRole('button', { name: 'dormir' }));
+  await waitFor(() => expect(posts()).toEqual([`/activities/${activityIdOf('I1')}/evaluate/stop`]));
+});

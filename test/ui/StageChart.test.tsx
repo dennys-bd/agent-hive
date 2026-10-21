@@ -26,6 +26,12 @@ test('each stage is a pressed-or-not button with its summary; each transition a 
   expect(screen.getByRole('button', { name: 'terminou' })).toBeInTheDocument(); // and every pill: the default path's selects its transition (#908)
 });
 
+test('an evaluate node shows the scale icon (#877)', () => {
+  const stages = [stage('Eval', { action: 'evaluate' })];
+  render(<StageChart stages={stages} transitions={[]} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);
+  expect(screen.getByRole('button', { name: /^Eval/ }).querySelector('svg.lucide-scale')).not.toBeNull();
+});
+
 test('the canvas bleeds to the card body edges on a dotted 16px grid and scrolls sideways; the chart is centred and its nodes are 64px high, radius lg (#887)', () => {
   const stages = [stage('Build', { prompt: '/hive:new-build' })];
   render(<StageChart stages={stages} transitions={[]} selection={{ kind: 'stage', id: stages[0].id }} defaultAgent="claude" onSelect={vi.fn()} />);

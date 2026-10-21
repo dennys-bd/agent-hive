@@ -1,4 +1,4 @@
-import type { StageCi, StageCommands } from '../../types.js';
+import type { Stage, StageCi, StageCommands, StageEvaluate } from '../../types.js';
 
 // The running block's lines (#914): a wait's checks or a commands stage's commands, each with its mark and its times, a silent command's minutes
 // and how a duration reads. Pure: the block passes the clock.
@@ -65,4 +65,13 @@ export function lineDuration(line: RunningLine, now: number): string | undefined
   if (line.startedAt === undefined) return undefined;
   if (line.mark === 'running') return formatDuration(now - Date.parse(line.startedAt));
   return line.endedAt === undefined ? undefined : formatDuration(Date.parse(line.endedAt) - Date.parse(line.startedAt));
+}
+
+/** An evaluation's runs (#877): each reviewer as `<agent> · <focus>`, running from the stage's start while it reviews, done once the judge runs;
+ * the judge after them, queued, then running. The reducer knows the phase only, so a finished reviewer shows no time. */
+export function evaluateLines(run: StageEvaluate, stage: Pick<Stage, 'reviewers' | 'judge'> | undefined, judgeLabel: string): RunningLine[] {
+  const reviewing = run.phase === 'reviewing';
+  const reviewers = (stage?.reviewers ?? []).map((r): RunningLine => ({ name: `${r.agent} · ${r.focus ?? ''}`, mark: reviewing ? 'running' : 'done', ...(reviewing ? { startedAt: run.startedAt } : {}) }));
+  const judge: RunningLine = { name: `${judgeLabel} · ${stage?.judge?.agent ?? ''}`, mark: reviewing ? 'queued' : 'running' };
+  return [...reviewers, judge];
 }

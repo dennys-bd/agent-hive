@@ -1,5 +1,7 @@
 import { TIMEOUT, timeoutMs } from './timeout.js';
-import { CI_CHECKS, type CiChecks, ENV_NAME, ON_MISSING, RESERVED_ENV_NAMES, type Command, type CommandImpl, type OnMissing, type Stage } from './types.js';
+import { isLaunchModel, isSpecializedAgent } from './launch-pick.js';
+import { rubricLines, SCORE_MAX } from './stage-agent.js';
+import { AGENT_IDS, CI_CHECKS, type AgentId, type CiChecks, type EvaluateRow, ENV_NAME, ON_MISSING, RESERVED_ENV_NAMES, type Command, type CommandImpl, type OnMissing, type Stage } from './types.js';
 
 // The Comb's run commands in hive.config.json (#300, #511), out of config.ts, which is over 400 lines. The prefix is config.ts's CONFIG_FILE,
 // written out: importing it would make config.ts, which calls this parser, and this file import each other.
@@ -171,4 +173,41 @@ export function parseStageCi(raw: Record<string, unknown>, field: string): Pick<
   if (ciChecks === 'list') return { ciChecks, checks: parseCheckList(raw.checks, `${field}.checks`), rerunOnce, ...timeout };
   if (raw.checks !== undefined) fail(`${field}.checks`, 'needs "ciChecks": "list"');
   return { ciChecks, rerunOnce, ...timeout };
+}
+
+const EVALUATE_KEYS = ['reviewers', 'judge', 'threshold', 'rubric'] as const;
+const isAgentId = (value: unknown): value is AgentId => AGENT_IDS.some((a) => a === value);
+
+// One reviewer or the judge (#877): an agent, its optional model and specialized agent as LaunchPick takes them, and a reviewer's focus. The
+// model and the agent's name reach an argv, so they get the run picks' own shape checks
+function parseRow(raw: unknown, field: string, isJudge: boolean): EvaluateRow {
+  if (!isRecord(raw)) return fail(field, 'must be an object');
+  if (!isAgentId(raw.agent)) return fail(`${field}.agent`, `must be one of: ${AGENT_IDS.join(', ')}`);
+  if (raw.model !== undefined && !isLaunchModel(raw.model)) fail(`${field}.model`, 'must be a model name');
+  if (raw.specializedAgent !== undefined && !isSpecializedAgent(raw.specializedAgent)) fail(`${field}.specializedAgent`, 'must be hive:<name>, lowercase letters, digits and hyphens');
+  if (isJudge && raw.focus !== undefined) fail(`${field}.focus`, 'is a reviewer\'s: the judge has none');
+  const picks = { agent: raw.agent, ...(typeof raw.model === 'string' ? { model: raw.model } : {}), ...(typeof raw.specializedAgent === 'string' ? { specializedAgent: raw.specializedAgent } : {}) };
+  return isJudge ? picks : { ...picks, focus: trimmed(raw.focus, `${field}.focus`) };
+}
+
+/** An evaluate stage's own keys (#877): its reviewers (none is fine: the judge reads the work alone), its judge, a 0..10 threshold and a rubric
+ * with at least one dimension, all required with `action: "evaluate"` and refused without it. model and session mean nothing next to it (each
+ * row picks its own); the other actions' keys are their parsers' to refuse. */
+export function parseStageEvaluate(raw: Record<string, unknown>, field: string): Pick<Stage, 'reviewers' | 'judge' | 'threshold' | 'rubric'> {
+  if (raw.action !== 'evaluate') {
+    for (const key of EVALUATE_KEYS) {
+      if (raw[key] !== undefined) fail(`${field}.${key}`, 'needs "action": "evaluate"');
+    }
+    return {};
+  }
+  for (const key of ['model', 'session'] as const) {
+    if (raw[key] !== undefined) fail(`${field}.${key}`, 'cannot be combined with "action": "evaluate"');
+  }
+  if (!Array.isArray(raw.reviewers)) return fail(`${field}.reviewers`, 'must be an array of reviewers');
+  const reviewers = raw.reviewers.map((row: unknown, i) => parseRow(row, `${field}.reviewers[${i}]`, false));
+  const judge = parseRow(raw.judge, `${field}.judge`, true);
+  const { threshold, rubric } = raw;
+  if (typeof threshold !== 'number' || !Number.isInteger(threshold) || threshold < 0 || threshold > SCORE_MAX) return fail(`${field}.threshold`, `must be an integer from 0 to ${SCORE_MAX}`);
+  if (typeof rubric !== 'string' || rubricLines(rubric).length === 0) return fail(`${field}.rubric`, 'must hold at least one dimension: a non-blank line');
+  return { reviewers, judge, threshold, rubric };
 }

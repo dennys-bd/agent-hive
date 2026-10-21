@@ -22,6 +22,7 @@ const ACTIVITY: Activity = {
   freeSessionStage: 'A',
   commands: { stage: 'A', at: 0, ptyId: 'p1', runId: 'p1', failed: [], workerId: 'w1', started: [] },
   ci: { stage: 'A', since: AT, reran: [] },
+  evaluate: { stage: 'A', runId: 'r1', workerId: 'w1', startedAt: AT, phase: 'reviewing' }, // #877
   checkpoints: [{ n: 1, stage: 'A', start: 'c0ffee', head: 'c0ffee', commit: 'c0ffee', branch: 'hive/1-t', at: AT, ended: 'done' }],
   stageGone: 'A',
 };
@@ -61,6 +62,7 @@ export const STAGE_KEYED_FIELDS: StageKeyedField[] = [
   { field: 'Activity.freeSessionStage', read: (s) => activity(s)?.freeSessionStage, before: 'A', after: 'Z' },
   { field: 'StageCommands.stage', read: (s) => activity(s)?.commands?.stage, before: 'A', after: 'Z' },
   { field: 'StageCi.stage', read: (s) => activity(s)?.ci?.stage, before: 'A', after: 'Z' },
+  { field: 'StageEvaluate.stage', read: (s) => activity(s)?.evaluate?.stage, before: 'A', after: 'Z' }, // #877
   { field: 'Checkpoint.stage', read: (s) => activity(s)?.checkpoints?.[0]?.stage, before: 'A', after: 'Z' },
   { field: 'Activity.stageGone', read: (s) => activity(s)?.stageGone, before: 'A', after: 'Z' },
   { field: 'ActivityRecord.stageRuns (keys)', read: (s) => Object.keys(s.activityRecords[0]?.stageRuns ?? {}), before: ['A', 'B'], after: ['Z', 'Y'] },

@@ -2,6 +2,7 @@ import { activityOf, withActivity } from './activities.js';
 import { releaseRun, releaseWorker, withTask } from './reducer-kit.js';
 import { haltCi } from './stage-ci.js';
 import { destinationOf } from './stage-delete.js';
+import { haltEvaluate } from './stage-evaluate.js';
 import { enter, inAction, stageOf, taskId } from './tasks.js';
 import { haltGone } from './transit.js';
 import type { Activity, Effect, Stage, State, Task, Worker } from './types.js';
@@ -21,7 +22,8 @@ function endHold(state: State, moved: Task, live: Activity, worker: Worker & { r
 }
 
 // A task a worker or a stage action holds: a plain rewrite of its stage and entry, no enter, so no gate, action or onStart fires mid-run. A
-// worker's run is marked stageGone and halts at its Stop; a wait for CI holds no process and its stage is gone, so it halts now
+// worker's run is marked stageGone and halts at its Stop; a wait for CI or an evaluation holds no process of the Hive's to Stop at and its stage is
+// gone, so it halts now, an evaluation's runs aborted (#877)
 function placeHeld(acc: Placed, task: Task, to: Stage): Placed {
   const moved: Task = { ...task, stage: to.name, enteredAt: new Date().toISOString() };
   const before = acc.before.map((c) => (taskId(c) === taskId(task) ? moved : c));
@@ -29,6 +31,10 @@ function placeHeld(acc: Placed, task: Task, to: Stage): Placed {
   const live = activityOf(state, taskId(task));
   if (live === undefined) return { ...acc, state, before };
   if (live.ci !== undefined) return { ...acc, before, state: haltGone(haltCi(state, live.id), moved, task.stage).state };
+  if (live.evaluate !== undefined) {
+    const halted = haltEvaluate(state, live.id);
+    return { before, state: haltGone(halted.state, moved, task.stage).state, effects: [...acc.effects, ...halted.effects] };
+  }
   const worker = state.workers.find((w) => w.id === live.workerId);
   if (worker?.status === 'approval' && worker.runId !== undefined) {
     const ended = endHold(state, moved, live, { ...worker, runId: worker.runId }, task.stage);

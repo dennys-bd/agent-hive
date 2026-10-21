@@ -40,13 +40,15 @@ export interface LspServerEntry { command: string; args: string[]; extensionToLa
 export type LspServers = Readonly<Record<string, LspServerEntry>>;
 
 /** One headless run (#330): no pty, no hook, no Hive MCP server; a prompt in on stdin and one answer out. Every path is inside `dir`, the
- * run's own temp folder. `schema` is the answer's JSON Schema as text (Claude takes it inline), `schemaPath` the same text on disk (Codex). */
+ * run's own temp folder, but `cwd`. `schema` is the answer's JSON Schema as text (Claude takes it inline), `schemaPath` the same text on disk (Codex). */
 export interface HeadlessRun {
   dir: string;
   schema: string;
   schemaPath: string;
   answerPath: string; // where an agent that writes its last message to a file (Codex's -o) puts it
   model?: string;
+  cwd?: string; // #877: the worktree the run reads; absent = dir
+  readOnlyTools?: true; // #877: the agent may read files, never write
 }
 
 export interface AgentRunner {

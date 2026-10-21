@@ -125,13 +125,10 @@ async function diffGit(worktree: string, args: string[], opts: { env: NodeJS.Pro
   }
 }
 
-/**
- * The worktree as it is on disk against `base` (#270): commits, staged and unstaged changes, and untracked files .gitignore does not
- * exclude. The worktree's index is copied to a fresh temp dir and only the copy takes `git add -A`, so the real index, which a worker may be
- * using, is never written; the add does store the untracked files' blobs in the object store, unreferenced, for gc to prune. One `diff
- * --cached -M` then gives renames and a single format to parse. The temp dir goes whatever happens.
- */
-export async function taskDiff(worktree: string, base: string, exec: Exec): Promise<FileDiff[]> {
+const DIFF_FLAGS = ['--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/'];
+
+// The worktree's index copied to a temp dir, every file added there only, and `fn` run against it; the temp dir goes whatever happens (#270)
+async function withIndexCopy<T>(worktree: string, exec: Exec, fn: (opts: { env: NodeJS.ProcessEnv; maxBuffer: number }) => Promise<T>): Promise<T> {
   // a linked worktree's index lives under the main repo's .git/worktrees/; git answers a path relative to the worktree or an absolute one
   const index = resolve(worktree, (await gitOrWords(worktree, ['rev-parse', '--git-path', 'index'], exec)).trim());
   const dir = await mkdtemp(join(tmpdir(), 'hive-diff-'));
@@ -140,11 +137,29 @@ export async function taskDiff(worktree: string, base: string, exec: Exec): Prom
     await copyFile(index, copy);
     const opts = { env: { ...process.env, GIT_INDEX_FILE: copy }, maxBuffer: DIFF_MAX_BYTES };
     await diffGit(worktree, ['add', '-A'], opts, exec);
-    const args = ['-c', 'core.quotepath=off', 'diff', '--cached', '--no-color', '--no-ext-diff', '--no-textconv', '-M', '--src-prefix=a/', '--dst-prefix=b/', '--end-of-options', base];
-    return parseDiff(await diffGit(worktree, args, opts, exec)).map(withHash);
+    return await fn(opts);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * The worktree as it is on disk against `base` (#270): commits, staged and unstaged changes, and untracked files .gitignore does not
+ * exclude. The worktree's index is copied to a fresh temp dir and only the copy takes `git add -A`, so the real index, which a worker may be
+ * using, is never written; the add does store the untracked files' blobs in the object store, unreferenced, for gc to prune. One `diff
+ * --cached -M` then gives renames and a single format to parse. The temp dir goes whatever happens.
+ */
+export async function taskDiff(worktree: string, base: string, exec: Exec): Promise<FileDiff[]> {
+  return withIndexCopy(worktree, exec, async (opts) =>
+    parseDiff(await diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, '--end-of-options', base], opts, exec)).map(withHash));
+}
+
+/** The worktree against `base` as an evaluation reads it (#877): `--stat` and the patch, on taskDiff's index copy, so untracked files show too. */
+export async function taskPatch(worktree: string, base: string, exec: Exec): Promise<{ stat: string; patch: string }> {
+  return withIndexCopy(worktree, exec, async (opts) => {
+    const diff = (extra: string[]): Promise<string> => diffGit(worktree, ['-c', 'core.quotepath=off', 'diff', '--cached', ...DIFF_FLAGS, ...extra, '--end-of-options', base], opts, exec);
+    return { stat: await diff(['--stat']), patch: await diff([]) };
+  });
 }
 
 /** The commit scope (#591): what the last commit changed, HEAD^ against HEAD, with the pinned flags; no index copy, none of the uncommitted work. */

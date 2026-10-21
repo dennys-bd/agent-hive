@@ -95,10 +95,10 @@ export async function readyOn(server: { dispatch(event: HiveEvent): Promise<Effe
 // The fields a fixture task may carry that the reducer keeps on its activity (#629): the worktree's, then the run's
 const WORK_KEYS: readonly (keyof Activity)[] = [
   'worktree', 'branch', 'worktreeGone', 'local', 'base', 'setup', 'lastSetup', 'deleting',
-  'sessionId', 'workerId', 'stopped', 'stoppedAt', 'stageStart', 'error', 'approval', 'handover', 'commands', 'ci', 'tries', 'via', 'freeSessionStage', 'checkpoints',
+  'sessionId', 'workerId', 'stopped', 'stoppedAt', 'stageStart', 'error', 'approval', 'handover', 'commands', 'ci', 'evaluate', 'tries', 'via', 'freeSessionStage', 'checkpoints',
 ];
 type WorkKey = 'worktree' | 'branch' | 'worktreeGone' | 'local' | 'base' | 'setup' | 'lastSetup' | 'deleting'
-  | 'sessionId' | 'workerId' | 'stopped' | 'stoppedAt' | 'stageStart' | 'error' | 'approval' | 'handover' | 'commands' | 'ci' | 'tries' | 'via' | 'freeSessionStage' | 'checkpoints';
+  | 'sessionId' | 'workerId' | 'stopped' | 'stoppedAt' | 'stageStart' | 'error' | 'approval' | 'handover' | 'commands' | 'ci' | 'evaluate' | 'tries' | 'via' | 'freeSessionStage' | 'checkpoints';
 const isWorkKey = (key: string): boolean => (WORK_KEYS as readonly string[]).includes(key);
 
 /** A fixture task with the worktree and run fields its activity holds (#629): what a test writes before saveState splits it. */

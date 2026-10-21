@@ -49,8 +49,8 @@ function Route({ id, transition, stages, onUpdate }: Omit<TransitionEditorProps,
       {transition.when === 'verdict' && (
         <Field id={`${id}-verdict`} label={t('settings.transitions.verdict')}>
           <Select value={transition.verdict} onValueChange={(verdict) => onUpdate({ verdict })}>
-            <SelectTrigger id={`${id}-verdict`} aria-label={t('settings.transitions.verdict')} className="w-full"><SelectValue>{verdictLabel(transition.verdict)}</SelectValue></SelectTrigger>
-            <SelectContent>{verdicts.map((v) => <SelectItem key={v} value={v}>{verdictLabel(v)}</SelectItem>)}</SelectContent>
+            <SelectTrigger id={`${id}-verdict`} aria-label={t('settings.transitions.verdict')} className="w-full"><SelectValue>{verdictLabel(transition.verdict, origin?.action)}</SelectValue></SelectTrigger>
+            <SelectContent>{verdicts.map((v) => <SelectItem key={v} value={v}>{verdictLabel(v, origin?.action)}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
       )}

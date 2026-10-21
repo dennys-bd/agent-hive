@@ -13,6 +13,7 @@ import { haltCommands } from './stage-commands.js';
 import { advance, type EndOf, take } from './transit.js';
 import { exitName, exitOf, transitionByKey } from './transitions.js';
 import { haltCi, uncollected } from './stage-ci.js';
+import { haltEvaluate } from './stage-evaluate.js';
 import type { Activity, Task, CloseAction, Effect, HiveEvent, SleepCause, Terminal, Trigger, Worker, State } from './types.js';
 import { openingSignal } from './signals.js';
 
@@ -86,11 +87,11 @@ const holding = (s: Worker): boolean => s.status === 'approval'; // a Stop held 
 // A leaving write in flight when the Hive died never answers (#286): the task carries this until the user starts it again or closes it.
 const LEAVING_LOST = 'a ação na source não terminou';
 
-// Neither deleting nor a setup survives a boot (#351, #629); a commands stage died with the Hive, its pty with it: stopped, with no verdict (#755).
-// A wait for CI holds no process: it is kept, its log fetch dropped, and the next tick reads on (#834)
-const bootedWork = ({ deleting: _deleting, setup: _setup, commands, ci, ...activity }: Activity): Activity => {
+// Neither deleting nor a setup survives a boot (#351, #629); a commands stage died with the Hive, its pty with it: stopped, with no verdict (#755),
+// and so did an evaluation's headless runs (#877). A wait for CI holds no process: it is kept, its log fetch dropped, and the next tick reads on (#834)
+const bootedWork = ({ deleting: _deleting, setup: _setup, commands, ci, evaluate, ...activity }: Activity): Activity => {
   const kept: Activity = ci === undefined ? activity : { ...activity, ci: uncollected(ci) };
-  return commands === undefined ? kept : stoppedWork(kept);
+  return commands === undefined && evaluate === undefined ? kept : stoppedWork(kept);
 };
 
 /**
@@ -356,14 +357,16 @@ function freeSessionEnd(state: State, worker: Worker, task: Task, result?: Recor
 
 /** Deleting an activity or dropping its task forgets its terminals (#573, #696): every terminal its activity keeps leaves the state at once,
  * a live one killed (git never runs under one), and every plain one's files go. The exit that follows finds no terminal. A commands stage in
- * flight is stopped with them (#755), its pty killed, with no verdict. A wait for CI ends with them, with no verdict (#834). */
+ * flight is stopped with them (#755), its pty killed, with no verdict. A wait for CI ends with them, with no verdict (#834), and an evaluation, its runs
+ * aborted (#877). */
 export function closeTerminals(state: State, task: Task): Reduced {
   const activity = activityOf(state, taskId(task));
   const slug = slugOf(state, taskId(task));
   const closed = forgetTerminals(state, activity === undefined ? [] : state.terminals.filter((t) => t.activityId === activity.id), () => slug);
   const halted = activity === undefined ? none(closed.state) : haltCommands(closed.state, activity.id);
   const unwaited = activity === undefined ? halted.state : haltCi(halted.state, activity.id); // #834
-  return { state: unwaited, effects: [...closed.effects, ...halted.effects] };
+  const unjudged = activity === undefined ? none(unwaited) : haltEvaluate(unwaited, activity.id); // #877
+  return { state: unjudged.state, effects: [...closed.effects, ...halted.effects, ...unjudged.effects] };
 }
 
 /** The first /tasks/:id/open is about to make the worktree (#629): the task's activity is born now, so its setup and worktreeReady have an id

@@ -5,7 +5,7 @@ import { access, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { WorkspaceBase } from '../src/fork.js';
-import { taskDiff, commitDiff, DIFF_MAX_BYTES, diffBase, DiffTooLarge, isOverflow, fileHash, NoParentCommit, parseDiff, withHash } from '../src/diff.js';
+import { taskDiff, taskPatch, commitDiff, DIFF_MAX_BYTES, diffBase, DiffTooLarge, isOverflow, fileHash, NoParentCommit, parseDiff, withHash } from '../src/diff.js';
 import type { Activity, Task, Exec } from '../src/types.js';
 import { tempHive } from './fakes.js';
 import { tempDir, type AfterHost } from './temp-dir.js';
@@ -276,4 +276,21 @@ test('fileHash changes with a hunk, the status or the old path, never with the p
   assert.notEqual(fileHash({ ...file, status: 'renamed', oldPath: 'b.txt' }), hash);
   const two = parseDiff(`${MODIFIED}${MODIFIED.replaceAll('a.txt', 'b.txt')}`).map(withHash);
   assert.deepEqual([...two].reverse().map((f) => f.hash).reverse(), two.map((f) => f.hash));
+});
+
+test('taskPatch gives the stat and the patch of the worktree against a base, untracked files included, the real index untouched (#877)', async (t) => {
+  const { repo } = await tempHive(t);
+  const git = (...args: string[]) => run('git', ['-C', repo, '-c', 'user.name=Hive', '-c', 'user.email=hive@example.invalid', '-c', 'commit.gpgsign=false', ...args]);
+  await writeFile(join(repo, 'a.ts'), 'one\n');
+  await git('add', 'a.ts');
+  await git('commit', '--quiet', '-m', 'base');
+  const base = (await git('rev-parse', 'HEAD')).stdout.trim();
+  await writeFile(join(repo, 'a.ts'), 'one\ntwo\n');
+  await writeFile(join(repo, 'new.ts'), 'fresh\n');
+  const { stat, patch } = await taskPatch(repo, base, run);
+  assert.match(stat, /a\.ts +\| +\d+/);
+  assert.match(stat, /new\.ts/);
+  assert.match(patch, /^diff --git a\/a\.ts b\/a\.ts/m);
+  assert.match(patch, /\+\+\+ b\/new\.ts/);
+  assert.equal((await git('status', '--porcelain')).stdout.includes('?? new.ts'), true, 'the real index never took the add');
 });

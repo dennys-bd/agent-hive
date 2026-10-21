@@ -1,6 +1,6 @@
 import { agentOf } from './agents.js';
 import { hiveActionRaw, runsAgentRaw } from './config-stage-agent.js';
-import { runsAgent } from './stage-agent.js';
+import { hasFixedVerdicts, runsAgent } from './stage-agent.js';
 import { isGate } from './tasks.js';
 import { isAutomatic, transitionKey, verdictsOf } from './transitions.js';
 import { END, TRIGGERS, type AgentId, type SourceAction, type Stage, type Transition, type TransitionSession, type Trigger } from './types.js';
@@ -52,13 +52,13 @@ function parseVerdict(raw: Record<string, unknown>, field: string, from: Stage, 
   return { verdict: raw.verdict };
 }
 
-// approved and feedback answer a stage with approval; done leaves a stage without it, except commands and wait for CI, which only end with
+// approved and feedback answer a stage with approval; done leaves a stage without it, except commands, wait for CI and evaluate (#877), which only end with
 // passed or failed; a gate runs nothing, so its feedback goes to the stage
 // that does the work
 function checkTrigger(from: Stage, when: Trigger, to: string, field: string): void {
   if ((when === 'approved' || when === 'feedback') && from.approval !== true) fail(`${field}.when`, `"${when}" needs "${from.name}" to have "approval"`);
   if (when === 'done' && from.approval === true) fail(`${field}.when`, `"done" cannot leave "${from.name}", which has "approval": use "approved"`);
-  if (when === 'done' && (from.action === 'commands' || from.action === 'waitForCi')) {
+  if (when === 'done' && hasFixedVerdicts(from)) {
     fail(`${field}.when`, `"done" cannot leave "${from.name}", which ends with a verdict: use "verdict" with "passed" or "failed"`);
   }
   if (when === 'feedback' && to === from.name && isGate(from)) fail(`${field}.to`, 'cannot be the gate itself: a gate runs nothing, so its feedback goes to another stage');

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { taskOfActivity, withActivity } from './activities.js';
+import { heldRun, taskOfActivity, withActivity } from './activities.js';
 import { withResult, withRun } from './record-kit.js';
 import { ensureActivity, none, type Reduced, releaseWorker, slugTaken, sourceWrites, stoppedWork, withTask } from './reducer-kit.js';
 import { onSource, resolveWorkspace, stageOf } from './tasks.js';
@@ -16,44 +16,54 @@ import { CHECKS_FAILED, type Activity, type CommandFailure, type Effect, type Hi
 const commandEffect = (activity: Activity, task: Task, stage: Stage, run: StageCommands): Effect =>
   ({ type: 'stageCommand', activity, task, stage, at: run.at, ptyId: run.ptyId });
 
-/** A commands stage starts on the task (#755) in `workers[index]` (#727): its onStart list written in order, as a prompt stage's start writes
- * it, the first command's run on the activity, born for it when it has none, and its effect. The run holds the worker for its life: a worker
- * with no run id (each command has a pty of its own) and no activity (no session), which the caps count and no session view lists. A slug
- * another task owns refuses it as a spawn is refused, with the error on the task. */
-export function startCommands(given: State, task: Task, index: number, kind: WorkerEventKind): Reduced {
+/** What a held stage's start shares (#727, #877): the slug check, the activity born for it when it has none and unstopped, the onStart list
+ * written in order, as a prompt stage's start writes it, the workspace frozen and `workers[index]` held. The worker has no run id and no
+ * activity (no session), which the caps count and no session view lists. `none(...)` when it cannot start. */
+export interface HeldStart { state: State; task: Task; activity: Activity; worker: Worker; stage: Stage; effects: Effect[] }
+export function heldStart(given: State, task: Task, index: number, kind: WorkerEventKind, action: 'commands' | 'evaluate'): HeldStart | Reduced {
   const stage = stageOf(given.stages, task.stage);
   const taken = slugTaken(given, task);
   if (taken) return none(taken);
   const born = ensureActivity(given, task);
   const slot = born?.state.workers[index];
-  if (!born || !slot || stage?.action !== 'commands') return none(given); // the fill and start only pass a task with a workspace
+  if (!born || !slot || stage?.action !== action) return none(given); // the fill and start only pass a task with a workspace
   const written = sourceWrites(task, onSource(stage.onStart, task.item.source));
   const workspace = resolveWorkspace(task, born.state.workspaces, born.state.sourceWorkspaces, born.state.tasks); // frozen as a spawn freezes it (#179)
   const started: Task = { ...written.task, ...(workspace === undefined ? {} : { workspace }) };
   const { stopped: _stopped, stoppedAt: _stoppedAt, ...unstopped } = born.activity;
-  const ptyId = randomUUID();
   const worker: Worker = { id: slot.id, status: 'working', stage: stage.name, startedAt: new Date().toISOString(), lastEvent: { kind }, ...(slot.draining ? { draining: true } : {}) };
-  const run: StageCommands = { stage: stage.name, at: 0, ptyId, runId: ptyId, failed: [], workerId: worker.id, started: [] };
-  const running: Activity = { ...unstopped, commands: run };
   const held: State = { ...born.state, workers: born.state.workers.map((w, i) => (i === index ? worker : w)) };
-  return { state: withActivity(withTask(held, started), running), effects: [...written.effects, commandEffect(running, started, stage, run)] };
+  return { state: withTask(held, started), task: started, activity: unstopped, worker, stage, effects: written.effects };
+}
+
+/** A commands stage starts on the task (#755) in `workers[index]` (#727), through heldStart: the first command's run on the activity and its
+ * effect. The run holds the worker for its life (each command has a pty of its own). A slug another task owns refuses it as a spawn is refused,
+ * with the error on the task. */
+export function startCommands(given: State, task: Task, index: number, kind: WorkerEventKind): Reduced {
+  const held = heldStart(given, task, index, kind, 'commands');
+  if (!('worker' in held)) return held;
+  const ptyId = randomUUID();
+  const run: StageCommands = { stage: held.stage.name, at: 0, ptyId, runId: ptyId, failed: [], workerId: held.worker.id, started: [] };
+  const running: Activity = { ...held.activity, commands: run };
+  return { state: withActivity(held.state, running), effects: [...held.effects, commandEffect(running, held.task, held.stage, run)] };
 }
 
 /** Every commands run's worker (#727: occupied, no run id) that no activity's run names any more frees, after every event: the boot dropped
  * every run (their ptys died with the Hive, as loadState already empties such a worker from a file), and a task that left mid-run (a save that
  * removed its stage) took its activity with it, so the run's end would never find the worker. */
 export function freedLostRuns(state: State): State {
-  const lost = state.workers.filter((w) => w.status !== 'empty' && w.runId === undefined && !state.activities.some((a) => a.commands?.workerId === w.id));
+  const lost = state.workers.filter((w) => w.status !== 'empty' && w.runId === undefined && !state.activities.some((a) => heldRun(a)?.workerId === w.id));
   return lost.length === 0 ? state : { ...state, workers: lost.reduce(releaseWorker, state.workers) };
 }
 
 // The worker the run held frees with its end, whatever the end, and before #134's routing takes the verdict anywhere (#727): a draining one
 // leaves, any other empties for the fill, which decides what runs next under the signal. Its time joins the task first (#617): the worker
-// holds no activity, so releaseRun never finds it
-function released(state: State, { id, commands }: Pick<Activity, 'id' | 'commands'>): State {
-  const worker = commands && state.workers.find((w) => w.id === commands.workerId);
+// holds no activity, so releaseRun never finds it. A commands run's or an evaluation's (#877)
+export function releaseHeld(state: State, activity: Pick<Activity, 'id' | 'commands' | 'evaluate'>): State {
+  const held = heldRun(activity);
+  const worker = held && state.workers.find((w) => w.id === held.workerId);
   if (!worker) return state;
-  const task = taskOfActivity(state, id);
+  const task = taskOfActivity(state, activity.id);
   const counted = task ? withRun(state, task, worker, Date.now()) : state;
   return { ...counted, workers: releaseWorker(counted.workers, worker) };
 }
@@ -73,12 +83,12 @@ function runOf(state: State, activityId: string, ptyId: string): { activity: Act
 function failCommands(state: State, activity: Activity, task: Task, output: string, list: string, runId: string): Reduced {
   const { commands: _commands, ...rest } = activity;
   const stopped: Activity = { ...rest, stopped: true, stoppedAt: new Date().toISOString(), error: `${CHECKS_FAILED}${list}` };
-  return none(withResult(withActivity(released(state, activity), stopped), task, { commands: { verdict: 'failed', output, runId } }));
+  return none(withResult(withActivity(releaseHeld(state, activity), stopped), task, { commands: { verdict: 'failed', output, runId } }));
 }
 
 // failed (#134): a failed transition takes the task on with the output on the record; without one it stops as before (failCommands)
 function failedCommands(state: State, activity: Activity, task: Task, output: string, list: string, runId: string): Reduced {
-  const freed = released(state, activity);
+  const freed = releaseHeld(state, activity);
   if (exitOf(freed, task.stage, 'verdict', 'failed') === undefined) return failCommands(freed, activity, task, output, list, runId);
   const { commands: _commands, ...rest } = activity;
   const failed = withResult(withActivity(freed, rest), task, { commands: { verdict: 'failed', output, runId } });
@@ -89,7 +99,7 @@ function failedCommands(state: State, activity: Activity, task: Task, output: st
 // #861: the stage was deleted under the run: no verdict routes, the run goes and the task halts in the stage it was moved to
 function goneCommands(state: State, activity: Activity, task: Task, gone: string): Reduced {
   const { commands: _commands, ...rest } = activity;
-  return none(haltGone(withActivity(released(state, activity), rest), task, gone).state);
+  return none(haltGone(withActivity(releaseHeld(state, activity), rest), task, gone).state);
 }
 
 // The stage's end (runId: the execution, which the verdict keeps so ver saída stays scoped to it): passed merges its verdict and moves the task on, as a deleted activity's stage does; any failure fails it
@@ -100,7 +110,7 @@ function endCommands(state: State, activity: Activity, task: Task, failed: reado
     return failedCommands(state, activity, task, output, failed.map((f) => `${f.name} (${f.code})`).join(', '), runId);
   }
   const { commands: _commands, ...rest } = activity;
-  const passed = withResult(withActivity(released(state, activity), rest), task, { commands: { verdict: 'passed', runId } });
+  const passed = withResult(withActivity(releaseHeld(state, activity), rest), task, { commands: { verdict: 'passed', runId } });
   const { state: advanced, effects } = advance(passed, task, { trigger: 'verdict', verdict: 'passed' }); // #134: passed fires its transition
   return { state: advanced, effects };
 }
@@ -154,5 +164,5 @@ export function haltCommands(state: State, activityId: string): Reduced {
   const activity = state.activities.find((a) => a.id === activityId);
   if (activity?.commands === undefined) return none(state);
   const { commands, ...rest } = activity;
-  return { state: withActivity(released(state, activity), stoppedWork(rest)), effects: [{ type: 'kill', slug: activity.slug ?? '', ptyId: commands.ptyId }] };
+  return { state: withActivity(releaseHeld(state, activity), stoppedWork(rest)), effects: [{ type: 'kill', slug: activity.slug ?? '', ptyId: commands.ptyId }] };
 }

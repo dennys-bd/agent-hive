@@ -12,7 +12,7 @@ import { checkStageModels, parseAgentArgs } from './config-agent-args.js';
 import { checkResumedAgents, parseTransitions, parseVerdicts } from './config-transitions.js';
 import { hiveActionRaw, parseStageAgent, runsAgentRaw } from './config-stage-agent.js';
 import { parseFork } from './fork.js';
-import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseTimeout } from './run-commands.js';
+import { commandsIn, parseEnv, parseCommands, parseStageCi, parseStageCommands, parseStageEvaluate, parseTimeout } from './run-commands.js';
 import { parseSourceEpics, refuseTopLevelEpics, requireSwitchAt } from './config-epics.js';
 import { parseShortcuts } from './shortcuts.js';
 import { isTrustedHost } from './trusted-hosts.js';
@@ -273,11 +273,12 @@ function parseStage(raw: unknown, field: string, sources: SourceRef[]): Stage {
   const stageAgent = parseStageAgent(raw, field); // #710: after the action and its combinations, so a bad action names itself first
   const commands = parseStageCommands(raw, field); // #755: after the action and the combinations every action refuses
   const ci = parseStageCi(raw, field); // #834: after the commands keys, so a commands key next to waitForCi names its own action
+  const evaluate = parseStageEvaluate(raw, field); // #877: after the other actions' keys, so theirs name their own action
   const verdicts = parseVerdicts(raw, field); // #134: after the action keys, so an action stage's own refusal names its action first
   return {
     name: requireString(raw.name, `${field}.name`), from,
     ...optionalString(raw.prompt, `${field}.prompt`), ...session, ...maxWorkers, ...optionalString(raw.model, `${field}.model`), ...agent, ...stageAgent,
-    ...onStart, ...action, ...commands, ...ci, ...verdicts, ...after, ...(raw.approval !== undefined && requireBoolean(raw.approval, `${field}.approval`) ? { approval: true as const } : {}),
+    ...onStart, ...action, ...commands, ...ci, ...evaluate, ...verdicts, ...after, ...(raw.approval !== undefined && requireBoolean(raw.approval, `${field}.approval`) ? { approval: true as const } : {}),
     ...(raw.handoff !== undefined && requireBoolean(raw.handoff, `${field}.handoff`) ? { handoff: true as const } : {}),
   };
 }
@@ -287,11 +288,11 @@ function requireSessionPolicy(value: unknown, field: string): SessionPolicy {
   return value as SessionPolicy;
 }
 
-// #573, #755, #834, #710: the stage actions; a file still saying cleanup is refused with the new names, no legacy path
-const STAGE_ACTIONS: readonly StageAction[] = ['deleteActivity', 'commands', 'waitForCi', 'skill'];
+// #573, #755, #834, #710, #877: the stage actions; a file still saying cleanup is refused with the new names, no legacy path
+const STAGE_ACTIONS: readonly StageAction[] = ['deleteActivity', 'commands', 'waitForCi', 'skill', 'evaluate'];
 
 function requireAction(value: unknown, field: string): StageAction {
-  if (!STAGE_ACTIONS.includes(value as StageAction)) throw new Error(`${CONFIG_FILE}: "${field}" must be "deleteActivity", "commands", "waitForCi" or "skill"`);
+  if (!STAGE_ACTIONS.includes(value as StageAction)) throw new Error(`${CONFIG_FILE}: "${field}" must be "deleteActivity", "commands", "waitForCi", "skill" or "evaluate"`);
   return value as StageAction;
 }
 

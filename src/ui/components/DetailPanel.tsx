@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { activityOf, resultOf, workIdOf } from '../../activities';
 import { issueOfLink } from '../../repos/issue-task';
-import { resolveWorkspace, sourceOf, taskLabel } from '../../tasks';
+import { inAction, resolveWorkspace, sourceOf, taskLabel } from '../../tasks';
 import { FIXED_BINDINGS } from '../../shortcuts';
 import type { Task, TaskFile, State } from '../../types';
 import { DETAIL_OUTLINE } from '@/components/ApprovalActions';
@@ -73,12 +73,12 @@ function Comments({ comments, locale }: { comments: CommentsState; locale: strin
   );
 }
 
-// The one status block (#914, #916): out of tries, the exhausted block; a wait for CI or a commands stage in flight, the running block; else the
+// The one status block (#914, #916): out of tries, the exhausted block; a stage run with no agent in flight, the running block; else the
 // status box
 function StatusBlock({ task, state, locale, isActivity }: { task: Task; state: State; locale: string; isActivity: boolean }) {
   const live = activityOf(state, task.item.itemId);
   if (isExhausted(task, state)) return <ExhaustedBlock task={task} state={state} locale={locale} />;
-  if (live?.ci !== undefined || live?.commands !== undefined) return <RunningBlock task={task} state={state} />;
+  if (inAction(live)) return <RunningBlock task={task} state={state} />; // #914, #877: any stage run with no agent
   return <StatusBox task={task} state={state} isActivity={isActivity} />;
 }
 

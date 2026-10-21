@@ -111,9 +111,12 @@ function hookPayload(raw: HookPayload): HookPayload | undefined {
 
 // #330: exec reads the prompt from stdin (-) and writes its last message, under the schema, to -o's file. A read-only sandbox, no rollout kept,
 // and none of the user's config.toml or rules: a -c table merges into the user's MCP servers instead of replacing them, and an MCP server
-// runs outside the sandbox, so the prompt's third-party text could reach the network through one. Auth still comes from CODEX_HOME
+// runs outside the sandbox, so the prompt's third-party text could reach the network through one. Auth still comes from CODEX_HOME.
+// #877: an evaluation runs it in the task's worktree (-C, no repo skip: it is one), read-only, so the repository's own AGENTS.md reaches it;
+// --ignore-rules only skips execpolicy .rules files, never AGENTS.md (checked: see the argv test), so it stays on every run
+const placeWords = (run: HeadlessRun): string[] => (run.cwd === undefined ? ['--skip-git-repo-check'] : ['-C', run.cwd]);
 const headless = (run: HeadlessRun): string[] => [
-  'exec', '--sandbox', 'read-only', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema', run.schemaPath,
+  'exec', '--sandbox', 'read-only', ...placeWords(run), '--ephemeral', '--ignore-user-config', '--ignore-rules', '--output-schema', run.schemaPath,
   '-o', run.answerPath, ...(run.model === undefined ? [] : [MODEL_FLAG, run.model]), '-',
 ];
 
