@@ -38,6 +38,7 @@ A prompt may name more than one mode; run them in the table's order. With none n
 
 - One file per screen. Its combinations (a layout, an option on or off) are tweaks of the file, as "Tweaks" of `reference/design.md` says; states meant to be seen side by side are sections, one after another, each headed by its state's name.
 - A new screen starts from `${CLAUDE_PLUGIN_ROOT}/reference/skeleton.hv.html` ("The skeleton"). A folder's first screen also copies `${CLAUDE_PLUGIN_ROOT}/reference/hv-kit.js` and `${CLAUDE_PLUGIN_ROOT}/reference/hv-tokens.css` beside it, once for all its screens. With a design system, that first screen writes `hv-tokens.css` with the design system's tokens, for both themes: dark under `:root`, light under `:root[data-theme="light"]`.
+- Markup that appears in two or more screens of the folder (a header, a footer, an activity bar, a sidebar) is a part under `parts/`, included by each screen, as "Parts" of `reference/design.md` says. When a run writes such markup a second time, extract it into a part and include it from both screens. What differs per screen goes into a slot, a state on `<html>` or a tweak of the screen, never into a copy of the part.
 - A screen declares `viewports` in its `hv-tweaks` block only when it is meant to lay out at those widths (a responsive page). The skeleton declares all three: drop the key for a window screen or any fixed-size screen, and drop the widths a screen does not lay out at. A screen without it opens in the design pane at its own size (`natural`).
 - An alternative direction the user asked for is its own file, `<screen>.<variant>.hv.html` (`a`, `b`…).
 - Every file follows "The .hv.html format" of `reference/design.md`: self-contained, no URL outside its own folder.
@@ -57,12 +58,13 @@ A Claude Design export becomes one screen, faithfully: its layout, copy, look an
 3. Write the default state's markup from `default.html`, then the `:root[data-tweak-<name>="<value>"]` CSS that turns it into each snapshot. Colours become tokens of the folder's `hv-tokens.css`, under `:root` and `:root[data-theme="light"]`, mapped from `colours.txt`. A script the export loads that is not beside it, such as a design-system bundle, means its components are drawn from the design system's tokens, and the handoff says so.
 4. Keep a `<section>` only for a state the export showed side by side; every other combination is a tweak.
 5. Port every interaction of the export: list each `onClick`, `onChange` and keyboard handler of its runtime, and declare each one with the kit's attributes ("Interactions"), a click on the same element doing what it did there; only what the kit cannot express goes in a short `<script>` of the screen. Menus and popovers open and close, a pick moves the selection, a toggle shows what it showed, a form opens, edits and closes, a dialog opens and closes. The markup an interaction reveals is written from the export's runtime and hidden until the click. A handler that called a backend shows the state it ended in. One you cannot port goes into the handoff by name, with why.
+6. When the folder already holds a part that matches markup of the export (its sidebar, its header), the screen includes the part instead of writing that markup again, and fills its slots with what the export shows differently.
 
 Then the check, as for any screen; with a browser, also click each ported interaction once and fix what does not follow the export. An import gets no reviewer round: a faithful migration would draw redesign findings it must not act on. The handoff says the screen was imported and not reviewed.
 
 ## Check that each screen renders
 
-For every screen the run wrote or changed:
+For every screen the run wrote or changed, and every screen that includes a part the run changed:
 
 1. **Always.** Run "The check" of `reference/design.md`; fix and run it again until it prints nothing.
 2. **When a browser is available.** Look at each screen as "Seeing it rendered" says, then fix everything you saw in one batch. One round only. Without a browser, the handoff says the screens were not seen rendered.
@@ -101,6 +103,7 @@ One commit per run in the docs repository, as "Commit" in `reference/conventions
 A comment the user writes on a screen in the Hive reaches the session as text: `Design comment <pin> on <path> (conversation <thread>):`, the target element or area, the viewport and theme, then the message. The calling session forwards it to you with `SendMessage`, or you get it directly when you are the session.
 
 - Change the screen it names. Then run the check and the review above as for any update, rewrite the handoff and commit.
+- A target that ends `in part <path>` is an element of that part: change the part, so every screen that includes it follows. When the user scopes the change to one screen, make it a slot, a state or a tweak of that screen instead, never a copy of the part. A target that also reads `, slot <name> filled by the screen` points at text the screen filled: change the screen's fill.
 - Answer each comment on its own conversation with the `hive_reply` tool: `thread` is the id it named, `text` says what you changed or why not. Pass `resolve: true` once the screen is changed. Never say you closed it: only the user confirms.
 - When `hive_reply` is not among your tools, end your report with one line per conversation: the thread id, your answer, and whether to pass `resolve: true`. The calling session sends each with `hive_reply`.
 

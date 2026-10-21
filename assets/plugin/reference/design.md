@@ -218,6 +218,8 @@ frame, with no network.
   path without `..`. No `http:`, `https:`, `file:`, `//` or absolute path in
   any attribute, `url(`, `image-set(`, `@import` or `import`. Fonts are a system stack, or the design
   system's font with a system fallback; never a font CDN.
+- Markup two or more screens of the folder share is a part, included by
+  each screen ("Parts" below), never a copy per screen.
 - One screen's combinations (a layout, an option on or off, a count) are
   tweaks of the file ("Tweaks" below); states meant to be seen side by side
   are sections: one `<section>` per state (empty, loading, error, filled…),
@@ -314,6 +316,51 @@ controls reach is `data-hv-set`, never both. Behaviour the kit cannot
 express, such as text typed into a filter that narrows a list, goes in a
 short `<script>` of the screen, and the handoff names it.
 
+### Parts
+
+Markup two or more screens of a folder share (a header, a footer, an
+activity bar, a sidebar) is a part: one `.html` fragment of the folder,
+conventionally under `parts/`, which each screen includes. The design pane
+assembles a screen before showing it, so a fix to a part reaches every
+screen that includes it.
+
+```html
+<!-- parts/issue-detail.html -->
+<aside class="detail">
+  <h2><hv-slot name="title">Title</hv-slot></h2>
+  <hv-slot name="body"></hv-slot>
+</aside>
+
+<!-- issue.hv.html -->
+<hv-include src="parts/sidebar.html"></hv-include>
+<hv-include src="parts/issue-detail.html">
+  <template data-hv-slot="title">Fix login</template>
+  <template data-hv-slot="body"><p>…</p></template>
+</hv-include>
+```
+
+- A part is a fragment: no `<!doctype>`, `<html>`, `<head>` or `<body>`,
+  and its name does not end in `.hv.html`. A part may include parts, up to
+  4 levels from the screen, never in a cycle.
+- `src` is relative to the including file's folder and stays inside the
+  design folder: no absolute path, no `..`, no dot segment, no symbolic
+  link.
+- Content that differs per screen goes through slots. A part declares
+  `<hv-slot name="<name>">default</hv-slot>`. The screen fills it with a
+  `<template data-hv-slot="<name>">` child of the `<hv-include>`, and an
+  unfilled slot shows its default. State that differs goes on `<html>`
+  (`data-hv-set`, "Interactions") or in the screen's tweaks, and the part's
+  CSS reacts by attribute. Only the screen declares tweaks: a part holds no
+  `hv-tweaks` block.
+- The pane marks each element with the file it came from (`data-hv-source`,
+  and `data-hv-fill` on an element holding a slot the screen filled with
+  text). Never write either by hand. A design comment on an element of a
+  part names it: `in part <path>`.
+- A broken include renders as a red notice in its place, and the rest of
+  the screen still renders. The check reports it.
+- Opened from disk, a screen shows its `<hv-include>` markers, not its
+  parts: only the design pane assembles it.
+
 ### The check
 
 Run from the docs repository, `<folder>` the design folder, quoted. It prints
@@ -326,11 +373,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/check-hv.mjs" "<folder>"
 It reports, one line each: what reaches outside the folder or the network
 (`http:`, `https:`, `file:`, `//` or an absolute path in an attribute,
 `url(`, `image-set(`, `@import` or `import`; `..`; a refresh; `fetch`,
-`XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `window.open`);
-a symbolic link; `<!doctype html>`, `<html`, `<head`, `</head>`, `<body`,
-`</body>` or `</html>` missing or out of order; an `hv-tweaks` block that is
-not JSON or breaks "Tweaks"; a script or stylesheet loaded by a relative
-path that is not in the folder, such as a missing `hv-kit.js`.
+`XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `window.open`),
+in a screen or a part; a symbolic link; `<!doctype html>`, `<html`, `<head`,
+`</head>`, `<body`, `</body>` or `</html>` missing or out of order in a
+screen; an `hv-tweaks` block that is not JSON or breaks "Tweaks"; a script
+or stylesheet loaded by a relative path that is not in the folder, such as
+a missing `hv-kit.js`. For parts ("Parts"): a part that holds
+`<!doctype`, `<html`, `<head` or `<body`, or an `hv-tweaks` block; a
+`data-hv-source` or `data-hv-fill` written by hand; and, for each include,
+in the words of the pane's notice, a missing part, a `src` that is not
+relative, has `..` or a dot segment, names a screen or a file that is not
+`.html`, a symbolic link, a cycle, more than 4 levels, or
+a slot fill the part does not declare.
 
 ### Seeing it rendered
 
@@ -350,6 +404,9 @@ chromium --headless --no-first-run --user-data-dir="$tmp/profile" --host-resolve
 Screenshot each enum option once, and each boolean the other way: copy the
 screen into the temporary folder with `data-tweak-<name>="<value>"` added to
 its `<html>` tag, one copy per value, the other tweaks at their default.
+
+A screen that includes parts shows its `<hv-include>` markers from disk,
+not the parts: say in the handoff that its parts were not seen rendered.
 
 One round at each width the screen declares (`desktop` 1280, `tablet` 768,
 `mobile` 390 px, as `--window-size`), or at its own width when it declares
